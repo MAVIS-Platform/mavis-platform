@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: mavis-backend
+
+  datasource:
+    # URL k?t n?i t?i con database mavis_db b?n v?a t?o
+    url: jdbc:postgresql://localhost:5432/mavis_db
+    # ?i?n username c?a PostgreSQL trên máy b?n (th??ng là postgres)
+    username: postgres
+    # ?i?n m?t kh?u PostgreSQL trên máy b?n vào ?ây
+    password: root
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    # Không cho phép JPA t? ??ng t?o b?ng vì chúng ta s? dùng Flyway
+    hibernate:
+      ddl-auto: validate
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+server:
+  port: 8080

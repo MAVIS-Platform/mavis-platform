@@ -1,0 +1,6 @@
+@MAVIS.Worker.Api_HostAddress = http://localhost:5082
+
+GET {{MAVIS.Worker.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
