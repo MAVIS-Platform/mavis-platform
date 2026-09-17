@@ -1,8 +1,13 @@
 using Microsoft.Extensions.DependencyInjection;
+using MAVIS.Worker.Application.Analysis;
 using MAVIS.Worker.Application.Graph;
 using MAVIS.Worker.Application.Impact;
+using MAVIS.Worker.Application.Jobs;
+using MAVIS.Worker.Infrastructure.Analysis;
+using MAVIS.Worker.Infrastructure.CSharp;
 using MAVIS.Worker.Infrastructure.Graph;
 using MAVIS.Worker.Infrastructure.Impact;
+using MAVIS.Worker.Infrastructure.Jobs;
 
 namespace MAVIS.Worker.Infrastructure;
 
@@ -17,6 +22,18 @@ public static class DependencyInjection
         // Graph and impact analysis implementations
         services.AddSingleton<IGraphEngine, GraphEngine>();
         services.AddSingleton<IImpactAnalyzer, ImpactAnalyzer>();
+
+        // Analysis pipeline (Normalize -> Resolve -> Orchestrate)
+        services.AddSingleton<INormalizer, Normalizer>();
+        services.AddSingleton<IResolver, Resolver>();
+        services.AddSingleton<IAnalysisOrchestrator, AnalysisOrchestrator>();
+
+        // C# Analyzer (Roslyn)
+        services.AddSingleton<ICSharpAnalyzer, CSharpAnalyzer>();
+
+        // Job queue + background worker
+        services.AddSingleton<IJobQueue, InMemoryJobQueue>();
+        services.AddHostedService<AnalysisBackgroundService>();
 
         return services;
     }
