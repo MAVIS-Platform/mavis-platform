@@ -32,6 +32,7 @@
     <dependencies>
 
 
+
         <!-- Liên kết với module mavis-platform -->
         <dependency>
             <groupId>${project.groupId}</groupId>
