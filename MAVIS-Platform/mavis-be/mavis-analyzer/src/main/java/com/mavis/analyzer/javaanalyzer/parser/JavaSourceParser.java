@@ -54,6 +54,9 @@ public class JavaSourceParser {
             String sourceCode = codeBuilder.toString();
             CompilationUnit cu = StaticJavaParser.parse(sourceCode);
             log.info("Phân tích cú pháp thành công file Java: {}", javaFile.toAbsolutePath());
+
+            new com.mavis.analyzer.javaanalyzer.visitor.ControllerVisitor().visit(cu, null);
+            new com.mavis.analyzer.javaanalyzer.visitor.FeignClientVisitor().visit(cu, null);
         } catch (Exception e) {
             log.error("Lỗi khi phân tích cú pháp file Java: {}", javaFile.toAbsolutePath(), e);
         }
