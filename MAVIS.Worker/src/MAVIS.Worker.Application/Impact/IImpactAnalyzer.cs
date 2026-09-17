@@ -1,12 +1,15 @@
 using MAVIS.Worker.Domain.Entities;
-using MAVIS.Worker.Application.Graph;
+using MAVIS.Worker.Domain.Graph;
 
 namespace MAVIS.Worker.Application.Impact;
 
 /// <summary>
-/// Phân tích tác động: cho một target service, tìm các service bị ảnh hưởng trực tiếp/gián tiếp.
+/// Impact analysis: given a target service, find all services directly/indirectly affected.
 /// </summary>
 public interface IImpactAnalyzer
 {
-    ImpactResult Analyze(DirectedGraph graph, string targetServiceId);
+    /// <param name="graph">The dependency graph already built.</param>
+    /// <param name="targetServiceId">The service being changed, need to know who is affected.</param>
+    /// <param name="maxDepth">Max hop count to traverse backwards, prevents large graphs/cycles from consuming CPU.</param>
+    ImpactResult Analyze(DirectedGraph graph, string targetServiceId, int maxDepth = 10);
 }
