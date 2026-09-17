@@ -1,6 +1,7 @@
 using MAVIS.Worker.Application.Analysis;
 using MAVIS.Worker.Application.Contracts.Requests;
 using MAVIS.Worker.Domain.Enums;
+using MAVIS.Worker.Infrastructure.Analysis;
 
 namespace MAVIS.Worker.Tests.Analysis;
 

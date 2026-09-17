@@ -1,8 +1,9 @@
+using MAVIS.Worker.Application.Analysis;
 using MAVIS.Worker.Application.Contracts.Requests;
 using MAVIS.Worker.Domain.Entities;
 using MAVIS.Worker.Domain.Enums;
 
-namespace MAVIS.Worker.Application.Analysis;
+namespace MAVIS.Worker.Infrastructure.Analysis;
 
 /// <summary>
 /// Chuẩn hoá raw findings (Java analyzer, generic regex-based) về

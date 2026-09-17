@@ -4,6 +4,8 @@ using MAVIS.Worker.Application.Graph;
 using MAVIS.Worker.Application.Impact;
 using MAVIS.Worker.Domain.Entities;
 using MAVIS.Worker.Domain.Enums;
+using MAVIS.Worker.Infrastructure.Analysis;
+using MAVIS.Worker.Infrastructure.CSharp;
 using NSubstitute;
 
 namespace MAVIS.Worker.Tests.Analysis;
@@ -14,11 +16,15 @@ public sealed class AnalysisOrchestratorTests
     private readonly IResolver _resolver = Substitute.For<IResolver>();
     private readonly IGraphEngine _graphEngine = Substitute.For<IGraphEngine>();
     private readonly IImpactAnalyzer _impactAnalyzer = Substitute.For<IImpactAnalyzer>();
+    private readonly ICSharpAnalyzer _csharpAnalyzer = Substitute.For<ICSharpAnalyzer>();
     private readonly AnalysisOrchestrator _sut;
 
     public AnalysisOrchestratorTests()
     {
-        _sut = new AnalysisOrchestrator(_normalizer, _resolver, _graphEngine, _impactAnalyzer);
+        _sut = new AnalysisOrchestrator(_normalizer, _resolver, _graphEngine, _impactAnalyzer, _csharpAnalyzer);
+        
+        // Default: C# analyzer không applicable (để tests cũ không đổi behavior)
+        _csharpAnalyzer.IsApplicable(Arg.Any<string>()).Returns(false);
     }
 
     [Fact]
@@ -200,6 +206,94 @@ public sealed class AnalysisOrchestratorTests
         var after = DateTimeOffset.UtcNow;
 
         Assert.InRange(result.CompletedAt, before, after);
+    }
+
+    [Fact]
+    public async Task RunAsync_WhenCSharpApplicable_CallsCSharpAnalyzer()
+    {
+        var request = new AnalysisRequest
+        {
+            ProjectId = "proj-1",
+            ProjectName = "Test",
+            SourceLocation = "/src/csharp-project",
+            RawFindings = Array.Empty<RawFindingDto>(),
+            ComputeImpact = false
+        };
+
+        var csharpFindings = new[]
+        {
+            new RawFindingDto
+            {
+                Language = "csharp",
+                ServiceId = "PaymentService",
+                Kind = "HTTP_REST_CALL",
+                Target = "OrderService",
+                HttpMethod = "GET",
+                Url = "http://order-service/api/orders",
+                FilePath = "/src/PaymentService/Client.cs",
+                StartLine = 10
+            }
+        };
+
+        _csharpAnalyzer.IsApplicable("/src/csharp-project").Returns(true);
+        _csharpAnalyzer.AnalyzeAsync("/src/csharp-project", Arg.Any<CancellationToken>())
+            .Returns(csharpFindings);
+
+        var manifest = CreateManifest("proj-1", "Test", "/src/csharp-project");
+        _normalizer.Normalize(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<RawFindingDto>>())
+            .Returns(manifest);
+        _resolver.Resolve(Arg.Any<IEnumerable<DependencyEdge>>()).Returns(Array.Empty<DependencyEdge>());
+
+        await _sut.RunAsync(request);
+
+        await _csharpAnalyzer.Received(1).AnalyzeAsync("/src/csharp-project", Arg.Any<CancellationToken>());
+        _normalizer.Received(1).Normalize(
+            "proj-1",
+            "Test",
+            "/src/csharp-project",
+            Arg.Is<IReadOnlyList<RawFindingDto>>(list => list.Count == 1 && list[0].Language == "csharp"));
+    }
+
+    [Fact]
+    public async Task RunAsync_MergesJavaAndCSharpFindings()
+    {
+        var javaFindings = new[]
+        {
+            new RawFindingDto { Language = "java", ServiceId = "OrderService", Kind = "FEIGN_CLIENT" }
+        };
+
+        var csharpFindings = new[]
+        {
+            new RawFindingDto { Language = "csharp", ServiceId = "PaymentService", Kind = "HTTP_REST_CALL" }
+        };
+
+        var request = new AnalysisRequest
+        {
+            ProjectId = "proj-1",
+            ProjectName = "Test",
+            SourceLocation = "/src",
+            RawFindings = javaFindings,
+            ComputeImpact = false
+        };
+
+        _csharpAnalyzer.IsApplicable("/src").Returns(true);
+        _csharpAnalyzer.AnalyzeAsync("/src", Arg.Any<CancellationToken>()).Returns(csharpFindings);
+
+        var manifest = CreateManifest("proj-1", "Test", "/src");
+        _normalizer.Normalize(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<RawFindingDto>>())
+            .Returns(manifest);
+        _resolver.Resolve(Arg.Any<IEnumerable<DependencyEdge>>()).Returns(Array.Empty<DependencyEdge>());
+
+        await _sut.RunAsync(request);
+
+        _normalizer.Received(1).Normalize(
+            "proj-1",
+            "Test",
+            "/src",
+            Arg.Is<IReadOnlyList<RawFindingDto>>(list =>
+                list.Count == 2 &&
+                list.Any(f => f.Language == "java") &&
+                list.Any(f => f.Language == "csharp")));
     }
 
     private static AnalysisRequest CreateBasicRequest() => new()
