@@ -3,7 +3,7 @@ using MAVIS.Worker.Domain.Entities;
 namespace MAVIS.Worker.Application.Analysis;
 
 /// <summary>
-/// Resolve dependency edges: gom evidence, dedupe, gán ID ổn định.
+/// Resolver interface: dedupe edges, merge evidences, assign stable IDs.
 /// </summary>
 public interface IResolver
 {

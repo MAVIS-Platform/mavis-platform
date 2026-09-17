@@ -4,11 +4,13 @@ using MAVIS.Worker.Domain.Entities;
 namespace MAVIS.Worker.Application.Analysis;
 
 /// <summary>
-/// Chuẩn hoá raw findings từ Java analyzer + Roslyn findings từ C# analyzer
-/// về cùng một dạng ServiceNode + DependencyEdge.
+/// Normalizer interface: convert raw findings to domain model.
 /// </summary>
 public interface INormalizer
 {
-    ProjectManifest Normalize(string projectId, string projectName, string sourceLocation,
+    ProjectManifest Normalize(
+        string projectId,
+        string projectName,
+        string sourceLocation,
         IReadOnlyList<RawFindingDto> rawFindings);
 }

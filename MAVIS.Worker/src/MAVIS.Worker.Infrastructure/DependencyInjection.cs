@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using MAVIS.Worker.Application.Analysis;
 using MAVIS.Worker.Application.Graph;
 using MAVIS.Worker.Application.Impact;
 using MAVIS.Worker.Infrastructure.Graph;
@@ -17,6 +18,11 @@ public static class DependencyInjection
         // Graph and impact analysis implementations
         services.AddSingleton<IGraphEngine, GraphEngine>();
         services.AddSingleton<IImpactAnalyzer, ImpactAnalyzer>();
+
+        // Analysis pipeline (Normalize -> Resolve -> Orchestrate)
+        services.AddSingleton<INormalizer, Normalizer>();
+        services.AddSingleton<IResolver, Resolver>();
+        services.AddSingleton<IAnalysisOrchestrator, AnalysisOrchestrator>();
 
         return services;
     }
