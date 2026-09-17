@@ -3,6 +3,8 @@ using MAVIS.Worker.Application.Analysis;
 using MAVIS.Worker.Application.Graph;
 using MAVIS.Worker.Application.Impact;
 using MAVIS.Worker.Application.Jobs;
+using MAVIS.Worker.Infrastructure.Analysis;
+using MAVIS.Worker.Infrastructure.CSharp;
 using MAVIS.Worker.Infrastructure.Graph;
 using MAVIS.Worker.Infrastructure.Impact;
 using MAVIS.Worker.Infrastructure.Jobs;
@@ -25,6 +27,9 @@ public static class DependencyInjection
         services.AddSingleton<INormalizer, Normalizer>();
         services.AddSingleton<IResolver, Resolver>();
         services.AddSingleton<IAnalysisOrchestrator, AnalysisOrchestrator>();
+
+        // C# Analyzer (Roslyn)
+        services.AddSingleton<ICSharpAnalyzer, CSharpAnalyzer>();
 
         // Job queue + background worker
         services.AddSingleton<IJobQueue, InMemoryJobQueue>();

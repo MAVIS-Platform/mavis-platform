@@ -1,12 +1,15 @@
+using MAVIS.Worker.Application.Analysis;
 using MAVIS.Worker.Application.Contracts.Requests;
 using MAVIS.Worker.Application.Contracts.Responses;
 using MAVIS.Worker.Application.Graph;
 using MAVIS.Worker.Application.Impact;
+using MAVIS.Worker.Infrastructure.CSharp;
 
-namespace MAVIS.Worker.Application.Analysis;
+namespace MAVIS.Worker.Infrastructure.Analysis;
 
 /// <summary>
 /// Orchestrator điều phối toàn bộ pipeline analysis:
+/// 0. (Optional) Nếu có C# code → chạy Roslyn scan, merge vào raw findings
 /// 1. Normalize: RawFindingDto[] → ProjectManifest
 /// 2. Resolve: dedupe edges, assign stable IDs
 /// 3. Build graph: DependencyEdge[] → DirectedGraph
@@ -18,27 +21,45 @@ public sealed class AnalysisOrchestrator : IAnalysisOrchestrator
     private readonly IResolver _resolver;
     private readonly IGraphEngine _graphEngine;
     private readonly IImpactAnalyzer _impactAnalyzer;
+    private readonly ICSharpAnalyzer _csharpAnalyzer;
 
     public AnalysisOrchestrator(
         INormalizer normalizer,
         IResolver resolver,
         IGraphEngine graphEngine,
-        IImpactAnalyzer impactAnalyzer)
+        IImpactAnalyzer impactAnalyzer,
+        ICSharpAnalyzer csharpAnalyzer)
     {
         _normalizer = normalizer;
         _resolver = resolver;
         _graphEngine = graphEngine;
         _impactAnalyzer = impactAnalyzer;
+        _csharpAnalyzer = csharpAnalyzer;
     }
 
-    public Task<AnalysisResult> RunAsync(AnalysisRequest request, CancellationToken ct = default)
+    public async Task<AnalysisResult> RunAsync(AnalysisRequest request, CancellationToken ct = default)
     {
-        // Step 1: Normalize raw findings
+        // Step 0: Merge findings from Java (generic + java) + C# (nếu có)
+        IReadOnlyList<RawFindingDto> allFindings = request.RawFindings;
+
+        // Nếu source location có C# code → chạy Roslyn scan và merge thêm
+        if (_csharpAnalyzer.IsApplicable(request.SourceLocation))
+        {
+            var csharpFindings = await _csharpAnalyzer.AnalyzeAsync(request.SourceLocation, ct);
+            if (csharpFindings.Count > 0)
+            {
+                var merged = new List<RawFindingDto>(request.RawFindings);
+                merged.AddRange(csharpFindings);
+                allFindings = merged;
+            }
+        }
+
+        // Step 1: Normalize raw findings (generic + java + csharp)
         var manifest = _normalizer.Normalize(
             request.ProjectId,
             request.ProjectName,
             request.SourceLocation,
-            request.RawFindings);
+            allFindings);
 
         // Step 2: Resolve edges (dedupe, stable IDs)
         var resolvedEdges = _resolver.Resolve(manifest.Dependencies);
@@ -72,6 +93,6 @@ public sealed class AnalysisOrchestrator : IAnalysisOrchestrator
             CompletedAt = DateTimeOffset.UtcNow
         };
 
-        return Task.FromResult(result);
+        return result;
     }
 }

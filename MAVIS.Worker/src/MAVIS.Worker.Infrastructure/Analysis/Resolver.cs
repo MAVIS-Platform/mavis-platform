@@ -1,8 +1,9 @@
+using MAVIS.Worker.Application.Analysis;
 using MAVIS.Worker.Domain.Entities;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace MAVIS.Worker.Application.Analysis;
+namespace MAVIS.Worker.Infrastructure.Analysis;
 
 /// <summary>
 /// Resolve dependency edges: dedupe, merge evidences, assign stable IDs.
