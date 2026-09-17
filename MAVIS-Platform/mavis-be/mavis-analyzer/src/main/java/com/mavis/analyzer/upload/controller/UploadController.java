@@ -1,12 +1,14 @@
 package com.mavis.analyzer.upload.controller;
 
 import com.mavis.analyzer.storage.service.StorageService;
+import com.mavis.common.contract.AnalyzeRequestEvent;
 import com.mavis.common.dto.ApiResponse;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,6 +25,7 @@ import java.util.UUID;
 public class UploadController {
 
     private final StorageService storageService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Tải lên file ZIP mã nguồn dự án", description = "Kiểm tra tính hợp lệ của file và lưu trữ tạm thời trước khi phân tích")
@@ -41,6 +44,8 @@ public class UploadController {
 
         String filePath = storageService.store(file);
 
-        return ApiResponse.success("Tải file ZIP thành công", filePath);
+        eventPublisher.publishEvent(new AnalyzeRequestEvent(projectId, filePath));
+
+        return ApiResponse.success("Tải file ZIP thành công và đã phát tín hiệu phân tích", filePath);
     }
 }
