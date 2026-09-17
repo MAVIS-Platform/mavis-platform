@@ -31,6 +31,12 @@
     </properties>
     <dependencies>
 
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>3.1.1</version>
+        </dependency>
+
         <!-- Liên kết với module mavis-common -->
         <dependency>
             <groupId>${project.groupId}</groupId>
