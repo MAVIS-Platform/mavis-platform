@@ -6,32 +6,18 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>4.1.1</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <relativePath/>
     </parent>
     <groupId>vn.edu.fpt</groupId>
     <artifactId>mavis-analyzer</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>mavis-analyzer</name>
-    <description>mavis-analyzer</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
+
     <properties>
         <java.version>21</java.version>
     </properties>
-    <dependencies>
 
-        <!-- Liên kết với module mavis-common -->
+    <dependencies>
+        <!-- Gọi sang Common -->
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>mavis-common</artifactId>
@@ -40,30 +26,17 @@
 
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webmvc</artifactId>
+            <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webmvc-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- Source: https://mvnrepository.com/artifact/org.springframework.boot/spring-boot-starter-webflux -->
+        <!-- WebFlux dùng để gọi API sang C# Worker và OpenAI -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
-            <version>4.1.1</version>
-            <scope>compile</scope>
         </dependency>
     </dependencies>
 
     <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
+        <!-- Đã xóa spring-boot-maven-plugin -->
     </build>
-
 </project>

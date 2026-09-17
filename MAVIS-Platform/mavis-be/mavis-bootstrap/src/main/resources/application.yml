@@ -5,14 +5,14 @@ spring:
   datasource:
     # URL k?t n?i t?i con database mavis_db b?n v?a t?o
     url: jdbc:postgresql://localhost:5432/mavis_db
-    # ?i?n username c?a PostgreSQL trên máy b?n (th??ng là postgres)
+    # ?i?n username c?a PostgreSQL trï¿½n mï¿½y b?n (th??ng lï¿½ postgres)
     username: postgres
-    # ?i?n m?t kh?u PostgreSQL trên máy b?n vào ?ây
-    password: root
+    # ?i?n m?t kh?u PostgreSQL trï¿½n mï¿½y b?n vï¿½o ?ï¿½y
+    password: 12345
     driver-class-name: org.postgresql.Driver
 
   jpa:
-    # Không cho phép JPA t? ??ng t?o b?ng vì chúng ta s? dùng Flyway
+    # Khï¿½ng cho phï¿½p JPA t? ??ng t?o b?ng vï¿½ chï¿½ng ta s? dï¿½ng Flyway
     hibernate:
       ddl-auto: validate
     show-sql: true
