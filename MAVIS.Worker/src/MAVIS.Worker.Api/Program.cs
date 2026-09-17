@@ -27,3 +27,6 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+// Expose Program class for WebApplicationFactory<Program> in integration tests.
+public partial class Program { }
