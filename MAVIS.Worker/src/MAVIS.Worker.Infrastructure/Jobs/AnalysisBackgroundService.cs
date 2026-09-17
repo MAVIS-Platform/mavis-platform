@@ -81,6 +81,10 @@ public sealed class AnalysisBackgroundService : BackgroundService
                     result.Manifest.Services.Count,
                     result.Manifest.Dependencies.Count);
 
+                // Lưu kết quả để API có thể query lại
+                var resultJson = JsonSerializer.Serialize(result);
+                await _jobQueue.SetResultAsync(job.JobId, resultJson, ct);
+
                 await _jobQueue.CompleteAsync(job.JobId, success: true, error: null, ct);
             }
             else

@@ -61,6 +61,36 @@ public sealed class InMemoryJobQueue : IJobQueue
         return Task.CompletedTask;
     }
 
+    public Task SetResultAsync(string jobId, string resultJson, CancellationToken ct = default)
+    {
+        if (_records.TryGetValue(jobId, out var record))
+        {
+            record.ResultJson = resultJson;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<JobStatusView?> GetStatusAsync(string jobId, CancellationToken ct = default)
+    {
+        if (!_records.TryGetValue(jobId, out var record))
+        {
+            return Task.FromResult<JobStatusView?>(null);
+        }
+
+        var view = new JobStatusView(
+            record.JobId,
+            record.JobType,
+            record.Status.ToString(),
+            record.EnqueuedAt,
+            record.StartedAt,
+            record.CompletedAt,
+            record.Error,
+            record.ResultJson);
+
+        return Task.FromResult<JobStatusView?>(view);
+    }
+
     private sealed class JobRecord
     {
         public required string JobId { get; init; }
@@ -70,6 +100,7 @@ public sealed class InMemoryJobQueue : IJobQueue
         public DateTimeOffset? StartedAt { get; set; }
         public DateTimeOffset? CompletedAt { get; set; }
         public string? Error { get; set; }
+        public string? ResultJson { get; set; }
     }
 
     private enum JobStatus

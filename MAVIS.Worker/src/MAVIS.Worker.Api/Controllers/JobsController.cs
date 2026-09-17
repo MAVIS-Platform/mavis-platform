@@ -39,4 +39,20 @@ public class JobsController : ControllerBase
             projectId = request.ProjectId
         });
     }
+
+    /// <summary>
+    /// Get job status and result (if completed).
+    /// </summary>
+    [HttpGet("{jobId}")]
+    public async Task<IActionResult> GetJobStatus(string jobId, CancellationToken ct)
+    {
+        var status = await _jobQueue.GetStatusAsync(jobId, ct);
+
+        if (status is null)
+        {
+            return NotFound(new { error = $"Job {jobId} not found" });
+        }
+
+        return Ok(status);
+    }
 }
