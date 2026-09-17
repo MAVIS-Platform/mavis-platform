@@ -32,6 +32,18 @@
     <dependencies>
 
 
+        <!-- Thư viện JPA để nhận diện @EntityScan và @EnableJpaRepositories -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- Đảm bảo Bootstrap đã liên kết với mavis-common (nếu chưa có) -->
+        <dependency>
+            <groupId>vn.edu.fpt</groupId>
+            <artifactId>mavis-common</artifactId>
+            <version>0.0.1-SNAPSHOT</version>
+        </dependency>
 
         <!-- Liên kết với module mavis-platform -->
         <dependency>
