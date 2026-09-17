@@ -1,6 +1,7 @@
 package com.mavis.analyzer.orchestrator.service;
 
 import com.mavis.analyzer.detector.docker.DockerDetector;
+import com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser;
 import com.mavis.common.contract.AnalyzeRequestEvent;
 import com.mavis.common.entity.AnalysisSession;
 import com.mavis.common.entity.Project;
@@ -24,6 +25,7 @@ public class AnalyzerOrchestrator {
     private final ProjectRepository projectRepository;
     private final AnalysisSessionRepository sessionRepository;
     private final DockerDetector dockerDetector;
+    private final JavaSourceParser javaSourceParser;
 
     @Async
     @EventListener
@@ -67,6 +69,8 @@ public class AnalyzerOrchestrator {
 
             List<String> detectedServices = dockerDetector.detectServices(extractedPath);
             log.info("Đã phát hiện {} Docker services: {}", detectedServices.size(), detectedServices);
+
+            javaSourceParser.parseProject(extractedPath);
         } catch (Exception e) {
             log.error("Lỗi xảy ra trong quá trình trích xuất và phân tích Docker cho Project ID: {}", event.projectId(), e);
             session.setStatus("FAILED");
