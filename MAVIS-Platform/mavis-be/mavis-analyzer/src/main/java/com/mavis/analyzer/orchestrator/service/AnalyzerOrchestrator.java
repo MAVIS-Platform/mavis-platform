@@ -17,6 +17,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -82,11 +83,28 @@ public class AnalyzerOrchestrator {
 
             graphBuilderService.buildEdgesAndEvidences(session, savedNodes, evidences);
             log.info("Đã hoàn tất kết nối dependency edges và lưu trữ evidences");
+
+            finalizeSession(project, session);
         } catch (Exception e) {
             log.error("Lỗi xảy ra trong quá trình trích xuất và phân tích Docker cho Project ID: {}", event.projectId(), e);
             session.setStatus("FAILED");
             session.setErrorMessage(e.getMessage());
             sessionRepository.save(session);
         }
+    }
+
+    private void finalizeSession(Project project, AnalysisSession session) {
+        log.info("Bắt đầu hoàn tất AnalysisSession ID: {} cho Project ID: {}", session.getId(), project.getId());
+        
+        // 1. Chạy hàm này TRƯỚC để tước cờ 'true' của các session cũ
+        sessionRepository.invalidatePreviousSessions(project.getId(), session.getId());
+
+        // 2. Ngai vàng đã trống, an tâm set 'true' và save() cho session mới
+        session.setStatus("COMPLETED");
+        session.setLatestValid(true);
+        session.setCompletedAt(LocalDateTime.now());
+        sessionRepository.save(session);
+        
+        log.info("AnalysisSession ID: {} đã hoàn tất thành công (COMPLETED, isLatestValid = true)", session.getId());
     }
 }
