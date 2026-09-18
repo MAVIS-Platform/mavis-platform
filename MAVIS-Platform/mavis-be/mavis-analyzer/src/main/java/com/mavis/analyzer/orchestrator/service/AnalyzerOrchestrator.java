@@ -1,10 +1,12 @@
 package com.mavis.analyzer.orchestrator.service;
 
 import com.mavis.analyzer.detector.docker.DockerDetector;
+import com.mavis.analyzer.graph.service.GraphBuilderService;
 import com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser;
 import com.mavis.common.contract.AnalyzeRequestEvent;
 import com.mavis.common.entity.AnalysisSession;
 import com.mavis.common.entity.Project;
+import com.mavis.common.entity.ServiceNode;
 import com.mavis.common.repository.AnalysisSessionRepository;
 import com.mavis.common.repository.ProjectRepository;
 import com.mavis.common.utils.ZipUtils;
@@ -26,6 +28,7 @@ public class AnalyzerOrchestrator {
     private final AnalysisSessionRepository sessionRepository;
     private final DockerDetector dockerDetector;
     private final JavaSourceParser javaSourceParser;
+    private final GraphBuilderService graphBuilderService;
 
     @Async
     @EventListener
@@ -69,6 +72,9 @@ public class AnalyzerOrchestrator {
 
             List<String> detectedServices = dockerDetector.detectServices(extractedPath);
             log.info("Đã phát hiện {} Docker services: {}", detectedServices.size(), detectedServices);
+
+            List<ServiceNode> savedNodes = graphBuilderService.buildAndSaveNodes(session, detectedServices);
+            log.info("Đã lưu {} service nodes vào database", savedNodes.size());
 
             javaSourceParser.parseProject(extractedPath);
         } catch (Exception e) {
