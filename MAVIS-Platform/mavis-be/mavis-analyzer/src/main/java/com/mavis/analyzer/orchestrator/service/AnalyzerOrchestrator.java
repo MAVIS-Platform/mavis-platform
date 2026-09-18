@@ -2,6 +2,7 @@ package com.mavis.analyzer.orchestrator.service;
 
 import com.mavis.analyzer.detector.docker.DockerDetector;
 import com.mavis.analyzer.graph.service.GraphBuilderService;
+import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser;
 import com.mavis.common.contract.AnalyzeRequestEvent;
 import com.mavis.common.entity.AnalysisSession;
@@ -76,7 +77,8 @@ public class AnalyzerOrchestrator {
             List<ServiceNode> savedNodes = graphBuilderService.buildAndSaveNodes(session, detectedServices);
             log.info("Đã lưu {} service nodes vào database", savedNodes.size());
 
-            javaSourceParser.parseProject(extractedPath);
+            List<CodeEvidenceDTO> evidences = javaSourceParser.parseProject(extractedPath);
+            log.info("Đã trích xuất {} code evidences từ mã nguồn", evidences.size());
         } catch (Exception e) {
             log.error("Lỗi xảy ra trong quá trình trích xuất và phân tích Docker cho Project ID: {}", event.projectId(), e);
             session.setStatus("FAILED");
