@@ -7,15 +7,27 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MemberValuePair;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
+import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.List;
 import java.util.Optional;
 
 @Slf4j
-public class ControllerVisitor extends VoidVisitorAdapter<Void> {
+public class ControllerVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>> {
+
+    private final String currentFilePath;
+
+    public ControllerVisitor() {
+        this(null);
+    }
+
+    public ControllerVisitor(String currentFilePath) {
+        this.currentFilePath = currentFilePath;
+    }
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration n, Void arg) {
+    public void visit(ClassOrInterfaceDeclaration n, List<CodeEvidenceDTO> arg) {
         // a. Kiểm tra class có được đánh dấu @RestController hoặc @Controller không
         boolean isController = n.isAnnotationPresent("RestController") || n.isAnnotationPresent("Controller");
         if (!isController) {
@@ -61,6 +73,21 @@ public class ControllerVisitor extends VoidVisitorAdapter<Void> {
             if (httpMethodType != null) {
                 String fullEndpointPath = combinePaths(basePath, methodPath);
                 log.info("Detected API Endpoint: [{}] {}", httpMethodType, fullEndpointPath);
+
+                if (arg != null) {
+                    Integer lineNumber = n.getBegin().map(p -> p.line).orElse(null);
+                    String rawSnippet = n.toString();
+                    String codeSnippet = rawSnippet.length() > 500 ? rawSnippet.substring(0, 500) : rawSnippet;
+
+                    CodeEvidenceDTO evidence = CodeEvidenceDTO.builder()
+                            .elementType("REST_API")
+                            .identifier(fullEndpointPath)
+                            .filePath(currentFilePath)
+                            .lineNumber(lineNumber)
+                            .codeSnippet(codeSnippet)
+                            .build();
+                    arg.add(evidence);
+                }
             }
         }
 
