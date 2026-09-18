@@ -1,10 +1,13 @@
 package com.mavis.analyzer.orchestrator.service;
 
 import com.mavis.analyzer.detector.docker.DockerDetector;
+import com.mavis.analyzer.graph.service.GraphBuilderService;
+import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser;
 import com.mavis.common.contract.AnalyzeRequestEvent;
 import com.mavis.common.entity.AnalysisSession;
 import com.mavis.common.entity.Project;
+import com.mavis.common.entity.ServiceNode;
 import com.mavis.common.repository.AnalysisSessionRepository;
 import com.mavis.common.repository.ProjectRepository;
 import com.mavis.common.utils.ZipUtils;
@@ -14,6 +17,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -26,6 +30,7 @@ public class AnalyzerOrchestrator {
     private final AnalysisSessionRepository sessionRepository;
     private final DockerDetector dockerDetector;
     private final JavaSourceParser javaSourceParser;
+    private final GraphBuilderService graphBuilderService;
 
     @Async
     @EventListener
@@ -70,12 +75,36 @@ public class AnalyzerOrchestrator {
             List<String> detectedServices = dockerDetector.detectServices(extractedPath);
             log.info("Đã phát hiện {} Docker services: {}", detectedServices.size(), detectedServices);
 
-            javaSourceParser.parseProject(extractedPath);
+            List<ServiceNode> savedNodes = graphBuilderService.buildAndSaveNodes(session, detectedServices);
+            log.info("Đã lưu {} service nodes vào database", savedNodes.size());
+
+            List<CodeEvidenceDTO> evidences = javaSourceParser.parseProject(extractedPath);
+            log.info("Đã trích xuất {} code evidences từ mã nguồn", evidences.size());
+
+            graphBuilderService.buildEdgesAndEvidences(session, savedNodes, evidences);
+            log.info("Đã hoàn tất kết nối dependency edges và lưu trữ evidences");
+
+            finalizeSession(project, session);
         } catch (Exception e) {
             log.error("Lỗi xảy ra trong quá trình trích xuất và phân tích Docker cho Project ID: {}", event.projectId(), e);
             session.setStatus("FAILED");
             session.setErrorMessage(e.getMessage());
             sessionRepository.save(session);
         }
+    }
+
+    private void finalizeSession(Project project, AnalysisSession session) {
+        log.info("Bắt đầu hoàn tất AnalysisSession ID: {} cho Project ID: {}", session.getId(), project.getId());
+        
+        // 1. Chạy hàm này TRƯỚC để tước cờ 'true' của các session cũ
+        sessionRepository.invalidatePreviousSessions(project.getId(), session.getId());
+
+        // 2. Ngai vàng đã trống, an tâm set 'true' và save() cho session mới
+        session.setStatus("COMPLETED");
+        session.setLatestValid(true);
+        session.setCompletedAt(LocalDateTime.now());
+        sessionRepository.save(session);
+        
+        log.info("AnalysisSession ID: {} đã hoàn tất thành công (COMPLETED, isLatestValid = true)", session.getId());
     }
 }
