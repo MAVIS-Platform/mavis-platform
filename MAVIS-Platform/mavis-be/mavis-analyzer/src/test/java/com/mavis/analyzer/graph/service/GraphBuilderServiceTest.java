@@ -1,8 +1,13 @@
 package com.mavis.analyzer.graph.service;
 
+import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.common.entity.AnalysisSession;
+import com.mavis.common.entity.DependencyEdge;
+import com.mavis.common.entity.Evidence;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.ServiceNode;
+import com.mavis.common.repository.DependencyEdgeRepository;
+import com.mavis.common.repository.EvidenceRepository;
 import com.mavis.common.repository.ServiceNodeRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,7 +23,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -27,6 +34,12 @@ class GraphBuilderServiceTest {
 
     @Mock
     private ServiceNodeRepository serviceNodeRepository;
+
+    @Mock
+    private DependencyEdgeRepository dependencyEdgeRepository;
+
+    @Mock
+    private EvidenceRepository evidenceRepository;
 
     @InjectMocks
     private GraphBuilderService graphBuilderService;
@@ -115,5 +128,97 @@ class GraphBuilderServiceTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getName()).isEqualTo("gateway-service");
         assertThat(result.get(0).getSourcePath()).isEqualTo(customExtractedPath);
+    }
+
+    @Test
+    @DisplayName("Should save REST_API evidence linked to owning node with edge as null")
+    void shouldSaveRestApiEvidenceLinkedToOwningNode() {
+        ServiceNode node = ServiceNode.builder()
+                .id(UUID.randomUUID())
+                .name("order-service")
+                .sourcePath("/app/order-service")
+                .session(sampleSession)
+                .build();
+
+        CodeEvidenceDTO restApiEvidence = CodeEvidenceDTO.builder()
+                .elementType("REST_API")
+                .identifier("/api/v1/orders")
+                .filePath("/app/order-service/src/OrderController.java")
+                .lineNumber(25)
+                .codeSnippet("@GetMapping(\"/api/v1/orders\")")
+                .build();
+
+        graphBuilderService.buildEdgesAndEvidences(sampleSession, List.of(node), List.of(restApiEvidence));
+
+        ArgumentCaptor<Evidence> captor = ArgumentCaptor.forClass(Evidence.class);
+        verify(evidenceRepository).save(captor.capture());
+
+        Evidence saved = captor.getValue();
+        assertThat(saved.getNode()).isEqualTo(node);
+        assertThat(saved.getEdge()).isNull();
+        assertThat(saved.getEvidenceType()).isEqualTo("REST_API");
+        assertThat(saved.getFilePath()).isEqualTo("/app/order-service/src/OrderController.java");
+        assertThat(saved.getLineNumber()).isEqualTo(25);
+    }
+
+    @Test
+    @DisplayName("Should match FeignClient, create DependencyEdge and linked Evidence")
+    void shouldMatchFeignClientAndCreateDependencyEdgeAndEvidence() {
+        ServiceNode orderNode = ServiceNode.builder()
+                .id(UUID.randomUUID())
+                .name("order-service")
+                .sourcePath("/app/order-service")
+                .session(sampleSession)
+                .build();
+
+        ServiceNode paymentNode = ServiceNode.builder()
+                .id(UUID.randomUUID())
+                .name("payment-service")
+                .sourcePath("/app/payment-service")
+                .session(sampleSession)
+                .build();
+
+        CodeEvidenceDTO feignEvidence = CodeEvidenceDTO.builder()
+                .elementType("FEIGN_CLIENT")
+                .identifier("payment-service")
+                .filePath("/app/order-service/src/PaymentClient.java")
+                .lineNumber(12)
+                .codeSnippet("@FeignClient(\"payment-service\")")
+                .build();
+
+        when(dependencyEdgeRepository.save(any(DependencyEdge.class))).thenAnswer(invocation -> {
+            DependencyEdge edge = invocation.getArgument(0);
+            edge.setId(UUID.randomUUID());
+            return edge;
+        });
+
+        graphBuilderService.buildEdgesAndEvidences(sampleSession, List.of(orderNode, paymentNode), List.of(feignEvidence));
+
+        ArgumentCaptor<DependencyEdge> edgeCaptor = ArgumentCaptor.forClass(DependencyEdge.class);
+        verify(dependencyEdgeRepository).save(edgeCaptor.capture());
+
+        DependencyEdge savedEdge = edgeCaptor.getValue();
+        assertThat(savedEdge.getSession()).isEqualTo(sampleSession);
+        assertThat(savedEdge.getSourceNode()).isEqualTo(orderNode);
+        assertThat(savedEdge.getTargetNode()).isEqualTo(paymentNode);
+        assertThat(savedEdge.getDependencyKind()).isEqualTo("REST_HTTP");
+
+        ArgumentCaptor<Evidence> evidenceCaptor = ArgumentCaptor.forClass(Evidence.class);
+        verify(evidenceRepository).save(evidenceCaptor.capture());
+
+        Evidence savedEvidence = evidenceCaptor.getValue();
+        assertThat(savedEvidence.getEdge()).isNotNull();
+        assertThat(savedEvidence.getNode()).isNull();
+        assertThat(savedEvidence.getEvidenceType()).isEqualTo("FEIGN_CLIENT");
+        assertThat(savedEvidence.getFilePath()).isEqualTo("/app/order-service/src/PaymentClient.java");
+    }
+
+    @Test
+    @DisplayName("Should do nothing when nodes or evidences list is empty")
+    void shouldDoNothingWhenListsAreEmpty() {
+        graphBuilderService.buildEdgesAndEvidences(sampleSession, Collections.emptyList(), Collections.emptyList());
+
+        verify(dependencyEdgeRepository, never()).save(any());
+        verify(evidenceRepository, never()).save(any());
     }
 }

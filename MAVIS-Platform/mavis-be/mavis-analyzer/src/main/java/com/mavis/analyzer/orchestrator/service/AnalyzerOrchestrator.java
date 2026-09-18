@@ -79,6 +79,9 @@ public class AnalyzerOrchestrator {
 
             List<CodeEvidenceDTO> evidences = javaSourceParser.parseProject(extractedPath);
             log.info("Đã trích xuất {} code evidences từ mã nguồn", evidences.size());
+
+            graphBuilderService.buildEdgesAndEvidences(session, savedNodes, evidences);
+            log.info("Đã hoàn tất kết nối dependency edges và lưu trữ evidences");
         } catch (Exception e) {
             log.error("Lỗi xảy ra trong quá trình trích xuất và phân tích Docker cho Project ID: {}", event.projectId(), e);
             session.setStatus("FAILED");
