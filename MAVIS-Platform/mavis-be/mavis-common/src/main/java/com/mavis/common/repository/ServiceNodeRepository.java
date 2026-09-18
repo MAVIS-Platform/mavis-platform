@@ -10,4 +10,5 @@ import java.util.UUID;
 @Repository
 public interface ServiceNodeRepository extends JpaRepository<ServiceNode, UUID> {
     List<ServiceNode> findBySessionId(UUID sessionId);
+    boolean existsByIdAndSessionId(UUID id, UUID sessionId);
 }
