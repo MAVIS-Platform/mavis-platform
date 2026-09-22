@@ -4,10 +4,11 @@ spring:
 
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:your_dummy_api_key_here}
+      api-key: "AQ.Ab8RN6ICeRodglwMYKdJKo8uU_v37VwdFoxXSqD9BOxwRpNHiw"
+      base-url: "https://generativelanguage.googleapis.com/v1beta/openai/"
       chat:
         options:
-          model: gpt-3.5-turbo
+          model: "gemini-flash-latest"
 
   datasource:
     # URL k?t n?i t?i con database mavis_db b?n v?a t?o

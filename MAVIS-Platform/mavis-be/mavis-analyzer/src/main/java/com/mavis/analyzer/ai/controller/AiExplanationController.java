@@ -2,7 +2,7 @@ package com.mavis.analyzer.ai.controller;
 
 import com.mavis.analyzer.ai.service.AiExplanationService;
 import com.mavis.common.entity.AiExplanation;
-import com.mavis.common.response.ApiResponse;
+import com.mavis.common.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;

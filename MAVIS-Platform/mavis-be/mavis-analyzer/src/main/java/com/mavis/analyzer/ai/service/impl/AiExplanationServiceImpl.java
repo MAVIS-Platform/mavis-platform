@@ -79,7 +79,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
             return chatClient.prompt().user(assembledPrompt).call().content();
         } catch (Exception e) {
             log.error("Lỗi khi gọi AI API", e);
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Không thể kết nối đến AI Provider");
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "AI Provider Error: " + e.getMessage());
         }
     }
 
@@ -112,7 +112,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
             explanationText = chatClient.prompt().user(prompt).call().content();
         } catch (Exception e) {
             log.error("Lỗi khi gọi AI API trong explainNode", e);
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Không thể kết nối đến AI Provider");
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "AI Provider Error: " + e.getMessage());
         }
 
         // 4. Lưu lại lịch sử
