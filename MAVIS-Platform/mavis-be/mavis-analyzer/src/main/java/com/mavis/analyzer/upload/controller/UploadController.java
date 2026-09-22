@@ -3,13 +3,17 @@ package com.mavis.analyzer.upload.controller;
 import com.mavis.analyzer.storage.service.StorageService;
 import com.mavis.common.contract.AnalyzeRequestEvent;
 import com.mavis.common.dto.ApiResponse;
+import com.mavis.common.entity.Project;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
+import com.mavis.common.repository.ProjectRepository;
+import com.mavis.common.utils.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -26,8 +30,10 @@ public class UploadController {
 
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ProjectRepository projectRepository;
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasRole('DEVELOPER') or hasRole('ADMIN')")
     @Operation(summary = "Tải lên file ZIP mã nguồn dự án", description = "Kiểm tra tính hợp lệ của file và lưu trữ tạm thời trước khi phân tích")
     public ApiResponse<String> upload(
             @RequestParam("file") MultipartFile file,
@@ -40,6 +46,13 @@ public class UploadController {
         String originalFilename = file.getOriginalFilename();
         if (originalFilename == null || !originalFilename.toLowerCase().endsWith(".zip")) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Chỉ chấp nhận file định dạng .zip");
+        }
+
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
+
+        if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền tải lên cho dự án này");
         }
 
         String filePath = storageService.store(file);
