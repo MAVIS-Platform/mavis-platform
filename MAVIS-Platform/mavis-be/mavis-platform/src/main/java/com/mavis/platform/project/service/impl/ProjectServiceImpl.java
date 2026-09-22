@@ -6,6 +6,7 @@ import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.ProjectRepository;
 import com.mavis.common.repository.UserRepository;
+import com.mavis.common.utils.SecurityUtils;
 import com.mavis.platform.project.dto.ProjectCreateRequest;
 import com.mavis.platform.project.dto.ProjectUpdateRequest;
 import com.mavis.platform.project.service.ProjectService;
@@ -32,14 +33,14 @@ public class ProjectServiceImpl implements ProjectService {
         project.setDescription(request.getDescription());
         project.setStatus("ACTIVE");
 
-        User defaultUser = userRepository.findAll().stream()
-                .findFirst()
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+        User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(
-                        ErrorCode.INTERNAL_SERVER_ERROR,
-                        "Hệ thống chưa có user nào để gán làm owner mặc định"
+                        ErrorCode.NOT_FOUND,
+                        "Không tìm thấy người dùng hiện tại"
                 ));
 
-        project.setOwner(defaultUser);
+        project.setOwner(currentUser);
         return projectRepository.save(project);
     }
 
@@ -55,20 +56,26 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     public Project getProjectById(UUID id) {
         log.info("Fetching project with ID: {}", id);
-        return projectRepository.findById(id)
+        Project project = projectRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + id));
+                
+        if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền truy cập dự án này");
+        }
+        
+        return project;
     }
 
     @Override
     public List<Project> getAllProjects() {
-        log.info("Fetching all projects");
-        return projectRepository.findAll();
+        log.info("Fetching all projects for current user");
+        return projectRepository.findByOwnerId(SecurityUtils.getCurrentUserId());
     }
 
     @Override
     public void deleteProject(UUID id) {
         log.info("Deleting project with ID: {}", id);
-        Project project = getProjectById(id);
+        Project project = getProjectById(id); // getProjectById already has the ownership check
         project.setStatus("DELETED");
         projectRepository.save(project);
         log.info("Project with ID: {} has been marked as DELETED", id);

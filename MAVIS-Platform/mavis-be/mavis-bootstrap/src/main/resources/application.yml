@@ -13,14 +13,14 @@ spring:
   datasource:
     # URL k?t n?i t?i con database mavis_db b?n v?a t?o
     url: jdbc:postgresql://localhost:5432/mavis_db
-    # ?i?n username c?a PostgreSQL tr�n m�y b?n (th??ng l� postgres)
+    # ?i?n username c?a PostgreSQL trn my b?n (th??ng l postgres)
     username: postgres
-    # ?i?n m?t kh?u PostgreSQL tr�n m�y b?n v�o ?�y
+    # ?i?n m?t kh?u PostgreSQL trn my b?n vo ?y
     password: 12345
     driver-class-name: org.postgresql.Driver
 
   jpa:
-    # Kh�ng cho ph�p JPA t? ??ng t?o b?ng v� ch�ng ta s? d�ng Flyway
+    # Khng cho php JPA t? ??ng t?o b?ng v chng ta s? dng Flyway
     hibernate:
       ddl-auto: validate
     show-sql: true
@@ -33,5 +33,25 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:mavisproject247@gmail.com}
+    password: ${MAIL_PASSWORD:your-app-password}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 server:
   port: 8080
+
+  jwt:
+    secret: "3cfa76ef14937c1c0ea519f8fc057a80fcd04a7420f8e8bcd0a756788e25d2b7c7b8d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
+    expiration: 86400000
+
+app:
+  google:
+    client-id: "417379784748-uceg8s5qlhsj7tjmld8k7pju5p2b8nm5.apps.googleusercontent.com"
