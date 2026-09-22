@@ -3,11 +3,18 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.1</version> <!-- Hoặc phiên bản mới nhất -->
+        <version>3.3.0</version> <!-- Hoặc phiên bản mới nhất -->
         <relativePath/>
     </parent>
     <groupId>com.mavis</groupId>
     <artifactId>mavis-backend</artifactId>
     <version>1.0.0</version>
     <packaging>pom</packaging> <!-- RẤT QUAN TRỌNG: Đánh dấu đây là dự án cha -->
+    <modules>
+        <module>mavis-common</module>
+        <module>mavis-platform</module>
+        <module>mavis-analyzer</module>
+        <module>mavis-bootstrap</module>
+    </modules>
+
 </project>
