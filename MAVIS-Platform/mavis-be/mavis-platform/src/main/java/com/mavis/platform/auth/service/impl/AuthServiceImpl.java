@@ -9,6 +9,7 @@ import com.mavis.common.repository.UserRepository;
 import com.mavis.platform.auth.dto.AuthResponse;
 import com.mavis.platform.auth.dto.LoginRequest;
 import com.mavis.platform.auth.dto.RegisterRequest;
+import com.mavis.platform.auth.dto.RegisterResponse;
 import com.mavis.platform.auth.service.AuthService;
 import com.mavis.platform.security.jwt.JwtUtil;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public AuthResponse register(RegisterRequest request) {
+    public RegisterResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Email is already in use");
         }
@@ -45,10 +46,7 @@ public class AuthServiceImpl implements AuthService {
 
         userRepository.save(user);
 
-        String token = jwtUtil.generateToken(user.getEmail(), user.getId(), user.getRole().getCode());
-
-        return AuthResponse.builder()
-                .token(token)
+        return RegisterResponse.builder()
                 .userId(user.getId())
                 .email(user.getEmail())
                 .fullName(user.getFullName())
