@@ -2,7 +2,7 @@ package vn.edu.fpt.mavisbootstrap;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.persistence.autoconfigure.EntityScan;
+import org.springframework.boot.autoconfigure.domain.EntityScan;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @SpringBootApplication(scanBasePackages = {"com.mavis"}) // Quét toàn bộ Component/Service ở tất cả các module
