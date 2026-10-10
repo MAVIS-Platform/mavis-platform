@@ -1,222 +1,258 @@
 -- ============================================================================
--- MAVIS - V1__Init_Database.sql
+-- MAVIS - V1__Init_Database.sql (Phiên bản Giáo dục sau Review 1)
 -- Flyway baseline migration - PostgreSQL
--- Domain: Platform (Auth, RBAC, Subscription, Billing, Project)
---         Analyzer (Analysis Session, Graph, Evidence, AI Explanation)
--- LƯU Ý: Phần Auth đã được tinh gọn (2 bảng) để phù hợp đồ án thay vì 5 bảng Enterprise.
+-- Domains:
+--   - Identity & Policy (Users, Workspaces, Memberships)
+--   - Learning Workspace (Assignments, Projects, Submissions, Feedback)
+--   - Artifact Gateway (Source Snapshots)
+--   - Job Orchestrator (Jobs, Attempts)
+--   - Model & Diagram (Models, Elements, Relationships, Diagrams, Evidence)
+--   - Evaluation (Evaluation Runs, Findings)
 -- ============================================================================
 
--- Bắt buộc để dùng uuid_generate_v4() tạo khóa chính tự động
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================================
--- DOMAIN: PLATFORM
+-- DOMAIN: IDENTITY & POLICY
 -- ============================================================================
 
--- Bảng roles: Định nghĩa sẵn các vai trò hợp lệ.
--- Giúp tuân thủ chuẩn 3NF, tránh hard-code chuỗi văn bản trong code.
-CREATE TABLE roles (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    code            VARCHAR(50) NOT NULL UNIQUE,  -- Ví dụ: ADMIN, DEVELOPER
-    description     TEXT
-);
-
--- Bảng users: Đã bỏ đi các bảng nối phức tạp, gắn trực tiếp role_id vào user.
--- Tối ưu cho Spring Security (chỉ cần JOIN 1 lần lấy được Role).
+-- Bảng users: Không dùng bảng roles toàn cục nữa, chỉ đánh dấu system_admin
 CREATE TABLE users (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    role_id         UUID NOT NULL REFERENCES roles(id) ON DELETE RESTRICT, -- Gắn Role trực tiếp vào User
-    email           VARCHAR(255) NOT NULL UNIQUE,
-    password_hash   VARCHAR(255) NOT NULL,
-    full_name       VARCHAR(255),
-    status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
-                        CHECK (status IN ('ACTIVE', 'LOCKED')),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+                       id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                       email           VARCHAR(255) NOT NULL UNIQUE,
+                       password_hash   VARCHAR(255) NOT NULL,
+                       full_name       VARCHAR(255),
+                       is_system_admin BOOLEAN NOT NULL DEFAULT false,
+                       status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
+                           CHECK (status IN ('ACTIVE', 'LOCKED')),
+                       created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+                       updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Bảng subscription_plans: Gói cước (Free, Premium)
-CREATE TABLE subscription_plans (
-    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name                    VARCHAR(100) NOT NULL,
-    max_projects            INT NOT NULL,
-    ai_explanation_credits  INT NOT NULL,
-    price                   NUMERIC(12,2) NOT NULL,
-    billing_cycle           VARCHAR(20) NOT NULL
-                                CHECK (billing_cycle IN ('MONTHLY', 'YEARLY')),
-    is_active               BOOLEAN NOT NULL DEFAULT true
+-- Bảng workspaces: Không gian lớp học / môn học
+CREATE TABLE workspaces (
+                            id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                            name            VARCHAR(255) NOT NULL,
+                            description     TEXT,
+                            created_by      UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+                            created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+                            updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Bảng user_subscriptions: Gói cước mà User đang sử dụng
--- ON DELETE RESTRICT: Đảm bảo dữ liệu thanh toán không bị mất dấu vết.
-CREATE TABLE user_subscriptions (
-    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id                 UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    plan_id                 UUID NOT NULL REFERENCES subscription_plans(id) ON DELETE RESTRICT,
-    status                  VARCHAR(20) NOT NULL
-                                CHECK (status IN ('ACTIVE', 'EXPIRED', 'CANCELLED')),
-    ai_credits_remaining    INT NOT NULL DEFAULT 0,
-    started_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expired_at              TIMESTAMPTZ
+-- Bảng workspace_members: Phân quyền LECTURER / STUDENT theo từng workspace
+CREATE TABLE workspace_members (
+                                   id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                                   workspace_id    UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                                   user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                                   role            VARCHAR(50) NOT NULL
+                                       CHECK (role IN ('LECTURER', 'STUDENT')),
+                                   joined_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+                                   UNIQUE (workspace_id, user_id)
 );
 
--- Bảng payment_transactions: Lịch sử thanh toán
-CREATE TABLE payment_transactions (
-    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_subscription_id    UUID NOT NULL REFERENCES user_subscriptions(id) ON DELETE RESTRICT,
-    amount                  NUMERIC(12,2) NOT NULL,
-    currency                VARCHAR(10) NOT NULL,
-    gateway                 VARCHAR(50) NOT NULL,
-    gateway_transaction_id  VARCHAR(255),
-    status                  VARCHAR(20) NOT NULL
-                                CHECK (status IN ('PENDING', 'SUCCESS', 'FAILED')),
-    created_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+-- ============================================================================
+-- DOMAIN: LEARNING WORKSPACE
+-- ============================================================================
+
+-- Bảng assignments: Đề bài do giảng viên giao
+CREATE TABLE assignments (
+                             id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                             workspace_id        UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                             title               VARCHAR(255) NOT NULL,
+                             description         TEXT,
+                             diagram_level       VARCHAR(50), -- e.g., 'C4_CONTAINER'
+                             rule_set_version    VARCHAR(50),
+                             ai_policy           JSONB,       -- Cấu hình hiển thị gợi ý, AI
+                             created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+                             updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Bảng billing_invoices: Hóa đơn thanh toán
-CREATE TABLE billing_invoices (
-    id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_subscription_id    UUID NOT NULL REFERENCES user_subscriptions(id) ON DELETE RESTRICT,
-    amount                  NUMERIC(12,2) NOT NULL,
-    issued_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
-    due_at                  TIMESTAMPTZ,
-    status                  VARCHAR(20) NOT NULL DEFAULT 'UNPAID'
-                                CHECK (status IN ('UNPAID', 'PAID', 'OVERDUE'))
-);
-
--- Bảng system_configs: Cấu hình linh hoạt dạng JSON (ví dụ API Keys)
-CREATE TABLE system_configs (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    config_key      VARCHAR(100) NOT NULL UNIQUE,
-    config_value    JSONB NOT NULL,
-    description     TEXT,
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
--- Bảng projects: Dự án đã được import bởi Developer
+-- Bảng projects: Dự án (Của giảng viên tạo làm mẫu hoặc sinh viên làm bài)
 CREATE TABLE projects (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    owner_id        UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    name            VARCHAR(255) NOT NULL,
-    description     TEXT,
-    storage_path    VARCHAR(500) NOT NULL,
-    status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
-                        CHECK (status IN ('ACTIVE', 'DELETED')),
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+                          id                      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                          workspace_id            UUID NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                          assignment_id           UUID REFERENCES assignments(id) ON DELETE SET NULL,
+                          owner_id                UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+                          name                    VARCHAR(255) NOT NULL,
+                          repository_url          VARCHAR(500),
+                          is_reference_template   BOOLEAN NOT NULL DEFAULT false, -- True nếu là project mẫu của giảng viên
+                          reference_snapshot_id   UUID, -- Trỏ về bản mẫu nếu fork từ project mẫu
+                          status                  VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
+                              CHECK (status IN ('ACTIVE', 'ARCHIVED', 'DELETED')),
+                          created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+                          updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ============================================================================
--- DOMAIN: ANALYZER (GRAPH CORE)
+-- DOMAIN: ARTIFACT GATEWAY & JOB ORCHESTRATOR
 -- ============================================================================
 
--- Bảng analysis_sessions: Tính năng "Immutable Analysis" (Phân tích bất biến)
--- Mỗi lần quét lại sẽ tạo mới, không xóa bản cũ để giữ an toàn dữ liệu.
-CREATE TABLE analysis_sessions (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    project_id          UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    triggered_by        UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    status              VARCHAR(20) NOT NULL DEFAULT 'PENDING'
-                            CHECK (status IN ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED')),
-    is_latest_valid     BOOLEAN NOT NULL DEFAULT false, -- Chỉ có 1 bản là true (bản hoàn chỉnh nhất)
-    error_message       TEXT,
-    started_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-    completed_at        TIMESTAMPTZ
+-- Bảng source_snapshots: Bản chụp source code cố định (đảm bảo tính bất biến)
+CREATE TABLE source_snapshots (
+                                  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                                  project_id      UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                                  commit_sha      VARCHAR(255),
+                                  artifact_hash   VARCHAR(255),
+                                  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Bảng service_nodes: Các Microservice phát hiện được (Ví dụ: order-service)
-CREATE TABLE service_nodes (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id      UUID NOT NULL REFERENCES analysis_sessions(id) ON DELETE CASCADE,
-    name            VARCHAR(255) NOT NULL,
-    node_type       VARCHAR(30) NOT NULL
-                        CHECK (node_type IN ('JAVA_SPRING', 'DOTNET', 'GENERIC')),
-    source_path     VARCHAR(500),
-    metadata        JSONB
+-- Bảng jobs: Quản lý tiến trình Analysis/Evaluation (Thay cho analysis_sessions)
+CREATE TABLE jobs (
+                      id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                      project_id          UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                      source_snapshot_id  UUID NOT NULL REFERENCES source_snapshots(id) ON DELETE CASCADE,
+                      job_type            VARCHAR(50) NOT NULL
+                          CHECK (job_type IN ('ANALYSIS', 'EVALUATION', 'EXPLANATION')),
+                      status              VARCHAR(20) NOT NULL DEFAULT 'PENDING'
+                          CHECK (status IN ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED')),
+                      result_manifest     JSONB,
+                      error_diagnostics   TEXT,
+                      started_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+                      completed_at        TIMESTAMPTZ
 );
 
--- Bảng dependency_edges: Mối liên kết giữa các Microservice (Ví dụ: Order gọi Payment)
-CREATE TABLE dependency_edges (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id          UUID NOT NULL REFERENCES analysis_sessions(id) ON DELETE CASCADE,
-    source_node_id      UUID NOT NULL REFERENCES service_nodes(id) ON DELETE CASCADE,
-    target_node_id      UUID NOT NULL REFERENCES service_nodes(id) ON DELETE CASCADE,
-    dependency_kind     VARCHAR(30) NOT NULL
-                            CHECK (dependency_kind IN ('REST_HTTP', 'CONFIG_REF', 'DOCKER_LINK')),
-    description         TEXT
+-- ============================================================================
+-- DOMAIN: MODEL & DIAGRAM (ARCHITECTURE KNOWLEDGE GRAPH)
+-- ============================================================================
+
+-- Bảng model_versions: Lưu trữ các phiên bản của mô hình kiến trúc
+CREATE TABLE model_versions (
+                                id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                                project_id          UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                                source_snapshot_id  UUID NOT NULL REFERENCES source_snapshots(id) ON DELETE RESTRICT,
+                                revision            INT NOT NULL DEFAULT 1,
+                                schema_version      VARCHAR(50) NOT NULL,
+                                origin              VARCHAR(50) NOT NULL
+                                    CHECK (origin IN ('GENERATED', 'USER_CONFIRMED')),
+                                created_by          UUID REFERENCES users(id) ON DELETE SET NULL,
+                                created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Bảng evidence: Minh chứng mã nguồn (Chính xác dòng code nào sinh ra liên kết này)
+-- Bảng elements: Các thành phần của kiến trúc (Containers, Components...)
+CREATE TABLE elements (
+                          id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                          model_version_id    UUID NOT NULL REFERENCES model_versions(id) ON DELETE CASCADE,
+                          element_type        VARCHAR(50) NOT NULL,
+                          name                VARCHAR(255) NOT NULL,
+                          scope               VARCHAR(100),
+                          properties          JSONB,
+                          status              VARCHAR(50) NOT NULL DEFAULT 'DRAFT'
+                              CHECK (status IN ('DRAFT', 'NEEDS_REVIEW', 'VALIDATED', 'STUDENT_CONFIRMED'))
+);
+
+-- Bảng relationships: Mối quan hệ giữa các elements
+CREATE TABLE relationships (
+                               id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                               model_version_id    UUID NOT NULL REFERENCES model_versions(id) ON DELETE CASCADE,
+                               source_element_id   UUID NOT NULL REFERENCES elements(id) ON DELETE CASCADE,
+                               target_element_id   UUID NOT NULL REFERENCES elements(id) ON DELETE CASCADE,
+                               relation_type       VARCHAR(50) NOT NULL,
+                               direction           VARCHAR(50),
+                               properties          JSONB
+);
+
+-- Bảng evidence: Dữ liệu nguồn dẫn chứng cho một Element hoặc Relationship
 CREATE TABLE evidence (
-    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    edge_id         UUID REFERENCES dependency_edges(id) ON DELETE CASCADE,
-    node_id         UUID REFERENCES service_nodes(id) ON DELETE CASCADE,
-    file_path       VARCHAR(500) NOT NULL,
-    line_number     INT,
-    code_snippet    TEXT,
-    evidence_type   VARCHAR(30) NOT NULL,
-    CONSTRAINT chk_evidence_target CHECK (edge_id IS NOT NULL OR node_id IS NOT NULL) -- Ràng buộc: Bằng chứng phải gắn với Node hoặc Edge
+                          id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                          source_snapshot_id  UUID NOT NULL REFERENCES source_snapshots(id) ON DELETE CASCADE,
+                          element_id          UUID REFERENCES elements(id) ON DELETE CASCADE,
+                          relationship_id     UUID REFERENCES relationships(id) ON DELETE CASCADE,
+                          locator             VARCHAR(500) NOT NULL, -- File path, trace span ID, vv.
+                          adapter_version     VARCHAR(50),
+                          source_type         VARCHAR(50) NOT NULL
+                              CHECK (source_type IN ('STATIC_CODE', 'CONFIG', 'RUNTIME_TRACE')),
+                          excerpt             TEXT,
+                          CONSTRAINT chk_evidence_target CHECK (element_id IS NOT NULL OR relationship_id IS NOT NULL)
 );
 
--- Bảng impact_index: Lưu trữ sẵn đường đi tác động để truy vấn siêu tốc (< 3 giây)
-CREATE TABLE impact_index (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id          UUID NOT NULL REFERENCES analysis_sessions(id) ON DELETE CASCADE,
-    source_node_id      UUID NOT NULL REFERENCES service_nodes(id) ON DELETE CASCADE,
-    affected_node_id    UUID NOT NULL REFERENCES service_nodes(id) ON DELETE CASCADE,
-    impact_type         VARCHAR(10) NOT NULL
-                            CHECK (impact_type IN ('DIRECT', 'INDIRECT')),
-    hop_distance        INT NOT NULL,
-    path                JSONB,
-    CONSTRAINT uq_impact_unique UNIQUE (session_id, source_node_id, affected_node_id)
+-- Bảng diagram_versions: Lưu trữ hiển thị đồ họa của Model (Sơ đồ vẽ)
+CREATE TABLE diagram_versions (
+                                  id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                                  model_version_id    UUID NOT NULL REFERENCES model_versions(id) ON DELETE CASCADE,
+                                  notation            VARCHAR(50) NOT NULL, -- e.g., 'C4', 'UML_SEQUENCE'
+                                  level               VARCHAR(50),
+                                  layout_json         JSONB NOT NULL,       -- Tọa độ x, y, shapes
+                                  created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Bảng ai_explanations: Lịch sử giải thích từ OpenAI/Gemini
-CREATE TABLE ai_explanations (
-    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id          UUID NOT NULL REFERENCES analysis_sessions(id) ON DELETE CASCADE,
-    node_id             UUID REFERENCES service_nodes(id) ON DELETE CASCADE,
-    edge_id             UUID REFERENCES dependency_edges(id) ON DELETE CASCADE,
-    requested_by        UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    explanation_text    TEXT NOT NULL,
-    prompt_used         TEXT,
-    credit_cost         INT NOT NULL DEFAULT 1,
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+-- ============================================================================
+-- DOMAIN: EVALUATION & SUBMISSION
+-- ============================================================================
+
+-- Bảng evaluation_runs: Kết quả chạy rule set
+CREATE TABLE evaluation_runs (
+                                 id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                                 model_version_id    UUID NOT NULL REFERENCES model_versions(id) ON DELETE CASCADE,
+                                 rule_set_version    VARCHAR(50) NOT NULL,
+                                 runtime_session_id  UUID, -- (Tuỳ chọn) Nếu có đối chiếu runtime
+                                 created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Bảng evaluation_findings: Chi tiết các lỗi/vi phạm hoặc Pass
+CREATE TABLE evaluation_findings (
+                                     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                                     evaluation_run_id   UUID NOT NULL REFERENCES evaluation_runs(id) ON DELETE CASCADE,
+                                     element_id          UUID REFERENCES elements(id) ON DELETE CASCADE,
+                                     relationship_id     UUID REFERENCES relationships(id) ON DELETE CASCADE,
+                                     rule_id             VARCHAR(100) NOT NULL,
+                                     status              VARCHAR(50) NOT NULL
+                                         CHECK (status IN ('PASS', 'VIOLATION', 'NEEDS_REVIEW', 'NOT_APPLICABLE')),
+                                     message             TEXT NOT NULL
+);
+
+-- Bảng submission_snapshots: Gói nộp bài của sinh viên (Bất biến)
+CREATE TABLE submission_snapshots (
+                                      id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                                      assignment_id       UUID NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+                                      project_id          UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                                      submitted_by        UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+                                      model_version_id    UUID NOT NULL REFERENCES model_versions(id) ON DELETE RESTRICT,
+                                      diagram_version_id  UUID NOT NULL REFERENCES diagram_versions(id) ON DELETE RESTRICT,
+                                      evaluation_run_id   UUID REFERENCES evaluation_runs(id) ON DELETE RESTRICT,
+                                      submitted_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Bảng feedbacks: Nhận xét của giảng viên trên bài nộp
+CREATE TABLE feedbacks (
+                           id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                           submission_id       UUID NOT NULL REFERENCES submission_snapshots(id) ON DELETE CASCADE,
+                           lecturer_id         UUID NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+                           element_id          UUID REFERENCES elements(id) ON DELETE CASCADE,
+                           relationship_id     UUID REFERENCES relationships(id) ON DELETE CASCADE,
+                           comment_text        TEXT NOT NULL,
+                           created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ============================================================================
 -- DATA MẪU (SEED DATA)
 -- ============================================================================
--- Insert sẵn 2 roles cơ bản để đỡ phải tạo tay.
-INSERT INTO roles (code, description) VALUES 
-('ADMIN', 'Quản trị viên hệ thống'),
-('DEVELOPER', 'Lập trình viên sử dụng hệ thống');
+INSERT INTO users (email, password_hash, full_name, is_system_admin) VALUES
+                                                                         ('admin@mavis.edu.vn', 'hashed_pwd', 'System Admin', true),
+                                                                         ('lecturer@fpt.edu.vn', 'hashed_pwd', 'Nguyen The Hoang', false);
 
 -- ============================================================================
 -- INDEXES 
 -- ============================================================================
 
--- Platform
-CREATE INDEX idx_projects_owner ON projects (owner_id);
-CREATE INDEX idx_user_subscriptions_user ON user_subscriptions (user_id);
-CREATE INDEX idx_payment_transactions_subscription ON payment_transactions (user_subscription_id);
-CREATE INDEX idx_billing_invoices_subscription ON billing_invoices (user_subscription_id);
+-- Bảng Workspace & Project
+CREATE INDEX idx_workspace_members_user ON workspace_members(user_id);
+CREATE INDEX idx_projects_workspace ON projects(workspace_id);
+CREATE INDEX idx_projects_owner ON projects(owner_id);
 
--- Analyzer - phục vụ build graph & precompute (lúc phân tích)
-CREATE INDEX idx_nodes_session ON service_nodes (session_id);
-CREATE INDEX idx_edges_session_source ON dependency_edges (session_id, source_node_id);
-CREATE INDEX idx_edges_session_target ON dependency_edges (session_id, target_node_id);
+-- Snapshot & Jobs
+CREATE INDEX idx_source_snapshots_project ON source_snapshots(project_id);
+CREATE INDEX idx_jobs_project ON jobs(project_id);
 
--- Analyzer - phục vụ truy vấn tương tác UI (bắt buộc < 3 giây)
-CREATE INDEX idx_impact_session_source ON impact_index (session_id, source_node_id);
+-- Model & Evidence
+CREATE INDEX idx_model_versions_project ON model_versions(project_id);
+CREATE INDEX idx_elements_model ON elements(model_version_id);
+CREATE INDEX idx_relationships_model ON relationships(model_version_id);
+CREATE INDEX idx_evidence_element ON evidence(element_id);
+CREATE INDEX idx_evidence_relationship ON evidence(relationship_id);
 
--- Partial Index: Đảm bảo chỉ có 1 session là latest cho mỗi project
-CREATE UNIQUE INDEX idx_sessions_project_latest ON analysis_sessions (project_id)
-    WHERE is_latest_valid = true;
-
--- Analyzer - evidence lookup từ UI
-CREATE INDEX idx_evidence_edge ON evidence (edge_id);
-CREATE INDEX idx_evidence_node ON evidence (node_id);
-
--- AI explanation history
-CREATE INDEX idx_ai_explanations_session ON ai_explanations (session_id);
+-- Evaluation & Submission
+CREATE INDEX idx_evaluation_runs_model ON evaluation_runs(model_version_id);
+CREATE INDEX idx_evaluation_findings_run ON evaluation_findings(evaluation_run_id);
+CREATE INDEX idx_submissions_assignment ON submission_snapshots(assignment_id);
+CREATE INDEX idx_submissions_project ON submission_snapshots(project_id);
+CREATE INDEX idx_feedbacks_submission ON feedbacks(submission_id);
