@@ -306,3 +306,108 @@ Giới hạn M2 còn lại:
 Verification: full Worker suite `dotnet test tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj --no-restore --verbosity minimal` đạt **80/80 pass**, build thành công. Thêm 6 cases: solution/project refs và target không bị chạy; qualified identity ổn định; missing/outside/conditional/dynamic refs; malformed XML; external-entity XML; metadata byte limit. 74 cases trước vẫn pass.
 
 Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộng semantic/reference handling có giới hạn trước khi nhận diện endpoint/DI/EF Core. Chưa triển khai runtime hay thay Java backend trong mốc này.
+
+## 11. Checklist tổng thể đến nghiệm thu
+
+Đây là bảng tiến độ tổng hợp hiện hành; mục 5 giữ kế hoạch và tiêu chí nghiệm thu, mục 8–10 giữ lịch sử. `[x]` chỉ nghĩa là phạm vi được ghi đã có code và verification, không có nghĩa toàn bộ mốc hoặc tích hợp đã hoàn thành. Cập nhật lần cuối: 20/10/2026, full suite gần nhất 80/80 pass.
+
+### Nền tảng Worker độc lập
+
+- [x] API phân tích source C# không cần Java findings.
+- [x] Snapshot/job correlation, evidence file/dòng, coverage và warnings.
+- [x] Allowed source roots, file/byte budgets, deadline và cancellation propagation trong implementation; các giới hạn thực nghiệm còn bên dưới.
+- [ ] Source-only background jobs: submit, progress, lấy kết quả, hủy.
+- [ ] Chung validation giữa API trực tiếp và source-only job.
+- [ ] Kiểm chứng symlink/junction, deadline exhaustion và chạy Linux.
+- [ ] Source snapshot delivery khi Java/Worker khác host/container.
+- [ ] Kiểm tra integrity/hash và bảo vệ API nội bộ.
+- [ ] Recovery/lease khi restart; queue hiện chỉ nằm trong RAM.
+
+### M2 — Cấu trúc C#
+
+- [x] Đọc .sln/.csproj và literal project references mà không thực thi MSBuild.
+- [x] Namespace/type/interface, qualified identity và base-type syntax candidates.
+- [x] Test ID ổn định khi thay đổi dòng; project XML/DTD/reference warnings và metadata byte limit.
+- [ ] Supported compile-item profile và project ownership chính xác trong phạm vi đó.
+- [ ] Compile Include/Remove/Exclude, linked files và conditions theo phạm vi hỗ trợ an toàn.
+- [ ] Semantic binding có kiểm soát và missing-reference diagnostics.
+- [ ] Resolve inheritance/interface implementation/code dependencies.
+- [ ] Hợp nhất partial declarations và evidence cùng symbol.
+- [ ] appsettings.json/configuration theo profile.
+- [ ] Quy tắc service identity; không đồng nhất project/namespace với service.
+
+### M3 — ASP.NET Core
+
+- [ ] Controller routes, HTTP verbs và attributes liên quan.
+- [ ] Minimal API và route groups.
+- [ ] HttpClient receiver/method/URL/base address; hiện mới có syntax candidates.
+- [ ] Named/typed IHttpClientFactory.
+- [ ] Refit.
+- [ ] DI registrations và injection dependencies.
+- [ ] EF Core DbContext và database access.
+- [ ] Configuration resolution và unresolved items khi thiếu bằng chứng.
+- [ ] Phân biệt service call, code dependency, containment và DB access.
+- [ ] Test findings/evidence/coverage/warnings cho từng capability công bố hỗ trợ.
+
+### Tích hợp phân tích tĩnh với Java/UI
+
+- [ ] Chốt contract/IDs/relationship semantics với Triết.
+- [ ] Java client xử lý result/errors/retry/cancellation.
+- [ ] Java hợp nhất Java/C#/config thành model đúng revision.
+- [ ] Java lưu model, matching graph, evidence, coverage và warnings nhất quán.
+- [ ] Frontend mở đúng evidence từ node/edge.
+- [ ] Kiểm thử mẫu hỗn hợp Java/C# và đối chiếu expected findings.
+- [ ] Ghi kết quả đo, giới hạn và supported analysis profiles.
+
+### M4 — Change Impact
+
+- [x] Reverse BFS và shortest-path implementation trong pipeline cũ; chưa phải API impact riêng đã tích hợp.
+- [ ] Chốt ownership/vị trí engine với Triết và chỉ một implementation chính.
+- [ ] API impact nhận graph, không chạy lại source analysis.
+- [ ] Kiểm tra model/graph revision/readiness và selected service.
+- [ ] Traversal đúng chiều và loại cạnh; containment không tự thành impact edge.
+- [ ] Paths có source evidence; depth/path limits minh bạch.
+- [ ] Chain/diamond/cycle/isolated/empty-result verification cho API mới.
+- [ ] Runtime context tương thích, không xóa static edges chưa quan sát.
+- [ ] Java/UI highlight đúng graph/diagram mappings.
+
+### M5–M6 — Dedicated Runtime Runner
+
+- [ ] Executable và môi trường Runner riêng, tách Worker/platform data.
+- [ ] Compose preflight theo supported Java/.NET Linux profiles.
+- [ ] Mount/privilege/Docker socket/network restrictions.
+- [ ] CPU/RAM/concurrency/deadline enforcement.
+- [ ] Build/verify images và image digests.
+- [ ] Temporary Compose override cho Java agent/.NET instrumentation, pin versions qua PoC.
+- [ ] Readiness và Collector checks có bounded waits.
+- [ ] Ordered HTTP requests, variables/dependencies, protected authentication references.
+- [ ] Approved setup/reset và expected outcomes.
+- [ ] Revalidate phiên bản/prerequisites trước mỗi run.
+- [ ] Một lifecycle idempotent cho completion/failure/timeout/cancel/Admin stop.
+- [ ] Cleanup được xác nhận; reconciliation/recovery khi chưa dừng/dọn xong.
+- [ ] Kiểm thử repeat/reset, failures, timeout, cancellation và leaked resources.
+
+### M7 — Trace correlation và nghiệm thu
+
+- [ ] OTLP Collector và sensitive-data redaction.
+- [ ] Trace/span/parent IDs, scenario-step/session references và causal ordering.
+- [ ] Không ghép unrelated traces; explicit missing-span states.
+- [ ] Runtime-service mapping đúng model revision, provenance và image/source correspondence.
+- [ ] Uncertain/unmapped evidence giữ rõ trạng thái và không tạo quan hệ giả.
+- [ ] Execution/scenario/trace/persistence/cleanup statuses riêng.
+- [ ] Giữ useful trace khi request thất bại.
+- [ ] Java lưu và frontend khám phá evidence; diagram generation chạy riêng trên saved data.
+- [ ] Thực nghiệm dự án mẫu đã rà soát, evidence cho từng Java/.NET profile công bố hỗ trợ.
+- [ ] Chốt/nghiệm thu SRS thresholds, báo cáo đo đạc, limitations, test và vận hành.
+
+### Quy tắc cập nhật bắt buộc trong quá trình triển khai
+
+- Mỗi phần code hoàn thành và verification đạt: cập nhật checklist này và entry tiến độ trong cùng commit; không cần người dùng nhắc lại.
+- Chỉ tick phạm vi đã chứng minh; nếu hoàn thành một phần thì tách checkbox thay vì tick toàn bộ.
+- Ghi lệnh kiểm thử, số case pass/fail, giới hạn chưa verify và công việc kế tiếp; failure/blocker phải giữ trạng thái chưa xong.
+- Thay API thì cập nhật contract/payload/hướng dẫn cùng thay đổi. Tích hợp Java/UI chỉ tick sau verification thực sự.
+- Thay supported profiles hoặc phạm vi theo docs thì cập nhật checklist và tiêu chí tương ứng.
+- Cập nhật bởi agent trong lúc triển khai; không tạo cron/background automation chỉ để tự tick README.
+- Chỉ commit/push lên `feat/worker-standalone-analysis`, theo dạng feat:/fix:/docs:/test:; người dùng tự merge.
+
+20/10/2026: thêm checklist tổng thể và quy tắc cập nhật. Thay đổi chỉ có README; không chạy lại tests cho chỉnh sửa tài liệu, verification gần nhất của code vẫn là 80/80 pass.
