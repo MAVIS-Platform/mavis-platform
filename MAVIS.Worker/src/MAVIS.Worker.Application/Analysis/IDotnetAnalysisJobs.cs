@@ -6,7 +6,8 @@ public static class DotnetRequestValidator
     {
         if (request.SchemaVersion != "1.0" || string.IsNullOrWhiteSpace(request.ProjectId) ||
             string.IsNullOrWhiteSpace(request.SourceSnapshotId) || string.IsNullOrWhiteSpace(request.JobId) ||
-            request.JobId.Length > 128 || string.IsNullOrWhiteSpace(request.SourceLocation))
+            request.JobId.Length > 128 || string.IsNullOrWhiteSpace(request.SourceLocation) ||
+            request.ExpectedInputDigest is not null && (request.ExpectedInputDigest.Length != 64 || !request.ExpectedInputDigest.All(Uri.IsHexDigit)))
             throw new SourceInputException("schemaVersion 1.0, projectId, sourceSnapshotId, jobId (up to 128 characters) and sourceLocation are required.");
     }
 }

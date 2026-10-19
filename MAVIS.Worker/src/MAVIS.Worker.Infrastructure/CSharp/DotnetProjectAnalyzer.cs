@@ -69,6 +69,7 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
         };
         var analyzed = 0;
         long totalBytes = 0;
+        var contentDigests = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         async Task<string> ReadBoundedAsync(string file)
         {
             token.ThrowIfCancellationRequested();
@@ -77,7 +78,9 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                 throw new SourceInputException("Source exceeds configured byte limits.");
             totalBytes += stream.Length;
             using var reader = new StreamReader(stream, Encoding.UTF8, true);
-            return await reader.ReadToEndAsync(token);
+            var content = await reader.ReadToEndAsync(token);
+            contentDigests[Path.GetRelativePath(root, file).Replace('\\', '/')] = SHA256.HashData(Encoding.UTF8.GetBytes(content));
+            return content;
         }
         var sources = files.Where(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.Ordinal).ToArray();
         var profiles = new List<ProjectCompileProfile>();
@@ -96,13 +99,13 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
         {
             token.ThrowIfCancellationRequested();
             var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
+            var text = await ReadBoundedAsync(file);
             var owners = profiles.Where(p => p.Files.Contains(file)).Select(p => p.Project).ToArray();
             if (owners.Length == 0)
             {
                 warnings.Add(new("UNOWNED_SOURCE", "Source is excluded or has no owner in the supported compile-item profile.", relative));
                 continue;
             }
-            var text = await ReadBoundedAsync(file);
             var tree = CSharpSyntaxTree.ParseText(text, path: file, cancellationToken: token);
             trees[file] = tree;
             var syntax = await tree.GetRootAsync(token);
@@ -168,8 +171,14 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
             return group.Count() < 2 ? first : first with { AdditionalEvidence = group.Skip(1).Select(f => f.Evidence).Distinct().ToArray() };
         }).ToArray();
         token.ThrowIfCancellationRequested();
-        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.3",
-            merged, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax"), warnings);
+        using var inputHash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        foreach (var item in contentDigests.OrderBy(p => p.Key, StringComparer.Ordinal))
+        { inputHash.AppendData(Encoding.UTF8.GetBytes(item.Key)); inputHash.AppendData(new byte[] { 0 }); inputHash.AppendData(item.Value); }
+        var inputDigest = Convert.ToHexString(inputHash.GetHashAndReset()).ToLowerInvariant();
+        if (request.ExpectedInputDigest is not null && !inputDigest.Equals(request.ExpectedInputDigest, StringComparison.OrdinalIgnoreCase))
+            throw new SourceInputException("Analysis input digest does not match the expected input version.");
+        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.4",
+            merged, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax"), warnings, inputDigest);
     }
 
     private static string Identity(string project, string kind, string symbol) =>

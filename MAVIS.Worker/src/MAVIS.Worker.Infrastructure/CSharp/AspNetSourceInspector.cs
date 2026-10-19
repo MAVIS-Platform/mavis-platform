@@ -78,7 +78,7 @@ internal static class AspNetSourceInspector
                 Add("DbContextRegistrationCandidate", generics[0].ToString(), null, call, name);
             if (name == "AddHttpClient")
             {
-                var clientName = generics.Count > 0 ? string.Join(",", generics) : Constant(args.FirstOrDefault()?.Expression) ?? "UnresolvedNamedClient";
+                var clientName = generics.Count > 0 ? string.Join(",", generics) : args.Count == 0 ? "DefaultClient" : Constant(args.FirstOrDefault()?.Expression) ?? "UnresolvedNamedClient";
                 Add("HttpClientRegistrationCandidate", clientName, null, call, name);
                 foreach (var assignment in call.DescendantNodes().OfType<AssignmentExpressionSyntax>())
                     if (assignment.Left is MemberAccessExpressionSyntax { Name.Identifier.ValueText: "BaseAddress" } &&
@@ -96,13 +96,12 @@ internal static class AspNetSourceInspector
                 if (verb is not null)
                 {
                     var url = Constant(args.FirstOrDefault()?.Expression);
-                    if (Uri.TryCreate(url, UriKind.Absolute, out var target) && target.Scheme is "http" or "https")
-                    {
+                    var knownTarget = Uri.TryCreate(url, UriKind.Absolute, out var target) && target.Scheme is "http" or "https";
                         var span = call.GetLocation().GetLineSpan();
-                        findings.Add(new("OutgoingHttp", project, target.Host, verb,
+                        findings.Add(new("OutgoingHttp", project, knownTarget ? target!.Host : null, verb,
                             new(file, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1), "System.Net.Http.HttpClient",
-                            SemanticProjectInspector.Id(project, "OutgoingHttp", file + "|" + span.StartLinePosition + "|" + target.Host), Confidence: "ResolvedSymbol"));
-                    }
+                            SemanticProjectInspector.Id(project, "OutgoingHttp", file + "|" + span.StartLinePosition + "|" + (knownTarget ? target!.Host : "unresolved")), Confidence: "ResolvedSymbol"));
+                    if (!knownTarget) warnings.Add(new("UNRESOLVED_HTTP_TARGET", "HttpClient call resolved but destination requires configuration or runtime context.", file));
                 }
             }
         }

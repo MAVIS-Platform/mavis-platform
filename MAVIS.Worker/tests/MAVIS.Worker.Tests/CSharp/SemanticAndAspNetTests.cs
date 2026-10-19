@@ -105,6 +105,35 @@ public sealed class SemanticAndAspNetTests : IDisposable
     }
 
     [Fact]
+    public async Task WebSdkImplicitUsingsResolveHttpClientButDoNotInventDynamicDestination()
+    {
+        Write("App.csproj", "<Project Sdk=\"Microsoft.NET.Sdk.Web\"><PropertyGroup><ImplicitUsings>enable</ImplicitUsings></PropertyGroup></Project>");
+        Write("Program.cs", """
+            var builder = WebApplication.CreateBuilder(args);
+            builder.Services.AddHttpClient();
+            var app = builder.Build();
+            app.MapGet("/orders", async (IHttpClientFactory clients) => await clients.CreateClient().GetStringAsync(Environment.GetEnvironmentVariable("PAYMENT_URL") + "/pay"));
+            app.Run();
+            """);
+        var result = await Analyze();
+        Assert.Contains(result.Findings, f => f.Kind == "OutgoingHttp" && f.Target is null && f.Confidence == "ResolvedSymbol");
+        Assert.Contains(result.Warnings, w => w.Code == "HOST_IMPLICIT_USINGS_PROFILE");
+        Assert.Contains(result.Warnings, w => w.Code == "UNRESOLVED_HTTP_TARGET");
+    }
+
+    [Fact]
+    public async Task InputDigestDetectsChangedSourceAndCanBeReusedForVerification()
+    {
+        Write("A.cs", "class A {}");
+        var result = await Analyze(); Assert.Equal(64, result.InputDigest!.Length);
+        var analyzer = new DotnetProjectAnalyzer(Options.Create(new DotnetAnalysisOptions { AllowedSourceRoots = [_root] }));
+        var request = new DotnetAnalysisRequest("project", "snapshot", _root, "job", ExpectedInputDigest: result.InputDigest);
+        Assert.Equal(result.InputDigest, (await analyzer.AnalyzeAsync(request, CancellationToken.None)).InputDigest);
+        Write("A.cs", "class Changed {}");
+        await Assert.ThrowsAsync<SourceInputException>(() => analyzer.AnalyzeAsync(request, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task NonconstantRoutesAreNotInvented()
     {
         Write("Program.cs", "var app = builder.Build(); var api = app.MapGroup(GetSecret()); api.MapGet(\"/orders\", () => 1);");

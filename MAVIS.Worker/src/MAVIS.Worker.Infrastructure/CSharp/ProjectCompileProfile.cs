@@ -11,6 +11,8 @@ internal sealed class ProjectCompileProfile
 {
     public required string Project { get; init; }
     public required HashSet<string> Files { get; init; }
+    public IReadOnlyList<string> ImplicitNamespaces { get; init; } = [];
+    public bool IsExecutable { get; init; }
 
     public static ProjectCompileProfile Create(string root, string project, string content,
         IReadOnlyList<string> sources, List<AnalysisWarning> warnings, CancellationToken ct)
@@ -78,7 +80,17 @@ internal sealed class ProjectCompileProfile
                 if (include is not null && Matches(name, include) && (exclude is null || !Matches(name, exclude))) selected.Add(source);
             }
         }
-        return new() { Project = project, Files = selected };
+        var properties = doc.Root?.Elements().Where(e => e.Name.LocalName == "PropertyGroup" && !Conditional(e)).SelectMany(e => e.Elements()).Where(e => !Conditional(e)).ToArray() ?? [];
+        var implicitSetting = properties.LastOrDefault(e => e.Name.LocalName == "ImplicitUsings")?.Value.Trim();
+        var imports = new List<string>();
+        if (knownSdk && implicitSetting is "enable" or "true")
+        {
+            imports.AddRange(["System", "System.Collections.Generic", "System.IO", "System.Linq", "System.Net.Http", "System.Threading", "System.Threading.Tasks"]);
+            if (sdk == "Microsoft.NET.Sdk.Web") imports.AddRange(["Microsoft.AspNetCore.Builder", "Microsoft.AspNetCore.Hosting", "Microsoft.AspNetCore.Http", "Microsoft.AspNetCore.Routing", "Microsoft.Extensions.Configuration", "Microsoft.Extensions.DependencyInjection", "Microsoft.Extensions.Hosting", "Microsoft.Extensions.Logging"]);
+            warnings.Add(new("HOST_IMPLICIT_USINGS_PROFILE", "Known SDK implicit namespaces are supplied to host semantic compilation; target SDK imports are not evaluated.", relative));
+        }
+        return new() { Project = project, Files = selected, ImplicitNamespaces = imports,
+            IsExecutable = sdk == "Microsoft.NET.Sdk.Web" || properties.LastOrDefault(e => e.Name.LocalName == "OutputType")?.Value.Trim() is "Exe" or "WinExe" };
 
         void AddDefaults()
         {
