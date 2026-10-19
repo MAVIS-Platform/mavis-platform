@@ -10,6 +10,10 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddWorkerInfrastructure();
+builder.Services.Configure<MAVIS.Worker.Infrastructure.CSharp.DotnetAnalysisOptions>(
+    builder.Configuration.GetSection("DotnetAnalysis"));
+builder.Services.AddSingleton<MAVIS.Worker.Application.Analysis.IDotnetProjectAnalyzer,
+    MAVIS.Worker.Infrastructure.CSharp.DotnetProjectAnalyzer>();
 
 var app = builder.Build();
 
