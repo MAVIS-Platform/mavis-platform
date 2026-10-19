@@ -77,27 +77,23 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
             using var reader = new StreamReader(stream, Encoding.UTF8, true);
             return await reader.ReadToEndAsync(token);
         }
+        var sources = files.Where(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.Ordinal).ToArray();
+        var profiles = new List<ProjectCompileProfile>();
         foreach (var metadata in files.Where(f => !Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.Ordinal))
         {
             var content = await ReadBoundedAsync(metadata);
             ProjectMetadataReader.Read(root, metadata, content, projects, findings, warnings, token);
+            if (Path.GetExtension(metadata).Equals(".csproj", StringComparison.OrdinalIgnoreCase))
+                profiles.Add(ProjectCompileProfile.Create(root, metadata, content, sources, warnings, token));
         }
-        foreach (var file in files.Where(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.Ordinal))
+        foreach (var file in sources)
         {
             token.ThrowIfCancellationRequested();
             var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
-            // The nearest containing project is a project identity, not an inferred service mapping.
-            var owners = projects.Where(p => IsWithin(file, Path.GetDirectoryName(p)!))
-                .OrderByDescending(p => Path.GetDirectoryName(p)!.Length).ToArray();
+            var owners = profiles.Where(p => p.Files.Contains(file)).Select(p => p.Project).ToArray();
             if (owners.Length == 0)
             {
-                warnings.Add(new("UNOWNED_SOURCE", "Source has no containing project.", relative));
-                continue;
-            }
-            var ownerDirectory = Path.GetDirectoryName(owners[0]);
-            if (owners.Count(p => Path.GetDirectoryName(p) == ownerDirectory) > 1)
-            {
-                warnings.Add(new("AMBIGUOUS_PROJECT", "Multiple projects share this source directory; ownership requires review.", relative));
+                warnings.Add(new("UNOWNED_SOURCE", "Source is excluded or has no owner in the supported compile-item profile.", relative));
                 continue;
             }
             var text = await ReadBoundedAsync(file);
@@ -105,56 +101,59 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
             var syntax = await tree.GetRootAsync(token);
             if (tree.GetDiagnostics(token).Any(d => d.Severity == DiagnosticSeverity.Error))
                 warnings.Add(new("SYNTAX_ERRORS", "Syntax errors found; available findings may be incomplete.", relative));
-            var project = Path.GetRelativePath(root, owners[0]).Replace('\\', '/');
-            foreach (var ns in syntax.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>())
+            foreach (var owner in owners)
             {
-                token.ThrowIfCancellationRequested();
-                var fullName = string.Join(".", ns.AncestorsAndSelf().OfType<BaseNamespaceDeclarationSyntax>().Reverse().Select(n => n.Name.ToString()));
-                var span = ns.Name.GetLocation().GetLineSpan();
-                findings.Add(new("Namespace", project, fullName, null,
-                    new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1), fullName,
-                    Identity(project, "Namespace", fullName)));
-            }
-            foreach (var type in syntax.DescendantNodes().OfType<TypeDeclarationSyntax>())
-            {
-                token.ThrowIfCancellationRequested();
-                var span = type.Identifier.GetLocation().GetLineSpan();
-                var namespaces = type.Ancestors().OfType<BaseNamespaceDeclarationSyntax>().Reverse().Select(n => n.Name.ToString());
-                var names = type.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Reverse()
-                    .Select(t => t.Identifier.ValueText + (t.TypeParameterList is null ? "" : "`" + t.TypeParameterList.Parameters.Count));
-                var subject = string.Join(".", namespaces.Concat(names));
-                var kind = type is InterfaceDeclarationSyntax ? "Interface" : "Type";
-                findings.Add(new(kind, project, type.Identifier.ValueText, null,
-                    new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1), subject,
-                    Identity(project, kind, subject)));
-                if (type.BaseList is not null)
+                var project = Path.GetRelativePath(root, owner).Replace('\\', '/');
+                foreach (var ns in syntax.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>())
                 {
-                    foreach (var baseType in type.BaseList.Types)
-                    {
-                        var location = baseType.GetLocation().GetLineSpan();
-                        findings.Add(new("BaseTypeCandidate", project, baseType.Type.ToString(), null,
-                            new(relative, location.StartLinePosition.Line + 1, location.EndLinePosition.Line + 1), subject,
-                            Identity(project, "BaseTypeCandidate", subject + "->" + baseType.Type)));
-                    }
-                    warnings.Add(new("UNRESOLVED_BASE_TYPES", "Base types are syntax candidates; inheritance versus interface implementation requires semantic binding.", relative));
+                    token.ThrowIfCancellationRequested();
+                    var fullName = string.Join(".", ns.AncestorsAndSelf().OfType<BaseNamespaceDeclarationSyntax>().Reverse().Select(n => n.Name.ToString()));
+                    var span = ns.Name.GetLocation().GetLineSpan();
+                    findings.Add(new("Namespace", project, fullName, null,
+                        new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1), fullName,
+                        Identity(project, "Namespace", fullName)));
                 }
-            }
-            // Reuse the baseline syntax walker, but publish only literal HTTP hosts as unresolved hints.
-            var walker = new CSharpDependencyWalker(project, file);
-            walker.Visit(syntax);
-            foreach (var finding in walker.Findings.Where(f => f.Kind == "HTTP_REST_CALL"))
-            {
-                token.ThrowIfCancellationRequested();
-                var literalHttp = Uri.TryCreate(finding.Url, UriKind.Absolute, out var uri) &&
-                    (uri.Scheme == "http" || uri.Scheme == "https");
-                findings.Add(new("OutgoingHttpCandidate", project, literalHttp ? uri!.Host : null,
-                    finding.HttpMethod, new(relative, finding.StartLine ?? 1, finding.StartLine ?? 1)));
-                warnings.Add(new("UNRESOLVED_HTTP_TARGET", "Syntax candidate only: receiver type and target service identity are not verified.", relative));
+                foreach (var type in syntax.DescendantNodes().OfType<TypeDeclarationSyntax>())
+                {
+                    token.ThrowIfCancellationRequested();
+                    var span = type.Identifier.GetLocation().GetLineSpan();
+                    var namespaces = type.Ancestors().OfType<BaseNamespaceDeclarationSyntax>().Reverse().Select(n => n.Name.ToString());
+                    var names = type.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Reverse()
+                        .Select(t => t.Identifier.ValueText + (t.TypeParameterList is null ? "" : "`" + t.TypeParameterList.Parameters.Count));
+                    var subject = string.Join(".", namespaces.Concat(names));
+                    var kind = type is InterfaceDeclarationSyntax ? "Interface" : "Type";
+                    findings.Add(new(kind, project, type.Identifier.ValueText, null,
+                        new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1), subject,
+                        Identity(project, kind, subject)));
+                    if (type.BaseList is not null)
+                    {
+                        foreach (var baseType in type.BaseList.Types)
+                        {
+                            var location = baseType.GetLocation().GetLineSpan();
+                            findings.Add(new("BaseTypeCandidate", project, baseType.Type.ToString(), null,
+                                new(relative, location.StartLinePosition.Line + 1, location.EndLinePosition.Line + 1), subject,
+                                Identity(project, "BaseTypeCandidate", subject + "->" + baseType.Type)));
+                        }
+                        warnings.Add(new("UNRESOLVED_BASE_TYPES", "Base types are syntax candidates; inheritance versus interface implementation requires semantic binding.", relative));
+                    }
+                }
+                // Reuse the baseline syntax walker, but publish only literal HTTP hosts as unresolved hints.
+                var walker = new CSharpDependencyWalker(project, file);
+                walker.Visit(syntax);
+                foreach (var finding in walker.Findings.Where(f => f.Kind == "HTTP_REST_CALL"))
+                {
+                    token.ThrowIfCancellationRequested();
+                    var literalHttp = Uri.TryCreate(finding.Url, UriKind.Absolute, out var uri) &&
+                        (uri.Scheme == "http" || uri.Scheme == "https");
+                    findings.Add(new("OutgoingHttpCandidate", project, literalHttp ? uri!.Host : null,
+                        finding.HttpMethod, new(relative, finding.StartLine ?? 1, finding.StartLine ?? 1)));
+                    warnings.Add(new("UNRESOLVED_HTTP_TARGET", "Syntax candidate only: receiver type and target service identity are not verified.", relative));
+                }
             }
             analyzed++;
         }
         token.ThrowIfCancellationRequested();
-        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-syntax/1.1",
+        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-syntax/1.2",
             findings, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax"), warnings);
     }
 
