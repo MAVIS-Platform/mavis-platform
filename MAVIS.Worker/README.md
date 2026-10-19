@@ -309,15 +309,15 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 
 ## 11. Checklist tổng thể đến nghiệm thu
 
-Đây là bảng tiến độ tổng hợp hiện hành; mục 5 giữ kế hoạch và tiêu chí nghiệm thu, mục 8–10 giữ lịch sử. `[x]` chỉ nghĩa là phạm vi được ghi đã có code và verification, không có nghĩa toàn bộ mốc hoặc tích hợp đã hoàn thành. Cập nhật lần cuối: 20/10/2026, full suite gần nhất 87/87 pass.
+Đây là bảng tiến độ tổng hợp hiện hành; mục 5 giữ kế hoạch và tiêu chí nghiệm thu, mục 8–10 giữ lịch sử. `[x]` chỉ nghĩa là phạm vi được ghi đã có code và verification, không có nghĩa toàn bộ mốc hoặc tích hợp đã hoàn thành. Cập nhật lần cuối: 20/10/2026, full suite gần nhất 106/106 pass.
 
 ### Nền tảng Worker độc lập
 
 - [x] API phân tích source C# không cần Java findings.
 - [x] Snapshot/job correlation, evidence file/dòng, coverage và warnings.
 - [x] Allowed source roots, file/byte budgets, deadline và cancellation propagation trong implementation; các giới hạn thực nghiệm còn bên dưới.
-- [ ] Source-only background jobs: submit, progress, lấy kết quả, hủy.
-- [ ] Chung validation giữa API trực tiếp và source-only job.
+- [x] Source-only background jobs: submit, progress, lấy kết quả, hủy.
+- [x] Chung validation giữa API trực tiếp và source-only job.
 - [ ] Kiểm chứng symlink/junction, deadline exhaustion và chạy Linux.
 - [ ] Source snapshot delivery khi Java/Worker khác host/container.
 - [ ] Kiểm tra integrity/hash và bảo vệ API nội bộ.
@@ -331,10 +331,12 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 - [x] Static compile-item profile v1: literal Include/Remove/Exclude, default toggles và per-project ownership trên source đã discovery; có cảnh báo chưa đánh giá MSBuild đầy đủ.
 - [x] Include/Remove/Exclude, glob cơ bản, semicolon patterns và shared linked source bên trong snapshot theo static profile.
 - [ ] Mở rộng ownership theo SDK/imports/conditions được hỗ trợ; hiện không evaluate conditions/Choose/Target và luôn trả giới hạn.
-- [ ] Semantic binding có kiểm soát và missing-reference diagnostics.
-- [ ] Resolve inheritance/interface implementation/code dependencies.
-- [ ] Hợp nhất partial declarations và evidence cùng symbol.
-- [ ] appsettings.json/configuration theo profile.
+- [x] Semantic binding có kiểm soát và missing-reference diagnostics.
+- [x] Resolve inheritance/interface và field/constructor code dependencies khi host-runtime compilation resolve được symbol.
+- [ ] Mở rộng dependency profile và target-specific semantic references; hiện trả SEMANTIC_LIMITATIONS khi thiếu dữ liệu.
+- [x] Hợp nhất partial declarations và evidence cùng symbol.
+- [x] appsettings JSON keys/HTTP hosts theo profile không trả secret values.
+- [ ] Environment merging, configuration binding và service identity resolution.
 - [ ] Quy tắc service identity; không đồng nhất project/namespace với service.
 
 ### M3 — ASP.NET Core
@@ -364,12 +366,13 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 
 - [x] Reverse BFS và shortest-path implementation trong pipeline cũ; chưa phải API impact riêng đã tích hợp.
 - [ ] Chốt ownership/vị trí engine với Triết và chỉ một implementation chính.
-- [ ] API impact nhận graph, không chạy lại source analysis.
-- [ ] Kiểm tra model/graph revision/readiness và selected service.
-- [ ] Traversal đúng chiều và loại cạnh; containment không tự thành impact edge.
-- [ ] Paths có source evidence; depth/path limits minh bạch.
-- [ ] Chain/diamond/cycle/isolated/empty-result verification cho API mới.
-- [ ] Runtime context tương thích, không xóa static edges chưa quan sát.
+- [x] API impact nhận graph, không chạy lại source analysis.
+- [x] Kiểm tra model/graph revision/readiness và selected service.
+- [x] Traversal đúng chiều và loại cạnh; containment không tự thành impact edge.
+- [x] Paths có source evidence; depth/path limits minh bạch.
+- [x] Chain/cycle/isolated/empty/depth/version/runtime-context tests và HTTP impact smoke test.
+- [ ] Diamond/parallel-edge và acceptance fixtures được nhóm rà soát.
+- [x] Runtime context tương thích, không xóa static edges chưa quan sát.
 - [ ] Java/UI highlight đúng graph/diagram mappings.
 
 ### M5–M6 — Dedicated Runtime Runner
@@ -430,3 +433,19 @@ Supported profile này không phải kết quả compile-item hoàn chỉnh củ
 Verification: `dotnet test tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj --no-restore --verbosity minimal` đạt **87/87 pass**, build thành công. Bảy cases mới kiểm tra remove/reinclude order, include/exclude/globs/semicolon/default-off, shared linked source, cùng thư mục nhiều project, conditional/dynamic/target items, Choose/target properties và thứ tự literal default settings.
 
 Checklist mục 11 đã cập nhật theo phạm vi được chứng minh. Tiếp theo: semantic binding/code dependencies và partial-symbol handling theo profile có giới hạn, sau đó appsettings và ASP.NET Core findings. Không thay Java hoặc runtime trong commit này.
+
+## 13. Static profile 1.3, source-only jobs và versioned impact
+
+Ngày 20/10/2026: hoàn thành và kiểm thử độc lập các phần dưới. Xem [contract v1 hiện hành](DOTNET_API_V1.md); tài liệu legacy vẫn là transitional. Mục này thay các mô tả “chưa có” tương ứng ở lịch sử trước.
+
+- Semantic compilation dùng trusted platform assemblies của host và project references trong snapshot; không load target binaries, build/restore hoặc chạy source. Inherits/Implements và field/constructor CodeDependency chỉ xuất khi symbol resolve được, confidence=ResolvedSymbol. Missing-reference diagnostics chỉ trả diagnostic IDs, không lộ source/secret values.
+- Gộp partial type declarations và namespace theo identity; giữ các vị trí khác trong additionalEvidence. Chưa khẳng định compile profile trùng target build. AnalyzerVersion=dotnet-static/1.3, schemaVersion=1.0, coverage.mode=PartialSyntax là nhãn tương thích thận trọng.
+- Controller routes/HTTP verbs, Minimal API/nested route groups, Refit attributes, DI/DbContext/DbSet/save patterns, named/typed client registration và literal base-address hosts có findings dạng Candidate với confidence=Syntax. Đây là supported pattern detection, không phải mọi ASP.NET construct hoặc resolved runtime service calls. Nonconstant/unsupported routes trả warnings.
+- HttpClient method resolve được qua semantic model với literal/constant absolute URL xuất OutgoingHttp confidence=ResolvedSymbol, chỉ giữ host/method. URL query, credentials, source snippets không đi vào result.
+- appsettings*.json: ConfigurationKey và ConfiguredHttpHost, không trả values/connection strings. Evidence hiện bao trùm file config; JSON lỗi trả warning, environment/override merging chưa được thực hiện.
+- POST /api/v1/dotnet/jobs, GET /api/v1/dotnet/jobs/{jobId}, POST /api/v1/dotnet/jobs/{jobId}/cancel: bounded queue/retention, identical-input idempotency, conflict detection, sanitized failures, actual cancellation/terminal races. Shared request validation với API trực tiếp. Progress hiện là lifecycle states, chưa có phần trăm hoặc per-file events. Jobs ephemeral; restart recovery/durable public state vẫn thuộc integration chưa hoàn thành.
+- POST /api/v1/impact: nhận model/graph revisions, allowed typed service edges, source evidence IDs và optional runtime observations. Reuse engine reverse BFS cũ, không tạo bản traversal thứ hai. Reject mismatched/pending graph, kiểm tra nodes/edges, giữ paths/evidence, depth limits, cycle/empty-result warnings. Runtime input chỉ được đối chiếu fields do caller cung cấp; Java phải kiểm chứng artifact/session provenance trước khi gọi.
+
+Verification full suite: `dotnet test tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj --no-restore --verbosity minimal` **106/106 pass**, build thành công. Tests mới cover semantic/partial/project references, ASP.NET/config redaction, HTTP symbol/base-host extraction, job lifecycle/idempotency/capacity/cancellation race, impact versions/types/paths/evidence/depth/cycle/runtime filtering và HTTP jobs/impact endpoints.
+
+Các checkbox M3 chưa tick toàn bộ vì hiện nhiều capability chỉ là syntax candidate. Chưa hoàn thành Java/UI integration, shared canonical IDs, restart recovery, internal authentication, full ASP.NET/semantic/config coverage hoặc Docker runtime acceptance. Người dùng đã chọn Docker Desktop Linux Engine trên máy này cho PoC; production isolation phải nghiệm thu riêng. Đang tiếp tục Runner/preflight và tracing theo các mốc sau.
