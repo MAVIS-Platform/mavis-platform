@@ -5,7 +5,7 @@ public sealed record DotnetAnalysisRequest(string ProjectId, string SourceSnapsh
 
 public sealed record SourceReference(string FilePath, int StartLine, int EndLine);
 public sealed record DotnetFinding(string Kind, string ProjectPath, string? Target, string? HttpMethod,
-    SourceReference Evidence);
+    SourceReference Evidence, string? Subject = null, string? Id = null);
 public sealed record AnalysisWarning(string Code, string Message, string? FilePath = null);
 public sealed record DotnetCoverage(int DiscoveredFiles, int AnalyzedFiles, string Mode);
 public sealed record DotnetAnalysisResult(string SchemaVersion, string JobId, string ProjectId,

@@ -279,3 +279,30 @@ Verification 20/10/2026:
 - Chưa verify thực nghiệm symlink/junction, deadline exhaustion, Linux execution hoặc Java/UI integration; không đánh dấu những phần này hoàn thành.
 
 Tiến độ: hoàn thành lát cắt đầu M1; M0 còn các quyết định phối hợp và sample chuẩn, M1 còn job contract/shared validation, IDs và lifecycle integration. Tiếp theo triển khai project discovery/structural analysis M2 sau khi chốt contract; không mở runtime trong mốc này.
+
+## 10. M2 bước đầu — project metadata và cấu trúc source
+
+Triển khai ngày 20/10/2026 trên `feat/worker-standalone-analysis`:
+
+- Discovery thêm `.sln` (chưa hỗ trợ `.slnx` cho source đích). Đọc project entries và `.csproj` ProjectReference dạng đường dẫn literal, kể cả XML namespace MSBuild cũ.
+- Không thực thi MSBuild targets, imports hay conditions. Reference chỉ được đối chiếu với project đã discovery dưới source root, không mở file theo reference.
+- Project XML không hợp lệ hoặc có DTD/external entities trả `INVALID_PROJECT_XML`; vẫn giữ findings source có thể đọc.
+- Conditional/dynamic/missing/outside references trả `UNRESOLVED_PROJECT_REFERENCE`, không tự tạo project edge đã xác nhận.
+- Findings thêm `Project`, `Solution`, `ProjectReference`, `SolutionProject`, `Namespace`, `BaseTypeCandidate`. Quan hệ project không phải service call hoặc impact edge mặc định.
+- `Type`/`Interface` giữ tương thích tên kind của API bước đầu. Có `subject` là tên đầy đủ gồm namespace/nested type/generic arity; `id` SHA-256 từ project-relative path, kind và qualified identity. BaseTypeCandidate ID gồm source/target syntax. Những ID này chưa phải canonical IDs đã được Java thống nhất.
+- Namespace/type/base-type findings có ID ổn định khi đổi dòng hoặc vị trí khai báo trong cùng project. Partial declarations có thể chia sẻ ID và có nhiều vị trí evidence; chưa gom thành một semantic symbol. Đổi project path hoặc tên symbol làm đổi ID, chưa có rename matching.
+- Base types chưa phân biệt chắc chắn inheritance với interface implementation; trả `UNRESOLVED_BASE_TYPES` và không nhận là resolved code/service dependency.
+- File/byte budgets áp dụng cả metadata đã đọc; `MaxFiles` tính .cs/.csproj/.sln, `MaxTotalBytes` tính .cs + metadata. Evidence reference theo dòng gốc.
+
+Contract schema vẫn 1.0, analyzerVersion tăng `dotnet-syntax/1.1`. Các trường subject/id là bổ sung nullable; các findings metadata/HTTP hiện có thể chưa có ID. Java consumer chưa tích hợp, cần xác nhận xử lý findings kinds mới trước khi dùng thực tế.
+
+Giới hạn M2 còn lại:
+
+- Chưa evaluate Compile Include/Remove/Exclude, imports, framework conditions và generated files. `PROJECT_ITEMS_UNEVALUATED` luôn được trả cho mỗi project; owner dựa trên project directory gần nhất, không phải kết quả build.
+- Chưa semantic binding, namespace alias resolution, fully resolved inheritance/implementation, appsettings/config resolution hay service identity mapping.
+- Solution entries được đọc để mô tả quan hệ, chưa giới hạn phạm vi phân tích theo solution membership. Các project discovery khác vẫn được phân tích với evidence riêng.
+- Không tick toàn bộ M2 vì các giới hạn trên chưa được hoàn tất; các API background job và integration còn như mục 9.
+
+Verification: full Worker suite `dotnet test tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj --no-restore --verbosity minimal` đạt **80/80 pass**, build thành công. Thêm 6 cases: solution/project refs và target không bị chạy; qualified identity ổn định; missing/outside/conditional/dynamic refs; malformed XML; external-entity XML; metadata byte limit. 74 cases trước vẫn pass.
+
+Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộng semantic/reference handling có giới hạn trước khi nhận diện endpoint/DI/EF Core. Chưa triển khai runtime hay thay Java backend trong mốc này.
