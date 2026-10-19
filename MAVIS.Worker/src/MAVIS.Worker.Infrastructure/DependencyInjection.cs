@@ -22,6 +22,7 @@ public static class DependencyInjection
         // Graph and impact analysis implementations
         services.AddSingleton<IGraphEngine, GraphEngine>();
         services.AddSingleton<IImpactAnalyzer, ImpactAnalyzer>();
+        services.AddSingleton<IVersionedImpactAnalyzer, VersionedImpactAnalyzer>();
 
         // Analysis pipeline (Normalize -> Resolve -> Orchestrate)
         services.AddSingleton<INormalizer, Normalizer>();
@@ -34,6 +35,9 @@ public static class DependencyInjection
         // Job queue + background worker
         services.AddSingleton<IJobQueue, InMemoryJobQueue>();
         services.AddHostedService<AnalysisBackgroundService>();
+        services.AddSingleton<DotnetAnalysisJobService>();
+        services.AddSingleton<MAVIS.Worker.Application.Analysis.IDotnetAnalysisJobs>(sp => sp.GetRequiredService<DotnetAnalysisJobService>());
+        services.AddHostedService(sp => sp.GetRequiredService<DotnetAnalysisJobService>());
 
         return services;
     }

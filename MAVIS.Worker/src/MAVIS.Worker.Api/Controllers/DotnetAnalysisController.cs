@@ -10,13 +10,9 @@ public sealed class DotnetAnalysisController(IDotnetProjectAnalyzer analyzer) : 
     [HttpPost]
     public async Task<IActionResult> Analyze(DotnetAnalysisRequest request, CancellationToken ct)
     {
-        if (request.SchemaVersion != "1.0" || string.IsNullOrWhiteSpace(request.ProjectId) ||
-            string.IsNullOrWhiteSpace(request.SourceSnapshotId) || string.IsNullOrWhiteSpace(request.JobId) ||
-            string.IsNullOrWhiteSpace(request.SourceLocation))
-            return Problem(statusCode: 400, title: "Invalid analysis request",
-                detail: "schemaVersion 1.0, projectId, sourceSnapshotId, jobId and sourceLocation are required.");
         try
         {
+            DotnetRequestValidator.Validate(request);
             return Ok(await analyzer.AnalyzeAsync(request, ct));
         }
         catch (SourceInputException ex)
