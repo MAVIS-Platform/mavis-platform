@@ -53,6 +53,19 @@ public sealed class VersionedImpactTests
     }
 
     [Fact]
+    public void DiamondUsesOneShortestPathAndKeepsParallelEdgeEvidence()
+    {
+        var request = new VersionedImpactRequest("m", "m", "g", true, "T", ["A", "B", "C", "T"],
+            [new("a1", "A", "B", "HttpRestCall", ["ab1"]), new("a2", "A", "B", "HttpRestCall", ["ab2"]),
+             new("b1", "B", "T", "HttpRestCall", ["bt"]), new("c1", "A", "C", "HttpRestCall", ["ac"]), new("c2", "C", "T", "HttpRestCall", ["ct"])]);
+        var result = _analyzer.Analyze(request);
+        var a = Assert.Single(result.AffectedServices.Where(s => s.ServiceId == "A"));
+        Assert.Equal(2, a.Distance); Assert.Equal(3, a.Hops.Count);
+        Assert.Contains("ab1", a.EvidenceIds); Assert.Contains("ab2", a.EvidenceIds);
+        Assert.Contains("ONE_SHORTEST_PATH_PER_SERVICE", result.Warnings);
+    }
+
+    [Fact]
     public void IsolatedServiceReturnsValidEmptyResult()
     {
         Assert.Empty(_analyzer.Analyze(Request() with { TargetServiceId = "Other" }).AffectedServices);

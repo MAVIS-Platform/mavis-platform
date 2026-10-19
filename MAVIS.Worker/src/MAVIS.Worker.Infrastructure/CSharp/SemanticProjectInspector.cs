@@ -91,9 +91,12 @@ internal static class SemanticProjectInspector
                 }
                 references.Add(Build(target).ToMetadataReference());
             }
-            var compilation = CSharpCompilation.Create("Mavis_" + Id(project, "Assembly", project),
-                profile.Files.Where(trees.ContainsKey).Select(f => trees[f]), references,
-                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            var projectTrees = profile.Files.Where(trees.ContainsKey).Select(f => trees[f]).ToList();
+            if (profile.ImplicitNamespaces.Count > 0)
+                projectTrees.Add(CSharpSyntaxTree.ParseText(string.Join("\n", profile.ImplicitNamespaces.Select(n => "global using " + n + ";")),
+                    path: Path.Combine(root, ".mavis-generated", Id(project, "GlobalUsings", project) + ".cs"), cancellationToken: ct));
+            var compilation = CSharpCompilation.Create("Mavis_" + Id(project, "Assembly", project), projectTrees, references,
+                new CSharpCompilationOptions(profile.IsExecutable ? OutputKind.ConsoleApplication : OutputKind.DynamicallyLinkedLibrary));
             visiting.Remove(profile.Project);
             compilations[profile.Project] = compilation;
             return compilation;

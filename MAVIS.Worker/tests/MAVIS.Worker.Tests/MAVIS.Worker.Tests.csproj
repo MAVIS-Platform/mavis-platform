@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\src\MAVIS.Worker.Application\MAVIS.Worker.Application.csproj" />
     <ProjectReference Include="..\..\src\MAVIS.Worker.Infrastructure\MAVIS.Worker.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\MAVIS.Worker.Api\MAVIS.Worker.Api.csproj" />
+    <ProjectReference Include="..\..\src\MAVIS.Runner\MAVIS.Runner.csproj" />
   </ItemGroup>
 
 </Project>

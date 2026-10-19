@@ -3,12 +3,39 @@ using System.Net.Http.Json;
 using MAVIS.Worker.Application.Analysis;
 using MAVIS.Worker.Application.Impact;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 
 namespace MAVIS.Worker.Tests.Integration;
 
 public sealed class IndependentEndpointTests
 {
+    [Fact]
+    public async Task ProductionDisablesLegacyAndDoesNotTrustForwardedLoopbackHeader()
+    {
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseEnvironment("Production"));
+        using var client = factory.CreateClient();
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/jobs/missing")).StatusCode);
+        client.DefaultRequestHeaders.Add("X-Forwarded-For", "127.0.0.1");
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/v1/dotnet/jobs/missing")).StatusCode);
+    }
+
+    [Fact]
+    public async Task ConfiguredServiceKeyProtectsNewEndpoints()
+    {
+        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.ConfigureAppConfiguration((_, c) =>
+            c.AddInMemoryCollection(new Dictionary<string, string?> { ["WorkerAccess:ApiKey"] = "test-service-key" })));
+        using var client = factory.CreateClient();
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/health")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/dotnet/jobs/missing")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/jobs/missing")).StatusCode);
+        client.DefaultRequestHeaders.Add("X-Mavis-Worker-Key", "wrong-key");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/v1/dotnet/jobs/missing")).StatusCode);
+        client.DefaultRequestHeaders.Remove("X-Mavis-Worker-Key");
+        client.DefaultRequestHeaders.Add("X-Mavis-Worker-Key", "test-service-key");
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/v1/dotnet/jobs/missing")).StatusCode);
+    }
+
     [Fact]
     public async Task SourceOnlyJobHasResultAndIdempotentSubmission()
     {

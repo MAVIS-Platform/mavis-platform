@@ -1,8 +1,17 @@
 # MAVIS.Worker C#/.NET
 
-Worker phân tích tĩnh C#/.NET bằng Roslyn và trả kết quả có bằng chứng cho Java hợp nhất vào Shared Architectural Model. Nhựt còn phụ trách thuật toán Change Impact phối hợp Triết và Dedicated Runtime Runner ở các giai đoạn sau.
+Worker phân tích tĩnh C#/.NET bằng Roslyn và trả kết quả có bằng chứng cho Java hợp nhất vào Shared Architectural Model. Phần độc lập hiện có API Change Impact và executable Dedicated Runtime Runner riêng; các giới hạn và phần phối hợp Java được ghi rõ bên dưới.
 
-README là kế hoạch và sổ tiến độ riêng của phần C#. Chỉ đánh dấu hoàn thành sau khi có implementation và verification; các contract dưới đây là thiết kế đề xuất, chưa phải API đã được nghiệm thu.
+README là kế hoạch và sổ tiến độ riêng của phần C#. Chỉ đánh dấu hoàn thành sau implementation và verification. Các API hiện hành đã test độc lập; contract tích hợp Java vẫn cần nhóm thống nhất. Mục 8–10 và 12–13 là lịch sử, mục 11 là checklist hiện hành.
+
+## Trạng thái triển khai ngày 20/10/2026
+
+- Static profile `dotnet-static/1.4`: source-only analysis/jobs, project/compile metadata, bounded semantic binding, partial types, ASP.NET pattern findings và config keys/hosts có evidence/warnings. Không build/run source đích.
+- Versioned impact API: reverse BFS, typed service edges, một shortest path mỗi dependent, evidence và runtime context không xóa static edges.
+- Dedicated Runner: executable riêng, strict image-only preflight, Compose override, internal-network HTTP scenario container, agents/Collector, causal correlation, bounded lifecycle/cancel/cleanup/recovery.
+- Hai dự án mẫu thật đã chạy cả .NET -> Java và Java -> .NET; có case request fail, startup fail, timeout, cancel và abandoned cleanup. Bằng chứng: [PoC evidence](samples/runtime-poc/POC_EVIDENCE.json).
+- Hướng dẫn API: [DOTNET_API_V1.md](DOTNET_API_V1.md). Hướng dẫn Runner và tái tạo PoC: [RUNNER.md](RUNNER.md).
+- Chưa phải nghiệm thu toàn bộ MAVIS: Java/UI, canonical IDs/source delivery, durable job/result orchestration, production isolation, secret store và SRS thresholds vẫn là phần tích hợp chưa hoàn thành.
 
 ## 1. Tài liệu làm căn cứ
 
@@ -56,7 +65,7 @@ Các mục sau được xác nhận bằng đọc code, chưa đồng nghĩa bui
 - Chưa có Dedicated Runner/OTel pipeline trong phần Worker đã rà soát.
 - Chưa xác minh baseline build/test trong lần cập nhật README này.
 
-`WORKER_API_CONTRACT.md`, `worker-contract-sample.json` và `ROSLYN_CSHARP_ANALYZER.md` là tài liệu chuyển tiếp của baseline cũ. Không xem ví dụ cũ là contract mới đã chốt. Worker không render UI graph.
+`ROSLYN_CSHARP_ANALYZER.md` và các file local cũ `WORKER_API_CONTRACT.md`/`worker-contract-sample.json` (nếu có) là tài liệu chuyển tiếp của baseline cũ. Không xem ví dụ cũ là contract mới đã chốt. Worker không render UI graph.
 
 ## 4. Nhận gì, làm gì, trả gì
 
@@ -309,7 +318,7 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 
 ## 11. Checklist tổng thể đến nghiệm thu
 
-Đây là bảng tiến độ tổng hợp hiện hành; mục 5 giữ kế hoạch và tiêu chí nghiệm thu, mục 8–10 giữ lịch sử. `[x]` chỉ nghĩa là phạm vi được ghi đã có code và verification, không có nghĩa toàn bộ mốc hoặc tích hợp đã hoàn thành. Cập nhật lần cuối: 20/10/2026, full suite gần nhất 106/106 pass.
+Đây là bảng tiến độ tổng hợp hiện hành; mục 5 giữ kế hoạch và tiêu chí nghiệm thu, mục 8–10 giữ lịch sử. `[x]` chỉ nghĩa là phạm vi được ghi đã có code và verification, không có nghĩa toàn bộ mốc hoặc tích hợp đã hoàn thành. Cập nhật lần cuối: 20/10/2026, Windows: 133 pass, 1 Linux-only skip; Linux: 68 profile tests pass.
 
 ### Nền tảng Worker độc lập
 
@@ -318,9 +327,10 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 - [x] Allowed source roots, file/byte budgets, deadline và cancellation propagation trong implementation; các giới hạn thực nghiệm còn bên dưới.
 - [x] Source-only background jobs: submit, progress, lấy kết quả, hủy.
 - [x] Chung validation giữa API trực tiếp và source-only job.
-- [ ] Kiểm chứng symlink/junction, deadline exhaustion và chạy Linux.
+- [x] Windows junction bị từ chối 400; deadline 1s trả 408 (~1183ms trên pilot); Linux 68 tests gồm file/root symlink rejection.
 - [ ] Source snapshot delivery khi Java/Worker khác host/container.
-- [ ] Kiểm tra integrity/hash và bảo vệ API nội bộ.
+- [x] Analysis input fingerprint và expected digest; service key/loopback guard cho API, legacy tắt mặc định ở Production.
+- [ ] Xác minh snapshot origin/delivery và authorization theo project qua Java.
 - [ ] Recovery/lease khi restart; queue hiện chỉ nằm trong RAM.
 
 ### M2 — Cấu trúc C#
@@ -341,16 +351,19 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 
 ### M3 — ASP.NET Core
 
-- [ ] Controller routes, HTTP verbs và attributes liên quan.
-- [ ] Minimal API và route groups.
-- [ ] HttpClient receiver/method/URL/base address; hiện mới có syntax candidates.
-- [ ] Named/typed IHttpClientFactory.
-- [ ] Refit.
-- [ ] DI registrations và injection dependencies.
-- [ ] EF Core DbContext và database access.
+- [x] Controller route/HTTP verb candidates theo literal/constant pattern đã test.
+- [ ] Mở rộng convention/action route/attribute alias semantics ngoài profile v1.
+- [x] Minimal API và nested route-group candidates với constant routes; unsupported patterns có warnings.
+- [x] HttpClient resolved receiver/method khi đủ references; literal host/base-address candidates, dynamic targets giữ unresolved.
+- [x] Named/typed/default registration và factory syntax candidates, có test; không tự đồng nhất client name với model service.
+- [x] Refit interface HTTP-attribute candidates trong supported source patterns.
+- [x] Generic DI registration candidates và resolved field/constructor type dependencies.
+- [ ] DI container/lifetime/factory semantics đầy đủ ngoài supported profile.
+- [x] DbContext/registration/DbSet/save candidates có evidence; chưa resolve EF/NuGet semantics đầy đủ.
+- [ ] EF query/entity/model mapping ngoài syntax profile.
 - [ ] Configuration resolution và unresolved items khi thiếu bằng chứng.
 - [ ] Phân biệt service call, code dependency, containment và DB access.
-- [ ] Test findings/evidence/coverage/warnings cho từng capability công bố hỗ trợ.
+- [x] Tests cho findings/evidence/coverage/warnings trong static profile được công bố; unsupported constructs vẫn có giới hạn.
 
 ### Tích hợp phân tích tĩnh với Java/UI
 
@@ -371,37 +384,46 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 - [x] Traversal đúng chiều và loại cạnh; containment không tự thành impact edge.
 - [x] Paths có source evidence; depth/path limits minh bạch.
 - [x] Chain/cycle/isolated/empty/depth/version/runtime-context tests và HTTP impact smoke test.
-- [ ] Diamond/parallel-edge và acceptance fixtures được nhóm rà soát.
+- [x] Diamond/parallel-edge regression tests.
+- [ ] Acceptance graph fixtures được nhóm rà soát và tích hợp Java/UI.
 - [x] Runtime context tương thích, không xóa static edges chưa quan sát.
 - [ ] Java/UI highlight đúng graph/diagram mappings.
 
 ### M5–M6 — Dedicated Runtime Runner
 
-- [ ] Executable và môi trường Runner riêng, tách Worker/platform data.
-- [ ] Compose preflight theo supported Java/.NET Linux profiles.
-- [ ] Mount/privilege/Docker socket/network restrictions.
-- [ ] CPU/RAM/concurrency/deadline enforcement.
-- [ ] Build/verify images và image digests.
-- [ ] Temporary Compose override cho Java agent/.NET instrumentation, pin versions qua PoC.
-- [ ] Readiness và Collector checks có bounded waits.
-- [ ] Ordered HTTP requests, variables/dependencies, protected authentication references.
+- [x] Executable Runner riêng; PoC Docker không mount platform data.
+- [ ] Dedicated production execution host và tenant isolation acceptance.
+- [x] Strict image-only Linux PoC preflight; không build/start trong preflight.
+- [x] Target Compose chặn host mounts/socket/privileges/ports/host networking; override và internal-network scenario verified trên PoC.
+- [x] CPU/RAM/PIDs/read-only/capability checks từ Docker inspect; local lease và deadline đã test.
+- [ ] Platform-wide capacity policy qua approved profiles của Java/Admin.
+- [x] Verify content-addressed images và ghi actual IDs; sample builds tách khỏi session runner.
+- [ ] Source-build execution profiles và source/image correspondence được nền tảng xác minh.
+- [x] Temporary overrides và .NET 1.17.0/Java 2.32.0 agents; download SHA256 và version-label checks, hai chiều trace thật.
+- [x] Readiness/Collector checks chạy trong internal network với bounded waits.
+- [x] Ordered HTTP requests, variables/dependencies/status checks, protected references qua in-memory/stdin có tests.
+- [ ] Platform secret-store integration và authenticated business-scenario acceptance.
 - [ ] Approved setup/reset và expected outcomes.
-- [ ] Revalidate phiên bản/prerequisites trước mỗi run.
-- [ ] Một lifecycle idempotent cho completion/failure/timeout/cancel/Admin stop.
-- [ ] Cleanup được xác nhận; reconciliation/recovery khi chưa dừng/dọn xong.
-- [ ] Kiểm thử repeat/reset, failures, timeout, cancellation và leaked resources.
+- [x] Validate version references/profile/scenario và bundle labels trước startup; receipt giữ selected versions và actual image IDs.
+- [x] Shared bounded lifecycle cho completion/failure/timeout/cancellation và local cancel marker.
+- [ ] Java/Admin stop API và durable cross-host control reconciliation.
+- [x] Confirm cleanup của container/network/volume; recover đúng generated project, đã test host chết đột ngột.
+- [ ] Automated recovery service và durable evidence delivery khi allocator chết.
+- [x] Stateless repeat, request/startup failures, timeout, live cancellation, orphan cleanup trên Docker thật.
+- [ ] Stateful reset và môi trường có credentials/business data theo SRS.
 
 ### M7 — Trace correlation và nghiệm thu
 
-- [ ] OTLP Collector và sensitive-data redaction.
-- [ ] Trace/span/parent IDs, scenario-step/session references và causal ordering.
-- [ ] Không ghép unrelated traces; explicit missing-span states.
+- [x] OTLP Collector transform allowlist và final projection; giữ timing/status, bỏ message/attributes/events nhạy cảm.
+- [x] Trace/span/parent IDs, scenario-step/session references và causal ordering, không sắp bằng timestamp.
+- [x] Unrelated traces/cycles/missing parents được giữ tách với warning/trace quality rõ.
 - [ ] Runtime-service mapping đúng model revision, provenance và image/source correspondence.
-- [ ] Uncertain/unmapped evidence giữ rõ trạng thái và không tạo quan hệ giả.
-- [ ] Execution/scenario/trace/persistence/cleanup statuses riêng.
-- [ ] Giữ useful trace khi request thất bại.
+- [x] Uncertain/unmapped evidence có warnings, không tạo synthetic spans/paths.
+- [x] Execution/scenario/evidence/trace-quality/mapping/cleanup tách riêng; persistence ghi CallerOwned.
+- [x] HTTP 503 vẫn thu được trace và causal service interaction trên PoC thật.
 - [ ] Java lưu và frontend khám phá evidence; diagram generation chạy riêng trên saved data.
-- [ ] Thực nghiệm dự án mẫu đã rà soát, evidence cho từng Java/.NET profile công bố hỗ trợ.
+- [x] Hai sample projects .NET -> Java và Java -> .NET; actual image IDs/agent hashes và outcome evidence được lưu.
+- [ ] SRS acceptance thresholds và sample/reference traces do nhóm/giảng viên rà soát chính thức.
 - [ ] Chốt/nghiệm thu SRS thresholds, báo cáo đo đạc, limitations, test và vận hành.
 
 ### Quy tắc cập nhật bắt buộc trong quá trình triển khai
@@ -449,3 +471,18 @@ Ngày 20/10/2026: hoàn thành và kiểm thử độc lập các phần dưới
 Verification full suite: `dotnet test tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj --no-restore --verbosity minimal` **106/106 pass**, build thành công. Tests mới cover semantic/partial/project references, ASP.NET/config redaction, HTTP symbol/base-host extraction, job lifecycle/idempotency/capacity/cancellation race, impact versions/types/paths/evidence/depth/cycle/runtime filtering và HTTP jobs/impact endpoints.
 
 Các checkbox M3 chưa tick toàn bộ vì hiện nhiều capability chỉ là syntax candidate. Chưa hoàn thành Java/UI integration, shared canonical IDs, restart recovery, internal authentication, full ASP.NET/semantic/config coverage hoặc Docker runtime acceptance. Người dùng đã chọn Docker Desktop Linux Engine trên máy này cho PoC; production isolation phải nghiệm thu riêng. Đang tiếp tục Runner/preflight và tracing theo các mốc sau.
+
+## 14. Independent Worker và Runtime PoC — 20/10/2026
+
+Hoàn thiện core độc lập trong các profile được mô tả ở đầu README, không tuyên bố hoàn tất toàn bộ checklist sản phẩm.
+
+- Static 1.4 thêm known SDK implicit-usings profile, dynamic HttpClient destination warnings, input fingerprint/expected digest và internal-service authentication. Production legacy analysis tắt mặc định; health vẫn truy cập được.
+- Runner là project riêng trong solution, thêm YamlDotNet 16.3.0 cho strict preflight. Không chạy Compose build trong session; chỉ nhận image digest/local content ID theo image-only profile.
+- Tự sinh override, gắn Java/.NET instrumentation đã checksum, kiểm tra khai báo bundle versions, chạy HTTP scenario bằng container nội bộ. Docker inspect xác nhận sandbox limits/network trước scenario.
+- Cùng lifecycle cho startup/request failure, timeout và cancel; giữ Collector đến khi apps flush, đọc active/rotated OTLP files, tách outcome/quality/mapping/persistence/cleanup, hỗ trợ operator recovery với exact generated project.
+- PoC Windows Docker Desktop Linux Engine đã chạy hai dự án mẫu và các failure cases; script bootstrap/matrix cùng bằng chứng curated nằm trong samples/runtime-poc. Không commit images, agent binaries, publish/bin/obj hoặc raw trace artifacts.
+- Test full suite Windows: 133 pass, 1 Linux-only skip; 68 profile tests trên Linux đều pass. Live Docker kiểm chứng success, failure với trace, startup fail, timeout, cancel, repeat, reverse-language project và cleanup sau host kill. Các thay đổi code sau mốc verification phải được kiểm tra lại trước commit.
+
+Phần còn phụ thuộc nhóm: Java source/artifact delivery, canonical IDs/contracts, durable jobs/results, model publication, runtime API/Admin control/secret store, UI diagrams/evidence và production isolation/SRS acceptance. Phần ngoài static/runtime profiles hiện tại vẫn để unchecked; không tự mở rộng tuyên bố hỗ trợ.
+
+Verification bổ sung ở mốc 14: Windows Worker API thật chặn junction (400), stress source deadline 1s trả 408 sau khoảng 1183ms. Linux SDK8 container đọc source readonly chạy 68 profile tests pass, gồm symlink file/root. Windows full suite 133 pass + 1 Linux-only skip. Đây là pilot verification, không thay SRS performance/accuracy acceptance.

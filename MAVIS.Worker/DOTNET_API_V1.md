@@ -2,6 +2,8 @@
 
 Implemented local contract, not yet approved or integrated by the Java consumer. JSON properties use camelCase. Run against a controlled internal endpoint; configure `DotnetAnalysis:AllowedSourceRoots` before analysis. No target MSBuild/restore/assembly execution occurs.
 
+Set `WorkerAccess__ApiKey` and send `X-Mavis-Worker-Key` for service-to-service calls. Without a key, analysis APIs allow loopback only (in-memory Development test hosts have no remote address). Forwarded IP headers do not grant access. The filter covers legacy analysis/jobs as well; in Production those legacy routes are disabled unless `WorkerAccess:EnableLegacyAnalysis=true`. Health is exempt. This is internal-service authentication, not a replacement for Java's project/workspace authorization.
+
 ## Source analysis
 
 `POST /api/v1/dotnet/analyze` returns a result directly. `POST /api/v1/dotnet/jobs` accepts the same input and returns 202 with a polling Location:
@@ -17,6 +19,8 @@ Implemented local contract, not yet approved or integrated by the Java consumer.
 ```
 
 Result: input identifiers, analyzerVersion, findings, coverage and warnings. A finding has kind/projectPath/target/httpMethod/evidence, optional subject/id/additionalEvidence and confidence. Evidence contains snapshot-relative filePath, startLine/endLine (1-based); it never contains source snippets. Configuration values and HTTP credentials/query strings are omitted. Configuration-key evidence currently spans the configuration file, not an exact property line.
+
+Static profile 1.4 returns `inputDigest`; optional request `expectedInputDigest` rejects changed analysis inputs. This is not the platform ZIP/source-snapshot hash: it covers discovered .cs/.csproj/.sln/appsettings*.json files, including excluded compile files, under the guarded root. Sort normalized snapshot-relative paths ordinally; for each append UTF-8 path, a zero byte, and SHA-256 of UTF-8 decoded file text; SHA-256 the concatenation and encode lowercase hex. BOM is consumed by StreamReader, line endings are retained. Imported source still must be immutable while read; this digest does not authenticate its origin or cover ignored/unsupported files.
 
 `confidence=ResolvedSymbol` means resolved in the bounded host-runtime compilation, not proof of a runtime interaction or an exact target build. Default `Syntax` means pattern/candidate evidence. `coverage.mode=PartialSyntax` remains the conservative compatibility label; read warnings for missing dependencies, incomplete project evaluation and unresolved patterns. Partial declarations share an ID and expose additionalEvidence. Service mapping remains Java's responsibility.
 
