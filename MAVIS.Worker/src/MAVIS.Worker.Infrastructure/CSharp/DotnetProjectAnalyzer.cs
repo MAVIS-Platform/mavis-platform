@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Cryptography;
 using MAVIS.Worker.Application.Analysis;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -48,7 +49,8 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                     if (!Ignored.Contains(Path.GetFileName(entry))) directories.Push(entry);
                 }
                 else if (Path.GetExtension(entry).Equals(".cs", StringComparison.OrdinalIgnoreCase) ||
-                         Path.GetExtension(entry).Equals(".csproj", StringComparison.OrdinalIgnoreCase))
+                         Path.GetExtension(entry).Equals(".csproj", StringComparison.OrdinalIgnoreCase) ||
+                         Path.GetExtension(entry).Equals(".sln", StringComparison.OrdinalIgnoreCase))
                 {
                     files.Add(entry);
                     if (files.Count > settings.MaxFiles) throw new SourceInputException("Source exceeds MaxFiles.");
@@ -65,6 +67,21 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
         };
         var analyzed = 0;
         long totalBytes = 0;
+        async Task<string> ReadBoundedAsync(string file)
+        {
+            token.ThrowIfCancellationRequested();
+            await using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (stream.Length > settings.MaxFileBytes || stream.Length > settings.MaxTotalBytes - totalBytes)
+                throw new SourceInputException("Source exceeds configured byte limits.");
+            totalBytes += stream.Length;
+            using var reader = new StreamReader(stream, Encoding.UTF8, true);
+            return await reader.ReadToEndAsync(token);
+        }
+        foreach (var metadata in files.Where(f => !Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.Ordinal))
+        {
+            var content = await ReadBoundedAsync(metadata);
+            ProjectMetadataReader.Read(root, metadata, content, projects, findings, warnings, token);
+        }
         foreach (var file in files.Where(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.Ordinal))
         {
             token.ThrowIfCancellationRequested();
@@ -83,23 +100,44 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                 warnings.Add(new("AMBIGUOUS_PROJECT", "Multiple projects share this source directory; ownership requires review.", relative));
                 continue;
             }
-            await using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
-            if (stream.Length > settings.MaxFileBytes || stream.Length > settings.MaxTotalBytes - totalBytes)
-                throw new SourceInputException("Source exceeds configured byte limits.");
-            totalBytes += stream.Length;
-            using var reader = new StreamReader(stream, Encoding.UTF8, true);
-            var text = await reader.ReadToEndAsync(token);
+            var text = await ReadBoundedAsync(file);
             var tree = CSharpSyntaxTree.ParseText(text, cancellationToken: token);
             var syntax = await tree.GetRootAsync(token);
             if (tree.GetDiagnostics(token).Any(d => d.Severity == DiagnosticSeverity.Error))
                 warnings.Add(new("SYNTAX_ERRORS", "Syntax errors found; available findings may be incomplete.", relative));
             var project = Path.GetRelativePath(root, owners[0]).Replace('\\', '/');
+            foreach (var ns in syntax.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>())
+            {
+                token.ThrowIfCancellationRequested();
+                var fullName = string.Join(".", ns.AncestorsAndSelf().OfType<BaseNamespaceDeclarationSyntax>().Reverse().Select(n => n.Name.ToString()));
+                var span = ns.Name.GetLocation().GetLineSpan();
+                findings.Add(new("Namespace", project, fullName, null,
+                    new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1), fullName,
+                    Identity(project, "Namespace", fullName)));
+            }
             foreach (var type in syntax.DescendantNodes().OfType<TypeDeclarationSyntax>())
             {
                 token.ThrowIfCancellationRequested();
                 var span = type.Identifier.GetLocation().GetLineSpan();
-                findings.Add(new(type is InterfaceDeclarationSyntax ? "Interface" : "Type", project,
-                    type.Identifier.ValueText, null, new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1)));
+                var namespaces = type.Ancestors().OfType<BaseNamespaceDeclarationSyntax>().Reverse().Select(n => n.Name.ToString());
+                var names = type.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Reverse()
+                    .Select(t => t.Identifier.ValueText + (t.TypeParameterList is null ? "" : "`" + t.TypeParameterList.Parameters.Count));
+                var subject = string.Join(".", namespaces.Concat(names));
+                var kind = type is InterfaceDeclarationSyntax ? "Interface" : "Type";
+                findings.Add(new(kind, project, type.Identifier.ValueText, null,
+                    new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1), subject,
+                    Identity(project, kind, subject)));
+                if (type.BaseList is not null)
+                {
+                    foreach (var baseType in type.BaseList.Types)
+                    {
+                        var location = baseType.GetLocation().GetLineSpan();
+                        findings.Add(new("BaseTypeCandidate", project, baseType.Type.ToString(), null,
+                            new(relative, location.StartLinePosition.Line + 1, location.EndLinePosition.Line + 1), subject,
+                            Identity(project, "BaseTypeCandidate", subject + "->" + baseType.Type)));
+                    }
+                    warnings.Add(new("UNRESOLVED_BASE_TYPES", "Base types are syntax candidates; inheritance versus interface implementation requires semantic binding.", relative));
+                }
             }
             // Reuse the baseline syntax walker, but publish only literal HTTP hosts as unresolved hints.
             var walker = new CSharpDependencyWalker(project, file);
@@ -116,9 +154,12 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
             analyzed++;
         }
         token.ThrowIfCancellationRequested();
-        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-syntax/1.0",
+        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-syntax/1.1",
             findings, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax"), warnings);
     }
+
+    private static string Identity(string project, string kind, string symbol) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(project + "\n" + kind + "\n" + symbol))).ToLowerInvariant();
 
     private static bool IsWithin(string path, string root) =>
         path.Equals(root, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
