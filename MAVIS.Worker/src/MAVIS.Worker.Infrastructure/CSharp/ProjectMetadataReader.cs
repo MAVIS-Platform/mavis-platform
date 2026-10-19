@@ -25,7 +25,7 @@ internal static class ProjectMetadataReader
             return;
         }
         findings.Add(new("Project", relative, relative, null, new(relative, 1, 1)));
-        warnings.Add(new("PROJECT_ITEMS_UNEVALUATED", "MSBuild conditions, imports, Compile items and generated code are not evaluated. Source ownership is based on containing directories, not evaluated compile items.", relative));
+        warnings.Add(new("PROJECT_ITEMS_UNEVALUATED", "Compile items use a static subset only; MSBuild imports, SDK targets, build properties and generated items are not evaluated.", relative));
         try
         {
             using var reader = XmlReader.Create(new StringReader(content), new XmlReaderSettings

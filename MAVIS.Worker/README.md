@@ -309,7 +309,7 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 
 ## 11. Checklist tổng thể đến nghiệm thu
 
-Đây là bảng tiến độ tổng hợp hiện hành; mục 5 giữ kế hoạch và tiêu chí nghiệm thu, mục 8–10 giữ lịch sử. `[x]` chỉ nghĩa là phạm vi được ghi đã có code và verification, không có nghĩa toàn bộ mốc hoặc tích hợp đã hoàn thành. Cập nhật lần cuối: 20/10/2026, full suite gần nhất 80/80 pass.
+Đây là bảng tiến độ tổng hợp hiện hành; mục 5 giữ kế hoạch và tiêu chí nghiệm thu, mục 8–10 giữ lịch sử. `[x]` chỉ nghĩa là phạm vi được ghi đã có code và verification, không có nghĩa toàn bộ mốc hoặc tích hợp đã hoàn thành. Cập nhật lần cuối: 20/10/2026, full suite gần nhất 87/87 pass.
 
 ### Nền tảng Worker độc lập
 
@@ -328,8 +328,9 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 - [x] Đọc .sln/.csproj và literal project references mà không thực thi MSBuild.
 - [x] Namespace/type/interface, qualified identity và base-type syntax candidates.
 - [x] Test ID ổn định khi thay đổi dòng; project XML/DTD/reference warnings và metadata byte limit.
-- [ ] Supported compile-item profile và project ownership chính xác trong phạm vi đó.
-- [ ] Compile Include/Remove/Exclude, linked files và conditions theo phạm vi hỗ trợ an toàn.
+- [x] Static compile-item profile v1: literal Include/Remove/Exclude, default toggles và per-project ownership trên source đã discovery; có cảnh báo chưa đánh giá MSBuild đầy đủ.
+- [x] Include/Remove/Exclude, glob cơ bản, semicolon patterns và shared linked source bên trong snapshot theo static profile.
+- [ ] Mở rộng ownership theo SDK/imports/conditions được hỗ trợ; hiện không evaluate conditions/Choose/Target và luôn trả giới hạn.
 - [ ] Semantic binding có kiểm soát và missing-reference diagnostics.
 - [ ] Resolve inheritance/interface implementation/code dependencies.
 - [ ] Hợp nhất partial declarations và evidence cùng symbol.
@@ -411,3 +412,21 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 - Chỉ commit/push lên `feat/worker-standalone-analysis`, theo dạng feat:/fix:/docs:/test:; người dùng tự merge.
 
 20/10/2026: thêm checklist tổng thể và quy tắc cập nhật. Thay đổi chỉ có README; không chạy lại tests cho chỉnh sửa tài liệu, verification gần nhất của code vẫn là 80/80 pass.
+
+## 12. M2 tiếp theo — static compile-item profile v1
+
+Hoàn thành 20/10/2026, analyzerVersion=`dotnet-syntax/1.2`, schemaVersion vẫn 1.0. Mục này thay mô tả ownership tạm thời của mục 9–10; các mục cũ giữ để theo dõi lịch sử.
+
+- Profile mặc định chọn .cs trong cây thư mục project đã qua discovery, loại hidden directories và các thư mục bỏ qua. Không dựa vào nearest-project khi có nhiều project: file có thể thuộc nhiều profile, được parse một lần rồi tạo findings cho từng owner với project-specific IDs.
+- Đọc literal EnableDefaultItems/EnableDefaultCompileItems trong PropertyGroup trực tiếp, không điều kiện; giá trị cuối theo từng property, hai cờ cùng quyết định defaults.
+- Đọc Compile Include/Exclude/Remove trong ItemGroup trực tiếp, theo thứ tự khai báo. Hỗ trợ slash/backslash, danh sách dấu chấm phẩy, *, ?, ** và **/ khớp 0 hoặc nhiều thư mục.
+- Shared source Include=../Shared/File.cs chỉ chọn từ các file đã discovery trong snapshot; không mở path ngoài source root. XML Link metadata không thay đổi evidence path gốc. Filesystem symlink/junction vẫn bị chặn, khác với linked compile item.
+- Unsupported expressions, điều kiện, Choose/Target, Update và pattern ngoài profile trả UNSUPPORTED_COMPILE_ITEM. Không đánh giá hoặc chạy MSBuild để đoán kết quả.
+- Project thiếu SDK được nhận diện hoặc XML lỗi dùng directory-candidate fallback có COMPILE_PROFILE_FALLBACK. PROJECT_ITEMS_UNEVALUATED vẫn luôn hiện vì imports/SDK targets/generated sources và build properties chưa được đánh giá.
+- coverage.analyzedFiles đếm file vật lý đã phân tích, không nhân lên theo số project owners. Source bị loại khỏi mọi profile giữ UNOWNED_SOURCE và không tạo type/HTTP findings.
+
+Supported profile này không phải kết quả compile-item hoàn chỉnh của MSBuild. Chưa resolve Directory.Build.props/targets, DefaultItemExcludes, target-framework conditions, property expansion, path expressions phức tạp hoặc semantic references. Solution membership chưa giới hạn tập project. M2 chưa hoàn tất và Java consumer chưa tích hợp.
+
+Verification: `dotnet test tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj --no-restore --verbosity minimal` đạt **87/87 pass**, build thành công. Bảy cases mới kiểm tra remove/reinclude order, include/exclude/globs/semicolon/default-off, shared linked source, cùng thư mục nhiều project, conditional/dynamic/target items, Choose/target properties và thứ tự literal default settings.
+
+Checklist mục 11 đã cập nhật theo phạm vi được chứng minh. Tiếp theo: semantic binding/code dependencies và partial-symbol handling theo profile có giới hạn, sau đó appsettings và ASP.NET Core findings. Không thay Java hoặc runtime trong commit này.
