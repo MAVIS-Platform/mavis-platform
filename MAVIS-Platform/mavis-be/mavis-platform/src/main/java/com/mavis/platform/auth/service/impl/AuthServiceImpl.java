@@ -56,14 +56,14 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Email is already in use");
         }
 
-        Role developerRole = roleRepository.findByCode("DEVELOPER")
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Role DEVELOPER not found"));
+        Role studentRole = roleRepository.findByCode("STUDENT")
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Role STUDENT not found"));
 
         User user = User.builder()
                 .fullName(request.getFullName())
                 .email(request.getEmail())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .role(developerRole)
+                .role(studentRole)
                 .status("PENDING_VERIFICATION") // Yêu cầu xác thực Email
                 .build();
 
@@ -181,15 +181,15 @@ public class AuthServiceImpl implements AuthService {
                 }
             } else {
                 // Tạo mới tài khoản (Tự động Active)
-                Role developerRole = roleRepository.findByCode("DEVELOPER")
-                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Role DEVELOPER not found"));
+                Role studentRole = roleRepository.findByCode("STUDENT")
+                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Role STUDENT not found"));
 
                 user = User.builder()
                         .email(email)
                         .fullName(name)
                         // Bỏ trống hoặc gen pass ngẫu nhiên vì login bằng Google
                         .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
-                        .role(developerRole)
+                        .role(studentRole)
                         .status("ACTIVE")
                         .build();
                 userRepository.save(user);
