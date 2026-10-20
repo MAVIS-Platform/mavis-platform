@@ -5,11 +5,15 @@ import com.mavis.analyzer.graph.service.GraphBuilderService;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser;
 import com.mavis.common.contract.AnalyzeRequestEvent;
-import com.mavis.common.entity.AnalysisSession;
+import com.mavis.common.entity.Job;
+import com.mavis.common.entity.ModelElement;
+import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
-import com.mavis.common.entity.ServiceNode;
-import com.mavis.common.repository.AnalysisSessionRepository;
+import com.mavis.common.entity.SourceSnapshot;
+import com.mavis.common.repository.JobRepository;
+import com.mavis.common.repository.ModelVersionRepository;
 import com.mavis.common.repository.ProjectRepository;
+import com.mavis.common.repository.SourceSnapshotRepository;
 import com.mavis.common.utils.ZipUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,9 +21,14 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -27,7 +36,9 @@ import java.util.Optional;
 public class AnalyzerOrchestrator {
 
     private final ProjectRepository projectRepository;
-    private final AnalysisSessionRepository sessionRepository;
+    private final SourceSnapshotRepository sourceSnapshotRepository;
+    private final ModelVersionRepository modelVersionRepository;
+    private final JobRepository jobRepository;
     private final DockerDetector dockerDetector;
     private final JavaSourceParser javaSourceParser;
     private final GraphBuilderService graphBuilderService;
@@ -52,19 +63,59 @@ public class AnalyzerOrchestrator {
 
         Project project = projectOpt.get();
 
-        AnalysisSession session;
+        SourceSnapshot snapshot;
         try {
-            session = AnalysisSession.builder()
+            String hash = calculateFileHash(event.zipFilePath());
+            snapshot = SourceSnapshot.builder()
                     .project(project)
-                    .triggeredBy(project.getOwner())
+                    .sourceType("ZIP_UPLOAD")
+                    .artifactHash(hash)
+                    .storagePath(event.zipFilePath())
+                    .createdBy(project.getOwner())
+                    .build();
+            snapshot = sourceSnapshotRepository.save(snapshot);
+            log.info("Đã tạo SourceSnapshot ID: {} cho Project ID: {}", snapshot.getId(), project.getId());
+        } catch (Exception e) {
+            log.error("Lỗi khi khởi tạo SourceSnapshot cho Project ID: {}", event.projectId(), e);
+            return;
+        }
+
+        Job job = null;
+        try {
+            job = Job.builder()
+                    .project(project)
+                    .sourceSnapshot(snapshot)
+                    .jobType("STATIC_ANALYSIS")
                     .status("RUNNING")
+                    .build();
+            job = jobRepository.save(job);
+        } catch (Exception e) {
+            log.warn("Không thể tạo Job log: {}", e.getMessage());
+        }
+
+        ModelVersion modelVersion;
+        try {
+            int nextRevision = modelVersionRepository.findMaxRevisionByProjectId(project.getId()) + 1;
+            modelVersion = ModelVersion.builder()
+                    .project(project)
+                    .sourceSnapshot(snapshot)
+                    .revision(nextRevision)
+                    .schemaVersion("1.0")
+                    .origin("GENERATED")
                     .isLatestValid(false)
+                    .createdBy(project.getOwner())
                     .build();
 
-            session = sessionRepository.save(session);
-            log.info("Đã tạo AnalysisSession thành công cho Project ID: {}", event.projectId());
+            modelVersion = modelVersionRepository.save(modelVersion);
+            log.info("Đã tạo ModelVersion (revision {}) thành công cho Project ID: {}", nextRevision, event.projectId());
         } catch (Exception e) {
-            log.error("Lỗi xảy ra trong quá trình khởi tạo AnalysisSession cho Project ID: {}", event.projectId(), e);
+            log.error("Lỗi xảy ra trong quá trình khởi tạo ModelVersion cho Project ID: {}", event.projectId(), e);
+            if (job != null) {
+                job.setStatus("FAILED");
+                job.setErrorDiagnostics(e.getMessage());
+                job.setCompletedAt(OffsetDateTime.now());
+                jobRepository.save(job);
+            }
             return;
         }
 
@@ -75,36 +126,68 @@ public class AnalyzerOrchestrator {
             List<String> detectedServices = dockerDetector.detectServices(extractedPath);
             log.info("Đã phát hiện {} Docker services: {}", detectedServices.size(), detectedServices);
 
-            List<ServiceNode> savedNodes = graphBuilderService.buildAndSaveNodes(session, detectedServices);
-            log.info("Đã lưu {} service nodes vào database", savedNodes.size());
+            List<ModelElement> savedElements = graphBuilderService.buildAndSaveElements(modelVersion, detectedServices, extractedPath);
+            log.info("Đã lưu {} model elements vào database", savedElements.size());
 
             List<CodeEvidenceDTO> evidences = javaSourceParser.parseProject(extractedPath);
             log.info("Đã trích xuất {} code evidences từ mã nguồn", evidences.size());
 
-            graphBuilderService.buildEdgesAndEvidences(session, savedNodes, evidences);
-            log.info("Đã hoàn tất kết nối dependency edges và lưu trữ evidences");
+            graphBuilderService.buildRelationshipsAndEvidences(snapshot, modelVersion, savedElements, evidences);
+            log.info("Đã hoàn tất kết nối model relationships và lưu trữ evidences");
 
-            finalizeSession(project, session);
+            finalizeModelVersion(project, modelVersion);
+
+            if (job != null) {
+                job.setStatus("COMPLETED");
+                job.setCompletedAt(OffsetDateTime.now());
+                jobRepository.save(job);
+            }
         } catch (Exception e) {
-            log.error("Lỗi xảy ra trong quá trình trích xuất và phân tích Docker cho Project ID: {}", event.projectId(), e);
-            session.setStatus("FAILED");
-            session.setErrorMessage(e.getMessage());
-            sessionRepository.save(session);
+            log.error("Lỗi xảy ra trong quá trình trích xuất và phân tích mã nguồn cho Project ID: {}", event.projectId(), e);
+            if (job != null) {
+                job.setStatus("FAILED");
+                job.setErrorDiagnostics(e.getMessage());
+                job.setCompletedAt(OffsetDateTime.now());
+                jobRepository.save(job);
+            }
         }
     }
 
-    private void finalizeSession(Project project, AnalysisSession session) {
-        log.info("Bắt đầu hoàn tất AnalysisSession ID: {} cho Project ID: {}", session.getId(), project.getId());
-        
-        // 1. Chạy hàm này TRƯỚC để tước cờ 'true' của các session cũ
-        sessionRepository.invalidatePreviousSessions(project.getId(), session.getId());
+    private void finalizeModelVersion(Project project, ModelVersion modelVersion) {
+        log.info("Bắt đầu hoàn tất ModelVersion ID: {} (revision {}) cho Project ID: {}",
+                modelVersion.getId(), modelVersion.getRevision(), project.getId());
 
-        // 2. Ngai vàng đã trống, an tâm set 'true' và save() cho session mới
-        session.setStatus("COMPLETED");
-        session.setLatestValid(true);
-        session.setCompletedAt(LocalDateTime.now());
-        sessionRepository.save(session);
-        
-        log.info("AnalysisSession ID: {} đã hoàn tất thành công (COMPLETED, isLatestValid = true)", session.getId());
+        // 1. Tước cờ 'isLatestValid = true' của các version cũ
+        modelVersionRepository.invalidatePreviousVersions(project.getId(), modelVersion.getId());
+
+        // 2. Set 'isLatestValid = true' cho version mới nhất
+        modelVersion.setIsLatestValid(true);
+        modelVersionRepository.save(modelVersion);
+
+        log.info("ModelVersion ID: {} đã hoàn tất thành công (isLatestValid = true)", modelVersion.getId());
+    }
+
+    private String calculateFileHash(String filePath) {
+        if (filePath == null) {
+            return UUID.randomUUID().toString().replace("-", "");
+        }
+        try (InputStream is = Files.newInputStream(Paths.get(filePath))) {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = is.read(buffer)) > 0) {
+                digest.update(buffer, 0, read);
+            }
+            byte[] hash = digest.digest();
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) hexString.append('0');
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (Exception e) {
+            return UUID.randomUUID().toString().replace("-", "");
+        }
     }
 }

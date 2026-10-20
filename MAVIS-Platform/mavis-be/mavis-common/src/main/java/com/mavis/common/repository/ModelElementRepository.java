@@ -11,4 +11,5 @@ import java.util.UUID;
 public interface ModelElementRepository extends JpaRepository<ModelElement, UUID> {
     List<ModelElement> findByModelVersionId(UUID modelVersionId);
     List<ModelElement> findByModelVersionIdAndParentElementId(UUID modelVersionId, UUID parentElementId);
+    boolean existsByIdAndModelVersionId(UUID id, UUID modelVersionId);
 }
