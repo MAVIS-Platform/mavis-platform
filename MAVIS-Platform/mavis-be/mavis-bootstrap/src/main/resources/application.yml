@@ -2,14 +2,6 @@ spring:
   application:
     name: mavis-backend
 
-  ai:
-    openai:
-      api-key: "AQ.Ab8RN6ICeRodglwMYKdJKo8uU_v37VwdFoxXSqD9BOxwRpNHiw"
-      base-url: "https://generativelanguage.googleapis.com/v1beta/openai/"
-      chat:
-        options:
-          model: "gemini-flash-latest"
-
   datasource:
     # URL k?t n?i t?i con database mavis_db b?n v?a t?o
     url: jdbc:postgresql://localhost:5432/mavis_db
