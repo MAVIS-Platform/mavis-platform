@@ -9,5 +9,7 @@ import java.util.UUID;
 
 @Repository
 public interface EvidenceRepository extends JpaRepository<Evidence, UUID> {
-    List<Evidence> findByNodeId(UUID nodeId);
+    List<Evidence> findByModelVersionId(UUID modelVersionId);
+    List<Evidence> findByElementId(UUID elementId);
+    List<Evidence> findByRelationshipId(UUID relationshipId);
 }
