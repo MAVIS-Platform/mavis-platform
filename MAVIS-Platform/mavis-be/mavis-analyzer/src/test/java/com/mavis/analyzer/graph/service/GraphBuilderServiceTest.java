@@ -8,6 +8,11 @@ import com.mavis.analyzer.detector.docker.dto.DockerDependencyDTO;
 import com.mavis.analyzer.detector.docker.service.DockerDetectorService;
 import com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
+import com.mavis.analyzer.workerclient.dto.DotnetAnalyzeResponseDTO;
+import com.mavis.analyzer.workerclient.dto.DotnetElementDTO;
+import com.mavis.analyzer.workerclient.dto.DotnetEvidenceDTO;
+import com.mavis.analyzer.workerclient.dto.DotnetRelationDTO;
+import com.mavis.analyzer.workerclient.service.DotnetWorkerClientService;
 import com.mavis.common.entity.Evidence;
 import com.mavis.common.entity.ModelElement;
 import com.mavis.common.entity.ModelRelationship;
@@ -55,6 +60,9 @@ class GraphBuilderServiceTest {
 
     @Mock
     private SpringConfigDetectorService springConfigDetectorService;
+
+    @Mock
+    private DotnetWorkerClientService dotnetWorkerClientService;
 
     @InjectMocks
     private GraphBuilderServiceImpl graphBuilderService;
@@ -446,6 +454,125 @@ class GraphBuilderServiceTest {
         assertThat(rel.getOriginLayer()).isEqualTo("DEPLOYMENT");
         assertThat(rel.getSourceElement()).isEqualTo(appService);
         assertThat(rel.getTargetElement()).isEqualTo(dbService);
+    }
+
+    @Test
+    @DisplayName("Should merge C# .NET elements and connect cross-language HTTP calls in O(1) with Roslyn evidence")
+    void shouldMergeCsharpElementsAndCrossLanguageCalls() {
+        // Container Level 2
+        ModelElement javaGateway = ModelElement.builder()
+                .id(UUID.randomUUID())
+                .name("api-gateway")
+                .elementType("SERVICE_CONTAINER")
+                .languageStack("JAVA_SPRING")
+                .scope("/app/api-gateway")
+                .modelVersion(sampleModelVersion)
+                .build();
+
+        ModelElement csharpOrderContainer = ModelElement.builder()
+                .id(UUID.randomUUID())
+                .name("csharp-order-service")
+                .elementType("SERVICE_CONTAINER")
+                .languageStack("CSHARP_DOTNET")
+                .scope("/app/csharp-order-service")
+                .modelVersion(sampleModelVersion)
+                .build();
+
+        // Java Evidences
+        List<CodeEvidenceDTO> javaEvidences = List.of(
+                CodeEvidenceDTO.builder()
+                        .elementType("CONTROLLER_COMPONENT")
+                        .identifier("GatewayController")
+                        .filePath("/app/api-gateway/GatewayController.java")
+                        .build(),
+                CodeEvidenceDTO.builder()
+                        .elementType("REST_TEMPLATE_CALL")
+                        .identifier("csharp-order-service") // Java calling C#
+                        .sourceComponent("GatewayController")
+                        .filePath("/app/api-gateway/GatewayController.java")
+                        .lineNumber(30)
+                        .codeSnippet("restTemplate.getForObject(\"http://csharp-order-service/orders\", String.class)")
+                        .build()
+        );
+
+        // C# Worker Analysis response
+        DotnetAnalyzeResponseDTO csharpResponse = DotnetAnalyzeResponseDTO.builder()
+                .elements(List.of(
+                        DotnetElementDTO.builder()
+                                .name("OrderController")
+                                .elementType("COMPONENT")
+                                .languageStack("CSHARP_DOTNET")
+                                .parentElementName("csharp-order-service")
+                                .scope("Controllers/OrderController.cs")
+                                .build()
+                ))
+                .relationships(List.of(
+                        DotnetRelationDTO.builder()
+                                .sourceElementName("OrderController")
+                                .targetElementName("api-gateway") // C# calling Java
+                                .relationType("SERVICE_HTTP_CALL")
+                                .originLayer("STATIC")
+                                .direction("DIRECTED")
+                                .build()
+                ))
+                .evidences(List.of(
+                        DotnetEvidenceDTO.builder()
+                                .sourceElementName("OrderController")
+                                .targetElementName("api-gateway")
+                                .relationType("SERVICE_HTTP_CALL")
+                                .locator("Controllers/OrderController.cs:55")
+                                .adapterVersion("ROSLYN_4.8")
+                                .sourceType("STATIC_CODE")
+                                .excerpt("await _client.GetAsync(\"http://api-gateway/auth/verify\");")
+                                .build()
+                ))
+                .build();
+
+        when(dotnetWorkerClientService.analyzeDotnetIfPresent(any(), any(), anyString()))
+                .thenReturn(csharpResponse);
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(evidenceRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion,
+                List.of(javaGateway, csharpOrderContainer), javaEvidences);
+
+        // 1. Kiểm tra batch save components (Java + C#)
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelElement>> compCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelElementRepository).saveAll(compCaptor.capture());
+
+        List<ModelElement> savedComponents = compCaptor.getValue();
+        assertThat(savedComponents).hasSize(2); // GatewayController + OrderController
+        assertThat(savedComponents).anyMatch(c -> "OrderController".equals(c.getName())
+                && "CSHARP_DOTNET".equals(c.getLanguageStack())
+                && csharpOrderContainer.equals(c.getParentElement()));
+
+        // 2. Kiểm tra batch save relationships (2 cạnh HTTP liên ngôn ngữ: Java -> C# và C# -> Java)
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelRelationship>> relCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository).saveAll(relCaptor.capture());
+
+        List<ModelRelationship> savedRels = relCaptor.getValue();
+        assertThat(savedRels).hasSize(2);
+        assertThat(savedRels).allMatch(r -> "SERVICE_HTTP_CALL".equals(r.getRelationType()));
+
+        // Java calling C#
+        assertThat(savedRels).anyMatch(r -> "GatewayController".equals(r.getSourceElement().getName())
+                && "csharp-order-service".equals(r.getTargetElement().getName()));
+
+        // C# calling Java
+        assertThat(savedRels).anyMatch(r -> "OrderController".equals(r.getSourceElement().getName())
+                && "api-gateway".equals(r.getTargetElement().getName()));
+
+        // 3. Kiểm tra bằng chứng Roslyn 4.8 được lưu kèm
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Evidence>> evCaptor = ArgumentCaptor.forClass(List.class);
+        verify(evidenceRepository).saveAll(evCaptor.capture());
+
+        List<Evidence> savedEvidences = evCaptor.getValue();
+        assertThat(savedEvidences).anyMatch(e -> "ROSLYN_4.8".equals(e.getAdapterVersion())
+                && e.getLocator().contains("Controllers/OrderController.cs:55"));
     }
 
     @Test

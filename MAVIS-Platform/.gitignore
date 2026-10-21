@@ -55,3 +55,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+
+# Custom documentation
+Huong_Di/
