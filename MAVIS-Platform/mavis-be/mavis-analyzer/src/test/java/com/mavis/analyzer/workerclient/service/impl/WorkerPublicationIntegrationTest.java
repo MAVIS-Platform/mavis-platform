@@ -48,7 +48,8 @@ class WorkerPublicationIntegrationTest {
         @Bean ObjectMapper objectMapper(){return new ObjectMapper();}
         @Bean GraphBuilderService graph(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v){return new GraphBuilderServiceImpl(e,r,v);}
         @Bean WorkerCanonicalImporter importer(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,ObjectMapper json){return new WorkerCanonicalImporter(e,r,v,json);}
-        @Bean WorkerModelPublisher publisher(JobRepository j,ProjectRepository p,ModelVersionRepository m,ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,GraphBuilderService g,WorkerCanonicalImporter i,ObjectMapper json){return new WorkerModelPublisher(j,p,m,e,r,v,g,i,json);}
+        @Bean CrossLanguageServiceLinker linker(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,ObjectMapper json){return new CrossLanguageServiceLinker(e,r,v,json);}
+        @Bean WorkerModelPublisher publisher(JobRepository j,ProjectRepository p,ModelVersionRepository m,ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,GraphBuilderService g,WorkerCanonicalImporter i,ObjectMapper json,CrossLanguageServiceLinker l){return new WorkerModelPublisher(j,p,m,e,r,v,g,i,json,l);}
     }
     @BeforeEach void start() {
         Assumptions.assumeTrue(System.getenv("MAVIS_TEST_JDBC_URL")!=null && System.getenv("MAVIS_WORKER_TEST_URL")!=null,"Run live database integration harness");
@@ -65,17 +66,27 @@ class WorkerPublicationIntegrationTest {
 
     @Test void realWorkerResultPublishesAndReloadsProvenanceWhileInvalidAttemptsRollback()throws Exception {
         Path source=Files.createDirectory(temp.resolve("source"));
-        Files.writeString(source.resolve("App.csproj"),"<Project />");Files.writeString(source.resolve("App.cs"),"interface IStore {} class App : IStore { public App(IStore store) {} }");
+        Files.writeString(source.resolve("App.csproj"),"<Project />");Files.writeString(source.resolve("App.cs"),"using System.Net.Http; interface IStore {} class App : IStore { public App(IStore store) {} public System.Threading.Tasks.Task Call(HttpClient http) => http.GetAsync(\"http://localhost:5001/api\"); }");
+        Files.createDirectories(source.resolve("java"));
+        Files.writeString(source.resolve("java/Gateway.java"),"class Gateway { void call() { restTemplate.getForObject(\"http://localhost:5002/orders\", String.class); } }");
+        Files.writeString(source.resolve("mavis.bindings.json"),"""
+            {"schemaVersion":"1.0","bindings":[
+              {"service":"java-service","projects":[],"sourceRoots":["java"],"endpoints":["http://localhost:5001"]},
+              {"service":"dotnet-service","projects":["App.csproj"],"sourceRoots":[],"endpoints":["http://localhost:5002"]}]}
+            """);
+        var javaFindings=new com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser().parseProject(source.toString());
         var client=new DotnetWorkerClientServiceImpl(true,System.getenv("MAVIS_WORKER_TEST_URL"),"test-service-key","test","fixture-only-not-for-production-32-byte-key",temp.toString(),System.getenv("MAVIS_WORKER_TEST_ARTIFACT_ROOT"),Clock.systemUTC());
         var execution=client.analyze(project,snapshot,job,attempt,source.toString(),deadline);
         assertEquals(WorkerContract.Status.COMPLETED,execution.outcome().status(),execution.outcome().code());
-        UUID model=publisher.publish(job,attempt,deadline,source.toString(),List.of(),List.of(),false,execution);
+        UUID model=publisher.publish(job,attempt,deadline,source.toString(),List.of("java-service","dotnet-service"),javaFindings,true,execution);
         assertEquals("COMPLETED",db.queryForObject("select status from jobs where id=?",String.class,job));
         assertEquals(true,db.queryForObject("select is_latest_valid from model_versions where id=?",Boolean.class,model));
         assertTrue(db.queryForObject("select count(*) from model_elements where model_version_id=? and properties->>'workerLogicalId' is not null",Integer.class,model)>0);
         assertTrue(db.queryForObject("select count(*) from model_relationships where model_version_id=? and relation_type='CODE_DEPENDENCY'",Integer.class,model)>0);
-        assertEquals(0,db.queryForObject("select count(*) from evidences where model_version_id=? and (provenance->>'fileHash' is null or provenance->>'sourceSnapshotId' <> ?)",Integer.class,model,snapshot.toString()));
-        assertEquals(0,db.queryForObject("select count(*) from model_elements where model_version_id=? and status='VALIDATED'",Integer.class,model));
+        assertEquals(0,db.queryForObject("select count(*) from evidences where model_version_id=? and (adapter_version='dotnet-static/1.9' and (provenance->>'fileHash' is null or provenance->>'sourceSnapshotId' <> ?))",Integer.class,model,snapshot.toString()));
+        assertEquals(0,db.queryForObject("select count(*) from model_elements where model_version_id=? and language_stack='CSHARP_DOTNET' and status='VALIDATED'",Integer.class,model));
+        assertEquals(2,db.queryForObject("select count(*) from model_relationships where model_version_id=? and properties->>'mappingStatus'='CONFIG_BOUND'",Integer.class,model));
+        assertEquals(2,db.queryForObject("select count(*) from evidences where model_version_id=? and locator='mavis.bindings.json:1'",Integer.class,model));
         assertThrows(IllegalStateException.class,()->publisher.publish(job,attempt,deadline,source.toString(),List.of(),List.of(),false,execution));
         assertEquals(1,db.queryForObject("select count(*) from model_versions where project_id=?",Integer.class,project));
 

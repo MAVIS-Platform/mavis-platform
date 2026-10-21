@@ -612,3 +612,13 @@ DotnetWorkerClientServiceImpl đã dùng typed scope/client core, không gửi r
 - [ ] I04/I05 còn lại: public upload/controller → FE acceptance, durable attempt leases/recovery/retention và diagram/revision/impact adapter. Không tuyên bố hoàn thành toàn plan chỉ từ vertical slice.
 
 Cấu hình và cách tái lập: [INTEGRATION_RUNBOOK.md](INTEGRATION_RUNBOOK.md). Worker client disabled mặc định; cần cấu hình roots/keys và apply V3 trước khi bật.
+
+## 28. I03–I04 — explicit cross-language service bindings
+
+- [x] Snapshot profile mavis.bindings.json schema 1.0: exact declared service/project/source-root/HTTP endpoint aliases, bounded file/list sizes, no symlink/outside paths. Absent bindings giữ unresolved; nhiều owner/target hoặc duplicate service nodes giữ ambiguous.
+- [x] ServiceBindingIndex giữ lowercase host + effective port/defaults/IPv6; không dùng class name/CreateClient name/fuzzy substring làm endpoint. Java HTTP visitor thêm endpointAlias riêng cho literal RestTemplate/WebClient để không mất port.
+- [x] CrossLanguageServiceLinker nối Java → C# và C# → Java khi ownership và target có đúng một service đã tồn tại. Parent module theo explicit project binding. Derived service edges CONFIG_BOUND/requiresReview, giữ cạnh/evidence Worker gốc và hash/locator binding file; save batch trong publication transaction. Manifest có serviceMapping counts/hash.
+- [x] Real Worker + Java AST parser + PostgreSQL publication kiểm chứng cả hai chiều với localhost:5001/5002. Unit fixtures chặn trùng alias/name và thiếu mapping. Full selected integration 33 pass, không skip (Java client core 9, analyzer 24); không phải full Maven suite có dataset đang thiếu.
+- [ ] Nghiệm thu nhóm/corpus: mapping tự suy từ Compose build context, dynamic Java/Feign config, public upload/FE và diagrams/revisions/impact adapter còn chưa hoàn thành. Existing Java legacy fuzzy graph không được coi là mapped service edges; profile mới chỉ đánh dấu CONFIG_BOUND cho cạnh có evidence rõ.
+
+Ví dụ cấu hình: contracts/service-bindings.example.json; cách dùng và giới hạn trong INTEGRATION_RUNBOOK.md. Binding file raw SHA độc lập với Worker analysis digest, phải được giữ immutable cùng snapshot.

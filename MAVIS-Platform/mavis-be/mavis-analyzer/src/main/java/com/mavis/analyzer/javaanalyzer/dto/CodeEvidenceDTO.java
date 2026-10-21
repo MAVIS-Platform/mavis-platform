@@ -17,4 +17,5 @@ public class CodeEvidenceDTO {
     private String codeSnippet;
     private String sourceComponent;
     private String targetComponent;
+    private String endpointAlias;
 }

@@ -16,7 +16,17 @@ The current Java orchestrator allocates an attempt UUID in the job manifest, cal
 - Successful adapters: manifest ADAPTERS_COMPLETED, canonicalMapping REQUIRES_REVIEW. Candidate C# elements are NEEDS_REVIEW; success does not mean architectural mapping was validated.
 - Cancelled Worker/expired attempt/scope mismatch rejects publication. A cancelled/superseded job cannot receive a late result. Explicit platform cancellation API and durable retries remain separate work.
 - Import maps logical IDs to new Java DB UUIDs and stores logical keys in properties. Evidence rows are created per element/relationship association, preserving common source evidence ID/hash in provenance; no snippets are fabricated. Modules/endpoint aliases are not guessed to be runtime services.
-- Java name/fuzzy service matching from the pre-existing pipeline is not used for the C# import. Cross-language endpoint/service reconciliation remains a separate unresolved mapping gate; do not feed unreviewed module/alias edges directly into service impact.
+- Java name/fuzzy service matching from the pre-existing pipeline is not used for the C# import. Cross-language service reconciliation can use the explicit snapshot binding profile below; do not feed unreviewed module/alias edges directly into service impact.
+
+## Explicit service bindings
+
+Place `mavis.bindings.json` at the extracted snapshot root, using [the example](contracts/service-bindings.example.json). Schema `1.0` associates exact Compose/service names with .csproj paths, Java source roots and HTTP endpoint aliases. Services must already exist uniquely in the selected model as SERVICE_CONTAINER. This is declared CONFIG evidence, not automatic confirmation of runtime behavior.
+
+Worker project ownership is matched by snapshot-relative projectPath. Java call ownership uses the longest matching source-root prefix with path-segment boundaries. Endpoint aliases use lowercase host and effective port; 80/443 defaults and IPv6 are retained. Endpoint paths do not affect service identity. Client names, class names, incomplete hostname-only references and fuzzy contains matches are never substituted for endpoint aliases. Literal Java RestTemplate/WebClient arguments expose a separate endpointAlias field while retaining compatibility fields for the old Java pipeline.
+
+Multiple owners/alias candidates or duplicate service nodes produce an ambiguous count; missing mappings produce an unresolved count. No first-match edge is emitted. Derived service edges are tagged CONFIG_BOUND/requiresReview, keep original Worker edges intact, carry original source evidence plus binding-file SHA-256, and use batch persistence in the same publish transaction. Module parent assignment uses explicit ownership. The resultManifest includes serviceMapping counts and bindingHash. No binding file means no derived links.
+
+The file is optional, bounded to 256 KiB/1000 bindings, rejects links/out-of-scope paths and unsupported schema fields. Its raw-byte SHA-256 is separate from Worker's analysis digest (the Worker does not parse this Java merge profile). Java's snapshot storage must keep the binding file immutable with the rest of the snapshot. Invalid declared bindings fail publication rather than silently choosing a service. This profile does not yet infer ownership from arbitrary Compose build contexts or framework runtime overrides; those remain review/corpus work.
 
 ## Reproduce integration tests
 
