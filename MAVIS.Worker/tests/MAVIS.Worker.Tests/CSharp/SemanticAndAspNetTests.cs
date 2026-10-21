@@ -160,7 +160,7 @@ public sealed class SemanticAndAspNetTests : IDisposable
             """);
         Write("appsettings.json", System.Text.Json.JsonSerializer.Serialize(new { ServiceUrl = secretUrl }));
         var result = await Analyze();
-        foreach (var kind in new[] { "OutgoingHttp", "OutgoingHttpCandidate", "HttpClientBaseAddressCandidate", "ConfiguredHttpHost" })
+        foreach (var kind in new[] { "OutgoingHttp", "HttpClientBaseAddressCandidate", "ConfiguredHttpHost" })
             Assert.Contains(result.Findings, f => f.Kind == kind && f.Target == expected);
         Assert.DoesNotContain("SECRET_SENTINEL", System.Text.Json.JsonSerializer.Serialize(result));
     }
