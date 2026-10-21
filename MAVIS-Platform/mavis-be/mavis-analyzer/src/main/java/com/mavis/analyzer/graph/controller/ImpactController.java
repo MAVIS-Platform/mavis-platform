@@ -1,5 +1,6 @@
 package com.mavis.analyzer.graph.controller;
 
+import com.mavis.analyzer.graph.dto.ImpactAnalysisResponseDTO;
 import com.mavis.analyzer.graph.dto.NodeDTO;
 import com.mavis.analyzer.graph.service.GraphService;
 import com.mavis.common.dto.ApiResponse;
@@ -17,14 +18,26 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/v1/analyzer/impact")
 @RequiredArgsConstructor
-@Tag(name = "Impact Analysis", description = "APIs for impact analysis")
+@Tag(name = "Impact Analysis", description = "APIs for multi-hop change impact analysis and dependency tracing")
 public class ImpactController {
 
     private final GraphService graphService;
 
     @GetMapping
-    @Operation(summary = "Phân tích tác động", description = "Tìm các dịch vụ bị ảnh hưởng nếu một dịch vụ (nodeId) bị sập")
-    public ApiResponse<List<NodeDTO>> analyzeImpact(@RequestParam UUID sessionId, @RequestParam UUID nodeId) {
-        return ApiResponse.success(graphService.analyzeImpact(sessionId, nodeId));
+    @Operation(summary = "Phân tích tác động chi tiết (BFS Change Impact Analysis)",
+            description = "Tìm các dịch vụ bị ảnh hưởng theo thứ tự Hop Distance (trực tiếp vs gián tiếp), đường truyền và bằng chứng")
+    public ApiResponse<ImpactAnalysisResponseDTO> analyzeImpact(
+            @RequestParam UUID sessionId,
+            @RequestParam UUID nodeId) {
+        ImpactAnalysisResponseDTO response = graphService.analyzeDetailedImpact(sessionId, nodeId);
+        return ApiResponse.success("Phân tích tác động thay đổi thành công", response);
+    }
+
+    @GetMapping("/simple")
+    @Operation(summary = "Phân tích tác động cơ bản (tương thích ngược)")
+    public ApiResponse<List<NodeDTO>> analyzeImpactSimple(
+            @RequestParam UUID sessionId,
+            @RequestParam UUID nodeId) {
+        return ApiResponse.success("Lấy danh sách node ảnh hưởng thành công", graphService.analyzeImpact(sessionId, nodeId));
     }
 }
