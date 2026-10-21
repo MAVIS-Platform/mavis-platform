@@ -148,7 +148,7 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                         warnings.Add(new("UNRESOLVED_BASE_TYPES", "Base types are syntax candidates; inheritance versus interface implementation requires semantic binding.", relative));
                     }
                 }
-                // Reuse the baseline syntax walker, but publish only literal HTTP hosts as unresolved hints.
+                // Reuse the baseline syntax walker, but publish only literal HTTP host/port identities as unresolved hints.
                 var walker = new CSharpDependencyWalker(project, file);
                 walker.Visit(syntax);
                 foreach (var finding in walker.Findings.Where(f => f.Kind == "HTTP_REST_CALL"))
@@ -156,7 +156,7 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                     token.ThrowIfCancellationRequested();
                     var literalHttp = Uri.TryCreate(finding.Url, UriKind.Absolute, out var uri) &&
                         (uri.Scheme == "http" || uri.Scheme == "https");
-                    findings.Add(new("OutgoingHttpCandidate", project, literalHttp ? uri!.Host : null,
+                    findings.Add(new("OutgoingHttpCandidate", project, literalHttp ? HttpEndpointIdentity.FromUri(uri!) : null,
                         finding.HttpMethod, new(relative, finding.StartLine ?? 1, finding.StartLine ?? 1)));
                     warnings.Add(new("UNRESOLVED_HTTP_TARGET", "Syntax candidate only: receiver type and target service identity are not verified.", relative));
                 }
@@ -177,7 +177,7 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
         var inputDigest = Convert.ToHexString(inputHash.GetHashAndReset()).ToLowerInvariant();
         if (request.ExpectedInputDigest is not null && !inputDigest.Equals(request.ExpectedInputDigest, StringComparison.OrdinalIgnoreCase))
             throw new SourceInputException("Analysis input digest does not match the expected input version.");
-        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.4",
+        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.5",
             merged, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax"), warnings, inputDigest);
     }
 

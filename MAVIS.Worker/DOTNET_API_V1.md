@@ -55,3 +55,7 @@ Result includes modelVersionId/graphRevisionId/targetServiceId, affectedServices
 Optional runtime observations have sessionId/modelVersionId/from/to/traceId/mappingConfirmed. Only compatible, confirmed observations matching allowed static graph edges are attached. Others produce review warnings; no static dependency is removed and no runtime-only edge is inserted into the selected model. Java must establish session/source/profile provenance before calling; Worker checks the declared model and mapping fields, not artifact authenticity.
 
 Legacy `/api/analysis` and `/api/jobs/*` are separate transitional contracts; do not send these v1 payloads to them.
+
+## HTTP endpoint identity — static profile 1.5
+
+For OutgoingHttp, OutgoingHttpCandidate, HttpClientBaseAddressCandidate and ConfiguredHttpHost, target is lowercase host plus effective port: http://localhost:5001 becomes localhost:5001; https://payments becomes payments:443; http://payments becomes payments:80. IPv6 retains brackets, for example [::1]:5001. User info, path, query and fragment are excluded. This changes the host-only target convention in profile 1.4; consumers must use analyzerVersion when interpreting old results. Finding kind names remain compatible. These values are mapping hints, never confirmed canonical service IDs. No alias resolution or merging of distinct ports is performed.
