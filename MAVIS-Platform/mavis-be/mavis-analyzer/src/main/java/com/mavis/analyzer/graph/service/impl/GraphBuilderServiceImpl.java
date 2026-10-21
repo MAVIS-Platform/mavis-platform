@@ -1,5 +1,6 @@
 package com.mavis.analyzer.graph.service.impl;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.analyzer.detector.config.dto.ConfigTargetUrlDTO;
@@ -10,6 +11,11 @@ import com.mavis.analyzer.detector.docker.dto.DockerDependencyDTO;
 import com.mavis.analyzer.detector.docker.service.DockerDetectorService;
 import com.mavis.analyzer.graph.service.GraphBuilderService;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
+import com.mavis.analyzer.workerclient.dto.DotnetAnalyzeResponseDTO;
+import com.mavis.analyzer.workerclient.dto.DotnetElementDTO;
+import com.mavis.analyzer.workerclient.dto.DotnetEvidenceDTO;
+import com.mavis.analyzer.workerclient.dto.DotnetRelationDTO;
+import com.mavis.analyzer.workerclient.service.DotnetWorkerClientService;
 import com.mavis.common.entity.Evidence;
 import com.mavis.common.entity.ModelElement;
 import com.mavis.common.entity.ModelRelationship;
@@ -37,6 +43,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
     private final EvidenceRepository evidenceRepository;
     private final DockerDetectorService dockerDetectorService;
     private final SpringConfigDetectorService springConfigDetectorService;
+    private final DotnetWorkerClientService dotnetWorkerClientService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final Pattern URL_HOST_PATTERN = Pattern.compile("https?://([^:/]+)(?::\\d+)?.*");
@@ -46,18 +53,28 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                                   ModelRelationshipRepository modelRelationshipRepository,
                                   EvidenceRepository evidenceRepository,
                                   @Autowired(required = false) DockerDetectorService dockerDetectorService,
-                                  @Autowired(required = false) SpringConfigDetectorService springConfigDetectorService) {
+                                  @Autowired(required = false) SpringConfigDetectorService springConfigDetectorService,
+                                  @Autowired(required = false) DotnetWorkerClientService dotnetWorkerClientService) {
         this.modelElementRepository = modelElementRepository;
         this.modelRelationshipRepository = modelRelationshipRepository;
         this.evidenceRepository = evidenceRepository;
         this.dockerDetectorService = dockerDetectorService;
         this.springConfigDetectorService = springConfigDetectorService;
+        this.dotnetWorkerClientService = dotnetWorkerClientService;
+    }
+
+    public GraphBuilderServiceImpl(ModelElementRepository modelElementRepository,
+                                  ModelRelationshipRepository modelRelationshipRepository,
+                                  EvidenceRepository evidenceRepository,
+                                  DockerDetectorService dockerDetectorService,
+                                  SpringConfigDetectorService springConfigDetectorService) {
+        this(modelElementRepository, modelRelationshipRepository, evidenceRepository, dockerDetectorService, springConfigDetectorService, null);
     }
 
     public GraphBuilderServiceImpl(ModelElementRepository modelElementRepository,
                                   ModelRelationshipRepository modelRelationshipRepository,
                                   EvidenceRepository evidenceRepository) {
-        this(modelElementRepository, modelRelationshipRepository, evidenceRepository, null, null);
+        this(modelElementRepository, modelRelationshipRepository, evidenceRepository, null, null, null);
     }
 
     @Override
@@ -194,15 +211,30 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         }
 
         String sourcePath = resolveSourcePath(modelVersion);
+        UUID projectId = (modelVersion != null && modelVersion.getProject() != null) ? modelVersion.getProject().getId() : null;
+        UUID snapshotId = sourceSnapshot != null ? sourceSnapshot.getId() : (modelVersion != null && modelVersion.getSourceSnapshot() != null ? modelVersion.getSourceSnapshot().getId() : null);
+
+        // =========================================================================
+        // BƯỚC 0: GỌI C# ROSLYN WORKER NẾU CÓ DỰ ÁN .NET (GRACEFUL DEGRADATION)
+        // =========================================================================
+        DotnetAnalyzeResponseDTO dotnetAnalysis = null;
+        if (dotnetWorkerClientService != null && sourcePath != null) {
+            try {
+                dotnetAnalysis = dotnetWorkerClientService.analyzeDotnetIfPresent(projectId, snapshotId, sourcePath);
+            } catch (Exception e) {
+                log.warn("Lỗi khi gọi DotnetWorkerClientService: {}. Tiến hành phân tích Java bình thường.", e.getMessage());
+            }
+        }
 
         // =========================================================================
         // BƯỚC 1: XÂY DỰNG VÀ LƯU BATCH CÁC COMPONENT CON (LEVEL 3 C4 HIERARCHY)
+        // HỢP NHẤT CẢ PHẦN TỬ JAVA VÀ PHẦN TỬ C#
         // =========================================================================
         List<ModelElement> componentsToSave = new ArrayList<>();
-        Map<String, ModelElement> componentIndex = new HashMap<>(); // key: serviceContainerName + ":" + componentName
+        Set<String> processedComponents = new HashSet<>();
 
+        // 1a. Java Components (Controller, Service, Repository, Component)
         if (evidences != null && !evidences.isEmpty()) {
-            Set<String> processedComponents = new HashSet<>();
             for (CodeEvidenceDTO ev : evidences) {
                 String type = ev.getElementType();
                 if ("CONTROLLER_COMPONENT".equals(type) || "SERVICE_COMPONENT".equals(type)
@@ -230,28 +262,70 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             }
         }
 
+        // 1b. C# .NET Components từ C# Roslyn Worker
+        if (dotnetAnalysis != null && dotnetAnalysis.getElements() != null) {
+            for (DotnetElementDTO csharpEl : dotnetAnalysis.getElements()) {
+                String compName = csharpEl.getName();
+                if (compName == null || compName.isBlank()) continue;
+
+                ModelElement owningContainer = null;
+                if (csharpEl.getParentElementName() != null) {
+                    owningContainer = matchTargetElement(elements, csharpEl.getParentElementName());
+                }
+                if (owningContainer == null) {
+                    owningContainer = findOwningContainer(elements, csharpEl.getScope());
+                }
+
+                String containerName = owningContainer != null ? owningContainer.getName() : "default";
+                String compKey = containerName + ":" + compName;
+
+                if (processedComponents.add(compKey)) {
+                    ModelElement compEl = ModelElement.builder()
+                            .modelVersion(modelVersion)
+                            .parentElement(owningContainer)
+                            .name(compName)
+                            .elementType(csharpEl.getElementType() != null ? csharpEl.getElementType() : "COMPONENT")
+                            .languageStack(csharpEl.getLanguageStack() != null ? csharpEl.getLanguageStack() : "CSHARP_DOTNET")
+                            .scope(csharpEl.getScope())
+                            .properties(convertPropertiesNode(csharpEl.getProperties(), csharpEl.getScope()))
+                            .status("VALIDATED")
+                            .build();
+                    componentsToSave.add(compEl);
+                }
+            }
+        }
+
         List<ModelElement> savedComponents = new ArrayList<>();
         if (!componentsToSave.isEmpty()) {
             savedComponents = modelElementRepository.saveAll(componentsToSave);
-            log.info("Successfully batch saved {} C4 COMPONENT elements with parent hierarchy", savedComponents.size());
-            for (ModelElement comp : savedComponents) {
-                String pName = comp.getParentElement() != null ? comp.getParentElement().getName() : "default";
-                componentIndex.put(pName + ":" + comp.getName(), comp);
-            }
+            log.info("Successfully batch saved {} C4 COMPONENT elements (Java & C#) with parent hierarchy", savedComponents.size());
         }
 
         List<ModelElement> allElements = new ArrayList<>(elements);
         allElements.addAll(savedComponents);
 
         // =========================================================================
-        // BƯỚC 2: XÂY DỰNG VÀ LƯU BATCH REST_API EVIDENCES
+        // XÂY DỰNG HASHMAP O(1) CHO VIỆC TÌM KIẾM PHẦN TỬ LIÊN NGÔN NGỮ (CROSS-LANGUAGE)
+        // =========================================================================
+        Map<String, ModelElement> elementByNameMap = new HashMap<>();
+        for (ModelElement el : allElements) {
+            if (el.getName() != null) {
+                elementByNameMap.put(el.getName().toLowerCase().trim(), el);
+            }
+        }
+
+        // =========================================================================
+        // BƯỚC 2: XÂY DỰNG VÀ LƯU BATCH REST_API EVIDENCES (JAVA + C#)
         // =========================================================================
         List<Evidence> allEvidencesToSave = new ArrayList<>();
 
         if (evidences != null) {
             for (CodeEvidenceDTO ev : evidences) {
                 if ("REST_API".equalsIgnoreCase(ev.getElementType())) {
-                    ModelElement owningEl = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
+                    ModelElement owningEl = elementByNameMap.get(ev.getSourceComponent() != null ? ev.getSourceComponent().toLowerCase().trim() : "");
+                    if (owningEl == null) {
+                        owningEl = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
+                    }
                     String locator = (ev.getFilePath() != null ? ev.getFilePath() : "") + ":" + ev.getLineNumber();
 
                     Evidence apiEvidence = Evidence.builder()
@@ -268,8 +342,31 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             }
         }
 
+        // Bổ sung các standalone evidences từ C# Worker (nếu có gắn liền với element)
+        if (dotnetAnalysis != null && dotnetAnalysis.getEvidences() != null) {
+            for (DotnetEvidenceDTO evDto : dotnetAnalysis.getEvidences()) {
+                if (evDto.getElementName() != null && (evDto.getSourceElementName() == null || evDto.getTargetElementName() == null)) {
+                    ModelElement targetEl = elementByNameMap.get(evDto.getElementName().toLowerCase().trim());
+                    if (targetEl != null) {
+                        Evidence ev = Evidence.builder()
+                                .sourceSnapshot(sourceSnapshot)
+                                .modelVersion(modelVersion)
+                                .element(targetEl)
+                                .relationship(null)
+                                .locator(evDto.getLocator() != null ? evDto.getLocator() : "RoslynWorker")
+                                .adapterVersion(evDto.getAdapterVersion() != null ? evDto.getAdapterVersion() : "ROSLYN_4.8")
+                                .sourceType(evDto.getSourceType() != null ? evDto.getSourceType() : "STATIC_CODE")
+                                .excerpt(evDto.getExcerpt())
+                                .build();
+                        allEvidencesToSave.add(ev);
+                    }
+                }
+            }
+        }
+
         // =========================================================================
         // BƯỚC 3: XÂY DỰNG ĐỦ 4 LOẠI RELATIONSHIPS VÀ BẰNG CHỨNG ĐI KÈM
+        // HỖ TRỢ KẾT NỐI LIÊN NGÔN NGỮ (JAVA <-> C#) TRONG THỜI GIAN O(1)
         // =========================================================================
         List<ModelRelationship> relationshipsToSave = new ArrayList<>();
         List<RelEvidenceContext> relEvidenceContexts = new ArrayList<>();
@@ -279,9 +376,13 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             try {
                 List<DetectedContainerDTO> containers = dockerDetectorService.detectContainers(sourcePath);
                 for (DetectedContainerDTO c : containers) {
-                    ModelElement sourceContainer = matchTargetElement(elements, c.getServiceName());
+                    ModelElement sourceContainer = elementByNameMap.get(c.getServiceName().toLowerCase().trim());
+                    if (sourceContainer == null) sourceContainer = matchTargetElement(elements, c.getServiceName());
+
                     for (DockerDependencyDTO dep : c.getDependsOn()) {
-                        ModelElement targetContainer = matchTargetElement(elements, dep.getTargetService());
+                        ModelElement targetContainer = elementByNameMap.get(dep.getTargetService().toLowerCase().trim());
+                        if (targetContainer == null) targetContainer = matchTargetElement(elements, dep.getTargetService());
+
                         if (sourceContainer != null && targetContainer != null) {
                             ModelRelationship rel = ModelRelationship.builder()
                                     .modelVersion(modelVersion)
@@ -294,7 +395,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                             relationshipsToSave.add(rel);
 
                             String loc = (c.getComposeFilePath() != null ? c.getComposeFilePath() : "docker-compose.yml") + ":" + dep.getLineNumber();
-                            relEvidenceContexts.add(new RelEvidenceContext(rel, loc, "DOCKER_COMPOSE", "depends_on: " + dep.getTargetService()));
+                            relEvidenceContexts.add(new RelEvidenceContext(rel, loc, "DOCKER_COMPOSE", "depends_on: " + dep.getTargetService(), "DOCKER_COMPOSE"));
                         }
                     }
                 }
@@ -311,10 +412,20 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                         || "WEB_CLIENT_CALL".equalsIgnoreCase(type)) {
 
                     String targetServiceName = ev.getIdentifier();
-                    ModelElement targetElement = matchTargetElement(elements, targetServiceName);
+                    if (targetServiceName == null || targetServiceName.isBlank()) continue;
+
+                    ModelElement targetElement = elementByNameMap.get(targetServiceName.toLowerCase().trim());
+                    if (targetElement == null) {
+                        targetElement = matchTargetElement(elements, targetServiceName);
+                    }
 
                     if (targetElement != null) {
-                        ModelElement sourceElement = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
+                        ModelElement sourceElement = (ev.getSourceComponent() != null && !ev.getSourceComponent().isBlank())
+                                ? elementByNameMap.get(ev.getSourceComponent().toLowerCase().trim())
+                                : null;
+                        if (sourceElement == null) {
+                            sourceElement = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
+                        }
 
                         ModelRelationship relationship = ModelRelationship.builder()
                                 .modelVersion(modelVersion)
@@ -327,7 +438,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                         relationshipsToSave.add(relationship);
 
                         String locator = (ev.getFilePath() != null ? ev.getFilePath() : "") + ":" + ev.getLineNumber();
-                        relEvidenceContexts.add(new RelEvidenceContext(relationship, locator, "STATIC_CODE", ev.getCodeSnippet()));
+                        relEvidenceContexts.add(new RelEvidenceContext(relationship, locator, "STATIC_CODE", ev.getCodeSnippet(), "JAVAPARSER_3.25"));
                     }
                 }
             }
@@ -338,10 +449,15 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             try {
                 List<DetectedSpringConfigDTO> configs = springConfigDetectorService.detectConfigs(sourcePath);
                 for (DetectedSpringConfigDTO cfg : configs) {
-                    ModelElement sourceContainer = matchTargetElement(elements, cfg.getApplicationName());
+                    if (cfg.getApplicationName() == null) continue;
+                    ModelElement sourceContainer = elementByNameMap.get(cfg.getApplicationName().toLowerCase().trim());
+                    if (sourceContainer == null) sourceContainer = matchTargetElement(elements, cfg.getApplicationName());
+
                     for (ConfigTargetUrlDTO targetUrlDto : cfg.getTargetServiceUrls()) {
                         String targetHost = extractHostFromUrl(targetUrlDto.getTargetUrl());
-                        ModelElement targetContainer = matchTargetElement(elements, targetHost);
+                        if (targetHost == null) continue;
+                        ModelElement targetContainer = elementByNameMap.get(targetHost.toLowerCase().trim());
+                        if (targetContainer == null) targetContainer = matchTargetElement(elements, targetHost);
 
                         if (sourceContainer != null && targetContainer != null
                                 && !containsRelationship(relationshipsToSave, sourceContainer, targetContainer, "SERVICE_HTTP_CALL")) {
@@ -357,7 +473,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                             relationshipsToSave.add(relationship);
 
                             String loc = cfg.getConfigFilePath() + ":" + targetUrlDto.getLineNumber();
-                            relEvidenceContexts.add(new RelEvidenceContext(relationship, loc, "CONFIG_FILE", targetUrlDto.getConfigKey() + "=" + targetUrlDto.getTargetUrl()));
+                            relEvidenceContexts.add(new RelEvidenceContext(relationship, loc, "CONFIG_FILE", targetUrlDto.getConfigKey() + "=" + targetUrlDto.getTargetUrl(), "SPRING_CONFIG"));
                         }
                     }
                 }
@@ -366,15 +482,19 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             }
         }
 
-        // (3) CODE_DEPENDENCY: Giữa các Component trong cùng service
+        // (3) CODE_DEPENDENCY: Giữa các Component trong cùng service (Java)
         if (evidences != null) {
             for (CodeEvidenceDTO ev : evidences) {
                 if ("CODE_DEPENDENCY".equalsIgnoreCase(ev.getElementType())) {
                     String srcCompName = ev.getSourceComponent();
                     String tgtCompName = ev.getTargetComponent();
+                    if (srcCompName == null || srcCompName.isBlank() || tgtCompName == null || tgtCompName.isBlank()) continue;
 
-                    ModelElement srcEl = findComponentByName(allElements, srcCompName, ev.getFilePath());
-                    ModelElement tgtEl = findComponentByName(allElements, tgtCompName, ev.getFilePath());
+                    ModelElement srcEl = elementByNameMap.get(srcCompName.toLowerCase().trim());
+                    if (srcEl == null) srcEl = findComponentByName(allElements, srcCompName, ev.getFilePath());
+
+                    ModelElement tgtEl = elementByNameMap.get(tgtCompName.toLowerCase().trim());
+                    if (tgtEl == null) tgtEl = findComponentByName(allElements, tgtCompName, ev.getFilePath());
 
                     if (srcEl != null && tgtEl != null && !srcEl.equals(tgtEl)) {
                         ModelRelationship rel = ModelRelationship.builder()
@@ -388,19 +508,23 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                         relationshipsToSave.add(rel);
 
                         String loc = (ev.getFilePath() != null ? ev.getFilePath() : "") + ":" + ev.getLineNumber();
-                        relEvidenceContexts.add(new RelEvidenceContext(rel, loc, "STATIC_CODE", ev.getCodeSnippet()));
+                        relEvidenceContexts.add(new RelEvidenceContext(rel, loc, "STATIC_CODE", ev.getCodeSnippet(), "JAVAPARSER_3.25"));
                     }
                 }
             }
         }
 
-        // (4) DATABASE_ACCESS: Từ Repository/Entity đến Database Node
+        // (4) DATABASE_ACCESS: Từ Repository/Entity đến Database Node (Java)
         Map<String, String> serviceToDbHostMap = mapServicesToDatabases(sourcePath);
         if (evidences != null) {
             for (CodeEvidenceDTO ev : evidences) {
                 if ("DATABASE_REPOSITORY".equalsIgnoreCase(ev.getElementType())) {
-                    String repoName = ev.getSourceComponent();
-                    ModelElement repoEl = findComponentByName(allElements, repoName, ev.getFilePath());
+                    String repoName = ev.getSourceComponent() != null ? ev.getSourceComponent() : ev.getIdentifier();
+                    if (repoName == null || repoName.isBlank()) continue;
+
+                    ModelElement repoEl = elementByNameMap.get(repoName.toLowerCase().trim());
+                    if (repoEl == null) repoEl = findComponentByName(allElements, repoName, ev.getFilePath());
+
                     ModelElement dbEl = findDatabaseElementForFile(allElements, elements, ev.getFilePath(), serviceToDbHostMap);
 
                     if (repoEl != null && dbEl != null) {
@@ -415,7 +539,48 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                         relationshipsToSave.add(rel);
 
                         String loc = (ev.getFilePath() != null ? ev.getFilePath() : "") + ":" + ev.getLineNumber();
-                        relEvidenceContexts.add(new RelEvidenceContext(rel, loc, "STATIC_CODE", ev.getCodeSnippet()));
+                        relEvidenceContexts.add(new RelEvidenceContext(rel, loc, "STATIC_CODE", ev.getCodeSnippet(), "JAVAPARSER_3.25"));
+                    }
+                }
+            }
+        }
+
+        // (5) QUAN HỆ TỪ C# ROSLYN WORKER (BAO GỒM C# GỌI C# VÀ C# GỌI JAVA / JAVA GỌI C#)
+        if (dotnetAnalysis != null && dotnetAnalysis.getRelationships() != null) {
+            for (DotnetRelationDTO relDto : dotnetAnalysis.getRelationships()) {
+                if (relDto.getSourceElementName() == null || relDto.getTargetElementName() == null) continue;
+
+                String srcName = relDto.getSourceElementName().toLowerCase().trim();
+                String tgtName = relDto.getTargetElementName().toLowerCase().trim();
+
+                // Tra cứu O(1) qua elementByNameMap
+                ModelElement srcEl = elementByNameMap.get(srcName);
+                if (srcEl == null) srcEl = matchTargetElement(allElements, relDto.getSourceElementName());
+
+                ModelElement tgtEl = elementByNameMap.get(tgtName);
+                if (tgtEl == null) tgtEl = matchTargetElement(allElements, relDto.getTargetElementName());
+
+                if (srcEl != null && tgtEl != null) {
+                    String relType = relDto.getRelationType() != null ? relDto.getRelationType() : "SERVICE_HTTP_CALL";
+                    if (!containsRelationship(relationshipsToSave, srcEl, tgtEl, relType)) {
+                        ModelRelationship rel = ModelRelationship.builder()
+                                .modelVersion(modelVersion)
+                                .sourceElement(srcEl)
+                                .targetElement(tgtEl)
+                                .relationType(relType)
+                                .originLayer(relDto.getOriginLayer() != null ? relDto.getOriginLayer() : "STATIC")
+                                .direction(relDto.getDirection() != null ? relDto.getDirection() : "DIRECTED")
+                                .properties(convertPropertiesNode(relDto.getProperties(), null))
+                                .build();
+                        relationshipsToSave.add(rel);
+
+                        DotnetEvidenceDTO matchedEv = findEvidenceForRel(dotnetAnalysis.getEvidences(), relDto);
+                        String locator = matchedEv != null ? matchedEv.getLocator() : "RoslynWorker";
+                        String excerpt = matchedEv != null ? matchedEv.getExcerpt() : (relDto.getSourceElementName() + " -> " + relDto.getTargetElementName());
+                        String adapter = matchedEv != null && matchedEv.getAdapterVersion() != null ? matchedEv.getAdapterVersion() : "ROSLYN_4.8";
+                        String srcType = matchedEv != null && matchedEv.getSourceType() != null ? matchedEv.getSourceType() : "STATIC_CODE";
+
+                        relEvidenceContexts.add(new RelEvidenceContext(rel, locator, srcType, excerpt, adapter));
                     }
                 }
             }
@@ -439,7 +604,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                         .relationship(savedRel)
                         .element(null)
                         .locator(ctx.locator)
-                        .adapterVersion("JAVAPARSER_3.25")
+                        .adapterVersion(ctx.adapterVersion)
                         .sourceType(ctx.sourceType)
                         .excerpt(ctx.excerpt)
                         .build();
@@ -485,6 +650,24 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             node.putPOJO("ports", c.getPorts());
         }
         return node;
+    }
+
+    private JsonNode convertPropertiesNode(Map<String, Object> props, String fallbackScope) {
+        if (props != null && !props.isEmpty()) {
+            return objectMapper.valueToTree(props);
+        }
+        return createPropertiesNode(fallbackScope);
+    }
+
+    private DotnetEvidenceDTO findEvidenceForRel(List<DotnetEvidenceDTO> evidences, DotnetRelationDTO relDto) {
+        if (evidences == null || evidences.isEmpty()) return null;
+        for (DotnetEvidenceDTO ev : evidences) {
+            if (relDto.getSourceElementName().equalsIgnoreCase(ev.getSourceElementName())
+                    && relDto.getTargetElementName().equalsIgnoreCase(ev.getTargetElementName())) {
+                return ev;
+            }
+        }
+        return null;
     }
 
     private ModelElement findOwningContainer(List<ModelElement> elements, String filePath) {
@@ -629,12 +812,14 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         final String locator;
         final String sourceType;
         final String excerpt;
+        final String adapterVersion;
 
-        RelEvidenceContext(ModelRelationship relationship, String locator, String sourceType, String excerpt) {
+        RelEvidenceContext(ModelRelationship relationship, String locator, String sourceType, String excerpt, String adapterVersion) {
             this.relationship = relationship;
             this.locator = locator;
             this.sourceType = sourceType;
             this.excerpt = excerpt;
+            this.adapterVersion = adapterVersion;
         }
     }
 }
