@@ -1,5 +1,5 @@
 #requires -Version 7.0
-param([switch]$Database)
+param([switch]$Database, [string]$TestFilter = '')
 $ErrorActionPreference = 'Stop'
 $workerRoot = Split-Path $PSScriptRoot -Parent
 $repoRoot = Split-Path $workerRoot -Parent
@@ -33,6 +33,7 @@ try {
         $tests += ',WorkerPublicationIntegrationTest,UploadWorkerApiIntegrationTest'
         $dbArgs = @('-e',"MAVIS_TEST_JDBC_URL=jdbc:postgresql://${postgres}:5432/mavis_it",'-e','MAVIS_TEST_JDBC_USER=mavis','-e','MAVIS_TEST_JDBC_PASSWORD=fixture-only-password')
     }
+    if ($TestFilter) { $tests = $TestFilter }
     $command = @'
 set -eu
 mkdir -p /tmp/work/MAVIS.Worker/integration /tmp/work/MAVIS-Platform

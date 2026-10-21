@@ -28,6 +28,7 @@ public class WorkerModelPublisher {
     private final WorkerCanonicalImporter importer;
     private final ObjectMapper json;
     private final CrossLanguageServiceLinker linker;
+    private final com.mavis.analyzer.diagram.service.DiagramProjectionService diagrams;
 
     @Transactional
     public boolean begin(UUID jobId,UUID attempt,Instant deadline) {
@@ -76,6 +77,7 @@ public class WorkerModelPublisher {
         if(complete)importer.importResult(version,outcome.result());
         var mapping=linker.link(version,source,complete?outcome.result():null,javaFindings);
         manifest.set("serviceMapping",json.valueToTree(mapping));
+        diagrams.generateDefaultDiagramsForModel(version,elements.findByModelVersionId(version.getId()),relationships.findByModelVersionId(version.getId()));
         // Missing C# in mixed input may retain a partial draft, never replace the latest complete model.
         if(complete||notApplicable) {versions.invalidatePreviousVersions(project.getId(),version.getId());version.setIsLatestValid(true);versions.save(version);}
         manifest.put("modelVersionId",version.getId().toString()).put("promotedLatest",complete||notApplicable);

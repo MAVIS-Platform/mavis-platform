@@ -55,7 +55,8 @@ class WorkerPublicationIntegrationTest {
         @Bean GraphBuilderService graph(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v){return new GraphBuilderServiceImpl(e,r,v);}
         @Bean WorkerCanonicalImporter importer(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,ObjectMapper json){return new WorkerCanonicalImporter(e,r,v,json);}
         @Bean CrossLanguageServiceLinker linker(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,ObjectMapper json){return new CrossLanguageServiceLinker(e,r,v,json);}
-        @Bean WorkerModelPublisher publisher(JobRepository j,ProjectRepository p,ModelVersionRepository m,ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,GraphBuilderService g,WorkerCanonicalImporter i,ObjectMapper json,CrossLanguageServiceLinker l){return new WorkerModelPublisher(j,p,m,e,r,v,g,i,json,l);}
+        @Bean com.mavis.analyzer.diagram.service.DiagramProjectionService diagrams(DiagramVersionRepository d,ModelVersionRepository m,ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,ObjectMapper json){return new com.mavis.analyzer.diagram.service.impl.DiagramProjectionServiceImpl(d,m,e,r,v,json);}
+        @Bean WorkerModelPublisher publisher(JobRepository j,ProjectRepository p,ModelVersionRepository m,ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,GraphBuilderService g,WorkerCanonicalImporter i,ObjectMapper json,CrossLanguageServiceLinker l,com.mavis.analyzer.diagram.service.DiagramProjectionService d){return new WorkerModelPublisher(j,p,m,e,r,v,g,i,json,l,d);}
     }
     @BeforeEach void start() {
         Assumptions.assumeTrue(System.getenv("MAVIS_TEST_JDBC_URL")!=null && System.getenv("MAVIS_WORKER_TEST_URL")!=null,"Run live database integration harness");
