@@ -45,7 +45,7 @@ class WorkerPublicationIntegrationTest {
             return new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema+",public",System.getenv("MAVIS_TEST_JDBC_USER"),System.getenv("MAVIS_TEST_JDBC_PASSWORD"));
         }
         @Bean LocalContainerEntityManagerFactoryBean entityManagerFactory(DriverManagerDataSource ds) {
-            var populator=new ResourceDatabasePopulator(new ClassPathResource("worker-migrations/V1__Init_Database.sql"),new ClassPathResource("worker-migrations/V2__Create_User_Otp_Table.sql"),new ClassPathResource("worker-migrations/V3__Worker_Evidence_Provenance.sql"));
+            var populator=new ResourceDatabasePopulator(new ClassPathResource("worker-migrations/V1__Init_Database.sql"),new ClassPathResource("worker-migrations/V2__Create_User_Otp_Table.sql"),new ClassPathResource("worker-migrations/V3__Worker_Evidence_Provenance.sql"),new ClassPathResource("worker-migrations/V4__Model_Revision_Lineage.sql"));
             populator.execute(ds);
             var factory=new LocalContainerEntityManagerFactoryBean();factory.setDataSource(ds);factory.setPackagesToScan("com.mavis.common.entity");factory.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
             factory.setJpaPropertyMap(Map.of("hibernate.hbm2ddl.auto","none"));return factory;
@@ -56,6 +56,7 @@ class WorkerPublicationIntegrationTest {
         @Bean WorkerCanonicalImporter importer(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,ObjectMapper json){return new WorkerCanonicalImporter(e,r,v,json);}
         @Bean CrossLanguageServiceLinker linker(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,ObjectMapper json){return new CrossLanguageServiceLinker(e,r,v,json);}
         @Bean com.mavis.analyzer.diagram.service.DiagramProjectionService diagrams(DiagramVersionRepository d,ModelVersionRepository m,ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,ObjectMapper json){return new com.mavis.analyzer.diagram.service.impl.DiagramProjectionServiceImpl(d,m,e,r,v,json);}
+        @Bean com.mavis.analyzer.model.service.ModelVersionService modelVersions(ProjectRepository p,ModelVersionRepository m,ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,com.mavis.analyzer.diagram.service.DiagramProjectionService d,ObjectMapper json){return new com.mavis.analyzer.model.service.impl.ModelVersionServiceImpl(p,m,e,r,v,d,json);}
         @Bean WorkerModelPublisher publisher(JobRepository j,ProjectRepository p,ModelVersionRepository m,ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,GraphBuilderService g,WorkerCanonicalImporter i,ObjectMapper json,CrossLanguageServiceLinker l,com.mavis.analyzer.diagram.service.DiagramProjectionService d){return new WorkerModelPublisher(j,p,m,e,r,v,g,i,json,l,d);}
     }
     @BeforeEach void start() {

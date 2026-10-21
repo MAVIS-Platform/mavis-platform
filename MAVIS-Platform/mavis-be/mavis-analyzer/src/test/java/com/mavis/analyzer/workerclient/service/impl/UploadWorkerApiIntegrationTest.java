@@ -46,7 +46,7 @@ class UploadWorkerApiIntegrationTest {
     private final ObjectMapper json=new ObjectMapper();
 
     @Configuration @EnableWebMvc @EnableAsync
-    @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class,com.mavis.analyzer.diagram.controller.DiagramController.class})
+    @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class,com.mavis.analyzer.diagram.controller.DiagramController.class,com.mavis.analyzer.model.controller.ModelVersionController.class})
     static class WebConfig {
         @Bean StorageService storage(org.springframework.core.env.Environment env) {
             var storage=new LocalDiskStorageServiceImpl();ReflectionTestUtils.setField(storage,"uploadDir",env.getRequiredProperty("it.upload-root"));return storage;
@@ -113,6 +113,38 @@ class UploadWorkerApiIntegrationTest {
         mvc.perform(put("/api/v1/analyzer/diagrams/"+diagramId+"/layout").contentType("application/json").content(positions.toString())).andExpect(status().isBadRequest());
         authenticate(UUID.randomUUID());mvc.perform(get("/api/v1/analyzer/diagrams/"+diagramId)).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/analyzer/evidences/element/"+element)).andExpect(status().isForbidden());authenticate(owner);
+        // Revision creation must preserve source evidence and identity while changing only the new model.
+        String type=db.queryForObject("select id from model_elements where model_version_id=? and name='App' and element_type='CLASS_INTERFACE'",UUID.class,UUID.fromString(model)).toString();
+        var edit=json.createObjectNode();edit.putArray("elements").addObject().put("ref",type).put("operation","UPDATE").put("name","RenamedApp").put("status","STUDENT_CONFIRMED");edit.putArray("relationships");
+        var revisedResponse=mvc.perform(post("/api/v1/analyzer/models/"+model+"/revisions").contentType("application/json").content(edit.toString())).andExpect(status().isOk()).andReturn();
+        String revised=json.readTree(revisedResponse.getResponse().getContentAsString()).required("data").required("id").asText();
+        assertEquals("App",db.queryForObject("select name from model_elements where id=?",String.class,UUID.fromString(type)));
+        assertEquals(1,db.queryForObject("select count(*) from model_elements where model_version_id=? and name='RenamedApp'",Integer.class,UUID.fromString(revised)));
+        assertEquals(3,db.queryForObject("select count(*) from diagram_versions where model_version_id=?",Integer.class,UUID.fromString(revised)));
+        assertTrue(db.queryForObject("select count(*) from evidences where model_version_id=? and provenance->>'copiedFromEvidenceId' is not null",Integer.class,UUID.fromString(revised))>0);
+        var compared=mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",model).param("targetVersionId",revised)).andExpect(status().isOk()).andReturn();
+        var diff=json.readTree(compared.getResponse().getContentAsString()).required("data").required("elements");
+        assertEquals(1,diff.required("modified").size());assertEquals(0,diff.required("added").size());assertEquals(0,diff.required("removed").size());
+        mvc.perform(post("/api/v1/analyzer/models/"+model+"/revisions").contentType("application/json").content(edit.toString())).andExpect(status().isBadRequest());
+        var add=json.createObjectNode();var additions=add.putArray("elements");
+        additions.addObject().put("ref","gateway").put("operation","ADD").put("name","Gateway").put("kind","SERVICE_CONTAINER");
+        additions.addObject().put("ref","orders").put("operation","ADD").put("name","Orders").put("kind","SERVICE_CONTAINER");
+        add.putArray("relationships").addObject().put("ref","call").put("operation","ADD").put("fromRef","gateway").put("toRef","orders").put("type","SERVICE_HTTP_CALL").put("confirmed",true);
+        var addedResponse=mvc.perform(post("/api/v1/analyzer/models/"+revised+"/revisions").contentType("application/json").content(add.toString())).andExpect(status().isOk()).andReturn();
+        String added=json.readTree(addedResponse.getResponse().getContentAsString()).required("data").required("id").asText();
+        var addDiff=mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",revised).param("targetVersionId",added)).andExpect(status().isOk()).andReturn();
+        var addedData=json.readTree(addDiff.getResponse().getContentAsString()).required("data");assertEquals(2,addedData.required("elements").required("added").size());assertEquals(1,addedData.required("relationships").required("added").size());
+        int versionsBefore=db.queryForObject("select count(*) from model_versions where project_id=?",Integer.class,project);
+        var invalid=json.createObjectNode();invalid.putArray("elements").addObject().put("ref","loop").put("operation","ADD").put("kind","COMPONENT").put("name","Loop").put("parentRef","loop");invalid.putArray("relationships");
+        mvc.perform(post("/api/v1/analyzer/models/"+added+"/revisions").contentType("application/json").content(invalid.toString())).andExpect(status().isBadRequest());
+        assertEquals(versionsBefore,db.queryForObject("select count(*) from model_versions where project_id=?",Integer.class,project));
+        String gateway=db.queryForObject("select id from model_elements where model_version_id=? and name='Gateway'",UUID.class,UUID.fromString(added)).toString();
+        var remove=json.createObjectNode();remove.putArray("elements").addObject().put("ref",gateway).put("operation","REMOVE");remove.putArray("relationships");
+        var removedResponse=mvc.perform(post("/api/v1/analyzer/models/"+added+"/revisions").contentType("application/json").content(remove.toString())).andExpect(status().isOk()).andReturn();
+        String removed=json.readTree(removedResponse.getResponse().getContentAsString()).required("data").required("id").asText();
+        var removeDiff=mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",added).param("targetVersionId",removed)).andExpect(status().isOk()).andReturn();
+        var removedData=json.readTree(removeDiff.getResponse().getContentAsString()).required("data");assertEquals(1,removedData.required("elements").required("removed").size());assertEquals(1,removedData.required("relationships").required("removed").size());
+        authenticate(UUID.randomUUID());mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",model).param("targetVersionId",revised)).andExpect(status().isForbidden());authenticate(owner);
     }
     @Test void invalidWorkerAuthMakesCsharpFailAndMixedInputExplicitlyPartial()throws Exception {
         start(false);
