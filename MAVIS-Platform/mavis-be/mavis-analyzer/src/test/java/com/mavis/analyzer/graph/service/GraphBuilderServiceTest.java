@@ -1,14 +1,16 @@
 package com.mavis.analyzer.graph.service;
 
+import com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
-import com.mavis.common.entity.AnalysisSession;
-import com.mavis.common.entity.DependencyEdge;
 import com.mavis.common.entity.Evidence;
+import com.mavis.common.entity.ModelElement;
+import com.mavis.common.entity.ModelRelationship;
+import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
-import com.mavis.common.entity.ServiceNode;
-import com.mavis.common.repository.DependencyEdgeRepository;
+import com.mavis.common.entity.SourceSnapshot;
 import com.mavis.common.repository.EvidenceRepository;
-import com.mavis.common.repository.ServiceNodeRepository;
+import com.mavis.common.repository.ModelElementRepository;
+import com.mavis.common.repository.ModelRelationshipRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,111 +35,120 @@ import static org.mockito.Mockito.when;
 class GraphBuilderServiceTest {
 
     @Mock
-    private ServiceNodeRepository serviceNodeRepository;
+    private ModelElementRepository modelElementRepository;
 
     @Mock
-    private DependencyEdgeRepository dependencyEdgeRepository;
+    private ModelRelationshipRepository modelRelationshipRepository;
 
     @Mock
     private EvidenceRepository evidenceRepository;
 
     @InjectMocks
-    private GraphBuilderService graphBuilderService;
+    private GraphBuilderServiceImpl graphBuilderService;
 
     private Project sampleProject;
-    private AnalysisSession sampleSession;
+    private SourceSnapshot sampleSnapshot;
+    private ModelVersion sampleModelVersion;
 
     @BeforeEach
     void setUp() {
         sampleProject = Project.builder()
                 .id(UUID.randomUUID())
                 .name("e-commerce-monolith")
-                .storagePath("/storage/projects/e-commerce-monolith")
                 .status("ACTIVE")
                 .build();
 
-        sampleSession = AnalysisSession.builder()
+        sampleSnapshot = SourceSnapshot.builder()
                 .id(UUID.randomUUID())
                 .project(sampleProject)
-                .status("RUNNING")
+                .storagePath("/storage/projects/e-commerce-monolith.zip")
+                .artifactHash("abc123hash")
+                .build();
+
+        sampleModelVersion = ModelVersion.builder()
+                .id(UUID.randomUUID())
+                .project(sampleProject)
+                .sourceSnapshot(sampleSnapshot)
+                .revision(1)
+                .isLatestValid(true)
                 .build();
     }
 
     @Test
-    @DisplayName("Should create and persist a fallback ServiceNode when detectedServices is empty")
+    @DisplayName("Should create and persist a fallback ModelElement when detectedServices is empty")
     void shouldCreateFallbackNodeWhenServicesEmpty() {
-        when(serviceNodeRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        List<ServiceNode> result = graphBuilderService.buildAndSaveNodes(sampleSession, Collections.emptyList());
+        List<ModelElement> result = graphBuilderService.buildAndSaveElements(sampleModelVersion, Collections.emptyList());
 
         assertThat(result).hasSize(1);
-        ServiceNode fallbackNode = result.get(0);
-        assertThat(fallbackNode.getSession()).isEqualTo(sampleSession);
-        assertThat(fallbackNode.getName()).isEqualTo("e-commerce-monolith");
-        assertThat(fallbackNode.getNodeType()).isEqualTo("JAVA_SPRING");
-        assertThat(fallbackNode.getSourcePath()).isEqualTo("/storage/projects/e-commerce-monolith");
+        ModelElement fallbackElement = result.get(0);
+        assertThat(fallbackElement.getModelVersion()).isEqualTo(sampleModelVersion);
+        assertThat(fallbackElement.getName()).isEqualTo("e-commerce-monolith");
+        assertThat(fallbackElement.getElementType()).isEqualTo("SERVICE_CONTAINER");
+        assertThat(fallbackElement.getLanguageStack()).isEqualTo("JAVA_SPRING");
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<ServiceNode>> captor = ArgumentCaptor.forClass(List.class);
-        verify(serviceNodeRepository).saveAll(captor.capture());
+        ArgumentCaptor<List<ModelElement>> captor = ArgumentCaptor.forClass(List.class);
+        verify(modelElementRepository).saveAll(captor.capture());
         assertThat(captor.getValue()).hasSize(1);
         assertThat(captor.getValue().get(0).getName()).isEqualTo("e-commerce-monolith");
     }
 
     @Test
-    @DisplayName("Should create and persist a fallback ServiceNode when detectedServices is null")
+    @DisplayName("Should create and persist a fallback ModelElement when detectedServices is null")
     void shouldCreateFallbackNodeWhenServicesNull() {
-        when(serviceNodeRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        List<ServiceNode> result = graphBuilderService.buildAndSaveNodes(sampleSession, null);
+        List<ModelElement> result = graphBuilderService.buildAndSaveElements(sampleModelVersion, null);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getName()).isEqualTo("e-commerce-monolith");
-        assertThat(result.get(0).getNodeType()).isEqualTo("JAVA_SPRING");
+        assertThat(result.get(0).getElementType()).isEqualTo("SERVICE_CONTAINER");
     }
 
     @Test
-    @DisplayName("Should create and persist ServiceNodes for each detected service name")
+    @DisplayName("Should create and persist ModelElements for each detected service name")
     void shouldCreateNodesForDetectedServices() {
         List<String> services = List.of("auth-service", "order-service", "payment-service");
-        when(serviceNodeRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        List<ServiceNode> result = graphBuilderService.buildAndSaveNodes(sampleSession, services);
+        List<ModelElement> result = graphBuilderService.buildAndSaveElements(sampleModelVersion, services);
 
         assertThat(result).hasSize(3);
-        assertThat(result).extracting(ServiceNode::getName)
+        assertThat(result).extracting(ModelElement::getName)
                 .containsExactly("auth-service", "order-service", "payment-service");
-        assertThat(result).allMatch(node -> "JAVA_SPRING".equals(node.getNodeType()));
-        assertThat(result).allMatch(node -> sampleSession.equals(node.getSession()));
+        assertThat(result).allMatch(node -> "SERVICE_CONTAINER".equals(node.getElementType()));
+        assertThat(result).allMatch(node -> sampleModelVersion.equals(node.getModelVersion()));
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<ServiceNode>> captor = ArgumentCaptor.forClass(List.class);
-        verify(serviceNodeRepository).saveAll(captor.capture());
+        ArgumentCaptor<List<ModelElement>> captor = ArgumentCaptor.forClass(List.class);
+        verify(modelElementRepository).saveAll(captor.capture());
         assertThat(captor.getValue()).hasSize(3);
     }
 
     @Test
-    @DisplayName("Should support custom sourcePath via overloaded buildAndSaveNodes")
+    @DisplayName("Should support custom sourcePath via overloaded buildAndSaveElements")
     void shouldSupportCustomSourcePath() {
         List<String> services = List.of("gateway-service");
         String customExtractedPath = "/custom/extracted/root";
-        when(serviceNodeRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        List<ServiceNode> result = graphBuilderService.buildAndSaveNodes(sampleSession, services, customExtractedPath);
+        List<ModelElement> result = graphBuilderService.buildAndSaveElements(sampleModelVersion, services, customExtractedPath);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).getName()).isEqualTo("gateway-service");
-        assertThat(result.get(0).getSourcePath()).isEqualTo(customExtractedPath);
+        assertThat(result.get(0).getScope()).isEqualTo(customExtractedPath);
     }
 
     @Test
-    @DisplayName("Should save REST_API evidence linked to owning node with edge as null")
+    @DisplayName("Should batch save REST_API evidence linked to owning element with relationship as null")
     void shouldSaveRestApiEvidenceLinkedToOwningNode() {
-        ServiceNode node = ServiceNode.builder()
+        ModelElement element = ModelElement.builder()
                 .id(UUID.randomUUID())
                 .name("order-service")
-                .sourcePath("/app/order-service")
-                .session(sampleSession)
+                .scope("/app/order-service")
+                .modelVersion(sampleModelVersion)
                 .build();
 
         CodeEvidenceDTO restApiEvidence = CodeEvidenceDTO.builder()
@@ -148,34 +159,39 @@ class GraphBuilderServiceTest {
                 .codeSnippet("@GetMapping(\"/api/v1/orders\")")
                 .build();
 
-        graphBuilderService.buildEdgesAndEvidences(sampleSession, List.of(node), List.of(restApiEvidence));
+        when(evidenceRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ArgumentCaptor<Evidence> captor = ArgumentCaptor.forClass(Evidence.class);
-        verify(evidenceRepository).save(captor.capture());
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion, List.of(element), List.of(restApiEvidence));
 
-        Evidence saved = captor.getValue();
-        assertThat(saved.getNode()).isEqualTo(node);
-        assertThat(saved.getEdge()).isNull();
-        assertThat(saved.getEvidenceType()).isEqualTo("REST_API");
-        assertThat(saved.getFilePath()).isEqualTo("/app/order-service/src/OrderController.java");
-        assertThat(saved.getLineNumber()).isEqualTo(25);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Evidence>> captor = ArgumentCaptor.forClass(List.class);
+        verify(evidenceRepository).saveAll(captor.capture());
+
+        List<Evidence> savedList = captor.getValue();
+        assertThat(savedList).hasSize(1);
+        Evidence saved = savedList.get(0);
+        assertThat(saved.getElement()).isEqualTo(element);
+        assertThat(saved.getRelationship()).isNull();
+        assertThat(saved.getSourceType()).isEqualTo("STATIC_CODE");
+        assertThat(saved.getLocator()).contains("/app/order-service/src/OrderController.java:25");
+        assertThat(saved.getExcerpt()).isEqualTo("@GetMapping(\"/api/v1/orders\")");
     }
 
     @Test
-    @DisplayName("Should match FeignClient, create DependencyEdge and linked Evidence")
+    @DisplayName("Should match FeignClient, create ModelRelationship in batch and linked Evidence in batch")
     void shouldMatchFeignClientAndCreateDependencyEdgeAndEvidence() {
-        ServiceNode orderNode = ServiceNode.builder()
+        ModelElement orderElement = ModelElement.builder()
                 .id(UUID.randomUUID())
                 .name("order-service")
-                .sourcePath("/app/order-service")
-                .session(sampleSession)
+                .scope("/app/order-service")
+                .modelVersion(sampleModelVersion)
                 .build();
 
-        ServiceNode paymentNode = ServiceNode.builder()
+        ModelElement paymentElement = ModelElement.builder()
                 .id(UUID.randomUUID())
                 .name("payment-service")
-                .sourcePath("/app/payment-service")
-                .session(sampleSession)
+                .scope("/app/payment-service")
+                .modelVersion(sampleModelVersion)
                 .build();
 
         CodeEvidenceDTO feignEvidence = CodeEvidenceDTO.builder()
@@ -186,39 +202,50 @@ class GraphBuilderServiceTest {
                 .codeSnippet("@FeignClient(\"payment-service\")")
                 .build();
 
-        when(dependencyEdgeRepository.save(any(DependencyEdge.class))).thenAnswer(invocation -> {
-            DependencyEdge edge = invocation.getArgument(0);
-            edge.setId(UUID.randomUUID());
-            return edge;
+        when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(invocation -> {
+            List<ModelRelationship> rels = invocation.getArgument(0);
+            for (ModelRelationship r : rels) {
+                r.setId(UUID.randomUUID());
+            }
+            return rels;
         });
+        when(evidenceRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        graphBuilderService.buildEdgesAndEvidences(sampleSession, List.of(orderNode, paymentNode), List.of(feignEvidence));
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion,
+                List.of(orderElement, paymentElement), List.of(feignEvidence));
 
-        ArgumentCaptor<DependencyEdge> edgeCaptor = ArgumentCaptor.forClass(DependencyEdge.class);
-        verify(dependencyEdgeRepository).save(edgeCaptor.capture());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelRelationship>> relCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository).saveAll(relCaptor.capture());
 
-        DependencyEdge savedEdge = edgeCaptor.getValue();
-        assertThat(savedEdge.getSession()).isEqualTo(sampleSession);
-        assertThat(savedEdge.getSourceNode()).isEqualTo(orderNode);
-        assertThat(savedEdge.getTargetNode()).isEqualTo(paymentNode);
-        assertThat(savedEdge.getDependencyKind()).isEqualTo("REST_HTTP");
+        List<ModelRelationship> savedRels = relCaptor.getValue();
+        assertThat(savedRels).hasSize(1);
+        ModelRelationship savedRel = savedRels.get(0);
+        assertThat(savedRel.getModelVersion()).isEqualTo(sampleModelVersion);
+        assertThat(savedRel.getSourceElement()).isEqualTo(orderElement);
+        assertThat(savedRel.getTargetElement()).isEqualTo(paymentElement);
+        assertThat(savedRel.getRelationType()).isEqualTo("SERVICE_HTTP_CALL");
 
-        ArgumentCaptor<Evidence> evidenceCaptor = ArgumentCaptor.forClass(Evidence.class);
-        verify(evidenceRepository).save(evidenceCaptor.capture());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Evidence>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
+        verify(evidenceRepository).saveAll(evidenceCaptor.capture());
 
-        Evidence savedEvidence = evidenceCaptor.getValue();
-        assertThat(savedEvidence.getEdge()).isNotNull();
-        assertThat(savedEvidence.getNode()).isNull();
-        assertThat(savedEvidence.getEvidenceType()).isEqualTo("FEIGN_CLIENT");
-        assertThat(savedEvidence.getFilePath()).isEqualTo("/app/order-service/src/PaymentClient.java");
+        List<Evidence> savedEvidences = evidenceCaptor.getValue();
+        assertThat(savedEvidences).hasSize(1);
+        Evidence savedEvidence = savedEvidences.get(0);
+        assertThat(savedEvidence.getRelationship()).isNotNull();
+        assertThat(savedEvidence.getElement()).isNull();
+        assertThat(savedEvidence.getSourceType()).isEqualTo("STATIC_CODE");
+        assertThat(savedEvidence.getLocator()).contains("/app/order-service/src/PaymentClient.java:12");
     }
 
     @Test
-    @DisplayName("Should do nothing when nodes or evidences list is empty")
+    @DisplayName("Should do nothing when elements or evidences list is empty")
     void shouldDoNothingWhenListsAreEmpty() {
-        graphBuilderService.buildEdgesAndEvidences(sampleSession, Collections.emptyList(), Collections.emptyList());
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion,
+                Collections.emptyList(), Collections.emptyList());
 
-        verify(dependencyEdgeRepository, never()).save(any());
-        verify(evidenceRepository, never()).save(any());
+        verify(modelRelationshipRepository, never()).saveAll(any());
+        verify(evidenceRepository, never()).saveAll(any());
     }
 }

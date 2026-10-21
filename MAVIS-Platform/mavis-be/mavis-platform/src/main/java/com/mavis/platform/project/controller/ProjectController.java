@@ -1,8 +1,8 @@
 package com.mavis.platform.project.controller;
 
 import com.mavis.common.dto.ApiResponse;
-import com.mavis.common.entity.Project;
 import com.mavis.platform.project.dto.ProjectCreateRequest;
+import com.mavis.platform.project.dto.ProjectResponseDTO;
 import com.mavis.platform.project.dto.ProjectUpdateRequest;
 import com.mavis.platform.project.service.ProjectService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -30,25 +30,25 @@ public class ProjectController {
 
     @GetMapping
     @Operation(summary = "Lấy danh sách tất cả các dự án", description = "Trả về toàn bộ danh sách các dự án trong hệ thống")
-    public ApiResponse<List<Project>> getAllProjects() {
+    public ApiResponse<List<ProjectResponseDTO>> getAllProjects() {
         return ApiResponse.success(projectService.getAllProjects());
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Lấy thông tin chi tiết dự án", description = "Tìm kiếm và trả về thông tin chi tiết dự án theo ID")
-    public ApiResponse<Project> getProjectById(@PathVariable UUID id) {
+    public ApiResponse<ProjectResponseDTO> getProjectById(@PathVariable UUID id) {
         return ApiResponse.success(projectService.getProjectById(id));
     }
 
     @PostMapping
     @Operation(summary = "Tạo mới dự án", description = "Tạo một dự án mới")
-    public ApiResponse<Project> createProject(@RequestBody ProjectCreateRequest request) {
+    public ApiResponse<ProjectResponseDTO> createProject(@RequestBody ProjectCreateRequest request) {
         return ApiResponse.success(projectService.createProject(request));
     }
 
     @PutMapping("/{id}")
     @Operation(summary = "Cập nhật dự án", description = "Cập nhật thông tin dự án theo ID")
-    public ApiResponse<Project> updateProject(@PathVariable UUID id, @RequestBody ProjectUpdateRequest request) {
+    public ApiResponse<ProjectResponseDTO> updateProject(@PathVariable UUID id, @RequestBody ProjectUpdateRequest request) {
         return ApiResponse.success(projectService.updateProject(id, request));
     }
 
