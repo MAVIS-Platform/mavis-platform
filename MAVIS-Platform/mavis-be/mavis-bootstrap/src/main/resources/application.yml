@@ -51,3 +51,7 @@ server:
 app:
   google:
     client-id: "417379784748-uceg8s5qlhsj7tjmld8k7pju5p2b8nm5.apps.googleusercontent.com"
+
+mavis:
+  security:
+    dev-bypass-enabled: true
