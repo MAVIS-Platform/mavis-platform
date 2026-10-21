@@ -714,3 +714,15 @@ Image probe cần image Worker build từ committed clean publish theo Dockerfil
 - [ ] FE mới chưa sẵn sàng theo xác nhận của người dùng: nhánh FE hiện tại chưa merge/chưa hoàn tất và có thể còn UI cũ. Không dùng nhánh đó để kết luận nghiệm thu UI; backend/Worker tiếp tục độc lập, browser acceptance giữ mở.
 
 Verification cuối mục 38: full Windows Worker regression 189 pass, 1 Linux-only skip (190 total); live Docker success có trace Available/cleanup Confirmed và persisted receipt khớp stdout JSON. Tests chạy trên working tree; các local edits cũ ở API/legacy interface không được đưa vào commit receipt.
+
+## 39. PR #19 — hòa giải baseline Java chặng 3–5
+
+- [x] Resolve 14 conflict files với main 5f8b7e1; giữ runtime/evaluation modules của Java, API controller/DTO chặng 3–5 và scoped Worker publication/attempt/deadline fences.
+- [x] Revision Java payload và Worker payload được chuyển vào cùng transaction/identity engine; giữ metadata, owner/latest checks và copy evidence. Diff không coi việc thêm logical key là sửa metadata nghiệp vụ.
+- [x] Diagram giữ type/position/data/source/target fields của Java cùng aliases Worker, evidence có model/snapshot/provenance; layout chỉ cập nhật tọa độ node đã tồn tại. Impact detailed/simple Java APIs cùng delegate .NET, không khôi phục Java BFS hoặc raw-path Worker invocation trong GraphBuilder.
+- [x] Regression mở rộng 140/140 pass không skip (client 11 + common 8 + analyzer 121), gồm Java runtime/evaluation/controller tests và Worker/PostgreSQL thật. Chỉ loại RealFruitMicroservicesDetectionTest do thiếu external fruit-market-microservices.zip; không gọi đây là unfiltered Maven suite xanh.
+- [ ] FE/browser acceptance, production auth/isolation và cross-host runtime delivery giữ trạng thái chưa nghiệm thu. Resolve conflict không đồng nghĩa toàn bộ sản phẩm đã hoàn tất.
+
+Chi tiết migration/compatibility của lần merge này ở INTEGRATION_RUNBOOK.md mục PR #19. Chỉ push feature branch; người dùng tự merge PR vào main.
+
+Final verification sau bổ sung Java layout aliases/timestamps/diff details: 23/23 targeted controller/service/live API tests pass, không skip. Đây là regression bổ sung trên cùng chức năng, không cộng thành 163 test riêng biệt.

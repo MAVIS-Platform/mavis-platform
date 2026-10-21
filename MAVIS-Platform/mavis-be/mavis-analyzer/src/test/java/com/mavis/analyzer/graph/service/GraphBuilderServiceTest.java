@@ -457,10 +457,13 @@ class GraphBuilderServiceTest {
     }
 
     @Test
-    void graphBuilderDoesNotDispatchWorkerInsideItsTransaction() {
-        ModelElement container=ModelElement.builder().id(UUID.randomUUID()).name("service").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
-        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot,sampleModelVersion,List.of(container),Collections.emptyList());
+    @DisplayName("Graph builder must not call the legacy raw-path Worker client or double-import C# findings")
+    void shouldDelegateCsharpPublicationToCanonicalImporter() {
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion,
+                Collections.emptyList(), Collections.emptyList());
         org.mockito.Mockito.verifyNoInteractions(dotnetWorkerClientService);
+        verify(modelRelationshipRepository, never()).saveAll(any());
+        verify(evidenceRepository, never()).saveAll(any());
     }
     @Test
     @DisplayName("Should do nothing when elements or evidences list is empty")
