@@ -73,7 +73,7 @@ class SubmissionApiIntegrationTest {
         Role studentRole = roleRepository.findByCode("STUDENT")
                 .orElseGet(() -> roleRepository.save(Role.builder().code("STUDENT").name("Student").build()));
 
-        User user = userRepository.save(User.builder()
+        User user = userRepository.saveAndFlush(User.builder()
                 .email("student_submitter_" + UUID.randomUUID().toString().substring(0, 8) + "@mavis.edu.vn")
                 .passwordHash("hashed_pwd")
                 .fullName("Tran Van Nop Bai")
