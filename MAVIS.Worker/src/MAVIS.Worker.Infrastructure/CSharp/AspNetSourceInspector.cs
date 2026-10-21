@@ -13,41 +13,7 @@ internal static class AspNetSourceInspector
         foreach (var type in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
         {
             ct.ThrowIfCancellationRequested();
-            var attributes = type.AttributeLists.SelectMany(a => a.Attributes).ToArray();
-            var isController = attributes.Any(a => Attribute(a) == "ApiController") || type.Identifier.ValueText.EndsWith("Controller", StringComparison.Ordinal);
-            var controller = type.Identifier.ValueText;
-            if (controller.EndsWith("Controller", StringComparison.Ordinal)) controller = controller[..^10];
-            var routes = attributes.Where(a => Attribute(a) == "Route").ToArray();
-            foreach (var method in type.Members.OfType<MethodDeclarationSyntax>())
-            {
-                foreach (var attribute in method.AttributeLists.SelectMany(a => a.Attributes))
-                {
-                    var name = Attribute(attribute);
-                    var verb = name switch { "HttpGet" or "Get" => "GET", "HttpPost" or "Post" => "POST", "HttpPut" or "Put" => "PUT",
-                        "HttpDelete" or "Delete" => "DELETE", "HttpPatch" or "Patch" => "PATCH", "HttpHead" or "Head" => "HEAD", "HttpOptions" or "Options" => "OPTIONS", _ => null };
-                    if (verb is null) continue;
-                    if (isController && name.StartsWith("Http", StringComparison.Ordinal))
-                    {
-                        var action = attribute.ArgumentList is null || attribute.ArgumentList.Arguments.Count == 0 ? "" : Constant(attribute.ArgumentList.Arguments.FirstOrDefault()?.Expression);
-                        if (action is null) { Unresolved(attribute); continue; }
-                        var prefixes = routes.Length == 0 ? new string?[] { "" } : routes.Select(a => Constant(a.ArgumentList?.Arguments.FirstOrDefault()?.Expression));
-                        foreach (var prefix in prefixes)
-                        {
-                            if (prefix is null) { Unresolved(attribute); continue; }
-                            var path = action.StartsWith('/') || action.StartsWith("~/", StringComparison.Ordinal) ? action.TrimStart('~') : Join(prefix, action);
-                            path = path.Replace("[controller]", controller, StringComparison.OrdinalIgnoreCase).Replace("[action]", method.Identifier.ValueText, StringComparison.OrdinalIgnoreCase);
-                            Add("ApiEndpointCandidate", path, verb, attribute, type.Identifier.ValueText + "." + method.Identifier.ValueText);
-                        }
-                    }
-                    else if (type is InterfaceDeclarationSyntax && attribute.Name.ToString().Contains("Refit", StringComparison.Ordinal) ||
-                             type is InterfaceDeclarationSyntax && root.DescendantNodes().OfType<UsingDirectiveSyntax>().Any(u => u.Name?.ToString() == "Refit"))
-                    {
-                        var path = Constant(attribute.ArgumentList?.Arguments.FirstOrDefault()?.Expression);
-                        if (path is not null) Add("RefitEndpointCandidate", SafeRoute(path), verb, attribute, type.Identifier.ValueText + "." + method.Identifier.ValueText);
-                        else Unresolved(attribute);
-                    }
-                }
-            }
+            ControllerEndpointInspector.Inspect(root, type, model, project, file, findings, warnings, ct);
             if (type.BaseList?.Types.Any(t => t.Type.ToString().Split('.').Last() == "DbContext") == true)
                 Add("DbContextCandidate", type.Identifier.ValueText, null, type.Identifier.Parent!, type.Identifier.ValueText);
             foreach (var property in type.Members.OfType<PropertyDeclarationSyntax>())
@@ -62,13 +28,19 @@ internal static class AspNetSourceInspector
             var name = member.Name.Identifier.ValueText;
             var args = call.ArgumentList.Arguments;
             var generics = member.Name is GenericNameSyntax generic ? generic.TypeArgumentList.Arguments : default;
-            if (name is "MapGet" or "MapPost" or "MapPut" or "MapDelete" or "MapPatch" or "MapHead" or "MapOptions")
+            if (name is "MapGet" or "MapPost" or "MapPut" or "MapDelete" or "MapPatch" or "MapHead" or "MapOptions" or "MapMethods")
             {
+                if (model.GetSymbolInfo(call, ct).Symbol is IMethodSymbol known &&
+                    !known.ContainingNamespace.ToDisplayString().StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal))
+                { Unresolved(call); continue; }
                 var route = Constant(args.FirstOrDefault()?.Expression);
                 var prefix = GroupPrefix(member.Expression, new HashSet<string>(), 0);
                 if (route is null || prefix is null) { Unresolved(call); continue; }
-                Add("MinimalApiEndpointCandidate", Join(prefix, route), name[3..].ToUpperInvariant(), call, name);
+                var verbs = name == "MapMethods" ? Methods(args.ElementAtOrDefault(1)?.Expression) : new[] { name[3..].ToUpperInvariant() };
+                if (verbs is null) { Unresolved(call); continue; }
+                foreach (var verb in verbs) Add("MinimalApiEndpointCandidate", Join(prefix, route), verb, call, name);
             }
+            if (name is "MapFallback" or "MapFallbackToFile" or "MapControllerRoute" or "MapDefaultControllerRoute") Unresolved(call);
             if (name is "AddScoped" or "AddSingleton" or "AddTransient")
             {
                 if (generics.Count > 0) Add("DiRegistrationCandidate", string.Join("->", generics.Select(t => t.ToString())), null, call, name);
@@ -113,6 +85,20 @@ internal static class AspNetSourceInspector
             return value.HasValue && value.Value is string text ? text : null;
         }
 
+        string[]? Methods(ExpressionSyntax? expression)
+        {
+            var items = expression switch
+            {
+                ImplicitArrayCreationExpressionSyntax a => a.Initializer.Expressions.ToArray(),
+                ArrayCreationExpressionSyntax a => a.Initializer?.Expressions.ToArray(),
+                CollectionExpressionSyntax a when a.Elements.All(e => e is ExpressionElementSyntax) => a.Elements.Cast<ExpressionElementSyntax>().Select(e => e.Expression).ToArray(),
+                _ => null
+            };
+            if (items is null || items.Length == 0 || items.Length > 16) return null;
+            var values = items.Select(e => Constant(e)?.ToUpperInvariant()).ToArray();
+            return values.All(v => v is "GET" or "POST" or "PUT" or "DELETE" or "PATCH" or "HEAD" or "OPTIONS") ? values.Cast<string>().Distinct().ToArray() : null;
+        }
+
         string? GroupPrefix(ExpressionSyntax expression, HashSet<string> visited, int depth)
         {
             if (depth > 16) return null;
@@ -147,7 +133,7 @@ internal static class AspNetSourceInspector
         {
             if (target is not null && kind.Contains("Endpoint", StringComparison.Ordinal)) target = SafeRoute(target);
             var span = node.GetLocation().GetLineSpan();
-            findings.Add(new(kind, project, target, verb, new(file, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1), subject,
+            findings.Add(new(kind, project, target, verb, new(file, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1, span.StartLinePosition.Character + 1, span.EndLinePosition.Character + 1), subject,
                 SemanticProjectInspector.Id(project, kind, subject + "|" + verb + "|" + target)));
         }
         void Unresolved(SyntaxNode node) => warnings.Add(new("UNRESOLVED_ASPNET_PATTERN", "Nonconstant or unsupported ASP.NET pattern requires review.", file));
@@ -155,7 +141,7 @@ internal static class AspNetSourceInspector
 
     private static string Attribute(AttributeSyntax a) => a.Name.ToString().Split('.').Last().Replace("Attribute", "", StringComparison.Ordinal);
     private static string Join(string prefix, string route) => "/" + string.Join("/", new[] { prefix.Trim('/'), route.Trim('/') }.Where(s => s.Length > 0));
-    private static string SafeRoute(string route)
+    internal static string SafeRoute(string route)
     {
         if (Uri.TryCreate(route, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https") route = uri.AbsolutePath;
         // Keep route optional-parameter '?' inside {...}; remove real query/fragment data.

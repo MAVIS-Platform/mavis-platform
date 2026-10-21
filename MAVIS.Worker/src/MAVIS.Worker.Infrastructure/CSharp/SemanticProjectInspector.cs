@@ -45,7 +45,7 @@ internal static class SemanticProjectInspector
                         {
                             var resolved = model.GetTypeInfo(baseType.Type, ct).Type;
                             if (resolved is null or IErrorTypeSymbol) continue;
-                            Add(resolved.TypeKind == TypeKind.Interface ? "Implements" : "Inherits", subject, Name(resolved), baseType, "ResolvedSymbol");
+                            Add(resolved.TypeKind == TypeKind.Interface && symbol.TypeKind != TypeKind.Interface ? "Implements" : "Inherits", subject, Name(resolved), baseType, "ResolvedSymbol");
                         }
                     foreach (var field in type.Members.OfType<FieldDeclarationSyntax>())
                     {

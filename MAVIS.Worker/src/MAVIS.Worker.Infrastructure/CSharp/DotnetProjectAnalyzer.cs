@@ -140,7 +140,7 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                 foreach (var type in syntax.DescendantNodes().OfType<TypeDeclarationSyntax>())
                 {
                     token.ThrowIfCancellationRequested();
-                    var span = type.Identifier.GetLocation().GetLineSpan();
+                    var span = type.GetLocation().GetLineSpan();
                     var namespaces = type.Ancestors().OfType<BaseNamespaceDeclarationSyntax>().Reverse().Select(n => n.Name.ToString());
                     var names = type.AncestorsAndSelf().OfType<TypeDeclarationSyntax>().Reverse()
                         .Select(t => t.Identifier.ValueText + (t.TypeParameterList is null ? "" : "`" + t.TypeParameterList.Parameters.Count));
@@ -148,7 +148,7 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                     var kind = type is InterfaceDeclarationSyntax ? "Interface" : "Type";
                     if (type.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword))) partialIds.Add(Identity(project, kind, subject));
                     findings.Add(new(kind, project, type.Identifier.ValueText, null,
-                        new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1), subject,
+                        new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1, span.StartLinePosition.Character + 1, span.EndLinePosition.Character + 1), subject,
                         Identity(project, kind, subject)));
                     if (type.BaseList is not null)
                     {
@@ -161,6 +161,17 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                         }
                         warnings.Add(new("UNRESOLVED_BASE_TYPES", "Base types are syntax candidates; inheritance versus interface implementation requires semantic binding.", relative));
                     }
+                }
+                foreach (var declaration in syntax.DescendantNodes().Where(n => n is EnumDeclarationSyntax or DelegateDeclarationSyntax))
+                {
+                    var identifier = declaration is EnumDeclarationSyntax e ? e.Identifier : ((DelegateDeclarationSyntax)declaration).Identifier;
+                    var prefix = declaration.Ancestors().OfType<BaseNamespaceDeclarationSyntax>().Reverse().Select(n => n.Name.ToString())
+                        .Concat(declaration.Ancestors().OfType<TypeDeclarationSyntax>().Reverse().Select(t => t.Identifier.ValueText));
+                    var subject = string.Join(".", prefix.Append(identifier.ValueText));
+                    var span = declaration.GetLocation().GetLineSpan();
+                    var kind = declaration is EnumDeclarationSyntax ? "Enum" : "Delegate";
+                    findings.Add(new(kind, project, identifier.ValueText, null, new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1,
+                        span.StartLinePosition.Character + 1, span.EndLinePosition.Character + 1), subject, Identity(project, kind, subject)));
                 }
                 // Reuse the baseline syntax walker, but publish only literal HTTP host/port identities as unresolved hints.
                 var walker = new CSharpDependencyWalker(project, file);
@@ -193,8 +204,8 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
             throw new SourceInputException("Analysis input digest does not match the expected input version.");
         token.ThrowIfCancellationRequested();
         if (request.DeadlineUtc <= DateTimeOffset.UtcNow) throw new AnalysisDeadlineException();
-        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.6",
-            merged, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax"), warnings, inputDigest, request.AttemptId, projects.Select(p =>
+        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.7",
+            merged, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax", sources.Length - analyzed, ["StaticCompileItems", "NearestProjectConfig", "CSharpTypes", "ControllerAttributeRoutes", "MinimalApiLiteralGroups"]), warnings, inputDigest, request.AttemptId, projects.Select(p =>
                 new DotnetProjectContext(Identity(Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'), "Project", ""),
                     Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'), Path.GetRelativePath(root, Path.GetDirectoryName(p)!).Replace(Path.DirectorySeparatorChar, '/'), Path.GetFileNameWithoutExtension(p))).ToArray());
     }
