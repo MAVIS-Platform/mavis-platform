@@ -10,5 +10,6 @@ import java.util.UUID;
 @Repository
 public interface EvaluationRunRepository extends JpaRepository<EvaluationRun, UUID> {
     List<EvaluationRun> findByModelVersionId(UUID modelVersionId);
+    List<EvaluationRun> findByModelVersionIdOrderByCreatedAtDesc(UUID modelVersionId);
     List<EvaluationRun> findByRuntimeSessionId(UUID runtimeSessionId);
 }

@@ -11,6 +11,7 @@ import java.util.UUID;
 
 @Repository
 public interface EvidenceRepository extends JpaRepository<Evidence, UUID> {
+    @EntityGraph(attributePaths = {"element", "relationship"})
     List<Evidence> findByModelVersionId(UUID modelVersionId);
     long countByModelVersionId(UUID modelVersionId);
 
