@@ -1,198 +1,132 @@
-     
- 
-CAPSTONE PROJECT REGISTER 
- 
-Class:            Duration time:  From … 11/05/2026…  to 31/08/2026…
-(*) Profession: Software Engineer                   Specialty: Spring Boot , .Net  – NextJS
-(*) Kinds of person make registers:              	Lecturer                	Students  
- 
-1. Register information for the supervisor 
-No.
-Full name
-Phone
-E-Mail 
-Title 
-  Supervisor 1
-Nguyễn Thế Hoàng
-0986 628 525
-hoangnt20@fe.edu.vn
-Mr. 
+# MAVIS — bối cảnh hiện hành cho developer và coding agent
 
+> Đối chiếu ngày 21/10/2026 với main c0121fe: Java chặng 0–6 và Worker đã tích hợp. Đọc file này trước khi sửa code. Tiến độ chi tiết: [IMPLEMENTATION_STATUS](IMPLEMENTATION_STATUS.md); task tiếp theo: [NEXT_TASKS](NEXT_TASKS.md).
 
+## 1. Hiểu dự án trong một lượt đọc
 
-2. Register information for students 
- No.
-Full name 
- Student code 
-Phone 
-Email 
-Role in Group 
-1
-Hoàng Vũ
-SE180716
-0379662470
-vuhse180716@fpt.edu.vn
-Team Leader
-2
-Lê Minh Triết
-SE181979
-0915672522
-trietlmse181979@fpt.edu.vn
-Member
-3
-Huỳnh Anh Nhựt
-SE180710
-0983958920
-nhuthase180710@fpt.edu.vn
-Member
-4
-Lê Ngọc Hậu 
-SE181741
-0378754283
-haulnse181741@fpt.edu.vn
-Member
+MAVIS hỗ trợ học và đánh giá kiến trúc microservices. Sinh viên hoặc người dùng nhập dự án Java Spring/C# ASP.NET, phân tích thành mô hình có bằng chứng, xem nhiều diagram, tự kiểm tra rule, xác nhận chỉnh sửa và phân tích tác động. Giảng viên quản lý workspace/bài tập, yêu cầu artifact, nhận submission và phản hồi đúng model/diagram đã nộp. Admin quản lý tài khoản, audit và cấu hình/vận hành cần được hoàn thiện.
 
+Runtime là một nhánh thực nghiệm có kiểm soát: chạy HTTP scenario trên ứng dụng container, thu OpenTelemetry trace và đối chiếu causal interactions với model đã chọn. Runtime không bắt buộc cho mọi dự án; bài tập có thể quy định cần trace. Trace chưa đi qua một cạnh không chứng minh cạnh tĩnh đó không tồn tại.
 
+Proposal trước Review 1 nói về Developer SaaS, subscription/billing/payment. Đó không phải backlog mặc định hiện nay. AI chỉ giải thích kết quả có căn cứ, không tự quyết định kiến trúc hay tạo evidence. Entity AI có trong schema không có nghĩa provider/API AI đã hoàn thành.
 
+Hiện có backend/Worker/Runner và các test dưới đây; chưa có frontend mới được xác nhận. “Có code”, “test đã chạy” và “đã nghiệm thu toàn hệ thống” là ba trạng thái khác nhau.
 
+## 2. Nguồn sự thật và cách dùng tài liệu
 
- 
-3. Register content of the Capstone Project
-3.1. Capstone Project Name
-English: AI-Assisted Microservices Architecture Visualization and Change Impact Analysis 
-Vietnamese: Hệ thống trực quan hóa kiến trúc Microservices và phân tích tác động thay đổi có hỗ trợ AI 
-Abbreviation: MAVIS 
-A. Context:
-Microservices architecture allows software systems to be divided into multiple independent services. However, as the number of services and communication relationships increases, understanding the overall architecture becomes more difficult.
-Developers often need to manually inspect source code, configuration files, and architecture documentation to identify how services communicate with each other. Existing architecture diagrams may also become outdated when the project changes.
-The main challenges include:
-Complex service dependencies: Developers may have difficulty identifying which services communicate with or depend on other services.
-Manual architecture analysis: Understanding an unfamiliar microservices project requires developers to inspect multiple source-code and configuration files manually.
-Outdated architecture documentation: Manually maintained architecture diagrams may no longer reflect the actual implementation of the project.
-Change impact uncertainty: When a service is modified, developers may have difficulty identifying other services that could be directly or indirectly affected.
-B. Proposed Solutions
-The project proposes a SaaS (Software as a Service) web-based system that analyzes supported microservices projects and automatically generates an architecture view based on information extracted from source code and configuration files.
-The solution focuses on four main capabilities:
-1. Microservice and Dependency Analysis
-The system analyzes supported microservices projects to identify services and REST/HTTP communication dependencies.
-Docker Compose configuration, project structure, service URLs, environment/configuration references, and supported HTTP client calls are used as analysis sources.
-For each detected dependency, the system provides source-code evidence so that developers can inspect where the relationship was identified.
-2. Interactive Architecture Visualization
-Detected services and dependencies are represented as a directed dependency graph.
-Developers can interact with the graph, select individual services, inspect incoming and outgoing dependencies, and view the source-code evidence associated with detected relationships.
-This provides an automatically generated architecture view based on the analyzed project instead of relying only on manually maintained diagrams.
-3. Change Impact Analysis
-The system uses the generated dependency graph to analyze the potential impact of changing a selected service.
-It identifies directly and indirectly dependent services and displays relevant dependency paths. Potentially affected services are highlighted on the architecture graph to help developers understand the scope of a change.
-4. AI-Assisted Architecture Explanation
-AI is used to explain analysis results rather than determine the architecture itself.
-Based on the services, dependencies, and impact-analysis results generated by deterministic analysis, the AI module provides natural-language explanations of the architecture, service relationships, and potential change impacts.
-Summary
-The proposed system combines static project analysis, dependency graph visualization, graph-based change impact analysis, and AI-assisted explanation to help developers understand supported microservices projects and evaluate service dependencies more efficiently.
-Functional Requirements
-    1. Actor: System Admin Platform & User Management
-View, lock, and manage registered developer accounts.
-Monitor overall platform usage statistics, active projects, and system health. Subscription & Billing Management
-Create and configure subscription packages (e.g., Free, Premium) with specific limitations (max projects, AI explanation credits).
-View platform revenue and active user subscriptions. System Configuration
-Configure and manage external integrations (e.g., AI API keys, payment gateway credentials).
+- Code/migrations/contract và test thực chạy xác định hành vi hiện có. Ghi commit và scope khi báo tiến độ.
+- Phân công sau Review 1 bản 2.0 ngày 20/10/2026 xác định mục tiêu V01–V18, T01–T18, N01–N18, F01–F18 và P01–P24.
+- Nguồn riêng của nhóm: `.doc_review/main/phân chia nhiệm vụ chi tiết.docx`, `Report 1.docx`, Mainflow/Mainflow business, System architecture, ERD, use case và screen flows. Các file đó chưa track; agent không cần preload chúng để sửa task đã mô tả trong docs.
+- `Java chang 3.pdf` là hướng dẫn triển khai, không tự thay thế runtime contract đang có trong code.
+- Không coi mọi bước trong lane “Analysis Worker” trên mainflow đều chạy trong .NET. Java orchestration/canonical publication vẫn thuộc Java.
+- Nếu tài liệu và code lệch: ghi rõ chỗ lệch, kiểm tra đúng module; không tự xây implementation thứ hai hoặc sửa business rule theo proposal cũ.
 
-2. Actor: Developer
-Account & Subscription
-Register, log in, and manage personal profile securely.
-View billing history and upgrade subscription packages via integrated payment gateways.
-Project Management
-Upload a supported microservices project as a ZIP file.
-Validate the uploaded project before analysis.
-View imported projects.
-Delete imported projects.
-Re-analyze an imported project based on subscription limits. 
-Microservice Analysis
-Detect microservices from supported project structures and configuration files.
-Analyze supported source files.
-Analyze Docker Compose configuration.
-Detected supported REST/HTTP communication dependencies between services.
-Detects service references from supported URLs and configuration values.
-View detected services.
-View detected service dependencies.
-View source-code evidence for detected dependencies.
-Architecture Visualization
-Generate a directed dependency graph from detected services and dependencies.
-View the microservices architecture as an interactive graph.
-Zoom, pan, and navigate the architecture graph.
-Select a service to view its details.
-View incoming dependencies of a selected service.
-View outgoing dependencies of a selected service.
-Select a dependency to view its source-code evidence.
-Change Impact Analysis
-Select a service for change impact analysis.
-Identify directly dependent services.
-Identify indirectly dependent services.
-Display dependency paths related to the selected service.
-Highlight potentially affected services on the architecture graph.
-View a summary of the impact analysis result.
-AI-Assisted Analysis
-Generate a natural-language explanation of the detected architecture.
-Generate explanations of selected service relationships.
-Generate a summary of potential change impacts.
-Clearly distinguish AI-generated explanations from deterministic analysis results.
-Analysis Result Management
-View previous analysis results of an imported project.
-Trigger project re-analysis when the project content is updated.
-Replace the current architecture result after successful re-analysis.
-Display appropriate error information when a project cannot be analyzed.
-Non-Functional Requirements
-Performance
-Common dashboard operations should respond within 3 seconds under normal usage, excluding project analysis and external AI processing.
-The system should complete analysis of supported sample microservices projects within an acceptable time for interactive use.
-Security
-Validate uploaded ZIP files before processing.
-Restrict unsupported or potentially unsafe file types from project analysis.
-Protect stored project and analysis data from unauthorized access.
-Reliability & Data Integrity
-Handle invalid, incomplete, or unsupported projects without system failure.
-Preserve analysis results consistently after successful analysis.
-Prevent failed re-analysis from corrupting the previous valid analysis result.
-Usability
-Provide a clear web interface for project import, architecture visualization, and impact analysis.
-Clearly distinguish services and dependencies in the architecture graph.
-Provide clear validation and error messages.
-Allow users to navigate from graph relationships to their corresponding source-code evidence.
-Maintainability
-Separate project processing, source analysis, dependency analysis, graph analysis, AI integration, and visualization into independent modules.
-Allow additional dependency detection rules to be added without redesigning the entire system.
-Transparency
-Dependency detection and change impact analysis shall be based on deterministic system logic.
-AI-generated content shall be presented only as explanation or summarization of analysis results.
+## 3. Kiến trúc và trách nhiệm
 
-3.2. Main Proposal Content
-A. Theory and practice (document):
-Students should apply the software development process in the modeling system.
-The documents include: Software Requirements Specification (SRS), Use Case Diagram & Use Case Specification, Entity Relationship Diagram (ERD), System Architecture Diagram, Test Documentation, System Acceptance Report.
-Source Code Management: GitHub.
-Server-side technologies:
-Server: Spring Boot / .NET Web API.
-Database: PostgreSQL.
-Others: Static analysis libraries, AI AP and Payment Gateway integration.
-Client-side technologies:
-Web Client: NextJS, TailwindCSS.
-Architecture Graph Visualization: Cytoscape.js or equivalent.
-B. Products:
-Admin Dashboard: A centralized portal for platform administrators to manage users, subscription packages, system configurations, and monitor revenue.
-Developer Workspace: A web application for microservices architecture analysis supporting project import, service detection, interactive graphing, change impact analysis, and AI-assisted explanation.
-C. Proposed Tasks:
-Task package 1: Develop core architecture analysis, dependency detection.
-Task package 2: Develop Change Impact Analysis and AI-assisted explanation modules.
-Task package 3: Develop User Authentication, Subscription/Billing logic, and Admin Dashboard.
-Task package 4: Integrate web front-ends, perform testing, and deployment.
+### Java backend: business và publication authority
 
- 
-Supervisor
-Nguyễn Thế Hoàng
-HCM, date 27/08/2026
-On behalf of the Registers  
-Hoàng Vũ
+Source: `MAVIS-Platform/mavis-be/`. Maven reactor gồm shared `worker-java-client`, `mavis-common`, `mavis-platform`, `mavis-analyzer`, `mavis-bootstrap`.
 
+- common: JPA entities/repositories, shared errors/contracts, utilities; model/snapshot/job/evidence/diagram/evaluation/runtime/submission/audit data.
+- platform: auth/security, project/workspace/assignment, submission/feedback và admin/audit.
+- analyzer: ingestion/storage, Java AST/config/Compose detection, Worker adapter, canonical publication, diagrams/revision/diff, impact adapter, deterministic evaluation, runtime session/trace APIs.
+- bootstrap: runnable Spring Boot application, configuration và Flyway V1–V6.
 
+Java nhận public requests, xác thực/quyền theo policy, giữ DB và artifact storage, phát analysis job, gọi C# rồi hợp nhất kết quả. Java sở hữu ID persisted, transaction, model version, latest-valid và kết quả người dùng. Worker không ghi business database.
 
+### C# Worker: analysis và impact engine
 
+Source: `MAVIS.Worker/src/MAVIS.Worker.*`; integration client ở `MAVIS.Worker/integration/java-client`.
+
+Nhận signed artifact grant, đọc snapshot được cấp quyền, phân tích C# source bằng Roslyn theo supported profile, trả findings/evidence/coverage/warnings/digest và provenance. Không build/run source mục tiêu, không tải arbitrary SourceLocation qua HTTP.
+
+Impact nhận typed service graph của model/revision đã chọn, chạy reverse BFS trong .NET và trả dependent services, hop/path/edge/evidence references và limits/warnings. Java load/authorize/enrich graph, không chạy một BFS fallback thứ hai.
+
+### Dedicated Runtime Runner: execution boundary riêng
+
+Source: `MAVIS.Worker/src/MAVIS.Runner`. Là executable riêng với preflight, Compose override, readiness, HTTP scenario, instrumentation/Collector, causal trace correlation, timeout/cancel/cleanup/recovery và local receipt outbox.
+
+Docker socket chỉ thuộc môi trường Runner/operator. Không đưa socket vào Java business container, Worker analyzer hoặc workload của source đích. Profile đã test là local Docker Desktop Linux image-only PoC; chưa chứng minh dedicated production host/tenant isolation hoặc arbitrary repository build execution.
+
+### Frontend
+
+Theo xác nhận của người dùng: nhánh FE chưa merge/chưa hoàn tất và có thể còn UI cũ. Không có source FE mới sẵn sàng trong baseline đã đối chiếu. Contract phải sẵn để FE dùng sau; không báo browser/E2E acceptance từ MockMvc.
+
+## 4. Phân công để không giẫm chân
+
+- Hoàng Vũ — SE180716, V01–V18: platform, database/migration, auth/policy, artifact/job orchestration, runtime control/persistence, admin/DevOps.
+- Lê Minh Triết — SE181979, T01–T18: Java analyzer, canonical model/evidence, graph/diagram projections, rule evaluation, controlled revision/diff, runtime model mapping, AI/explanation/export.
+- Huỳnh Anh Nhựt — SE180710, N01–N18: .NET Worker, Roslyn/profile, single impact engine, Dedicated Runner, HTTP scenario/OTel/causal correlation, lifecycle/runtime PoC/regression/runbooks.
+- Lê Ngọc Hậu — SE181741, F01–F18: frontend, API state/UI graph/diagram/evidence, classroom/submission/runtime/AI/admin screens và E2E.
+
+Owner là người điều phối theo phân công, không khẳng định ai đã viết từng dòng code. Nhánh Worker có các adapter Java và integration tests để nối hệ thống. Không nhân đôi module đã có trên main. Thay DTO/schema/API chung cần cập nhật producer, consumer, test và docs trong cùng lát cắt; schema do Vũ phối hợp người dùng entity review.
+
+## 5. Luồng static: nhận gì → làm gì → trả gì
+
+1. Java import ZIP hoặc GitHub: nhận project/source, lưu archive bằng tên do server sinh, tính raw artifact SHA, tạo SourceSnapshot. Import không tự chạy analysis; trả snapshot và `analysisRequired=true`.
+2. Client gọi `POST /api/v1/analyzer/snapshots/{snapshotId}/analyze` với `Idempotency-Key`. Java authorize/lock project, tạo PENDING job hoặc trả job cũ cho request trùng; dispatch AFTER_COMMIT.
+3. Orchestrator load snapshot/job từ DB; không lấy event path làm authority. Begin durable attempt/deadline, kiểm tra archive SHA, bounded sealed extraction, chạy Java AST/config/Compose và gọi Worker ngoài publication transaction.
+4. Worker nhận `{schemaVersion, artifactGrant}` qua `POST /api/v1/dotnet/analyze`. Grant ký project/snapshot/job/attempt/deadline/path/digest. Root mount read-only, service key và grant key tách nhau.
+5. Worker đọc `.sln`, `.csproj`, `.cs`, `appsettings*.json` theo profile `dotnet-static/1.9`. Trả IDs nguồn, findings với file/dòng, coverage, warnings, analyzerVersion và inputDigest; không trả secrets/config values hoặc suy class/project thành runtime service đã xác nhận.
+6. Java validate response scope/provenance, import canonical elements/relationships/evidence. `mavis.bindings.json` cung cấp service ownership/project roots/endpoint aliases tường minh. Missing/ambiguous giữ unresolved/ambiguous; không fuzzy-map theo display name.
+7. WorkerModelPublisher lock job/project, fence đúng attempt/deadline, lưu model/nodes/edges/evidence/manifest/default diagrams trong một transaction. Complete mới promote latest; partial mixed-language giữ draft, failed publication không làm mất model tốt trước đó.
+8. API job trả raw status cùng `analysisState`, `dotnetStatus`, `modelVersionId`, `promotedLatest`. Frontend cần đọc outcome, không coi HTTP 200 hay raw COMPLETED là model đã hoàn tất không cần review.
+
+Cancel: pending có thể CANCELLED ngay; running chuyển CANCELLING rồi xác nhận dừng execution mới CANCELLED. Deadline recovery có thể FAILED với `CANCEL_OUTCOME_UNCONFIRMED`; không báo stopped khi chưa biết. Attempt ledger đã bền vững; Worker queue riêng vẫn trong RAM, không phải renewable distributed lease/retry scheduler.
+
+## 6. Model, diagram, revision và impact
+
+- SourceSnapshot = source đầu vào có hash; ModelVersion = kết quả canonical/confirmed model; DiagramVersion = projection/layout từ model; Evidence = căn cứ có locator/provenance. Các ID này không thay thế nhau.
+- Các quan hệ CODE_DEPENDENCY, SERVICE_HTTP_CALL, DATABASE_ACCESS và containment có ngữ nghĩa khác nhau. Containment/code/DB không tự là service HTTP edge để impact.
+- Default diagrams: DEPENDENCY_GRAPH/SERVICE, C4/CONTAINER, C4/COMPONENT. Chúng được sinh từ model đã lưu, không gọi parser/Worker lại. Chưa đồng nghĩa mọi loại UML/export trong SRS đã xong.
+- Layout chỉ cập nhật tọa độ node known/bounded. Payload giữ Java `type/position/data`, `source/target/relationType` cùng alias Worker. Không cho layout request sửa node/edge/model/evidence.
+- Controlled revision giữ base lineage, lock project, yêu cầu latest base, copy logical identities/evidence và tạo model mới. ADD/UPDATE/REMOVE được validate; không sửa model gốc. Java payload added/modified/removed và Worker elements/relationships cùng dùng một engine; không trộn hai payload trong một request.
+- Diff dùng logical keys/Worker identity/lineage; rename là modified, không remove/add theo tên. Legacy analyses độc lập thiếu stable identity không được fuzzy nối.
+- Versioned impact `/models/{id}/impact` pin model/graph SHA/target; dùng confirmed service mappings/typed edges, trả paths và evidence. `/impact` giữ detailed DTO của main; `/impact/simple` trả node list. `sessionId` tại đây là modelVersionId, không project/latest fallback.
+- Java có deterministic rule evaluation: cycle, shared database, isolated service, evidence grounding trong supported rules. Rule DFS là rule check; không phải một impact BFS thứ hai.
+
+## 7. Luồng runtime và khoảng cách tích hợp còn lại
+
+Java đã có preflight/session create/approve/stop/list/get, trace ingest/sequence APIs; có DTO, persistence và tests. Hiện `approve` có bước sinh override/cập nhật RUNNING trong DB; điều này chưa chứng minh Docker workload đã chạy hoặc Runner đã nhận lệnh. `stop` DB cũng chưa phải receipt cleanup của Dedicated Runner.
+
+Runner độc lập nhận RuntimeRunDefinition: session/model/source/profile/run-configuration/scenario version IDs, Compose image-only input, approved local profile, scenario và confirmed service mappings. Nó validate → allocate → instrument → ready → HTTP requests → preserve trace → cleanup → local receipt rồi stdout.
+
+- Trace giữ traceId/spanId/parentSpanId, dựng causal parent-child edges; không nối trace khác nhau hoặc chỉ sort timestamp để suy lời gọi.
+- Collector và projection lọc thông tin nhạy cảm. Execution/scenario/evidence/trace quality/mapping/cleanup là các trạng thái riêng; HTTP scenario fail vẫn có thể có trace hữu ích.
+- Receipt giữ actual image IDs và selected versions; image/source correspondence và production profile acceptance vẫn Unverified.
+- Receipt lưu trước stdout tại `<state-root>/receipts/<generated-project>.json`, không overwrite; platform persistence vẫn CallerOwned. Chưa có cross-host delivery/ack/retry hoàn chỉnh.
+- Không tự xóa static dependency vì không thấy trong runtime. Sequence/interaction diagram phải dựa trên saved, scoped evidence đúng model/revision.
+
+## 8. Giáo dục, submission và admin trên main
+
+Chặng 6 có submission snapshot gắn assignment/project/source/model/diagram và optional evaluation/runtime; kiểm tra deadline và các liên kết được implement. Feedback có anchor element/relationship và kiểm tra cùng model của submission; sửa/xóa feedback kiểm tra author. Admin có list users/status/role/dashboard/audit APIs.
+
+Đây là code đang có, chưa phải chứng nhận policy đầy đủ: cần rà project ownership/workspace membership/lecturer/admin matrix, runtime phải khớp model/source chứ không chỉ project, và không fallback latest source cho một bài nộp cần pinned evidence. Chỉ thấy test source hoặc chặng đã merge không chứng minh tất cả negative authorization cases đã chạy.
+
+## 9. Bản đồ code tối thiểu
+
+Mở đúng khu vực theo task, không scan toàn repo:
+
+- Import/storage: `mavis-analyzer/.../upload`, `storage`; `mavis-common/.../utils/ZipUtils.java`.
+- Static job: `mavis-analyzer/.../orchestrator`; `workerclient/service/impl/WorkerModelPublisher.java`, `WorkerCanonicalImporter.java`.
+- Service mapping: `workerclient/service/impl/ServiceBindingIndex.java`, `CrossLanguageServiceLinker.java`.
+- Worker transport: `MAVIS.Worker/integration/java-client/src/main/java/com/mavis/workerclient/`; Java Spring adapter `mavis-analyzer/.../workerclient`.
+- C# discovery/parser: `MAVIS.Worker/src/MAVIS.Worker.Infrastructure/CSharp/DotnetProjectAnalyzer.cs`; source analysis DTO/use case trong `MAVIS.Worker.Application/Analysis`; HTTP controllers trong `MAVIS.Worker.Api/Controllers`.
+- Impact: Java `mavis-analyzer/.../impact`, compatibility `graph`; .NET implementation tìm `VersionedImpact`/impact types trong Worker source.
+- Diagrams/revisions/rules/runtime APIs: `mavis-analyzer/.../diagram`, `model`, `evaluation`, `runtime`.
+- Educational platform: `mavis-platform/.../workspace`, `assignment`, `submission`, `admin`, `security`.
+- Runtime execution: `MAVIS.Worker/src/MAVIS.Runner/RunnerProgram.cs`, `DockerComposeSession.cs`, `RuntimeSessionLifecycle.cs`, `RuntimeReceiptStore.cs`, `SessionRecovery.cs`, `TraceCorrelator.cs`.
+- Migration authority: `mavis-bootstrap/src/main/resources/db/migration/`; tests copy resources through their build configuration.
+
+`...` trong đường dẫn Java là `src/main/java/com/mavis/analyzer` hoặc `com/mavis/platform` theo module. Các thư mục source cũ ngoài Maven reactor và legacy C# APIs không phải nơi mặc định thêm chức năng mới.
+
+## 10. Việc cần giữ đúng trước khi code
+
+- Không báo Worker hoặc MAVIS “100% done”. Xem [tiến độ](IMPLEMENTATION_STATUS.md) và chọn ticket có owner/DoD.
+- Giữ single impact engine, immutable version references, evidence/provenance, supported-profile warnings và conservative partial states.
+- Không chạy source người dùng trong static analyzer; không mount arbitrary host directories/socket vào workload.
+- Không sửa applied migrations V1–V6 để hợp entity mới; tạo migration mới và test upgrade.
+- Auth production chưa nghiệm thu: dev-bypass mặc định đang bật trong config; SecurityUtils còn dev header/seed-user fallback; tắt filter bypass một mình chưa chứng minh mọi method có policy đúng.
+- Không ghi/copy real secrets vào docs hoặc fixtures. Config hiện tại là dev setup, không phải production template.
+- Không auto-merge vào main. Theo phiên làm việc này chỉ commit/push feature branch đã được người dùng chỉ định; người dùng tự merge.
+- Kết thúc mỗi task: cập nhật implementation status + subsystem docs, ghi exact tests/commit/scope và phần còn thiếu. Không tick checkbox chỉ từ code tồn tại.

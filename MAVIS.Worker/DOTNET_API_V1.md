@@ -1,6 +1,6 @@
 # Worker independent API v1
 
-Internal contract v1 is implemented and independently verified; the real Java dispatcher/client is not integrated. See [N01.md](N01.md) for scoped grants, deployment, health/readiness, error codes and Java fixtures. All /api/v1 endpoints require X-Mavis-Worker-Key. Legacy /api/analysis and /api/jobs are disabled by default in every environment.
+Internal contract v1 is implemented and verified through the real Java client, canonical publication and PostgreSQL integration tests. See [current project context](../docs/mavis-context.md) and [implementation status](../docs/IMPLEMENTATION_STATUS.md) for the merged baseline and remaining acceptance gates. See [N01.md](N01.md) for scoped grants, deployment, health/readiness, error codes and Java fixtures. All /api/v1 endpoints require X-Mavis-Worker-Key. Legacy /api/analysis and /api/jobs are disabled by default in every environment.
 
 ## Source analysis
 
