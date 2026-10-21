@@ -173,22 +173,10 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                     findings.Add(new(kind, project, identifier.ValueText, null, new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1,
                         span.StartLinePosition.Character + 1, span.EndLinePosition.Character + 1), subject, Identity(project, kind, subject)));
                 }
-                // Reuse the baseline syntax walker, but publish only literal HTTP host/port identities as unresolved hints.
-                var walker = new CSharpDependencyWalker(project, file);
-                walker.Visit(syntax);
-                foreach (var finding in walker.Findings.Where(f => f.Kind == "HTTP_REST_CALL"))
-                {
-                    token.ThrowIfCancellationRequested();
-                    var literalHttp = Uri.TryCreate(finding.Url, UriKind.Absolute, out var uri) &&
-                        (uri.Scheme == "http" || uri.Scheme == "https");
-                    findings.Add(new("OutgoingHttpCandidate", project, literalHttp ? HttpEndpointIdentity.FromUri(uri!) : null,
-                        finding.HttpMethod, new(relative, finding.StartLine ?? 1, finding.StartLine ?? 1)));
-                    warnings.Add(new("UNRESOLVED_HTTP_TARGET", "Syntax candidate only: receiver type and target service identity are not verified.", relative));
-                }
             }
-            analyzed++;
+                        analyzed++;
         }
-        SemanticProjectInspector.Inspect(root, profiles, trees, findings, warnings, token);
+        SemanticProjectInspector.Inspect(root, profiles, trees, findings, warnings, token, configuration);
         var merged = findings.GroupBy(f => f.Id is not null && (partialIds.Contains(f.Id) || f.Kind == "Namespace")
             ? f.Id : Guid.NewGuid().ToString()).Select(group =>
         {
@@ -204,8 +192,8 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
             throw new SourceInputException("Analysis input digest does not match the expected input version.");
         token.ThrowIfCancellationRequested();
         if (request.DeadlineUtc <= DateTimeOffset.UtcNow) throw new AnalysisDeadlineException();
-        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.7",
-            merged, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax", sources.Length - analyzed, ["StaticCompileItems", "NearestProjectConfig", "CSharpTypes", "ControllerAttributeRoutes", "MinimalApiLiteralGroups"]), warnings, inputDigest, request.AttemptId, projects.Select(p =>
+        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.8",
+            merged, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax", sources.Length - analyzed, ["StaticCompileItems", "NearestProjectConfig", "CSharpTypes", "ControllerAttributeRoutes", "MinimalApiLiteralGroups", "HttpClientLiteralAndRegistration", "RefitInterfaceDescriptors"]), warnings, inputDigest, request.AttemptId, projects.Select(p =>
                 new DotnetProjectContext(Identity(Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'), "Project", ""),
                     Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'), Path.GetRelativePath(root, Path.GetDirectoryName(p)!).Replace(Path.DirectorySeparatorChar, '/'), Path.GetFileNameWithoutExtension(p))).ToArray());
     }

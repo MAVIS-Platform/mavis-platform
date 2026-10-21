@@ -16,7 +16,7 @@ internal static class SemanticProjectInspector
 
     public static void Inspect(string root, IReadOnlyList<ProjectCompileProfile> profiles,
         IReadOnlyDictionary<string, SyntaxTree> trees, List<DotnetFinding> findings,
-        List<AnalysisWarning> warnings, CancellationToken ct)
+        List<AnalysisWarning> warnings, CancellationToken ct, ConfigurationCatalog configuration)
     {
         var compilations = new Dictionary<string, CSharpCompilation>();
         var visiting = new HashSet<string>();
@@ -29,6 +29,7 @@ internal static class SemanticProjectInspector
             if (errors.Length > 0)
                 warnings.Add(new("SEMANTIC_LIMITATIONS", "Host-runtime compilation has missing references or errors; only resolved symbols are published. Diagnostic IDs: " +
                     string.Join(",", errors.Take(20).Select(d => d.Id).Distinct()), project));
+            HttpClientInspector.Inspect(root, project, compilation, configuration, findings, warnings, ct);
             foreach (var tree in compilation.SyntaxTrees)
             {
                 ct.ThrowIfCancellationRequested();

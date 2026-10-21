@@ -561,3 +561,13 @@ N02 full Windows regression: 166 pass + 1 Linux-only skip (167 tests). Golden re
 - [ ] N03 nghiệm thu nhóm: Triết review endpoint identity/evidence trong canonical model, corpus chung/Java publication vẫn là integration.
 
 N03 full Windows regression: 170 pass + 1 Linux-only skip (171 tests), golden fixture drift check đạt.
+
+## 22. N04 — HttpClient/named-client resolver hoàn thiện profile
+
+- [x] Outgoing HTTP cần resolved HttpClient receiver; loại fallback đoán bằng GetAsync/PostAsync từ syntax walker. Receiver chưa rõ có diagnostic, không thành HTTP relation.
+- [x] Named/default/typed registrations, BaseAddress literal/config indexer, relative calls và inline HttpRequestMessage; registration/config evidence được giữ. CreateClient tên bất kỳ không thành service.
+- [x] Ambiguous/conditional registration, reassignment và thiếu config giữ trạng thái không resolve; host/effective port dùng cùng alias N02.
+- [x] Refit interface adapter có fixture namespace kiểm chứng; không tuyên bố resolve generated calls. RestSharp disabled + diagnostic. Profile limitations trong STATIC_PROFILES.md.
+- [ ] N04 nghiệm thu nhóm: Triết nối alias endpoint vào canonical service mapping; runtime/Java merger không nằm trong outgoing resolver độc lập.
+
+N04 verification: 8 outgoing/Refit resolver fixtures pass; full Windows suite 178 pass + 1 Linux-only skip (179 tests), golden response drift check đạt. Analyzer version 1.8.

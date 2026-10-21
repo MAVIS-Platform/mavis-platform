@@ -48,34 +48,6 @@ internal static class AspNetSourceInspector
             }
             if (name == "AddDbContext" && generics.Count > 0)
                 Add("DbContextRegistrationCandidate", generics[0].ToString(), null, call, name);
-            if (name == "AddHttpClient")
-            {
-                var clientName = generics.Count > 0 ? string.Join(",", generics) : args.Count == 0 ? "DefaultClient" : Constant(args.FirstOrDefault()?.Expression) ?? "UnresolvedNamedClient";
-                Add("HttpClientRegistrationCandidate", clientName, null, call, name);
-                foreach (var assignment in call.DescendantNodes().OfType<AssignmentExpressionSyntax>())
-                    if (assignment.Left is MemberAccessExpressionSyntax { Name.Identifier.ValueText: "BaseAddress" } &&
-                        assignment.Right is ObjectCreationExpressionSyntax uriCreation &&
-                        Uri.TryCreate(Constant(uriCreation.ArgumentList?.Arguments.FirstOrDefault()?.Expression), UriKind.Absolute, out var address) && address.Scheme is "http" or "https")
-                        Add("HttpClientBaseAddressCandidate", HttpEndpointIdentity.FromUri(address), null, assignment, clientName);
-            }
-            if (name == "CreateClient") Add("HttpClientFactoryCandidate", null, null, call, "CreateClient");
-            if (name == "SaveChanges" || name == "SaveChangesAsync") Add("DatabaseWriteCandidate", null, null, call, name);
-            if (model.GetSymbolInfo(call, ct).Symbol is IMethodSymbol httpMethod &&
-                httpMethod.ContainingType.ToDisplayString() == "System.Net.Http.HttpClient")
-            {
-                var verb = name switch { "GetAsync" or "GetStringAsync" or "GetByteArrayAsync" or "GetStreamAsync" => "GET",
-                    "PostAsync" => "POST", "PutAsync" => "PUT", "DeleteAsync" => "DELETE", "PatchAsync" => "PATCH", _ => null };
-                if (verb is not null)
-                {
-                    var url = Constant(args.FirstOrDefault()?.Expression);
-                    var knownTarget = Uri.TryCreate(url, UriKind.Absolute, out var target) && target.Scheme is "http" or "https";
-                        var span = call.GetLocation().GetLineSpan();
-                        findings.Add(new("OutgoingHttp", project, knownTarget ? HttpEndpointIdentity.FromUri(target!) : null, verb,
-                            new(file, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1), "System.Net.Http.HttpClient",
-                            SemanticProjectInspector.Id(project, "OutgoingHttp", file + "|" + span.StartLinePosition + "|" + (knownTarget ? HttpEndpointIdentity.FromUri(target!) : "unresolved")), Confidence: "ResolvedSymbol"));
-                    if (!knownTarget) warnings.Add(new("UNRESOLVED_HTTP_TARGET", "HttpClient call resolved but destination requires configuration or runtime context.", file));
-                }
-            }
         }
 
         string? Constant(ExpressionSyntax? expression)

@@ -52,13 +52,20 @@ internal static class ControllerEndpointInspector
                         }
                     }
                 }
-                else if (type is InterfaceDeclarationSyntax && (attribute.Name.ToString().Contains("Refit.", StringComparison.Ordinal) ||
-                    root.DescendantNodes().OfType<UsingDirectiveSyntax>().Any(u => u.Name?.ToString() == "Refit")))
+                else if (type is InterfaceDeclarationSyntax && IsRefit(attribute))
                 {
                     var path = Template(attribute);
                     if (path is null) Warn(); else Add("RefitEndpointCandidate", path, verb, attribute);
                 }
             }
+        }
+
+        bool IsRefit(AttributeSyntax attribute)
+        {
+            if (model.GetSymbolInfo(attribute, ct).Symbol is IMethodSymbol constructor)
+                return constructor.ContainingNamespace.ToDisplayString() == "Refit";
+            return attribute.Name.ToString().StartsWith("Refit.", StringComparison.Ordinal) ||
+                attribute.Name is IdentifierNameSyntax && root.DescendantNodes().OfType<UsingDirectiveSyntax>().Any(u => u.Alias is null && u.Name?.ToString() == "Refit");
         }
 
         string? Template(AttributeSyntax attribute)

@@ -49,15 +49,12 @@ public sealed class StandaloneDotnetAnalysisTests : IDisposable
         var result = await response.Content.ReadFromJsonAsync<DotnetAnalysisResult>();
         Assert.NotNull(result);
         Assert.Equal("PartialSyntax", result.Coverage.Mode);
-        Assert.Equal("dotnet-static/1.7", result.AnalyzerVersion);
+        Assert.Equal("dotnet-static/1.8", result.AnalyzerVersion);
         Assert.Equal(1, result.Coverage.AnalyzedFiles);
         Assert.Contains(result.Findings, f => f.Kind == "Type" && f.Target == "Client");
-        var http = Assert.Single(result.Findings.Where(f => f.Kind == "OutgoingHttpCandidate"));
-        Assert.Equal("payments:443", http.Target);
-        Assert.Equal("Client.cs", http.Evidence.FilePath);
-        Assert.Equal(3, http.Evidence.StartLine);
+        Assert.DoesNotContain(result.Findings, f => f.Kind == "OutgoingHttpCandidate");
         Assert.Contains(result.Warnings, w => w.Code == "SYNTAX_ONLY");
-        Assert.Contains(result.Warnings, w => w.Code == "UNRESOLVED_HTTP_TARGET");
+        Assert.Contains(result.Warnings, w => w.Code == "UNRESOLVED_HTTP_RECEIVER");
     }
 
     [Fact]
