@@ -1,6 +1,8 @@
 # MAVIS Dashboard
 
-Design a clean, modern developer dashboard for MAVIS, a SaaS platform for microservices architecture analysis. Include sidebar navigation, overview statistics, recent projects, analysis status, and a clear quick action to import a project. Use a professional minimal light-theme modern SaaS UI.
+Next.js / React / strict TypeScript frontend for architecture learning, source analysis, runtime evidence and versioned coursework. Stage 2 reuses the Stage 1 shell, role navigation and Light/Dark/System semantic styles.
+
+The default is **mock mode**, with clearly labeled sample accounts/data and simulated operations. No backend integration has been verified. See the [architecture](docs/architecture/stage-2.md) and [API integration checklist](docs/architecture/api-integration.md).
 
 This project was built with [Lovable](https://lovable.dev).
 
@@ -19,6 +21,10 @@ Prefer working locally? You need Node.js and npm — [install with nvm](https://
 ```sh
 git clone <this-repository-url>
 cd <repository-name>
-npm i
+npm ci
 npm run dev
 ```
+
+Run `npm run typecheck`, `npm test`, and `npm run build` for verification. Copy `.env.example` to `.env.local` to select mock scenarios or configure backend mode. Never commit session secrets or expose them through `NEXT_PUBLIC_*` settings.
+
+In mock mode `/login` offers Student, Lecturer and Administrator sample accounts. Reload resets sample changes; switching sample roles keeps the current in-memory submissions available for review.

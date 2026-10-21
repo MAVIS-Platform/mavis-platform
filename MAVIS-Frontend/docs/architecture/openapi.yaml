@@ -1,0 +1,1747 @@
+openapi: 3.1.0
+info:
+  title: MAVIS Public Frontend API
+  version: 0.1.0-draft
+  description: >-
+    PROPOSED contract generated from the current MAVIS frontend operation
+    schemas. No route in this document is confirmed or runtime-verified.
+servers:
+  - url: /api/v1
+    description: Proposed Spring Boot public API, accessed through the Next.js same-origin proxy.
+tags:
+  - name: Session
+  - name: Projects
+  - name: Source
+  - name: Analysis
+  - name: Architecture
+  - name: Runtime
+  - name: Education
+  - name: Submissions
+  - name: Administration
+security:
+  - sessionCookie: []
+paths:
+  /session:
+    get:
+      tags: [Session]
+      operationId: session
+      summary: Get the current authenticated user
+      description: PROPOSED. Anonymous callers receive user=null; no token is returned.
+      security: []
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [anonymous, student, lecturer, admin]
+      responses:
+        "200":
+          description: Current user or anonymous session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /session/logout:
+    post:
+      tags: [Session]
+      operationId: signOut
+      summary: End the current session
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, lecturer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          description: Session ended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /projects:
+    get:
+      tags: [Projects]
+      operationId: projects
+      summary: List projects visible to the caller
+      description: Returns an array for current FE schema compatibility. Pagination headers are proposed.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Accessible projects.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+            X-Total-Count:
+              $ref: "#/components/headers/TotalCount"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /projects/{projectId}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      operationId: project
+      summary: Get an accessible project
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      responses:
+        "200":
+          description: Project summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /projects/{projectId}/snapshots:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Source]
+      operationId: snapshots
+      summary: List immutable source snapshots
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Source snapshots.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+            X-Total-Count:
+              $ref: "#/components/headers/TotalCount"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Snapshot"
+        default:
+          $ref: "#/components/responses/ApiError"
+    post:
+      tags: [Source]
+      operationId: importSource
+      summary: Validate and create an immutable ZIP source snapshot
+      description: >-
+        PROPOSED. Do not return storage paths. Frontend local upload maximum is
+        200 MiB; deployment limit remains TBD.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [projectId, file, name]
+              properties:
+                projectId:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+      responses:
+        "201":
+          description: Snapshot created, including validation status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Snapshot"
+        "413":
+          $ref: "#/components/responses/ApiError"
+        "422":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /projects/{projectId}/analysis-jobs:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Analysis]
+      operationId: analysisJobs
+      summary: List analysis jobs for a project
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Analysis jobs.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+            X-Total-Count:
+              $ref: "#/components/headers/TotalCount"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalysisJob"
+        default:
+          $ref: "#/components/responses/ApiError"
+    post:
+      tags: [Analysis]
+      operationId: startAnalysis
+      summary: Start asynchronous analysis for a validated snapshot
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartAnalysisRequest"
+      responses:
+        "202":
+          description: Analysis accepted and queued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisJob"
+        "409":
+          $ref: "#/components/responses/ApiError"
+        "422":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /analysis-jobs/{jobId}:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      tags: [Analysis]
+      operationId: analysisJob
+      summary: Get analysis job status and result reference
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      responses:
+        "200":
+          description: Job status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisJob"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /projects/{projectId}/models:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Architecture]
+      operationId: models
+      summary: List architecture model versions for a project
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Model versions.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+            X-Total-Count:
+              $ref: "#/components/headers/TotalCount"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Model"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /models/{modelId}:
+    parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      tags: [Architecture]
+      operationId: model
+      summary: Get a versioned architecture model and graph
+      description: Graph is embedded in the current frontend schema; large-graph pagination is TBD.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      responses:
+        "200":
+          description: Immutable model revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /models/{modelId}/revisions:
+    parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    post:
+      tags: [Architecture]
+      operationId: saveModel
+      summary: Create a new immutable model revision
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveModelRequest"
+      responses:
+        "201":
+          description: New model ID and revision; previous revision is unchanged.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Model"
+        "409":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /projects/{projectId}/runtime-configuration:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Runtime]
+      operationId: runtimeConfiguration
+      summary: Read runtime eligibility and safe configuration metadata
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      responses:
+        "200":
+          description: Runtime configuration without secrets.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeConfiguration"
+        default:
+          $ref: "#/components/responses/ApiError"
+    put:
+      tags: [Runtime]
+      operationId: saveRuntimeConfiguration
+      summary: Select an eligible runtime profile
+      description: Historical immutable config revision support is required but not represented in the current FE response.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveRuntimeConfigurationRequest"
+      responses:
+        "200":
+          description: Current configuration metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeConfiguration"
+        "409":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /projects/{projectId}/scenarios:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Runtime]
+      operationId: scenarios
+      summary: List runtime scenarios
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      responses:
+        "200":
+          description: Current scenarios.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Scenario"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /scenarios/{scenarioId}/revisions:
+    parameters:
+      - name: scenarioId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    post:
+      tags: [Runtime]
+      operationId: saveScenario
+      summary: Create a new scenario revision
+      description: Historical immutable revisions are required for pinned runtime sessions.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaveScenarioRequest"
+      responses:
+        "201":
+          description: New scenario revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scenario"
+        "409":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /runtime-sessions:
+    get:
+      tags: [Runtime]
+      operationId: runtimeSessions
+      summary: List runtime sessions in an authorized project scope
+      description: projectId=* is reserved for an explicitly authorized administrative scope.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, admin]
+      parameters:
+        - name: projectId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Runtime sessions.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+            X-Total-Count:
+              $ref: "#/components/headers/TotalCount"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RuntimeSession"
+        default:
+          $ref: "#/components/responses/ApiError"
+    post:
+      tags: [Runtime]
+      operationId: startRuntime
+      summary: Start an explicitly approved runtime session
+      description: Current FE request lacks modelVersionId and executionProfileId; resolve before full parity.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartRuntimeRequest"
+      responses:
+        "202":
+          description: Runtime session accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeSession"
+        "409":
+          $ref: "#/components/responses/ApiError"
+        "422":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /runtime-sessions/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      tags: [Runtime]
+      operationId: runtimeSession
+      summary: Get runtime session status, events and trace summary
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, admin]
+      responses:
+        "200":
+          description: Runtime session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeSession"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /runtime-sessions/{sessionId}/actions:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    post:
+      tags: [Runtime]
+      operationId: stopRuntime
+      summary: Cancel or terminate a runtime session
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StopRuntimeRequest"
+      responses:
+        "200":
+          description: Updated session state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeSession"
+        "409":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /models/{modelId}/impact-analyses:
+    parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    post:
+      tags: [Architecture]
+      operationId: impact
+      summary: Calculate potential impact for a model element
+      description: Results describe potential impact, not guaranteed runtime failure.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImpactRequest"
+      responses:
+        "200":
+          description: Version-scoped potential impact paths and limitations.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Impact"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /models/{modelId}/elements/{elementId}/explanations:
+    parameters:
+      - name: modelId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: elementId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    post:
+      tags: [Architecture]
+      operationId: explain
+      summary: Explain an element in the selected model version
+      description: AI output is explanatory only and must not mutate the model or expose secrets.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExplainRequest"
+      responses:
+        "200":
+          description: Explanation and evidence references.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Explanation"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /workspaces:
+    get:
+      tags: [Education]
+      operationId: workspaces
+      summary: List workspaces visible to the caller
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      responses:
+        "200":
+          description: Workspaces with member summaries.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Workspace"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /workspaces/{workspaceId}/assignments:
+    parameters:
+      - name: workspaceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      tags: [Education]
+      operationId: assignments
+      summary: List assignments visible in a workspace
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Assignments.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+            X-Total-Count:
+              $ref: "#/components/headers/TotalCount"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Assignment"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /workspaces/{workspaceId}/reference-versions:
+    parameters:
+      - name: workspaceId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      tags: [Education]
+      operationId: referenceVersions
+      summary: List immutable workspace reference versions
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      responses:
+        "200":
+          description: Reference version snapshots and models.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReferenceVersion"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /submissions:
+    get:
+      tags: [Submissions]
+      operationId: submissions
+      summary: List submissions in the caller's authorized scope
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Authorized submissions.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+            X-Total-Count:
+              $ref: "#/components/headers/TotalCount"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Submission"
+        default:
+          $ref: "#/components/responses/ApiError"
+    post:
+      tags: [Submissions]
+      operationId: submit
+      summary: Create an immutable submission from selected versions
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitRequest"
+      responses:
+        "201":
+          description: Frozen submission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Submission"
+        "409":
+          $ref: "#/components/responses/ApiError"
+        "422":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /submissions/{submissionId}:
+    parameters:
+      - name: submissionId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    get:
+      tags: [Submissions]
+      operationId: submission
+      summary: Get a frozen submission and its permitted evidence
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [student, individual-learner-tbd, lecturer, admin]
+      responses:
+        "200":
+          description: Submission snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Submission"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /submissions/{submissionId}/feedback:
+    parameters:
+      - name: submissionId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    post:
+      tags: [Submissions]
+      operationId: feedback
+      summary: Add feedback to the exact submitted model version
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [lecturer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackRequest"
+      responses:
+        "200":
+          description: Updated submission with feedback.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Submission"
+        "409":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /admin/accounts:
+    get:
+      tags: [Administration]
+      operationId: accounts
+      summary: List account summaries
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [admin]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Account summaries.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+            X-Total-Count:
+              $ref: "#/components/headers/TotalCount"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Account"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /admin/accounts/{accountId}/lock:
+    parameters:
+      - name: accountId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    patch:
+      tags: [Administration]
+      operationId: setAccountLock
+      summary: Lock or unlock an account
+      description: Account concurrency token is not present in the current FE request; policy remains TBD.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetAccountLockRequest"
+      responses:
+        "200":
+          description: Updated account state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Account"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /admin/integrations:
+    get:
+      tags: [Administration]
+      operationId: integrations
+      summary: List integration status without credential values
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [admin]
+      responses:
+        "200":
+          description: Integration metadata.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Integration"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /admin/integrations/{integrationId}:
+    parameters:
+      - name: integrationId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    patch:
+      tags: [Administration]
+      operationId: configureIntegration
+      summary: Enable or disable an integration
+      description: Credential editing and connection testing are not in the current frontend.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigureIntegrationRequest"
+      responses:
+        "200":
+          description: Updated integration metadata.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Integration"
+        "409":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /admin/runtime-profiles:
+    get:
+      tags: [Administration]
+      operationId: profiles
+      summary: List runtime profile summaries
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [admin]
+      responses:
+        "200":
+          description: Runtime profiles.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Profile"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /admin/runtime-profiles/{profileId}:
+    parameters:
+      - name: profileId
+        in: path
+        required: true
+        schema:
+          type: string
+          minLength: 1
+    patch:
+      tags: [Administration]
+      operationId: configureProfile
+      summary: Enable or disable a runtime profile
+      description: Profile CRUD and validation/test operations are outside the current frontend contract.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfigureProfileRequest"
+      responses:
+        "200":
+          description: Updated profile summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Profile"
+        "409":
+          $ref: "#/components/responses/ApiError"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /admin/audit-records:
+    get:
+      tags: [Administration]
+      operationId: audit
+      summary: List redacted administrative audit records
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [admin]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Audit records.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+            X-Total-Count:
+              $ref: "#/components/headers/TotalCount"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditRecord"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /admin/analysis-jobs:
+    get:
+      tags: [Administration]
+      operationId: adminJobs
+      summary: List platform-wide analysis jobs
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [admin]
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/Size"
+      responses:
+        "200":
+          description: Jobs visible to administrators.
+          headers:
+            Link:
+              $ref: "#/components/headers/Link"
+            X-Total-Count:
+              $ref: "#/components/headers/TotalCount"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnalysisJob"
+        default:
+          $ref: "#/components/responses/ApiError"
+  /admin/platform-summary:
+    get:
+      tags: [Administration]
+      operationId: platformSummary
+      summary: Read telemetry-backed platform counts and health
+      description: Health may be available/degraded only when backed by real probes; otherwise unknown.
+      x-mavis-status: PROPOSED
+      x-mavis-roles: [admin]
+      responses:
+        "200":
+          description: Platform telemetry summary.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformSummary"
+        default:
+          $ref: "#/components/responses/ApiError"
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: MAVIS_SESSION
+      description: Proposed cookie name only; actual identity/session configuration is TBD.
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Proposed zero-based page index; current FE does not send this parameter.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Size:
+      name: size
+      in: query
+      required: false
+      description: Proposed page size; server maximum remains TBD.
+      schema:
+        type: integer
+        minimum: 1
+        default: 50
+  headers:
+    Link:
+      description: RFC 8288 links for next/previous pages when applicable.
+      schema:
+        type: string
+    TotalCount:
+      description: Total matching items before pagination.
+      schema:
+        type: integer
+        minimum: 0
+  responses:
+    ApiError:
+      description: Standard error response. Status semantics are described in backend-api-contract.md.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+  schemas:
+    Ok:
+      type: object
+      additionalProperties: false
+      required: [ok]
+      properties:
+        ok:
+          const: true
+    Session:
+      type: object
+      additionalProperties: false
+      required: [user]
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/UserIdentity"
+            - type: "null"
+    UserIdentity:
+      type: object
+      additionalProperties: false
+      required: [id, name, role]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+    Role:
+      type: string
+      enum: [student, lecturer, admin]
+    Project:
+      type: object
+      additionalProperties: false
+      required: [id, name, repository, status, services, runtimeSupported]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        repository:
+          type: string
+        status:
+          type: string
+          enum: [ready, processing, failed]
+        services:
+          type: integer
+          minimum: 0
+        runtimeSupported:
+          type: boolean
+    Snapshot:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, name, createdAt, validation, evidenceComplete]
+      properties:
+        id:
+          type: string
+          description: Stable opaque immutable snapshot ID; never a filesystem path.
+        projectId:
+          type: string
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        validation:
+          type: string
+          enum: [valid, invalid, unsupported]
+        evidenceComplete:
+          type: boolean
+    AnalysisJob:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, snapshotId, status, progress, modelId, message]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        snapshotId:
+          type: string
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+        progress:
+          type: number
+          minimum: 0
+          maximum: 100
+        modelId:
+          oneOf:
+            - type: string
+            - type: "null"
+        message:
+          type: string
+    StartAnalysisRequest:
+      type: object
+      additionalProperties: false
+      required: [projectId, snapshotId]
+      properties:
+        projectId:
+          type: string
+        snapshotId:
+          type: string
+    Evidence:
+      type: object
+      additionalProperties: false
+      required: [id, kind, location, snippet, complete]
+      properties:
+        id:
+          type: string
+          description: Stable evidence ID, not an unstable server path.
+        kind:
+          type: string
+          enum: [source, runtime]
+        location:
+          type: string
+          description: Safe, non-secret logical source location.
+        snippet:
+          type: string
+          description: Sanitized evidence excerpt.
+        complete:
+          type: boolean
+    Element:
+      type: object
+      additionalProperties: false
+      required: [id, name, layer, description, evidence]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        layer:
+          type: string
+          enum: [edge, domain, platform, data]
+        description:
+          type: string
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+    Edge:
+      type: object
+      additionalProperties: false
+      required: [id, from, to, protocol, evidence, uncertain]
+      properties:
+        id:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        protocol:
+          type: string
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evidence"
+        uncertain:
+          type: boolean
+    Model:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, snapshotId, revision, label, elements, edges]
+      properties:
+        id:
+          type: string
+          description: Immutable model revision ID.
+        projectId:
+          type: string
+        snapshotId:
+          type: string
+        revision:
+          type: integer
+          minimum: 1
+        label:
+          type: string
+        elements:
+          type: array
+          items:
+            $ref: "#/components/schemas/Element"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/Edge"
+    SaveModelRequest:
+      type: object
+      additionalProperties: false
+      required: [modelId, expectedRevision, elementId, description]
+      properties:
+        modelId:
+          type: string
+        expectedRevision:
+          type: integer
+          minimum: 1
+        elementId:
+          type: string
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    RuntimeConfiguration:
+      type: object
+      additionalProperties: false
+      required: [projectId, profileId, supported, prerequisites, ready, revision]
+      properties:
+        projectId:
+          type: string
+        profileId:
+          type: string
+        supported:
+          type: boolean
+        prerequisites:
+          type: array
+          items:
+            type: string
+        ready:
+          type: boolean
+        revision:
+          type: integer
+          minimum: 1
+    SaveRuntimeConfigurationRequest:
+      type: object
+      additionalProperties: false
+      required: [projectId, profileId, expectedRevision]
+      properties:
+        projectId:
+          type: string
+        profileId:
+          type: string
+        expectedRevision:
+          type: integer
+          minimum: 1
+    Scenario:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, name, steps, revision]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        name:
+          type: string
+        steps:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+        revision:
+          type: integer
+          minimum: 1
+    SaveScenarioRequest:
+      type: object
+      additionalProperties: false
+      required: [scenarioId, expectedRevision, name, steps]
+      properties:
+        scenarioId:
+          type: string
+        expectedRevision:
+          type: integer
+          minimum: 1
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        steps:
+          type: array
+          minItems: 1
+          maxItems: 30
+          items:
+            type: string
+            minLength: 1
+            maxLength: 500
+    StartRuntimeRequest:
+      type: object
+      additionalProperties: false
+      required: [projectId, snapshotId, scenarioId, configurationRevision, scenarioRevision, approved]
+      properties:
+        projectId:
+          type: string
+        snapshotId:
+          type: string
+        scenarioId:
+          type: string
+        configurationRevision:
+          type: integer
+          minimum: 1
+        scenarioRevision:
+          type: integer
+          minimum: 1
+        approved:
+          const: true
+        modelVersionId:
+          type: string
+          description: Required by the target immutable-run policy but absent from current FE request; TBD.
+        executionProfileId:
+          type: string
+          description: Required by the target immutable-run policy but absent from current FE request; TBD.
+    RuntimeSession:
+      type: object
+      additionalProperties: false
+      required: [id, projectId, snapshotId, scenarioId, configurationRevision, scenarioRevision, status, outcome, approvedAt, events, traces]
+      properties:
+        id:
+          type: string
+        projectId:
+          type: string
+        snapshotId:
+          type: string
+        scenarioId:
+          type: string
+        configurationRevision:
+          type: integer
+          minimum: 1
+        scenarioRevision:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [running, completed, failed, cancelled, terminated]
+        outcome:
+          type: string
+          enum: [pending, passed, failed, unknown]
+        approvedAt:
+          type: string
+          format: date-time
+        events:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [at, message]
+            properties:
+              at:
+                type: string
+                format: date-time
+              message:
+                type: string
+        traces:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, from, to, durationMs, uncertain]
+            properties:
+              id:
+                type: string
+              from:
+                type: string
+              to:
+                type: string
+              durationMs:
+                type: number
+                minimum: 0
+              uncertain:
+                type: boolean
+    StopRuntimeRequest:
+      type: object
+      additionalProperties: false
+      required: [sessionId, action]
+      properties:
+        sessionId:
+          type: string
+        action:
+          type: string
+          enum: [cancel, terminate]
+    ImpactRequest:
+      type: object
+      additionalProperties: false
+      required: [modelId, targetId]
+      properties:
+        modelId:
+          type: string
+        targetId:
+          type: string
+    Impact:
+      type: object
+      additionalProperties: false
+      required: [modelId, targetId, paths, limitations]
+      properties:
+        modelId:
+          type: string
+        targetId:
+          type: string
+        paths:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+        limitations:
+          type: string
+    ExplainRequest:
+      type: object
+      additionalProperties: false
+      required: [modelId, elementId]
+      properties:
+        modelId:
+          type: string
+        elementId:
+          type: string
+    Explanation:
+      type: object
+      additionalProperties: false
+      required: [id, modelId, elementId, text, evidenceIds, sample]
+      properties:
+        id:
+          type: string
+        modelId:
+          type: string
+        elementId:
+          type: string
+        text:
+          type: string
+        evidenceIds:
+          type: array
+          items:
+            type: string
+        sample:
+          type: boolean
+    Workspace:
+      type: object
+      additionalProperties: false
+      required: [id, name, members]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        members:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, name, role]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              role:
+                type: string
+    Assignment:
+      type: object
+      additionalProperties: false
+      required: [id, workspaceId, title, instructions, dueAt]
+      properties:
+        id:
+          type: string
+        workspaceId:
+          type: string
+        title:
+          type: string
+        instructions:
+          type: string
+        dueAt:
+          type: string
+          format: date-time
+    ReferenceVersion:
+      type: object
+      additionalProperties: false
+      required: [id, workspaceId, snapshot, model]
+      properties:
+        id:
+          type: string
+        workspaceId:
+          type: string
+        snapshot:
+          $ref: "#/components/schemas/Snapshot"
+        model:
+          $ref: "#/components/schemas/Model"
+    Submission:
+      type: object
+      additionalProperties: false
+      required: [id, assignmentId, studentId, submittedAt, model, snapshot, runtime, feedback]
+      properties:
+        id:
+          type: string
+        assignmentId:
+          type: string
+        studentId:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        model:
+          $ref: "#/components/schemas/Model"
+        snapshot:
+          $ref: "#/components/schemas/Snapshot"
+        runtime:
+          oneOf:
+            - $ref: "#/components/schemas/RuntimeSession"
+            - type: "null"
+        feedback:
+          type: array
+          items:
+            $ref: "#/components/schemas/Feedback"
+    SubmitRequest:
+      type: object
+      additionalProperties: false
+      required: [assignmentId, modelId, snapshotId, runtimeSessionId]
+      properties:
+        assignmentId:
+          type: string
+        modelId:
+          type: string
+        snapshotId:
+          type: string
+        runtimeSessionId:
+          oneOf:
+            - type: string
+            - type: "null"
+    FeedbackRequest:
+      type: object
+      additionalProperties: false
+      required: [submissionId, modelId, text]
+      properties:
+        submissionId:
+          type: string
+        modelId:
+          type: string
+        text:
+          type: string
+          minLength: 1
+          maxLength: 5000
+    Feedback:
+      type: object
+      additionalProperties: false
+      required: [id, text, createdAt, authorId]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        authorId:
+          type: string
+    Account:
+      type: object
+      additionalProperties: false
+      required: [id, name, role, locked]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        role:
+          $ref: "#/components/schemas/Role"
+        locked:
+          type: boolean
+    SetAccountLockRequest:
+      type: object
+      additionalProperties: false
+      required: [accountId, locked]
+      properties:
+        accountId:
+          type: string
+        locked:
+          type: boolean
+    Integration:
+      type: object
+      additionalProperties: false
+      required: [id, name, enabled, revision]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        revision:
+          type: integer
+          minimum: 1
+    ConfigureIntegrationRequest:
+      type: object
+      additionalProperties: false
+      required: [integrationId, enabled, expectedRevision]
+      properties:
+        integrationId:
+          type: string
+        enabled:
+          type: boolean
+        expectedRevision:
+          type: integer
+          minimum: 1
+    Profile:
+      type: object
+      additionalProperties: false
+      required: [id, name, enabled, revision]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        revision:
+          type: integer
+          minimum: 1
+    ConfigureProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [profileId, enabled, expectedRevision]
+      properties:
+        profileId:
+          type: string
+        enabled:
+          type: boolean
+        expectedRevision:
+          type: integer
+          minimum: 1
+    AuditRecord:
+      type: object
+      additionalProperties: false
+      required: [id, at, action, actorId, resourceId]
+      properties:
+        id:
+          type: string
+        at:
+          type: string
+          format: date-time
+        action:
+          type: string
+        actorId:
+          type: string
+        resourceId:
+          type: string
+    PlatformSummary:
+      type: object
+      additionalProperties: false
+      required: [health, message, projects, users, runningSessions, analysisJobs]
+      properties:
+        health:
+          type: string
+          enum: [available, degraded, unknown]
+        message:
+          type: string
+        projects:
+          type: integer
+          minimum: 0
+        users:
+          type: integer
+          minimum: 0
+        runningSessions:
+          type: integer
+          minimum: 0
+        analysisJobs:
+          type: integer
+          minimum: 0
+    ApiError:
+      type: object
+      additionalProperties: true
+      required: [type, title, status, code, requestId]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+        detail:
+          type: string
+        fieldErrors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, code, message]
+            properties:
+              field:
+                type: string
+              code:
+                type: string
+              message:
+                type: string
+        requestId:
+          type: string
