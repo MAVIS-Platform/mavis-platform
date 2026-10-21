@@ -95,3 +95,11 @@ The service graph includes SERVICE_CONTAINER nodes and only SERVICE_HTTP_CALL ed
 Java maps SERVICE_HTTP_CALL to the producer's HttpRestCall edge kind, verifies result model/graph/target and path/edge/evidence references, and preserves truncated/depth/path warnings. HTTP failures/timeouts/corrupt results never fall back to Java traversal or a successful empty set. The new API returns 503 for Worker transport failure. No impact-result history table is added in this milestone.
 
 Compatibility `/api/v1/analyzer/impact?sessionId=...&nodeId=...` also delegates to .NET, with sessionId now strictly a modelVersionId. Project-ID/latest fallback was deliberately removed for impact; it still returns the old list-shaped response, so new callers should use the versioned API for paths/evidence/truncation. The unrelated legacy graph-read API has not been migrated by this adapter. Production JWT, UI highlights, runtime context and larger corpus/performance acceptance remain separate gates.
+
+## Artifact storage and extraction profile
+
+Uploads and GitHub streams are stored under server-generated UUID_source.zip names; original filenames cannot select paths. Storage refuses linked roots and streams beyond 100 MiB, writes a temporary file, then atomically publishes the completed archive. Filesystem ownership/quotas remain operator responsibilities.
+
+Analysis verifies the snapshot raw artifact SHA before bounded ZIP extraction. Limits: 100 MiB archive, 10,000 entries, 20 MiB per file, 200 MiB expanded bytes, path depth 32 and path length 1024. Traversal, absolute paths, colon/control characters, case-insensitive duplicate names and the reserved extraction seal are rejected. Extraction never executes uploaded build scripts.
+
+A per-archive lock protects publication. Fresh temporary trees are atomically renamed to the legacy *_extracted location after recording archive/tree SHA values. Reuse verifies both hashes and rejects unsealed or changed trees instead of overwriting them. An older unsealed extraction requires operator migration/re-import; it is not silently trusted. Only the temporary tree created by the failing invocation is cleaned automatically. Static artifacts are not deleted by runtime cleanup; retention needs a separate policy.
