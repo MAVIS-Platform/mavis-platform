@@ -21,4 +21,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     @EntityGraph(attributePaths = {"role"})
     List<User> findByEmailIn(Collection<String> emails);
+
+    @EntityGraph(attributePaths = {"role"})
+    List<User> findAllByOrderByCreatedAtDesc();
 }
+
