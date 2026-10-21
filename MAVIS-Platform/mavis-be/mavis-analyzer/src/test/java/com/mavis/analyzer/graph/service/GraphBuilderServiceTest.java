@@ -1,5 +1,6 @@
 package com.mavis.analyzer.graph.service;
 
+import com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.common.entity.Evidence;
 import com.mavis.common.entity.ModelElement;
@@ -43,7 +44,7 @@ class GraphBuilderServiceTest {
     private EvidenceRepository evidenceRepository;
 
     @InjectMocks
-    private GraphBuilderService graphBuilderService;
+    private GraphBuilderServiceImpl graphBuilderService;
 
     private Project sampleProject;
     private SourceSnapshot sampleSnapshot;
@@ -141,7 +142,7 @@ class GraphBuilderServiceTest {
     }
 
     @Test
-    @DisplayName("Should save REST_API evidence linked to owning element with relationship as null")
+    @DisplayName("Should batch save REST_API evidence linked to owning element with relationship as null")
     void shouldSaveRestApiEvidenceLinkedToOwningNode() {
         ModelElement element = ModelElement.builder()
                 .id(UUID.randomUUID())
@@ -158,12 +159,17 @@ class GraphBuilderServiceTest {
                 .codeSnippet("@GetMapping(\"/api/v1/orders\")")
                 .build();
 
+        when(evidenceRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
         graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion, List.of(element), List.of(restApiEvidence));
 
-        ArgumentCaptor<Evidence> captor = ArgumentCaptor.forClass(Evidence.class);
-        verify(evidenceRepository).save(captor.capture());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Evidence>> captor = ArgumentCaptor.forClass(List.class);
+        verify(evidenceRepository).saveAll(captor.capture());
 
-        Evidence saved = captor.getValue();
+        List<Evidence> savedList = captor.getValue();
+        assertThat(savedList).hasSize(1);
+        Evidence saved = savedList.get(0);
         assertThat(saved.getElement()).isEqualTo(element);
         assertThat(saved.getRelationship()).isNull();
         assertThat(saved.getSourceType()).isEqualTo("STATIC_CODE");
@@ -172,7 +178,7 @@ class GraphBuilderServiceTest {
     }
 
     @Test
-    @DisplayName("Should match FeignClient, create ModelRelationship and linked Evidence")
+    @DisplayName("Should match FeignClient, create ModelRelationship in batch and linked Evidence in batch")
     void shouldMatchFeignClientAndCreateDependencyEdgeAndEvidence() {
         ModelElement orderElement = ModelElement.builder()
                 .id(UUID.randomUUID())
@@ -196,28 +202,37 @@ class GraphBuilderServiceTest {
                 .codeSnippet("@FeignClient(\"payment-service\")")
                 .build();
 
-        when(modelRelationshipRepository.save(any(ModelRelationship.class))).thenAnswer(invocation -> {
-            ModelRelationship rel = invocation.getArgument(0);
-            rel.setId(UUID.randomUUID());
-            return rel;
+        when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(invocation -> {
+            List<ModelRelationship> rels = invocation.getArgument(0);
+            for (ModelRelationship r : rels) {
+                r.setId(UUID.randomUUID());
+            }
+            return rels;
         });
+        when(evidenceRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion,
                 List.of(orderElement, paymentElement), List.of(feignEvidence));
 
-        ArgumentCaptor<ModelRelationship> relCaptor = ArgumentCaptor.forClass(ModelRelationship.class);
-        verify(modelRelationshipRepository).save(relCaptor.capture());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelRelationship>> relCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository).saveAll(relCaptor.capture());
 
-        ModelRelationship savedRel = relCaptor.getValue();
+        List<ModelRelationship> savedRels = relCaptor.getValue();
+        assertThat(savedRels).hasSize(1);
+        ModelRelationship savedRel = savedRels.get(0);
         assertThat(savedRel.getModelVersion()).isEqualTo(sampleModelVersion);
         assertThat(savedRel.getSourceElement()).isEqualTo(orderElement);
         assertThat(savedRel.getTargetElement()).isEqualTo(paymentElement);
         assertThat(savedRel.getRelationType()).isEqualTo("SERVICE_HTTP_CALL");
 
-        ArgumentCaptor<Evidence> evidenceCaptor = ArgumentCaptor.forClass(Evidence.class);
-        verify(evidenceRepository).save(evidenceCaptor.capture());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Evidence>> evidenceCaptor = ArgumentCaptor.forClass(List.class);
+        verify(evidenceRepository).saveAll(evidenceCaptor.capture());
 
-        Evidence savedEvidence = evidenceCaptor.getValue();
+        List<Evidence> savedEvidences = evidenceCaptor.getValue();
+        assertThat(savedEvidences).hasSize(1);
+        Evidence savedEvidence = savedEvidences.get(0);
         assertThat(savedEvidence.getRelationship()).isNotNull();
         assertThat(savedEvidence.getElement()).isNull();
         assertThat(savedEvidence.getSourceType()).isEqualTo("STATIC_CODE");
@@ -230,7 +245,7 @@ class GraphBuilderServiceTest {
         graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion,
                 Collections.emptyList(), Collections.emptyList());
 
-        verify(modelRelationshipRepository, never()).save(any());
-        verify(evidenceRepository, never()).save(any());
+        verify(modelRelationshipRepository, never()).saveAll(any());
+        verify(evidenceRepository, never()).saveAll(any());
     }
 }

@@ -69,7 +69,7 @@ public class SecurityUtils {
             }
 
             // Ưu tiên 3: User đầu tiên bất kỳ
-            Optional<User> firstUserOpt = staticUserRepository.findAll().stream().findFirst();
+            Optional<User> firstUserOpt = staticUserRepository.findFirstByOrderByCreatedAtAsc();
             if (firstUserOpt.isPresent()) {
                 return firstUserOpt.get().getId();
             }
