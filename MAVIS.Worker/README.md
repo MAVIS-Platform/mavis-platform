@@ -541,3 +541,13 @@ Verification bổ sung N01: locked restore toàn solution đạt; publish Runner
 Hướng dẫn đầy đủ và giới hạn nghiệm thu: [N01.md](N01.md). N01 Worker code hoàn thành; không tick P06/P08 Done hay Java integration chỉ dựa vào standalone tests.
 
 Verification N01 (snapshot index sạch, không gồm local edits cũ): Windows SDK 10.0.204 full suite 163 pass + 1 Linux-only skip; Linux SDK 10.0.402 compatibility full suite 164/164 pass, locked restore đạt. Java 21/Jackson consumer BUILD SUCCESS. Publish Release và image smoke đạt; image ID sha256:9153471c4aa55e4110f2ef797374fa504029e75033e920ff0d58a931e4468bd8. Container chạy UID 1654/read-only root/cap-drop ALL/512 MiB/1 CPU và artifact bind readonly; sau smoke không còn container N01. SDK Linux vẫn có giới hạn tái lập phiên bản như mục 18.
+
+## 20. N02 — project/config discovery hoàn thiện profile độc lập
+
+- [x] Project contexts có ID/path/root/name theo csproj, không nhận folder src thành service; default compile ownership chọn project gần nhất, explicit linked Include vẫn giữ profile cũ.
+- [x] Config ở thư mục con dùng context gần nhất; aliases xuất ConfigurationHttpReference với host/effective port và trạng thái ConfigurationLiteral/Ambiguous. Không đoán precedence môi trường hay canonical service ID.
+- [x] Missing/dynamic references là Unresolved, outside-snapshot là External, không mở file ngoài snapshot. Generated policy mặc định bỏ *.g.cs/*.g.i.cs/*.generated.cs và auto-generated banner; vẫn fingerprint nội dung, có thể tắt ExcludeGeneratedSources.
+- [x] CSharp regression: 49 pass, 1 Linux-only skip. Analyzer profile 1.6; contract bổ sung projects/resolutionStatus. Chi tiết supported profile: STATIC_PROFILES.md.
+- [ ] N02 nghiệm thu nhóm: Triết review alias conventions/canonical mapping và corpus chung. Project context là source identity, không phải service runtime đã xác nhận.
+
+N02 full Windows regression: 166 pass + 1 Linux-only skip (167 tests). Golden result fixture được export qua analyzer và kiểm tra lại trên snapshot code độc lập. Docker build gặp lỗi cache parent snapshot của Engine; không dùng image cũ làm evidence N02. Fixture export chỉ ghi bản copy test output khi MAVIS_EXPORT_N01_FIXTURE=1, sau đó copy/review có chủ đích vào contracts.

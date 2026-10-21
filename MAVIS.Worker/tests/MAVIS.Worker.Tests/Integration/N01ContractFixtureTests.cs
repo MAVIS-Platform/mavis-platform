@@ -33,6 +33,9 @@ public sealed class N01ContractFixtureTests
                 (resolved.ProjectId, resolved.SourceSnapshotId, resolved.JobId, resolved.AttemptId));
             var analyzer = new DotnetProjectAnalyzer(Options.Create(new DotnetAnalysisOptions()), scope);
             var result = await analyzer.AnalyzeAsync(resolved with { DeadlineUtc = DateTimeOffset.UtcNow.AddMinutes(1) }, CancellationToken.None);
+            // Explicit local fixture-export mode writes only to the test output copy, never source fixtures.
+            if (Environment.GetEnvironmentVariable("MAVIS_EXPORT_N01_FIXTURE") == "1")
+                await File.WriteAllTextAsync(Path.Combine(fixtures, "result.json"), JsonSerializer.Serialize(result, json));
             var expected = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(fixtures, "result.json")));
             Assert.True(JsonNode.DeepEquals(expected, JsonSerializer.SerializeToNode(result, json)), "N01 result fixture drift");
         }

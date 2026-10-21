@@ -7,13 +7,15 @@ public sealed record DotnetAnalysisRequest(string ProjectId, string SourceSnapsh
 public sealed record SourceReference(string FilePath, int StartLine, int EndLine);
 public sealed record DotnetFinding(string Kind, string ProjectPath, string? Target, string? HttpMethod,
     SourceReference Evidence, string? Subject = null, string? Id = null,
-    IReadOnlyList<SourceReference>? AdditionalEvidence = null, string Confidence = "Syntax");
+    IReadOnlyList<SourceReference>? AdditionalEvidence = null, string Confidence = "Syntax",
+    string ResolutionStatus = "Candidate");
+public sealed record DotnetProjectContext(string Id, string ProjectPath, string RootPath, string Name);
 public sealed record AnalysisWarning(string Code, string Message, string? FilePath = null);
 public sealed record DotnetCoverage(int DiscoveredFiles, int AnalyzedFiles, string Mode);
 public sealed record DotnetAnalysisResult(string SchemaVersion, string JobId, string ProjectId,
     string SourceSnapshotId, string AnalyzerVersion, IReadOnlyList<DotnetFinding> Findings,
     DotnetCoverage Coverage, IReadOnlyList<AnalysisWarning> Warnings, string? InputDigest = null,
-    string? AttemptId = null);
+    string? AttemptId = null, IReadOnlyList<DotnetProjectContext>? Projects = null);
 
 public interface IDotnetProjectAnalyzer
 {

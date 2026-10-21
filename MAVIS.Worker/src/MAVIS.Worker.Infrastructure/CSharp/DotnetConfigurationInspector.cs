@@ -6,14 +6,14 @@ namespace MAVIS.Worker.Infrastructure.CSharp;
 internal static class DotnetConfigurationInspector
 {
     public static void Inspect(string root, string file, string content, string[] projects,
-        List<DotnetFinding> findings, List<AnalysisWarning> warnings, CancellationToken ct)
+        List<DotnetFinding> findings, List<AnalysisWarning> warnings, CancellationToken ct, ConfigurationCatalog? catalog = null)
     {
         var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
         warnings.Add(new("CONFIGURATION_PROFILE", "Configuration keys and HTTP host/port identities only; no secret values, environment merging or runtime overrides are evaluated.", relative));
         try
         {
             using var document = JsonDocument.Parse(content, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true, MaxDepth = 64 });
-            foreach (var project in projects.Where(p => Path.GetDirectoryName(p) == Path.GetDirectoryName(file)))
+            foreach (var project in ProjectContextOwnership.Nearest(file, projects))
                 Visit(document.RootElement, "", Path.GetRelativePath(root, project).Replace('\\', '/'));
         }
         catch (JsonException) { warnings.Add(new("INVALID_CONFIGURATION_JSON", "Configuration is malformed or exceeds supported depth.", relative)); }
@@ -40,8 +40,11 @@ internal static class DotnetConfigurationInspector
                 if (element.ValueKind == JsonValueKind.String && (leaf.EndsWith("Url", StringComparison.OrdinalIgnoreCase) ||
                     leaf.EndsWith("BaseAddress", StringComparison.OrdinalIgnoreCase) || leaf.EndsWith("Endpoint", StringComparison.OrdinalIgnoreCase)) &&
                     Uri.TryCreate(element.GetString(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
+                {
+                    catalog?.Add(project, key, uri, evidence);
                     findings.Add(new("ConfiguredHttpHost", project, HttpEndpointIdentity.FromUri(uri), null, evidence, key,
-                        SemanticProjectInspector.Id(project, "ConfiguredHttpHost", relative + "|" + key)));
+                        SemanticProjectInspector.Id(project, "ConfiguredHttpHost", relative + "|" + key), ResolutionStatus: "ConfigurationLiteral"));
+                }
             }
         }
     }
