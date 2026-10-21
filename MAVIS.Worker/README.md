@@ -584,3 +584,15 @@ N04 follow-up: conditional guard bên ngoài AddHttpClient (if/loop/switch) cũn
 - [ ] N05 nghiệm thu nhóm: Triết review shared canonical schema và database/service mapping; Vũ tích hợp publish/persistence và SRS corpus acceptance. Các task Worker độc lập N02–N05 đã có implementation/profile; không coi đó là P06/P07 Done toàn hệ thống.
 
 N05 / N02–N05 final verification: Windows SDK 10.0.204 full suite 186 pass + 1 Linux-only skip (187 tests); Linux SDK 10.0.402 compatibility full suite 187/187 pass, locked restore đạt. Hai bộ test chạy trên snapshot index sạch, không gồm local edits cũ. Java 21/Jackson consumer BUILD SUCCESS, bao gồm canonical endpoint/evidence/hash/no-orphan assertions. Docker runtime build vẫn có cache snapshot error ở mốc N02; Linux SDK/Maven container tests đạt nhưng không tuyên bố đã kiểm chứng image Worker mới cho profile 1.9. N02–N05 code độc lập và fixtures hoàn thành; review/integration/corpus acceptance thuộc nhóm vẫn unchecked.
+
+## 24. Đối chiếu Java chặng 3 và plan kết nối — 21/10/2026
+
+Đã đọc Java chang 3.pdf (chặng 3 trang 23–28) và fetch code: main 5392804 (chặng 2), nhánh Java chặng 3 ef9f88f có task 3.1/client/merge. Contract Java raw path + /internal/v1 và response name-based chưa khớp Worker scoped API/profile 1.9. Chưa thay pipeline hoặc merge nhánh. Kế hoạch phối hợp/ownership/gates I01–I05: [JAVA_WORKER_INTEGRATION_PLAN.md](JAVA_WORKER_INTEGRATION_PLAN.md).
+
+Java 21 targeted reactor test: common 4/4 pass, analyzer 51 pass/1 fail vì thiếu dataset fruit-market-microservices.zip; client 7/7 và GraphBuilder 12/12 pass nhưng dùng mocks, chưa phải interop thật. Plan giữ một .NET impact engine theo phân chia chi tiết, đánh dấu đề xuất BFS Java trong PDF là điểm cần nhóm thống nhất lại.
+
+## 25. I01 — shared Java contract và client core
+
+Đã merge baseline Java ef9f88f vào nhánh Worker sau xác nhận trực tiếp của người dùng; main/nhánh bạn khác không bị sửa. Thêm worker-java-client (Java 21/Jackson) vào Maven reactor: typed producer DTOs, HMAC scope issuer, atomic artifact staging, fingerprint và bounded asynchronous HTTP client/result validator. Không ghi DB hoặc đoán service từ tên.
+
+Verification I01: Java core 8 pass, 1 live-only skip; .NET producer test kiểm chứng đủ 6 shared Unicode/BOM/CRLF cases pass. Export fixture đã sửa ordinal sorting trước nghiệm thu. Live Worker test và Java pipeline chưa được tuyên bố xong ở commit này. Chi tiết: integration/java-client/README.md.

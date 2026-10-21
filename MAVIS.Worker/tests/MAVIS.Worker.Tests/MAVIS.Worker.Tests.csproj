@@ -25,6 +25,7 @@
   <ItemGroup>
     <Content Include="..\..\contracts\n01\*.json" Link="N01Fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\contracts\n01\source\*" Link="N01Fixtures\source\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\contracts\fingerprint\*.json" Link="FingerprintFixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
