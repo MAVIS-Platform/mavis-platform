@@ -2,7 +2,7 @@
 
 Worker phân tích tĩnh C#/.NET bằng Roslyn và trả kết quả có bằng chứng cho Java hợp nhất vào Shared Architectural Model. Phần độc lập hiện có API Change Impact và executable Dedicated Runtime Runner riêng; các giới hạn và phần phối hợp Java được ghi rõ bên dưới.
 
-README là kế hoạch và sổ tiến độ riêng của phần C#. Chỉ đánh dấu hoàn thành sau implementation và verification. Các API hiện hành đã test độc lập; contract tích hợp Java vẫn cần nhóm thống nhất. Mục 8–10 và 12–13 là lịch sử, mục 11 là checklist hiện hành.
+README là sổ tiến độ subsystem C#; các entry có ngày giữ lịch sử triển khai, không phải mọi câu “chưa” đều còn đúng ở baseline mới. Static Java–Worker client/publication/diagram/revision/impact đã tích hợp và kiểm thử. Agent đọc [context tổng thể](../docs/mavis-context.md), [tiến độ Java/Worker/FE](../docs/IMPLEMENTATION_STATUS.md) và [task tiếp theo](../docs/NEXT_TASKS.md) trước; dùng contract/runbook bên dưới khi sửa subsystem.
 
 ## Trạng thái triển khai ngày 21/10/2026
 
@@ -11,7 +11,7 @@ README là kế hoạch và sổ tiến độ riêng của phần C#. Chỉ đá
 - Dedicated Runner: executable riêng, strict image-only preflight, Compose override, internal-network HTTP scenario container, agents/Collector, causal correlation, bounded lifecycle/cancel/cleanup/recovery.
 - Hai dự án mẫu thật đã chạy cả .NET -> Java và Java -> .NET; có case request fail, startup fail, timeout, cancel và abandoned cleanup. Bằng chứng: [PoC evidence](samples/runtime-poc/POC_EVIDENCE.json).
 - Hướng dẫn API: [DOTNET_API_V1.md](DOTNET_API_V1.md). Hướng dẫn Runner và tái tạo PoC: [RUNNER.md](RUNNER.md).
-- Chưa phải nghiệm thu toàn bộ MAVIS: Java/UI, canonical IDs/source delivery, durable job/result orchestration, production isolation, secret store và SRS thresholds vẫn là phần tích hợp chưa hoàn thành.
+- Static Java client/scoped artifact delivery/canonical publication và attempt ledger đã có; còn runtime liên máy, retry/renewable leases/retention, production policy/isolation, secret store, corpus/thresholds và FE acceptance. Không coi các phần đó hoàn tất từ local PoC.
 
 ## 1. Tài liệu làm căn cứ
 
@@ -726,3 +726,9 @@ Verification cuối mục 38: full Windows Worker regression 189 pass, 1 Linux-o
 Chi tiết migration/compatibility của lần merge này ở INTEGRATION_RUNBOOK.md mục PR #19. Chỉ push feature branch; người dùng tự merge PR vào main.
 
 Final verification sau bổ sung Java layout aliases/timestamps/diff details: 23/23 targeted controller/service/live API tests pass, không skip. Đây là regression bổ sung trên cùng chức năng, không cộng thành 163 test riêng biệt.
+
+## 40. Tài liệu tổng thể sau merge main
+
+Docs hiện hành đã được tổ chức lại ở ../docs/: mavis-context.md (entry cho agent), IMPLEMENTATION_STATUS.md (đủ V/T/N/F và P01–P24), NEXT_TASKS.md (owner/input/output/DoD) và DEVELOPMENT_RUNBOOK.md. Root README dẫn vào các tài liệu đó. Proposal Developer SaaS/subscription cũ không còn là context mặc định; lịch sử nằm trong Git.
+
+Baseline đối chiếu main c0121fe gồm Java chặng 0–6 và Worker; Java runtime API/DB state không tự chứng minh actual Runner execution. Test evidence phân biệt analyzer regression đã chạy và stage 6 test sources chưa chạy lại trong lượt docs. Thay đổi mục này là Markdown-only, verification bằng links/path/task coverage và diff, không chạy lại application tests.

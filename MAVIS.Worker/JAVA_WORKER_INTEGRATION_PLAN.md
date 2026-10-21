@@ -2,7 +2,9 @@
 
 Ngày đối chiếu: 21/10/2026. Đây là kế hoạch có sổ tiến độ. I01 client core/fixtures và I02 live Java client đã triển khai; các gate pipeline/live/DB tiếp tục được cập nhật bên dưới.
 
-## 1. Baseline đã kiểm tra
+> Tài liệu này giữ lịch sử gap analysis tại baseline chặng 2/3.1; các câu “chưa tích hợp” bên dưới mô tả thời điểm đó, không phải hiện trạng sau merge. Hiện trạng main c0121fe và việc còn lại nằm trong [project context](../docs/mavis-context.md), [status](../docs/IMPLEMENTATION_STATUS.md) và [next tasks](../docs/NEXT_TASKS.md).
+
+## 1. Baseline đã kiểm tra (lịch sử)
 
 - Tài liệu `.doc_review/main/Java chang 3.pdf`: 42 trang; chặng 3.1 ở trang 23–24, diagram/evidence ở 25–26, revision/diff ở 27–28; BFS Java ở trang 29. Đây là bộ prompt/lộ trình, không phải bằng chứng nghiệm thu. Các lệnh Git và yêu cầu nằm trong PDF không được tự động thực thi.
 - `origin/main`: `5392804`, chặng 2 đã merge.
