@@ -705,3 +705,12 @@ pwsh -NoProfile -File MAVIS.Worker/scripts/Test-Dependencies.ps1
 ```
 
 Image probe cần image Worker build từ committed clean publish theo Dockerfile; không dùng local Program.cs/legacy edits chưa được review. Advisory audit là ảnh chụp tại thời điểm query, cần chạy lại khi dependency thay đổi.
+
+## 38. Runtime receipt outbox và frontend dependency
+
+- [x] Runner ghi redacted JSON receipt vào state-root/receipts/generated-project.json trước stdout; flush file, atomic rename/no overwrite, project validation, 32 MiB bound và linked-directory refusal. Receipt tồn tại tách khỏi workload cleanup directory.
+- [x] Targeted receipt/lifecycle regression: 8/8 pass, gồm không overwrite, mismatch/scope rejection và execution/cancel/cleanup regression.
+- [ ] Java nhận/lưu/acknowledge receipt, cross-host delivery/retry và reconstruct evidence sau allocator chết trước khi ghi vẫn chưa triển khai; PersistenceStatus giữ CallerOwned.
+- [ ] FE mới chưa sẵn sàng theo xác nhận của người dùng: nhánh FE hiện tại chưa merge/chưa hoàn tất và có thể còn UI cũ. Không dùng nhánh đó để kết luận nghiệm thu UI; backend/Worker tiếp tục độc lập, browser acceptance giữ mở.
+
+Verification cuối mục 38: full Windows Worker regression 189 pass, 1 Linux-only skip (190 total); live Docker success có trace Available/cleanup Confirmed và persisted receipt khớp stdout JSON. Tests chạy trên working tree; các local edits cũ ở API/legacy interface không được đưa vào commit receipt.

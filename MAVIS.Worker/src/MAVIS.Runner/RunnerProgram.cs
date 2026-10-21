@@ -53,10 +53,12 @@ public static class RunnerProgram
                 RuntimeSessionOutcome outcome;
                 try { outcome = await RuntimeSessionLifecycle.RunAsync(backend, definition.Profile.TimeoutSeconds, cancellation.Token); }
                 finally { watcherStop.Cancel(); try { await watcher; } catch (OperationCanceledException) { } }
-                Console.WriteLine(JsonSerializer.Serialize(new { definition.SessionId, definition.ModelVersionId, definition.SourceSnapshotId,
+                var receipt = JsonSerializer.Serialize(new { definition.SessionId, definition.ModelVersionId, definition.SourceSnapshotId,
                     definition.ProfileVersionId, definition.RunConfigurationVersionId, definition.ScenarioVersionId,
                     backend.ResourceProject, actualImageIds = backend.ActualImageIds, backend.DeclaredInstrumentationVersions, backend.SandboxEnforcementConfirmed, outcome,
-                    imageSourceCorrespondence = "Unverified", profileAcceptance = "Unverified" }, jsonOptions));
+                    imageSourceCorrespondence = "Unverified", profileAcceptance = "Unverified" }, jsonOptions);
+                RuntimeReceiptStore.Save(args[3], backend.ResourceProject, receipt);
+                Console.WriteLine(receipt);
                 return outcome.ExecutionStatus == "Completed" && outcome.ScenarioStatus == "Passed" && outcome.CleanupStatus == "Confirmed" ? 0 : 1;
             }
             if (args[0] == "scenario")
