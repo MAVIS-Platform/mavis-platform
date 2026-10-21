@@ -28,6 +28,7 @@ public class FeedbackCommentServiceImpl implements FeedbackCommentService {
     private final UserRepository userRepository;
     private final ModelElementRepository modelElementRepository;
     private final ModelRelationshipRepository modelRelationshipRepository;
+    private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -35,19 +36,21 @@ public class FeedbackCommentServiceImpl implements FeedbackCommentService {
         log.info("Thêm nhận xét chấm bài cho submissionId: {}, elementId: {}, relationshipId: {}",
                 submissionId, request.getElementId(), request.getRelationshipId());
 
-        UUID lecturerId = SecurityUtils.getCurrentUserId();
-        User lecturer = userRepository.findById(lecturerId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy thông tin giảng viên đang đăng nhập"));
-
         SubmissionSnapshot submission = submissionSnapshotRepository.findById(submissionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
+
+        if (submission.getAssignment() != null && submission.getAssignment().getWorkspace() != null) {
+            accessPolicyService.requireWorkspaceLecturer(submission.getAssignment().getWorkspace().getId());
+        }
+
+        User lecturer = accessPolicyService.requireCurrentActiveUser();
 
         ModelElement element = null;
         if (request.getElementId() != null) {
             element = modelElementRepository.findById(request.getElementId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phần tử kiến trúc với ID: " + request.getElementId()));
-            if (!element.getModelVersion().getId().equals(submission.getModelVersion().getId())) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Phần tử kiến trúc không thuộc phiên bản mô hình của bài nộp");
+            if (submission.getModelVersion() == null || !element.getModelVersion().getId().equals(submission.getModelVersion().getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Phần tử nhận xét không thuộc về phiên bản mô hình đã nộp");
             }
         }
 
@@ -55,8 +58,8 @@ public class FeedbackCommentServiceImpl implements FeedbackCommentService {
         if (request.getRelationshipId() != null) {
             relationship = modelRelationshipRepository.findById(request.getRelationshipId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy mối quan hệ kiến trúc với ID: " + request.getRelationshipId()));
-            if (!relationship.getModelVersion().getId().equals(submission.getModelVersion().getId())) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Mối quan hệ kiến trúc không thuộc phiên bản mô hình của bài nộp");
+            if (submission.getModelVersion() == null || !relationship.getModelVersion().getId().equals(submission.getModelVersion().getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Quan hệ nhận xét không thuộc về phiên bản mô hình đã nộp");
             }
         }
 

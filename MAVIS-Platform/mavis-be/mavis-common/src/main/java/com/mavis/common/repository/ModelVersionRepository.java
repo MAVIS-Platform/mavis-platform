@@ -31,4 +31,6 @@ public interface ModelVersionRepository extends JpaRepository<ModelVersion, UUID
 
     List<ModelVersion> findByRuntimeSessionId(UUID runtimeSessionId);
     Optional<ModelVersion> findFirstByRuntimeSessionIdOrderByRevisionDesc(UUID runtimeSessionId);
+
+    boolean existsBySourceSnapshotId(UUID sourceSnapshotId);
 }
