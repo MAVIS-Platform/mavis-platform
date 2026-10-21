@@ -1,8 +1,12 @@
 package com.mavis.analyzer.runtime.controller;
 
+import com.mavis.analyzer.model.dto.ModelVersionResponseDTO;
 import com.mavis.analyzer.runtime.dto.PreflightCheckResponseDTO;
 import com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest;
 import com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO;
+import com.mavis.analyzer.runtime.dto.RuntimeTraceIngestRequestDTO;
+import com.mavis.analyzer.runtime.dto.SequenceDiagramResponseDTO;
+import com.mavis.analyzer.runtime.service.OtelTraceCorrelationService;
 import com.mavis.analyzer.runtime.service.RuntimeSessionService;
 import com.mavis.common.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -21,6 +25,7 @@ import java.util.UUID;
 public class RuntimeSessionController {
 
     private final RuntimeSessionService runtimeSessionService;
+    private final OtelTraceCorrelationService otelTraceCorrelationService;
 
     @PostMapping("/runtime/preflight")
     @Operation(summary = "Tiền kiểm tra bảo mật file docker-compose (Compose Preflight Check)",
@@ -69,4 +74,24 @@ public class RuntimeSessionController {
         RuntimeSessionResponseDTO session = runtimeSessionService.getSessionById(sessionId);
         return ApiResponse.success("Lấy chi tiết phiên thực nghiệm thành công", session);
     }
+
+    @PostMapping("/runtime/sessions/{sessionId}/ingest-traces")
+    @Operation(summary = "Tiếp nhận và đối chiếu nhân quả vết OpenTelemetry (BR-46..BR-49)",
+            description = "Dựng chuỗi nhân quả O(N), nâng cấp cạnh STATIC lên STATIC_AND_RUNTIME, thêm RUNTIME_OBSERVED và chiếu Sequence Diagram")
+    public ApiResponse<ModelVersionResponseDTO> ingestTraces(
+            @PathVariable UUID sessionId,
+            @RequestParam UUID baseModelVersionId,
+            @RequestBody RuntimeTraceIngestRequestDTO request) {
+        ModelVersionResponseDTO response = otelTraceCorrelationService.ingestTraces(sessionId, baseModelVersionId, request);
+        return ApiResponse.success("Tiếp nhận và đối chiếu vết OpenTelemetry thành công", response);
+    }
+
+    @GetMapping("/runtime/sessions/{sessionId}/sequence")
+    @Operation(summary = "Lấy biểu đồ tuần tự tương tác nhân quả (UML Sequence Diagram)",
+            description = "Trả về thứ tự các bước gọi API liên dịch vụ ghi nhận từ vết OpenTelemetry")
+    public ApiResponse<SequenceDiagramResponseDTO> getSequenceDiagram(@PathVariable UUID sessionId) {
+        SequenceDiagramResponseDTO response = otelTraceCorrelationService.getSequenceDiagramBySession(sessionId);
+        return ApiResponse.success("Lấy sơ đồ tuần tự runtime thành công", response);
+    }
 }
+
