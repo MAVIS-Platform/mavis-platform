@@ -1,0 +1,4 @@
+**
+!.artifacts/
+!.artifacts/worker-publish/
+!.artifacts/worker-publish/**

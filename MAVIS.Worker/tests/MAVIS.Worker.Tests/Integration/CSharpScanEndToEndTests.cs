@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -21,7 +22,7 @@ public class CSharpScanEndToEndTests : IClassFixture<WebApplicationFactory<Progr
 
     public CSharpScanEndToEndTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory;
+        _factory = factory.WithWebHostBuilder(b => b.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?> { ["WorkerAccess:EnableLegacyAnalysis"] = "true" })));
         _tempDir = Path.Combine(Path.GetTempPath(), "mavis-e2e-" + Guid.NewGuid());
         Directory.CreateDirectory(_tempDir);
     }

@@ -5,26 +5,21 @@ namespace MAVIS.Worker.Api.Controllers;
 
 [ApiController]
 [Route("api/v1/dotnet/jobs")]
-public sealed class DotnetJobsController(IDotnetAnalysisJobs jobs) : ControllerBase
+public sealed class DotnetJobsController(IDotnetAnalysisJobs jobs, IArtifactScopeResolver artifacts) : ControllerBase
 {
     [HttpPost]
-    public IActionResult Submit(DotnetAnalysisRequest request)
+    public IActionResult Submit(ScopedDotnetRequest request)
     {
-        try
-        {
-            var job = jobs.Submit(request);
-            return AcceptedAtAction(nameof(Get), new { jobId = job.JobId }, job);
-        }
-        catch (SourceInputException ex) { return Problem(statusCode: 400, title: "Invalid analysis input", detail: ex.Message); }
-        catch (JobConflictException ex) { return Problem(statusCode: 409, title: "Job input conflict", detail: ex.Message); }
-        catch (JobCapacityException ex) { return Problem(statusCode: 429, title: "Analysis capacity exhausted", detail: ex.Message); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-        { return Problem(statusCode: 400, title: "Source cannot be read"); }
+        if (!artifacts.IsReady) return StatusCode(503);
+        var job = jobs.Submit(artifacts.Resolve(request));
+        return AcceptedAtAction(nameof(Get), new { jobId = job.JobId, attemptId = job.AttemptId }, job);
     }
 
     [HttpGet("{jobId}")]
-    public IActionResult Get(string jobId) => jobs.Get(jobId) is { } job ? Ok(job) : NotFound();
+    public IActionResult Get(string jobId, [FromQuery] string attemptId) =>
+        jobs.Get(jobId, attemptId) is { } job ? Ok(job) : NotFound();
 
     [HttpPost("{jobId}/cancel")]
-    public IActionResult Cancel(string jobId) => jobs.Cancel(jobId) is { } job ? Ok(job) : NotFound();
+    public IActionResult Cancel(string jobId, [FromQuery] string attemptId) =>
+        jobs.Cancel(jobId, attemptId) is { } job ? Ok(job) : NotFound();
 }

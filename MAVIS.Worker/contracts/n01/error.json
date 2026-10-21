@@ -1,0 +1,7 @@
+{
+  "type": "urn:mavis:worker:artifact_scope_denied",
+  "title": "Worker access or artifact scope denied",
+  "status": 403,
+  "code": "ARTIFACT_SCOPE_DENIED",
+  "traceId": "fixture-trace"
+}

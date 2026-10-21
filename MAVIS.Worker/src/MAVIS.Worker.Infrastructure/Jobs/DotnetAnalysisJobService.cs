@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 namespace MAVIS.Worker.Infrastructure.Jobs;
 
 /// <summary>Bounded local job lifecycle. Explicitly ephemeral; Java owns durable public job state.</summary>
-public sealed class DotnetAnalysisJobService(IDotnetProjectAnalyzer analyzer, IOptions<DotnetAnalysisOptions> options)
+public sealed class DotnetAnalysisJobService(IDotnetProjectAnalyzer analyzer, IOptions<DotnetAnalysisOptions> options, IOptions<ArtifactScopeOptions>? artifacts = null)
     : BackgroundService, IDotnetAnalysisJobs
 {
     private sealed class Entry(DotnetAnalysisRequest request)
@@ -19,21 +19,22 @@ public sealed class DotnetAnalysisJobService(IDotnetProjectAnalyzer analyzer, IO
         public DateTimeOffset? Completed { get; set; }
         public DotnetAnalysisResult? Result { get; set; }
         public string? Error { get; set; }
-        public DotnetJobView View() => new(Request.JobId, Request.SourceSnapshotId, Status, Created, Completed, Result, Error);
+        public DotnetJobView View() => new(Request.JobId, Request.SourceSnapshotId, Status, Created, Completed, Result, Error, AttemptId: Request.AttemptId);
     }
 
     private readonly object _gate = new();
-    private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string Job, string? Attempt), Entry> _entries = new();
     private readonly Channel<Entry> _queue = Channel.CreateBounded<Entry>(new BoundedChannelOptions(64)
         { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
 
     public DotnetJobView Submit(DotnetAnalysisRequest request)
     {
         DotnetRequestValidator.Validate(request);
-        DotnetProjectAnalyzer.ValidateRoot(request.SourceLocation, options.Value.AllowedSourceRoots);
+        DotnetProjectAnalyzer.ValidateSource(request, options.Value, artifacts?.Value);
+        if (request.DeadlineUtc <= DateTimeOffset.UtcNow) throw new AnalysisDeadlineException();
         lock (_gate)
         {
-            if (_entries.TryGetValue(request.JobId, out var existing))
+            if (_entries.TryGetValue((request.JobId, request.AttemptId), out var existing))
             {
                 if (existing.Request != request) throw new JobConflictException("jobId already belongs to different input.");
                 return existing.View();
@@ -45,10 +46,10 @@ public sealed class DotnetAnalysisJobService(IDotnetProjectAnalyzer analyzer, IO
             }
             if (_entries.Count >= 256) throw new JobCapacityException("Local job retention capacity reached; retry after terminal records expire.");
             var entry = new Entry(request);
-            _entries.Add(request.JobId, entry);
+            _entries.Add((request.JobId, request.AttemptId), entry);
             if (!_queue.Writer.TryWrite(entry))
             {
-                _entries.Remove(request.JobId);
+                _entries.Remove((request.JobId, request.AttemptId));
                 entry.Cancellation.Dispose();
                 throw new JobCapacityException("Analysis queue is full.");
             }
@@ -56,14 +57,14 @@ public sealed class DotnetAnalysisJobService(IDotnetProjectAnalyzer analyzer, IO
         }
     }
 
-    public DotnetJobView? Get(string jobId) { lock (_gate) return _entries.GetValueOrDefault(jobId)?.View(); }
+    public DotnetJobView? Get(string jobId, string? attemptId = null) { lock (_gate) return _entries.GetValueOrDefault((jobId, attemptId))?.View(); }
 
-    public DotnetJobView? Cancel(string jobId)
+    public DotnetJobView? Cancel(string jobId, string? attemptId = null)
     {
         lock (_gate)
         {
-            if (!_entries.TryGetValue(jobId, out var entry)) return null;
-            if (entry.Status is "Completed" or "Failed" or "Cancelled") return entry.View();
+            if (!_entries.TryGetValue((jobId, attemptId), out var entry)) return null;
+            if (entry.Status is "Completed" or "Failed" or "TimedOut" or "Cancelled") return entry.View();
             var queued = entry.Status == "Queued";
             entry.Status = queued ? "Cancelled" : "Cancelling";
             if (queued) entry.Completed = DateTimeOffset.UtcNow;
@@ -80,13 +81,21 @@ public sealed class DotnetAnalysisJobService(IDotnetProjectAnalyzer analyzer, IO
             {
                 lock (_gate)
                 {
-                    if (!_entries.TryGetValue(entry.Request.JobId, out var current) || !ReferenceEquals(current, entry) || entry.Status == "Cancelled") continue;
+                    if (!_entries.TryGetValue((entry.Request.JobId, entry.Request.AttemptId), out var current) || !ReferenceEquals(current, entry) || entry.Status == "Cancelled") continue;
                     entry.Status = "Running";
                 }
                 using var linked = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, entry.Cancellation.Token);
                 try
                 {
+                    if (entry.Request.DeadlineUtc is { } expires)
+                    {
+                        var remaining = expires - DateTimeOffset.UtcNow;
+                        if (remaining <= TimeSpan.Zero) throw new AnalysisDeadlineException();
+                        linked.CancelAfter(remaining);
+                    }
                     var result = await analyzer.AnalyzeAsync(entry.Request, linked.Token);
+                    linked.Token.ThrowIfCancellationRequested();
+                    if (entry.Request.DeadlineUtc <= DateTimeOffset.UtcNow) throw new AnalysisDeadlineException();
                     lock (_gate)
                     {
                         if (entry.Cancellation.IsCancellationRequested) entry.Status = "Cancelled";
@@ -97,8 +106,8 @@ public sealed class DotnetAnalysisJobService(IDotnetProjectAnalyzer analyzer, IO
                 {
                     lock (_gate)
                     {
-                        entry.Status = linked.IsCancellationRequested ? "Cancelled" : "Failed";
-                        entry.Error = linked.IsCancellationRequested ? null : "Analysis deadline exceeded.";
+                        entry.Status = entry.Cancellation.IsCancellationRequested || stoppingToken.IsCancellationRequested ? "Cancelled" : "TimedOut";
+                        entry.Error = entry.Status == "Cancelled" ? null : "Analysis deadline exceeded.";
                     }
                 }
                 catch (Exception ex)

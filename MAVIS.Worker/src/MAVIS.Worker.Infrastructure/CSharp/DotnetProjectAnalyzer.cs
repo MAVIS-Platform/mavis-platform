@@ -18,7 +18,7 @@ public sealed class DotnetAnalysisOptions
 }
 
 /// <summary>Read-only syntax analysis. Never loads MSBuild or executes project targets.</summary>
-public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> options) : IDotnetProjectAnalyzer
+public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> options, IOptions<ArtifactScopeOptions>? artifacts = null) : IDotnetProjectAnalyzer
 {
     private static readonly HashSet<string> Ignored = new(StringComparer.OrdinalIgnoreCase)
         { "bin", "obj", ".git", ".vs", "node_modules" };
@@ -29,9 +29,16 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
         var settings = options.Value;
         if (settings.MaxFiles < 1 || settings.MaxFileBytes < 1 || settings.MaxTotalBytes < 1 || settings.TimeoutSeconds < 1)
             throw new InvalidOperationException("Invalid DotnetAnalysis limits.");
-        var root = ValidateRoot(request.SourceLocation, settings.AllowedSourceRoots);
+        var root = ValidateSource(request, settings, artifacts?.Value);
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        deadline.CancelAfter(TimeSpan.FromSeconds(settings.TimeoutSeconds));
+        var budget = TimeSpan.FromSeconds(settings.TimeoutSeconds);
+        if (request.DeadlineUtc is { } expires)
+        {
+            var remaining = expires - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero) throw new AnalysisDeadlineException();
+            if (remaining < budget) budget = remaining;
+        }
+        deadline.CancelAfter(budget);
         var token = deadline.Token;
         var files = new List<string>();
         var directories = new Stack<string>();
@@ -177,8 +184,10 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
         var inputDigest = Convert.ToHexString(inputHash.GetHashAndReset()).ToLowerInvariant();
         if (request.ExpectedInputDigest is not null && !inputDigest.Equals(request.ExpectedInputDigest, StringComparison.OrdinalIgnoreCase))
             throw new SourceInputException("Analysis input digest does not match the expected input version.");
+        token.ThrowIfCancellationRequested();
+        if (request.DeadlineUtc <= DateTimeOffset.UtcNow) throw new AnalysisDeadlineException();
         return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.5",
-            merged, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax"), warnings, inputDigest);
+            merged, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax"), warnings, inputDigest, request.AttemptId);
     }
 
     private static string Identity(string project, string kind, string symbol) =>
@@ -188,6 +197,12 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
         path.Equals(root, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ||
         path.StartsWith(Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar,
             OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    internal static string ValidateSource(DotnetAnalysisRequest request, DotnetAnalysisOptions settings, ArtifactScopeOptions? artifacts)
+    {
+        var roots = request.AttemptId is not null && artifacts is not null ? new[] { artifacts.Root } : settings.AllowedSourceRoots;
+        return ValidateRoot(request.SourceLocation, roots);
+    }
 
     internal static string ValidateRoot(string location, string[] allowedRoots)
     {

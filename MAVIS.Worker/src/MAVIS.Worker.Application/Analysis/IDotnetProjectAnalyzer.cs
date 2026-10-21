@@ -1,7 +1,8 @@
 namespace MAVIS.Worker.Application.Analysis;
 
 public sealed record DotnetAnalysisRequest(string ProjectId, string SourceSnapshotId, string SourceLocation,
-    string JobId, string SchemaVersion = "1.0", string? ExpectedInputDigest = null);
+    string JobId, string SchemaVersion = "1.0", string? ExpectedInputDigest = null,
+    string? AttemptId = null, DateTimeOffset? DeadlineUtc = null);
 
 public sealed record SourceReference(string FilePath, int StartLine, int EndLine);
 public sealed record DotnetFinding(string Kind, string ProjectPath, string? Target, string? HttpMethod,
@@ -11,7 +12,8 @@ public sealed record AnalysisWarning(string Code, string Message, string? FilePa
 public sealed record DotnetCoverage(int DiscoveredFiles, int AnalyzedFiles, string Mode);
 public sealed record DotnetAnalysisResult(string SchemaVersion, string JobId, string ProjectId,
     string SourceSnapshotId, string AnalyzerVersion, IReadOnlyList<DotnetFinding> Findings,
-    DotnetCoverage Coverage, IReadOnlyList<AnalysisWarning> Warnings, string? InputDigest = null);
+    DotnetCoverage Coverage, IReadOnlyList<AnalysisWarning> Warnings, string? InputDigest = null,
+    string? AttemptId = null);
 
 public interface IDotnetProjectAnalyzer
 {
