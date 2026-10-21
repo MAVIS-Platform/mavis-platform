@@ -16,9 +16,3 @@ CREATE TABLE user_otps (
 );
 
 CREATE INDEX idx_user_otps_user ON user_otps (user_id);
-
--- Cập nhật ràng buộc (check constraint) của cột status trong bảng users
--- PostgreSQL không cho phép ALTER CONSTRAINT trực tiếp, nên ta drop rồi add lại.
-ALTER TABLE users DROP CONSTRAINT users_status_check;
-ALTER TABLE users ADD CONSTRAINT users_status_check 
-    CHECK (status IN ('ACTIVE', 'LOCKED', 'PENDING_VERIFICATION'));
