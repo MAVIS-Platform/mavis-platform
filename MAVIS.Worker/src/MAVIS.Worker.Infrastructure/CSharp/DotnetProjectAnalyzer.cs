@@ -166,8 +166,9 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                 {
                     var identifier = declaration is EnumDeclarationSyntax e ? e.Identifier : ((DelegateDeclarationSyntax)declaration).Identifier;
                     var prefix = declaration.Ancestors().OfType<BaseNamespaceDeclarationSyntax>().Reverse().Select(n => n.Name.ToString())
-                        .Concat(declaration.Ancestors().OfType<TypeDeclarationSyntax>().Reverse().Select(t => t.Identifier.ValueText));
-                    var subject = string.Join(".", prefix.Append(identifier.ValueText));
+                        .Concat(declaration.Ancestors().OfType<TypeDeclarationSyntax>().Reverse().Select(t => t.Identifier.ValueText + (t.TypeParameterList is null ? "" : "`" + t.TypeParameterList.Parameters.Count)));
+                    var ownName = identifier.ValueText + (declaration is DelegateDeclarationSyntax { TypeParameterList: { } parameters } ? "`" + parameters.Parameters.Count : "");
+                    var subject = string.Join(".", prefix.Append(ownName));
                     var span = declaration.GetLocation().GetLineSpan();
                     var kind = declaration is EnumDeclarationSyntax ? "Enum" : "Delegate";
                     findings.Add(new(kind, project, identifier.ValueText, null, new(relative, span.StartLinePosition.Line + 1, span.EndLinePosition.Line + 1,
@@ -192,10 +193,12 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
             throw new SourceInputException("Analysis input digest does not match the expected input version.");
         token.ThrowIfCancellationRequested();
         if (request.DeadlineUtc <= DateTimeOffset.UtcNow) throw new AnalysisDeadlineException();
-        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.8",
-            merged, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax", sources.Length - analyzed, ["StaticCompileItems", "NearestProjectConfig", "CSharpTypes", "ControllerAttributeRoutes", "MinimalApiLiteralGroups", "HttpClientLiteralAndRegistration", "RefitInterfaceDescriptors"]), warnings, inputDigest, request.AttemptId, projects.Select(p =>
+        var projected = CanonicalFindingProjector.Project(request, "dotnet-static/1.9", merged, contentDigests, token);
+        token.ThrowIfCancellationRequested();
+        return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.9",
+            projected.Findings, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax", sources.Length - analyzed, ["StaticCompileItems", "NearestProjectConfig", "CSharpTypes", "ControllerAttributeRoutes", "MinimalApiLiteralGroups", "HttpClientLiteralAndRegistration", "RefitInterfaceDescriptors", "TypedDependencies", "EfCoreConfigReferences", "CanonicalEvidenceProjection"]), warnings, inputDigest, request.AttemptId, projects.Select(p =>
                 new DotnetProjectContext(Identity(Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'), "Project", ""),
-                    Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'), Path.GetRelativePath(root, Path.GetDirectoryName(p)!).Replace(Path.DirectorySeparatorChar, '/'), Path.GetFileNameWithoutExtension(p))).ToArray());
+                    Path.GetRelativePath(root, p).Replace(Path.DirectorySeparatorChar, '/'), Path.GetRelativePath(root, Path.GetDirectoryName(p)!).Replace(Path.DirectorySeparatorChar, '/'), Path.GetFileNameWithoutExtension(p))).ToArray(), projected.Bundle);
     }
 
     private static string Identity(string project, string kind, string symbol) =>

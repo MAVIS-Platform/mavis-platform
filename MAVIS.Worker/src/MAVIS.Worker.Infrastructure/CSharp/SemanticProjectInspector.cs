@@ -30,6 +30,7 @@ internal static class SemanticProjectInspector
                 warnings.Add(new("SEMANTIC_LIMITATIONS", "Host-runtime compilation has missing references or errors; only resolved symbols are published. Diagnostic IDs: " +
                     string.Join(",", errors.Take(20).Select(d => d.Id).Distinct()), project));
             HttpClientInspector.Inspect(root, project, compilation, configuration, findings, warnings, ct);
+            DependencyInspector.Inspect(root, project, compilation, configuration, findings, warnings, ct);
             foreach (var tree in compilation.SyntaxTrees)
             {
                 ct.ThrowIfCancellationRequested();
@@ -55,11 +56,19 @@ internal static class SemanticProjectInspector
                     }
                     foreach (var parameter in type.Members.OfType<ConstructorDeclarationSyntax>().SelectMany(c => c.ParameterList.Parameters))
                         if (parameter.Type is not null) Dependency(model.GetTypeInfo(parameter.Type, ct).Type, parameter.Type);
+                    foreach (var property in type.Members.OfType<PropertyDeclarationSyntax>()) Dependency(model.GetTypeInfo(property.Type, ct).Type, property.Type);
+                    var primary = type switch { ClassDeclarationSyntax c => c.ParameterList, StructDeclarationSyntax s => s.ParameterList, RecordDeclarationSyntax r => r.ParameterList, _ => null };
+                    foreach (var parameter in primary?.Parameters ?? default)
+                        if (parameter.Type is not null) Dependency(model.GetTypeInfo(parameter.Type, ct).Type, parameter.Type);
 
                     void Dependency(ITypeSymbol? dependency, SyntaxNode evidence)
                     {
                         if (dependency is null or IErrorTypeSymbol || dependency.SpecialType != SpecialType.None || dependency is ITypeParameterSymbol) return;
+                        if (dependency is IArrayTypeSymbol array) { Dependency(array.ElementType, evidence); return; }
                         Add("CodeDependency", subject, Name(dependency), evidence, "ResolvedSymbol");
+                        if (dependency is INamedTypeSymbol named)
+                            foreach (var argument in named.TypeArguments.Where(t => t.TypeKind != TypeKind.TypeParameter))
+                                if (!SymbolEqualityComparer.Default.Equals(argument, dependency)) Dependency(argument, evidence);
                     }
                 }
                 AspNetSourceInspector.Inspect(syntax, model, project, relative, findings, warnings, ct);

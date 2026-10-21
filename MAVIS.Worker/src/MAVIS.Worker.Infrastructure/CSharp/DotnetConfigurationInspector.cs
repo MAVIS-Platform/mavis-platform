@@ -37,6 +37,8 @@ internal static class DotnetConfigurationInspector
                     SemanticProjectInspector.Id(project, "ConfigurationKey", relative + "|" + key)));
                 // Connection strings and credentials are never parsed or returned as values.
                 var leaf = key.Split(':').Last();
+                if (element.ValueKind == JsonValueKind.String && key.StartsWith("ConnectionStrings:", StringComparison.Ordinal) && key.Count(c => c == ':') == 1)
+                    catalog?.AddConnection(project, leaf, element.GetString()!, evidence);
                 if (element.ValueKind == JsonValueKind.String && (leaf.EndsWith("Url", StringComparison.OrdinalIgnoreCase) ||
                     leaf.EndsWith("BaseAddress", StringComparison.OrdinalIgnoreCase) || leaf.EndsWith("Endpoint", StringComparison.OrdinalIgnoreCase)) &&
                     Uri.TryCreate(element.GetString(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
