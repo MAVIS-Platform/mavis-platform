@@ -16,6 +16,9 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ModelRevisionRequestDTO {
+    // Worker contract fields are additive; null selects the Java stage-3 request shape.
+    private List<com.mavis.analyzer.model.service.ModelVersionService.ElementEdit> elements;
+    private List<com.mavis.analyzer.model.service.ModelVersionService.RelationshipEdit> relationships;
 
     private UUID createdById;
     private String revisionNote;

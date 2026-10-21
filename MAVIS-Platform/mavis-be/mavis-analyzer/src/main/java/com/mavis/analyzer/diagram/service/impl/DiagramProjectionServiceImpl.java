@@ -2,345 +2,87 @@ package com.mavis.analyzer.diagram.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.mavis.analyzer.diagram.dto.DiagramResponseDTO;
-import com.mavis.analyzer.diagram.dto.EvidenceResponseDTO;
 import com.mavis.analyzer.diagram.service.DiagramProjectionService;
-import com.mavis.common.entity.DiagramVersion;
-import com.mavis.common.entity.Evidence;
-import com.mavis.common.entity.ModelElement;
-import com.mavis.common.entity.ModelRelationship;
-import com.mavis.common.entity.ModelVersion;
-import com.mavis.common.exception.BusinessException;
-import com.mavis.common.exception.ErrorCode;
-import com.mavis.common.repository.DiagramVersionRepository;
-import com.mavis.common.repository.EvidenceRepository;
+import com.mavis.common.entity.*;
+import com.mavis.common.repository.*;
+import com.mavis.common.exception.*;
+import com.mavis.common.utils.SecurityUtils;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
+import org.springframework.transaction.annotation.*;
 import java.util.*;
-import java.util.stream.Collectors;
 
-@Service
-@RequiredArgsConstructor
-@Slf4j
+@Service @RequiredArgsConstructor
 public class DiagramProjectionServiceImpl implements DiagramProjectionService {
+    private final DiagramVersionRepository diagrams;
+    private final ModelVersionRepository models;
+    private final ModelElementRepository elements;
+    private final ModelRelationshipRepository relationships;
+    private final EvidenceRepository evidence;
+    private final ObjectMapper json;
 
-    private final DiagramVersionRepository diagramVersionRepository;
-    private final EvidenceRepository evidenceRepository;
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public List<DiagramResponseDTO> generateDefaultDiagramsForModel(ModelVersion modelVersion,
-                                                                  List<ModelElement> elements,
-                                                                  List<ModelRelationship> relationships) {
-        log.info("Bắt đầu sinh 3 bản vẽ kiến trúc mặc định cho ModelVersion ID: {}",
-                modelVersion != null ? modelVersion.getId() : null);
-
-        List<ModelElement> safeElements = elements != null ? elements : Collections.emptyList();
-        List<ModelRelationship> safeRelationships = relationships != null ? relationships : Collections.emptyList();
-
-        // 1. Phân loại Level 2 Containers và Level 3 Components
-        List<ModelElement> containers = new ArrayList<>();
-        List<ModelElement> components = new ArrayList<>();
-
-        for (ModelElement el : safeElements) {
-            if ("COMPONENT".equalsIgnoreCase(el.getElementType()) || el.getParentElement() != null) {
-                components.add(el);
-            } else {
-                containers.add(el);
-            }
-        }
-
-        // Nếu không có container nào tách biệt, coi toàn bộ elements là containers
-        if (containers.isEmpty() && !safeElements.isEmpty()) {
-            containers.addAll(safeElements);
-        }
-
-        // 2. Tạo layout JSON cho từng bản vẽ
-        JsonNode dependencyGraphLayout = buildDependencyGraphLayout(containers, safeRelationships);
-        JsonNode c4ContainerLayout = buildC4ContainerLayout(containers, safeRelationships);
-        JsonNode c4ComponentLayout = buildC4ComponentLayout(containers, components, safeRelationships);
-
-        // 3. Khởi tạo 3 bản ghi DiagramVersion
-        DiagramVersion d1 = DiagramVersion.builder()
-                .modelVersion(modelVersion)
-                .notation("DEPENDENCY_GRAPH")
-                .level("SERVICE")
-                .layoutJson(dependencyGraphLayout)
-                .build();
-
-        DiagramVersion d2 = DiagramVersion.builder()
-                .modelVersion(modelVersion)
-                .notation("C4")
-                .level("CONTAINER")
-                .layoutJson(c4ContainerLayout)
-                .build();
-
-        DiagramVersion d3 = DiagramVersion.builder()
-                .modelVersion(modelVersion)
-                .notation("C4")
-                .level("COMPONENT")
-                .layoutJson(c4ComponentLayout)
-                .build();
-
-        // 4. Batch Persistence: Lưu duy nhất 1 lần qua saveAll
-        List<DiagramVersion> savedDiagrams = diagramVersionRepository.saveAll(List.of(d1, d2, d3));
-        log.info("Đã lưu thành công 3 bản vẽ mặc định (DEPENDENCY_GRAPH, C4 CONTAINER, C4 COMPONENT) cho ModelVersion ID: {}",
-                modelVersion != null ? modelVersion.getId() : null);
-
-        return savedDiagrams.stream()
-                .map(DiagramResponseDTO::fromEntity)
-                .collect(Collectors.toList());
+    @Override @Transactional(propagation=Propagation.MANDATORY)
+    public List<com.mavis.analyzer.diagram.dto.DiagramResponseDTO> generateDefaultDiagramsForModel(ModelVersion model,List<ModelElement> nodes,List<ModelRelationship> edges){
+        if(nodes.size()>10000 || edges.size()>50000)throw new BusinessException(ErrorCode.BAD_REQUEST,"Diagram projection exceeds supported budget");
+        var ordered=nodes.stream().sorted(Comparator.comparing(e->e.getId().toString())).toList();
+        var containerKinds=Set.of("SERVICE_CONTAINER","DATABASE","EXTERNAL_SYSTEM","QUEUE_BROKER");
+        var containers=ordered.stream().filter(e->containerKinds.contains(e.getElementType())).toList();
+        var components=ordered.stream().filter(e->!"CLASS_INTERFACE".equals(e.getElementType())).toList();
+        return diagrams.saveAll(List.of(create(model,"DEPENDENCY_GRAPH","SERVICE",containers,edges),create(model,"C4","CONTAINER",containers,edges),create(model,"C4","COMPONENT",components,edges))).stream().map(com.mavis.analyzer.diagram.dto.DiagramResponseDTO::fromEntity).toList();
     }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<DiagramResponseDTO> getDiagramsByModelVersion(UUID modelVersionId) {
-        return diagramVersionRepository.findByModelVersionIdOrderByCreatedAtAsc(modelVersionId).stream()
-                .map(DiagramResponseDTO::fromEntity)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public DiagramResponseDTO getDiagramById(UUID diagramId) {
-        DiagramVersion diagram = diagramVersionRepository.findById(diagramId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy sơ đồ với ID: " + diagramId));
-        return DiagramResponseDTO.fromEntity(diagram);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public DiagramResponseDTO updateDiagramLayout(UUID diagramId, JsonNode layoutJson) {
-        // Tuân thủ BR-33: Chỉ cập nhật layoutJson của DiagramVersion mà không làm biến đổi ModelVersion gốc
-        DiagramVersion diagram = diagramVersionRepository.findById(diagramId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy sơ đồ với ID: " + diagramId));
-
-        diagram.setLayoutJson(layoutJson);
-        DiagramVersion updated = diagramVersionRepository.save(diagram);
-        log.info("Đã cập nhật layout cho sơ đồ ID: {} thành công (tuân thủ BR-33)", diagramId);
-        return DiagramResponseDTO.fromEntity(updated);
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<EvidenceResponseDTO> getEvidencesByElement(UUID elementId) {
-        List<Evidence> evidences = evidenceRepository.findByElementIdOrderByCreatedAtAsc(elementId);
-        return evidences.stream()
-                .map(EvidenceResponseDTO::fromEntity)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    @Transactional(readOnly = true)
-    public List<EvidenceResponseDTO> getEvidencesByRelationship(UUID relationshipId) {
-        List<Evidence> evidences = evidenceRepository.findByRelationshipIdOrderByCreatedAtAsc(relationshipId);
-        return evidences.stream()
-                .map(EvidenceResponseDTO::fromEntity)
-                .collect(Collectors.toList());
-    }
-
-    // =========================================================================
-    // HELPER LAYOUT BUILDERS VỚI TÍNH TOÁN TỌA ĐỘ LƯỚI (X, Y)
-    // =========================================================================
-
-    private JsonNode buildDependencyGraphLayout(List<ModelElement> containers, List<ModelRelationship> relationships) {
-        ObjectNode root = objectMapper.createObjectNode();
-        ArrayNode nodesArray = root.putArray("nodes");
-        ArrayNode edgesArray = root.putArray("edges");
-
-        Set<UUID> containerIdSet = new HashSet<>();
-        int cols = 3;
-        for (int i = 0; i < containers.size(); i++) {
-            ModelElement el = containers.get(i);
-            containerIdSet.add(el.getId());
-
-            int col = i % cols;
-            int row = i / cols;
-            int x = 100 + col * 320;
-            int y = 100 + row * 220;
-
-            ObjectNode node = nodesArray.addObject();
-            node.put("id", el.getId() != null ? el.getId().toString() : "node-" + i);
-            node.put("name", el.getName());
-            node.put("type", el.getElementType());
-            node.put("languageStack", el.getLanguageStack());
-
-            ObjectNode pos = node.putObject("position");
-            pos.put("x", x);
-            pos.put("y", y);
-
-            ObjectNode data = node.putObject("data");
-            data.put("label", el.getName());
-            data.put("status", el.getStatus());
+    private DiagramVersion create(ModelVersion model,String notation,String level,List<ModelElement> nodes,List<ModelRelationship> edges){
+        var layout=json.createObjectNode().put("schemaVersion","1.0").put("modelVersionId",model.getId().toString());
+        var positions=layout.putArray("nodes");var ids=new HashSet<UUID>();nodes.forEach(n->ids.add(n.getId()));
+        for(int i=0;i<nodes.size();i++){
+            var node=nodes.get(i);ids.add(node.getId());
+            var point=positions.addObject().put("id",node.getId().toString()).put("name",node.getName()).put("kind",node.getElementType()).put("type",node.getElementType()).put("status",node.getStatus()).put("x",(i%8)*280).put("y",(i/8)*180);
+            point.put("languageStack",node.getLanguageStack());
+            point.putObject("position").put("x",(i%8)*280).put("y",(i/8)*180);
+            point.putObject("data").put("label",node.getName()).put("status",node.getStatus()).put("technology",node.getLanguageStack());
+            if("C4".equals(notation))point.put("c4Type","COMPONENT".equals(level)&&!containerKindsForNode(node)?"Component":"Container");
+            if(node.getParentElement()!=null && ids.contains(node.getParentElement().getId()))point.put("parentId",node.getParentElement().getId().toString());
         }
-
-        for (ModelRelationship rel : relationships) {
-            UUID srcId = rel.getSourceElement() != null ? rel.getSourceElement().getId() : null;
-            UUID tgtId = rel.getTargetElement() != null ? rel.getTargetElement().getId() : null;
-
-            if (srcId != null && tgtId != null && containerIdSet.contains(srcId) && containerIdSet.contains(tgtId)) {
-                ObjectNode edge = edgesArray.addObject();
-                edge.put("id", rel.getId() != null ? rel.getId().toString() : UUID.randomUUID().toString());
-                edge.put("source", srcId.toString());
-                edge.put("target", tgtId.toString());
-                edge.put("relationType", rel.getRelationType());
-                edge.put("originLayer", rel.getOriginLayer());
-                edge.put("direction", rel.getDirection());
-                edge.put("label", rel.getRelationType());
-            }
-        }
-
-        return root;
+        var connections=layout.putArray("edges");
+        edges.stream().filter(e->ids.contains(e.getSourceElement().getId())&&ids.contains(e.getTargetElement().getId())).sorted(Comparator.comparing(e->e.getId().toString())).forEach(e->connections.addObject()
+                .put("id",e.getId().toString()).put("from",e.getSourceElement().getId().toString()).put("to",e.getTargetElement().getId().toString()).put("type",e.getRelationType())
+                .put("source",e.getSourceElement().getId().toString()).put("target",e.getTargetElement().getId().toString()).put("relationType",e.getRelationType()).put("label",e.getRelationType()).put("originLayer",e.getOriginLayer()).put("direction",e.getDirection()));
+        return DiagramVersion.builder().modelVersion(model).notation(notation).level(level).layoutJson(layout).build();
     }
-
-    private JsonNode buildC4ContainerLayout(List<ModelElement> containers, List<ModelRelationship> relationships) {
-        ObjectNode root = objectMapper.createObjectNode();
-        ArrayNode nodesArray = root.putArray("nodes");
-        ArrayNode edgesArray = root.putArray("edges");
-
-        Set<UUID> containerIdSet = new HashSet<>();
-        int cols = 3;
-        for (int i = 0; i < containers.size(); i++) {
-            ModelElement el = containers.get(i);
-            containerIdSet.add(el.getId());
-
-            int col = i % cols;
-            int row = i / cols;
-            int x = 120 + col * 360;
-            int y = 120 + row * 250;
-
-            ObjectNode node = nodesArray.addObject();
-            node.put("id", el.getId() != null ? el.getId().toString() : "container-" + i);
-            node.put("name", el.getName());
-            node.put("type", el.getElementType());
-            node.put("c4Type", "Container");
-            node.put("languageStack", el.getLanguageStack());
-
-            ObjectNode pos = node.putObject("position");
-            pos.put("x", x);
-            pos.put("y", y);
-
-            ObjectNode data = node.putObject("data");
-            data.put("label", el.getName());
-            data.put("technology", el.getLanguageStack() != null ? el.getLanguageStack() : "Java/Docker");
-            data.put("description", "Container: " + el.getElementType());
+    @Override @Transactional(readOnly=true)
+    public List<DiagramView> list(UUID model){owner(models.findById(model).orElseThrow(()->missing()));return diagrams.findByModelVersionId(model).stream().sorted(Comparator.comparing(DiagramVersion::getNotation).thenComparing(DiagramVersion::getLevel)).map(this::view).toList();}
+    @Override @Transactional(readOnly=true)
+    public DiagramView get(UUID diagram){var entity=diagrams.findById(diagram).orElseThrow(()->missing());owner(entity.getModelVersion());return view(entity);}
+    @Override @Transactional
+    public DiagramView updateLayout(UUID diagram,JsonNode request){
+        var entity=diagrams.findById(diagram).orElseThrow(()->missing());owner(entity.getModelVersion());
+        if(request==null||!request.isObject()||request.size()!=1||!request.has("nodes")||!request.get("nodes").isArray()||request.get("nodes").size()>10000)throw invalid();
+        ObjectNode copy=entity.getLayoutJson().deepCopy();var known=new HashMap<String,ObjectNode>();for(var node:copy.withArray("nodes"))known.put(node.path("id").asText(),(ObjectNode)node);
+        var seen=new HashSet<String>();
+        for(var position:request.get("nodes")){
+            String id=position.path("id").asText();
+            if(!position.isObject()||position.size()!=3||!position.path("x").isNumber()||!position.path("y").isNumber()||!known.containsKey(id)||!seen.add(id))throw invalid();
+            double x=position.get("x").asDouble(),y=position.get("y").asDouble();if(!Double.isFinite(x)||!Double.isFinite(y)||Math.abs(x)>1000000||Math.abs(y)>1000000)throw invalid();
+            known.get(id).put("x",x).put("y",y);
+            known.get(id).putObject("position").put("x",x).put("y",y);
         }
-
-        for (ModelRelationship rel : relationships) {
-            UUID srcId = rel.getSourceElement() != null ? rel.getSourceElement().getId() : null;
-            UUID tgtId = rel.getTargetElement() != null ? rel.getTargetElement().getId() : null;
-
-            if (srcId != null && tgtId != null && containerIdSet.contains(srcId) && containerIdSet.contains(tgtId)) {
-                ObjectNode edge = edgesArray.addObject();
-                edge.put("id", rel.getId() != null ? rel.getId().toString() : UUID.randomUUID().toString());
-                edge.put("source", srcId.toString());
-                edge.put("target", tgtId.toString());
-                edge.put("relationType", rel.getRelationType());
-                edge.put("originLayer", rel.getOriginLayer());
-                edge.put("label", rel.getRelationType());
-            }
-        }
-
-        return root;
+        entity.setLayoutJson(copy);diagrams.save(entity);return view(entity);
     }
+    @Override @Transactional(readOnly=true)
+    public List<EvidenceView> elementEvidence(UUID id){var target=elements.findById(id).orElseThrow(()->missing());owner(target.getModelVersion());return evidence.findByElementId(id).stream().map(this::ev).toList();}
+    @Override @Transactional(readOnly=true)
+    public List<EvidenceView> relationshipEvidence(UUID id){var target=relationships.findById(id).orElseThrow(()->missing());owner(target.getModelVersion());return evidence.findByRelationshipId(id).stream().map(this::ev).toList();}
+    private void owner(ModelVersion model){if(!model.getProject().getOwner().getId().equals(SecurityUtils.getCurrentUserId()))throw new BusinessException(ErrorCode.FORBIDDEN,"Model access denied");}
+    private boolean containerKindsForNode(ModelElement node){return Set.of("SERVICE_CONTAINER","DATABASE","EXTERNAL_SYSTEM","QUEUE_BROKER").contains(node.getElementType());}
+    private DiagramView view(DiagramVersion d){return new DiagramView(d.getId(),d.getModelVersion().getId(),d.getNotation(),d.getLevel(),d.getLayoutJson(),d.getCreatedAt());}
+    private EvidenceView ev(Evidence e){return new EvidenceView(e.getId(),e.getModelVersion().getId(),e.getSourceSnapshot().getId(),e.getSourceType(),e.getLocator(),e.getAdapterVersion(),e.getProvenance());}
+    private static BusinessException missing(){return new BusinessException(ErrorCode.NOT_FOUND,"Model artifact not found");}
+    private static BusinessException invalid(){return new BusinessException(ErrorCode.BAD_REQUEST,"Layout accepts only known node IDs and bounded x/y coordinates");}
 
-    private JsonNode buildC4ComponentLayout(List<ModelElement> containers,
-                                           List<ModelElement> components,
-                                           List<ModelRelationship> relationships) {
-        ObjectNode root = objectMapper.createObjectNode();
-        ArrayNode nodesArray = root.putArray("nodes");
-        ArrayNode edgesArray = root.putArray("edges");
-
-        // Nhóm các component vào container cha theo parentElement
-        Map<UUID, List<ModelElement>> componentsByContainer = new HashMap<>();
-        List<ModelElement> orphanComponents = new ArrayList<>();
-
-        for (ModelElement comp : components) {
-            if (comp.getParentElement() != null && comp.getParentElement().getId() != null) {
-                componentsByContainer.computeIfAbsent(comp.getParentElement().getId(), k -> new ArrayList<>()).add(comp);
-            } else {
-                orphanComponents.add(comp);
-            }
-        }
-
-        int groupCols = 2;
-        int containerIndex = 0;
-
-        for (ModelElement cont : containers) {
-            UUID contId = cont.getId();
-            List<ModelElement> childComponents = componentsByContainer.getOrDefault(contId, Collections.emptyList());
-
-            int gCol = containerIndex % groupCols;
-            int gRow = containerIndex / groupCols;
-            int groupX = 80 + gCol * 650;
-            int groupY = 80 + gRow * 480;
-
-            // 1. Group Node đại diện cho Service Container
-            ObjectNode groupNode = nodesArray.addObject();
-            groupNode.put("id", contId != null ? contId.toString() : "group-" + containerIndex);
-            groupNode.put("name", cont.getName());
-            groupNode.put("type", "GROUP");
-            groupNode.put("c4Type", "ContainerBoundary");
-
-            ObjectNode gPos = groupNode.putObject("position");
-            gPos.put("x", groupX);
-            gPos.put("y", groupY);
-
-            ObjectNode gData = groupNode.putObject("data");
-            gData.put("label", cont.getName() + " (" + cont.getElementType() + ")");
-
-            // 2. Các Component con nằm bên trong Group
-            for (int j = 0; j < childComponents.size(); j++) {
-                ModelElement comp = childComponents.get(j);
-                int cCol = j % 2;
-                int cRow = j / 2;
-                int compX = groupX + 30 + cCol * 280;
-                int compY = groupY + 60 + cRow * 90;
-
-                ObjectNode compNode = nodesArray.addObject();
-                compNode.put("id", comp.getId() != null ? comp.getId().toString() : "comp-" + containerIndex + "-" + j);
-                compNode.put("name", comp.getName());
-                compNode.put("type", "COMPONENT");
-                compNode.put("c4Type", "Component");
-                compNode.put("parentId", contId != null ? contId.toString() : null);
-
-                ObjectNode cPos = compNode.putObject("position");
-                cPos.put("x", compX);
-                cPos.put("y", compY);
-
-                ObjectNode cData = compNode.putObject("data");
-                cData.put("label", comp.getName());
-                cData.put("parentContainer", cont.getName());
-                cData.put("languageStack", comp.getLanguageStack());
-            }
-
-            containerIndex++;
-        }
-
-        // 3. Toàn bộ các cạnh quan hệ (bao gồm CODE_DEPENDENCY giữa components và HTTP call)
-        for (ModelRelationship rel : relationships) {
-            if (rel.getSourceElement() != null && rel.getTargetElement() != null) {
-                UUID sId = rel.getSourceElement().getId();
-                UUID tId = rel.getTargetElement().getId();
-
-                if (sId != null && tId != null) {
-                    ObjectNode edge = edgesArray.addObject();
-                    edge.put("id", rel.getId() != null ? rel.getId().toString() : UUID.randomUUID().toString());
-                    edge.put("source", sId.toString());
-                    edge.put("target", tId.toString());
-                    edge.put("relationType", rel.getRelationType());
-                    edge.put("originLayer", rel.getOriginLayer());
-                    edge.put("label", rel.getRelationType());
-                }
-            }
-        }
-
-        return root;
-    }
+    @Transactional(readOnly=true) public List<com.mavis.analyzer.diagram.dto.DiagramResponseDTO> getDiagramsByModelVersion(UUID id){return list(id).stream().map(this::dto).toList();}
+    @Transactional(readOnly=true) public com.mavis.analyzer.diagram.dto.DiagramResponseDTO getDiagramById(UUID id){return dto(get(id));}
+    @Transactional public com.mavis.analyzer.diagram.dto.DiagramResponseDTO updateDiagramLayout(UUID id,JsonNode positions){return dto(updateLayout(id,positions));}
+    @Transactional(readOnly=true) public List<com.mavis.analyzer.diagram.dto.EvidenceResponseDTO> getEvidencesByElement(UUID id){var target=elements.findById(id).orElseThrow(()->missing());owner(target.getModelVersion());return evidence.findByElementIdOrderByCreatedAtAsc(id).stream().map(com.mavis.analyzer.diagram.dto.EvidenceResponseDTO::fromEntity).toList();}
+    @Transactional(readOnly=true) public List<com.mavis.analyzer.diagram.dto.EvidenceResponseDTO> getEvidencesByRelationship(UUID id){var target=relationships.findById(id).orElseThrow(()->missing());owner(target.getModelVersion());return evidence.findByRelationshipIdOrderByCreatedAtAsc(id).stream().map(com.mavis.analyzer.diagram.dto.EvidenceResponseDTO::fromEntity).toList();}
+    private com.mavis.analyzer.diagram.dto.DiagramResponseDTO dto(DiagramView view){return com.mavis.analyzer.diagram.dto.DiagramResponseDTO.builder().id(view.id()).modelVersionId(view.modelVersionId()).notation(view.notation()).level(view.level()).layoutJson(view.layoutJson()).createdAt(view.createdAt()).build();}
 }

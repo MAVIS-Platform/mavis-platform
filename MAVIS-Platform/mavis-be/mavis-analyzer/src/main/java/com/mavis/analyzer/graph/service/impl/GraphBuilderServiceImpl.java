@@ -218,13 +218,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         // BƯỚC 0: GỌI C# ROSLYN WORKER NẾU CÓ DỰ ÁN .NET (GRACEFUL DEGRADATION)
         // =========================================================================
         DotnetAnalyzeResponseDTO dotnetAnalysis = null;
-        if (dotnetWorkerClientService != null && sourcePath != null) {
-            try {
-                dotnetAnalysis = dotnetWorkerClientService.analyzeDotnetIfPresent(projectId, snapshotId, sourcePath);
-            } catch (Exception e) {
-                log.warn("Lỗi khi gọi DotnetWorkerClientService: {}. Tiến hành phân tích Java bình thường.", e.getMessage());
-            }
-        }
+        // Worker results are imported by WorkerCanonicalImporter inside the publication transaction.
 
         // =========================================================================
         // BƯỚC 1: XÂY DỰNG VÀ LƯU BATCH CÁC COMPONENT CON (LEVEL 3 C4 HIERARCHY)

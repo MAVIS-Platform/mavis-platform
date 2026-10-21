@@ -31,6 +31,10 @@ public class ModelVersion {
     private SourceSnapshot sourceSnapshot;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "base_model_version_id")
+    private ModelVersion baseModelVersion;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "runtime_session_id")
     private RuntimeSession runtimeSession;
 

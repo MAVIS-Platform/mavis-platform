@@ -1,0 +1,10 @@
+# Import explicitly from deployment configuration. Never commit real keys here.
+mavis:
+  worker:
+    enabled: ${MAVIS_WORKER_ENABLED:false}
+    dotnet-url: ${MAVIS_WORKER_URL:http://localhost:5050}
+    service-key: ${MAVIS_WORKER_SERVICE_KEY:}
+    grant-key-id: ${MAVIS_WORKER_GRANT_KEY_ID:}
+    grant-key: ${MAVIS_WORKER_GRANT_KEY:}
+    snapshot-root: ${MAVIS_SNAPSHOT_ROOT:}
+    artifact-root: ${MAVIS_ARTIFACT_ROOT:}

@@ -1,0 +1,340 @@
+{
+  "reviewDate": "2026-10-20",
+  "scope": "Local profile PoC smoke evidence; not full platform/SRS acceptance",
+  "unitTests": {
+    "passed": 133,
+    "skipped": 1,
+    "failed": 0,
+    "hostSdk": "10.0.204"
+  },
+  "linuxEngine": true,
+  "dockerServerVersion": "29.1.5",
+  "composeVersion": "5.0.1",
+  "dotnetAgent": "1.17.0",
+  "javaAgent": "2.32.0",
+  "collectorImage": "otel/opentelemetry-collector-contrib@sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806",
+  "runtimeBaseImage": "mcr.microsoft.com/dotnet/aspnet@sha256:1601380775673021a23ea5985669f1daf03719faaa684f839da1752fb48cfc7f",
+  "agentChecksums": [
+    {
+      "name": "dotnet.zip",
+      "sha": "cc56878f0155e28b6554924fbd420fcb8bec7108cd9d41836dc530764ac923f8"
+    },
+    {
+      "name": "opentelemetry-javaagent.jar",
+      "sha": "f787eb6c7f3d18e69a431e108a15278d25ee37f83d68b678f621e063f3988f82"
+    }
+  ],
+  "sampleSourceSha256": {
+    "catalog/Dockerfile": "74c44237804a3df0468eb757d8ada2a79445926c633acfd408ff4effd4488ae4",
+    "gateway/pom.xml": "ec3e81ee53fb27db35bc3cdf48f2b95dd599b3754e941eb85acd64a0ebdf1fc2",
+    "payment/src/main/java/com/mavis/poc/PaymentApplication.java": "ba0e3ba8729be7c35fadd8479afcc73403ad0ad81780098fc8cf8c685c24bc6d",
+    "orders/Orders.csproj": "99aa5218c1878ec612ea9cde2dff48ced337c031b4b4325d8b921c08bb33adbd",
+    "catalog/Catalog.csproj": "99aa5218c1878ec612ea9cde2dff48ced337c031b4b4325d8b921c08bb33adbd",
+    "payment/Dockerfile": "13465d2887be60e5f47328470b4d43f64504e1d9c4ecf526e679e3800b844d14",
+    "payment/pom.xml": "f5a5261a81746ed056ee80cf5813c6e673dfa33215cfd80dda9bcd4e32af72a8",
+    "catalog/Program.cs": "d1957cfab9808c59a7dfc5a5595303ef9ffc1d4c3dadfbb1080e1473d4ad8322",
+    "collector.yaml": "fd589508e10cd4f046b5a2473d97f383fd621780b6303058e102281f4d5a6561",
+    "orders/Dockerfile": "2d85d569ed513ee48413c906ed70d49380c8d9a58ab1fd43c2d226be836cbd4c",
+    "gateway/Dockerfile": "036a333624ecc9681eda2ec18e5aaf03be311c03456872541c99e358d7dcb29c",
+    "orders/Program.cs": "1b130ed5cfa2d4ff496972e43d1c831d746a0c1a880cdc670d8256ba23b246f2",
+    "gateway/src/main/java/com/mavis/poc/GatewayApplication.java": "925cb1148819063f67ea97a747c56addff842db8ead6b2e5828fff23fea61da7"
+  },
+  "cases": [
+    {
+      "case": "Success",
+      "sessionId": "poc-success-e1c5994a",
+      "resourceProject": "mavisrun-e6e02a6f7d944e929458c9b918c04d31",
+      "modelVersionId": "poc-model-orders",
+      "sourceSnapshotId": "poc-source-orders",
+      "profileVersionId": "poc-profile-v1",
+      "runConfigurationVersionId": "poc-config-v1",
+      "scenarioVersionId": "poc-scenario-Success",
+      "execution": "Completed",
+      "scenario": "Passed",
+      "evidence": "Available",
+      "cleanup": "Confirmed",
+      "sandboxConfirmed": true,
+      "spanCount": 5,
+      "observedServicePairs": [
+        "orders -> payment"
+      ],
+      "actualImageIds": {
+        "orders": "sha256:00ee8bc463f5435b59cce625a87c975edb76f92262f15ba401912cbdd84da296",
+        "payment": "sha256:21a3c7e3f739dcb8287a76ee248b692511056ef9e76be69b041edfc99355cf1f",
+        "mavis-collector": "sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806"
+      },
+      "warnings": [
+        "MISSING_PARENT_SPAN",
+        "ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION"
+      ]
+    },
+    {
+      "case": "Failure",
+      "sessionId": "poc-failure-9db733b1",
+      "resourceProject": "mavisrun-4e95c3ce2f97419f814611d7dc21ff49",
+      "modelVersionId": "poc-model-orders",
+      "sourceSnapshotId": "poc-source-orders",
+      "profileVersionId": "poc-profile-v1",
+      "runConfigurationVersionId": "poc-config-v1",
+      "scenarioVersionId": "poc-scenario-Failure",
+      "execution": "Completed",
+      "scenario": "Failed",
+      "evidence": "Available",
+      "cleanup": "Confirmed",
+      "sandboxConfirmed": true,
+      "spanCount": 5,
+      "observedServicePairs": [
+        "orders -> payment"
+      ],
+      "actualImageIds": {
+        "orders": "sha256:00ee8bc463f5435b59cce625a87c975edb76f92262f15ba401912cbdd84da296",
+        "payment": "sha256:21a3c7e3f739dcb8287a76ee248b692511056ef9e76be69b041edfc99355cf1f",
+        "mavis-collector": "sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806"
+      },
+      "warnings": [
+        "MISSING_PARENT_SPAN",
+        "ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION"
+      ]
+    },
+    {
+      "case": "StartupFailure",
+      "sessionId": "poc-startupfailure-ae234ea9",
+      "resourceProject": "mavisrun-a325e6c7e13843079f749f47bd4c8b4d",
+      "modelVersionId": "poc-model-orders",
+      "sourceSnapshotId": "poc-source-orders",
+      "profileVersionId": "poc-profile-v1",
+      "runConfigurationVersionId": "poc-config-v1",
+      "scenarioVersionId": "poc-scenario-StartupFailure",
+      "execution": "Failed",
+      "scenario": "NotRun",
+      "evidence": "Unavailable",
+      "cleanup": "Confirmed",
+      "sandboxConfirmed": false,
+      "spanCount": 0,
+      "observedServicePairs": [],
+      "actualImageIds": {},
+      "warnings": null
+    },
+    {
+      "case": "Timeout",
+      "sessionId": "poc-timeout-52e9e28f",
+      "resourceProject": "mavisrun-b1a074c2545940a89dfe5afba8bc1d1a",
+      "modelVersionId": "poc-model-orders",
+      "sourceSnapshotId": "poc-source-orders",
+      "profileVersionId": "poc-profile-v1",
+      "runConfigurationVersionId": "poc-config-v1",
+      "scenarioVersionId": "poc-scenario-Timeout",
+      "execution": "TimedOut",
+      "scenario": "NotRun",
+      "evidence": "Unavailable",
+      "cleanup": "Confirmed",
+      "sandboxConfirmed": false,
+      "spanCount": 0,
+      "observedServicePairs": [],
+      "actualImageIds": {},
+      "warnings": null
+    },
+    {
+      "case": "Cancel",
+      "sessionId": "poc-cancel-6c96b4de",
+      "resourceProject": "mavisrun-8c7bc258c9f546bc83ed905ab3833557",
+      "modelVersionId": "poc-model-orders",
+      "sourceSnapshotId": "poc-source-orders",
+      "profileVersionId": "poc-profile-v1",
+      "runConfigurationVersionId": "poc-config-v1",
+      "scenarioVersionId": "poc-scenario-Cancel",
+      "execution": "Cancelled",
+      "scenario": "NotRun",
+      "evidence": "Unavailable",
+      "cleanup": "Confirmed",
+      "sandboxConfirmed": false,
+      "spanCount": 0,
+      "observedServicePairs": [],
+      "actualImageIds": {},
+      "warnings": null
+    },
+    {
+      "case": "SecondProject",
+      "sessionId": "poc-secondproject-bd197c6a",
+      "resourceProject": "mavisrun-affa8e0fd07d4ee1991111a195489672",
+      "modelVersionId": "poc-model-gateway",
+      "sourceSnapshotId": "poc-source-gateway",
+      "profileVersionId": "poc-profile-v1",
+      "runConfigurationVersionId": "poc-config-v1",
+      "scenarioVersionId": "poc-scenario-SecondProject",
+      "execution": "Completed",
+      "scenario": "Passed",
+      "evidence": "Available",
+      "cleanup": "Confirmed",
+      "sandboxConfirmed": true,
+      "spanCount": 10,
+      "observedServicePairs": [
+        "gateway -> catalog"
+      ],
+      "actualImageIds": {
+        "gateway": "sha256:0c6bc1b9c2e777bb52f4f0b32b462f11b1cac7fc55c8846bd8c786b2ea5fa542",
+        "catalog": "sha256:5bab7e63acbd32a73a64d005a2da41615bd6ed6c1f8556b3f0a020f3d87d6909",
+        "mavis-collector": "sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806"
+      },
+      "warnings": [
+        "MISSING_PARENT_SPAN",
+        "ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION"
+      ]
+    }
+  ],
+  "abandonedRecovery": {
+    "inMemoryResultRecovered": false,
+    "cleanup": "Confirmed",
+    "resourceProject": "mavisrun-269ca1e35a264b0a880248c43a425fd8"
+  },
+  "limitations": [
+    "Generated stateless samples; no authenticated database reset acceptance",
+    "Source/image correspondence remains unverified by generic runner",
+    "Missing parent includes scenario trace carrier not exported as a root span",
+    "Production isolation, Java/UI integration and SRS thresholds not accepted"
+  ],
+  "linuxProfileTests": {
+    "passed": 68,
+    "failed": 0,
+    "scope": "New standalone profile tests including Linux symlinks; legacy suite not claimed here",
+    "skipped": 0,
+    "sdkImage": "mcr.microsoft.com/dotnet/sdk@sha256:f7e28a0a3f6f9235929ec19274fd0ddf8534e9159f99fac602ac73304f1ce99f"
+  },
+  "windowsScopeAndDeadline": {
+    "deadlineElapsedMs": 1183,
+    "configuredDeadlineSeconds": 1,
+    "deadlineHttpStatus": 408,
+    "junctionHttpStatus": 400
+  },
+  "net10RunnerRegression": {
+    "cases": [
+      {
+        "evidence": "Available",
+        "spanCount": 9,
+        "cleanup": "Confirmed",
+        "observedServicePairs": [
+          "orders -> payment"
+        ],
+        "mappingStatus": "Mapped",
+        "resourceProject": "mavisrun-a6df8769051e47f6aee2e9ad0962680b",
+        "sandboxConfirmed": true,
+        "actualImageIds": {
+          "orders": "sha256:56368c8347cddceb0cbbdcaa757868a2a62b9c1f6c1a62710fc4e69a971853b3",
+          "payment": "sha256:dd1d9f5b05ddfe2f103a0cf409056ada7438ad83e0813684342e16129d6a8d7e",
+          "mavis-collector": "sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806"
+        },
+        "scenario": "Passed",
+        "case": "Success",
+        "sessionId": "poc-success-f59fee2f",
+        "execution": "Completed",
+        "traceQuality": "Partial"
+      },
+      {
+        "evidence": "Available",
+        "spanCount": 5,
+        "cleanup": "Confirmed",
+        "observedServicePairs": [
+          "gateway -> catalog"
+        ],
+        "mappingStatus": "Mapped",
+        "resourceProject": "mavisrun-d4e87a83cd584881858473dfbfabb2d6",
+        "sandboxConfirmed": true,
+        "actualImageIds": {
+          "gateway": "sha256:2038b39af58900addcd9389afca1a8a0f385caa67c72a846f45aa2560152bb75",
+          "catalog": "sha256:5627cf7f8b21e45cb616e403f25205ee0e94c4e9d715d465c7710e689e4821fa",
+          "mavis-collector": "sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806"
+        },
+        "scenario": "Passed",
+        "case": "SecondProject",
+        "sessionId": "poc-secondproject-28afaca9",
+        "execution": "Completed",
+        "traceQuality": "Partial"
+      },
+      {
+        "evidence": "Available",
+        "spanCount": 9,
+        "cleanup": "Confirmed",
+        "observedServicePairs": [
+          "orders -> payment"
+        ],
+        "mappingStatus": "Mapped",
+        "resourceProject": "mavisrun-168038597d2d4b2ea6f17502c54d513d",
+        "sandboxConfirmed": true,
+        "actualImageIds": {
+          "orders": "sha256:56368c8347cddceb0cbbdcaa757868a2a62b9c1f6c1a62710fc4e69a971853b3",
+          "payment": "sha256:dd1d9f5b05ddfe2f103a0cf409056ada7438ad83e0813684342e16129d6a8d7e",
+          "mavis-collector": "sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806"
+        },
+        "scenario": "Failed",
+        "case": "Failure",
+        "sessionId": "poc-failure-179495ff",
+        "execution": "Completed",
+        "traceQuality": "Partial"
+      },
+      {
+        "evidence": "Unavailable",
+        "spanCount": 1,
+        "cleanup": "Confirmed",
+        "observedServicePairs": [
+          " -> "
+        ],
+        "mappingStatus": "Unavailable",
+        "resourceProject": "mavisrun-d96b0ae00617462fa0df0e1d1995736d",
+        "sandboxConfirmed": false,
+        "actualImageIds": {},
+        "scenario": "NotRun",
+        "case": "StartupFailure",
+        "sessionId": "poc-startupfailure-fa6d8ac2",
+        "execution": "Failed",
+        "traceQuality": "Unavailable"
+      },
+      {
+        "evidence": "Unavailable",
+        "spanCount": 1,
+        "cleanup": "Confirmed",
+        "observedServicePairs": [
+          " -> "
+        ],
+        "mappingStatus": "Unavailable",
+        "resourceProject": "mavisrun-0f0a9d6251524e55bf245d87268b37ed",
+        "sandboxConfirmed": false,
+        "actualImageIds": {},
+        "scenario": "NotRun",
+        "case": "Timeout",
+        "sessionId": "poc-timeout-507a4890",
+        "execution": "TimedOut",
+        "traceQuality": "Unavailable"
+      },
+      {
+        "evidence": "Unavailable",
+        "spanCount": 1,
+        "cleanup": "Confirmed",
+        "observedServicePairs": [
+          " -> "
+        ],
+        "mappingStatus": "Unavailable",
+        "resourceProject": "mavisrun-e3b96a36cc124dc382b028676cad1077",
+        "sandboxConfirmed": false,
+        "actualImageIds": {},
+        "scenario": "NotRun",
+        "case": "Cancel",
+        "sessionId": "poc-cancel-d6993d02",
+        "execution": "Cancelled",
+        "traceQuality": "Unavailable"
+      }
+    ],
+    "abandonedRecovery": {
+      "resourceProject": "mavisrun-99d5071deb554b478e5a70f7e6098f2c",
+      "cleanupStatus": "Confirmed"
+    },
+    "runnerRuntimeImage": "mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac",
+    "dotnetAgent": "1.17.0",
+    "acceptance": "Six scenario checks and abandoned-allocator cleanup passed; no production isolation or Java persistence acceptance",
+    "javaAgent": "2.32.0",
+    "verifiedAtUtc": "2026-10-21T12:10:47.4320574+00:00",
+    "sampleRuntimeImage": "mcr.microsoft.com/dotnet/aspnet@sha256:1601380775673021a23ea5985669f1daf03719faaa684f839da1752fb48cfc7f",
+    "collectorImage": "otel/opentelemetry-collector-contrib@sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806",
+    "runnerImageId": "sha256:9c55b8255a2327bc1fba5f3b5bf226d976e2f0975ae50dc3477a74ae5b8b66dd",
+    "scope": "Local Docker Desktop Linux PoC only; previous evidence above is historical"
+  }
+}

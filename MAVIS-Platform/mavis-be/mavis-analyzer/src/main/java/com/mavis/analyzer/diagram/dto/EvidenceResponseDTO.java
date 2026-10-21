@@ -14,6 +14,9 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class EvidenceResponseDTO {
+    private UUID modelVersionId;
+    private UUID sourceSnapshotId;
+    private com.fasterxml.jackson.databind.JsonNode provenance;
     private UUID id;
     private UUID elementId;
     private UUID relationshipId;
@@ -28,6 +31,9 @@ public class EvidenceResponseDTO {
             return null;
         }
         return EvidenceResponseDTO.builder()
+                .modelVersionId(entity.getModelVersion() == null ? null : entity.getModelVersion().getId())
+                .sourceSnapshotId(entity.getSourceSnapshot() == null ? null : entity.getSourceSnapshot().getId())
+                .provenance(entity.getProvenance())
                 .id(entity.getId())
                 .elementId(entity.getElement() != null ? entity.getElement().getId() : null)
                 .relationshipId(entity.getRelationship() != null ? entity.getRelationship().getId() : null)
