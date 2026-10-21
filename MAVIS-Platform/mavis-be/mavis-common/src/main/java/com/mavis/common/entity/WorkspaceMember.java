@@ -36,4 +36,11 @@ public class WorkspaceMember {
     @CreationTimestamp
     @Column(name = "joined_at", nullable = false, updatable = false)
     private OffsetDateTime joinedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (joinedAt == null) {
+            joinedAt = OffsetDateTime.now();
+        }
+    }
 }

@@ -20,6 +20,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -63,6 +64,7 @@ public class ProjectServiceImpl implements ProjectService {
             projectType = "PERSONAL";
         }
 
+        OffsetDateTime now = OffsetDateTime.now();
         Project project = Project.builder()
                 .name(request.getName())
                 .description(request.getDescription())
@@ -74,6 +76,8 @@ public class ProjectServiceImpl implements ProjectService {
                 .projectType(projectType)
                 .isReferenceTemplate(false)
                 .status("ACTIVE")
+                .createdAt(now)
+                .updatedAt(now)
                 .build();
 
         Project saved = projectRepository.save(project);
@@ -106,6 +110,7 @@ public class ProjectServiceImpl implements ProjectService {
         if (request.getStatus() != null && !request.getStatus().isBlank()) {
             project.setStatus(request.getStatus());
         }
+        project.setUpdatedAt(OffsetDateTime.now());
 
         Project saved = projectRepository.save(project);
         return toDTO(saved);
@@ -150,6 +155,7 @@ public class ProjectServiceImpl implements ProjectService {
         }
 
         project.setStatus("DELETED");
+        project.setUpdatedAt(OffsetDateTime.now());
         projectRepository.save(project);
         log.info("Project with ID: {} has been marked as DELETED", id);
     }
@@ -158,6 +164,9 @@ public class ProjectServiceImpl implements ProjectService {
         if (project == null) {
             return null;
         }
+        OffsetDateTime updatedAt = project.getUpdatedAt() != null ? project.getUpdatedAt() : OffsetDateTime.now();
+        OffsetDateTime createdAt = project.getCreatedAt() != null ? project.getCreatedAt() : updatedAt;
+
         return ProjectResponseDTO.builder()
                 .id(project.getId())
                 .workspaceId(project.getWorkspace() != null ? project.getWorkspace().getId() : null)
@@ -175,8 +184,8 @@ public class ProjectServiceImpl implements ProjectService {
                 .isReferenceTemplate(project.getIsReferenceTemplate())
                 .referenceSnapshotId(project.getReferenceSnapshotId())
                 .status(project.getStatus())
-                .createdAt(project.getCreatedAt())
-                .updatedAt(project.getUpdatedAt())
+                .createdAt(createdAt)
+                .updatedAt(updatedAt)
                 .build();
     }
 }
