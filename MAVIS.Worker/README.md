@@ -640,3 +640,11 @@ Ví dụ cấu hình: contracts/service-bindings.example.json; cách dùng và g
 - [ ] I05 tiếp theo: controlled revision/diff giữ logical identity/provenance và Java → .NET impact adapter; chưa hoàn tất toàn I05.
 
 I05 verification bổ sung cuối: 3/3 targeted MVC API integration tests pass sau khi thêm checksum evidence + node/relationship count assertions trước/sau layout update. Không có model/evidence mutation; container/network test được thu hồi bởi harness.
+
+## 31. I05 — controlled revision và logical model diff
+
+- [x] ModelVersionService/Impl và APIs list/revise/compare: project-owner guard, latest-base validation, project lock, immutable base và migration V4 base-model lineage.
+- [x] ADD/UPDATE/REMOVE nodes/edges trong supported edit profile; bounded operations, validate refs/parent cycles, remove incident edges, manual confirmation evidence. Copy source evidence/provenance bằng batch, sinh 3 diagrams và promote latest trong cùng transaction.
+- [x] LogicalKey/Worker logical ID/lineage UUID matching bằng maps; rename/status change là modified, không remove/add theo display name. Không fuzzy match độc lập giữa legacy analyses.
+- [x] 3/3 targeted live MVC/Worker/PostgreSQL integration scenarios pass; gồm revision rename + evidence lineage, add nodes/edge diff, remove incident-edge diff, cyclic-parent rollback, stale-base và non-owner denial. V1–V4 migrations được apply trên schemas mới.
+- [ ] UI revision/diff rendering, classroom policy và full corpus acceptance còn lại. Tiếp theo impact adapter Java → .NET, không thêm BFS thứ hai.
