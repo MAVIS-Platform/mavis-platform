@@ -6,7 +6,7 @@ README là kế hoạch và sổ tiến độ riêng của phần C#. Chỉ đá
 
 ## Trạng thái triển khai ngày 20/10/2026
 
-- Static profile `dotnet-static/1.4`: source-only analysis/jobs, project/compile metadata, bounded semantic binding, partial types, ASP.NET pattern findings và config keys/hosts có evidence/warnings. Không build/run source đích.
+- Static profile `dotnet-static/1.5`: source-only analysis/jobs, project/compile metadata, bounded semantic binding, partial types, ASP.NET pattern findings và config keys/hosts có evidence/warnings. Không build/run source đích.
 - Versioned impact API: reverse BFS, typed service edges, một shortest path mỗi dependent, evidence và runtime context không xóa static edges.
 - Dedicated Runner: executable riêng, strict image-only preflight, Compose override, internal-network HTTP scenario container, agents/Collector, causal correlation, bounded lifecycle/cancel/cleanup/recovery.
 - Hai dự án mẫu thật đã chạy cả .NET -> Java và Java -> .NET; có case request fail, startup fail, timeout, cancel và abandoned cleanup. Bằng chứng: [PoC evidence](samples/runtime-poc/POC_EVIDENCE.json).
@@ -502,3 +502,10 @@ Căn cứ mới: phân chia nhiệm vụ chi tiết.docx v2.0 trong .doc_review/
 - Verification: Windows full suite 133 pass, 1 Linux-only skip. Artifact scope, canonical fixtures/enum mapping, durable dispatch và signed runtime envelope vẫn chưa hoàn thành.
 
 Verification bổ sung N01: locked restore toàn solution đạt; publish Runner Release đạt; Docker image net10 khởi động và thực thi preflight thành công với network none/read-only/cap-drop ALL. Đây là Linux CLI smoke, chưa phải Linux full regression hay chạy lại runtime tracing PoC. Theo hướng dẫn Microsoft, SDK được pin chính xác khi dùng lock file: https://learn.microsoft.com/dotnet/core/tools/global-json .
+
+## 16. N02 — HTTP host/port identity, 21/10/2026
+
+- [x] Bảo toàn host và effective port ở config, literal HTTP syntax candidates, resolved HttpClient và BaseAddress. Port mặc định cũng hiện rõ (80/443), IPv6 có brackets. Không gộp localhost khác port; không xuất credentials/path/query/fragment.
+- [x] Nâng analyzerVersion lên dotnet-static/1.5 và ghi migration contract trong DOTNET_API_V1.md; không thay canonical IDs của Java.
+- [x] Regression CSharp: 46 pass, 1 Linux-only skip; thêm 8 trường hợp về ports/defaults/IPv6 và phân biệt hai dịch vụ localhost.
+- [ ] N02 còn lại: thống nhất alias/config mapping với canonical model Java, kiểm chứng Linux và corpus đa project theo nghiệm thu chung.

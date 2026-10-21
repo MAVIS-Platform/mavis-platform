@@ -22,7 +22,7 @@ public sealed class ConfigurationInspectorTests
             var analyzer = new DotnetProjectAnalyzer(Options.Create(new DotnetAnalysisOptions { AllowedSourceRoots = [root] }));
             var request = new DotnetAnalysisRequest("p", "s", root, "j");
             var result = await analyzer.AnalyzeAsync(request, CancellationToken.None);
-            Assert.Contains(result.Findings, f => f.Kind == "ConfiguredHttpHost" && f.Target == "payments");
+            Assert.Contains(result.Findings, f => f.Kind == "ConfiguredHttpHost" && f.Target == "payments:443");
             Assert.Contains(result.Findings, f => f.Kind == "ConfigurationKey" && f.Target == "ConnectionStrings:Db");
             Assert.DoesNotContain("SECRET_SENTINEL", System.Text.Json.JsonSerializer.Serialize(result));
             File.WriteAllText(Path.Combine(root, "appsettings.json"), "{ invalid");

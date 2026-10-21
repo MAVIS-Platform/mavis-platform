@@ -9,7 +9,7 @@ internal static class DotnetConfigurationInspector
         List<DotnetFinding> findings, List<AnalysisWarning> warnings, CancellationToken ct)
     {
         var relative = Path.GetRelativePath(root, file).Replace('\\', '/');
-        warnings.Add(new("CONFIGURATION_PROFILE", "Configuration keys and HTTP hosts only; no secret values, environment merging or runtime overrides are evaluated.", relative));
+        warnings.Add(new("CONFIGURATION_PROFILE", "Configuration keys and HTTP host/port identities only; no secret values, environment merging or runtime overrides are evaluated.", relative));
         try
         {
             using var document = JsonDocument.Parse(content, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true, MaxDepth = 64 });
@@ -40,7 +40,7 @@ internal static class DotnetConfigurationInspector
                 if (element.ValueKind == JsonValueKind.String && (leaf.EndsWith("Url", StringComparison.OrdinalIgnoreCase) ||
                     leaf.EndsWith("BaseAddress", StringComparison.OrdinalIgnoreCase) || leaf.EndsWith("Endpoint", StringComparison.OrdinalIgnoreCase)) &&
                     Uri.TryCreate(element.GetString(), UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
-                    findings.Add(new("ConfiguredHttpHost", project, uri.Host, null, evidence, key,
+                    findings.Add(new("ConfiguredHttpHost", project, HttpEndpointIdentity.FromUri(uri), null, evidence, key,
                         SemanticProjectInspector.Id(project, "ConfiguredHttpHost", relative + "|" + key)));
             }
         }

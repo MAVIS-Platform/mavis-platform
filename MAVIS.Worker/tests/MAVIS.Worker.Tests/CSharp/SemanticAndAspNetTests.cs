@@ -90,7 +90,7 @@ public sealed class SemanticAndAspNetTests : IDisposable
     }
 
     [Fact]
-    public async Task RealHttpClientAndTypedBaseAddressKeepOnlyHost()
+    public async Task RealHttpClientAndTypedBaseAddressKeepOnlyHostAndPort()
     {
         Write("Client.cs", """
             using System.Net.Http;
@@ -99,8 +99,8 @@ public sealed class SemanticAndAspNetTests : IDisposable
             class Startup { public void Configure() { services.AddHttpClient<IClient, Client>(c => c.BaseAddress = new System.Uri("https://payments?token=SECRET_SENTINEL")); } }
             """);
         var result = await Analyze();
-        Assert.Contains(result.Findings, f => f.Kind == "OutgoingHttp" && f.Target == "payments" && f.Confidence == "ResolvedSymbol");
-        Assert.Contains(result.Findings, f => f.Kind == "HttpClientBaseAddressCandidate" && f.Target == "payments");
+        Assert.Contains(result.Findings, f => f.Kind == "OutgoingHttp" && f.Target == "payments:443" && f.Confidence == "ResolvedSymbol");
+        Assert.Contains(result.Findings, f => f.Kind == "HttpClientBaseAddressCandidate" && f.Target == "payments:443");
         Assert.DoesNotContain("SECRET_SENTINEL", System.Text.Json.JsonSerializer.Serialize(result));
     }
 
@@ -141,5 +141,37 @@ public sealed class SemanticAndAspNetTests : IDisposable
         Assert.DoesNotContain(result.Findings, f => f.Kind == "MinimalApiEndpointCandidate");
         Assert.Contains(result.Warnings, w => w.Code == "UNRESOLVED_ASPNET_PATTERN");
     }
+    [Theory]
+    [InlineData("http://localhost:5001", "localhost:5001")]
+    [InlineData("http://localhost:5002", "localhost:5002")]
+    [InlineData("http://PAYMENTS", "payments:80")]
+    [InlineData("https://payments", "payments:443")]
+    [InlineData("https://payments:443", "payments:443")]
+    [InlineData("https://payments:8443", "payments:8443")]
+    [InlineData("http://[::1]:5001", "[::1]:5001")]
+    public async Task HttpDestinationsPreserveEffectivePortAcrossAllFindingSources(string endpoint, string expected)
+    {
+        var secretUrl = endpoint + "/private?token=SECRET_SENTINEL#SECRET_SENTINEL";
+        Write("Client.cs", $$"""
+            using System.Net.Http;
+            using System.Threading.Tasks;
+            class Client { public async Task Run(HttpClient http) { await http.GetAsync("{{secretUrl}}"); } }
+            class Startup { public void Configure() { services.AddHttpClient<IClient, Client>(c => c.BaseAddress = new System.Uri("{{secretUrl}}")); } }
+            """);
+        Write("appsettings.json", System.Text.Json.JsonSerializer.Serialize(new { ServiceUrl = secretUrl }));
+        var result = await Analyze();
+        foreach (var kind in new[] { "OutgoingHttp", "OutgoingHttpCandidate", "HttpClientBaseAddressCandidate", "ConfiguredHttpHost" })
+            Assert.Contains(result.Findings, f => f.Kind == kind && f.Target == expected);
+        Assert.DoesNotContain("SECRET_SENTINEL", System.Text.Json.JsonSerializer.Serialize(result));
+    }
+
+    [Fact]
+    public async Task LocalServicesOnDifferentPortsRemainDistinct()
+    {
+        Write("appsettings.json", """{"FirstUrl":"http://localhost:5001","SecondUrl":"http://localhost:5002"}""");
+        var hosts = (await Analyze()).Findings.Where(f => f.Kind == "ConfiguredHttpHost").Select(f => f.Target).ToArray();
+        Assert.Equal(new[] { "localhost:5001", "localhost:5002" }, hosts);
+    }
+
     public void Dispose() => Directory.Delete(_root, recursive: true);
 }
