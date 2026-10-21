@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/MAVIS.Worker.Api/MAVIS.Worker.Api.csproj" />
+    <Project Path="src/MAVIS.Runner/MAVIS.Runner.csproj" />
     <Project Path="src/MAVIS.Worker.Application/MAVIS.Worker.Application.csproj" />
     <Project Path="src/MAVIS.Worker.Domain/MAVIS.Worker.Domain.csproj" />
     <Project Path="src/MAVIS.Worker.Infrastructure/MAVIS.Worker.Infrastructure.csproj" />

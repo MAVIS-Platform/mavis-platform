@@ -17,6 +17,8 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ModelDiffResponseDTO {
+    private com.mavis.analyzer.model.service.ModelVersionService.Difference elements;
+    private com.mavis.analyzer.model.service.ModelVersionService.Difference relationships;
 
     private UUID baseVersionId;
     private Integer baseRevision;

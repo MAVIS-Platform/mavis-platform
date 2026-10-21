@@ -33,6 +33,8 @@ public class GlobalExceptionHandler {
             status = HttpStatus.FORBIDDEN;
         } else if (code == 404) {
             status = HttpStatus.NOT_FOUND;
+        } else if (code == 409) {
+            status = HttpStatus.CONFLICT;
         } else if (code == 429) {
             status = HttpStatus.TOO_MANY_REQUESTS;
         } else if (code >= 500) {

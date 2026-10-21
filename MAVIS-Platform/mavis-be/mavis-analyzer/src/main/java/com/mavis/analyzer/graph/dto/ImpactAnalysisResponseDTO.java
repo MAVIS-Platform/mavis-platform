@@ -14,6 +14,10 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ImpactAnalysisResponseDTO {
+    private String graphRevisionId;
+    private boolean truncated;
+    @Builder.Default
+    private List<String> warnings = new ArrayList<>();
     private UUID modelVersionId;
     private UUID targetElementId;
     private String targetElementName;

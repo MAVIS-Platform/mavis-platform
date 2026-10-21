@@ -28,7 +28,7 @@ public class UploadController {
             @RequestParam("file") MultipartFile file,
             @RequestParam("projectId") UUID projectId) {
         IngestionResponseDTO response = sourceIngestionService.ingestZipUpload(projectId, file);
-        return ApiResponse.success("Tải file ZIP thành công và đã tạo tiến trình phân tích", response);
+        return ApiResponse.success("Tải file ZIP thành công; snapshot sẵn sàng để yêu cầu phân tích", response);
     }
 
     @PostMapping("/import/github")
@@ -36,6 +36,6 @@ public class UploadController {
     public ApiResponse<IngestionResponseDTO> importFromGitHub(
             @Valid @RequestBody GitHubImportRequest request) {
         IngestionResponseDTO response = sourceIngestionService.ingestFromGitHub(request);
-        return ApiResponse.success("Nạp mã nguồn từ GitHub thành công và đã tạo tiến trình phân tích", response);
+        return ApiResponse.success("Nạp mã nguồn thành công; snapshot sẵn sàng để yêu cầu phân tích", response);
     }
 }

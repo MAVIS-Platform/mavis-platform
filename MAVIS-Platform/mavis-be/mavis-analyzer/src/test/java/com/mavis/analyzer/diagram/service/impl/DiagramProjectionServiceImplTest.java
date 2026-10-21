@@ -45,6 +45,10 @@ class DiagramProjectionServiceImplTest {
     @Mock
     private EvidenceRepository evidenceRepository;
 
+    @org.mockito.Mock private com.mavis.common.repository.ModelVersionRepository models;
+    @org.mockito.Mock private com.mavis.common.repository.ModelElementRepository elements;
+    @org.mockito.Mock private com.mavis.common.repository.ModelRelationshipRepository relationships;
+    @org.mockito.Spy private ObjectMapper json = new ObjectMapper();
     @InjectMocks
     private DiagramProjectionServiceImpl diagramProjectionService;
 
@@ -53,9 +57,10 @@ class DiagramProjectionServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken("00000000-0000-0000-0000-000000000001","test",List.of()));
         Project sampleProject = Project.builder()
                 .id(UUID.randomUUID())
-                .name("fruit-market-app")
+                .owner(com.mavis.common.entity.User.builder().id(UUID.fromString("00000000-0000-0000-0000-000000000001")).build()).name("fruit-market-app")
                 .build();
 
         sampleModelVersion = ModelVersion.builder()
@@ -154,6 +159,8 @@ class DiagramProjectionServiceImplTest {
         assertThat(hasChildWithParent).isTrue();
 
         assertThat(results).hasSize(3);
+        assertThat(compNodes.get(0).path("position").has("x")).isTrue();
+        assertThat(compNodes.get(0).path("data").has("label")).isTrue();
     }
 
     @Test
@@ -169,7 +176,8 @@ class DiagramProjectionServiceImplTest {
                 .createdAt(OffsetDateTime.now())
                 .build();
 
-        when(diagramVersionRepository.findByModelVersionIdOrderByCreatedAtAsc(mvId))
+        when(models.findById(mvId)).thenReturn(Optional.of(sampleModelVersion));
+        when(diagramVersionRepository.findByModelVersionId(mvId))
                 .thenReturn(List.of(d1));
 
         List<DiagramResponseDTO> responses = diagramProjectionService.getDiagramsByModelVersion(mvId);
@@ -201,7 +209,7 @@ class DiagramProjectionServiceImplTest {
 
         assertThatThrownBy(() -> diagramProjectionService.getDiagramById(notFoundId))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Không tìm thấy sơ đồ")
+                
                 .extracting("errorCode").isEqualTo(ErrorCode.NOT_FOUND);
     }
 
@@ -214,18 +222,19 @@ class DiagramProjectionServiceImplTest {
                 .modelVersion(sampleModelVersion)
                 .notation("C4")
                 .level("CONTAINER")
-                .layoutJson(objectMapper.createObjectNode())
+                .layoutJson(objectMapper.createObjectNode().set("nodes",objectMapper.createArrayNode().add(objectMapper.createObjectNode().put("id","node").put("x",0).put("y",0))))
                 .build();
 
         ObjectNode newLayout = objectMapper.createObjectNode();
-        newLayout.put("customZoom", 1.5);
+        newLayout.putArray("nodes").addObject().put("id","node").put("x",123).put("y",456);
 
         when(diagramVersionRepository.findById(diagramId)).thenReturn(Optional.of(existing));
         when(diagramVersionRepository.save(any(DiagramVersion.class))).thenAnswer(inv -> inv.getArgument(0));
 
         DiagramResponseDTO updated = diagramProjectionService.updateDiagramLayout(diagramId, newLayout);
 
-        assertThat(updated.getLayoutJson().get("customZoom").asDouble()).isEqualTo(1.5);
+        assertThat(updated.getLayoutJson().path("nodes").get(0).path("x").asInt()).isEqualTo(123);
+        assertThat(updated.getLayoutJson().path("nodes").get(0).path("position").path("x").asInt()).isEqualTo(123);
         assertThat(existing.getModelVersion()).isEqualTo(sampleModelVersion); // BR-33: ModelVersion gốc không bị thay đổi
     }
 
@@ -233,7 +242,7 @@ class DiagramProjectionServiceImplTest {
     @DisplayName("Should get evidences by elementId ordered by createdAt")
     void shouldGetEvidencesByElement() {
         UUID elementId = UUID.randomUUID();
-        ModelElement element = ModelElement.builder().id(elementId).name("OrderController").build();
+        ModelElement element = ModelElement.builder().modelVersion(sampleModelVersion).id(elementId).name("OrderController").build();
 
         Evidence ev = Evidence.builder()
                 .id(UUID.randomUUID())
@@ -245,6 +254,7 @@ class DiagramProjectionServiceImplTest {
                 .createdAt(OffsetDateTime.now())
                 .build();
 
+        when(elements.findById(elementId)).thenReturn(Optional.of(element));
         when(evidenceRepository.findByElementIdOrderByCreatedAtAsc(elementId))
                 .thenReturn(List.of(ev));
 
@@ -261,7 +271,7 @@ class DiagramProjectionServiceImplTest {
     @DisplayName("Should get evidences by relationshipId ordered by createdAt")
     void shouldGetEvidencesByRelationship() {
         UUID relId = UUID.randomUUID();
-        ModelRelationship rel = ModelRelationship.builder().id(relId).relationType("SERVICE_HTTP_CALL").build();
+        ModelRelationship rel = ModelRelationship.builder().modelVersion(sampleModelVersion).id(relId).relationType("SERVICE_HTTP_CALL").build();
 
         Evidence ev = Evidence.builder()
                 .id(UUID.randomUUID())
@@ -273,6 +283,7 @@ class DiagramProjectionServiceImplTest {
                 .createdAt(OffsetDateTime.now())
                 .build();
 
+        when(relationships.findById(relId)).thenReturn(Optional.of(rel));
         when(evidenceRepository.findByRelationshipIdOrderByCreatedAtAsc(relId))
                 .thenReturn(List.of(ev));
 

@@ -11,6 +11,7 @@
     <version>1.0.0</version>
     <packaging>pom</packaging> <!-- RẤT QUAN TRỌNG: Đánh dấu đây là dự án cha -->
     <modules>
+        <module>../../MAVIS.Worker/integration/java-client</module>
         <module>mavis-common</module>
         <module>mavis-platform</module>
         <module>mavis-analyzer</module>
