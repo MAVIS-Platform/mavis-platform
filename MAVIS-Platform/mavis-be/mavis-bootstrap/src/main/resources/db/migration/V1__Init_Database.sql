@@ -36,7 +36,7 @@ CREATE TABLE users (
     password_hash   VARCHAR(255) NOT NULL,
     full_name       VARCHAR(255) NOT NULL,
     status          VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
-        CHECK (status IN ('ACTIVE', 'LOCKED', 'INACTIVE')),
+        CHECK (status IN ('ACTIVE', 'LOCKED', 'INACTIVE', 'PENDING_VERIFICATION')),
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
