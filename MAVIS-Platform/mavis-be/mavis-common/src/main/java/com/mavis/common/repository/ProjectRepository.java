@@ -11,6 +11,9 @@ import java.util.UUID;
 
 @Repository
 public interface ProjectRepository extends JpaRepository<Project, UUID> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select p from Project p where p.id = :id")
+    Optional<Project> findLockedById(@org.springframework.data.repository.query.Param("id") UUID id);
     List<Project> findByOwnerId(UUID ownerId);
     List<Project> findByWorkspaceId(UUID workspaceId);
 

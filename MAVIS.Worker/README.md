@@ -600,3 +600,15 @@ Verification I01: Java core 8 pass, 1 live-only skip; .NET producer test kiểm 
 ## 26. I02 — Java client ↔ Worker thật
 
 DotnetWorkerClientServiceImpl đã dùng typed scope/client core, không gửi raw extractedSourcePath. Core và client Spring thực đã gọi Worker 1.9 đang chạy thành tiến trình Linux riêng: 15/15 selected tests pass, gồm 2 live calls không mock/không skip. Source artifact mount readonly ở Worker, staging root tách biệt; script scripts/Test-JavaWorkerIntegration.ps1 thu hồi container/network của phiên test. Transport cũ fail-closed. Network client leaf hoàn thành; orchestrator/import/publish integration tiếp tục ở I03, chưa coi toàn pipeline hoàn thành.
+
+## 27. I03 — canonical import và atomic publication vertical slice
+
+- [x] Orchestrator cấp attempt/deadline trong Job manifest, dispatch Worker ngoài transaction và dùng snapshot storagePath làm source authority; GraphBuilder không dispatch Worker nữa.
+- [x] WorkerCanonicalImporter map logical IDs → UUID, module parents, typed relations/candidate NEEDS_REVIEW. Evidence lưu per-target association và source ID/location/hash/origin trong provenance JSONB (migration V3); CONFIG map sang CONFIG_FILE ở cột Java, giữ nguyên origin trong provenance.
+- [x] WorkerModelPublisher dùng job/project row locks, kiểm tra pinned attempt/deadline/provenance, transaction cho model/elements/relations/evidence/job/latest. Không duplicate completion; pure C# lỗi không publish rỗng; mixed thiếu C# giữ PARTIAL draft không promote latest.
+- [x] Java 21 + real Worker 1.9 + disposable PostgreSQL16: 29 selected tests pass, không skip (core 9 + analyzer 20). Database test áp dụng V1/V2/V3 và kiểm tra reload/hash/candidate status/stale input/partial/SQL rollback/cancel. Orchestration test kiểm tra dispatch trước publish và source path từ snapshot.
+- [x] .NET full regression sau shared fingerprint tests: 187 pass + 1 Linux-only skip (188 total). Script test thu hồi container/network; source artifacts/cache giữ lại trong .artifacts theo runbook.
+- [ ] I03 còn gate: cross-language service/endpoint alias ownership đã xác nhận, corpus mixed/duplicate names/ports và canonical review. Import hiện giữ unresolved alias/module đúng nghĩa, không tự tạo service mapping giả.
+- [ ] I04/I05 còn lại: public upload/controller → FE acceptance, durable attempt leases/recovery/retention và diagram/revision/impact adapter. Không tuyên bố hoàn thành toàn plan chỉ từ vertical slice.
+
+Cấu hình và cách tái lập: [INTEGRATION_RUNBOOK.md](INTEGRATION_RUNBOOK.md). Worker client disabled mặc định; cần cấu hình roots/keys và apply V3 trước khi bật.
