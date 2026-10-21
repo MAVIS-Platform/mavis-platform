@@ -35,16 +35,33 @@ public class ControllerVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>>
             return;
         }
 
-        // b. Trích xuất base path từ class-level @RequestMapping
+        String className = n.getNameAsString();
+
+        // 1. Tạo bằng chứng cho component Controller (để sinh ModelElement COMPONENT cấp con)
+        if (arg != null) {
+            Integer classLine = n.getBegin().map(p -> p.line).orElse(null);
+            String classHeader = n.getAnnotations().toString() + "\npublic class " + className;
+
+            CodeEvidenceDTO componentEvidence = CodeEvidenceDTO.builder()
+                    .elementType("CONTROLLER_COMPONENT")
+                    .identifier(className)
+                    .sourceComponent(className)
+                    .filePath(currentFilePath)
+                    .lineNumber(classLine)
+                    .codeSnippet(classHeader.length() > 500 ? classHeader.substring(0, 500) : classHeader)
+                    .build();
+            arg.add(componentEvidence);
+        }
+
+        // 2. Trích xuất base path từ class-level @RequestMapping
         String basePath = "";
         Optional<AnnotationExpr> classMappingOpt = n.getAnnotationByName("RequestMapping");
         if (classMappingOpt.isPresent()) {
             basePath = extractPathFromAnnotation(classMappingOpt.get());
         }
 
-        // c. Duyệt qua tất cả các phương thức trong class
+        // 3. Duyệt qua tất cả các phương thức trong class để trích xuất REST_API
         for (MethodDeclaration method : n.getMethods()) {
-            // d. Kiểm tra các HTTP mapping annotations
             String httpMethodType = null;
             String methodPath = "";
 
@@ -69,10 +86,9 @@ public class ControllerVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>>
                 methodPath = extractPathFromAnnotation(reqAnnotation);
             }
 
-            // e & f. Nếu tìm thấy HTTP mapping, kết hợp base path và ghi log
             if (httpMethodType != null) {
                 String fullEndpointPath = combinePaths(basePath, methodPath);
-                log.info("Detected API Endpoint: [{}] {}", httpMethodType, fullEndpointPath);
+                log.info("Detected API Endpoint: [{}] {} in {}", httpMethodType, fullEndpointPath, className);
 
                 if (arg != null) {
                     Integer lineNumber = method.getBegin().map(p -> p.line).orElse(null);
@@ -82,6 +98,7 @@ public class ControllerVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>>
                     CodeEvidenceDTO evidence = CodeEvidenceDTO.builder()
                             .elementType("REST_API")
                             .identifier(fullEndpointPath)
+                            .sourceComponent(className)
                             .filePath(currentFilePath)
                             .lineNumber(lineNumber)
                             .codeSnippet(codeSnippet)

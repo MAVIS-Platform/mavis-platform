@@ -3,8 +3,10 @@ package com.mavis.analyzer.javaanalyzer.parser;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
+import com.mavis.analyzer.javaanalyzer.visitor.CodeDependencyVisitor;
 import com.mavis.analyzer.javaanalyzer.visitor.ControllerVisitor;
-import com.mavis.analyzer.javaanalyzer.visitor.FeignClientVisitor;
+import com.mavis.analyzer.javaanalyzer.visitor.DatabaseAccessVisitor;
+import com.mavis.analyzer.javaanalyzer.visitor.HttpClientVisitor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -40,12 +42,15 @@ public class JavaSourceParser {
 
         try (Stream<Path> stream = Files.walk(rootPath)) {
             stream.filter(Files::isRegularFile)
+                    // BR-26: Bỏ qua hoàn toàn thư mục test, target, build, .git
+                    .filter(path -> !isIgnoredPath(path))
                     .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".java"))
                     .forEach(file -> parseJavaFile(file, allEvidences));
         } catch (IOException e) {
             log.error("Lỗi khi duyệt thư mục dự án: {}", extractedPath, e);
         }
 
+        log.info("Đã hoàn tất phân tích AST. Tổng số code evidences trích xuất được: {}", allEvidences.size());
         return allEvidences;
     }
 
@@ -62,13 +67,26 @@ public class JavaSourceParser {
 
             String sourceCode = codeBuilder.toString();
             CompilationUnit cu = StaticJavaParser.parse(sourceCode);
-            log.info("Phân tích cú pháp thành công file Java: {}", javaFile.toAbsolutePath());
-
             String currentFilePath = javaFile.toAbsolutePath().toString();
+
+            // Thực thi đủ 4 AST Visitors
             new ControllerVisitor(currentFilePath).visit(cu, allEvidences);
-            new FeignClientVisitor(currentFilePath).visit(cu, allEvidences);
+            new HttpClientVisitor(currentFilePath).visit(cu, allEvidences);
+            new CodeDependencyVisitor(currentFilePath).visit(cu, allEvidences);
+            new DatabaseAccessVisitor(currentFilePath).visit(cu, allEvidences);
         } catch (Exception e) {
             log.error("Lỗi khi phân tích cú pháp file Java: {}", javaFile.toAbsolutePath(), e);
         }
+    }
+
+    public static boolean isIgnoredPath(Path path) {
+        String normalized = path.toString().replace('\\', '/').toLowerCase();
+        return normalized.contains("/test/")
+                || normalized.contains("/target/")
+                || normalized.contains("/build/")
+                || normalized.contains("/.git/")
+                || normalized.endsWith("/test")
+                || normalized.endsWith("/target")
+                || normalized.endsWith("/build");
     }
 }

@@ -15,4 +15,6 @@ public class CodeEvidenceDTO {
     private String filePath;
     private Integer lineNumber;
     private String codeSnippet;
+    private String sourceComponent;
+    private String targetComponent;
 }

@@ -13,6 +13,8 @@ public interface ModelRelationshipRepository extends JpaRepository<ModelRelation
     @EntityGraph(attributePaths = {"sourceElement", "targetElement"})
     List<ModelRelationship> findByModelVersionId(UUID modelVersionId);
 
+    long countByModelVersionId(UUID modelVersionId);
+
     List<ModelRelationship> findBySourceElementId(UUID sourceElementId);
     List<ModelRelationship> findByTargetElementId(UUID targetElementId);
 }

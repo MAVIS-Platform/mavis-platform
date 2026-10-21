@@ -1,19 +1,21 @@
-package com.mavis.analyzer.orchestrator.service;
+package com.mavis.analyzer.orchestrator.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.analyzer.detector.docker.DockerDetector;
 import com.mavis.analyzer.graph.service.GraphBuilderService;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser;
+import com.mavis.analyzer.orchestrator.service.AnalyzerOrchestratorService;
 import com.mavis.common.contract.AnalyzeRequestEvent;
 import com.mavis.common.entity.Job;
 import com.mavis.common.entity.ModelElement;
 import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.SourceSnapshot;
-import com.mavis.common.repository.JobRepository;
-import com.mavis.common.repository.ModelVersionRepository;
-import com.mavis.common.repository.ProjectRepository;
-import com.mavis.common.repository.SourceSnapshotRepository;
+import com.mavis.common.repository.*;
+import com.mavis.common.utils.HashUtils;
 import com.mavis.common.utils.ZipUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,30 +23,31 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.security.MessageDigest;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class AnalyzerOrchestrator {
+public class AnalyzerOrchestratorServiceImpl implements AnalyzerOrchestratorService {
 
     private final ProjectRepository projectRepository;
     private final SourceSnapshotRepository sourceSnapshotRepository;
     private final ModelVersionRepository modelVersionRepository;
     private final JobRepository jobRepository;
+    private final ModelElementRepository modelElementRepository;
+    private final ModelRelationshipRepository modelRelationshipRepository;
+    private final EvidenceRepository evidenceRepository;
     private final DockerDetector dockerDetector;
     private final JavaSourceParser javaSourceParser;
     private final GraphBuilderService graphBuilderService;
+    private final ObjectMapper objectMapper;
 
     @Async
     @EventListener
+    @Override
     public void handleAnalyzeRequest(AnalyzeRequestEvent event) {
         log.info("Bắt đầu luồng phân tích cho Project ID: {}", event.projectId());
 
@@ -70,7 +73,7 @@ public class AnalyzerOrchestrator {
 
         if (snapshot == null) {
             try {
-                String hash = calculateFileHash(event.zipFilePath());
+                String hash = HashUtils.sha256Hex(Paths.get(event.zipFilePath()));
                 snapshot = SourceSnapshot.builder()
                         .project(project)
                         .sourceType("ZIP_UPLOAD")
@@ -153,9 +156,27 @@ public class AnalyzerOrchestrator {
             finalizeModelVersion(project, modelVersion);
 
             if (job != null) {
+                long elementsCount = modelElementRepository.countByModelVersionId(modelVersion.getId());
+                long relationshipsCount = modelRelationshipRepository.countByModelVersionId(modelVersion.getId());
+                long evidencesCount = evidenceRepository.countByModelVersionId(modelVersion.getId());
+
+                ObjectNode manifestNode = objectMapper.createObjectNode();
+                manifestNode.put("elementsCount", elementsCount);
+                manifestNode.put("relationshipsCount", relationshipsCount);
+                manifestNode.put("evidencesCount", evidencesCount);
+                ArrayNode servicesArray = manifestNode.putArray("servicesDetected");
+                if (detectedServices != null) {
+                    for (String service : detectedServices) {
+                        servicesArray.add(service);
+                    }
+                }
+
+                job.setResultManifest(manifestNode);
                 job.setStatus("COMPLETED");
                 job.setCompletedAt(OffsetDateTime.now());
                 jobRepository.save(job);
+                log.info("Job ID: {} đã hoàn tất thành công. ResultManifest: elements={}, relationships={}, evidences={}",
+                        job.getId(), elementsCount, relationshipsCount, evidencesCount);
             }
         } catch (Exception e) {
             log.error("Lỗi xảy ra trong quá trình trích xuất và phân tích mã nguồn cho Project ID: {}", event.projectId(), e);
@@ -180,29 +201,5 @@ public class AnalyzerOrchestrator {
         modelVersionRepository.save(modelVersion);
 
         log.info("ModelVersion ID: {} đã hoàn tất thành công (isLatestValid = true)", modelVersion.getId());
-    }
-
-    private String calculateFileHash(String filePath) {
-        if (filePath == null) {
-            return UUID.randomUUID().toString().replace("-", "");
-        }
-        try (InputStream is = Files.newInputStream(Paths.get(filePath))) {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = is.read(buffer)) > 0) {
-                digest.update(buffer, 0, read);
-            }
-            byte[] hash = digest.digest();
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) hexString.append('0');
-                hexString.append(hex);
-            }
-            return hexString.toString();
-        } catch (Exception e) {
-            return UUID.randomUUID().toString().replace("-", "");
-        }
     }
 }
