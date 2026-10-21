@@ -648,3 +648,11 @@ I05 verification bổ sung cuối: 3/3 targeted MVC API integration tests pass s
 - [x] LogicalKey/Worker logical ID/lineage UUID matching bằng maps; rename/status change là modified, không remove/add theo display name. Không fuzzy match độc lập giữa legacy analyses.
 - [x] 3/3 targeted live MVC/Worker/PostgreSQL integration scenarios pass; gồm revision rename + evidence lineage, add nodes/edge diff, remove incident-edge diff, cyclic-parent rollback, stale-base và non-owner denial. V1–V4 migrations được apply trên schemas mới.
 - [ ] UI revision/diff rendering, classroom policy và full corpus acceptance còn lại. Tiếp theo impact adapter Java → .NET, không thêm BFS thứ hai.
+
+## 32. I05 — Java → .NET versioned impact adapter
+
+- [x] ImpactGraphLoader pin selected completed model/service target, typed service graph, evidence batch lookup và deterministic graph SHA revision; reject partial/foreign target/revision mismatch. Chỉ CONFIG_BOUND/userConfirmed HTTP service edges được dùng, code/DB/containment/legacy fuzzy edges không tự thành impact.
+- [x] ImpactWorkerClient dùng bounded async HTTP body/deadline + service auth, validate result provenance/path/edge/evidence proof; không chạy traversal Java thứ hai. WorkerImpactService enrich serviceNames/evidence ngoài DB transaction.
+- [x] API /models/{id}/impact trả paths/evidence/truncation; legacy /impact cũng delegate .NET và bỏ project/latest fallback. GraphServiceImpl BFS đã được thay, không giữ fallback engine.
+- [x] 39 selected integration tests pass, không skip (Java core 11 + analyzer 28); gồm real .NET direct impact sau user revision, edge/evidence IDs, graph/model mismatch, compatibility endpoint và no latest fallback. Existing .NET engine depth/cycle/path tests vẫn là producer regression, không bị viết lại trong Java.
+- [ ] UI highlight, runtime-context mapping, impact result history và larger corpus/performance/policy acceptance còn lại. Runtime/production deployment chưa hoàn tất toàn diện.
