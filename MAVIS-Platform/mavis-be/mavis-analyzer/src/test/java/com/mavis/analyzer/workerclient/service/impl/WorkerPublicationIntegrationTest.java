@@ -34,9 +34,15 @@ class WorkerPublicationIntegrationTest {
 
     @Configuration @EnableTransactionManagement @EnableJpaRepositories(basePackages="com.mavis.common.repository")
     static class Config {
-        @Bean DriverManagerDataSource dataSource() {
+        @Bean DriverManagerDataSource dataSource() throws Exception {
             var ds=new DriverManagerDataSource(System.getenv("MAVIS_TEST_JDBC_URL"),System.getenv("MAVIS_TEST_JDBC_USER"),System.getenv("MAVIS_TEST_JDBC_PASSWORD"));
-            return ds;
+            String schema="it_"+UUID.randomUUID().toString().replace("-","");
+            try(var connection=ds.getConnection();var statement=connection.createStatement()) {
+                statement.execute("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\" WITH SCHEMA public");
+                statement.execute("CREATE SCHEMA "+schema);
+            }
+            String url=System.getenv("MAVIS_TEST_JDBC_URL");
+            return new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema+",public",System.getenv("MAVIS_TEST_JDBC_USER"),System.getenv("MAVIS_TEST_JDBC_PASSWORD"));
         }
         @Bean LocalContainerEntityManagerFactoryBean entityManagerFactory(DriverManagerDataSource ds) {
             var populator=new ResourceDatabasePopulator(new ClassPathResource("worker-migrations/V1__Init_Database.sql"),new ClassPathResource("worker-migrations/V2__Create_User_Otp_Table.sql"),new ClassPathResource("worker-migrations/V3__Worker_Evidence_Provenance.sql"));

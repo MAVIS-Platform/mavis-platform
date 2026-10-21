@@ -12,7 +12,8 @@ import com.mavis.common.utils.HashUtils;
 import com.mavis.common.utils.ZipUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.event.EventListener;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import java.nio.file.*;
@@ -31,7 +32,7 @@ public class AnalyzerOrchestratorServiceImpl implements AnalyzerOrchestratorServ
     private final DotnetWorkerClientService worker;
     private final WorkerModelPublisher publisher;
 
-    @Async @EventListener @Override
+    @Async @TransactionalEventListener(phase=TransactionPhase.AFTER_COMMIT, fallbackExecution=true) @Override
     public void handleAnalyzeRequest(AnalyzeRequestEvent event) {
         UUID attempt=UUID.randomUUID();UUID jobId=null;boolean started=false;
         try {

@@ -23,14 +23,14 @@ try {
         '-e','ASPNETCORE_HTTP_PORTS=8080','-e','WorkerAccess__ApiKey=test-service-key','-e','ArtifactScope__Root=/artifacts','-e','ArtifactScope__GrantKeys__test=fixture-only-not-for-production-32-byte-key',
         '--mount',"type=bind,source=$shared,target=/artifacts,readonly",'--mount',"type=bind,source=$publish,target=/app,readonly",'--workdir','/app','--user','1654','--entrypoint','dotnet',
         'mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac','MAVIS.Worker.Api.dll')
-    $tests = 'ClientContractTest,LiveWorkerIntegrationTest,DotnetWorkerClientServiceImplTest,WorkerOrchestrationTest,GraphBuilderServiceTest,ServiceBindingIndexTest,CrossLanguageServiceLinkerTest'
+    $tests = 'ClientContractTest,LiveWorkerIntegrationTest,DotnetWorkerClientServiceImplTest,WorkerOrchestrationTest,GraphBuilderServiceTest,ServiceBindingIndexTest,CrossLanguageServiceLinkerTest,JobAnalysisStateTest'
     $dbArgs = @()
     if ($Database) {
         Checked docker @('run','-d','--name',$postgres,'--network',$network,'--memory','512m','--cpus','1','-e','POSTGRES_DB=mavis_it','-e','POSTGRES_USER=mavis','-e','POSTGRES_PASSWORD=fixture-only-password','postgres@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea')
         $ready=$false
         for($i=0;$i -lt 40;$i++){ & docker exec $postgres pg_isready -U mavis -d mavis_it 2>$null | Out-Null; if($LASTEXITCODE -eq 0){$ready=$true;break}; Start-Sleep -Milliseconds 250 }
         if(!$ready){throw 'Integration DB readiness failed'}
-        $tests += ',WorkerPublicationIntegrationTest'
+        $tests += ',WorkerPublicationIntegrationTest,UploadWorkerApiIntegrationTest'
         $dbArgs = @('-e',"MAVIS_TEST_JDBC_URL=jdbc:postgresql://${postgres}:5432/mavis_it",'-e','MAVIS_TEST_JDBC_USER=mavis','-e','MAVIS_TEST_JDBC_PASSWORD=fixture-only-password')
     }
     $command = @'

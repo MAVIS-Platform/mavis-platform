@@ -622,3 +622,11 @@ Cấu hình và cách tái lập: [INTEGRATION_RUNBOOK.md](INTEGRATION_RUNBOOK.m
 - [ ] Nghiệm thu nhóm/corpus: mapping tự suy từ Compose build context, dynamic Java/Feign config, public upload/FE và diagrams/revisions/impact adapter còn chưa hoàn thành. Existing Java legacy fuzzy graph không được coi là mapped service edges; profile mới chỉ đánh dấu CONFIG_BOUND cho cạnh có evidence rõ.
 
 Ví dụ cấu hình: contracts/service-bindings.example.json; cách dùng và giới hạn trong INTEGRATION_RUNBOOK.md. Binding file raw SHA độc lập với Worker analysis digest, phải được giữ immutable cùng snapshot.
+
+## 29. I04 — upload/job API integration và frontend outcome projection
+
+- [x] Listener async chạy AFTER_COMMIT để snapshot/job ingestion được commit trước dispatch; legacy outside-transaction events giữ fallbackExecution rõ ràng.
+- [x] Job DTO thêm analysisState/dotnetStatus/modelVersionId/promotedLatest; PARTIAL và COMPLETED_LEGACY không bị hiển thị như complete, adapter-complete/candidate là COMPLETED_WITH_REVIEW.
+- [x] MVC multipart upload + real ingestion/storage/events/orchestrator → Worker → PostgreSQL; poll job và project job-history trả đúng snapshot/model/provenance. Test ownership denial/invalid-file không tạo job, C# wrong auth fail không publish rỗng, mixed input PARTIAL không promote latest, Java-only vẫn hoàn thành.
+- [x] Selected Java integration 37 pass (client core 9 + analyzer 28), không skip; database schemas tách riêng và apply V1/V2/V3. Servlet boundary dùng MockMvc, backend/DB/Worker thật; chưa có browser/JWT deployment acceptance.
+- [ ] Còn FE tiêu thụ outcome mới, production auth policy acceptance và tách import khỏi explicit analysis theo P03. Test hiện kiểm chứng auto-analyze ingestion đang tồn tại; không tuyên bố P03 đã hoàn thành.

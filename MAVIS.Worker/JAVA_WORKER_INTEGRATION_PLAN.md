@@ -111,3 +111,5 @@ I03 implementation: WorkerModelPublisher quản lý begin/publish/fail, job+proj
 I03 verification 21/10: 29/29 selected Java tests pass trên real Worker + PostgreSQL, V1/V2/V3 được apply, source hashes/provenance reload/duplicate guard/scope mismatch/partial/latest/SQL rollback/cancel và orchestrator ordering được kiểm thử. I03 core publication đã xong; alias reconciliation/public controller/FE và I05 vẫn unchecked. .NET full suite 187 pass + 1 Linux-only skip.
 
 I03–I04 explicit binding verification: 33 selected tests pass (9 client core + 24 analyzer), không skip, real Worker/PostgreSQL. Giữ nguyên raw candidate graph, thêm CONFIG_BOUND service projections có binding SHA/evidence; chưa thay thế Java legacy graph matching hoặc nghiệm thu frontend.
+
+I04 API milestone: 37 selected integration tests pass, MVC upload/job/history + after-commit orchestration và live Worker/PostgreSQL. Frontend/browser, production JWT và import/analyze separation chưa nghiệm thu; không tick toàn I04 Done.
