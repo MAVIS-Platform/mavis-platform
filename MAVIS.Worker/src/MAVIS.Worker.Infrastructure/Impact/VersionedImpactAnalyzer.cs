@@ -10,7 +10,7 @@ public sealed class VersionedImpactAnalyzer(IImpactAnalyzer engine) : IVersioned
     public VersionedImpactResult Analyze(VersionedImpactRequest r)
     {
         if (string.IsNullOrWhiteSpace(r.ModelVersionId) || r.ModelVersionId != r.GraphModelVersionId || !r.GraphReady ||
-            string.IsNullOrWhiteSpace(r.GraphRevisionId) || r.MaxDepth is < 1 or > 100 ||
+            string.IsNullOrWhiteSpace(r.GraphRevisionId) || r.MaxDepth is < 1 or > 100 || r.MaxPaths is < 1 or > 10_000 ||
             r.ServiceIds is null || r.Edges is null || r.ServiceIds.Count > 10_000 || r.Edges.Count > 50_000 ||
             (r.Runtime?.Count ?? 0) > 50_000)
             throw new SourceInputException("A ready graph matching the selected model and valid bounded inputs are required.");
@@ -31,7 +31,10 @@ public sealed class VersionedImpactAnalyzer(IImpactAnalyzer engine) : IVersioned
         var impact = engine.Analyze(graph, r.TargetServiceId, r.MaxDepth);
         var distances = impact.AffectedServices.ToDictionary(a => a.ServiceId, a => a.Distance);
         distances[r.TargetServiceId] = 0;
-        var paths = impact.Paths.Select(path =>
+        // Prefer direct/nearer dependencies, then stable service identity, regardless of input order.
+        // Bound response enrichment; the shared BFS still evaluates the bounded graph for depth coverage.
+        var paths = impact.Paths.OrderBy(path => distances[path.FromServiceId])
+            .ThenBy(path => path.FromServiceId, StringComparer.Ordinal).Take(r.MaxPaths).Select(path =>
         {
             var pathEdges = path.Hops.Zip(path.Hops.Skip(1), (from, to) =>
                 edgeLookup[(from, to)]).SelectMany(e => e).ToArray();
@@ -41,6 +44,11 @@ public sealed class VersionedImpactAnalyzer(IImpactAnalyzer engine) : IVersioned
         }).ToArray();
         var truncated = edges.Any(e => distances.TryGetValue(e.To, out var depth) && depth == r.MaxDepth && !distances.ContainsKey(e.From));
         if (truncated) warnings.Add("MAX_DEPTH_REACHED");
+        if (impact.Paths.Count > r.MaxPaths)
+        {
+            truncated = true;
+            warnings.Add("MAX_PATHS_REACHED");
+        }
         warnings.Add("ONE_SHORTEST_PATH_PER_SERVICE");
         warnings.Add("EMPTY_RESULT_DOES_NOT_PROVE_ABSENCE_OUTSIDE_COVERAGE");
         var runtime = new List<RuntimeImpactObservation>();

@@ -4,7 +4,7 @@ public sealed record ImpactEdge(string Id, string From, string To, string Kind, 
 public sealed record RuntimeImpactObservation(string SessionId, string ModelVersionId, string From, string To, string TraceId, bool MappingConfirmed);
 public sealed record VersionedImpactRequest(string ModelVersionId, string GraphModelVersionId, string GraphRevisionId,
     bool GraphReady, string TargetServiceId, IReadOnlyList<string> ServiceIds, IReadOnlyList<ImpactEdge> Edges,
-    int MaxDepth = 10, IReadOnlyList<RuntimeImpactObservation>? Runtime = null);
+    int MaxDepth = 10, IReadOnlyList<RuntimeImpactObservation>? Runtime = null, int MaxPaths = 1000);
 public sealed record ImpactPathView(string ServiceId, string Classification, int Distance, IReadOnlyList<string> Hops,
     IReadOnlyList<string> EdgeIds, IReadOnlyList<string> EvidenceIds);
 public sealed record VersionedImpactResult(string ModelVersionId, string GraphRevisionId, string TargetServiceId,
