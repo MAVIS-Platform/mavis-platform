@@ -43,10 +43,11 @@ class UploadWorkerApiIntegrationTest {
     private MockMvc mvc;
     private JdbcTemplate db;
     private UUID owner,project;
+    private String previousAnalysisKey;
     private final ObjectMapper json=new ObjectMapper();
 
     @Configuration @EnableWebMvc @EnableAsync
-    @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class,com.mavis.analyzer.diagram.controller.DiagramController.class,com.mavis.analyzer.model.controller.ModelVersionController.class,com.mavis.analyzer.impact.VersionedImpactController.class,com.mavis.analyzer.graph.controller.ImpactController.class})
+    @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class,com.mavis.analyzer.diagram.controller.DiagramController.class,com.mavis.analyzer.model.controller.ModelVersionController.class,com.mavis.analyzer.impact.VersionedImpactController.class,com.mavis.analyzer.graph.controller.ImpactController.class,com.mavis.analyzer.orchestrator.controller.AnalysisRequestController.class})
     static class WebConfig {
         @Bean StorageService storage(org.springframework.core.env.Environment env) {
             var storage=new LocalDiskStorageServiceImpl();ReflectionTestUtils.setField(storage,"uploadDir",env.getRequiredProperty("it.upload-root"));return storage;
@@ -58,6 +59,7 @@ class UploadWorkerApiIntegrationTest {
         @Bean com.mavis.analyzer.impact.WorkerImpactService impact(com.mavis.analyzer.impact.ImpactGraphLoader g){return new com.mavis.analyzer.impact.WorkerImpactService(g,System.getenv("MAVIS_WORKER_TEST_URL"),"test-service-key");}
         @Bean com.mavis.analyzer.graph.service.GraphService graphRead(ModelElementRepository e,ModelRelationshipRepository r,ModelVersionRepository m,com.mavis.analyzer.impact.WorkerImpactService impact){return new com.mavis.analyzer.graph.service.impl.GraphServiceImpl(e,r,m,impact);}
         @Bean JobServiceImpl jobs(JobRepository j,ProjectRepository p){return new JobServiceImpl(j,p);}
+        @Bean AnalysisRequestService analysisRequests(SourceSnapshotRepository s,ProjectRepository p,JobRepository j,ApplicationEventPublisher e){return new AnalysisRequestService(s,p,j,e);}
     }
     private void start(boolean validKey)throws Exception {
         Assumptions.assumeTrue(System.getenv("MAVIS_TEST_JDBC_URL")!=null && System.getenv("MAVIS_WORKER_TEST_URL")!=null,"Run live API integration harness");
@@ -74,7 +76,20 @@ class UploadWorkerApiIntegrationTest {
     }
     private JsonNode upload(Map<String,String> files)throws Exception {
         var response=mvc.perform(multipart("/api/v1/analyzer/upload").file(new MockMultipartFile("file","source.zip","application/zip",zip(files))).param("projectId",project.toString())).andExpect(status().isOk()).andReturn();
-        return json.readTree(response.getResponse().getContentAsString()).required("data");
+        var imported=json.readTree(response.getResponse().getContentAsString()).required("data");
+        assertTrue(imported.required("analysisRequired").asBoolean());assertTrue(imported.path("jobId").isNull()||imported.path("jobId").isMissingNode());
+        String snapshot=imported.required("snapshotId").asText();
+        assertEquals(0,db.queryForObject("select count(*) from jobs where source_snapshot_id=?",Integer.class,UUID.fromString(snapshot)));
+        mvc.perform(post("/api/v1/analyzer/snapshots/"+snapshot+"/analyze")).andExpect(status().isBadRequest());
+        authenticate(UUID.randomUUID());mvc.perform(post("/api/v1/analyzer/snapshots/"+snapshot+"/analyze").header("Idempotency-Key","foreign")).andExpect(status().isForbidden());authenticate(owner);
+        if(previousAnalysisKey!=null)mvc.perform(post("/api/v1/analyzer/snapshots/"+snapshot+"/analyze").header("Idempotency-Key",previousAnalysisKey)).andExpect(status().isConflict());
+        String key=UUID.randomUUID().toString();
+        previousAnalysisKey=key;
+        var accepted=mvc.perform(post("/api/v1/analyzer/snapshots/"+snapshot+"/analyze").header("Idempotency-Key",key)).andExpect(status().isAccepted()).andReturn();
+        var analysis=json.readTree(accepted.getResponse().getContentAsString()).required("data");
+        var repeated=mvc.perform(post("/api/v1/analyzer/snapshots/"+snapshot+"/analyze").header("Idempotency-Key",key)).andExpect(status().isAccepted()).andReturn();
+        assertEquals(analysis.required("jobId").asText(),json.readTree(repeated.getResponse().getContentAsString()).required("data").required("jobId").asText());
+        ((com.fasterxml.jackson.databind.node.ObjectNode)imported).put("jobId",analysis.required("jobId").asText());return imported;
     }
     private JsonNode terminal(String job)throws Exception {
         Instant timeout=Instant.now().plusSeconds(45);

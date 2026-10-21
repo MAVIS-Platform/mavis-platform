@@ -45,7 +45,7 @@ class WorkerPublicationIntegrationTest {
             return new DriverManagerDataSource(url+(url.contains("?")?"&":"?")+"currentSchema="+schema+",public",System.getenv("MAVIS_TEST_JDBC_USER"),System.getenv("MAVIS_TEST_JDBC_PASSWORD"));
         }
         @Bean LocalContainerEntityManagerFactoryBean entityManagerFactory(DriverManagerDataSource ds) {
-            var populator=new ResourceDatabasePopulator(new ClassPathResource("worker-migrations/V1__Init_Database.sql"),new ClassPathResource("worker-migrations/V2__Create_User_Otp_Table.sql"),new ClassPathResource("worker-migrations/V3__Worker_Evidence_Provenance.sql"),new ClassPathResource("worker-migrations/V4__Model_Revision_Lineage.sql"));
+            var populator=new ResourceDatabasePopulator(new ClassPathResource("worker-migrations/V1__Init_Database.sql"),new ClassPathResource("worker-migrations/V2__Create_User_Otp_Table.sql"),new ClassPathResource("worker-migrations/V3__Worker_Evidence_Provenance.sql"),new ClassPathResource("worker-migrations/V4__Model_Revision_Lineage.sql"),new ClassPathResource("worker-migrations/V5__Explicit_Analysis_Request.sql"));
             populator.execute(ds);
             var factory=new LocalContainerEntityManagerFactoryBean();factory.setDataSource(ds);factory.setPackagesToScan("com.mavis.common.entity");factory.setJpaVendorAdapter(new HibernateJpaVendorAdapter());
             factory.setJpaPropertyMap(Map.of("hibernate.hbm2ddl.auto","none"));return factory;

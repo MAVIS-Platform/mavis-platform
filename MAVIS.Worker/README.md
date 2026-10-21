@@ -656,3 +656,12 @@ I05 verification bổ sung cuối: 3/3 targeted MVC API integration tests pass s
 - [x] API /models/{id}/impact trả paths/evidence/truncation; legacy /impact cũng delegate .NET và bỏ project/latest fallback. GraphServiceImpl BFS đã được thay, không giữ fallback engine.
 - [x] 39 selected integration tests pass, không skip (Java core 11 + analyzer 28); gồm real .NET direct impact sau user revision, edge/evidence IDs, graph/model mismatch, compatibility endpoint và no latest fallback. Existing .NET engine depth/cycle/path tests vẫn là producer regression, không bị viết lại trong Java.
 - [ ] UI highlight, runtime-context mapping, impact result history và larger corpus/performance/policy acceptance còn lại. Runtime/production deployment chưa hoàn tất toàn diện.
+
+## 33. P03 — import snapshot tách khỏi explicit analysis
+
+- [x] ZIP/GitHub ingestion không tạo Job hoặc phát AnalyzeRequestEvent; response analysisRequired=true, jobId/jobStatus null. API POST /snapshots/{id}/analyze mới tạo PENDING job và dispatch AFTER_COMMIT.
+- [x] Owner guard + bounded Idempotency-Key, project lock và V5 unique request key; duplicate cùng snapshot trả job cũ, cùng key khác snapshot trả 409; thiếu key/sai quyền bị chặn.
+- [x] Full selected integration 47 pass không skip (client core 11 + analyzer 36, thêm 8 ingestion tests). Final targeted API 3/3 pass kiểm tra import không tạo job, analyze riêng/idempotency/409 và workflow revision/impact xuyên Worker/PostgreSQL.
+- [ ] Frontend cần đổi sang hai hành động import/analyze; chưa có source frontend trong workspace. Đã hỏi vị trí source để tiếp tục nghiệm thu UI, vẫn tiếp tục công việc backend độc lập.
+
+Breaking workflow migration và V5 documented trong INTEGRATION_RUNBOOK.md. Request idempotency không thay cho durable attempt leases/recovery.

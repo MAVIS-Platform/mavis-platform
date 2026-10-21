@@ -83,26 +83,11 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
                 .build();
         snapshot = sourceSnapshotRepository.save(snapshot);
 
-        Job job = Job.builder()
-                .project(project)
-                .sourceSnapshot(snapshot)
-                .jobType("STATIC_ANALYSIS")
-                .status("PENDING")
-                .build();
-        job = jobRepository.save(job);
-
-        eventPublisher.publishEvent(new AnalyzeRequestEvent(project.getId(), snapshot.getId(), job.getId(), storagePath));
-
-        log.info("Đã ingest ZIP upload thành công. Project ID: {}, Snapshot ID: {}, Job ID: {}",
-                project.getId(), snapshot.getId(), job.getId());
-
         return IngestionResponseDTO.builder()
                 .projectId(project.getId())
                 .snapshotId(snapshot.getId())
-                .jobId(job.getId())
                 .sourceType(snapshot.getSourceType())
                 .artifactHash(artifactHash)
-                .jobStatus(job.getStatus())
                 .storagePath(storagePath)
                 .build();
     }
@@ -189,26 +174,11 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
                 .build();
         snapshot = sourceSnapshotRepository.save(snapshot);
 
-        Job job = Job.builder()
-                .project(project)
-                .sourceSnapshot(snapshot)
-                .jobType("STATIC_ANALYSIS")
-                .status("PENDING")
-                .build();
-        job = jobRepository.save(job);
-
-        eventPublisher.publishEvent(new AnalyzeRequestEvent(project.getId(), snapshot.getId(), job.getId(), storagePath));
-
-        log.info("Đã ingest GitHub archive thành công. Project ID: {}, Snapshot ID: {}, Job ID: {}",
-                project.getId(), snapshot.getId(), job.getId());
-
         return IngestionResponseDTO.builder()
                 .projectId(project.getId())
                 .snapshotId(snapshot.getId())
-                .jobId(job.getId())
                 .sourceType(snapshot.getSourceType())
                 .artifactHash(artifactHash)
-                .jobStatus(job.getStatus())
                 .storagePath(storagePath)
                 .build();
     }

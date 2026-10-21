@@ -8,6 +8,14 @@ Set service key, grant key ID and grant secret through deployment configuration.
 
 The current Java orchestrator allocates an attempt UUID in the job manifest, calls the scoped Worker client outside DB transactions, then calls WorkerModelPublisher. Job and project row locks prevent duplicate publication and serialize revision allocation; publication verifies attempt, snapshot/project and absolute deadline. The authoritative ZIP path comes from the stored snapshot. This is not a durable attempt/lease scheduler or restart recovery implementation.
 
+## Import and explicit analysis
+
+Apply V5 before deploying this workflow change. ZIP upload/GitHub import now create only an immutable-source snapshot record/artifact hash and return `analysisRequired:true`; legacy jobId/jobStatus fields are null. Import does not create a job or dispatch an analysis event.
+
+Start analysis explicitly with `POST /api/v1/analyzer/snapshots/{snapshotId}/analyze`, passing `Idempotency-Key: <1..128 ASCII letters/digits/underscore/hyphen>`. The owner-only service locks the project, creates a PENDING job and emits the event for AFTER_COMMIT processing. A repeated key for the same project/snapshot returns the same job without redispatch; reusing it for another snapshot returns 409. A new key is a deliberate new analysis request. The response is 202 with jobId/snapshotId/status/existing. Poll the job API as before.
+
+This is a breaking workflow correction for clients that assumed upload automatically starts analysis. Frontend must offer separate import and analyze actions. The request key is persisted and uniquely indexed; it is not a replacement for durable attempt leases/recovery/automatic retries.
+
 ## Publication behavior
 
 - Java-only input: Worker NOT_APPLICABLE, no network. Java publishes normally.
@@ -46,7 +54,7 @@ Database tests apply V1, V2 and V3 in fresh isolated schemas, then verify public
 
 Job API retains database `status` for compatibility and adds `analysisState`, `dotnetStatus`, `modelVersionId` and `promotedLatest` derived from the stored result manifest. Use `analysisState` for the displayed outcome: PARTIAL means Java results were retained but C# was unavailable/rejected; COMPLETED_WITH_REVIEW means adapters finished but architectural mappings/candidates still require review; COMPLETED_LEGACY means older results lack completeness metadata. RUNNING/PENDING/FAILED/CANCELLED preserve their normal meanings. Never show a PARTIAL job as fully analyzed based only on raw COMPLETED status. The actual frontend still needs to consume these fields and pass its own acceptance tests.
 
-The async analysis listener runs AFTER_COMMIT so uploaded job/snapshot records are visible to its separate DB transaction. `fallbackExecution=true` preserves explicitly published events outside a transaction for legacy internal callers. This is still the existing auto-analyze ingestion flow; the SRS requirement to separate import from an explicit analysis action remains an independent migration gate, not solved by the after-commit fix.
+The async analysis listener runs AFTER_COMMIT so explicit analysis jobs and snapshot records are visible to its separate DB transaction. `fallbackExecution=true` preserves explicitly published events outside a transaction for legacy internal callers. Public import does not emit this event; only the explicit analyze action does.
 
 ## Diagram and evidence API
 

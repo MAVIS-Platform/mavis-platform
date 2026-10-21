@@ -129,28 +129,20 @@ class SourceIngestionServiceImplTest {
             return s;
         });
 
-        when(jobRepository.save(any(Job.class))).thenAnswer(invocation -> {
-            Job j = invocation.getArgument(0);
-            j.setId(jobId);
-            return j;
-        });
 
         IngestionResponseDTO response = sourceIngestionService.ingestZipUpload(sampleProject.getId(), file);
 
         assertThat(response).isNotNull();
         assertThat(response.getProjectId()).isEqualTo(sampleProject.getId());
         assertThat(response.getSnapshotId()).isEqualTo(snapshotId);
-        assertThat(response.getJobId()).isEqualTo(jobId);
+        assertThat(response.getJobId()).isNull();
         assertThat(response.getSourceType()).isEqualTo("ZIP_UPLOAD");
-        assertThat(response.getJobStatus()).isEqualTo("PENDING");
+        assertThat(response.getJobStatus()).isNull();
+        assertThat(response.isAnalysisRequired()).isTrue();
         assertThat(response.getArtifactHash()).isNotBlank();
         assertThat(response.getStoragePath()).isEqualTo(sampleZipFile.toAbsolutePath().toString());
 
-        ArgumentCaptor<AnalyzeRequestEvent> eventCaptor = ArgumentCaptor.forClass(AnalyzeRequestEvent.class);
-        verify(eventPublisher).publishEvent(eventCaptor.capture());
-        assertThat(eventCaptor.getValue().projectId()).isEqualTo(sampleProject.getId());
-        assertThat(eventCaptor.getValue().snapshotId()).isEqualTo(snapshotId);
-        assertThat(eventCaptor.getValue().jobId()).isEqualTo(jobId);
+        org.mockito.Mockito.verifyNoInteractions(eventPublisher, jobRepository);
     }
 
     @Test
@@ -240,23 +232,19 @@ class SourceIngestionServiceImplTest {
             return s;
         });
 
-        when(jobRepository.save(any(Job.class))).thenAnswer(inv -> {
-            Job j = inv.getArgument(0);
-            j.setId(jobId);
-            return j;
-        });
 
         IngestionResponseDTO response = sourceIngestionService.ingestFromGitHub(request);
 
         assertThat(response).isNotNull();
         assertThat(response.getProjectId()).isEqualTo(sampleProject.getId());
         assertThat(response.getSnapshotId()).isEqualTo(snapshotId);
-        assertThat(response.getJobId()).isEqualTo(jobId);
+        assertThat(response.getJobId()).isNull();
         assertThat(response.getSourceType()).isEqualTo("GITHUB_COMMIT");
-        assertThat(response.getJobStatus()).isEqualTo("PENDING");
+        assertThat(response.getJobStatus()).isNull();
+        assertThat(response.isAnalysisRequired()).isTrue();
         assertThat(response.getArtifactHash()).isNotBlank();
 
-        verify(eventPublisher).publishEvent(any(AnalyzeRequestEvent.class));
+        org.mockito.Mockito.verifyNoInteractions(eventPublisher, jobRepository);
     }
 
     @Test

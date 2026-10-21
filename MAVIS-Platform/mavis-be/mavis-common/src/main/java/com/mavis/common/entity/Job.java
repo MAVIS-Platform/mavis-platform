@@ -34,6 +34,9 @@ public class Job {
     @Column(name = "job_type", nullable = false, length = 50)
     private String jobType;
 
+    @Column(name = "analysis_request_key", length = 128)
+    private String analysisRequestKey;
+
     @Builder.Default
     @Column(nullable = false, length = 20)
     private String status = "PENDING";
