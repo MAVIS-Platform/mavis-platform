@@ -38,4 +38,42 @@ public class LocalDiskStorageServiceImpl implements StorageService {
             throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED, "Lỗi khi lưu trữ file ZIP xuống hệ thống");
         }
     }
+
+    @Override
+    public String store(byte[] data, String originalFilename) {
+        try {
+            Path uploadPath = Paths.get(uploadDir);
+            Files.createDirectories(uploadPath);
+
+            String uniqueFilename = UUID.randomUUID() + "_" + (originalFilename != null ? originalFilename : "download.zip");
+            Path targetPath = uploadPath.resolve(uniqueFilename);
+
+            Files.write(targetPath, data);
+            log.info("Successfully stored byte data to: {}", targetPath.toAbsolutePath());
+
+            return targetPath.toAbsolutePath().toString();
+        } catch (IOException e) {
+            log.error("Failed to store byte data file: {}", originalFilename, e);
+            throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED, "Lỗi khi lưu trữ file ZIP xuống hệ thống");
+        }
+    }
+
+    @Override
+    public String store(java.io.InputStream inputStream, String originalFilename) {
+        try {
+            Path uploadPath = Paths.get(uploadDir);
+            Files.createDirectories(uploadPath);
+
+            String uniqueFilename = UUID.randomUUID() + "_" + (originalFilename != null ? originalFilename : "download.zip");
+            Path targetPath = uploadPath.resolve(uniqueFilename);
+
+            Files.copy(inputStream, targetPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            log.info("Successfully stored stream to: {}", targetPath.toAbsolutePath());
+
+            return targetPath.toAbsolutePath().toString();
+        } catch (IOException e) {
+            log.error("Failed to store stream to file: {}", originalFilename, e);
+            throw new BusinessException(ErrorCode.FILE_UPLOAD_FAILED, "Lỗi khi lưu trữ file ZIP xuống hệ thống");
+        }
+    }
 }

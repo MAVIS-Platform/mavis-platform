@@ -11,6 +11,7 @@ import java.util.UUID;
 @Repository
 public interface EvidenceRepository extends JpaRepository<Evidence, UUID> {
     List<Evidence> findByModelVersionId(UUID modelVersionId);
+    long countByModelVersionId(UUID modelVersionId);
     List<Evidence> findByElementId(UUID elementId);
     List<Evidence> findByRelationshipId(UUID relationshipId);
     List<Evidence> findByRelationshipIdIn(Collection<UUID> relationshipIds);

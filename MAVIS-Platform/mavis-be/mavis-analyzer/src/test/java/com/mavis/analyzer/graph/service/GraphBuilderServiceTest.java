@@ -1,5 +1,11 @@
 package com.mavis.analyzer.graph.service;
 
+import com.mavis.analyzer.detector.config.dto.ConfigTargetUrlDTO;
+import com.mavis.analyzer.detector.config.dto.DetectedSpringConfigDTO;
+import com.mavis.analyzer.detector.config.service.SpringConfigDetectorService;
+import com.mavis.analyzer.detector.docker.dto.DetectedContainerDTO;
+import com.mavis.analyzer.detector.docker.dto.DockerDependencyDTO;
+import com.mavis.analyzer.detector.docker.service.DockerDetectorService;
 import com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.common.entity.Evidence;
@@ -27,6 +33,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,6 +50,12 @@ class GraphBuilderServiceTest {
     @Mock
     private EvidenceRepository evidenceRepository;
 
+    @Mock
+    private DockerDetectorService dockerDetectorService;
+
+    @Mock
+    private SpringConfigDetectorService springConfigDetectorService;
+
     @InjectMocks
     private GraphBuilderServiceImpl graphBuilderService;
 
@@ -54,14 +67,14 @@ class GraphBuilderServiceTest {
     void setUp() {
         sampleProject = Project.builder()
                 .id(UUID.randomUUID())
-                .name("e-commerce-monolith")
+                .name("fruit-market-app")
                 .status("ACTIVE")
                 .build();
 
         sampleSnapshot = SourceSnapshot.builder()
                 .id(UUID.randomUUID())
                 .project(sampleProject)
-                .storagePath("/storage/projects/e-commerce-monolith.zip")
+                .storagePath("/storage/projects/fruit-market-app.zip")
                 .artifactHash("abc123hash")
                 .build();
 
@@ -84,7 +97,7 @@ class GraphBuilderServiceTest {
         assertThat(result).hasSize(1);
         ModelElement fallbackElement = result.get(0);
         assertThat(fallbackElement.getModelVersion()).isEqualTo(sampleModelVersion);
-        assertThat(fallbackElement.getName()).isEqualTo("e-commerce-monolith");
+        assertThat(fallbackElement.getName()).isEqualTo("fruit-market-app");
         assertThat(fallbackElement.getElementType()).isEqualTo("SERVICE_CONTAINER");
         assertThat(fallbackElement.getLanguageStack()).isEqualTo("JAVA_SPRING");
 
@@ -92,7 +105,7 @@ class GraphBuilderServiceTest {
         ArgumentCaptor<List<ModelElement>> captor = ArgumentCaptor.forClass(List.class);
         verify(modelElementRepository).saveAll(captor.capture());
         assertThat(captor.getValue()).hasSize(1);
-        assertThat(captor.getValue().get(0).getName()).isEqualTo("e-commerce-monolith");
+        assertThat(captor.getValue().get(0).getName()).isEqualTo("fruit-market-app");
     }
 
     @Test
@@ -103,21 +116,21 @@ class GraphBuilderServiceTest {
         List<ModelElement> result = graphBuilderService.buildAndSaveElements(sampleModelVersion, null);
 
         assertThat(result).hasSize(1);
-        assertThat(result.get(0).getName()).isEqualTo("e-commerce-monolith");
+        assertThat(result.get(0).getName()).isEqualTo("fruit-market-app");
         assertThat(result.get(0).getElementType()).isEqualTo("SERVICE_CONTAINER");
     }
 
     @Test
     @DisplayName("Should create and persist ModelElements for each detected service name")
     void shouldCreateNodesForDetectedServices() {
-        List<String> services = List.of("auth-service", "order-service", "payment-service");
+        List<String> services = List.of("catalog-service", "order-service", "payment-service");
         when(modelElementRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         List<ModelElement> result = graphBuilderService.buildAndSaveElements(sampleModelVersion, services);
 
         assertThat(result).hasSize(3);
         assertThat(result).extracting(ModelElement::getName)
-                .containsExactly("auth-service", "order-service", "payment-service");
+                .containsExactly("catalog-service", "order-service", "payment-service");
         assertThat(result).allMatch(node -> "SERVICE_CONTAINER".equals(node.getElementType()));
         assertThat(result).allMatch(node -> sampleModelVersion.equals(node.getModelVersion()));
 
@@ -237,6 +250,202 @@ class GraphBuilderServiceTest {
         assertThat(savedEvidence.getElement()).isNull();
         assertThat(savedEvidence.getSourceType()).isEqualTo("STATIC_CODE");
         assertThat(savedEvidence.getLocator()).contains("/app/order-service/src/PaymentClient.java:12");
+    }
+
+    @Test
+    @DisplayName("Should create C4 COMPONENT elements with parentElement linking and batch saveAll")
+    void shouldCreateC4ComponentLevelHierarchyAndBatchSave() {
+        ModelElement serviceContainer = ModelElement.builder()
+                .id(UUID.randomUUID())
+                .name("order-service")
+                .elementType("SERVICE_CONTAINER")
+                .scope("/app/order-service")
+                .modelVersion(sampleModelVersion)
+                .build();
+
+        List<CodeEvidenceDTO> evidences = List.of(
+                CodeEvidenceDTO.builder()
+                        .elementType("CONTROLLER_COMPONENT")
+                        .identifier("OrderController")
+                        .filePath("/app/order-service/OrderController.java")
+                        .build(),
+                CodeEvidenceDTO.builder()
+                        .elementType("SERVICE_COMPONENT")
+                        .identifier("OrderService")
+                        .filePath("/app/order-service/OrderService.java")
+                        .build(),
+                CodeEvidenceDTO.builder()
+                        .elementType("DATABASE_REPOSITORY")
+                        .identifier("OrderRepository")
+                        .filePath("/app/order-service/OrderRepository.java")
+                        .build()
+        );
+
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion,
+                List.of(serviceContainer), evidences);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelElement>> compCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelElementRepository).saveAll(compCaptor.capture());
+
+        List<ModelElement> savedComponents = compCaptor.getValue();
+        assertThat(savedComponents).hasSize(3);
+        assertThat(savedComponents).extracting(ModelElement::getName)
+                .containsExactlyInAnyOrder("OrderController", "OrderService", "OrderRepository");
+        assertThat(savedComponents).allMatch(c -> "COMPONENT".equals(c.getElementType()));
+        assertThat(savedComponents).allMatch(c -> serviceContainer.equals(c.getParentElement()));
+    }
+
+    @Test
+    @DisplayName("Should create CODE_DEPENDENCY relationship between components in the same microservice")
+    void shouldCreateCodeDependencyRelationshipBetweenComponents() {
+        ModelElement serviceContainer = ModelElement.builder()
+                .id(UUID.randomUUID())
+                .name("order-service")
+                .elementType("SERVICE_CONTAINER")
+                .scope("/app/order-service")
+                .modelVersion(sampleModelVersion)
+                .build();
+
+        List<CodeEvidenceDTO> evidences = List.of(
+                CodeEvidenceDTO.builder()
+                        .elementType("SERVICE_COMPONENT")
+                        .identifier("OrderService")
+                        .filePath("/app/order-service/OrderService.java")
+                        .build(),
+                CodeEvidenceDTO.builder()
+                        .elementType("DATABASE_REPOSITORY")
+                        .identifier("OrderRepository")
+                        .filePath("/app/order-service/OrderRepository.java")
+                        .build(),
+                CodeEvidenceDTO.builder()
+                        .elementType("CODE_DEPENDENCY")
+                        .identifier("OrderService -> OrderRepository")
+                        .sourceComponent("OrderService")
+                        .targetComponent("OrderRepository")
+                        .filePath("/app/order-service/OrderService.java")
+                        .lineNumber(15)
+                        .codeSnippet("private final OrderRepository orderRepository;")
+                        .build()
+        );
+
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(evidenceRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion,
+                List.of(serviceContainer), evidences);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelRelationship>> relCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository).saveAll(relCaptor.capture());
+
+        List<ModelRelationship> rels = relCaptor.getValue();
+        assertThat(rels).hasSize(1);
+        ModelRelationship rel = rels.get(0);
+        assertThat(rel.getRelationType()).isEqualTo("CODE_DEPENDENCY");
+        assertThat(rel.getOriginLayer()).isEqualTo("STATIC");
+        assertThat(rel.getSourceElement().getName()).isEqualTo("OrderService");
+        assertThat(rel.getTargetElement().getName()).isEqualTo("OrderRepository");
+    }
+
+    @Test
+    @DisplayName("Should create DATABASE_ACCESS relationship between repository and database container")
+    void shouldCreateDatabaseAccessRelationship() {
+        ModelElement serviceContainer = ModelElement.builder()
+                .id(UUID.randomUUID())
+                .name("order-service")
+                .elementType("SERVICE_CONTAINER")
+                .scope("/app/order-service")
+                .modelVersion(sampleModelVersion)
+                .build();
+
+        ModelElement dbContainer = ModelElement.builder()
+                .id(UUID.randomUUID())
+                .name("order-db")
+                .elementType("DATABASE")
+                .scope("/app/order-db")
+                .modelVersion(sampleModelVersion)
+                .build();
+
+        List<CodeEvidenceDTO> evidences = List.of(
+                CodeEvidenceDTO.builder()
+                        .elementType("DATABASE_REPOSITORY")
+                        .identifier("OrderRepository")
+                        .sourceComponent("OrderRepository")
+                        .targetComponent("Order")
+                        .filePath("/app/order-service/OrderRepository.java")
+                        .lineNumber(10)
+                        .codeSnippet("public interface OrderRepository extends JpaRepository<Order, UUID>")
+                        .build()
+        );
+
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(evidenceRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion,
+                List.of(serviceContainer, dbContainer), evidences);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelRelationship>> relCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository).saveAll(relCaptor.capture());
+
+        List<ModelRelationship> rels = relCaptor.getValue();
+        assertThat(rels).hasSize(1);
+        ModelRelationship rel = rels.get(0);
+        assertThat(rel.getRelationType()).isEqualTo("DATABASE_ACCESS");
+        assertThat(rel.getOriginLayer()).isEqualTo("STATIC");
+        assertThat(rel.getSourceElement().getName()).isEqualTo("OrderRepository");
+        assertThat(rel.getTargetElement().getName()).isEqualTo("order-db");
+    }
+
+    @Test
+    @DisplayName("Should create DECLARED_COMPOSE relationship from docker-compose depends_on")
+    void shouldCreateDeclaredComposeFromDockerDependsOn() {
+        ModelElement appService = ModelElement.builder()
+                .id(UUID.randomUUID())
+                .name("order-service")
+                .elementType("SERVICE_CONTAINER")
+                .scope("/app")
+                .modelVersion(sampleModelVersion)
+                .build();
+
+        ModelElement dbService = ModelElement.builder()
+                .id(UUID.randomUUID())
+                .name("order-db")
+                .elementType("DATABASE")
+                .scope("/app")
+                .modelVersion(sampleModelVersion)
+                .build();
+
+        DetectedContainerDTO containerDto = DetectedContainerDTO.builder()
+                .serviceName("order-service")
+                .elementType("SERVICE_CONTAINER")
+                .composeFilePath("/app/docker-compose.yml")
+                .dependsOn(List.of(new DockerDependencyDTO("order-db", 18)))
+                .build();
+
+        when(dockerDetectorService.detectContainers(anyString())).thenReturn(List.of(containerDto));
+        when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(evidenceRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion,
+                List.of(appService, dbService), Collections.emptyList());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelRelationship>> relCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository).saveAll(relCaptor.capture());
+
+        List<ModelRelationship> rels = relCaptor.getValue();
+        assertThat(rels).hasSize(1);
+        ModelRelationship rel = rels.get(0);
+        assertThat(rel.getRelationType()).isEqualTo("DECLARED_COMPOSE");
+        assertThat(rel.getOriginLayer()).isEqualTo("DEPLOYMENT");
+        assertThat(rel.getSourceElement()).isEqualTo(appService);
+        assertThat(rel.getTargetElement()).isEqualTo(dbService);
     }
 
     @Test
