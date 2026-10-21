@@ -690,3 +690,18 @@ Breaking workflow migration và V5 documented trong INTEGRATION_RUNBOOK.md. Requ
 - [x] Dừng đúng allocator PoC sau khi workload bắt đầu rồi recover theo generated project ID: cleanup Confirmed; không khôi phục giả in-memory result.
 - [x] Bằng chứng mới ở samples/runtime-poc/POC_EVIDENCE.json.net10RunnerRegression: actual image IDs, outcomes, causal service pairs, span counts và cleanup; không thay thế evidence lịch sử bằng kết quả chưa đo.
 - [ ] Dedicated execution host, Java runtime persistence/control, credentials/stateful reset và browser acceptance còn mở. Desktop PoC không được đánh dấu production isolation.
+## 37. N18 — repeatable image probe và NuGet advisory audit
+
+- [x] scripts/Test-N01Image.ps1 thêm -BenchmarkIterations 1..20; đo first analysis/warm requests, validate digest/attempt mỗi response và ghi .artifacts/n01-benchmark.json. Vẫn chạy readiness, scoped result, 401/403 và legacy-disabled checks, rồi cleanup container.
+- [x] Pilot 21/10 trên tiny N01 fixture, container 1 CPU/512 MiB: first request 693.50 ms; 5 warm requests trung bình 18.98 ms; Docker memory sample sau requests 150.5 MiB. Image sha256:d4c92daf061b5cdb323093422c98ab95ff65ffeacf6e6f7a2d8c9808830b68fa. Đây là wall time/one memory sample, không phải peak RSS hoặc benchmark corpus lớn; không có acceptance threshold tự đặt.
+- [x] scripts/Test-Dependencies.ps1 query NuGet advisory cho 6 projects, bao gồm transitive; fail nếu query lỗi/inconclusive hoặc có vulnerability. Lần chạy 21/10 không có known vulnerable NuGet packages được báo cáo; raw JSON trong .artifacts/dependency-audit.json. Không phải audit Maven, OS image hoặc agent JAR.
+- [ ] Corpus/reference findings, cold filesystem cache/peak memory/concurrency measurements và ngưỡng nghiệm thu do nhóm thống nhất vẫn mở. Linux đúng SDK 10.0.204 chưa tái lập bằng image hiện có.
+
+Tái lập từ repository root:
+
+```powershell
+pwsh -NoProfile -File MAVIS.Worker/scripts/Test-N01Image.ps1 -Image mavis-worker:n18 -BenchmarkIterations 5
+pwsh -NoProfile -File MAVIS.Worker/scripts/Test-Dependencies.ps1
+```
+
+Image probe cần image Worker build từ committed clean publish theo Dockerfile; không dùng local Program.cs/legacy edits chưa được review. Advisory audit là ảnh chụp tại thời điểm query, cần chạy lại khi dependency thay đổi.
