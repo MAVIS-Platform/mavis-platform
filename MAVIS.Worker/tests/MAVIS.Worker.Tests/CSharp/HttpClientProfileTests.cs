@@ -67,15 +67,17 @@ public sealed class HttpClientProfileTests : IDisposable
     [Theory]
     [InlineData("duplicate")]
     [InlineData("conditional")]
+    [InlineData("outer-conditional")]
     [InlineData("reassigned")]
     public async Task AmbiguousOrReassignedClientsDoNotSelectAnAddress(string mode)
     {
         var registration = mode == "duplicate" ? "services.AddHttpClient(\"p\", c => c.BaseAddress = new Uri(\"http://localhost:5002\"));" : "";
         var assignment = mode == "conditional" ? "if (flag) c.BaseAddress = new Uri(\"http://localhost:5001\");" : "c.BaseAddress = new Uri(\"http://localhost:5001\");";
         var change = mode == "reassigned" ? "client.BaseAddress = new Uri(\"http://localhost:5003\");" : "";
+        var outer = mode == "outer-conditional" ? "if (flag)" : "";
         var result = await Analyze(Imports + $$"""
             class Startup { public void Configure(IServiceCollection services, bool flag) {
-                services.AddHttpClient("p", c => { {{assignment}} }); {{registration}}
+                {{outer}} services.AddHttpClient("p", c => { {{assignment}} }); {{registration}}
             } }
             class Caller { public async Task Run(IHttpClientFactory factory) {
                 var client = factory.CreateClient("p"); {{change}} await client.GetAsync("pay");

@@ -37,7 +37,8 @@ internal static class HttpClientInspector
                         l is SimpleLambdaExpressionSyntax s && s.Parameter.Identifier.ValueText == id.Identifier.ValueText ||
                         l is ParenthesizedLambdaExpressionSyntax p && p.ParameterList.Parameters.Any(x => x.Identifier.ValueText == id.Identifier.ValueText))).ToArray();
                 var mapping = assignments.Length == 1 ? Address(assignments[0].Right, model) : Unknown;
-                if (assignments.Any(a => a.Ancestors().TakeWhile(n => n != call).Any(n => n is IfStatementSyntax or SwitchStatementSyntax or ForStatementSyntax or ForEachStatementSyntax or WhileStatementSyntax or ConditionalExpressionSyntax)))
+                if (call.Ancestors().Any(n => n is IfStatementSyntax or SwitchStatementSyntax or ForStatementSyntax or ForEachStatementSyntax or WhileStatementSyntax or ConditionalExpressionSyntax) ||
+                    assignments.Any(a => a.Ancestors().TakeWhile(n => n != call).Any(n => n is IfStatementSyntax or SwitchStatementSyntax or ForStatementSyntax or ForEachStatementSyntax or WhileStatementSyntax or ConditionalExpressionSyntax)))
                     mapping = Unknown with { Status = "Conditional" };
                 if (assignments.Length > 1) mapping = new(null, assignments.Select(Ref).ToArray(), "Ambiguous");
                 mapping = mapping with { Evidence = mapping.Evidence.Prepend(Ref(call)).Distinct().ToArray() };
