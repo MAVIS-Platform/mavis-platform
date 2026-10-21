@@ -665,3 +665,11 @@ I05 verification bổ sung cuối: 3/3 targeted MVC API integration tests pass s
 - [ ] Frontend cần đổi sang hai hành động import/analyze; chưa có source frontend trong workspace. Đã hỏi vị trí source để tiếp tục nghiệm thu UI, vẫn tiếp tục công việc backend độc lập.
 
 Breaking workflow migration và V5 documented trong INTEGRATION_RUNBOOK.md. Request idempotency không thay cho durable attempt leases/recovery.
+
+## 34. Static job control — durable attempt ledger, cancellation và deadline recovery
+
+- [x] V6 analysis_attempts ghi owner-instance/start/deadline/terminal outcome và unique active attempt/job; job/project fences giữ publication đúng attempt. Named executor giới hạn 2 threads/queue 64.
+- [x] Owner-only cancel/history APIs; pending cancel không chạy, running CANCELLING → CANCELLED sau execution acknowledgement, terminal results không bị mất. Job read/history cũng được owner guard.
+- [x] Bounded recovery scan pending/running/cancelling: redispatch lost pending events/throttle, expired attempts FAILED và reject late publication; không báo cancel-confirmed nếu outcome chưa rõ.
+- [x] 55 selected integration tests pass không skip (core 11 + analyzer 44), gồm 4 DB lifecycle cases, live API/Worker/PostgreSQL, ingestion/owner/job controls/revision/impact.
+- [ ] Renewable heartbeat leases, automatic retry/reconciliation với remote Runner và artifact retention/janitor còn lại. Hiện retry explicit bằng analysis request key mới; không gọi đây là đầy đủ production scheduler.

@@ -47,17 +47,19 @@ class UploadWorkerApiIntegrationTest {
     private final ObjectMapper json=new ObjectMapper();
 
     @Configuration @EnableWebMvc @EnableAsync
-    @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class,com.mavis.analyzer.diagram.controller.DiagramController.class,com.mavis.analyzer.model.controller.ModelVersionController.class,com.mavis.analyzer.impact.VersionedImpactController.class,com.mavis.analyzer.graph.controller.ImpactController.class,com.mavis.analyzer.orchestrator.controller.AnalysisRequestController.class})
+    @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class,com.mavis.analyzer.diagram.controller.DiagramController.class,com.mavis.analyzer.model.controller.ModelVersionController.class,com.mavis.analyzer.impact.VersionedImpactController.class,com.mavis.analyzer.graph.controller.ImpactController.class,com.mavis.analyzer.orchestrator.controller.AnalysisRequestController.class,com.mavis.analyzer.orchestrator.controller.JobControlController.class})
     static class WebConfig {
         @Bean StorageService storage(org.springframework.core.env.Environment env) {
             var storage=new LocalDiskStorageServiceImpl();ReflectionTestUtils.setField(storage,"uploadDir",env.getRequiredProperty("it.upload-root"));return storage;
         }
         @Bean SourceIngestionServiceImpl ingestion(StorageService s,ApplicationEventPublisher e,ProjectRepository p,SourceSnapshotRepository snapshots,JobRepository jobs){return new SourceIngestionServiceImpl(s,e,p,snapshots,jobs);}
         @Bean DotnetWorkerClientService worker(org.springframework.core.env.Environment env){return new DotnetWorkerClientServiceImpl(true,System.getenv("MAVIS_WORKER_TEST_URL"),env.getRequiredProperty("it.service-key"),"test","fixture-only-not-for-production-32-byte-key",env.getRequiredProperty("it.upload-root"),System.getenv("MAVIS_WORKER_TEST_ARTIFACT_ROOT"),Clock.systemUTC());}
-        @Bean AnalyzerOrchestratorServiceImpl orchestrator(ProjectRepository p,SourceSnapshotRepository s,JobRepository j,DotnetWorkerClientService w,WorkerModelPublisher publisher){return new AnalyzerOrchestratorServiceImpl(p,s,j,new DockerDetector(new DockerDetectorServiceImpl()),new JavaSourceParser(),w,publisher);}
+        @Bean AnalyzerOrchestratorServiceImpl orchestrator(ProjectRepository p,SourceSnapshotRepository s,JobRepository j,DotnetWorkerClientService w,WorkerModelPublisher publisher,AnalysisExecutionRegistry x){return new AnalyzerOrchestratorServiceImpl(p,s,j,new DockerDetector(new DockerDetectorServiceImpl()),new JavaSourceParser(),w,publisher,x);}
         @Bean com.mavis.analyzer.impact.ImpactGraphLoader impactGraphs(ModelVersionRepository m,ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,JobRepository j,ObjectMapper json){return new com.mavis.analyzer.impact.ImpactGraphLoader(m,e,r,v,j,json);}
         @Bean com.mavis.analyzer.impact.WorkerImpactService impact(com.mavis.analyzer.impact.ImpactGraphLoader g){return new com.mavis.analyzer.impact.WorkerImpactService(g,System.getenv("MAVIS_WORKER_TEST_URL"),"test-service-key");}
         @Bean com.mavis.analyzer.graph.service.GraphService graphRead(ModelElementRepository e,ModelRelationshipRepository r,ModelVersionRepository m,com.mavis.analyzer.impact.WorkerImpactService impact){return new com.mavis.analyzer.graph.service.impl.GraphServiceImpl(e,r,m,impact);}
+        @Bean(name="mavisAnalysisExecutor") public org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor executor(){return new AnalysisLifecycleConfiguration().analysisExecutor();}
+        @Bean JobControlService controls(JobRepository j,AnalysisAttemptRepository a,AnalysisExecutionRegistry x,ApplicationEventPublisher e,ObjectMapper json){return new JobControlService(j,a,x,e,json);}
         @Bean JobServiceImpl jobs(JobRepository j,ProjectRepository p){return new JobServiceImpl(j,p);}
         @Bean AnalysisRequestService analysisRequests(SourceSnapshotRepository s,ProjectRepository p,JobRepository j,ApplicationEventPublisher e){return new AnalysisRequestService(s,p,j,e);}
     }
@@ -105,6 +107,9 @@ class UploadWorkerApiIntegrationTest {
         start(true);
         var accepted=upload(Map.of("App.csproj","<Project />","App.cs","interface IStore {} class App : IStore {}"));
         var result=terminal(accepted.required("jobId").asText());
+        var attemptHistory=mvc.perform(get("/api/v1/analyzer/jobs/"+accepted.required("jobId").asText()+"/attempts")).andExpect(status().isOk()).andReturn();
+        var attempts=json.readTree(attemptHistory.getResponse().getContentAsString()).required("data");assertEquals(1,attempts.size());assertEquals("COMPLETED",attempts.get(0).required("status").asText());
+        mvc.perform(post("/api/v1/analyzer/jobs/"+accepted.required("jobId").asText()+"/cancel")).andExpect(status().isOk());
         assertEquals("COMPLETED_WITH_REVIEW",result.required("analysisState").asText());assertEquals("COMPLETED",result.required("dotnetStatus").asText());assertTrue(result.required("promotedLatest").asBoolean());
         assertEquals(accepted.required("snapshotId").asText(),result.required("sourceSnapshotId").asText());
         String model=result.required("modelVersionId").asText();
@@ -174,6 +179,10 @@ class UploadWorkerApiIntegrationTest {
         var removeDiff=mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",added).param("targetVersionId",removed)).andExpect(status().isOk()).andReturn();
         var removedData=json.readTree(removeDiff.getResponse().getContentAsString()).required("data");assertEquals(1,removedData.required("elements").required("removed").size());assertEquals(1,removedData.required("relationships").required("removed").size());
         authenticate(UUID.randomUUID());mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",model).param("targetVersionId",revised)).andExpect(status().isForbidden());authenticate(owner);
+        authenticate(UUID.randomUUID());mvc.perform(get("/api/v1/analyzer/jobs/"+accepted.required("jobId").asText()+"/attempts")).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/analyzer/jobs/"+accepted.required("jobId").asText())).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/analyzer/projects/"+project+"/jobs")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v1/analyzer/jobs/"+accepted.required("jobId").asText()+"/cancel")).andExpect(status().isForbidden());authenticate(owner);
     }
     @Test void invalidWorkerAuthMakesCsharpFailAndMixedInputExplicitlyPartial()throws Exception {
         start(false);
