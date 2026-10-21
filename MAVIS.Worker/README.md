@@ -630,3 +630,13 @@ Ví dụ cấu hình: contracts/service-bindings.example.json; cách dùng và g
 - [x] MVC multipart upload + real ingestion/storage/events/orchestrator → Worker → PostgreSQL; poll job và project job-history trả đúng snapshot/model/provenance. Test ownership denial/invalid-file không tạo job, C# wrong auth fail không publish rỗng, mixed input PARTIAL không promote latest, Java-only vẫn hoàn thành.
 - [x] Selected Java integration 37 pass (client core 9 + analyzer 28), không skip; database schemas tách riêng và apply V1/V2/V3. Servlet boundary dùng MockMvc, backend/DB/Worker thật; chưa có browser/JWT deployment acceptance.
 - [ ] Còn FE tiêu thụ outcome mới, production auth policy acceptance và tách import khỏi explicit analysis theo P03. Test hiện kiểm chứng auto-analyze ingestion đang tồn tại; không tuyên bố P03 đã hoàn thành.
+
+## 30. I05 bước 1 — diagrams/evidence drawer backend
+
+- [x] DiagramProjectionService/Impl sinh batch 3 projection DEPENDENCY_GRAPH/SERVICE, C4/CONTAINER, C4/COMPONENT từ persisted model trong publication transaction; không gọi analyzer/Worker lại, không tự tạo service khi chỉ có code modules.
+- [x] API list/get diagram theo model, update layout coordinates, evidence drawer theo element/relationship trả model/snapshot/locator/adapter/provenance. Project-owner guard cho diagram/evidence endpoints; workspace/lecturer policy ngoài profile hiện tại.
+- [x] Layout chỉ sửa x/y cho existing node IDs; không sửa source ModelVersion/nodes/edges/evidence. Mơ hồ về mapping vẫn là candidate, không vì được vẽ mà thành VALIDATED.
+- [x] Selected integration 37/37 pass với Worker/PostgreSQL thật, MVC diagrams/layout/evidence + invalid node/forbidden access checks. Browser/FE chưa nghiệm thu; full Maven dataset test thiếu ZIP không được coi là xanh.
+- [ ] I05 tiếp theo: controlled revision/diff giữ logical identity/provenance và Java → .NET impact adapter; chưa hoàn tất toàn I05.
+
+I05 verification bổ sung cuối: 3/3 targeted MVC API integration tests pass sau khi thêm checksum evidence + node/relationship count assertions trước/sau layout update. Không có model/evidence mutation; container/network test được thu hồi bởi harness.

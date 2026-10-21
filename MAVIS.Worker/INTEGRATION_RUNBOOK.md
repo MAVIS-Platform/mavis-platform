@@ -47,3 +47,15 @@ Database tests apply V1, V2 and V3 in fresh isolated schemas, then verify public
 Job API retains database `status` for compatibility and adds `analysisState`, `dotnetStatus`, `modelVersionId` and `promotedLatest` derived from the stored result manifest. Use `analysisState` for the displayed outcome: PARTIAL means Java results were retained but C# was unavailable/rejected; COMPLETED_WITH_REVIEW means adapters finished but architectural mappings/candidates still require review; COMPLETED_LEGACY means older results lack completeness metadata. RUNNING/PENDING/FAILED/CANCELLED preserve their normal meanings. Never show a PARTIAL job as fully analyzed based only on raw COMPLETED status. The actual frontend still needs to consume these fields and pass its own acceptance tests.
 
 The async analysis listener runs AFTER_COMMIT so uploaded job/snapshot records are visible to its separate DB transaction. `fallbackExecution=true` preserves explicitly published events outside a transaction for legacy internal callers. This is still the existing auto-analyze ingestion flow; the SRS requirement to separate import from an explicit analysis action remains an independent migration gate, not solved by the after-commit fix.
+
+## Diagram and evidence API
+
+Publication creates DEPENDENCY_GRAPH/SERVICE, C4/CONTAINER and C4/COMPONENT diagram rows in one batch inside the model transaction. These are deterministic grid projections of the selected saved model, not an independent re-analysis or a validated architectural interpretation. A pure code snapshot with no declared services can legitimately have an empty container/service view. Partial models retain partial semantics from their job manifest.
+
+- `GET /api/v1/analyzer/models/{modelVersionId}/diagrams`
+- `GET /api/v1/analyzer/diagrams/{diagramId}`
+- `PUT /api/v1/analyzer/diagrams/{diagramId}/layout` with `{"nodes":[{"id":"<existing node UUID>","x":123,"y":456}]}`
+- `GET /api/v1/analyzer/evidences/element/{elementId}`
+- `GET /api/v1/analyzer/evidences/relationship/{relationshipId}`
+
+Layout updates accept only known node coordinates (finite/bounded values, no duplicate IDs); they cannot insert nodes/edges, change ownership, rename model elements or alter evidence. Evidence DTOs expose modelVersionId/sourceSnapshotId, locator, adapter and provenance without fabricated snippets. These endpoints currently enforce project-owner access through the existing SecurityUtils policy. Shared workspace/lecturer access and production JWT acceptance remain separate platform policy work. Browser rendering and interaction have not been acceptance-tested.

@@ -46,7 +46,7 @@ class UploadWorkerApiIntegrationTest {
     private final ObjectMapper json=new ObjectMapper();
 
     @Configuration @EnableWebMvc @EnableAsync
-    @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class})
+    @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class,com.mavis.analyzer.diagram.controller.DiagramController.class})
     static class WebConfig {
         @Bean StorageService storage(org.springframework.core.env.Environment env) {
             var storage=new LocalDiskStorageServiceImpl();ReflectionTestUtils.setField(storage,"uploadDir",env.getRequiredProperty("it.upload-root"));return storage;
@@ -93,6 +93,26 @@ class UploadWorkerApiIntegrationTest {
         assertTrue(db.queryForObject("select count(*) from evidences where model_version_id=? and provenance->>'sourceSnapshotId'=?",Integer.class,UUID.fromString(model),accepted.required("snapshotId").asText())>0);
         var history=mvc.perform(get("/api/v1/analyzer/projects/"+project+"/jobs")).andExpect(status().isOk()).andReturn();
         assertEquals("COMPLETED_WITH_REVIEW",json.readTree(history.getResponse().getContentAsString()).required("data").get(0).required("analysisState").asText());
+        var diagramResponse=mvc.perform(get("/api/v1/analyzer/models/"+model+"/diagrams")).andExpect(status().isOk()).andReturn();
+        var diagrams=json.readTree(diagramResponse.getResponse().getContentAsString()).required("data");assertEquals(3,diagrams.size());
+        JsonNode component=null;for(var d:diagrams)if(d.path("level").asText().equals("COMPONENT"))component=d;
+        assertNotNull(component);String diagramId=component.required("id").asText();String nodeId=component.required("layoutJson").required("nodes").get(0).required("id").asText();
+        long elementsBefore=db.queryForObject("select count(*) from model_elements where model_version_id=?",Long.class,UUID.fromString(model));
+        long relationshipsBefore=db.queryForObject("select count(*) from model_relationships where model_version_id=?",Long.class,UUID.fromString(model));
+        String evidenceBefore=db.queryForObject("select md5(string_agg(locator || coalesce(provenance::text,''),',' order by id)) from evidences where model_version_id=?",String.class,UUID.fromString(model));
+        var positions=json.createObjectNode();positions.putArray("nodes").addObject().put("id",nodeId).put("x",123).put("y",456);
+        mvc.perform(put("/api/v1/analyzer/diagrams/"+diagramId+"/layout").contentType("application/json").content(positions.toString())).andExpect(status().isOk());
+        assertEquals(elementsBefore,db.queryForObject("select count(*) from model_elements where model_version_id=?",Long.class,UUID.fromString(model)));
+        assertEquals(relationshipsBefore,db.queryForObject("select count(*) from model_relationships where model_version_id=?",Long.class,UUID.fromString(model)));
+        assertEquals(evidenceBefore,db.queryForObject("select md5(string_agg(locator || coalesce(provenance::text,''),',' order by id)) from evidences where model_version_id=?",String.class,UUID.fromString(model)));
+        UUID element=db.queryForObject("select element_id from evidences where model_version_id=? and element_id is not null limit 1",UUID.class,UUID.fromString(model));
+        var drawer=mvc.perform(get("/api/v1/analyzer/evidences/element/"+element)).andExpect(status().isOk()).andReturn();
+        var evidence=json.readTree(drawer.getResponse().getContentAsString()).required("data");assertTrue(evidence.size()>0);
+        assertEquals(accepted.required("snapshotId").asText(),evidence.get(0).required("sourceSnapshotId").asText());assertTrue(evidence.get(0).required("provenance").hasNonNull("fileHash"));
+        positions.withArray("nodes").removeAll().addObject().put("id",UUID.randomUUID().toString()).put("x",1).put("y",2);
+        mvc.perform(put("/api/v1/analyzer/diagrams/"+diagramId+"/layout").contentType("application/json").content(positions.toString())).andExpect(status().isBadRequest());
+        authenticate(UUID.randomUUID());mvc.perform(get("/api/v1/analyzer/diagrams/"+diagramId)).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/analyzer/evidences/element/"+element)).andExpect(status().isForbidden());authenticate(owner);
     }
     @Test void invalidWorkerAuthMakesCsharpFailAndMixedInputExplicitlyPartial()throws Exception {
         start(false);
