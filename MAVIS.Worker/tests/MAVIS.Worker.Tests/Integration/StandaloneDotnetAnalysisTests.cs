@@ -49,7 +49,7 @@ public sealed class StandaloneDotnetAnalysisTests : IDisposable
         var result = await response.Content.ReadFromJsonAsync<DotnetAnalysisResult>();
         Assert.NotNull(result);
         Assert.Equal("PartialSyntax", result.Coverage.Mode);
-        Assert.Equal("dotnet-static/1.6", result.AnalyzerVersion);
+        Assert.Equal("dotnet-static/1.7", result.AnalyzerVersion);
         Assert.Equal(1, result.Coverage.AnalyzedFiles);
         Assert.Contains(result.Findings, f => f.Kind == "Type" && f.Target == "Client");
         var http = Assert.Single(result.Findings.Where(f => f.Kind == "OutgoingHttpCandidate"));

@@ -551,3 +551,13 @@ Verification N01 (snapshot index sạch, không gồm local edits cũ): Windows 
 - [ ] N02 nghiệm thu nhóm: Triết review alias conventions/canonical mapping và corpus chung. Project context là source identity, không phải service runtime đã xác nhận.
 
 N02 full Windows regression: 166 pass + 1 Linux-only skip (167 tests). Golden result fixture được export qua analyzer và kiểm tra lại trên snapshot code độc lập. Docker build gặp lỗi cache parent snapshot của Engine; không dùng image cũ làm evidence N02. Fixture export chỉ ghi bản copy test output khi MAVIS_EXPORT_N01_FIXTURE=1, sau đó copy/review có chủ đích vào contracts.
+
+## 21. N03 — structural/endpoint profile hoàn thiện
+
+- [x] Class/interface/struct/record/enum/delegate/namespace và module project context; interface inheritance không bị gắn Implements.
+- [x] Controller method Route + template-less verbs, named properties, absolute paths/tokens; NonAction/private/static/generic exclusion; Minimal literal groups/MapMethods và diagnostic cho unsupported patterns.
+- [x] Source ranges/endpoint columns, snapshot + adapter version trong envelope; coverage skipped files/profiles. Không restore/build source đầu vào.
+- [x] CSharp regression 53 pass + 1 Linux-only skip; fixture chuyển profile 1.7. STATIC_PROFILES.md công bố rõ phần hỗ trợ và phần bị bỏ qua có diagnostic.
+- [ ] N03 nghiệm thu nhóm: Triết review endpoint identity/evidence trong canonical model, corpus chung/Java publication vẫn là integration.
+
+N03 full Windows regression: 170 pass + 1 Linux-only skip (171 tests), golden fixture drift check đạt.
