@@ -40,6 +40,25 @@ public class ContractConsumer {
             require(!Path.of(evidence.required("filePath").asText()).isAbsolute(), "relative evidence");
             require(evidence.required("startLine").asInt() >= 1, "evidence line");
         }
+        JsonNode canonical = result.required("canonical");
+        require(canonical.required("requiresCanonicalMerge").asBoolean(), "projection is not a published Java model");
+        var elements = new java.util.HashSet<String>();
+        var evidenceIds = new java.util.HashSet<String>();
+        var used = new java.util.HashSet<String>();
+        for (JsonNode element : canonical.required("elements")) {
+            elements.add(element.required("id").asText());
+            for (JsonNode id : element.required("evidenceIds")) used.add(id.asText());
+        }
+        for (JsonNode evidence : canonical.required("evidence")) {
+            evidenceIds.add(evidence.required("id").asText());
+            require(evidence.required("sourceSnapshotId").equals(claims.required("sourceSnapshotId")), "evidence snapshot");
+            require(evidence.required("fileHash").asText().matches("[0-9a-f]{64}") && evidence.required("evidenceHash").asText().matches("[0-9a-f]{64}"), "evidence hashes");
+        }
+        for (JsonNode relation : canonical.required("relationships")) {
+            require(elements.contains(relation.required("fromId").asText()) && elements.contains(relation.required("toId").asText()), "relationship endpoints");
+            for (JsonNode id : relation.required("evidenceIds")) used.add(id.asText());
+        }
+        require(used.equals(evidenceIds), "no orphan evidence");
         JsonNode error = json.readTree(root.resolve("error.json").toFile());
         require(error.required("status").asInt() == 403 && error.required("code").asText().equals("ARTIFACT_SCOPE_DENIED") && error.hasNonNull("traceId"), "error envelope");
         System.out.println("N01 Java/Jackson fixture consumer: PASS (signature, digest, result, evidence, error)");

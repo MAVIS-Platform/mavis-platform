@@ -58,3 +58,7 @@ For OutgoingHttp, OutgoingHttpCandidate, HttpClientBaseAddressCandidate and Conf
 ## Impact path response budget — N07
 
 Optional maxPaths defaults to 1000 and accepts 1..10000. The existing BFS still evaluates the input graph (bounded to 10000 services/50000 edges); the adapter enriches and returns at most maxPaths paths, ordered by distance then ordinal service ID. MAX_PATHS_REACHED and truncated=true indicate omitted services; MAX_DEPTH_REACHED independently indicates the depth boundary. A capped result must never be presented as the complete affected set. RuntimeContext retains compatible observations from the supplied graph and is not restricted to returned paths. This is an output/enrichment budget, not a new traversal engine or Java schema agreement.
+
+## Static profile 1.9 projection
+
+Result additionally carries projects and canonical; findings add resolutionStatus/properties/origin/evidenceIds; source ranges may include startColumn/endColumn and coverage includes skippedFiles/profiles. Canonical logical IDs, evidence locators/hashes and typed proposed relationships are described in STATIC_PROFILES.md. Canonical schema dotnet-findings/1 is an adapter candidate bundle with requiresCanonicalMerge=true, not Java's persisted canonical model or a ready impact service graph. Existing consumers may ignore the additive fields but must review profile changes, particularly the removal of HTTP method-name guessing in 1.8.

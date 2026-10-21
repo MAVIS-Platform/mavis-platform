@@ -4,9 +4,9 @@ Worker phân tích tĩnh C#/.NET bằng Roslyn và trả kết quả có bằng 
 
 README là kế hoạch và sổ tiến độ riêng của phần C#. Chỉ đánh dấu hoàn thành sau implementation và verification. Các API hiện hành đã test độc lập; contract tích hợp Java vẫn cần nhóm thống nhất. Mục 8–10 và 12–13 là lịch sử, mục 11 là checklist hiện hành.
 
-## Trạng thái triển khai ngày 20/10/2026
+## Trạng thái triển khai ngày 21/10/2026
 
-- Static profile `dotnet-static/1.5`: source-only analysis/jobs, project/compile metadata, bounded semantic binding, partial types, ASP.NET pattern findings và config keys/hosts có evidence/warnings. Không build/run source đích.
+- Static profile `dotnet-static/1.9`: source-only analysis/jobs, project/compile metadata, bounded semantic binding, partial types, ASP.NET pattern findings và config keys/hosts có evidence/warnings. Không build/run source đích.
 - Versioned impact API: reverse BFS, typed service edges, một shortest path mỗi dependent, evidence và runtime context không xóa static edges.
 - Dedicated Runner: executable riêng, strict image-only preflight, Compose override, internal-network HTTP scenario container, agents/Collector, causal correlation, bounded lifecycle/cancel/cleanup/recovery.
 - Hai dự án mẫu thật đã chạy cả .NET -> Java và Java -> .NET; có case request fail, startup fail, timeout, cancel và abandoned cleanup. Bằng chứng: [PoC evidence](samples/runtime-poc/POC_EVIDENCE.json).
@@ -17,7 +17,8 @@ README là kế hoạch và sổ tiến độ riêng của phần C#. Chỉ đá
 
 Đối chiếu ngày 20/10/2026 với `../.doc_review/main/`:
 
-- `Chia nhiệm vụ.docx`: trách nhiệm thành viên và ba giai đoạn triển khai.
+- `phân chia nhiệm vụ chi tiết.docx` v2.0: phân công N01–N18, PBI và tiêu chí nghiệm thu sau Review 1 (ưu tiên cho các mốc 19–23).
+- `Chia nhiệm vụ.docx`: trách nhiệm thành viên và ba giai đoạn triển khai cũ.
 - `Report 1.docx`: phạm vi, giới hạn phân tích/runtime, versioning và provenance.
 - `System architecture.drawio.png`: Java quản lý DB/artifact storage, Worker giao tiếp HTTP/JSON, Runner tách biệt.
 - `Mainflow.drawio.png`: CF-02 phân tích; CF-07 impact; CF-09 cấu hình; CF-10 scenario; CF-11 thực thi; CF-12 hủy.
@@ -364,12 +365,12 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 - [x] HttpClient resolved receiver/method khi đủ references; literal host/base-address candidates, dynamic targets giữ unresolved.
 - [x] Named/typed/default registration và factory syntax candidates, có test; không tự đồng nhất client name với model service.
 - [x] Refit interface HTTP-attribute candidates trong supported source patterns.
-- [x] Generic DI registration candidates và resolved field/constructor type dependencies.
+- [x] Typed DI generic/typeof mappings, property/primary-constructor/array/generic dependencies và raw candidates cho phần chưa resolve.
 - [ ] DI container/lifetime/factory semantics đầy đủ ngoài supported profile.
-- [x] DbContext/registration/DbSet/save candidates có evidence; chưa resolve EF/NuGet semantics đầy đủ.
+- [x] DbContext/registration/DbSet/save + selected async query DATA_ACCESS, connection-config evidence/hash; không resolve đầy đủ NuGet/EF model semantics.
 - [ ] EF query/entity/model mapping ngoài syntax profile.
-- [ ] Configuration resolution và unresolved items khi thiếu bằng chứng.
-- [ ] Phân biệt service call, code dependency, containment và DB access.
+- [x] Configuration-key/named-client literal resolution và ambiguous/unresolved states theo profile N02/N04; complex environment/options binding vẫn ngoài profile.
+- [x] Tách SERVICE_HTTP_CALL / CODE_DEPENDENCY / DATABASE_ACCESS candidates; containment không tự thành HTTP/impact edge; projection cần Java canonical merge.
 - [x] Tests cho findings/evidence/coverage/warnings trong static profile được công bố; unsupported constructs vẫn có giới hạn.
 
 ### Tích hợp phân tích tĩnh với Java/UI
@@ -573,3 +574,13 @@ N03 full Windows regression: 170 pass + 1 Linux-only skip (171 tests), golden fi
 N04 verification: 8 outgoing/Refit resolver fixtures pass; full Windows suite 178 pass + 1 Linux-only skip (179 tests), golden response drift check đạt. Analyzer version 1.8.
 
 N04 follow-up: conditional guard bên ngoài AddHttpClient (if/loop/switch) cũng giữ unresolved, không chỉ if trong lambda. 9/9 HTTP profile tests pass. Commit riêng trước khi chốt N05.
+
+## 23. N05 — dependency/data-access/evidence profile hoàn thiện
+
+- [x] Typed type/DI/project-reference dependencies tách biệt DATA_ACCESS. DI dynamic/factory/instance overload không bị suy thành implementation giả; constructor chính, property/array/generic type arguments có dependency profile.
+- [x] EF context/registration/read/write + config connection alias có evidence. Không map host từ tên DbContext; missing/conflicting config giữ unresolved/ambiguous. Chỉ xuất host/port/database whitelist, không credentials/connection string/SQLite path.
+- [x] Canonical candidate bundle dotnet-findings/1, logical IDs, locator/fileHash/evidenceHash và origin STATIC_CODE/CONFIG; requiresCanonicalMerge=true, không gán UUID/ghi DB Java.
+- [x] 7 acceptance fixtures (gồm generic enum/delegate identity): EF configure/read/write, ambiguous/missing config, DI/type/fake method distinction, orphan/endpoint integrity, hash/logical ID stability và CONFIG project reference.
+- [ ] N05 nghiệm thu nhóm: Triết review shared canonical schema và database/service mapping; Vũ tích hợp publish/persistence và SRS corpus acceptance. Các task Worker độc lập N02–N05 đã có implementation/profile; không coi đó là P06/P07 Done toàn hệ thống.
+
+N05 / N02–N05 final verification: Windows SDK 10.0.204 full suite 186 pass + 1 Linux-only skip (187 tests); Linux SDK 10.0.402 compatibility full suite 187/187 pass, locked restore đạt. Hai bộ test chạy trên snapshot index sạch, không gồm local edits cũ. Java 21/Jackson consumer BUILD SUCCESS, bao gồm canonical endpoint/evidence/hash/no-orphan assertions. Docker runtime build vẫn có cache snapshot error ở mốc N02; Linux SDK/Maven container tests đạt nhưng không tuyên bố đã kiểm chứng image Worker mới cho profile 1.9. N02–N05 code độc lập và fixtures hoàn thành; review/integration/corpus acceptance thuộc nhóm vẫn unchecked.
