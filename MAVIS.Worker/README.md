@@ -319,7 +319,7 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 
 ## 11. Checklist tổng thể đến nghiệm thu
 
-Đây là bảng tiến độ tổng hợp hiện hành; mục 5 giữ kế hoạch và tiêu chí nghiệm thu, mục 8–10 giữ lịch sử. `[x]` chỉ nghĩa là phạm vi được ghi đã có code và verification, không có nghĩa toàn bộ mốc hoặc tích hợp đã hoàn thành. Cập nhật lần cuối: 20/10/2026, Windows: 133 pass, 1 Linux-only skip; Linux: 68 profile tests pass.
+Đây là bảng tiến độ tổng hợp hiện hành; mục 5 giữ kế hoạch và tiêu chí nghiệm thu, mục 8–10 giữ lịch sử. `[x]` chỉ nghĩa là phạm vi được ghi đã có code và verification, không có nghĩa toàn bộ mốc hoặc tích hợp đã hoàn thành. Cập nhật lần cuối: 21/10/2026. Worker regression gần nhất: Windows 187 pass + 1 Linux-only skip; Linux 187/187 (compatibility SDK 10.0.402). Java selected integration 61/61. Runner .NET 10: 6 runtime cases và 1 abandoned recovery pass; chi tiết mục 35–36.
 
 ### Nền tảng Worker độc lập
 
@@ -328,7 +328,8 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 - [x] N01 contract probe: Java 21/Jackson đọc fixture request/result/error, xác minh HMAC và input digest.
 - [ ] N01 nghiệm thu nhóm: Vũ review V02/format grant, Java client/artifact delivery thật và integrated acceptance.
 - [x] N01/N18: Linux .NET 10 compatibility regression đạt 148/148 (SDK 10.0.402; xem mục 18).
-- [ ] N01/N18: tái lập Linux đúng SDK 10.0.204 và chạy lại hai PoC với Runner image mới.
+- [x] N01/N18: chạy lại hai PoC và failure/timeout/cancel/recovery với Runner .NET 10 image mới (mục 36).
+- [ ] N01/N18: tái lập Linux đúng SDK 10.0.204; registry SDK image hiện có khác patch như mục 18.
 
 - [x] API phân tích source C# không cần Java findings.
 - [x] Snapshot/job correlation, evidence file/dòng, coverage và warnings.
@@ -376,17 +377,17 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 ### Tích hợp phân tích tĩnh với Java/UI
 
 - [ ] Chốt contract/IDs/relationship semantics với Triết.
-- [ ] Java client xử lý result/errors/retry/cancellation.
-- [ ] Java hợp nhất Java/C#/config thành model đúng revision.
-- [ ] Java lưu model, matching graph, evidence, coverage và warnings nhất quán.
+- [x] Java client xử lý scoped result/errors/deadline; owner cancel/attempt history và deadline recovery có tests. Automatic retry/renewable lease vẫn mở.
+- [x] Java hợp nhất Java/C#/explicit bindings vào model đúng snapshot/revision; ambiguous/unresolved giữ candidate.
+- [x] Java atomic publication model/graph/evidence/coverage/warnings; partial không promote latest, có rollback/fencing tests.
 - [ ] Frontend mở đúng evidence từ node/edge.
-- [ ] Kiểm thử mẫu hỗn hợp Java/C# và đối chiếu expected findings.
+- [x] Fixture hỗn hợp Java/C# chạy Worker/PostgreSQL thật, explicit service edges cả hai chiều; corpus nghiệm thu nhóm vẫn mở.
 - [ ] Ghi kết quả đo, giới hạn và supported analysis profiles.
 
 ### M4 — Change Impact
 
 - [x] Reverse BFS và shortest-path implementation trong pipeline cũ; chưa phải API impact riêng đã tích hợp.
-- [ ] Chốt ownership/vị trí engine với Triết và chỉ một implementation chính.
+- [x] Java impact API delegate single .NET engine, bỏ Java BFS ở adapter hiện hành; review nhóm vẫn cần.
 - [x] API impact nhận graph, không chạy lại source analysis.
 - [x] Kiểm tra model/graph revision/readiness và selected service.
 - [x] Traversal đúng chiều và loại cạnh; containment không tự thành impact edge.
@@ -681,3 +682,11 @@ Breaking workflow migration và V5 documented trong INTEGRATION_RUNBOOK.md. Requ
 - [x] Extraction được serialize bằng filesystem lock, công bố bằng atomic directory move và seal archive/tree hash. Existing extraction không có seal hoặc bị sửa sẽ bị từ chối; không ghi đè snapshot cũ.
 - [x] 61 selected integration tests pass, không skip (client core 11, common 4, analyzer 46), gồm storage budget/cancellation, ZIP hash/traversal/expansion/tampering và live Java–Worker–PostgreSQL workflows.
 - [ ] Storage quota toàn hệ thống, retention theo policy và dedicated production deployment chưa nghiệm thu. Seal phát hiện thay đổi giữa các lần sử dụng; không thay thế quyền filesystem riêng của artifact store.
+
+## 36. Runner .NET 10 — live PoC revalidation
+
+- [x] Initialize-Poc.ps1 build Runner .NET 10 với runtime digest riêng; sample applications vẫn .NET 8/Java. Agent artifacts và Collector giữ pin/hash đã công bố.
+- [x] Invoke-Poc.ps1: Success (.NET → Java), SecondProject (Java → .NET), Failure (HTTP scenario fail nhưng trace Available), StartupFailure, Timeout, Cancel đều pass outcome assertions và cleanup Confirmed.
+- [x] Dừng đúng allocator PoC sau khi workload bắt đầu rồi recover theo generated project ID: cleanup Confirmed; không khôi phục giả in-memory result.
+- [x] Bằng chứng mới ở samples/runtime-poc/POC_EVIDENCE.json.net10RunnerRegression: actual image IDs, outcomes, causal service pairs, span counts và cleanup; không thay thế evidence lịch sử bằng kết quả chưa đo.
+- [ ] Dedicated execution host, Java runtime persistence/control, credentials/stateful reset và browser acceptance còn mở. Desktop PoC không được đánh dấu production isolation.
