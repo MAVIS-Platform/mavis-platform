@@ -149,10 +149,10 @@ class UploadWorkerApiIntegrationTest {
         var diff=json.readTree(compared.getResponse().getContentAsString()).required("data").required("elements");
         assertEquals(1,diff.required("modified").size());assertEquals(0,diff.required("added").size());assertEquals(0,diff.required("removed").size());
         mvc.perform(post("/api/v1/analyzer/models/"+model+"/revisions").contentType("application/json").content(edit.toString())).andExpect(status().isBadRequest());
-        var add=json.createObjectNode();var additions=add.putArray("elements");
-        additions.addObject().put("ref","gateway").put("operation","ADD").put("name","Gateway").put("kind","SERVICE_CONTAINER");
-        additions.addObject().put("ref","orders").put("operation","ADD").put("name","Orders").put("kind","SERVICE_CONTAINER");
-        add.putArray("relationships").addObject().put("ref","call").put("operation","ADD").put("fromRef","gateway").put("toRef","orders").put("type","SERVICE_HTTP_CALL").put("confirmed",true);
+        var add=json.createObjectNode();var additions=add.putArray("addedElements");
+        additions.addObject().put("name","Gateway").put("elementType","SERVICE_CONTAINER").put("languageStack","JAVA");
+        additions.addObject().put("name","Orders").put("elementType","SERVICE_CONTAINER").put("languageStack","CSHARP_DOTNET");
+        add.putArray("addedRelationships").addObject().put("sourceElementName","Gateway").put("targetElementName","Orders").put("relationType","SERVICE_HTTP_CALL");
         var addedResponse=mvc.perform(post("/api/v1/analyzer/models/"+revised+"/revisions").contentType("application/json").content(add.toString())).andExpect(status().isOk()).andReturn();
         String added=json.readTree(addedResponse.getResponse().getContentAsString()).required("data").required("id").asText();
         var addDiff=mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",revised).param("targetVersionId",added)).andExpect(status().isOk()).andReturn();
@@ -166,7 +166,7 @@ class UploadWorkerApiIntegrationTest {
         mvc.perform(get("/api/v1/analyzer/models/"+added+"/impact").param("targetServiceId",orders).param("graphRevisionId","wrong")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/v1/analyzer/models/"+model+"/impact").param("targetServiceId",orders)).andExpect(status().isBadRequest());
         var legacyImpact=mvc.perform(get("/api/v1/analyzer/impact").param("sessionId",added).param("nodeId",orders)).andExpect(status().isOk()).andReturn();
-        assertEquals(1,json.readTree(legacyImpact.getResponse().getContentAsString()).required("data").size());
+        assertEquals(1,json.readTree(legacyImpact.getResponse().getContentAsString()).required("data").required("impactedElements").size());
         mvc.perform(get("/api/v1/analyzer/impact").param("sessionId",project.toString()).param("nodeId",orders)).andExpect(status().isNotFound());
         int versionsBefore=db.queryForObject("select count(*) from model_versions where project_id=?",Integer.class,project);
         var invalid=json.createObjectNode();invalid.putArray("elements").addObject().put("ref","loop").put("operation","ADD").put("kind","COMPONENT").put("name","Loop").put("parentRef","loop");invalid.putArray("relationships");

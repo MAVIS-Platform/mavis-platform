@@ -10,5 +10,6 @@ import java.util.UUID;
 @Repository
 public interface DiagramVersionRepository extends JpaRepository<DiagramVersion, UUID> {
     List<DiagramVersion> findByModelVersionId(UUID modelVersionId);
+    List<DiagramVersion> findByModelVersionIdOrderByCreatedAtAsc(UUID modelVersionId);
     List<DiagramVersion> findByModelVersionIdAndNotation(UUID modelVersionId, String notation);
 }

@@ -105,4 +105,17 @@ public class GraphServiceImpl implements GraphService {
         return result.impact().affectedServices().stream().map(p->NodeDTO.builder().id(UUID.fromString(p.serviceId()))
                 .name(result.serviceNames().get(p.serviceId())).type("SERVICE_CONTAINER").build()).toList();
     }
+    @Override
+    public com.mavis.analyzer.graph.dto.ImpactAnalysisResponseDTO analyzeDetailedImpact(UUID model,UUID target){
+        var view=workerImpact.analyze(model,target,null,10,1000);var result=view.impact();
+        var nodes=new ArrayList<com.mavis.analyzer.graph.dto.ImpactedElementDTO>();
+        for(var path:result.affectedServices()){
+            var supporting=new ArrayList<com.mavis.analyzer.graph.dto.EvidenceSummaryDTO>();
+            for(String id:path.evidenceIds()){var ev=view.evidence().get(id);if(ev!=null)supporting.add(com.mavis.analyzer.graph.dto.EvidenceSummaryDTO.builder().evidenceId(UUID.fromString(id)).sourceType(ev.sourceType()).locator(ev.locator()).adapterVersion(ev.adapterVersion()).build());}
+            nodes.add(com.mavis.analyzer.graph.dto.ImpactedElementDTO.builder().elementId(UUID.fromString(path.serviceId())).name(view.serviceNames().get(path.serviceId())).elementType("SERVICE_CONTAINER").impactLevel(path.distance()==1?"DIRECTLY_IMPACTED":"INDIRECTLY_IMPACTED").hopDistance(path.distance()).dependencyPathNames(path.hops().stream().map(view.serviceNames()::get).toList()).supportingEvidences(supporting).build());
+        }
+        var warnings=new ArrayList<>(result.warnings());warnings.addAll(view.adapterWarnings());
+        int direct=(int)nodes.stream().filter(n->n.getHopDistance()==1).count();
+        return com.mavis.analyzer.graph.dto.ImpactAnalysisResponseDTO.builder().modelVersionId(model).targetElementId(target).targetElementName(view.serviceNames().get(target.toString())).graphRevisionId(result.graphRevisionId()).truncated(result.truncated()).warnings(warnings).totalImpactedCount(nodes.size()).directlyImpactedCount(direct).indirectlyImpactedCount(nodes.size()-direct).impactedElements(nodes).build();
+    }
 }
