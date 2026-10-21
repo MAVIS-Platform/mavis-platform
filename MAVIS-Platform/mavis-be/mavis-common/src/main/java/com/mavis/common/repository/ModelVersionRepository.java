@@ -28,4 +28,7 @@ public interface ModelVersionRepository extends JpaRepository<ModelVersion, UUID
 
     @Query("SELECT COALESCE(MAX(m.revision), 0) FROM ModelVersion m WHERE m.project.id = :projectId")
     Integer findMaxRevisionByProjectId(@Param("projectId") UUID projectId);
+
+    List<ModelVersion> findByRuntimeSessionId(UUID runtimeSessionId);
+    Optional<ModelVersion> findFirstByRuntimeSessionIdOrderByRevisionDesc(UUID runtimeSessionId);
 }
