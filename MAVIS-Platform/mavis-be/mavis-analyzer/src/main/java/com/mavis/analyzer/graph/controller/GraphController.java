@@ -14,15 +14,15 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/analyzer/sessions")
+@RequestMapping("/api/v1/analyzer")
 @RequiredArgsConstructor
 @Tag(name = "Graph Data", description = "APIs for graph data retrieval")
 public class GraphController {
 
     private final GraphService graphService;
 
-    @GetMapping("/{sessionId}/graph")
-    @Operation(summary = "Lấy dữ liệu đồ thị của một session", description = "Trả về danh sách nodes và edges để Frontend vẽ đồ thị")
+    @GetMapping(value = {"/sessions/{sessionId}/graph", "/models/{sessionId}/graph"})
+    @Operation(summary = "Lấy dữ liệu đồ thị của một model version", description = "Trả về danh sách nodes và edges để Frontend vẽ đồ thị (hỗ trợ cả modelVersionId và projectId)")
     public ApiResponse<GraphDataDTO> getGraphData(@PathVariable UUID sessionId) {
         return ApiResponse.success(graphService.getGraphDataBySessionId(sessionId));
     }

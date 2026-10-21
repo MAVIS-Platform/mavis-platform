@@ -2,38 +2,57 @@ package com.mavis.common.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "evidence")
+@Table(name = "evidences")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
 public class Evidence {
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "edge_id")
-    private DependencyEdge edge;
+    @JoinColumn(name = "source_snapshot_id", nullable = false)
+    private SourceSnapshot sourceSnapshot;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "node_id")
-    private ServiceNode node;
+    @JoinColumn(name = "model_version_id", nullable = false)
+    private ModelVersion modelVersion;
 
-    @Column(name = "file_path", nullable = false, length = 500)
-    private String filePath;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "element_id")
+    private ModelElement element;
 
-    @Column(name = "line_number")
-    private Integer lineNumber;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "relationship_id")
+    private ModelRelationship relationship;
 
-    @Column(name = "code_snippet", columnDefinition = "TEXT")
-    private String codeSnippet;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "runtime_session_id")
+    private RuntimeSession runtimeSession;
 
-    @Column(name = "evidence_type", nullable = false, length = 30)
-    private String evidenceType;
+    @Column(nullable = false, length = 500)
+    private String locator;
+
+    @Column(name = "adapter_version", length = 50)
+    private String adapterVersion;
+
+    @Column(name = "source_type", nullable = false, length = 50)
+    private String sourceType;
+
+    @Column(columnDefinition = "TEXT")
+    private String excerpt;
+
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private OffsetDateTime createdAt;
 }
