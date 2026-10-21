@@ -324,7 +324,8 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 
 - [x] N01 (phần nền tảng): Worker/Runner/tests target .NET 10, pin SDK 10.0.204 và NuGet lock files; Windows regression 133 pass, 1 Linux-only skip.
 - [ ] N01 còn lại: artifact-scoped input thay raw SourceLocation; contract fixtures thống nhất với Java, xác thực deadline/attempt và nghiệm thu tích hợp.
-- [ ] N01/N18: chạy regression Linux trên .NET 10 và chạy lại hai PoC với Runner image mới.
+- [x] N01/N18: Linux .NET 10 compatibility regression đạt 148/148 (SDK 10.0.402; xem mục 18).
+- [ ] N01/N18: tái lập Linux đúng SDK 10.0.204 và chạy lại hai PoC với Runner image mới.
 
 - [x] API phân tích source C# không cần Java findings.
 - [x] Snapshot/job correlation, evidence file/dòng, coverage và warnings.
@@ -516,3 +517,12 @@ Verification bổ sung N01: locked restore toàn solution đạt; publish Runner
 - [x] Truncated/MAX_PATHS_REACHED phản ánh output thiếu; depth limit độc lập. Giữ static graph và runtime-context semantics hiện có.
 - [x] VersionedImpact regression: 12/12 pass, gồm cap boundary, validation, evidence và deterministic order khi đảo input.
 - [ ] N07 tích hợp: Java adapter chuyển typed canonical relationships sang contract Worker, graph/model revision provenance và persistence; Java BFS cũ chưa được chuyển sang Worker.
+
+## 18. N18 — Windows/Linux regression, 21/10/2026
+
+- [x] API integration assertion theo profile 1.5 kiểm tra payments:443 và analyzerVersion; thay convention host-only cũ.
+- [x] Windows SDK 10.0.204: 147 pass, 1 Linux-only skip, tổng 148 tests.
+- [x] Linux SDK 10.0.402: locked restore đạt, full suite 148/148 pass, gồm file/root symlink scope. Snapshot nguồn 06f8e74 cộng bản sửa integration assertion, không mang local edits cũ ở Program/legacy controller/interface vào container.
+- Image SDK digest: mcr.microsoft.com/dotnet/sdk@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa. Container read-only, cap-drop ALL/no-new-privileges, 2 CPU/3 GiB; build/cache chỉ trong tmpfs 2 GiB, source mount readonly.
+- Registry không có tag SDK 10.0.204 tại thời điểm kiểm tra; chỉ bản copy global.json trong tmpfs đổi sang 10.0.402. Repository vẫn pin 10.0.204. Đây là compatibility evidence, chưa đạt reproducibility với cùng SDK Linux/Windows.
+- [ ] N18 còn lại: benchmark cold/warm/memory, dependency audit và corpus/threshold nghiệm thu đã thống nhất; Linux regression không thay cho Java integration hoặc tracing PoC mới.
