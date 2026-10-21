@@ -80,14 +80,14 @@ class SubmissionApiIntegrationTest {
                 .role(studentRole)
                 .build());
 
-        Workspace workspace = workspaceRepository.save(Workspace.builder()
+        Workspace workspace = workspaceRepository.saveAndFlush(Workspace.builder()
                 .name("Kien Truc Phan Mem K18")
                 .code("SE1801_" + UUID.randomUUID().toString().substring(0, 4))
                 .createdBy(user)
                 .build());
 
         // Đề bài yêu cầu bắt buộc Runtime Trace (requireRuntimeTrace = true)
-        Assignment assignment = assignmentRepository.save(Assignment.builder()
+        Assignment assignment = assignmentRepository.saveAndFlush(Assignment.builder()
                 .workspace(workspace)
                 .createdBy(user)
                 .title("Do An Kien Truc Microservices")
@@ -95,19 +95,19 @@ class SubmissionApiIntegrationTest {
                 .requireRuntimeTrace(true)
                 .build());
 
-        Project project = projectRepository.save(Project.builder()
+        Project project = projectRepository.saveAndFlush(Project.builder()
                 .workspace(workspace)
                 .owner(user)
                 .name("Fruit E-Store Architecture")
                 .build());
 
-        SourceSnapshot snapshot = sourceSnapshotRepository.save(SourceSnapshot.builder()
+        SourceSnapshot snapshot = sourceSnapshotRepository.saveAndFlush(SourceSnapshot.builder()
                 .project(project)
                 .sourceType("GITHUB_COMMIT")
                 .artifactHash("1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef")
                 .build());
 
-        ModelVersion modelVersion = modelVersionRepository.save(ModelVersion.builder()
+        ModelVersion modelVersion = modelVersionRepository.saveAndFlush(ModelVersion.builder()
                 .project(project)
                 .sourceSnapshot(snapshot)
                 .revision(1)
@@ -117,7 +117,7 @@ class SubmissionApiIntegrationTest {
                 .createdBy(user)
                 .build());
 
-        DiagramVersion diagramVersion = diagramVersionRepository.save(DiagramVersion.builder()
+        DiagramVersion diagramVersion = diagramVersionRepository.saveAndFlush(DiagramVersion.builder()
                 .modelVersion(modelVersion)
                 .notation("C4")
                 .level("CONTAINER")
@@ -129,13 +129,13 @@ class SubmissionApiIntegrationTest {
         summaryMetrics.put("passedRules", 5);
         summaryMetrics.put("failedRules", 0);
 
-        EvaluationRun evaluationRun = evaluationRunRepository.save(EvaluationRun.builder()
+        EvaluationRun evaluationRun = evaluationRunRepository.saveAndFlush(EvaluationRun.builder()
                 .modelVersion(modelVersion)
                 .ruleSetVersion("1.0")
                 .summaryMetrics(summaryMetrics)
                 .build());
 
-        RuntimeSession runtimeSession = runtimeSessionRepository.save(RuntimeSession.builder()
+        RuntimeSession runtimeSession = runtimeSessionRepository.saveAndFlush(RuntimeSession.builder()
                 .project(project)
                 .sourceSnapshot(snapshot)
                 .triggeredBy(user)

@@ -35,12 +35,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class ProjectServiceImplTest {
 
     @Mock
@@ -60,6 +64,9 @@ class ProjectServiceImplTest {
 
     @Mock
     private WorkspaceMemberRepository workspaceMemberRepository;
+
+    @Mock
+    private com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     @InjectMocks
     private ProjectServiceImpl projectService;
@@ -99,6 +106,8 @@ class ProjectServiceImplTest {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(currentUserId.toString(), null, Collections.emptyList())
         );
+
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(currentUser);
     }
 
     @AfterEach

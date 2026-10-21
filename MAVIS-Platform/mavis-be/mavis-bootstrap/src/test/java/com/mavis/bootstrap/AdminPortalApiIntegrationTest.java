@@ -79,6 +79,7 @@ class AdminPortalApiIntegrationTest {
 
         // --- BƯỚC 1: GET /api/v1/admin/users ---
         MvcResult usersResult = mockMvc.perform(get("/api/v1/admin/users")
+                        .header("X-Test-User-Email", adminUser.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -149,6 +150,7 @@ class AdminPortalApiIntegrationTest {
 
         // --- BƯỚC 4: GET /dashboard-stats ---
         MvcResult statsResult = mockMvc.perform(get("/api/v1/admin/dashboard-stats")
+                        .header("X-Test-User-Email", adminUser.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -170,6 +172,7 @@ class AdminPortalApiIntegrationTest {
 
         // --- BƯỚC 5: GET /audit-logs ---
         MvcResult auditResult = mockMvc.perform(get("/api/v1/admin/audit-logs")
+                        .header("X-Test-User-Email", adminUser.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))

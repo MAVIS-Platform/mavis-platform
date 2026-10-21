@@ -38,15 +38,16 @@ public class AssignmentServiceImpl implements AssignmentService {
     private final SubmissionSnapshotRepository submissionSnapshotRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public AssignmentResponseDTO createAssignment(UUID workspaceId, AssignmentCreateRequest request) {
+        accessPolicyService.requireWorkspaceLecturer(workspaceId);
         UUID currentUserId = SecurityUtils.getCurrentUserId();
         Workspace workspace = workspaceRepository.findWithCreatorById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy lớp học"));
 
-        validateLecturerOrCreatorPermission(workspace, currentUserId);
         validateDiagramTypes(request.getRequiredDiagramTypes());
 
         User currentUser = userRepository.findById(currentUserId)
@@ -126,11 +127,10 @@ public class AssignmentServiceImpl implements AssignmentService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public AssignmentResponseDTO updateAssignment(UUID assignmentId, AssignmentUpdateRequest request) {
-        UUID currentUserId = SecurityUtils.getCurrentUserId();
         Assignment assignment = assignmentRepository.findWithDetailsById(assignmentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy đề bài tập"));
 
-        validateLecturerOrCreatorPermission(assignment.getWorkspace(), currentUserId);
+        accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
 
         assignment.setTitle(request.getTitle().trim());
         assignment.setDescription(request.getDescription());
@@ -167,11 +167,10 @@ public class AssignmentServiceImpl implements AssignmentService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteAssignment(UUID assignmentId) {
-        UUID currentUserId = SecurityUtils.getCurrentUserId();
         Assignment assignment = assignmentRepository.findWithDetailsById(assignmentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy đề bài tập"));
 
-        validateLecturerOrCreatorPermission(assignment.getWorkspace(), currentUserId);
+        accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
 
         if (submissionSnapshotRepository.existsByAssignmentId(assignmentId)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Không thể xóa đề bài tập đã có sinh viên nộp bài (BR-14)");

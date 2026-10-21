@@ -39,6 +39,7 @@ public interface SubmissionSnapshotRepository extends JpaRepository<SubmissionSn
 
     boolean existsByAssignmentId(UUID assignmentId);
     long countByAssignmentId(UUID assignmentId);
+    boolean existsBySourceSnapshotId(UUID sourceSnapshotId);
 
     @Query("SELECT s.assignment.id, COUNT(s.id) FROM SubmissionSnapshot s WHERE s.assignment.id IN :assignmentIds GROUP BY s.assignment.id")
     List<Object[]> countSubmissionsByAssignmentIds(@Param("assignmentIds") Collection<UUID> assignmentIds);

@@ -27,6 +27,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -38,6 +39,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
 
@@ -49,17 +51,18 @@ class RealFruitMicroservicesDetectionTest {
     @Test
     @DisplayName("Kiểm thử thực tế toàn diện trên fruit-market-microservices.zip: Docker, Config, Java AST & C4 GraphBuilder")
     void testRealFruitMicroservicesDataset() throws IOException {
-        Path zipPath = Paths.get("..", "Huong_Di", "fruit-market-microservices.zip");
-        if (!zipPath.toFile().exists()) {
-            zipPath = Paths.get("Huong_Di", "fruit-market-microservices.zip");
+        Path zipPath = Paths.get("Huong_Di", "fruit-market-microservices.zip");
+        if (!Files.exists(zipPath)) {
+            zipPath = Paths.get("..", "Huong_Di", "fruit-market-microservices.zip");
         }
-        if (!zipPath.toFile().exists()) {
-            zipPath = Paths.get("c:\\Users\\Minh Triet\\Desktop\\Do_An\\mavis-platform\\MAVIS-Platform\\mavis-be\\Huong_Di\\fruit-market-microservices.zip");
+        if (!Files.exists(zipPath)) {
+            zipPath = Paths.get("mavis-be", "Huong_Di", "fruit-market-microservices.zip");
+        }
+        if (!Files.exists(zipPath)) {
+            zipPath = Paths.get("..", "mavis-be", "Huong_Di", "fruit-market-microservices.zip");
         }
 
-        assertThat(zipPath.toFile().exists())
-                .as("File dữ liệu mẫu fruit-market-microservices.zip phải tồn tại")
-                .isTrue();
+        assumeTrue(Files.exists(zipPath), "Skipping external dataset test when fruit-market-microservices.zip is absent");
 
         // 1. Giải nén vào tempDir
         extractZip(zipPath.toFile(), tempDir.toFile());

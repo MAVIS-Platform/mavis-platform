@@ -54,6 +54,9 @@ class AssignmentServiceImplTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private com.mavis.common.security.AccessPolicyService accessPolicyService;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
@@ -163,13 +166,12 @@ class AssignmentServiceImplTest {
                 .title("Assignment 1")
                 .build();
 
-        when(workspaceRepository.findWithCreatorById(workspaceId)).thenReturn(Optional.of(otherWorkspace));
-        when(workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, currentUserId))
-                .thenReturn(Optional.of(WorkspaceMember.builder().memberRole("STUDENT").build()));
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN, "Chỉ Giảng viên của lớp mới có quyền tạo/chỉnh sửa đề bài tập"))
+                .when(accessPolicyService).requireWorkspaceLecturer(workspaceId);
 
         assertThatThrownBy(() -> assignmentService.createAssignment(workspaceId, request))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Chỉ Giảng viên của lớp mới có quyền tạo/chỉnh sửa đề bài tập")
+                .hasMessageContaining("Chỉ Giảng viên của lớp")
                 .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.FORBIDDEN);
 
         verify(assignmentRepository, never()).save(any());
