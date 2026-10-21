@@ -1,0 +1,41 @@
+package com.mavis.platform.submission.dto;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotNull;
+import lombok.*;
+
+import java.util.UUID;
+
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+@Schema(description = "Yêu cầu nộp bài tập kiến trúc bất biến")
+public class SubmissionCreateRequest {
+
+    @NotNull(message = "ID đề bài tập không được để trống")
+    @Schema(description = "ID của đề bài tập (Assignment)", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    private UUID assignmentId;
+
+    @NotNull(message = "ID dự án không được để trống")
+    @Schema(description = "ID của đồ án kiến trúc (Project)", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    private UUID projectId;
+
+    @NotNull(message = "ID phiên bản mô hình không được để trống")
+    @Schema(description = "ID của ModelVersion nộp bài", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    private UUID modelVersionId;
+
+    @NotNull(message = "ID bản vẽ kiến trúc không được để trống")
+    @Schema(description = "ID của DiagramVersion nộp bài", example = "3fa85f64-5717-4562-b3fc-2c963f66afa6")
+    private UUID diagramVersionId;
+
+    @Schema(description = "ID kết quả chấm kiến trúc tự động (nếu có)")
+    private UUID evaluationRunId;
+
+    @Schema(description = "ID phiên chạy sandbox thực nghiệm (bắt buộc nếu đề bài yêu cầu requireRuntimeTrace)")
+    private UUID runtimeSessionId;
+
+    @Schema(description = "Ghi chú của sinh viên khi nộp bài", example = "Em đã hoàn thành thiết kế C4 Container và cấu hình OTel trace.")
+    private String submissionNotes;
+}

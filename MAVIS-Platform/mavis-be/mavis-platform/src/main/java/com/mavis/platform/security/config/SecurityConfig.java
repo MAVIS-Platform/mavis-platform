@@ -2,6 +2,7 @@ package com.mavis.platform.security.config;
 
 import com.mavis.platform.security.filter.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -27,6 +28,9 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthFilter;
 
+    @Value("${mavis.security.dev-bypass-enabled:true}")
+    private boolean devBypassEnabled;
+
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
@@ -37,15 +41,20 @@ public class SecurityConfig {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable)
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers(
+            .authorizeHttpRequests(auth -> {
+                auth.requestMatchers(
                         "/api/v1/auth/**",
                         "/v3/api-docs/**",
                         "/swagger-ui/**",
                         "/swagger-ui.html"
-                ).permitAll()
-                .anyRequest().permitAll()
-            )
+                ).permitAll();
+
+                if (devBypassEnabled) {
+                    auth.anyRequest().permitAll();
+                } else {
+                    auth.anyRequest().authenticated();
+                }
+            })
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 
