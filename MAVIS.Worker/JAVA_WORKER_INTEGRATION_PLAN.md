@@ -67,17 +67,17 @@ Giữ contract Worker hiện có làm producer baseline và sửa Java client/ma
 
 ### I02 — Artifact delivery và client HTTP thật
 
-- [ ] Java cấp job/attempt/grant, chuẩn bị immutable artifact root/mount; readiness riêng liveness.
-- [ ] Sửa Worker client route/header/body/response mapper và chuyển call ra khỏi transaction publish của GraphBuilder.
+- [x] Java cấp job/attempt/grant, atomic stage vào artifact root, Worker mount readonly; readiness riêng liveness trong test harness. Production immutable host/retention vẫn cần deployment policy.
+- [x] Sửa Worker client route/header/body/response mapper và chuyển call ra khỏi transaction publish của GraphBuilder.
 - [ ] Đồng bộ language manifest/discovery policy; scan bỏ hẳn subtree ignored với budget, không Files.walk rồi chỉ filter kết quả. Không mặc định bỏ mọi project test nếu Worker policy vẫn phân tích chúng. Không cam kết 1ms chỉ từ findAny().
-- [ ] Bounded timeout, response/body, cancel, sanitized diagnostics và retry policy.
+- [x] Bounded timeout, response/body, interruption, sanitized diagnostics; no automatic retry.
 - Gate: Java client thật gọi Worker thật với một snapshot C#; sai service key/grant/root/hash/expired deadline đều bị từ chối rõ ràng, không fallback thành kết quả thành công rỗng.
 
 ### I03 — Canonical import và publish
 
-- [ ] Tách canonical mapper/validator khỏi GraphBuilder batching và network I/O.
-- [ ] Identity/parent/service-alias mapping bằng scoped IDs và host/port; import giữ candidate/coverage, không ép VALIDATED.
-- [ ] Save elements, relations, evidence và ID mapping trong transaction publish; xác nhận không orphan, không cross-version FK, rollback khi import lỗi.
+- [x] Tách canonical mapper/validator khỏi GraphBuilder batching và network I/O.
+- [ ] Identity/parent bằng scoped IDs và import giữ candidate/coverage đã có; service-alias ownership/mapping host/port xuyên ngôn ngữ còn cần hoàn thiện.
+- [x] Save elements, relations, evidence và ID mapping trong transaction publish; guarded job/attempt/provenance, V3 JSONB evidence metadata và rollback checks.
 - [ ] ResultManifest lưu adapter outcomes, warnings/coverage, versions/digests và attempt; chỉ promote latest khi đạt policy completeness. Không làm mất bản thành công trước đó khi attempt lỗi.
 - Gate: snapshot → Java job → Worker → DB model/evidence → reload đúng provenance, chạy lại không duplicate, response muộn không ghi vào model khác.
 
@@ -100,8 +100,12 @@ Giữ contract Worker hiện có làm producer baseline và sửa Java client/ma
 
 ## 6. Thứ tự code ngay sau khi plan được dùng
 
-Làm I01 rồi I02 trước. Tận dụng client/fallback/batch-save đã có ở `ef9f88f`, thay seam DTO/transport và canonical mapping thay vì viết lại Java analyzer. Worker sửa phần producer/fixtures trên `feat/worker-standalone-analysis`; Java owner sửa nhánh Java. User tự merge, không tự merge main hay sửa nhánh bạn khác.
+Làm I01 rồi I02 trước. Tận dụng client/fallback/batch-save đã có ở `ef9f88f`, thay seam DTO/transport và canonical mapping thay vì viết lại Java analyzer. Worker sửa phần producer/fixtures trên `feat/worker-standalone-analysis`; Java baseline đã được user cho phép nhập vào nhánh Worker để triển khai seam tích hợp; không sửa remote nhánh bạn khác. User tự merge, không tự merge main hay sửa nhánh bạn khác.
 
 Chưa cần triển khai thêm Runner/runtime để giải quyết task 3.1. Runtime tách thành lát cắt sau khi static interoperability đã đạt.
 
 I02 verification: Java 21 reactor selected tests 15/15 pass trên Worker Linux thật, không skip. Producer publish từ HEAD sạch không có local Program.cs edits cũ. Java pipeline publication vẫn chưa hoàn thành ở mốc client leaf này; xem I03 tiếp theo.
+
+I03 implementation: WorkerModelPublisher quản lý begin/publish/fail, job+project lock, pinned attempt/deadline; WorkerCanonicalImporter giữ logical IDs/candidate status và evidence provenance; orchestrator gọi network trước publish. Public upload/FE, service alias reconciliation và durable leases/restart recovery chưa được nghiệm thu.
+
+I03 verification 21/10: 29/29 selected Java tests pass trên real Worker + PostgreSQL, V1/V2/V3 được apply, source hashes/provenance reload/duplicate guard/scope mismatch/partial/latest/SQL rollback/cancel và orchestrator ordering được kiểm thử. I03 core publication đã xong; alias reconciliation/public controller/FE và I05 vẫn unchecked. .NET full suite 187 pass + 1 Linux-only skip.

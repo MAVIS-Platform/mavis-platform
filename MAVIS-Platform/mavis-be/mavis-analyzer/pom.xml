@@ -17,6 +17,7 @@
     </properties>
 
     <dependencies>
+        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>test</scope></dependency>
         <dependency>
             <groupId>com.mavis</groupId>
             <artifactId>worker-java-client</artifactId>
@@ -68,6 +69,11 @@
     </dependencies>
 
     <build>
+        <testResources>
+            <testResource><directory>src/test/resources</directory></testResource>
+            <testResource><directory>../../../MAVIS.Worker/contracts/n01</directory><targetPath>worker-fixtures</targetPath></testResource>
+            <testResource><directory>../mavis-bootstrap/src/main/resources/db/migration</directory><targetPath>worker-migrations</targetPath></testResource>
+        </testResources>
         <!-- Đã xóa spring-boot-maven-plugin -->
         <plugins>
             <plugin>

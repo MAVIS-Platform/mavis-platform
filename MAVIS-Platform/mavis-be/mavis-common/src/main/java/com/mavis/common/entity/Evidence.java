@@ -6,6 +6,9 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "evidences")
@@ -51,6 +54,10 @@ public class Evidence {
 
     @Column(columnDefinition = "TEXT")
     private String excerpt;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "provenance", columnDefinition = "jsonb")
+    private JsonNode provenance;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
