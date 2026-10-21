@@ -5,6 +5,7 @@ $artifactRoot = Join-Path $PSScriptRoot 'artifacts'
 New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 $workerRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $runtime = 'mcr.microsoft.com/dotnet/aspnet@sha256:1601380775673021a23ea5985669f1daf03719faaa684f839da1752fb48cfc7f'
+$runnerRuntime = 'mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac'
 $collector = 'otel/opentelemetry-collector-contrib@sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806'
 
 function Invoke-Checked([string]$Command, [string[]]$Arguments) {
@@ -15,6 +16,7 @@ function Invoke-Checked([string]$Command, [string[]]$Arguments) {
 if ((& docker info --format '{{.OSType}}').Trim() -ne 'linux') { throw 'Docker Linux Engine is required.' }
 Invoke-Checked docker @('pull', $runtime)
 Invoke-Checked docker @('pull', $collector)
+Invoke-Checked docker @('pull', $runnerRuntime)
 foreach ($sample in @('orders','catalog')) {
     $project = if ($sample -eq 'orders') { 'Orders.csproj' } else { 'Catalog.csproj' }
     $directory = Join-Path $PSScriptRoot $sample
@@ -25,7 +27,7 @@ foreach ($sample in @('payment','gateway')) {
     Invoke-Checked docker @('build','--quiet','-t',"mavis-poc-${sample}:1",(Join-Path $PSScriptRoot $sample))
 }
 Invoke-Checked dotnet @('publish',(Join-Path $workerRoot 'src/MAVIS.Runner/MAVIS.Runner.csproj'),'-c','Release','-p:UseAppHost=false','-o',(Join-Path $artifactRoot 'runner-publish'),'--verbosity','minimal')
-Invoke-Checked docker @('build','--quiet','--file',(Join-Path $PSScriptRoot 'Runner.Dockerfile'),'--build-arg',"RUNTIME_IMAGE=$runtime",'-t','mavis-poc-runner:1',$PSScriptRoot)
+Invoke-Checked docker @('build','--quiet','--file',(Join-Path $PSScriptRoot 'Runner.Dockerfile'),'--build-arg',"RUNTIME_IMAGE=$runnerRuntime",'-t','mavis-poc-runner:1',$PSScriptRoot)
 
 $agents = @(
     @{name='dotnet.zip';url='https://github.com/open-telemetry/opentelemetry-dotnet-instrumentation/releases/download/v1.17.0/opentelemetry-dotnet-instrumentation-linux-glibc-x64.zip';sha='cc56878f0155e28b6554924fbd420fcb8bec7108cd9d41836dc530764ac923f8'},
@@ -61,6 +63,6 @@ foreach ($sample in @('orders','payment','catalog','gateway','runner')) {
     if ($LASTEXITCODE -ne 0) { throw 'Missing PoC image.' }
 }
 Invoke-Checked docker @('run','--rm','--network','none','--cap-drop','ALL','--security-opt','no-new-privileges:true','--volume',"$(Join-Path $PSScriptRoot 'collector.yaml'):/etc/collector.yaml:ro",$collector,'validate','--config=/etc/collector.yaml')
-$manifest = @{images=$images;collectorImage=$collector;runtimeImage=$runtime;instrumentationVolume=$volume;dotnetAgent='1.17.0';javaAgent='2.32.0';agentChecksums=$agents | Select-Object name,sha}
+$manifest = @{images=$images;collectorImage=$collector;runtimeImage=$runtime;runnerRuntimeImage=$runnerRuntime;instrumentationVolume=$volume;dotnetAgent='1.17.0';javaAgent='2.32.0';agentChecksums=$agents | Select-Object name,sha}
 [IO.File]::WriteAllText((Join-Path $artifactRoot 'manifest.json'),($manifest|ConvertTo-Json -Depth 8),[Text.UTF8Encoding]::new($false))
 Write-Output 'PoC initialized. Images and agent bundle are reusable profile artifacts, not per-session resources.'

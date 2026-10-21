@@ -4,7 +4,7 @@
 
 ## Reproduce the two sample projects
 
-Use PowerShell 7, a .NET SDK supporting .NET 8, and Docker Desktop with Linux Engine running. Initialization downloads official artifacts, verifies agent SHA-256 values, builds only MAVIS-owned samples and creates a reusable instrumentation volume. It needs internet access and Docker disk space.
+Use PowerShell 7, the pinned .NET SDK 10.0.204 (global.json), and Docker Desktop with Linux Engine running. Initialization downloads official artifacts, verifies agent SHA-256 values, builds only MAVIS-owned samples and creates a reusable instrumentation volume. It needs internet access and Docker disk space.
 
 From `MAVIS.Worker`:
 
@@ -83,3 +83,5 @@ The receipt separates executionStatus, scenarioStatus, evidenceStatus, traceQual
 Java must authenticate/authorize runtime actions, provide verified version/artifact mappings, save the result durably and implement Admin oversight. Generate Diagram is a separate operation on saved evidence; this executable does not generate diagrams or publish model versions.
 
 Instrumentation configuration follows the [official .NET settings](https://opentelemetry.io/docs/zero-code/dotnet/configuration/) and [Java agent setup](https://opentelemetry.io/docs/zero-code/java/agent/getting-started/). Revalidate compatibility when profile settings or versions change.
+
+The Runner now targets .NET 10 and uses its own pinned ASP.NET 10 runtime image. Sample applications remain .NET 8. Existing POC_EVIDENCE.json predates this migration; rerun both samples before accepting the new Runner profile. NuGet lock files are checked with dotnet restore --locked-mode.
