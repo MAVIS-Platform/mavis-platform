@@ -10,9 +10,7 @@ import com.mavis.common.repository.UserRepository;
 import com.mavis.common.repository.WorkspaceMemberRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.utils.SecurityUtils;
-import com.mavis.platform.workspace.dto.WorkspaceCreateRequest;
-import com.mavis.platform.workspace.dto.WorkspaceResponseDTO;
-import com.mavis.platform.workspace.dto.WorkspaceUpdateRequest;
+import com.mavis.platform.workspace.dto.*;
 import com.mavis.platform.workspace.service.WorkspaceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -252,13 +251,175 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .build();
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public WorkspaceMemberResponseDTO addMemberByEmail(UUID workspaceId, AddWorkspaceMemberRequest request) {
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+        Workspace workspace = workspaceRepository.findWithCreatorById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy lớp học"));
+
+        validateLecturerOrCreatorPermission(workspace, currentUserId);
+
+        String email = request.getEmail().trim().toLowerCase();
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy người dùng với email: " + email));
+
+        if (workspaceMemberRepository.existsByWorkspaceIdAndUserId(workspaceId, user.getId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Người dùng đã là thành viên của lớp học này");
+        }
+
+        String role = request.getMemberRole() != null && !request.getMemberRole().isBlank()
+                ? request.getMemberRole().trim().toUpperCase()
+                : "STUDENT";
+        if (!"LECTURER".equals(role) && !"STUDENT".equals(role)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Vai trò chỉ có thể là LECTURER hoặc STUDENT");
+        }
+
+        OffsetDateTime now = OffsetDateTime.now();
+        WorkspaceMember member = WorkspaceMember.builder()
+                .workspace(workspace)
+                .user(user)
+                .memberRole(role)
+                .joinedAt(now)
+                .build();
+        member = workspaceMemberRepository.save(member);
+
+        log.info("Added member {} ({}) to workspace {}", user.getEmail(), role, workspaceId);
+
+        return WorkspaceMemberResponseDTO.builder()
+                .id(member.getId())
+                .workspaceId(workspace.getId())
+                .userId(user.getId())
+                .email(user.getEmail())
+                .fullName(user.getFullName())
+                .globalRole(user.getRole() != null ? user.getRole().getCode() : null)
+                .memberRole(member.getMemberRole())
+                .joinedAt(member.getJoinedAt() != null ? member.getJoinedAt() : now)
+                .build();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public BatchAddMembersResponseDTO batchAddStudents(UUID workspaceId, BatchAddMembersRequest request) {
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+        Workspace workspace = workspaceRepository.findWithCreatorById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy lớp học"));
+
+        validateLecturerOrCreatorPermission(workspace, currentUserId);
+
+        Set<String> cleanEmails = request.getEmails() == null ? Collections.emptySet() :
+                request.getEmails().stream()
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .map(String::toLowerCase)
+                        .filter(e -> !e.isBlank())
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        if (cleanEmails.isEmpty()) {
+            return BatchAddMembersResponseDTO.builder()
+                    .addedCount(0)
+                    .addedEmails(Collections.emptyList())
+                    .alreadyMemberEmails(Collections.emptyList())
+                    .notFoundEmails(Collections.emptyList())
+                    .build();
+        }
+
+        List<User> foundUsers = userRepository.findByEmailIn(cleanEmails);
+        Map<String, User> userByEmail = foundUsers.stream()
+                .collect(Collectors.toMap(u -> u.getEmail().toLowerCase(), u -> u, (a, b) -> a));
+
+        Set<UUID> existingMemberUserIds = workspaceMemberRepository.findMemberUserIdsByWorkspaceId(workspaceId);
+
+        List<String> addedEmails = new ArrayList<>();
+        List<String> alreadyMemberEmails = new ArrayList<>();
+        List<String> notFoundEmails = new ArrayList<>();
+        List<WorkspaceMember> newMembers = new ArrayList<>();
+        OffsetDateTime now = OffsetDateTime.now();
+
+        for (String email : cleanEmails) {
+            User user = userByEmail.get(email);
+            if (user == null) {
+                notFoundEmails.add(email);
+            } else if (existingMemberUserIds.contains(user.getId())) {
+                alreadyMemberEmails.add(email);
+            } else {
+                addedEmails.add(email);
+                newMembers.add(WorkspaceMember.builder()
+                        .workspace(workspace)
+                        .user(user)
+                        .memberRole("STUDENT")
+                        .joinedAt(now)
+                        .build());
+            }
+        }
+
+        if (!newMembers.isEmpty()) {
+            workspaceMemberRepository.saveAll(newMembers);
+        }
+
+        log.info("Batch added {} students to workspace {}", newMembers.size(), workspaceId);
+
+        return BatchAddMembersResponseDTO.builder()
+                .addedCount(addedEmails.size())
+                .addedEmails(addedEmails)
+                .alreadyMemberEmails(alreadyMemberEmails)
+                .notFoundEmails(notFoundEmails)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<WorkspaceMemberResponseDTO> getWorkspaceMembers(UUID workspaceId) {
+        if (!workspaceRepository.existsById(workspaceId)) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy lớp học");
+        }
+
+        List<WorkspaceMember> members = workspaceMemberRepository.findByWorkspaceIdOrderByJoinedAtAsc(workspaceId);
+
+        return members.stream().map(m -> WorkspaceMemberResponseDTO.builder()
+                .id(m.getId())
+                .workspaceId(workspaceId)
+                .userId(m.getUser() != null ? m.getUser().getId() : null)
+                .email(m.getUser() != null ? m.getUser().getEmail() : null)
+                .fullName(m.getUser() != null ? m.getUser().getFullName() : null)
+                .globalRole(m.getUser() != null && m.getUser().getRole() != null ? m.getUser().getRole().getCode() : null)
+                .memberRole(m.getMemberRole())
+                .joinedAt(m.getJoinedAt())
+                .build()
+        ).toList();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void removeMember(UUID workspaceId, UUID userId) {
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+        Workspace workspace = workspaceRepository.findWithCreatorById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy lớp học"));
+
+        validateLecturerOrCreatorPermission(workspace, currentUserId);
+
+        if (workspace.getCreatedBy() != null && workspace.getCreatedBy().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Không thể xóa người tạo khỏi lớp học");
+        }
+
+        WorkspaceMember member = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Thành viên không tồn tại trong lớp học"));
+
+        workspaceMemberRepository.delete(member);
+        log.info("Removed member {} from workspace {}", userId, workspaceId);
+    }
+
     private void validateLecturerOrCreatorPermission(Workspace workspace, UUID currentUserId) {
         boolean isCreator = workspace.getCreatedBy() != null && currentUserId.equals(workspace.getCreatedBy().getId());
+        if (isCreator) {
+            return;
+        }
+
         boolean isLecturer = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspace.getId(), currentUserId)
                 .map(wm -> "LECTURER".equalsIgnoreCase(wm.getMemberRole()))
                 .orElse(false);
 
-        if (!isCreator && !isLecturer) {
+        if (!isLecturer) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Chỉ Giảng viên của lớp mới có quyền chỉnh sửa Workspace");
         }
     }
