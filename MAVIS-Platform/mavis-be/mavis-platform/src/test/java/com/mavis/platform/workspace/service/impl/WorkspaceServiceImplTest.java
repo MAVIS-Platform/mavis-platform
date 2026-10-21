@@ -9,9 +9,8 @@ import com.mavis.common.repository.AssignmentRepository;
 import com.mavis.common.repository.UserRepository;
 import com.mavis.common.repository.WorkspaceMemberRepository;
 import com.mavis.common.repository.WorkspaceRepository;
-import com.mavis.platform.workspace.dto.WorkspaceCreateRequest;
-import com.mavis.platform.workspace.dto.WorkspaceResponseDTO;
-import com.mavis.platform.workspace.dto.WorkspaceUpdateRequest;
+import com.mavis.common.entity.Role;
+import com.mavis.platform.workspace.dto.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -372,5 +371,240 @@ class WorkspaceServiceImplTest {
                 .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.FORBIDDEN);
 
         verify(workspaceRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should add member by email successfully")
+    void shouldAddMemberByEmailSuccessfully() {
+        UUID wsId = UUID.randomUUID();
+        Workspace ws = Workspace.builder()
+                .id(wsId)
+                .code("SWP391")
+                .createdBy(currentUser)
+                .build();
+
+        UUID studentId = UUID.randomUUID();
+        User student = User.builder()
+                .id(studentId)
+                .email("student@fpt.edu.vn")
+                .fullName("Nguyen Van A")
+                .role(Role.builder().code("STUDENT").build())
+                .build();
+
+        AddWorkspaceMemberRequest request = AddWorkspaceMemberRequest.builder()
+                .email("student@fpt.edu.vn")
+                .memberRole("STUDENT")
+                .build();
+
+        when(workspaceRepository.findWithCreatorById(wsId)).thenReturn(Optional.of(ws));
+        when(userRepository.findByEmail("student@fpt.edu.vn")).thenReturn(Optional.of(student));
+        when(workspaceMemberRepository.existsByWorkspaceIdAndUserId(wsId, studentId)).thenReturn(false);
+
+        WorkspaceMember savedMember = WorkspaceMember.builder()
+                .id(UUID.randomUUID())
+                .workspace(ws)
+                .user(student)
+                .memberRole("STUDENT")
+                .joinedAt(java.time.OffsetDateTime.now())
+                .build();
+        when(workspaceMemberRepository.save(any(WorkspaceMember.class))).thenReturn(savedMember);
+
+        WorkspaceMemberResponseDTO response = workspaceService.addMemberByEmail(wsId, request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getEmail()).isEqualTo("student@fpt.edu.vn");
+        assertThat(response.getFullName()).isEqualTo("Nguyen Van A");
+        assertThat(response.getGlobalRole()).isEqualTo("STUDENT");
+        assertThat(response.getMemberRole()).isEqualTo("STUDENT");
+        verify(workspaceMemberRepository).save(any(WorkspaceMember.class));
+    }
+
+    @Test
+    @DisplayName("Should throw NOT_FOUND when adding member with non-existent email")
+    void shouldThrowNotFoundWhenAddingNonExistentUser() {
+        UUID wsId = UUID.randomUUID();
+        Workspace ws = Workspace.builder()
+                .id(wsId)
+                .code("SWP391")
+                .createdBy(currentUser)
+                .build();
+
+        AddWorkspaceMemberRequest request = AddWorkspaceMemberRequest.builder()
+                .email("unknown@fpt.edu.vn")
+                .build();
+
+        when(workspaceRepository.findWithCreatorById(wsId)).thenReturn(Optional.of(ws));
+        when(userRepository.findByEmail("unknown@fpt.edu.vn")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> workspaceService.addMemberByEmail(wsId, request))
+                .isInstanceOf(BusinessException.class)
+                .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.NOT_FOUND);
+
+        verify(workspaceMemberRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should throw BAD_REQUEST when user is already a member of the workspace")
+    void shouldThrowBadRequestWhenUserAlreadyMember() {
+        UUID wsId = UUID.randomUUID();
+        Workspace ws = Workspace.builder()
+                .id(wsId)
+                .code("SWP391")
+                .createdBy(currentUser)
+                .build();
+
+        UUID studentId = UUID.randomUUID();
+        User student = User.builder()
+                .id(studentId)
+                .email("student@fpt.edu.vn")
+                .build();
+
+        AddWorkspaceMemberRequest request = AddWorkspaceMemberRequest.builder()
+                .email("student@fpt.edu.vn")
+                .build();
+
+        when(workspaceRepository.findWithCreatorById(wsId)).thenReturn(Optional.of(ws));
+        when(userRepository.findByEmail("student@fpt.edu.vn")).thenReturn(Optional.of(student));
+        when(workspaceMemberRepository.existsByWorkspaceIdAndUserId(wsId, studentId)).thenReturn(true);
+
+        assertThatThrownBy(() -> workspaceService.addMemberByEmail(wsId, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Người dùng đã là thành viên của lớp học này")
+                .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.BAD_REQUEST);
+
+        verify(workspaceMemberRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should batch add students categorizing into added, alreadyMember, and notFound without loop queries")
+    void shouldBatchAddStudentsSuccessfully() {
+        UUID wsId = UUID.randomUUID();
+        Workspace ws = Workspace.builder()
+                .id(wsId)
+                .code("SWP391")
+                .createdBy(currentUser)
+                .build();
+
+        UUID u1Id = UUID.randomUUID();
+        UUID u2Id = UUID.randomUUID();
+        User u1 = User.builder().id(u1Id).email("student1@fpt.edu.vn").build();
+        User u2 = User.builder().id(u2Id).email("student2@fpt.edu.vn").build();
+
+        BatchAddMembersRequest request = BatchAddMembersRequest.builder()
+                .emails(List.of("student1@fpt.edu.vn", "student2@fpt.edu.vn", "unknown@fpt.edu.vn"))
+                .build();
+
+        when(workspaceRepository.findWithCreatorById(wsId)).thenReturn(Optional.of(ws));
+        when(userRepository.findByEmailIn(anyCollection())).thenReturn(List.of(u1, u2));
+        // student2 is already a member
+        when(workspaceMemberRepository.findMemberUserIdsByWorkspaceId(wsId)).thenReturn(Set.of(u2Id));
+        when(workspaceMemberRepository.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+
+        BatchAddMembersResponseDTO response = workspaceService.batchAddStudents(wsId, request);
+
+        assertThat(response).isNotNull();
+        assertThat(response.getAddedCount()).isEqualTo(1);
+        assertThat(response.getAddedEmails()).containsExactly("student1@fpt.edu.vn");
+        assertThat(response.getAlreadyMemberEmails()).containsExactly("student2@fpt.edu.vn");
+        assertThat(response.getNotFoundEmails()).containsExactly("unknown@fpt.edu.vn");
+
+        verify(workspaceMemberRepository).saveAll(anyList());
+    }
+
+    @Test
+    @DisplayName("Should get all workspace members in one query")
+    void shouldGetWorkspaceMembersSuccessfully() {
+        UUID wsId = UUID.randomUUID();
+        when(workspaceRepository.existsById(wsId)).thenReturn(true);
+
+        User u = User.builder()
+                .id(UUID.randomUUID())
+                .email("student@fpt.edu.vn")
+                .fullName("Student Name")
+                .role(Role.builder().code("STUDENT").build())
+                .build();
+
+        WorkspaceMember member = WorkspaceMember.builder()
+                .id(UUID.randomUUID())
+                .user(u)
+                .memberRole("STUDENT")
+                .joinedAt(java.time.OffsetDateTime.now())
+                .build();
+
+        when(workspaceMemberRepository.findByWorkspaceIdOrderByJoinedAtAsc(wsId)).thenReturn(List.of(member));
+
+        List<WorkspaceMemberResponseDTO> result = workspaceService.getWorkspaceMembers(wsId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getEmail()).isEqualTo("student@fpt.edu.vn");
+        assertThat(result.get(0).getMemberRole()).isEqualTo("STUDENT");
+        assertThat(result.get(0).getGlobalRole()).isEqualTo("STUDENT");
+    }
+
+    @Test
+    @DisplayName("Should remove member from workspace successfully")
+    void shouldRemoveMemberSuccessfully() {
+        UUID wsId = UUID.randomUUID();
+        Workspace ws = Workspace.builder()
+                .id(wsId)
+                .code("SWP391")
+                .createdBy(currentUser)
+                .build();
+
+        UUID studentId = UUID.randomUUID();
+        WorkspaceMember member = WorkspaceMember.builder()
+                .id(UUID.randomUUID())
+                .workspace(ws)
+                .user(User.builder().id(studentId).build())
+                .memberRole("STUDENT")
+                .build();
+
+        when(workspaceRepository.findWithCreatorById(wsId)).thenReturn(Optional.of(ws));
+        when(workspaceMemberRepository.findByWorkspaceIdAndUserId(wsId, studentId)).thenReturn(Optional.of(member));
+
+        workspaceService.removeMember(wsId, studentId);
+
+        verify(workspaceMemberRepository).delete(member);
+    }
+
+    @Test
+    @DisplayName("Should throw BAD_REQUEST when trying to remove workspace creator")
+    void shouldThrowBadRequestWhenRemovingCreator() {
+        UUID wsId = UUID.randomUUID();
+        Workspace ws = Workspace.builder()
+                .id(wsId)
+                .code("SWP391")
+                .createdBy(currentUser)
+                .build();
+
+        when(workspaceRepository.findWithCreatorById(wsId)).thenReturn(Optional.of(ws));
+
+        assertThatThrownBy(() -> workspaceService.removeMember(wsId, currentUserId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Không thể xóa người tạo khỏi lớp học")
+                .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.BAD_REQUEST);
+
+        verify(workspaceMemberRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("Should throw NOT_FOUND when removing non-existing member")
+    void shouldThrowNotFoundWhenRemovingNonExistingMember() {
+        UUID wsId = UUID.randomUUID();
+        Workspace ws = Workspace.builder()
+                .id(wsId)
+                .code("SWP391")
+                .createdBy(currentUser)
+                .build();
+
+        UUID nonMemberId = UUID.randomUUID();
+        when(workspaceRepository.findWithCreatorById(wsId)).thenReturn(Optional.of(ws));
+        when(workspaceMemberRepository.findByWorkspaceIdAndUserId(wsId, nonMemberId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> workspaceService.removeMember(wsId, nonMemberId))
+                .isInstanceOf(BusinessException.class)
+                .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.NOT_FOUND);
+
+        verify(workspaceMemberRepository, never()).delete(any());
     }
 }

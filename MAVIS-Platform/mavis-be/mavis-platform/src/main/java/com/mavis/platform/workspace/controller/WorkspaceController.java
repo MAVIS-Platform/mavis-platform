@@ -1,9 +1,7 @@
 package com.mavis.platform.workspace.controller;
 
 import com.mavis.common.dto.ApiResponse;
-import com.mavis.platform.workspace.dto.WorkspaceCreateRequest;
-import com.mavis.platform.workspace.dto.WorkspaceResponseDTO;
-import com.mavis.platform.workspace.dto.WorkspaceUpdateRequest;
+import com.mavis.platform.workspace.dto.*;
 import com.mavis.platform.workspace.service.WorkspaceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -50,5 +48,30 @@ public class WorkspaceController {
     @Operation(summary = "Lưu trữ lớp học", description = "Đổi trạng thái workspace thành ARCHIVED")
     public ApiResponse<WorkspaceResponseDTO> archiveWorkspace(@PathVariable UUID id) {
         return ApiResponse.success(workspaceService.archiveWorkspace(id));
+    }
+
+    @GetMapping("/{workspaceId}/members")
+    @Operation(summary = "Lấy danh sách thành viên của lớp học", description = "Trả về danh sách tất cả thành viên trong workspace")
+    public ApiResponse<List<WorkspaceMemberResponseDTO>> getWorkspaceMembers(@PathVariable UUID workspaceId) {
+        return ApiResponse.success(workspaceService.getWorkspaceMembers(workspaceId));
+    }
+
+    @PostMapping("/{workspaceId}/members")
+    @Operation(summary = "Thêm thành viên vào lớp học bằng email", description = "Thêm một thành viên mới (LECTURER hoặc STUDENT) vào workspace")
+    public ApiResponse<WorkspaceMemberResponseDTO> addMember(@PathVariable UUID workspaceId, @Valid @RequestBody AddWorkspaceMemberRequest request) {
+        return ApiResponse.success(workspaceService.addMemberByEmail(workspaceId, request));
+    }
+
+    @PostMapping("/{workspaceId}/members/batch")
+    @Operation(summary = "Thêm sinh viên hàng loạt bằng danh sách email", description = "Thêm danh sách sinh viên vào lớp học tối ưu batch không N+1")
+    public ApiResponse<BatchAddMembersResponseDTO> batchAddStudents(@PathVariable UUID workspaceId, @Valid @RequestBody BatchAddMembersRequest request) {
+        return ApiResponse.success(workspaceService.batchAddStudents(workspaceId, request));
+    }
+
+    @DeleteMapping("/{workspaceId}/members/{userId}")
+    @Operation(summary = "Xóa thành viên khỏi lớp học", description = "Xóa một thành viên khỏi workspace (không thể xóa người tạo lớp)")
+    public ApiResponse<Void> removeMember(@PathVariable UUID workspaceId, @PathVariable UUID userId) {
+        workspaceService.removeMember(workspaceId, userId);
+        return ApiResponse.success("Xóa thành viên khỏi lớp học thành công", null);
     }
 }
