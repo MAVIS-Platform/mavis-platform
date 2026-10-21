@@ -12,6 +12,8 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class IngestionResponseDTO {
+    @Builder.Default
+    private boolean analysisRequired = true;
     private UUID projectId;
     private UUID snapshotId;
     private UUID jobId;
