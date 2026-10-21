@@ -10,6 +10,7 @@ import java.util.UUID;
 @Repository
 public interface JobRepository extends JpaRepository<Job, UUID> {
     List<Job> findByProjectId(UUID projectId);
+    List<Job> findByProjectIdOrderByStartedAtDesc(UUID projectId);
     List<Job> findBySourceSnapshotId(UUID sourceSnapshotId);
     List<Job> findByStatus(String status);
 }
