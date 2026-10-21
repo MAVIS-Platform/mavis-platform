@@ -596,3 +596,7 @@ Java 21 targeted reactor test: common 4/4 pass, analyzer 51 pass/1 fail vì thi�
 Đã merge baseline Java ef9f88f vào nhánh Worker sau xác nhận trực tiếp của người dùng; main/nhánh bạn khác không bị sửa. Thêm worker-java-client (Java 21/Jackson) vào Maven reactor: typed producer DTOs, HMAC scope issuer, atomic artifact staging, fingerprint và bounded asynchronous HTTP client/result validator. Không ghi DB hoặc đoán service từ tên.
 
 Verification I01: Java core 8 pass, 1 live-only skip; .NET producer test kiểm chứng đủ 6 shared Unicode/BOM/CRLF cases pass. Export fixture đã sửa ordinal sorting trước nghiệm thu. Live Worker test và Java pipeline chưa được tuyên bố xong ở commit này. Chi tiết: integration/java-client/README.md.
+
+## 26. I02 — Java client ↔ Worker thật
+
+DotnetWorkerClientServiceImpl đã dùng typed scope/client core, không gửi raw extractedSourcePath. Core và client Spring thực đã gọi Worker 1.9 đang chạy thành tiến trình Linux riêng: 15/15 selected tests pass, gồm 2 live calls không mock/không skip. Source artifact mount readonly ở Worker, staging root tách biệt; script scripts/Test-JavaWorkerIntegration.ps1 thu hồi container/network của phiên test. Transport cũ fail-closed. Network client leaf hoàn thành; orchestrator/import/publish integration tiếp tục ở I03, chưa coi toàn pipeline hoàn thành.
