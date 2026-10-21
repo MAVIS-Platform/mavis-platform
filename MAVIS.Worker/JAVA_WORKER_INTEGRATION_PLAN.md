@@ -95,7 +95,7 @@ Giữ contract Worker hiện có làm producer baseline và sửa Java client/ma
 
 - [x] Backend diagram/evidence drawer pin modelVersion, tạo 3 projections lúc publish, không gọi lại Worker. Coordinate-only layout edit không đổi source model/evidence; browser/workspace-policy acceptance còn lại.
 - [x] Backend revision/diff giữ stable logical identity khi đổi display name; key `type + lowercase(name)` trong PDF cần sửa vì rename bị thành add/remove và trùng tên bị đè. Giữ lineage/provenance của evidence cũ.
-- [ ] Chặng 4 trong PDF đề xuất thêm BFS Java, xung đột phân công chi tiết đã dùng cho N07: giữ một .NET impact engine; Java nạp typed service graph/version, gọi Worker, enrich/persist/UI projection. Không tự merge thêm engine Java song song.
+- [x] Backend adapter đã thay BFS Java bằng .NET; chặng 4 trong PDF đề xuất thêm BFS Java, xung đột phân công chi tiết đã dùng cho N07: giữ một .NET impact engine; Java nạp typed service graph/version, gọi Worker, enrich/persist/UI projection. Không tự merge thêm engine Java song song.
 - [ ] Contract impact riêng: Java `SERVICE_HTTP_CALL` cần map sang edge kinds Worker hiện chấp nhận; pin model/graph revisions, loại containment/code/data access khỏi service-impact input theo policy. Runtime không xóa static evidence vì chưa được chạy qua.
 
 ## 6. Thứ tự code ngay sau khi plan được dùng
@@ -117,3 +117,5 @@ I04 API milestone: 37 selected integration tests pass, MVC upload/job/history + 
 I05 diagrams/evidence backend milestone: MVC integration đọc 3 diagrams, cập nhật layout, chặn node ngoài model và non-owner, evidence trả đúng snapshot/provenance; 37 selected tests pass. Revision/diff và impact adapter chưa triển khai ở mốc này.
 
 I05 revision milestone: V4 lineage + atomic controlled revision/copy evidence/diagrams + logical-key diff đã pass targeted API integration, gồm adds/removes/rename/stale/rollback/ownership. UI và final corpus chưa nghiệm thu.
+
+I05 impact milestone: single .NET engine wired through real Java API/DB graph with revision/path evidence validation; 39 selected integration tests pass. UI/runtime context/history/full acceptance vẫn mở.

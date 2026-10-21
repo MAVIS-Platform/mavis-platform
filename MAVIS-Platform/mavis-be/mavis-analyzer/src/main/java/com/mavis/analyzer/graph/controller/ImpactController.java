@@ -23,7 +23,7 @@ public class ImpactController {
     private final GraphService graphService;
 
     @GetMapping
-    @Operation(summary = "Phân tích tác động", description = "Tìm các dịch vụ bị ảnh hưởng nếu một dịch vụ (nodeId) bị sập")
+    @Operation(summary = "Phân tích tác động tiềm năng", description = "Compatibility API: sessionId phải là modelVersionId cụ thể, nodeId là service trong model; sử dụng engine .NET, không tự chọn latest")
     public ApiResponse<List<NodeDTO>> analyzeImpact(@RequestParam UUID sessionId, @RequestParam UUID nodeId) {
         return ApiResponse.success(graphService.analyzeImpact(sessionId, nodeId));
     }

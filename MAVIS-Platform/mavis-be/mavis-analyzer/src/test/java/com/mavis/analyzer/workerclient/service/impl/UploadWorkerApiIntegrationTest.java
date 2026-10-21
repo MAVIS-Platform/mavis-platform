@@ -46,7 +46,7 @@ class UploadWorkerApiIntegrationTest {
     private final ObjectMapper json=new ObjectMapper();
 
     @Configuration @EnableWebMvc @EnableAsync
-    @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class,com.mavis.analyzer.diagram.controller.DiagramController.class,com.mavis.analyzer.model.controller.ModelVersionController.class})
+    @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class,com.mavis.analyzer.diagram.controller.DiagramController.class,com.mavis.analyzer.model.controller.ModelVersionController.class,com.mavis.analyzer.impact.VersionedImpactController.class,com.mavis.analyzer.graph.controller.ImpactController.class})
     static class WebConfig {
         @Bean StorageService storage(org.springframework.core.env.Environment env) {
             var storage=new LocalDiskStorageServiceImpl();ReflectionTestUtils.setField(storage,"uploadDir",env.getRequiredProperty("it.upload-root"));return storage;
@@ -54,6 +54,9 @@ class UploadWorkerApiIntegrationTest {
         @Bean SourceIngestionServiceImpl ingestion(StorageService s,ApplicationEventPublisher e,ProjectRepository p,SourceSnapshotRepository snapshots,JobRepository jobs){return new SourceIngestionServiceImpl(s,e,p,snapshots,jobs);}
         @Bean DotnetWorkerClientService worker(org.springframework.core.env.Environment env){return new DotnetWorkerClientServiceImpl(true,System.getenv("MAVIS_WORKER_TEST_URL"),env.getRequiredProperty("it.service-key"),"test","fixture-only-not-for-production-32-byte-key",env.getRequiredProperty("it.upload-root"),System.getenv("MAVIS_WORKER_TEST_ARTIFACT_ROOT"),Clock.systemUTC());}
         @Bean AnalyzerOrchestratorServiceImpl orchestrator(ProjectRepository p,SourceSnapshotRepository s,JobRepository j,DotnetWorkerClientService w,WorkerModelPublisher publisher){return new AnalyzerOrchestratorServiceImpl(p,s,j,new DockerDetector(new DockerDetectorServiceImpl()),new JavaSourceParser(),w,publisher);}
+        @Bean com.mavis.analyzer.impact.ImpactGraphLoader impactGraphs(ModelVersionRepository m,ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,JobRepository j,ObjectMapper json){return new com.mavis.analyzer.impact.ImpactGraphLoader(m,e,r,v,j,json);}
+        @Bean com.mavis.analyzer.impact.WorkerImpactService impact(com.mavis.analyzer.impact.ImpactGraphLoader g){return new com.mavis.analyzer.impact.WorkerImpactService(g,System.getenv("MAVIS_WORKER_TEST_URL"),"test-service-key");}
+        @Bean com.mavis.analyzer.graph.service.GraphService graphRead(ModelElementRepository e,ModelRelationshipRepository r,ModelVersionRepository m,com.mavis.analyzer.impact.WorkerImpactService impact){return new com.mavis.analyzer.graph.service.impl.GraphServiceImpl(e,r,m,impact);}
         @Bean JobServiceImpl jobs(JobRepository j,ProjectRepository p){return new JobServiceImpl(j,p);}
     }
     private void start(boolean validKey)throws Exception {
@@ -134,6 +137,17 @@ class UploadWorkerApiIntegrationTest {
         String added=json.readTree(addedResponse.getResponse().getContentAsString()).required("data").required("id").asText();
         var addDiff=mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",revised).param("targetVersionId",added)).andExpect(status().isOk()).andReturn();
         var addedData=json.readTree(addDiff.getResponse().getContentAsString()).required("data");assertEquals(2,addedData.required("elements").required("added").size());assertEquals(1,addedData.required("relationships").required("added").size());
+        String orders=db.queryForObject("select id from model_elements where model_version_id=? and name='Orders'",UUID.class,UUID.fromString(added)).toString();
+        var impactResponse=mvc.perform(get("/api/v1/analyzer/models/"+added+"/impact").param("targetServiceId",orders)).andExpect(status().isOk()).andReturn();
+        var impactData=json.readTree(impactResponse.getResponse().getContentAsString()).required("data");var impact=impactData.required("impact");
+        assertEquals(added,impact.required("modelVersionId").asText());assertEquals(1,impact.required("affectedServices").size());
+        var path=impact.required("affectedServices").get(0);assertEquals(1,path.required("distance").asInt());assertEquals("Direct",path.required("classification").asText());assertTrue(path.required("evidenceIds").size()>0);
+        assertEquals("Gateway",impactData.required("serviceNames").required(path.required("serviceId").asText()).asText());
+        mvc.perform(get("/api/v1/analyzer/models/"+added+"/impact").param("targetServiceId",orders).param("graphRevisionId","wrong")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/analyzer/models/"+model+"/impact").param("targetServiceId",orders)).andExpect(status().isBadRequest());
+        var legacyImpact=mvc.perform(get("/api/v1/analyzer/impact").param("sessionId",added).param("nodeId",orders)).andExpect(status().isOk()).andReturn();
+        assertEquals(1,json.readTree(legacyImpact.getResponse().getContentAsString()).required("data").size());
+        mvc.perform(get("/api/v1/analyzer/impact").param("sessionId",project.toString()).param("nodeId",orders)).andExpect(status().isNotFound());
         int versionsBefore=db.queryForObject("select count(*) from model_versions where project_id=?",Integer.class,project);
         var invalid=json.createObjectNode();invalid.putArray("elements").addObject().put("ref","loop").put("operation","ADD").put("kind","COMPONENT").put("name","Loop").put("parentRef","loop");invalid.putArray("relationships");
         mvc.perform(post("/api/v1/analyzer/models/"+added+"/revisions").contentType("application/json").content(invalid.toString())).andExpect(status().isBadRequest());

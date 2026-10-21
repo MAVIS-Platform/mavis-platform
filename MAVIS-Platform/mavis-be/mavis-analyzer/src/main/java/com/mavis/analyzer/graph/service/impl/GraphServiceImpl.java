@@ -36,6 +36,7 @@ public class GraphServiceImpl implements GraphService {
     private final ModelElementRepository modelElementRepository;
     private final ModelRelationshipRepository modelRelationshipRepository;
     private final ModelVersionRepository modelVersionRepository;
+    private final com.mavis.analyzer.impact.WorkerImpactService workerImpact;
 
     @Override
     public GraphDataDTO getGraphDataBySessionId(UUID sessionId) {
@@ -99,63 +100,9 @@ public class GraphServiceImpl implements GraphService {
     }
 
     @Override
-    public List<NodeDTO> analyzeImpact(UUID sessionId, UUID sourceNodeId) {
-        log.info("Analyzing impact for session / modelVersion ID: {} and source element ID: {}", sessionId, sourceNodeId);
-
-        UUID targetModelVersionId = sessionId;
-        if (!modelElementRepository.existsByIdAndModelVersionId(sourceNodeId, targetModelVersionId)) {
-            // Check if sessionId was actually a projectId
-            Optional<ModelVersion> latest = modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(sessionId);
-            if (latest.isPresent() && modelElementRepository.existsByIdAndModelVersionId(sourceNodeId, latest.get().getId())) {
-                targetModelVersionId = latest.get().getId();
-            } else {
-                throw new BusinessException(ErrorCode.NOT_FOUND, "Node không tồn tại trong phiên kiến trúc");
-            }
-        }
-
-        List<ModelRelationship> edges = modelRelationshipRepository.findByModelVersionId(targetModelVersionId);
-
-        // Reverse graph: key = targetElementId, value = list of sourceElementIds (dependents)
-        Map<UUID, List<UUID>> graph = new HashMap<>();
-        for (ModelRelationship edge : edges) {
-            UUID targetId = edge.getTargetElement().getId();
-            UUID sourceId = edge.getSourceElement().getId();
-            graph.computeIfAbsent(targetId, k -> new ArrayList<>()).add(sourceId);
-        }
-
-        Set<UUID> visited = new HashSet<>();
-        Queue<UUID> queue = new LinkedList<>();
-
-        queue.add(sourceNodeId);
-        visited.add(sourceNodeId);
-
-        List<UUID> impactedNodeIds = new ArrayList<>();
-
-        while (!queue.isEmpty()) {
-            UUID current = queue.poll();
-
-            if (!current.equals(sourceNodeId)) {
-                impactedNodeIds.add(current);
-            }
-
-            List<UUID> dependents = graph.getOrDefault(current, new ArrayList<>());
-            for (UUID dependent : dependents) {
-                if (!visited.contains(dependent)) {
-                    visited.add(dependent);
-                    queue.add(dependent);
-                }
-            }
-        }
-
-        List<ModelElement> impactedNodes = modelElementRepository.findAllById(impactedNodeIds);
-
-        return impactedNodes.stream()
-                .map(node -> NodeDTO.builder()
-                        .id(node.getId())
-                        .name(node.getName())
-                        .type(node.getElementType())
-                        .sourcePath(extractSourcePath(node))
-                        .build())
-                .collect(Collectors.toList());
+    public List<NodeDTO> analyzeImpact(UUID modelVersionId, UUID sourceNodeId) {
+        var result=workerImpact.analyze(modelVersionId,sourceNodeId,null,10,1000);
+        return result.impact().affectedServices().stream().map(p->NodeDTO.builder().id(UUID.fromString(p.serviceId()))
+                .name(result.serviceNames().get(p.serviceId())).type("SERVICE_CONTAINER").build()).toList();
     }
 }
