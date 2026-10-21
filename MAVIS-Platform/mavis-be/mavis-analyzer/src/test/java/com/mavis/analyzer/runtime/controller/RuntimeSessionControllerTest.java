@@ -1,9 +1,9 @@
 package com.mavis.analyzer.runtime.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mavis.analyzer.runtime.dto.PreflightCheckResponseDTO;
-import com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest;
-import com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO;
+import com.mavis.analyzer.model.dto.ModelVersionResponseDTO;
+import com.mavis.analyzer.runtime.dto.*;
+import com.mavis.analyzer.runtime.service.OtelTraceCorrelationService;
 import com.mavis.analyzer.runtime.service.RuntimeSessionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,6 +35,9 @@ class RuntimeSessionControllerTest {
 
     @Mock
     private RuntimeSessionService runtimeSessionService;
+
+    @Mock
+    private OtelTraceCorrelationService otelTraceCorrelationService;
 
     @InjectMocks
     private RuntimeSessionController runtimeSessionController;
@@ -160,4 +163,79 @@ class RuntimeSessionControllerTest {
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data[0].id").value(s.getId().toString()));
     }
+
+    @Test
+    @DisplayName("POST /api/v1/analyzer/runtime/sessions/{sessionId}/ingest-traces: Tiếp nhận và đối chiếu vết")
+    void testIngestTraces() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID baseModelVersionId = UUID.randomUUID();
+        UUID enrichedModelVersionId = UUID.randomUUID();
+
+        RuntimeTraceIngestRequestDTO request = RuntimeTraceIngestRequestDTO.builder()
+                .scenarioOutcome("PASSED")
+                .spans(List.of(
+                        OtelSpanDTO.builder()
+                                .traceId("trace-1")
+                                .spanId("span-1")
+                                .serviceName("order-service")
+                                .httpMethod("POST")
+                                .httpUrl("http://order-service/orders")
+                                .httpStatusCode(200)
+                                .build()
+                ))
+                .build();
+
+        ModelVersionResponseDTO responseDTO = ModelVersionResponseDTO.builder()
+                .id(enrichedModelVersionId)
+                .revision(2)
+                .origin("RUNTIME_ENRICHED")
+                .isLatestValid(true)
+                .build();
+
+        when(otelTraceCorrelationService.ingestTraces(eq(sessionId), eq(baseModelVersionId), any(RuntimeTraceIngestRequestDTO.class)))
+                .thenReturn(responseDTO);
+
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-traces", sessionId)
+                        .param("baseModelVersionId", baseModelVersionId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.id").value(enrichedModelVersionId.toString()))
+                .andExpect(jsonPath("$.data.origin").value("RUNTIME_ENRICHED"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/analyzer/runtime/sessions/{sessionId}/sequence: Lấy biểu đồ tuần tự")
+    void testGetSequenceDiagram() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID diagramId = UUID.randomUUID();
+
+        SequenceDiagramResponseDTO responseDTO = SequenceDiagramResponseDTO.builder()
+                .diagramId(diagramId)
+                .runtimeSessionId(sessionId)
+                .notation("UML_SEQUENCE")
+                .level("RUNTIME_PROCESS")
+                .steps(List.of(
+                        SequenceStepDTO.builder()
+                                .stepOrder(1)
+                                .callerService("api-gateway")
+                                .calleeService("order-service")
+                                .httpMethod("POST")
+                                .httpStatusCode(200)
+                                .build()
+                ))
+                .build();
+
+        when(otelTraceCorrelationService.getSequenceDiagramBySession(sessionId)).thenReturn(responseDTO);
+
+        mockMvc.perform(get("/api/v1/analyzer/runtime/sessions/{sessionId}/sequence", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.diagramId").value(diagramId.toString()))
+                .andExpect(jsonPath("$.data.notation").value("UML_SEQUENCE"))
+                .andExpect(jsonPath("$.data.steps[0].callerService").value("api-gateway"));
+    }
 }
+
