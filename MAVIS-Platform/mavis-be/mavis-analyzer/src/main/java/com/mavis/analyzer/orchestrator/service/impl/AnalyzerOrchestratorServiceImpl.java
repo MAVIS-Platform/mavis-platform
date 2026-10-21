@@ -11,6 +11,7 @@ import com.mavis.analyzer.orchestrator.service.AnalyzerOrchestratorService;
 import com.mavis.common.contract.AnalyzeRequestEvent;
 import com.mavis.common.entity.Job;
 import com.mavis.common.entity.ModelElement;
+import com.mavis.common.entity.ModelRelationship;
 import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.SourceSnapshot;
@@ -43,6 +44,7 @@ public class AnalyzerOrchestratorServiceImpl implements AnalyzerOrchestratorServ
     private final DockerDetector dockerDetector;
     private final JavaSourceParser javaSourceParser;
     private final GraphBuilderService graphBuilderService;
+    private final com.mavis.analyzer.diagram.service.DiagramProjectionService diagramProjectionService;
     private final ObjectMapper objectMapper;
 
     @Async
@@ -152,6 +154,15 @@ public class AnalyzerOrchestratorServiceImpl implements AnalyzerOrchestratorServ
 
             graphBuilderService.buildRelationshipsAndEvidences(snapshot, modelVersion, savedElements, evidences);
             log.info("Đã hoàn tất kết nối model relationships và lưu trữ evidences");
+
+            try {
+                List<ModelElement> allElements = modelElementRepository.findByModelVersionId(modelVersion.getId());
+                List<ModelRelationship> allRelationships = modelRelationshipRepository.findByModelVersionId(modelVersion.getId());
+                diagramProjectionService.generateDefaultDiagramsForModel(modelVersion, allElements, allRelationships);
+                log.info("Đã tạo và lưu 3 bản vẽ kiến trúc mặc định cho ModelVersion ID: {}", modelVersion.getId());
+            } catch (Exception e) {
+                log.warn("Lỗi khi sinh bản vẽ mặc định cho ModelVersion ID {}: {}", modelVersion.getId(), e.getMessage());
+            }
 
             finalizeModelVersion(project, modelVersion);
 
