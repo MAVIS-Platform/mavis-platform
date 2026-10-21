@@ -59,3 +59,7 @@ Legacy `/api/analysis` and `/api/jobs/*` are separate transitional contracts; do
 ## HTTP endpoint identity — static profile 1.5
 
 For OutgoingHttp, OutgoingHttpCandidate, HttpClientBaseAddressCandidate and ConfiguredHttpHost, target is lowercase host plus effective port: http://localhost:5001 becomes localhost:5001; https://payments becomes payments:443; http://payments becomes payments:80. IPv6 retains brackets, for example [::1]:5001. User info, path, query and fragment are excluded. This changes the host-only target convention in profile 1.4; consumers must use analyzerVersion when interpreting old results. Finding kind names remain compatible. These values are mapping hints, never confirmed canonical service IDs. No alias resolution or merging of distinct ports is performed.
+
+## Impact path response budget — N07
+
+Optional maxPaths defaults to 1000 and accepts 1..10000. The existing BFS still evaluates the input graph (bounded to 10000 services/50000 edges); the adapter enriches and returns at most maxPaths paths, ordered by distance then ordinal service ID. MAX_PATHS_REACHED and truncated=true indicate omitted services; MAX_DEPTH_REACHED independently indicates the depth boundary. A capped result must never be presented as the complete affected set. RuntimeContext retains compatible observations from the supplied graph and is not restricted to returned paths. This is an output/enrichment budget, not a new traversal engine or Java schema agreement.

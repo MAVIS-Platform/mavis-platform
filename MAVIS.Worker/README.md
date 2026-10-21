@@ -509,3 +509,10 @@ Verification bổ sung N01: locked restore toàn solution đạt; publish Runner
 - [x] Nâng analyzerVersion lên dotnet-static/1.5 và ghi migration contract trong DOTNET_API_V1.md; không thay canonical IDs của Java.
 - [x] Regression CSharp: 46 pass, 1 Linux-only skip; thêm 8 trường hợp về ports/defaults/IPv6 và phân biệt hai dịch vụ localhost.
 - [ ] N02 còn lại: thống nhất alias/config mapping với canonical model Java, kiểm chứng Linux và corpus đa project theo nghiệm thu chung.
+
+## 17. N07 — bounded dependency paths, 21/10/2026
+
+- [x] Thêm maxPaths (mặc định 1000, giới hạn 1..10000), ưu tiên distance rồi service ID; chỉ enrich các path trong budget, reuse BFS hiện có.
+- [x] Truncated/MAX_PATHS_REACHED phản ánh output thiếu; depth limit độc lập. Giữ static graph và runtime-context semantics hiện có.
+- [x] VersionedImpact regression: 12/12 pass, gồm cap boundary, validation, evidence và deterministic order khi đảo input.
+- [ ] N07 tích hợp: Java adapter chuyển typed canonical relationships sang contract Worker, graph/model revision provenance và persistence; Java BFS cũ chưa được chuyển sang Worker.

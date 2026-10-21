@@ -70,4 +70,39 @@ public sealed class VersionedImpactTests
     {
         Assert.Empty(_analyzer.Analyze(Request() with { TargetServiceId = "Other" }).AffectedServices);
     }
+
+    [Fact]
+    public void PathCapPrefersNearestDependenciesAndReportsIncompleteResult()
+    {
+        var result = _analyzer.Analyze(Request() with { MaxPaths = 1 });
+        var path = Assert.Single(result.AffectedServices);
+        Assert.Equal("Order", path.ServiceId);
+        Assert.Equal("Direct", path.Classification);
+        Assert.Equal(new[] { "ev2" }, path.EvidenceIds);
+        Assert.True(result.Truncated);
+        Assert.Contains("MAX_PATHS_REACHED", result.Warnings);
+        Assert.DoesNotContain("MAX_DEPTH_REACHED", result.Warnings);
+    }
+
+    [Fact]
+    public void PathCapUsesStableOrderForEqualDistanceRegardlessOfInputOrder()
+    {
+        var request = new VersionedImpactRequest("m", "m", "g", true, "T", ["Z", "A", "T"],
+            [new("z", "Z", "T", "HttpRestCall", ["zv"]), new("a", "A", "T", "HttpRestCall", ["av"])], MaxPaths: 1);
+        var first = _analyzer.Analyze(request);
+        var reversed = _analyzer.Analyze(request with { Edges = request.Edges.Reverse().ToArray(), ServiceIds = request.ServiceIds.Reverse().ToArray() });
+        Assert.Equal("A", Assert.Single(first.AffectedServices).ServiceId);
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(first), System.Text.Json.JsonSerializer.Serialize(reversed));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(10001)]
+    public void InvalidPathCapsAreRejected(int cap) =>
+        Assert.Throws<SourceInputException>(() => _analyzer.Analyze(Request() with { MaxPaths = cap }));
+
+    [Fact]
+    public void ExactPathCapDoesNotReportTruncation() =>
+        Assert.False(_analyzer.Analyze(Request() with { MaxPaths = 2 }).Truncated);
 }
