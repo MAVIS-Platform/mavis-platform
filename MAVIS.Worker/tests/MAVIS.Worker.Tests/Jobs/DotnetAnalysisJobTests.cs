@@ -76,5 +76,37 @@ public sealed class DotnetAnalysisJobTests : IDisposable
         await service.StopAsync(CancellationToken.None);
     }
 
+    [Fact]
+    public async Task DeadlineExpiredInQueueDoesNotInvokeAnalyzer()
+    {
+        var analyzer = new ControlledAnalyzer(); using var service = Service(analyzer);
+        service.Submit(Request());
+        var expires = DateTimeOffset.UtcNow.AddSeconds(1);
+        service.Submit(Request("late") with { DeadlineUtc = expires });
+        await service.StartAsync(CancellationToken.None);
+        await analyzer.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(expires - DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(100));
+        analyzer.Release.TrySetResult();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        while (service.Get("late")!.CompletedAt is null) await Task.Delay(10, timeout.Token);
+        Assert.Equal("TimedOut", service.Get("late")!.Status);
+        Assert.Equal(1, analyzer.Calls);
+        Assert.Equal("TimedOut", service.Cancel("late")!.Status);
+        await service.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task AbsoluteDeadlineCancelsRunningAttemptWithoutReportingUserCancellation()
+    {
+        var analyzer = new ControlledAnalyzer(); using var service = Service(analyzer);
+        service.Submit(Request() with { DeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(1) });
+        await service.StartAsync(CancellationToken.None);
+        var result = await Terminal(service);
+        Assert.Equal("TimedOut", result.Status);
+        Assert.Null(result.Result);
+        Assert.Equal("Analysis deadline exceeded.", result.Error);
+        await service.StopAsync(CancellationToken.None);
+    }
+
     public void Dispose() => Directory.Delete(_root, recursive: true);
 }

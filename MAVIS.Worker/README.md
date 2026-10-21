@@ -323,7 +323,9 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 ### Nền tảng Worker độc lập
 
 - [x] N01 (phần nền tảng): Worker/Runner/tests target .NET 10, pin SDK 10.0.204 và NuGet lock files; Windows regression 133 pass, 1 Linux-only skip.
-- [ ] N01 còn lại: artifact-scoped input thay raw SourceLocation; contract fixtures thống nhất với Java, xác thực deadline/attempt và nghiệm thu tích hợp.
+- [x] N01 Worker code: signed artifact scope thay raw HTTP SourceLocation, service auth, deadline/attempt, health/readiness, error envelope và build image (mục 19).
+- [x] N01 contract probe: Java 21/Jackson đọc fixture request/result/error, xác minh HMAC và input digest.
+- [ ] N01 nghiệm thu nhóm: Vũ review V02/format grant, Java client/artifact delivery thật và integrated acceptance.
 - [x] N01/N18: Linux .NET 10 compatibility regression đạt 148/148 (SDK 10.0.402; xem mục 18).
 - [ ] N01/N18: tái lập Linux đúng SDK 10.0.204 và chạy lại hai PoC với Runner image mới.
 
@@ -334,7 +336,7 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 - [x] Chung validation giữa API trực tiếp và source-only job.
 - [x] Windows junction bị từ chối 400; deadline 1s trả 408 (~1183ms trên pilot); Linux 68 tests gồm file/root symlink rejection.
 - [ ] Source snapshot delivery khi Java/Worker khác host/container.
-- [x] Analysis input fingerprint và expected digest; service key/loopback guard cho API, legacy tắt mặc định ở Production.
+- [x] Analysis input fingerprint và expected digest; mọi API v1 bắt buộc service key; legacy tắt mặc định mọi environment. HTTP source chỉ qua signed artifact grant.
 - [ ] Xác minh snapshot origin/delivery và authorization theo project qua Java.
 - [ ] Recovery/lease khi restart; queue hiện chỉ nằm trong RAM.
 
@@ -526,3 +528,16 @@ Verification bổ sung N01: locked restore toàn solution đạt; publish Runner
 - Image SDK digest: mcr.microsoft.com/dotnet/sdk@sha256:0d99ebf1ccad15037b5c98c9fe8979d6b8dbac23812feae2277a0b277b5c5ffa. Container read-only, cap-drop ALL/no-new-privileges, 2 CPU/3 GiB; build/cache chỉ trong tmpfs 2 GiB, source mount readonly.
 - Registry không có tag SDK 10.0.204 tại thời điểm kiểm tra; chỉ bản copy global.json trong tmpfs đổi sang 10.0.402. Repository vẫn pin 10.0.204. Đây là compatibility evidence, chưa đạt reproducibility với cùng SDK Linux/Windows.
 - [ ] N18 còn lại: benchmark cold/warm/memory, dependency audit và corpus/threshold nghiệm thu đã thống nhất; Linux regression không thay cho Java integration hoặc tracing PoC mới.
+
+## 19. N01 — scoped internal Worker API, 21/10/2026
+
+- [x] HTTP analyze/jobs nhận schemaVersion + artifactGrant; không bind raw SourceLocation và reject unknown fields. Grant HMAC-SHA256 ràng buộc audience, project/snapshot/job/attempt, artifact ID, expected analysis digest và absolute deadline; hỗ trợ key ID để rotation.
+- [x] Artifact root do operator cấu hình, chỉ map ID hex dưới root; giữ symlink/junction guard, source budgets và read-only analysis. Java chịu trách nhiệm immutable snapshot delivery, ZIP/hash/manifest và cấp grant.
+- [x] Queue tính cả thời gian chờ, deadline execution không refresh; TimedOut khác Cancelled. Idempotency/status/cancel theo jobId + attemptId; Java vẫn giữ durable jobs và publication.
+- [x] Public liveness/readiness tách biệt; mọi v1 API cần service key; error envelope code/traceId nhất quán và không lộ exception/path/secret. Legacy API chỉ bật khi explicit opt-in, kể cả Development.
+- [x] Dockerfile runtime digest .NET 10, non-root UID 1654; script Test-N01Image.ps1 xác minh filesystem/source readonly, auth, scoped analysis và provenance rồi cleanup container.
+- [x] Java 21/Jackson fixture consumer PASS: grant HMAC, claim JSON, analysis input digest, result provenance/evidence và error envelope. Đây là compatibility probe, chưa phải platform Java client.
+
+Hướng dẫn đầy đủ và giới hạn nghiệm thu: [N01.md](N01.md). N01 Worker code hoàn thành; không tick P06/P08 Done hay Java integration chỉ dựa vào standalone tests.
+
+Verification N01 (snapshot index sạch, không gồm local edits cũ): Windows SDK 10.0.204 full suite 163 pass + 1 Linux-only skip; Linux SDK 10.0.402 compatibility full suite 164/164 pass, locked restore đạt. Java 21/Jackson consumer BUILD SUCCESS. Publish Release và image smoke đạt; image ID sha256:9153471c4aa55e4110f2ef797374fa504029e75033e920ff0d58a931e4468bd8. Container chạy UID 1654/read-only root/cap-drop ALL/512 MiB/1 CPU và artifact bind readonly; sau smoke không còn container N01. SDK Linux vẫn có giới hạn tái lập phiên bản như mục 18.

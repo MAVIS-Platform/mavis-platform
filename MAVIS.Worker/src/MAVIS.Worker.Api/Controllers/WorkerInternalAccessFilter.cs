@@ -13,7 +13,7 @@ public sealed class WorkerInternalAccessFilter(IConfiguration configuration, IWe
     {
         var path = context.HttpContext.Request.Path;
         if (path.StartsWithSegments("/api/health")) return;
-        if (!environment.IsDevelopment() && (path.StartsWithSegments("/api/analysis") || path.StartsWithSegments("/api/jobs")) &&
+        if ((path.StartsWithSegments("/api/analysis") || path.StartsWithSegments("/api/jobs")) &&
             !configuration.GetValue<bool>("WorkerAccess:EnableLegacyAnalysis"))
         { context.Result = new NotFoundResult(); return; }
         var key = configuration["WorkerAccess:ApiKey"];
@@ -26,6 +26,8 @@ public sealed class WorkerInternalAccessFilter(IConfiguration configuration, IWe
                 context.Result = new ObjectResult(new ProblemDetails { Status = 401, Title = "Worker service authentication required" }) { StatusCode = 401 };
             return;
         }
+        if (path.StartsWithSegments("/api/v1"))
+        { context.Result = WorkerContractFilter.Failure(401, context.HttpContext); return; }
         var remote = context.HttpContext.Connection.RemoteIpAddress;
         if (remote is null ? !environment.IsDevelopment() : !IPAddress.IsLoopback(remote))
             context.Result = new ObjectResult(new ProblemDetails { Status = 403, Title = "Worker API requires loopback access or a configured service key" }) { StatusCode = 403 };

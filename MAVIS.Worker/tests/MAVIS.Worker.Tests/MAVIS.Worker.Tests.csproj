@@ -23,6 +23,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\..\contracts\n01\*.json" Link="N01Fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\contracts\n01\source\*" Link="N01Fixtures\source\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\MAVIS.Worker.Domain\MAVIS.Worker.Domain.csproj" />
     <ProjectReference Include="..\..\src\MAVIS.Worker.Application\MAVIS.Worker.Application.csproj" />
     <ProjectReference Include="..\..\src\MAVIS.Worker.Infrastructure\MAVIS.Worker.Infrastructure.csproj" />

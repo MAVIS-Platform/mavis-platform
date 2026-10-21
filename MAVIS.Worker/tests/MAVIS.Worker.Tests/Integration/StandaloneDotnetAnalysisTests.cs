@@ -11,7 +11,8 @@ namespace MAVIS.Worker.Tests.Integration;
 
 public sealed class StandaloneDotnetAnalysisTests : IDisposable
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "mavis-standalone-" + Guid.NewGuid().ToString("N"));
+    private readonly string _artifactRoot = Path.Combine(Path.GetTempPath(), "mavis-standalone-" + Guid.NewGuid().ToString("N"));
+    private string _root => Path.Combine(_artifactRoot, ArtifactTestSupport.ArtifactId);
 
     public StandaloneDotnetAnalysisTests()
     {
@@ -28,10 +29,7 @@ public sealed class StandaloneDotnetAnalysisTests : IDisposable
 
     private WebApplicationFactory<Program> CreateFactory(bool allow = true) => new WebApplicationFactory<Program>()
         .WithWebHostBuilder(builder => builder.ConfigureAppConfiguration((_, config) =>
-            config.AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["DotnetAnalysis:AllowedSourceRoots:0"] = allow ? _root : _root + "-other"
-            })));
+            config.AddInMemoryCollection(ArtifactTestSupport.Configuration(allow ? _artifactRoot : _artifactRoot + "-other"))));
 
     private DotnetAnalysisRequest Request(string? source = null) => new("project-1", "snapshot-1", source ?? _root, "job-1");
 
@@ -40,7 +38,8 @@ public sealed class StandaloneDotnetAnalysisTests : IDisposable
     {
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
-        var response = await client.PostAsJsonAsync("/api/v1/dotnet/analyze", Request());
+        ArtifactTestSupport.Authenticate(client);
+        var response = await client.PostAsJsonAsync("/api/v1/dotnet/analyze", await ScopedRequest());
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var json = await response.Content.ReadAsStringAsync();
         Assert.DoesNotContain("SECRET_SENTINEL", json);
@@ -66,7 +65,8 @@ public sealed class StandaloneDotnetAnalysisTests : IDisposable
     {
         using var factory = CreateFactory(false);
         using var client = factory.CreateClient();
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/dotnet/analyze", Request())).StatusCode);
+        ArtifactTestSupport.Authenticate(client);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.PostAsJsonAsync("/api/v1/dotnet/analyze", await ScopedRequest())).StatusCode);
     }
 
     [Theory]
@@ -76,8 +76,9 @@ public sealed class StandaloneDotnetAnalysisTests : IDisposable
     {
         using var factory = CreateFactory();
         using var client = factory.CreateClient();
-        var response = await client.PostAsJsonAsync("/api/v1/dotnet/analyze", Request() with { SchemaVersion = version, JobId = job });
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        ArtifactTestSupport.Authenticate(client);
+        var response = await client.PostAsJsonAsync("/api/v1/dotnet/analyze", (await ScopedRequest(job)) with { SchemaVersion = version });
+        Assert.Equal(job.Length == 0 ? HttpStatusCode.Forbidden : HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -115,9 +116,16 @@ public sealed class StandaloneDotnetAnalysisTests : IDisposable
         await Assert.ThrowsAsync<SourceInputException>(() => analyzer.AnalyzeAsync(Request(_root + "-sibling"), CancellationToken.None));
     }
 
+    private async Task<ScopedDotnetRequest> ScopedRequest(string job = "job-1")
+    {
+        var analyzer = new DotnetProjectAnalyzer(Options.Create(new DotnetAnalysisOptions { AllowedSourceRoots = [_root] }));
+        var digest = (await analyzer.AnalyzeAsync(Request(), CancellationToken.None)).InputDigest!;
+        return ArtifactTestSupport.Sign(new("1.0", "mavis-worker-analysis", "project-1", "snapshot-1", job,
+            "attempt-1", ArtifactTestSupport.ArtifactId, digest, DateTimeOffset.UtcNow.AddMinutes(2)));
+    }
     public void Dispose()
     {
         // Only remove this test's unique, explicitly created directory.
-        Directory.Delete(_root, recursive: true);
+        Directory.Delete(_artifactRoot, recursive: true);
     }
 }

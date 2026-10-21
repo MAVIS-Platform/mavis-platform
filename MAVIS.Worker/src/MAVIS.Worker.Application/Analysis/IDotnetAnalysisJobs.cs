@@ -14,13 +14,13 @@ public static class DotnetRequestValidator
 
 public sealed record DotnetJobView(string JobId, string SourceSnapshotId, string Status,
     DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, DotnetAnalysisResult? Result, string? Error,
-    bool Ephemeral = true);
+    bool Ephemeral = true, string? AttemptId = null);
 
 public interface IDotnetAnalysisJobs
 {
     DotnetJobView Submit(DotnetAnalysisRequest request);
-    DotnetJobView? Get(string jobId);
-    DotnetJobView? Cancel(string jobId);
+    DotnetJobView? Get(string jobId, string? attemptId = null);
+    DotnetJobView? Cancel(string jobId, string? attemptId = null);
 }
 
 public sealed class JobConflictException(string message) : Exception(message);
