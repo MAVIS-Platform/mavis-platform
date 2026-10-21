@@ -19,4 +19,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     @EntityGraph(attributePaths = {"owner", "workspace", "assignment"})
     Optional<Project> findWithDetailsById(UUID id);
+
+    @EntityGraph(attributePaths = {"owner", "workspace", "assignment"})
+    List<Project> findByWorkspaceIdAndStatusNotOrderByCreatedAtDesc(UUID workspaceId, String excludedStatus);
 }
