@@ -23,10 +23,24 @@ public class GlobalExceptionHandler {
      * Bắt lỗi nghiệp vụ tự định nghĩa (BusinessException)
      */
     @ExceptionHandler(BusinessException.class)
-    @ResponseStatus(HttpStatus.BAD_REQUEST)
-    public ApiResponse<Void> handleBusinessException(BusinessException ex) {
+    public org.springframework.http.ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException ex) {
         log.warn("Business Exception: {}", ex.getMessage());
-        return ApiResponse.error(ex.getErrorCode(), ex.getMessage());
+        int code = ex.getErrorCode().getCode();
+        HttpStatus status;
+        if (code == 401) {
+            status = HttpStatus.UNAUTHORIZED;
+        } else if (code == 403) {
+            status = HttpStatus.FORBIDDEN;
+        } else if (code == 404) {
+            status = HttpStatus.NOT_FOUND;
+        } else if (code == 429) {
+            status = HttpStatus.TOO_MANY_REQUESTS;
+        } else if (code >= 500) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        } else {
+            status = HttpStatus.BAD_REQUEST;
+        }
+        return org.springframework.http.ResponseEntity.status(status).body(ApiResponse.error(ex.getErrorCode(), ex.getMessage()));
     }
 
     /**

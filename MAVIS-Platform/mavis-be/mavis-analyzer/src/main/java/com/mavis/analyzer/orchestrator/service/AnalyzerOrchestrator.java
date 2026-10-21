@@ -63,34 +63,49 @@ public class AnalyzerOrchestrator {
 
         Project project = projectOpt.get();
 
-        SourceSnapshot snapshot;
-        try {
-            String hash = calculateFileHash(event.zipFilePath());
-            snapshot = SourceSnapshot.builder()
-                    .project(project)
-                    .sourceType("ZIP_UPLOAD")
-                    .artifactHash(hash)
-                    .storagePath(event.zipFilePath())
-                    .createdBy(project.getOwner())
-                    .build();
-            snapshot = sourceSnapshotRepository.save(snapshot);
-            log.info("Đã tạo SourceSnapshot ID: {} cho Project ID: {}", snapshot.getId(), project.getId());
-        } catch (Exception e) {
-            log.error("Lỗi khi khởi tạo SourceSnapshot cho Project ID: {}", event.projectId(), e);
-            return;
+        SourceSnapshot snapshot = null;
+        if (event.snapshotId() != null) {
+            snapshot = sourceSnapshotRepository.findById(event.snapshotId()).orElse(null);
+        }
+
+        if (snapshot == null) {
+            try {
+                String hash = calculateFileHash(event.zipFilePath());
+                snapshot = SourceSnapshot.builder()
+                        .project(project)
+                        .sourceType("ZIP_UPLOAD")
+                        .artifactHash(hash)
+                        .storagePath(event.zipFilePath())
+                        .createdBy(project.getOwner())
+                        .build();
+                snapshot = sourceSnapshotRepository.save(snapshot);
+                log.info("Đã tạo SourceSnapshot ID: {} cho Project ID: {}", snapshot.getId(), project.getId());
+            } catch (Exception e) {
+                log.error("Lỗi khi khởi tạo SourceSnapshot cho Project ID: {}", event.projectId(), e);
+                return;
+            }
         }
 
         Job job = null;
-        try {
-            job = Job.builder()
-                    .project(project)
-                    .sourceSnapshot(snapshot)
-                    .jobType("STATIC_ANALYSIS")
-                    .status("RUNNING")
-                    .build();
+        if (event.jobId() != null) {
+            job = jobRepository.findById(event.jobId()).orElse(null);
+        }
+
+        if (job != null) {
+            job.setStatus("RUNNING");
             job = jobRepository.save(job);
-        } catch (Exception e) {
-            log.warn("Không thể tạo Job log: {}", e.getMessage());
+        } else {
+            try {
+                job = Job.builder()
+                        .project(project)
+                        .sourceSnapshot(snapshot)
+                        .jobType("STATIC_ANALYSIS")
+                        .status("RUNNING")
+                        .build();
+                job = jobRepository.save(job);
+            } catch (Exception e) {
+                log.warn("Không thể tạo Job log: {}", e.getMessage());
+            }
         }
 
         ModelVersion modelVersion;

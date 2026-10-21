@@ -75,8 +75,8 @@ public class ControllerVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>>
                 log.info("Detected API Endpoint: [{}] {}", httpMethodType, fullEndpointPath);
 
                 if (arg != null) {
-                    Integer lineNumber = n.getBegin().map(p -> p.line).orElse(null);
-                    String rawSnippet = n.toString();
+                    Integer lineNumber = method.getBegin().map(p -> p.line).orElse(null);
+                    String rawSnippet = method.toString();
                     String codeSnippet = rawSnippet.length() > 500 ? rawSnippet.substring(0, 500) : rawSnippet;
 
                     CodeEvidenceDTO evidence = CodeEvidenceDTO.builder()
