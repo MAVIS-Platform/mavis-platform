@@ -47,7 +47,7 @@ public class AnalyzerOrchestratorServiceImpl implements AnalyzerOrchestratorServ
             jobId=job.getId();Instant deadline=Instant.now().plusSeconds(120);
             if(!publisher.begin(jobId,attempt,deadline))return;started=true;executions.register(jobId);
             // Stored snapshot artifact is authoritative; event paths cannot select another source.
-            String extracted=ZipUtils.extract(snapshot.getStoragePath());
+            String extracted=ZipUtils.extract(snapshot.getStoragePath(),snapshot.getArtifactHash());
             var javaFindings=javaParser.parseProject(extracted);
             boolean hasJava=hasJava(Path.of(extracted));
             // Network/staging/validation completes before entering the publication transaction.

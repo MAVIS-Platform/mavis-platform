@@ -673,3 +673,11 @@ Breaking workflow migration và V5 documented trong INTEGRATION_RUNBOOK.md. Requ
 - [x] Bounded recovery scan pending/running/cancelling: redispatch lost pending events/throttle, expired attempts FAILED và reject late publication; không báo cancel-confirmed nếu outcome chưa rõ.
 - [x] 55 selected integration tests pass không skip (core 11 + analyzer 44), gồm 4 DB lifecycle cases, live API/Worker/PostgreSQL, ingestion/owner/job controls/revision/impact.
 - [ ] Renewable heartbeat leases, automatic retry/reconciliation với remote Runner và artifact retention/janitor còn lại. Hiện retry explicit bằng analysis request key mới; không gọi đây là đầy đủ production scheduler.
+
+## 35. Artifact delivery — bounded upload và sealed extraction
+
+- [x] Server sinh tên ZIP độc lập với filename đầu vào; stream/multipart/byte-array giới hạn 100 MiB, temp file được atomic-move sau khi hoàn tất và cleanup khi lỗi/hủy.
+- [x] Orchestrator xác minh raw artifact SHA của snapshot trước extraction. ZIP chặn traversal, symlink paths, duplicate portable names và reserved seal; giới hạn 10k entries, 20 MiB/file, 200 MiB tổng nội dung và độ sâu 32.
+- [x] Extraction được serialize bằng filesystem lock, công bố bằng atomic directory move và seal archive/tree hash. Existing extraction không có seal hoặc bị sửa sẽ bị từ chối; không ghi đè snapshot cũ.
+- [x] 61 selected integration tests pass, không skip (client core 11, common 4, analyzer 46), gồm storage budget/cancellation, ZIP hash/traversal/expansion/tampering và live Java–Worker–PostgreSQL workflows.
+- [ ] Storage quota toàn hệ thống, retention theo policy và dedicated production deployment chưa nghiệm thu. Seal phát hiện thay đổi giữa các lần sử dụng; không thay thế quyền filesystem riêng của artifact store.

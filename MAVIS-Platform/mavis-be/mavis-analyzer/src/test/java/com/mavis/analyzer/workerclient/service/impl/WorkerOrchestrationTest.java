@@ -22,7 +22,7 @@ class WorkerOrchestrationTest {
         var projects=mock(ProjectRepository.class);var snapshots=mock(SourceSnapshotRepository.class);var jobs=mock(JobRepository.class);
         var docker=mock(DockerDetector.class);var parser=mock(JavaSourceParser.class);var worker=mock(DotnetWorkerClientService.class);var publisher=mock(WorkerModelPublisher.class);
         UUID projectId=UUID.randomUUID(),snapshotId=UUID.randomUUID(),jobId=UUID.randomUUID();
-        Project project=Project.builder().id(projectId).build();SourceSnapshot snapshot=SourceSnapshot.builder().id(snapshotId).project(project).storagePath(zip.toString()).build();Job job=Job.builder().id(jobId).project(project).sourceSnapshot(snapshot).build();
+        Project project=Project.builder().id(projectId).build();SourceSnapshot snapshot=SourceSnapshot.builder().id(snapshotId).project(project).storagePath(zip.toString()).artifactHash(com.mavis.common.utils.HashUtils.sha256Hex(zip)).build();Job job=Job.builder().id(jobId).project(project).sourceSnapshot(snapshot).build();
         when(projects.findWithDetailsById(projectId)).thenReturn(Optional.of(project));when(snapshots.findById(snapshotId)).thenReturn(Optional.of(snapshot));when(jobs.findById(jobId)).thenReturn(Optional.of(job));when(publisher.begin(eq(jobId),any(),any())).thenReturn(true);
         when(parser.parseProject(anyString())).thenReturn(List.of());when(docker.detectServices(anyString())).thenReturn(List.of());
         var execution=new DotnetWorkerClientService.Execution(null,WorkerContract.Outcome.failure(WorkerContract.Status.FAILED,"UNAVAILABLE"));when(worker.analyze(eq(projectId),eq(snapshotId),eq(jobId),any(),anyString(),any())).thenReturn(execution);
