@@ -15,7 +15,7 @@ internal sealed class ProjectCompileProfile
     public bool IsExecutable { get; init; }
 
     public static ProjectCompileProfile Create(string root, string project, string content,
-        IReadOnlyList<string> sources, List<AnalysisWarning> warnings, CancellationToken ct)
+        IReadOnlyList<string> sources, List<AnalysisWarning> warnings, CancellationToken ct, IReadOnlyList<string>? projects = null)
     {
         var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
         var directory = Path.GetDirectoryName(project)!;
@@ -98,7 +98,7 @@ internal sealed class ProjectCompileProfile
             {
                 ct.ThrowIfCancellationRequested();
                 var name = Path.GetRelativePath(directory, source).Replace('\\', '/');
-                if (!name.StartsWith("../", StringComparison.Ordinal) &&
+                if ((projects is null || ProjectContextOwnership.Nearest(source, projects).Contains(project)) && !name.StartsWith("../", StringComparison.Ordinal) &&
                     !name.Split('/').Any(s => s.StartsWith('.'))) selected.Add(source);
             }
         }

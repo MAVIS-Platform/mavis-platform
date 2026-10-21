@@ -40,6 +40,7 @@ internal static class ProjectMetadataReader
                     string.IsNullOrWhiteSpace(include) || include.IndexOfAny(['$', '@', '*', '?', ';', '%']) >= 0)
                 {
                     warnings.Add(new("UNRESOLVED_PROJECT_REFERENCE", "Conditional or dynamic project reference was not evaluated.", relative));
+                    Candidate(line, "Unresolved");
                     continue;
                 }
                 AddReference("ProjectReference", include, line);
@@ -58,6 +59,7 @@ internal static class ProjectMetadataReader
             catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
             {
                 warnings.Add(new("UNRESOLVED_PROJECT_REFERENCE", "Invalid reference path.", relative));
+                Candidate(line, "Unresolved");
                 return;
             }
             // Never open a reference. Match only files already discovered within the guarded snapshot.
@@ -66,10 +68,14 @@ internal static class ProjectMetadataReader
             if (known is null)
             {
                 warnings.Add(new("UNRESOLVED_PROJECT_REFERENCE", "Referenced project is missing, excluded or outside the source snapshot.", relative));
+                var snapshot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar;
+                Candidate(line, target.StartsWith(snapshot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ? "Unresolved" : "External");
                 return;
             }
             findings.Add(new(kind, relative, Path.GetRelativePath(root, known).Replace('\\', '/'), null,
-                new(relative, line, line), relative));
+                new(relative, line, line), relative, ResolutionStatus: "SnapshotReference"));
         }
+        void Candidate(int line, string status) => findings.Add(new("ProjectReferenceCandidate", relative, null, null,
+            new(relative, line, line), relative, SemanticProjectInspector.Id(relative, "ProjectReferenceCandidate", line.ToString(System.Globalization.CultureInfo.InvariantCulture)), ResolutionStatus: status));
     }
 }
