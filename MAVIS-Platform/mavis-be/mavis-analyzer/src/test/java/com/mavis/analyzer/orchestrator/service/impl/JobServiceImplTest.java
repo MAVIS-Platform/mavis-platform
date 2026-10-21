@@ -47,11 +47,13 @@ class JobServiceImplTest {
     @BeforeEach
     void setUp() {
         UUID projectId = UUID.randomUUID();
+        org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(projectId.toString(),null,java.util.List.of()));
         UUID snapshotId = UUID.randomUUID();
         UUID jobId = UUID.randomUUID();
 
         sampleProject = Project.builder()
                 .id(projectId)
+                .owner(com.mavis.common.entity.User.builder().id(projectId).build())
                 .name("Order Service")
                 .build();
 
@@ -110,7 +112,7 @@ class JobServiceImplTest {
     @Test
     @DisplayName("getJobsByProjectId - Thành công lấy danh sách tiến trình theo dự án")
     void getJobsByProjectId_Success() {
-        when(projectRepository.existsById(sampleProject.getId())).thenReturn(true);
+        when(projectRepository.findById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
         when(jobRepository.findByProjectIdOrderByStartedAtDesc(sampleProject.getId()))
                 .thenReturn(List.of(sampleJob));
 
@@ -125,10 +127,11 @@ class JobServiceImplTest {
     @DisplayName("getJobsByProjectId - Ném NOT_FOUND khi dự án không tồn tại")
     void getJobsByProjectId_ProjectNotFound_ThrowsException() {
         UUID nonExistentProjectId = UUID.randomUUID();
-        when(projectRepository.existsById(nonExistentProjectId)).thenReturn(false);
+        when(projectRepository.findById(nonExistentProjectId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> jobService.getJobsByProjectId(nonExistentProjectId))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_FOUND);
     }
+    @org.junit.jupiter.api.AfterEach void clearAuth(){org.springframework.security.core.context.SecurityContextHolder.clearContext();}
 }

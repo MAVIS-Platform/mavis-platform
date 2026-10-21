@@ -31,8 +31,9 @@ public class AnalyzerOrchestratorServiceImpl implements AnalyzerOrchestratorServ
     private final JavaSourceParser javaParser;
     private final DotnetWorkerClientService worker;
     private final WorkerModelPublisher publisher;
+    private final AnalysisExecutionRegistry executions;
 
-    @Async @TransactionalEventListener(phase=TransactionPhase.AFTER_COMMIT, fallbackExecution=true) @Override
+    @Async("mavisAnalysisExecutor") @TransactionalEventListener(phase=TransactionPhase.AFTER_COMMIT, fallbackExecution=true) @Override
     public void handleAnalyzeRequest(AnalyzeRequestEvent event) {
         UUID attempt=UUID.randomUUID();UUID jobId=null;boolean started=false;
         try {
@@ -44,7 +45,7 @@ public class AnalyzerOrchestratorServiceImpl implements AnalyzerOrchestratorServ
             Job job=event.jobId()==null?jobs.save(Job.builder().project(project).sourceSnapshot(snapshot).jobType("STATIC_ANALYSIS").status("PENDING").build()):jobs.findById(event.jobId()).orElseThrow();
             if(!job.getProject().getId().equals(project.getId()) || !job.getSourceSnapshot().getId().equals(snapshot.getId()))throw new IllegalArgumentException("Job snapshot mismatch");
             jobId=job.getId();Instant deadline=Instant.now().plusSeconds(120);
-            if(!publisher.begin(jobId,attempt,deadline))return;started=true;
+            if(!publisher.begin(jobId,attempt,deadline))return;started=true;executions.register(jobId);
             // Stored snapshot artifact is authoritative; event paths cannot select another source.
             String extracted=ZipUtils.extract(snapshot.getStoragePath());
             var javaFindings=javaParser.parseProject(extracted);
@@ -53,8 +54,11 @@ public class AnalyzerOrchestratorServiceImpl implements AnalyzerOrchestratorServ
             var execution=worker.analyze(project.getId(),snapshot.getId(),jobId,attempt,extracted,deadline);
             publisher.publish(jobId,attempt,deadline,extracted,docker.detectServices(extracted),javaFindings,hasJava,execution);
         }catch(Exception exception) {
+            Thread.interrupted();
             log.warn("Analysis attempt {} failed; no latest model promotion",attempt);
             if(started && jobId!=null)publisher.fail(jobId,attempt,"ANALYSIS_OR_PUBLICATION_FAILED");
+        }finally{
+            if(started&&jobId!=null){Thread.interrupted();executions.unregister(jobId);publisher.acknowledgeCancellation(jobId,attempt);}
         }
     }
     private boolean hasJava(Path root) throws java.io.IOException {

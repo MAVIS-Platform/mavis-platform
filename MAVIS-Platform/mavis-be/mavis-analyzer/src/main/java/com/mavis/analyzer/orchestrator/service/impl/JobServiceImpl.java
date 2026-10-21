@@ -28,16 +28,14 @@ public class JobServiceImpl implements JobService {
     public JobResponseDTO getJobById(UUID jobId) {
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy tiến trình phân tích với ID: " + jobId));
-
+        owner(job.getProject());
         return toResponseDTO(job);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<JobResponseDTO> getJobsByProjectId(UUID projectId) {
-        if (!projectRepository.existsById(projectId)) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId);
-        }
+        owner(projectRepository.findById(projectId).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND,"Project not found")));
 
         List<Job> jobs = jobRepository.findByProjectIdOrderByStartedAtDesc(projectId);
         return jobs.stream()
@@ -58,4 +56,5 @@ public class JobServiceImpl implements JobService {
                 .completedAt(job.getCompletedAt())
                 .build();
     }
+    private void owner(com.mavis.common.entity.Project project){if(!project.getOwner().getId().equals(com.mavis.common.utils.SecurityUtils.getCurrentUserId()))throw new BusinessException(ErrorCode.FORBIDDEN,"Job access denied");}
 }

@@ -29,6 +29,8 @@ public class WorkerModelPublisher {
     private final ObjectMapper json;
     private final CrossLanguageServiceLinker linker;
     private final com.mavis.analyzer.diagram.service.DiagramProjectionService diagrams;
+    private final AnalysisAttemptRepository attempts;
+    private final com.mavis.analyzer.orchestrator.service.impl.AnalysisExecutionRegistry executions;
 
     @Transactional
     public boolean begin(UUID jobId,UUID attempt,Instant deadline) {
@@ -36,7 +38,8 @@ public class WorkerModelPublisher {
         Job job=jobs.findLockedById(jobId).orElseThrow();
         if(!"PENDING".equals(job.getStatus()))return false;
         job.setStatus("RUNNING");job.setResultManifest(json.createObjectNode().put("attemptId",attempt.toString()).put("deadlineUtc",deadline.toString()));
-        jobs.save(job);return true;
+        jobs.save(job);
+        attempts.save(AnalysisAttempt.builder().id(attempt).job(job).status("RUNNING").ownerInstance(executions.instanceId()).startedAt(OffsetDateTime.now()).deadlineUtc(OffsetDateTime.ofInstant(deadline,java.time.ZoneOffset.UTC)).build());return true;
     }
 
     @Transactional(rollbackFor=Exception.class)
@@ -84,12 +87,15 @@ public class WorkerModelPublisher {
         manifest.put("elementsCount",elements.countByModelVersionId(version.getId())).put("relationshipsCount",relationships.countByModelVersionId(version.getId())).put("evidencesCount",evidence.countByModelVersionId(version.getId()));
         if(!Instant.now().isBefore(deadline))throw new IllegalStateException("Analysis attempt expired during publication");
         job.setResultManifest(manifest);job.setStatus("COMPLETED");job.setCompletedAt(OffsetDateTime.now());jobs.save(job);
+        finishAttempt(attempt,complete||notApplicable?"COMPLETED":"PARTIAL",null);
         return version.getId();
     }
     @Transactional
     public void fail(UUID jobId,UUID attempt,String code) {
         Job job=jobs.findLockedById(jobId).orElseThrow();if(!active(job,attempt))return;
-        job.setStatus("FAILED");job.setErrorDiagnostics(code);job.setCompletedAt(OffsetDateTime.now());jobs.save(job);
+        job.setStatus("FAILED");job.setErrorDiagnostics(code);job.setCompletedAt(OffsetDateTime.now());jobs.save(job);finishAttempt(attempt,"FAILED",code);
     }
+    @Transactional public void acknowledgeCancellation(UUID jobId,UUID attempt){var job=jobs.findLockedById(jobId).orElseThrow();if("CANCELLING".equals(job.getStatus())&&job.getResultManifest()!=null&&attempt.toString().equals(job.getResultManifest().path("attemptId").asText())){job.setStatus("CANCELLED");job.setCompletedAt(OffsetDateTime.now());jobs.save(job);finishAttempt(attempt,"CANCELLED",null);}}
+    private void finishAttempt(UUID id,String status,String code){attempts.findById(id).ifPresent(a->{a.setStatus(status);a.setCompletedAt(OffsetDateTime.now());a.setDiagnosticCode(code);attempts.save(a);});}
     private boolean active(Job job,UUID attempt) {return "RUNNING".equals(job.getStatus()) && job.getResultManifest()!=null && attempt.toString().equals(job.getResultManifest().path("attemptId").asText());}
 }
