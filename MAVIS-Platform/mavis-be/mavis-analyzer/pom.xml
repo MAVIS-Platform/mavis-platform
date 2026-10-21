@@ -17,6 +17,11 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>com.mavis</groupId>
+            <artifactId>worker-java-client</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
         <!-- Gọi sang Common -->
         <dependency>
             <groupId>${project.groupId}</groupId>
