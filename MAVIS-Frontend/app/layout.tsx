@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AppProvider } from "@/providers/app-provider";
+import { readAppConfiguration } from "@/lib/api/config";
 import "../src/styles.css";
 
 // Runs before paint; keep the storage key and validation aligned with ThemeProvider.
@@ -12,15 +14,28 @@ export const metadata: Metadata = {
   authors: [{ name: "MAVIS" }],
 };
 
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const configuration = readAppConfiguration(process.env);
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="preload" href="/fonts/inter/InterVariable.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link
+          rel="preload"
+          href="/fonts/inter/InterVariable.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
         <script dangerouslySetInnerHTML={{ __html: appearanceBootstrap }} />
       </head>
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <AppProvider mode={configuration.mode} mockScenario={configuration.mockScenario}>
+            {children}
+          </AppProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
