@@ -44,19 +44,20 @@ public class ProjectServiceImpl implements ProjectService {
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(
                         ErrorCode.NOT_FOUND,
-                        "Không tìm thấy người dùng hiện tại"
-                ));
+                        "Không tìm thấy người dùng hiện tại"));
 
         Workspace workspace = null;
         if (request.getWorkspaceId() != null) {
             workspace = workspaceRepository.findById(request.getWorkspaceId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy Workspace với ID: " + request.getWorkspaceId()));
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                            "Không tìm thấy Workspace với ID: " + request.getWorkspaceId()));
         }
 
         Assignment assignment = null;
         if (request.getAssignmentId() != null) {
             assignment = assignmentRepository.findById(request.getAssignmentId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy Assignment với ID: " + request.getAssignmentId()));
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                            "Không tìm thấy Assignment với ID: " + request.getAssignmentId()));
         }
 
         String projectType = request.getProjectType();
