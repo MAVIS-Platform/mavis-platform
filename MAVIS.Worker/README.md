@@ -571,3 +571,5 @@ N03 full Windows regression: 170 pass + 1 Linux-only skip (171 tests), golden fi
 - [ ] N04 nghiệm thu nhóm: Triết nối alias endpoint vào canonical service mapping; runtime/Java merger không nằm trong outgoing resolver độc lập.
 
 N04 verification: 8 outgoing/Refit resolver fixtures pass; full Windows suite 178 pass + 1 Linux-only skip (179 tests), golden response drift check đạt. Analyzer version 1.8.
+
+N04 follow-up: conditional guard bên ngoài AddHttpClient (if/loop/switch) cũng giữ unresolved, không chỉ if trong lambda. 9/9 HTTP profile tests pass. Commit riêng trước khi chốt N05.
