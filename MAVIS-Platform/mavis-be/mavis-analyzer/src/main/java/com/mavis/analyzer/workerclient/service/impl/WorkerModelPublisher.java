@@ -27,6 +27,7 @@ public class WorkerModelPublisher {
     private final GraphBuilderService graph;
     private final WorkerCanonicalImporter importer;
     private final ObjectMapper json;
+    private final CrossLanguageServiceLinker linker;
 
     @Transactional
     public boolean begin(UUID jobId,UUID attempt,Instant deadline) {
@@ -39,7 +40,7 @@ public class WorkerModelPublisher {
 
     @Transactional(rollbackFor=Exception.class)
     public UUID publish(UUID jobId,UUID attempt,Instant deadline,String source,List<String> services,List<CodeEvidenceDTO> javaFindings,
-                        boolean hasJava,DotnetWorkerClientService.Execution execution) {
+                        boolean hasJava,DotnetWorkerClientService.Execution execution) throws java.io.IOException {
         Job job=jobs.findLockedById(jobId).orElseThrow();
         if(!active(job,attempt))throw new IllegalStateException("Stale or cancelled analysis attempt");
         if(job.getResultManifest().path("deadlineUtc").asText().isEmpty() || !deadline.equals(Instant.parse(job.getResultManifest().path("deadlineUtc").asText())))
@@ -73,6 +74,8 @@ public class WorkerModelPublisher {
             graph.buildRelationshipsAndEvidences(job.getSourceSnapshot(),version,saved,javaFindings);
         }
         if(complete)importer.importResult(version,outcome.result());
+        var mapping=linker.link(version,source,complete?outcome.result():null,javaFindings);
+        manifest.set("serviceMapping",json.valueToTree(mapping));
         // Missing C# in mixed input may retain a partial draft, never replace the latest complete model.
         if(complete||notApplicable) {versions.invalidatePreviousVersions(project.getId(),version.getId());version.setIsLatestValid(true);versions.save(version);}
         manifest.put("modelVersionId",version.getId().toString()).put("promotedLatest",complete||notApplicable);

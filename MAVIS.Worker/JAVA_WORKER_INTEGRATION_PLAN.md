@@ -76,7 +76,7 @@ Giữ contract Worker hiện có làm producer baseline và sửa Java client/ma
 ### I03 — Canonical import và publish
 
 - [x] Tách canonical mapper/validator khỏi GraphBuilder batching và network I/O.
-- [ ] Identity/parent bằng scoped IDs và import giữ candidate/coverage đã có; service-alias ownership/mapping host/port xuyên ngôn ngữ còn cần hoàn thiện.
+- [x] Scoped IDs/module parent + explicit snapshot bindings cho source ownership và endpoint host/port; import giữ candidate/coverage. Mapping config-bound không tự thành runtime-confirmed.
 - [x] Save elements, relations, evidence và ID mapping trong transaction publish; guarded job/attempt/provenance, V3 JSONB evidence metadata và rollback checks.
 - [ ] ResultManifest lưu adapter outcomes, warnings/coverage, versions/digests và attempt; chỉ promote latest khi đạt policy completeness. Không làm mất bản thành công trước đó khi attempt lỗi.
 - Gate: snapshot → Java job → Worker → DB model/evidence → reload đúng provenance, chạy lại không duplicate, response muộn không ghi vào model khác.
@@ -86,7 +86,7 @@ Giữ contract Worker hiện có làm producer baseline và sửa Java client/ma
 - [ ] Java-only: Worker NOT_APPLICABLE, không gọi mạng; Java vẫn thành công.
 - [ ] C#-only + Worker tắt/timeout/rejected: attempt lỗi rõ ràng, không COMPLETED với model rỗng.
 - [ ] Mixed + Worker lỗi: Java findings có thể giữ theo policy PARTIAL, nhưng C# adapter outcome/coverage hiển thị thiếu; không báo đầy đủ hay tự ghi đè latest complete model.
-- [ ] Java → C#, C# → Java, C# → DB, duplicate class names khác service/project, hai localhost ports, unresolved destination và evidence nhiều nguồn.
+- [ ] Java → C# và C# → Java với explicit bindings/localhost ports/evidence đã pass; duplicate alias/service + absent mapping có tests. Corpus chung/C# DB xuyên stack/duplicate class fixtures còn cần mở rộng.
 - [ ] Cancel/late response/retry/new attempt, hash mismatch, malformed result, unknown types, orphan evidence và publish rollback.
 - [ ] Đưa dataset thiếu vào test resources/fixture mechanism tái lập; không hardcode đường dẫn máy tác giả.
 - Gate: test integration dùng Java client thật + Worker thật + DB fixture; unit mock chỉ là một lớp kiểm tra.
@@ -109,3 +109,5 @@ I02 verification: Java 21 reactor selected tests 15/15 pass trên Worker Linux t
 I03 implementation: WorkerModelPublisher quản lý begin/publish/fail, job+project lock, pinned attempt/deadline; WorkerCanonicalImporter giữ logical IDs/candidate status và evidence provenance; orchestrator gọi network trước publish. Public upload/FE, service alias reconciliation và durable leases/restart recovery chưa được nghiệm thu.
 
 I03 verification 21/10: 29/29 selected Java tests pass trên real Worker + PostgreSQL, V1/V2/V3 được apply, source hashes/provenance reload/duplicate guard/scope mismatch/partial/latest/SQL rollback/cancel và orchestrator ordering được kiểm thử. I03 core publication đã xong; alias reconciliation/public controller/FE và I05 vẫn unchecked. .NET full suite 187 pass + 1 Linux-only skip.
+
+I03–I04 explicit binding verification: 33 selected tests pass (9 client core + 24 analyzer), không skip, real Worker/PostgreSQL. Giữ nguyên raw candidate graph, thêm CONFIG_BOUND service projections có binding SHA/evidence; chưa thay thế Java legacy graph matching hoặc nghiệm thu frontend.
