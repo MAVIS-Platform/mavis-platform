@@ -205,7 +205,7 @@ Worker có thể phát triển với contract fixtures khi Java chưa chạy. C�
 
 ## 7. Build và chạy baseline
 
-Chạy từ thư mục MAVIS.Worker. Cần SDK hỗ trợ target .NET 8. Lệnh dùng project trực tiếp để không phụ thuộc CLI hỗ trợ solution .slnx:
+Chạy từ thư mục MAVIS.Worker. Cần đúng SDK 10.0.204 theo global.json; Worker/Runner target .NET 10. Các ứng dụng PoC vẫn target .NET 8. Lệnh dùng project trực tiếp để không phụ thuộc CLI hỗ trợ solution .slnx:
 
 ```powershell
 dotnet build src/MAVIS.Worker.Api/MAVIS.Worker.Api.csproj
@@ -321,6 +321,10 @@ Tiếp theo: chuẩn hóa project compile-item profile và ownership, mở rộn
 Đây là bảng tiến độ tổng hợp hiện hành; mục 5 giữ kế hoạch và tiêu chí nghiệm thu, mục 8–10 giữ lịch sử. `[x]` chỉ nghĩa là phạm vi được ghi đã có code và verification, không có nghĩa toàn bộ mốc hoặc tích hợp đã hoàn thành. Cập nhật lần cuối: 20/10/2026, Windows: 133 pass, 1 Linux-only skip; Linux: 68 profile tests pass.
 
 ### Nền tảng Worker độc lập
+
+- [x] N01 (phần nền tảng): Worker/Runner/tests target .NET 10, pin SDK 10.0.204 và NuGet lock files; Windows regression 133 pass, 1 Linux-only skip.
+- [ ] N01 còn lại: artifact-scoped input thay raw SourceLocation; contract fixtures thống nhất với Java, xác thực deadline/attempt và nghiệm thu tích hợp.
+- [ ] N01/N18: chạy regression Linux trên .NET 10 và chạy lại hai PoC với Runner image mới.
 
 - [x] API phân tích source C# không cần Java findings.
 - [x] Snapshot/job correlation, evidence file/dòng, coverage và warnings.
@@ -486,3 +490,15 @@ Hoàn thiện core độc lập trong các profile được mô tả ở đầu 
 Phần còn phụ thuộc nhóm: Java source/artifact delivery, canonical IDs/contracts, durable jobs/results, model publication, runtime API/Admin control/secret store, UI diagrams/evidence và production isolation/SRS acceptance. Phần ngoài static/runtime profiles hiện tại vẫn để unchecked; không tự mở rộng tuyên bố hỗ trợ.
 
 Verification bổ sung ở mốc 14: Windows Worker API thật chặn junction (400), stress source deadline 1s trả 408 sau khoảng 1183ms. Linux SDK8 container đọc source readonly chạy 68 profile tests pass, gồm symlink file/root. Windows full suite 133 pass + 1 Linux-only skip. Đây là pilot verification, không thay SRS performance/accuracy acceptance.
+
+## 15. N01 — .NET 10 foundation, 21/10/2026
+
+Căn cứ mới: phân chia nhiệm vụ chi tiết.docx v2.0 trong .doc_review/main. Java giữ durable jobs/artifacts/persistence; .NET giữ analyzer, một impact engine và Runner. Main Java 7b22e63 đã được đối chiếu, chưa merge vào nhánh Worker.
+
+- Sáu project Worker/Runner/tests target net10.0; Microsoft Extensions và MVC Test Host chuyển 10.0.0. Roslyn 4.10 giữ nguyên profile cú pháp hiện có, chưa tuyên bố hỗ trợ C# 14.
+- global.json khóa SDK 10.0.204, rollForward disable. Directory.Build.props sinh packages.lock.json; CI bật ContinuousIntegrationBuild sẽ yêu cầu locked restore. Chủ động nâng phiên bản bằng restore --force-evaluate và review lock diff.
+- Runner container dùng ASP.NET 10 image digest riêng; sample orders/catalog và OTel profile .NET 8 giữ phiên bản đã kiểm chứng. POC_EVIDENCE.json vẫn là bằng chứng cũ ngày 20/10, không đại diện Runner .NET 10.
+- Semantic analysis vẫn dùng host runtime references (nay .NET 10), chỉ phát resolved symbols và warnings; chưa phải reference-pack binding theo TFM của source. Không coi kết quả này là build validation cho source net8/net10.
+- Verification: Windows full suite 133 pass, 1 Linux-only skip. Artifact scope, canonical fixtures/enum mapping, durable dispatch và signed runtime envelope vẫn chưa hoàn thành.
+
+Verification bổ sung N01: locked restore toàn solution đạt; publish Runner Release đạt; Docker image net10 khởi động và thực thi preflight thành công với network none/read-only/cap-drop ALL. Đây là Linux CLI smoke, chưa phải Linux full regression hay chạy lại runtime tracing PoC. Theo hướng dẫn Microsoft, SDK được pin chính xác khi dùng lock file: https://learn.microsoft.com/dotnet/core/tools/global-json .
