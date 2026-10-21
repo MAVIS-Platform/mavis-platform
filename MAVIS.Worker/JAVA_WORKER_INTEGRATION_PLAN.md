@@ -1,6 +1,6 @@
 # Java chặng 3 ↔ C# Worker: kế hoạch tích hợp
 
-Ngày đối chiếu: 21/10/2026. Đây là kế hoạch có sổ tiến độ. I01 client core/fixtures đã triển khai; các gate pipeline/live/DB tiếp tục được cập nhật bên dưới.
+Ngày đối chiếu: 21/10/2026. Đây là kế hoạch có sổ tiến độ. I01 client core/fixtures và I02 live Java client đã triển khai; các gate pipeline/live/DB tiếp tục được cập nhật bên dưới.
 
 ## 1. Baseline đã kiểm tra
 
@@ -103,3 +103,5 @@ Giữ contract Worker hiện có làm producer baseline và sửa Java client/ma
 Làm I01 rồi I02 trước. Tận dụng client/fallback/batch-save đã có ở `ef9f88f`, thay seam DTO/transport và canonical mapping thay vì viết lại Java analyzer. Worker sửa phần producer/fixtures trên `feat/worker-standalone-analysis`; Java owner sửa nhánh Java. User tự merge, không tự merge main hay sửa nhánh bạn khác.
 
 Chưa cần triển khai thêm Runner/runtime để giải quyết task 3.1. Runtime tách thành lát cắt sau khi static interoperability đã đạt.
+
+I02 verification: Java 21 reactor selected tests 15/15 pass trên Worker Linux thật, không skip. Producer publish từ HEAD sạch không có local Program.cs edits cũ. Java pipeline publication vẫn chưa hoàn thành ở mốc client leaf này; xem I03 tiếp theo.
