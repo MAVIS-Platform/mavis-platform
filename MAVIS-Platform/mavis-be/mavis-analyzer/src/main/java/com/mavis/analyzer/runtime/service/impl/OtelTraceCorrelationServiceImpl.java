@@ -14,6 +14,7 @@ import com.mavis.common.entity.*;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.*;
+import com.mavis.common.security.AccessPolicyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,7 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
     private final EvidenceRepository evidenceRepository;
     private final DiagramVersionRepository diagramVersionRepository;
     private final ObjectMapper objectMapper;
+    private final AccessPolicyService accessPolicyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -46,6 +48,8 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
 
         ModelVersion baseVersion = modelVersionRepository.findById(baseModelVersionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên bản mô hình gốc với ID: " + baseModelVersionId));
+
+        accessPolicyService.requireProjectWriteAccess(session.getProject());
 
         List<OtelSpanDTO> rawSpans = (request != null && request.getSpans() != null)
                 ? request.getSpans()
@@ -322,6 +326,8 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         }
 
         ModelVersion mv = mvOpt.get();
+        accessPolicyService.requireProjectReadAccess(mv.getProject());
+
         List<DiagramVersion> diagrams = diagramVersionRepository.findByModelVersionIdAndNotation(mv.getId(), "UML_SEQUENCE");
         if (diagrams.isEmpty()) {
             throw new BusinessException(ErrorCode.NOT_FOUND,
