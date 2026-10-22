@@ -45,6 +45,9 @@ class ArchitectureEvaluationServiceImplTest {
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
+    @Mock
+    private com.mavis.common.security.AccessPolicyService accessPolicy;
+
     @InjectMocks
     private ArchitectureEvaluationServiceImpl evaluationService;
 

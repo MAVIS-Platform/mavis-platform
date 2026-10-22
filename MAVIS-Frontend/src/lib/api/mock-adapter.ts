@@ -294,6 +294,7 @@ export class MockAdapter implements ApiAdapter {
         return this.advanceJob(
           this.find(this.jobs, (j) => j.id === contracts.analysisJob.input.parse(raw).jobId),
         );
+      case "modelVersions":
       case "models":
         return this.scenario === "empty"
           ? []

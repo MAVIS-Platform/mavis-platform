@@ -12,13 +12,6 @@ import { FlowFrame } from "@/components/mainflow/shell";
 import { ModelFlow } from "@/components/mainflow/model-flow";
 import type { ArchitecturalModel } from "@/types/domain";
 export default function ImpactPage() {
-  const api = useApi();
-  if (api.mode === "backend")
-    return (
-      <FlowFrame title="Change Impact">
-        <ModelFlow mode="impact" />
-      </FlowFrame>
-    );
   return (
     <AppShell>
       <ImpactWorkspace />
@@ -52,7 +45,12 @@ function ImpactWorkspace() {
   );
 }
 function ImpactResults({ model }: { model: ArchitecturalModel }) {
-  const [targetId, setTargetId] = useState(model.elements[0]?.id ?? "");
+  const api = useApi();
+  const targets =
+    api.mode === "backend"
+      ? model.elements.filter((e) => e.elementType === "SERVICE_CONTAINER")
+      : model.elements;
+  const [targetId, setTargetId] = useState(targets[0]?.id ?? "");
   const query = useApiQuery(
     "impact",
     { modelId: model.id, targetId },
@@ -64,13 +62,18 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
         label="Change target"
         value={targetId}
         onChange={setTargetId}
-        options={model.elements.map((e) => ({ value: e.id, label: e.name }))}
+        options={targets.map((e) => ({ value: e.id, label: e.name }))}
       />
       {targetId && (
-        <RequestState query={query} empty={!query.data?.paths.length}>
+        <RequestState query={query}>
           {query.data && (
             <>
               <p className="text-sm text-muted-foreground">{query.data.limitations}</p>
+              {!query.data.paths.length && (
+                <p className="text-sm">
+                  No affected service found under the confirmed-edge policy.
+                </p>
+              )}
               <DependencyPathViewer paths={query.data.paths} />
             </>
           )}

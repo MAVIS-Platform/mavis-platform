@@ -1,7 +1,7 @@
 import type { ArchitecturalModel } from "@/types/domain";
 export const NODE_WIDTH = 168;
 export const NODE_HEIGHT = 62;
-const layers = ["edge", "domain", "platform", "data"] as const;
+const layers = ["edge", "domain", "platform", "data", "unclassified"] as const;
 export function layoutGraph(model: ArchitecturalModel) {
   const counts = new Map<string, number>();
   return model.elements.map((element) => {

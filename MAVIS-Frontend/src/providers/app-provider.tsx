@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { Suspense, useState, type ReactNode } from "react";
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Toaster } from "@/components/ui/sonner";
 import { BackendAdapter } from "@/lib/api/backend-adapter";
 import { MockAdapter, type MockScenario } from "@/lib/api/mock-adapter";
@@ -45,16 +46,43 @@ export function AppProvider({
     });
     return queryClient;
   });
-  const [projectId, setProjectId] = useState(mode === "mock" ? "sample-checkout" : "");
-  const [workspaceId, setWorkspaceId] = useState(mode === "mock" ? "workspace-1" : "");
+
   return (
     <ApiContext.Provider value={api}>
       <QueryClientProvider client={client}>
-        <SelectionContext.Provider value={{ projectId, setProjectId, workspaceId, setWorkspaceId }}>
-          {children}
-          <Toaster />
-        </SelectionContext.Provider>
+        <Suspense fallback={<p className="p-8">Loading workspace…</p>}>
+          <UrlSelection mode={mode}>{children}</UrlSelection>
+        </Suspense>
+        <Toaster />
       </QueryClientProvider>
     </ApiContext.Provider>
+  );
+}
+
+function UrlSelection({ mode, children }: { mode: "mock" | "backend"; children: ReactNode }) {
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const projectId = params.get("project") ?? (mode === "mock" ? "sample-checkout" : "");
+  const workspaceId = params.get("workspace") ?? (mode === "mock" ? "workspace-1" : "");
+  function select(kind: "project" | "workspace", value: string) {
+    const next = new URLSearchParams(params.toString());
+    for (const key of ["model", "snapshot", "job", "target", "kind"]) next.delete(key);
+    if (kind === "workspace") next.delete("project");
+    if (value) next.set(kind, value);
+    else next.delete(kind);
+    router.replace(`${pathname}?${next}`);
+  }
+  return (
+    <SelectionContext.Provider
+      value={{
+        projectId,
+        workspaceId,
+        setProjectId: (value) => select("project", value),
+        setWorkspaceId: (value) => select("workspace", value),
+      }}
+    >
+      {children}
+    </SelectionContext.Provider>
   );
 }

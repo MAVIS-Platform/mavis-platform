@@ -339,55 +339,20 @@ test("backend propagates cancellation, timeout, and real multipart archives", as
   });
   assert.equal((await api.execute("importSource", upload)).id, "source-2");
 });
-test("server proxy requires configured operations, checks write origin, and strips untrusted response fields", async (t) => {
-  env(t, {
-    MAVIS_API_MODE: "backend",
-    MAVIS_BACKEND_URL: "https://backend.invalid",
-    MAVIS_API_OPERATIONS: "{}",
-    MAVIS_SESSION_COOKIES: "session",
+test("server proxy uses Java bearer auth, rejects cross-origin writes and strips session secrets", async (t) => {
+  env(t, { MAVIS_API_MODE:"backend", MAVIS_JAVA_URL:"https://backend.invalid" });
+  const context=operation=>({params:Promise.resolve({operation})});
+  const read=operation=>new NextRequest(`http://localhost:3092/api/mavis/${operation}?input=%7B%7D`);
+  assert.equal((await route.GET(read("projects"),context("projects"))).status,401);
+  assert.equal((await route.POST(new NextRequest("http://localhost:3092/api/mavis/signOut",{method:"POST",headers:{host:"localhost:3092",origin:"https://other.invalid"},body:"{}"}),context("signOut"))).status,403);
+  t.mock.method(globalThis,"fetch",async(url,options)=>{
+    assert.equal(url,"https://backend.invalid/api/v1/auth/me");assert.equal(options.headers.get("Authorization"),"Bearer opaque");assert.equal(options.headers.has("Cookie"),false);
+    return Response.json({code:200,data:{id:"11111111-1111-4111-8111-111111111111",fullName:"User",role:"STUDENT",passwordHash:"must-be-stripped",token:"must-be-stripped"}});
   });
-  const context = (operation) => ({ params: Promise.resolve({ operation }) });
-  const read = (operation) =>
-    new NextRequest(`http://localhost:3092/api/mavis/${operation}?input=%7B%7D`);
-  assert.equal((await route.GET(read("projects"), context("projects"))).status, 501);
-  assert.equal(
-    (
-      await route.POST(
-        new NextRequest("http://localhost:3092/api/mavis/signOut", {
-          method: "POST",
-          headers: { origin: "https://other.invalid" },
-          body: "{}",
-        }),
-        context("signOut"),
-      )
-    ).status,
-    403,
-  );
-  process.env.MAVIS_API_OPERATIONS = JSON.stringify({
-    session: { path: "/session", method: "GET" },
-  });
-  t.mock.method(globalThis, "fetch", async (url, options) => {
-    assert.equal(url.origin, "https://backend.invalid");
-    assert.equal(options.headers.Cookie, "session=opaque");
-    return Response.json({
-      user: { id: "u1", name: "User", role: "student", accessToken: "must-be-stripped" },
-      internal: "must-be-stripped",
-    });
-  });
-  const response = await route.GET(
-    new NextRequest("http://localhost:3092/api/mavis/session", {
-      headers: { cookie: "session=opaque; unrelated=private" },
-    }),
-    context("session"),
-  );
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { user: { id: "u1", name: "User", role: "student" } });
-  assert.equal(response.headers.get("cache-control"), "no-store");
-  process.env.MAVIS_API_OPERATIONS = JSON.stringify({
-    session: { path: "//untrusted.invalid", method: "GET" },
-  });
-  assert.equal((await route.GET(read("session"), context("session"))).status, 501);
+  const response=await route.GET(new NextRequest("http://localhost:3092/api/mavis/session",{headers:{cookie:"mavis_session=opaque; unrelated=private"}}),context("session"));
+  assert.equal(response.status,200);assert.deepEqual(await response.json(),{user:{id:"11111111-1111-4111-8111-111111111111",name:"User",role:"student"}});assert.equal(response.headers.get("cache-control"),"no-store");
 });
+
 test("theme bootstraps before paint with validated preferences and denied-storage fallback", () => {
   const layout = fs.readFileSync(path.join(root, "app/layout.tsx"), "utf8");
   const script = layout.match(/const appearanceBootstrap = `([^`]+)`/)[1];
@@ -484,7 +449,7 @@ test("live shell preserves model context without provisional session or sample U
     assert.ok(!html.includes(excluded), excluded);
 });
 
-test("analysis routes choose isolated live mainflow in backend mode and retain mock gates", () => {
+test("analysis routes share the authenticated guard in backend mode and mock mode", () => {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");
   const { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -514,7 +479,7 @@ test("analysis routes choose isolated live mainflow in backend mode and retain m
       );
       client.clear();
       assert.ok(html.includes("Checking session"), `${screen}: ${mode} checks its session`);
-      assert.equal(html.includes("Architecture analysis"), mode === "backend", screen);
+      assert.equal(html.includes("Architecture analysis"), false, `${screen}: do not render authenticated content before session resolution`);
     }
   }
 });

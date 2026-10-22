@@ -46,18 +46,30 @@ function Projects() {
         emptyMessage="No projects are available. Contact your workspace administrator to create a project."
       >
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard label="Active projects" value={projects.data?.length ?? 0} />
+          <SummaryCard label="Projects" value={projects.data?.length ?? 0} />
           <SummaryCard
             label="Services indexed"
-            value={projects.data?.reduce((sum, p) => sum + p.services, 0) ?? 0}
+            value={
+              projects.data?.some((p) => p.services === null)
+                ? "Unknown"
+                : (projects.data?.reduce((sum, p) => sum + (p.services ?? 0), 0) ?? "Unknown")
+            }
           />
           <SummaryCard
             label="Ready projects"
-            value={projects.data?.filter((p) => p.status === "ready").length ?? 0}
+            value={
+              projects.data?.some((p) => p.status === "unknown")
+                ? "Unknown"
+                : (projects.data?.filter((p) => p.status === "ready").length ?? "Unknown")
+            }
           />
           <SummaryCard
             label="Runtime capable"
-            value={projects.data?.filter((p) => p.runtimeSupported).length ?? 0}
+            value={
+              projects.data?.some((p) => p.runtimeSupported === null)
+                ? "Not checked"
+                : (projects.data?.filter((p) => p.runtimeSupported).length ?? "Not checked")
+            }
           />
         </div>
         <div className="mt-6 grid gap-6 xl:grid-cols-3">
@@ -94,8 +106,7 @@ function Projects() {
                   label: "Project",
                   render: (p) => (
                     <Link
-                      href="/project-overview"
-                      onClick={() => selection.setProjectId(p.id)}
+                      href={`/project-overview?project=${p.id}`}
                       className="font-medium text-primary hover:underline"
                     >
                       {p.name}
@@ -105,7 +116,7 @@ function Projects() {
                     </Link>
                   ),
                 },
-                { key: "services", label: "Services", render: (p) => p.services },
+                { key: "services", label: "Services", render: (p) => p.services ?? "Unknown" },
                 {
                   key: "status",
                   label: "Status",
@@ -114,7 +125,12 @@ function Projects() {
                 {
                   key: "runtime",
                   label: "Runtime",
-                  render: (p) => (p.runtimeSupported ? "Supported" : "Unavailable"),
+                  render: (p) =>
+                    p.runtimeSupported === null
+                      ? "Not checked"
+                      : p.runtimeSupported
+                        ? "Supported"
+                        : "Unavailable",
                 },
               ]}
             />

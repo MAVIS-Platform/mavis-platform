@@ -13,13 +13,6 @@ import { useApi } from "@/hooks/use-api";
 import { FlowFrame } from "@/components/mainflow/shell";
 import { ModelFlow } from "@/components/mainflow/model-flow";
 export default function ExplainPage() {
-  const api = useApi();
-  if (api.mode === "backend")
-    return (
-      <FlowFrame title="Grounded Explanation">
-        <ModelFlow mode="explain" />
-      </FlowFrame>
-    );
   return (
     <AppShell>
       <ExplainWorkspace />

@@ -24,6 +24,9 @@ export function validateResponse<K extends Operation>(
     model: "modelId",
     analysisJob: "jobId",
     runtimeSession: "sessionId",
+    runtimeReadSession: "sessionId",
+    runtimeStop: "sessionId",
+    runtimeApprove: "sessionId",
     stopRuntime: "sessionId",
     submission: "submissionId",
     feedback: "submissionId",
@@ -36,7 +39,15 @@ export function validateResponse<K extends Operation>(
   if (idKey && (!record(value) || value["id"] !== request[idKey])) fail();
   if (
     Array.isArray(value) &&
-    ["snapshots", "models", "analysisJobs", "scenarios", "runtimeSessions"].includes(operation) &&
+    [
+      "snapshots",
+      "models",
+      "modelVersions",
+      "analysisJobs",
+      "scenarios",
+      "runtimeSessions",
+      "runtimeReadSessions",
+    ].includes(operation) &&
     request["projectId"] !== "*" &&
     value.some((entry: unknown) => !record(entry) || entry["projectId"] !== request["projectId"])
   )

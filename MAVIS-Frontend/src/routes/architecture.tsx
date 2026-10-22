@@ -1,4 +1,5 @@
 "use client";
+import { ModelTools } from "@/features/architecture/model-tools";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
@@ -14,13 +15,6 @@ import { useApi } from "@/hooks/use-api";
 import { FlowFrame } from "@/components/mainflow/shell";
 import { ModelFlow } from "@/components/mainflow/model-flow";
 export default function ArchitecturePage() {
-  const api = useApi();
-  if (api.mode === "backend")
-    return (
-      <FlowFrame title="Architecture Graph">
-        <ModelFlow mode="architecture" />
-      </FlowFrame>
-    );
   return (
     <AppShell>
       <ArchitectureWorkspace />
@@ -60,6 +54,7 @@ export function ArchitectureWorkspace({
                 />
                 <ElementDetailsPanel model={state.model} selectedId={id} />
               </div>
+              <ModelTools modelId={state.model.id} />
             </>
           )}
         </RequestState>

@@ -2,6 +2,10 @@
 
 Nền tảng học tập kiến trúc microservices: nhập source, phân tích Java/C#, xây mô hình kiến trúc có evidence, sinh diagram, kiểm tra rule, chỉnh revision, phân tích tác động và thực nghiệm HTTP/runtime tracing. Sinh viên nộp đúng phiên bản artifact; giảng viên xem và phản hồi trên phiên bản đó.
 
+## Chạy trên máy mới clone
+
+Xem [hướng dẫn DB cloud và đăng nhập thật](docs/CLEAN_CLONE_SETUP.md). Chạy `./Start-Mavis.ps1 -Initialize`, điền DB credential vào `.env.backend.local`, rồi `./Start-Mavis.ps1 -Service All`. Không có secret/tài khoản demo dùng chung trong Git.
+
 ## Bắt đầu cho developer hoặc coding agent
 
 1. Đọc [bối cảnh và kiến trúc hiện hành](docs/mavis-context.md).
