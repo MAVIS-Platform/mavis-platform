@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -53,6 +54,12 @@ class RuntimeSessionServiceImplTest {
 
     @Mock
     private UserRepository userRepository;
+
+    @Mock
+    private com.mavis.common.repository.ModelVersionRepository modelVersionRepository;
+
+    @Mock
+    private com.mavis.common.repository.ModelElementRepository modelElementRepository;
 
     @Spy
     private ComposePreflightValidator composePreflightValidator = new ComposePreflightValidator();
@@ -264,5 +271,106 @@ class RuntimeSessionServiceImplTest {
         assertThat(results).hasSize(2);
         assertThat(results.get(0).getId()).isEqualTo(s2.getId());
         assertThat(results.get(1).getId()).isEqualTo(s1.getId());
+    }
+
+    @Test
+    @DisplayName("WJ-01 BẢO MẬT: Chặn tạo session khi Snapshot không thuộc về Dự án đã chọn")
+    void testCreateRuntimeSession_SnapshotMismatch_ThrowsBadRequest() {
+        Project otherProject = Project.builder().id(UUID.randomUUID()).build();
+        snapshot.setProject(otherProject);
+
+        RuntimeSessionCreateRequest request = RuntimeSessionCreateRequest.builder()
+                .projectId(projectId)
+                .sourceSnapshotId(snapshotId)
+                .build();
+
+        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Snapshot không thuộc về dự án đã chọn");
+    }
+
+    @Test
+    @DisplayName("WJ-01 BẢO MẬT: Chặn tạo session khi ModelVersion không thuộc về Dự án hoặc Snapshot")
+    void testCreateRuntimeSession_ModelVersionMismatch_ThrowsBadRequest() {
+        UUID mvId = UUID.randomUUID();
+        Project otherProject = Project.builder().id(UUID.randomUUID()).build();
+        com.mavis.common.entity.ModelVersion foreignMv = com.mavis.common.entity.ModelVersion.builder()
+                .id(mvId)
+                .project(otherProject)
+                .sourceSnapshot(snapshot)
+                .build();
+
+        when(modelVersionRepository.findById(mvId)).thenReturn(Optional.of(foreignMv));
+
+        RuntimeSessionCreateRequest request = RuntimeSessionCreateRequest.builder()
+                .projectId(projectId)
+                .sourceSnapshotId(snapshotId)
+                .modelVersionId(mvId)
+                .build();
+
+        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Phiên bản mô hình không thuộc về dự án đã chọn");
+    }
+
+    @Test
+    @DisplayName("WJ-03 DỪNG PHIÊN: stopSession ghi file marker cancel.request và đặt STOP_REQUESTED")
+    void testStopSession_WithStateRoot_WritesCancelMarkerAndSetsStopRequested(@TempDir Path tempDir) {
+        org.springframework.test.util.ReflectionTestUtils.setField(runtimeSessionService, "runnerStateRoot", tempDir.toString());
+
+        UUID sessionId = UUID.randomUUID();
+        String resourceProject = "mavisrun-abcdef0123456789abcdef0123456789";
+        RuntimeSession runningSession = RuntimeSession.builder()
+                .id(sessionId)
+                .project(project)
+                .sourceSnapshot(snapshot)
+                .resourceProject(resourceProject)
+                .scenarioStatus("RUNNING")
+                .cleanupStatus("NOT_APPLICABLE")
+                .build();
+
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(runningSession));
+
+        RuntimeSessionResponseDTO stopped = runtimeSessionService.stopSession(sessionId);
+
+        assertThat(stopped.getScenarioStatus()).isEqualTo("CANCELLED");
+        assertThat(stopped.getCleanupStatus()).isEqualTo("STOP_REQUESTED");
+        assertThat(stopped.getCancelRequestedAt()).isNotNull();
+
+        Path markerFile = tempDir.resolve(resourceProject).resolve("cancel.request");
+        assertThat(Files.exists(markerFile)).isTrue();
+    }
+
+    @Test
+    @DisplayName("WJ-01 RUN DEFINITION: exportRunDefinition xuất đúng cấu trúc RuntimeRunDefinition chuẩn")
+    void testExportRunDefinition_Success() {
+        UUID sessionId = UUID.randomUUID();
+        UUID mvId = UUID.randomUUID();
+        com.mavis.common.entity.ModelVersion mv = com.mavis.common.entity.ModelVersion.builder()
+                .id(mvId)
+                .project(project)
+                .build();
+
+        RuntimeSession testSession = RuntimeSession.builder()
+                .id(sessionId)
+                .project(project)
+                .sourceSnapshot(snapshot)
+                .modelVersion(mv)
+                .profileVersionId("local-poc-profile/1.0")
+                .runConfigurationVersionId("run-config/1.0")
+                .scenarioVersionId("scenario/1.0")
+                .confirmedServiceMappings(Map.of("order-service", UUID.randomUUID().toString()))
+                .scenarioConfig(objectMapper.createObjectNode().put("test", true))
+                .build();
+
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(testSession));
+
+        var definition = runtimeSessionService.exportRunDefinition(sessionId);
+
+        assertThat(definition).isNotNull();
+        assertThat(definition.getSessionId()).isEqualTo(sessionId.toString());
+        assertThat(definition.getModelVersionId()).isEqualTo(mvId.toString());
+        assertThat(definition.getSourceSnapshotId()).isEqualTo(snapshotId.toString());
+        assertThat(definition.getConfirmedServiceMappings()).containsKey("order-service");
     }
 }

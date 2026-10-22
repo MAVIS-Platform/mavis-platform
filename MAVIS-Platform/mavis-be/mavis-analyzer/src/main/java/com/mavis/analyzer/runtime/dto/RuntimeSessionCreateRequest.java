@@ -29,4 +29,17 @@ public class RuntimeSessionCreateRequest {
     private String scenarioName;
 
     private JsonNode scenarioConfig;
+
+    private UUID modelVersionId;
+
+    @Builder.Default
+    private String profileVersionId = "local-poc-profile/1.0";
+
+    @Builder.Default
+    private String runConfigurationVersionId = "run-config/1.0";
+
+    @Builder.Default
+    private String scenarioVersionId = "scenario/1.0";
+
+    private java.util.Map<String, String> confirmedServiceMappings;
 }

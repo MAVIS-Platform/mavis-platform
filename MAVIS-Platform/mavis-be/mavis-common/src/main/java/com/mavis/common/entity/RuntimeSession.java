@@ -32,11 +32,34 @@ public class RuntimeSession {
     private SourceSnapshot sourceSnapshot;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "model_version_id")
+    private ModelVersion modelVersion;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "triggered_by")
     private User triggeredBy;
 
     @Column(name = "profile_name", length = 100)
     private String profileName;
+
+    @Builder.Default
+    @Column(name = "profile_version_id", length = 100)
+    private String profileVersionId = "local-poc-profile/1.0";
+
+    @Builder.Default
+    @Column(name = "run_configuration_version_id", length = 100)
+    private String runConfigurationVersionId = "run-config/1.0";
+
+    @Builder.Default
+    @Column(name = "scenario_version_id", length = 100)
+    private String scenarioVersionId = "scenario/1.0";
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "confirmed_service_mappings")
+    private java.util.Map<String, String> confirmedServiceMappings;
+
+    @Column(name = "resource_project", length = 64)
+    private String resourceProject;
 
     @Column(name = "scenario_name")
     private String scenarioName;
@@ -50,6 +73,34 @@ public class RuntimeSession {
     private String scenarioStatus = "PENDING";
 
     @Builder.Default
+    @Column(name = "execution_status", length = 40)
+    private String executionStatus = "NOT_STARTED";
+
+    @Builder.Default
+    @Column(name = "evidence_status", length = 40)
+    private String evidenceStatus = "UNAVAILABLE";
+
+    @Builder.Default
+    @Column(name = "cleanup_status", length = 40)
+    private String cleanupStatus = "NOT_APPLICABLE";
+
+    @Builder.Default
+    @Column(name = "trace_quality", length = 40)
+    private String traceQuality = "UNAVAILABLE";
+
+    @Builder.Default
+    @Column(name = "mapping_status", length = 40)
+    private String mappingStatus = "UNAVAILABLE";
+
+    @Builder.Default
+    @Column(name = "sandbox_enforcement_confirmed")
+    private Boolean sandboxEnforcementConfirmed = false;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "runner_receipt_json")
+    private JsonNode runnerReceiptJson;
+
+    @Builder.Default
     @Column(name = "trace_status", nullable = false, length = 30)
     private String traceStatus = "NONE";
 
@@ -61,6 +112,9 @@ public class RuntimeSession {
 
     @Column(name = "completed_at")
     private OffsetDateTime completedAt;
+
+    @Column(name = "cancel_requested_at")
+    private OffsetDateTime cancelRequestedAt;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
