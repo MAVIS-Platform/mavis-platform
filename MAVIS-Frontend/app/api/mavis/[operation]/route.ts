@@ -4,6 +4,7 @@ import { z } from "zod";
 import { contracts, isOperation } from "@/lib/api/contracts";
 import { validateResponse } from "@/lib/api/validate-response";
 import { currentSession, signIn, executeJava } from "@/lib/api/java-operations";
+import { javaRequest } from "@/lib/api/java-client";
 import { ApiError } from "@/lib/errors/api-error";
 export const dynamic = "force-dynamic";
 const cookieName = "mavis_session";
@@ -28,7 +29,21 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
   )
     return fail(403);
   const token = request.cookies.get(cookieName)?.value;
-  if (!token && !["session", "signIn", "signOut"].includes(operation)) return fail(401);
+  if (
+    !token &&
+    ![
+      "session",
+      "signIn",
+      "signOut",
+      "register",
+      "verifyEmail",
+      "resendOtp",
+      "forgotPassword",
+      "resetPassword",
+      "googleSignIn",
+    ].includes(operation)
+  )
+    return fail(401);
   if (Number(request.headers.get("content-length") ?? "0") > 101 * 1024 * 1024) return fail(413);
   try {
     let raw: unknown;
@@ -56,8 +71,27 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
       if (!session.user) response.cookies.delete(cookieName);
       return response;
     }
-    if (operation === "signIn") {
-      const auth = await signIn(parsed.data, request.signal);
+    const authPaths: Record<string, string> = {
+      register: "register",
+      verifyEmail: "verify-email",
+      resendOtp: "resend-otp",
+      forgotPassword: "forgot-password",
+      resetPassword: "reset-password",
+    };
+    const authPath = authPaths[operation];
+    if (authPath) {
+      const result = await javaRequest(`auth/${authPath}`, undefined, {
+        method: "POST",
+        body: JSON.stringify(parsed.data),
+        signal: request.signal,
+      });
+      return NextResponse.json(
+        validateResponse(operation, parsed.data, operation === "register" ? result : { ok: true }),
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    if (operation === "signIn" || operation === "googleSignIn") {
+      const auth = await signIn(parsed.data, request.signal, operation === "googleSignIn");
       const response = NextResponse.json(auth.session, {
         headers: { "Cache-Control": "no-store" },
       });

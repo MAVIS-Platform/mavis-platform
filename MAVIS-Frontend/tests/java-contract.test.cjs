@@ -68,3 +68,15 @@ test("Java body errors and malformed envelopes cannot become successful view dat
 test("fresh clone defaults to real backend mode; mock requires an explicit choice",()=>{
  const {readAppConfiguration}=require("../src/lib/api/config.ts");assert.equal(readAppConfiguration({}).mode,"backend");assert.equal(readAppConfiguration({MAVIS_API_MODE:"mock"}).mode,"mock");
 });
+
+test("public auth flows map to Java without requiring a previous session",async t=>{
+ environment(t);const context=operation=>({params:Promise.resolve({operation})});const calls=[];
+ t.mock.method(globalThis,"fetch",async(url,options)=>{calls.push({url,body:JSON.parse(options.body),authorization:options.headers.get("Authorization")});return Response.json({code:200,data:url.endsWith("/register")?{userId:project,email:"new@example.invalid",fullName:"New user",role:"STUDENT"}:null});});
+ for(const [op,path,input] of [["register","register",{fullName:"New user",email:"new@example.invalid",password:"test-password"}],["verifyEmail","verify-email",{email:"new@example.invalid",otpCode:"123456"}],["resendOtp","resend-otp",{email:"new@example.invalid"}],["forgotPassword","forgot-password",{email:"new@example.invalid"}],["resetPassword","reset-password",{email:"new@example.invalid",otpCode:"123456",newPassword:"new-password"}]]){
+ const response=await route.POST(new NextRequest("http://localhost:3000/api/mavis/"+op,{method:"POST",headers:{host:"localhost:3000",origin:"http://localhost:3000","Content-Type":"application/json"},body:JSON.stringify(input)}),context(op));assert.equal(response.status,200,op);const call=calls.at(-1);assert.equal(call.url,"https://java.invalid/api/v1/auth/"+path);assert.deepEqual(call.body,input);assert.equal(call.authorization,null);if(op!=="register")assert.deepEqual(await response.json(),{ok:true});
+ }
+});
+test("Google credential exchange keeps the returned JWT inside HttpOnly cookie",async t=>{
+ environment(t);t.mock.method(globalThis,"fetch",async(url,options)=>{assert.equal(url,"https://java.invalid/api/v1/auth/google");assert.deepEqual(JSON.parse(options.body),{idToken:"google-issued-id-token"});return Response.json({code:200,data:{token:"private-jwt",userId:project,fullName:"Google user",role:"STUDENT"}});});
+ const response=await route.POST(new NextRequest("http://localhost:3000/api/mavis/googleSignIn",{method:"POST",headers:{host:"localhost:3000",origin:"http://localhost:3000","Content-Type":"application/json"},body:JSON.stringify({idToken:"google-issued-id-token"})}),{params:Promise.resolve({operation:"googleSignIn"})});assert.equal(response.status,200);assert.match(response.headers.get("set-cookie"),/HttpOnly/);assert.ok(!JSON.stringify(await response.json()).includes("private-jwt"));
+});

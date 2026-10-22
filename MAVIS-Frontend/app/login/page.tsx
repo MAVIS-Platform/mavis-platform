@@ -1,4 +1,6 @@
 "use client";
+import Link from "next/link";
+import { GoogleSignIn } from "@/features/auth/google-sign-in";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -120,13 +122,19 @@ export default function LoginPage() {
               Sign in to continue exploring your architecture.
             </p>
           </div>
-          {params.get("signedOut") === "1" && (
+          {(params.get("signedOut") === "1" ||
+            params.get("verified") === "1" ||
+            params.get("reset") === "1") && (
             <div
               role="status"
               className="mb-6 flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-3 text-sm"
             >
               <Check size={16} className="text-primary" />
-              You’re signed out.
+              {params.get("verified") === "1"
+                ? "Email verified. You can sign in now."
+                : params.get("reset") === "1"
+                  ? "Password updated. Sign in with your new password."
+                  : "You’re signed out."}
             </div>
           )}
           {api.mode === "mock" ? (
@@ -207,6 +215,14 @@ export default function LoginPage() {
                   </button>
                 </div>
               </div>
+              <div className="flex justify-end">
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               {real.isError && <ErrorState error={real.error} />}
               <Button
                 className="h-12 w-full text-sm font-medium"
@@ -229,6 +245,23 @@ export default function LoginPage() {
                 Use the verified account provided for your workspace.
               </p>
             </form>
+          )}
+          {api.mode === "backend" && (
+            <>
+              <GoogleSignIn onSignedIn={finish} />
+              <p className="mt-6 text-center text-sm text-muted-foreground">
+                New to MAVIS?{" "}
+                <Link href="/auth/register" className="font-medium text-primary hover:underline">
+                  Create an account
+                </Link>
+              </p>
+              <p className="mt-2 text-center text-xs text-muted-foreground">
+                Need to verify your email?{" "}
+                <Link href="/auth/verify" className="text-primary hover:underline">
+                  Enter verification code
+                </Link>
+              </p>
+            </>
           )}
           <div className="mt-8 flex items-center justify-center gap-2 border-t pt-5 text-xs text-muted-foreground">
             <ShieldCheck size={14} />

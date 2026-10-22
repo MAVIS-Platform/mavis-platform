@@ -54,6 +54,7 @@ $null=New-Item -ItemType Directory -Force -Path $logs,$uploads,$artifacts
 $environment=@{}
 foreach($entry in $values.GetEnumerator()) { if ($entry.Key -match '^(MAVIS_|MAIL_)') { $environment[$entry.Key]=$entry.Value } }
 $environment.SPRING_PROFILES_ACTIVE='cloud'
+if ($values.MAVIS_GOOGLE_CLIENT_ID) { $environment.APP_GOOGLE_CLIENT_ID=$values.MAVIS_GOOGLE_CLIENT_ID }
 $environment.SERVER_PORT=[string]$javaPort
 $environment.MAVIS_DB_MIGRATIONS_ENABLED='false'
 $environment.MAVIS_WORKER_ENABLED='true'
