@@ -16,7 +16,7 @@ Nếu đang có checkout, giữ các chỉnh sửa local trước khi chuyển n
 Windows PowerShell, JDK 21+, .NET SDK 10, Node.js 20.9+ và npm. Docker chỉ cần cho runtime workload; đăng nhập/phân tích source không yêu cầu chạy ứng dụng được import.
 
 ```powershell
-.\Start-Mavis.ps1 -Initialize
+.\scripts\Start-Mavis.ps1 -Initialize
 ```
 
 Mở `.env.backend.local` vừa tạo và điền MAVIS_DB_URL, MAVIS_DB_USERNAME, MAVIS_DB_PASSWORD thật của DB test. URL JDBC cần đúng host/port/database, ví dụ dạng `jdbc:postgresql://HOST:PORT/defaultdb?sslmode=require`. File local và khóa dịch vụ không đi theo Git là chủ ý; application.yml không bị xóa. Nhờ chủ DB cung cấp credential qua kênh riêng, không commit credential vào repo.
@@ -34,9 +34,9 @@ Các tiến trình đã chiếm cổng được giữ nguyên, không bị tự 
 ## Khởi động bằng PowerShell (tùy chọn)
 
 ```powershell
-.\Start-Mavis.ps1 -Service All
+.\scripts\Start-Mavis.ps1 -Service All
 # Sau khi các dịch vụ startup xong:
-.\Start-Mavis.ps1 -Service Check
+.\scripts\Start-Mavis.ps1 -Service Check
 ```
 
 Lệnh khởi động Java với profile cloud, Flyway disabled, DB validate, Worker keys/root dùng chung và FE backend mode. Thiếu credential sẽ bị chặn sớm với tên biến cần điền. Worker/Java/FE chạy nền, log ở `.artifacts/local-run/`. Cổng đã có dịch vụ sẽ không bị tự tắt; phải bảo đảm đó là phiên bản đúng trước khi test.
