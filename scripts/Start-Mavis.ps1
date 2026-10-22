@@ -7,7 +7,7 @@ param(
     [string]$SettingsPath
 )
 $ErrorActionPreference = 'Stop'
-$repo = $PSScriptRoot
+$repo = Split-Path -Parent $PSScriptRoot
 if (-not $SettingsPath) { $SettingsPath = Join-Path $repo '.env.backend.local' }
 $example = Join-Path $repo '.env.backend.example'
 if ($Initialize) {
@@ -23,7 +23,7 @@ if ($Initialize) {
     Write-Host 'Created .env.backend.local with stable local service keys. Fill DB URL/user/password before starting. Do not commit or send this file in chat.'
     return
 }
-if (-not (Test-Path -LiteralPath $SettingsPath)) { throw 'Missing .env.backend.local. Run ./Start-Mavis.ps1 -Initialize, then fill the database credentials.' }
+if (-not (Test-Path -LiteralPath $SettingsPath)) { throw 'Missing .env.backend.local. Run ./scripts/Start-Mavis.ps1 -Initialize, then fill the database credentials.' }
 $values = @{}
 foreach ($line in [IO.File]::ReadAllLines($SettingsPath)) {
     if ($line.Trim() -eq '' -or $line.TrimStart().StartsWith('#')) { continue }
@@ -117,7 +117,7 @@ if ($Service -eq 'Check') {
     }
     try { $spec=Invoke-RestMethod "http://127.0.0.1:$javaPort/v3/api-docs" -TimeoutSec 10; if (-not $spec.paths.'/api/v1/auth/me') { Write-Warning 'Java is older than the integrated FE: /auth/me is missing. Pull matching source and rebuild Java.' } } catch {}
 } else {
-    Write-Host "Starting services. Check logs in .artifacts/local-run, then run ./Start-Mavis.ps1 -Service Check."
+    Write-Host "Starting services. Check logs in .artifacts/local-run, then run ./scripts/Start-Mavis.ps1 -Service Check."
 }
 Write-Host "FE: http://127.0.0.1:$fePort/login | Java: http://127.0.0.1:$javaPort/swagger-ui/index.html | Worker: http://127.0.0.1:$workerPort/swagger"
 

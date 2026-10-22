@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
   Bell,
   ChevronDown,
@@ -121,12 +121,14 @@ function ManagedShellChrome(props: AppShellProps) {
     {},
     { enabled: role !== "admin" && !onPreviewNavigate && !!selection.workspaceId },
   );
+  const router = useRouter();
   async function logout() {
     try {
       await signOut.mutateAsync({});
       await queryClient.cancelQueries();
       queryClient.clear();
       queryClient.setQueryData(["api", "session", {}], { user: null });
+      router.replace("/login?signedOut=1");
     } catch {
       /* Mutation feedback is shown by the provider. */
     }
@@ -458,16 +460,40 @@ function ShellChrome({
                   <div className="mx-2 h-6 border-l" />
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="gap-2 px-1.5" aria-label="Profile menu">
+                      <Button
+                        variant="ghost"
+                        className="h-11 gap-2 rounded-xl px-2"
+                        aria-label="Profile menu"
+                      >
                         <span className="flex size-8 items-center justify-center rounded-full border bg-secondary">
-                          <UserRound className="size-4" />
+                          <span className="text-xs font-semibold text-primary">
+                            {displayName
+                              .split(" ")
+                              .filter(Boolean)
+                              .map((part) => part[0])
+                              .slice(0, 2)
+                              .join("")
+                              .toUpperCase()}
+                          </span>
                         </span>
-                        <span className="hidden text-xs lg:block">{displayName}</span>
+                        <span className="hidden text-left lg:block">
+                          <span className="block max-w-36 truncate text-xs font-medium">
+                            {displayName}
+                          </span>
+                          <span className="block text-[10px] text-muted-foreground">
+                            {roleLabels[role]}
+                          </span>
+                        </span>
                         <ChevronDown className="hidden size-3 lg:block" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuLabel>{roleLabels[role]}</DropdownMenuLabel>
+                    <DropdownMenuContent align="end" className="w-60 rounded-xl p-2">
+                      <DropdownMenuLabel className="px-2 py-3">
+                        <span className="block text-sm">{displayName}</span>
+                        <span className="mt-1 block text-xs font-normal text-muted-foreground">
+                          {roleLabels[role]}
+                        </span>
+                      </DropdownMenuLabel>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem asChild>
                         <Link href="/profile">
@@ -481,6 +507,7 @@ function ShellChrome({
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuItem
+                        className="text-destructive focus:bg-destructive/10 focus:text-destructive"
                         disabled={signOutPending || Boolean(onPreviewNavigate)}
                         onSelect={() => {
                           onSignOut?.();
