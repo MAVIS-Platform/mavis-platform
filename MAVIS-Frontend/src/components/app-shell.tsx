@@ -51,6 +51,8 @@ import { cn } from "@/lib/utils";
 
 export type AppShellProps = {
   children: ReactNode;
+  live?: boolean;
+  navigationQuery?: string;
   role?: AppRole;
   scope?: WorkspaceScope;
   activeId?: string;
@@ -65,6 +67,8 @@ export type AppShellProps = {
 
 export function AppShell({
   children,
+  live = false,
+  navigationQuery = "",
   role = "student",
   scope: scopeOverride,
   activeId: activeOverride,
@@ -86,10 +90,20 @@ export function AppShell({
   const [detailsInline, setDetailsInline] = useState(false);
   const contentContainer = useRef<HTMLDivElement>(null);
   const detailReturnFocus = useRef<HTMLElement | null>(null);
-  const contentVariant = contentOverride ??
-    (scope === "project" || scope === "review" ? "workspace" : "standard");
+  const contentVariant =
+    contentOverride ?? (scope === "project" || scope === "review" ? "workspace" : "standard");
   const showInlineDetail = Boolean(detailPanel) && (detailsInline || !onDetailClose);
-  const groups = contextualNavigation(role, scope);
+  const decorateGroups = (items: readonly NavigationGroup[]): NavigationGroup[] =>
+    items.map((group) => ({
+      ...group,
+      items: group.items.map((item) => {
+        const href = item.id === "snapshots" && live ? "/import" : item.href;
+        return href && live && href !== "/design-system"
+          ? { ...item, href: `${href === "/" ? "/import" : href}${navigationQuery}` }
+          : item;
+      }),
+    }));
+  const groups = decorateGroups(contextualNavigation(role, scope));
   const activeItem = [...globalNavigation[role], ...groups]
     .flatMap((group) => group.items)
     .find((item) => item.id === activeId);
@@ -156,20 +170,22 @@ export function AppShell({
         <div className={cn("border-b px-5 py-4", isCollapsed && "px-2 text-center")}>
           {isCollapsed ? (
             <span className="text-xs font-semibold" title={roleLabels[role]}>
-              {role === "student" ? "ST" : role === "lecturer" ? "LE" : "AD"}
+              {live ? "MV" : role === "student" ? "ST" : role === "lecturer" ? "LE" : "AD"}
             </span>
           ) : (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                 Learning & analysis
               </p>
-              <p className="mt-1 text-xs font-medium">{roleLabels[role]}</p>
+              <p className="mt-1 text-xs font-medium">
+                {live ? "Architecture analysis" : roleLabels[role]}
+              </p>
             </>
           )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
           <NavigationGroups
-            groups={globalNavigation[role]}
+            groups={decorateGroups(globalNavigation[role])}
             collapsed={isCollapsed}
             currentKind={scope === "global" ? "page" : "location"}
             activeId={
@@ -314,68 +330,94 @@ export function AppShell({
             </nav>
             <div className="flex shrink-0 items-center gap-1">
               <AppearanceSelector />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="Notifications">
-                    <Bell />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-72 p-4">
-                  <DropdownMenuLabel className="px-0">Notifications</DropdownMenuLabel>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Design preview. Notifications are not connected to a live service.
-                  </p>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <div className="mx-2 h-6 border-l" />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="gap-2 px-1.5" aria-label="Profile menu">
-                    <span className="flex size-8 items-center justify-center rounded-full border bg-secondary">
-                      <UserRound className="size-4" />
-                    </span>
-                    <span className="hidden text-xs lg:block">Preview account</span>
-                    <ChevronDown className="hidden size-3 lg:block" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>Account · design preview</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem disabled>
-                    <UserRound />
-                    My Profile · planned
-                  </DropdownMenuItem>
-                  <DropdownMenuItem disabled>
-                    <LogOut />
-                    Logout → Login · planned
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {!live && (
+                <>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Notifications">
+                        <Bell />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-72 p-4">
+                      <DropdownMenuLabel className="px-0">Notifications</DropdownMenuLabel>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        Design preview. Notifications are not connected to a live service.
+                      </p>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <div className="mx-2 h-6 border-l" />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" className="gap-2 px-1.5" aria-label="Profile menu">
+                        <span className="flex size-8 items-center justify-center rounded-full border bg-secondary">
+                          <UserRound className="size-4" />
+                        </span>
+                        <span className="hidden text-xs lg:block">Preview account</span>
+                        <ChevronDown className="hidden size-3 lg:block" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuLabel>Account · design preview</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem disabled>
+                        <UserRound />
+                        My Profile · planned
+                      </DropdownMenuItem>
+                      <DropdownMenuItem disabled>
+                        <LogOut />
+                        Logout → Login · planned
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
             </div>
           </header>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-info-subtle px-(--page-gutter) py-2 text-xs text-info">
-            <span className="flex items-center gap-2">
-              <Info className="size-3.5 shrink-0" aria-hidden="true" />
-              <span>Design preview · All content is illustrative. No live system data.</span>
-            </span>
-            <button
-              onClick={() => setFeedbackOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 font-medium underline-offset-4 hover:underline"
-            >
-              <MessageSquare className="size-3.5" aria-hidden="true" />
-              Review notes
-            </button>
-          </div>
+          {!live && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-info-subtle px-(--page-gutter) py-2 text-xs text-info">
+              <span className="flex items-center gap-2">
+                <Info className="size-3.5 shrink-0" aria-hidden="true" />
+                <span>Design preview · All content is illustrative. No live system data.</span>
+              </span>
+              <button
+                onClick={() => setFeedbackOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 font-medium underline-offset-4 hover:underline"
+              >
+                <MessageSquare className="size-3.5" aria-hidden="true" />
+                Review notes
+              </button>
+            </div>
+          )}
           <div className="mavis-content-region min-w-0 flex-1">
             <div ref={contentContainer} className="mavis-content-container">
-              <div className={cn("mavis-content-layout", showInlineDetail && detailsInline && "has-inline-details")}>
-                <main id="main-content" tabIndex={-1} className="min-w-0 outline-none" data-content-variant={contentVariant}>
-                  <div className={cn("w-full", contentVariant === "standard" && "mx-auto max-w-(--content-max)", contentVariant === "reading" && "max-w-(--reading-max)", contentVariant === "form" && "max-w-(--form-max)")}>
+              <div
+                className={cn(
+                  "mavis-content-layout",
+                  showInlineDetail && detailsInline && "has-inline-details",
+                )}
+              >
+                <main
+                  id="main-content"
+                  tabIndex={-1}
+                  className="min-w-0 outline-none"
+                  data-content-variant={contentVariant}
+                >
+                  <div
+                    className={cn(
+                      "w-full",
+                      contentVariant === "standard" && "mx-auto max-w-(--content-max)",
+                      contentVariant === "reading" && "max-w-(--reading-max)",
+                      contentVariant === "form" && "max-w-(--form-max)",
+                    )}
+                  >
                     {children}
                   </div>
                 </main>
                 {showInlineDetail && (
-                  <aside aria-label="Contextual detail panel" className="mavis-panel min-w-0 self-start p-6">
+                  <aside
+                    aria-label="Contextual detail panel"
+                    className="mavis-panel min-w-0 self-start p-6"
+                  >
                     {detailPanel}
                   </aside>
                 )}
@@ -383,11 +425,30 @@ export function AppShell({
             </div>
           </div>
         </div>
-        <Sheet open={Boolean(detailPanel) && !showInlineDetail} onOpenChange={(open) => { if (!open) onDetailClose?.(); }}>
-          <SheetContent className="[&_[data-detail-close]]:hidden"
-            onOpenAutoFocus={() => { detailReturnFocus.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : document.getElementById("main-content"); }}
-            onCloseAutoFocus={(event) => { event.preventDefault(); detailReturnFocus.current?.focus(); }}>
-            <SheetHeader className="sr-only"><SheetTitle>Contextual evidence</SheetTitle><SheetDescription>Selected source, model and evidence details.</SheetDescription></SheetHeader>
+        <Sheet
+          open={Boolean(detailPanel) && !showInlineDetail}
+          onOpenChange={(open) => {
+            if (!open) onDetailClose?.();
+          }}
+        >
+          <SheetContent
+            className="[&_[data-detail-close]]:hidden"
+            onOpenAutoFocus={() => {
+              detailReturnFocus.current =
+                document.activeElement instanceof HTMLElement &&
+                document.activeElement !== document.body
+                  ? document.activeElement
+                  : document.getElementById("main-content");
+            }}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              detailReturnFocus.current?.focus();
+            }}
+          >
+            <SheetHeader className="sr-only">
+              <SheetTitle>Contextual evidence</SheetTitle>
+              <SheetDescription>Selected source, model and evidence details.</SheetDescription>
+            </SheetHeader>
             {detailPanel}
           </SheetContent>
         </Sheet>
