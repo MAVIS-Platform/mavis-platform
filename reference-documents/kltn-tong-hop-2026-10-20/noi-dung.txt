@@ -1,0 +1,228 @@
+[word/document.xml]
+     
+ 
+CAPSTONE PROJECT REGISTER 
+ 
+Class:            Duration time:  From … 11/05/2026…  to 31/08/2026…
+(*) Profession: Software Engineer                   Specialty: Spring Boot , .Net  – NextJS
+(*) Kinds of person make registers:              	Lecturer                	Students  
+ 
+1. Register information for the supervisor 
+No.
+Full name
+Phone
+E-Mail 
+Title 
+  Supervisor 1
+Nguyễn Thế Hoàng
+0986 628 525
+hoangnt20@fe.edu.vn
+Mr. 
+
+2. Register information for students 
+ No.
+Full name 
+ Student code 
+Phone 
+Email 
+Role in Group 
+1
+Hoàng Vũ
+SE180716
+0379662470
+vuhse180716@fpt.edu.vn
+Team Leader
+2
+Lê Minh Triết
+SE181979
+0915672522
+trietlmse181979@fpt.edu.vn
+Member
+3
+Huỳnh Anh Nhựt
+SE180710
+0983958920
+nhuthase180710@fpt.edu.vn
+Member
+4
+Lê Ngọc Hậu 
+SE181741
+0378754283
+haulnse181741@fpt.edu.vn
+Member
+
+
+
+ 
+3. Register content of the Capstone Project
+3.1. Capstone Project Name
+English: AI-Assisted Microservices Architecture Visualization and Change Impact Analysis 
+Vietnamese: Hệ thống trực quan hóa kiến trúc Microservices và phân tích tác động thay đổi có hỗ trợ AI  
+Abbreviation: MAVIS 
+A. Context:
+Microservices projects divide application responsibilities across independently deployable services that may use different backend technologies. Understanding the architecture requires examining source and configuration as well as the service interactions observed during selected executions.
+Students and new developers need to connect source code with architectural diagrams when learning software design. Instructors can provide reference projects, while learners can also use personal projects. Keeping diagrams aligned with changing source code is a common challenge.
+The main challenges include:
+Complex dependencies: Service calls and code dependencies are spread across source and configuration files.
+Architecture learning: Users need diagrams that explain services and their internal classes, packages and components.
+Diagram verification: Users need supporting source locations and version history to check generated diagrams.
+Runtime verification: Source analysis alone does not establish which service interactions occurred in a particular request. Learners need scenario-specific runtime evidence linked to the architectural model.
+Change impact: Users need to identify potentially affected services and understand the dependency paths involved.
+B. Proposed Solutions
+MAVIS is a web-based platform for microservices architecture visualization and change impact analysis with AI-assisted explanation. It combines static source/configuration analysis with scenario-based runtime tracing, links both forms of evidence to architectural views, and supports educational workspaces and personal projects.
+The solution provides five core capabilities and an educational workflow:
+1. Multi-Language Project and Dependency Analysis
+MAVIS supports selected widely used backend languages, initially focusing on Java and C#. Language-specific adapters allow future extensions and extract services, software elements and dependencies from supported source and configuration. Source analysis covers selected Java/C# constructs and configuration formats defined in the supported analysis profiles.
+Static findings are combined into a shared architectural model. Supported HTTP calls, endpoint definitions and configuration references help infer communication between services, including Java/C# services. Runtime observations are mapped to the model with explicit provenance rather than replacing static findings.
+Each detected relationship links to supporting source or configuration. MAVIS displays warnings for missing information and unsupported inputs.
+2. Automated Runtime Execution and Trace Capture
+Runtime capture is part of the project scope for microservices applications that meet documented execution profiles. The initial target is synchronous HTTP communication in compatible Linux containers for Java Spring Boot and ASP.NET Core. Each application must provide a valid Docker Compose configuration, available source/build contexts or verifiable application images, test configuration and an executable scenario. Exact runtime, framework and image versions will be established by proof-of-concept (PoC) testing and recorded in the SRS.
+MAVIS inspects Compose and proposes service mappings and run settings. Users supply missing credentials or test data, review uncertain mappings and approve the scenario before execution. Scenarios specify requests, authentication where required, data preparation and expected responses. OpenAPI descriptions or existing test requests can assist scenario preparation. A saved configuration enables automated repeat runs while its prerequisites remain valid; automatic creation of business scenarios is not required.
+A dedicated runner prepares the approved environment, builds or verifies application images, adds compatible OpenTelemetry instrumentation through temporary configuration, checks readiness and executes the saved scenario. The platform collects traces, maps service identities to the selected model and preserves links to the source snapshot, image versions, scenario and runtime session. Each session has a time limit and releases its execution resources on completion, failure or cancellation.
+Runtime views show service interactions actually observed in a scenario, including available timing and error information. MAVIS distinguishes source-inferred relationships from runtime observations, flags uncertain mappings and incomplete traces, and retains useful traces from failed requests. These views do not claim complete coverage of internal methods or execution paths. Projects outside the execution profiles can still use supported static analysis.
+3. Interactive Architecture Visualization and Diagram Generation
+The interactive service-dependency graph is complemented by selected commonly used diagrams associated with C4 and the 4+1 architectural views. Structural and declared deployment views explain the model, while scenario-specific interaction diagrams present supported runtime traces. Views retain links to their model version and, where applicable, runtime session.
+Users select a supported diagram type and generate a draft. MAVIS automatically applies its built-in rules and provides element details, supporting evidence and warnings.
+Users can inspect diagrams, confirm architectural information and compare versions. Diagram types are selected according to their relevance to the project, available input data and proof-of-concept results. The supported set and generation limits will be defined in the requirements specification.
+4. Change Impact Analysis across Supported Views
+Users select a service, and MAVIS identifies services that may be directly or indirectly affected by a change. Dependency paths explain how the potential impact may spread.
+Potentially affected elements are highlighted on the graph and supported diagrams with reliable model mappings. An impact summary presents affected services, dependency paths and supporting evidence.
+Runtime evidence supplies observed interaction paths and scenario context for potential impacts. An unobserved dependency is not removed from the static impact analysis solely because it did not occur in the captured scenarios.
+5. AI-Assisted Explanation and Educational Use
+AI provides natural-language explanations of selected architectural elements, source findings, observed service interactions and potential change impacts using the corresponding model, source and trace evidence. AI is not required to authorize or execute runtime scenarios.
+Lecturers create workspaces, add members, provide reference sources and specify required diagrams. Students work on projects, generate and inspect results, and submit selected versions for feedback. Individual learners can analyze personal projects independently.
+Summary
+MAVIS links source snapshots, architectural models, scenario traces and diagrams to support architecture learning and evidence-based change impact analysis. The scope includes selected Java/C# static-analysis profiles and controlled HTTP runtime capture through Docker Compose execution profiles. Broader asynchronous tracing, unrestricted execution of arbitrary repositories and complete method-level execution reconstruction are outside the initial scope.
+Functional Requirements
+1. Actor: System Administrator
+View registered user accounts and lock or unlock account access.
+Monitor platform usage, analysis jobs, runtime sessions and system health.
+View records of important user and system operations.
+Configure repository access and AI-provider integrations.
+Test integration settings and view connection results.
+Configure approved runner profiles, execution limits and trace-collector connections; inspect or stop runtime sessions according to access permissions.
+
+2. Actor: Lecturer
+Create workspaces and add or remove members.
+Create and update assignments and select the diagram types students need to submit.
+Import reference source code and publish a selected reference version for an assignment.
+View student submissions, versioned models, diagrams, analysis results and submitted runtime evidence.
+Provide feedback on each submitted version.
+Export permitted submission artifacts and analysis reports from a selected submission version..
+3. Actor: Student / Individual Learner
+Account and Project Access
+Register, log in, log out and update personal profile information.
+Work on personal projects or join a learning workspace.
+Project and Source Management
+Create a personal project or an assignment project.
+Import project source through a GitHub URL with branch/commit selection or a ZIP archive.
+View, update and archive or delete projects according to access permissions.
+View assignments, required diagrams and reference source information.
+Start project analysis or re-analysis and track its status.
+Source Code and Dependency Analysis
+Analyze imported project source code, initially supporting Java and C#.
+Identify services, classes, interfaces, packages and modules.
+Read project structure and configuration files, including Docker Compose.
+Identify REST/HTTP calls and dependencies between services.
+Distinguish service calls, code dependencies and database access.
+View detected software elements and their details.
+View incoming and outgoing dependencies of detected elements.
+View supporting source code or configuration and analysis warnings.
+Runtime Execution and Trace Capture
+Select a source snapshot and inspect Docker Compose compatibility, application services, infrastructure dependencies and missing run configuration.
+Review or confirm mappings between Compose services, architectural model elements and runtime service identities; supply missing test settings through protected inputs.
+Create or import a supported HTTP scenario with requests, authentication references, data preparation or reset steps and expected outcomes; save it for reuse.
+Review and approve the run configuration and scenario, then start a runtime session or rerun a saved scenario after validating its prerequisites.
+Automatically prepare the runner, build or verify application images, attach compatible tracing instrumentation, check readiness and execute the approved scenario.
+Track execution progress, cancel a session, and inspect diagnostics for configuration, build, startup, request and trace-capture problems.
+Inspect collected traces and scenario-specific service-interaction diagrams; follow mappings to the selected model and available source evidence.
+Distinguish source-inferred and runtime-observed relationships, uncertain mappings and incomplete traces; retain scenario outcome separately from trace availability.
+Release session resources after completion, failure, cancellation or timeout while retaining saved results and diagnostics.
+Interactive Graphs and Architectural Diagrams
+Generate an interactive graph showing services and their dependencies.
+Select a supported diagram type and generate an architectural diagram.
+Automatically check generated diagrams using built-in system rules.
+Zoom, pan and select graph or diagram elements to view details and supporting evidence.
+Edit and confirm architectural model information.
+Compare model versions to view added, removed and changed elements or relationships.
+Export generated diagrams and analysis reports.
+Change Impact Analysis
+Select a service to analyze the potential impact of a change.
+Identify services that may be directly or indirectly affected.
+Display dependency paths explaining how the impact may spread.
+Highlight potentially affected services on the graph and corresponding elements in supported diagrams.
+View an impact summary with potentially affected services, dependency paths, source evidence and any reliably mapped runtime observations. Missing runtime observations do not establish that a dependency or potential impact is absent.
+AI Explanation and Coursework Submission
+Request natural-language explanations of selected architectural elements, relationships, diagrams and observed runtime interactions using the evidence available for the selected versions.
+Request explanations of potential change impacts and their dependency paths.
+Submit selected project result versions for an assignment, including saved runtime views and trace references where required; exclude execution secrets.
+View lecturer feedback on submitted work.
+Analysis Results and History
+View current and previous analysis results, diagrams, runtime sessions, scenario outcomes, trace warnings and processing status.
+Save a new result version when project source or model information changes.
+Display clear messages for invalid or unsupported inputs.
+Non-Functional Requirements
+Performance
+Common dashboard operations should respond within 3 seconds under agreed pilot conditions, excluding source import, analysis, image build, runtime execution and external AI processing.
+Define and evaluate source-analysis performance targets using documented sample projects, initially Java and C#.
+Measure image-build and startup duration, scenario execution time, trace availability and view-generation latency on documented sample projects. Set session timeouts, resource limits and a supported concurrency limit under the pilot hardware configuration.
+Security
+Validate repository URLs and uploaded ZIP files before processing.
+Apply workspace access and project ownership controls to protect personal projects and coursework.
+Protect credentials and project data and filter sensitive information sent to AI services.
+Execute projects on a dedicated runner separated from the main application and platform data. Restrict privileges, host mounts, Docker-socket access and network destinations under the approved execution profiles. Do not treat Compose validation alone as a security boundary.
+Protect runtime secrets and test credentials, redact sensitive telemetry and diagnostics, and exclude credentials from AI context and coursework exports.
+Reliability & Data Integrity
+Handle invalid or unsupported projects and report incomplete analysis clearly.
+Keep version history and provenance for source snapshots, models, diagrams, scenarios, runtime sessions, application image digests, trace mappings and submitted work.
+Preserve previous successful results when a new analysis fails.
+Retain available traces when a scenario fails; report missing spans or uncertain mappings explicitly. Derive interaction order from available causal trace relationships rather than timestamps alone.
+Enforce session deadlines and clean up abandoned runner resources after failures or cancellations. Validate saved run settings and data preparation before repeating a scenario.
+Usability
+Provide clear interfaces for source import, missing run settings, scenario approval, runtime progress, diagram exploration, impact analysis and coursework.
+Display element types, relationship types, legends and result versions consistently.
+Display useful processing messages, warnings and items requiring user confirmation.
+Allow users to open supporting evidence from graphs, diagrams and analysis results.
+Maintainability
+Organize project management, static analysis, runtime execution, trace processing, visualization, impact analysis and AI explanation into separate modules.
+Support the addition of language adapters, tested runtime profiles, diagram types and analysis rules.
+Transparency
+Provide evidence for detected relationships and define and evaluate accuracy targets using reviewed sample projects.
+Clearly label AI explanations, source-inferred relationships, runtime observations, scenario coverage and uncertain mappings. Trace absence must not be presented as proof that an interaction cannot occur.
+
+3.2. Main Proposal Content
+A. Theory and practice (document):
+Apply software design and architecture concepts, including selected C4 diagrams and 4+1 views. Research Java/C# source analysis, Docker Compose execution, OpenTelemetry instrumentation, distributed trace relationships, model-to-trace mapping, diagram generation and graph-based change impact analysis.
+Deliver SRS, use case specifications, ERD, system architecture/design documentation, test documentation and an acceptance report. Document supported analysis and execution profiles, trace limitations and evaluation results using reviewed microservices projects.
+Source management: GitHub. Compare existing diagram-generation and reverse-engineering tools.
+Runtime Feasibility and Evaluation
+Build an end-to-end PoC that runs a versioned microservices source snapshot, attaches instrumentation, executes a prepared scenario, captures HTTP interactions and generates a view linked to the architectural model. Verify the approach on another project. Every Java or C# runtime profile claimed as supported must have corresponding test evidence; proposed profiles must not be reported as already validated.
+Compare observed service identities, interaction edges, causal ordering and model mappings against reviewed scenarios and reference traces. Record missing or incorrect edges, mapping accuracy and user corrections, and report how much configuration is automatic.
+Test successful requests, failed service calls, missing settings, unavailable services, incomplete traces, cancellation, timeouts, repeat runs after data reset and resource cleanup. Define quantitative acceptance thresholds and pilot conditions in the SRS before evaluation.
+Server-side technologies:
+Server: Spring Boot application services, a C#/.NET analysis worker and a separate runtime runner with bounded execution sessions.
+Database: PostgreSQL for metadata and version mappings; artifact storage for source snapshots, generated views and retained trace data.
+Others: Java/C# static-analysis libraries, configuration parsers and an AI API for evidence-based explanations; evaluate Mermaid, PlantUML or equivalent diagram renderers.
+Runtime: Docker Engine and Docker Compose for compatible Linux containers; temporary Compose overrides for session settings and instrumentation.
+Tracing: OpenTelemetry Java agent and .NET Automatic Instrumentation for tested profiles; OTLP and OpenTelemetry Collector for trace intake. Pin compatible versions during the PoC.
+Scenarios: a MAVIS HTTP scenario runner with saved request sequences and data preparation; use available OpenAPI descriptions or test requests to assist setup. AI-generated scenarios are optional and require review.
+Client-side technologies:
+Web Client: Next.js and Tailwind CSS.
+Visualization: Cytoscape.js or equivalent for interactive graphs and selected renderers for structural diagrams and observed service-interaction views.
+B. Products:
+Administration Portal: user management, integration and runner settings, audit records, runtime-session oversight and system monitoring.
+Learning and Analysis Application: personal projects and educational workspaces with source analysis, automated runtime scenarios for supported profiles, linked source/trace evidence, dependency graphs, diagrams, change impact analysis, AI explanation, submissions and feedback.
+C. Proposed Tasks:
+Task package 1: Develop source-analysis adapters, initially Java/C#, configuration analysis and the shared architecture model.
+Task package 2: Implement the runtime PoC, Compose preflight, runner lifecycle, compatible tracing adapters, saved HTTP scenarios and model-to-trace mapping; record profile compatibility and execution limits.
+Task package 3: Develop interactive graphs, selected structural and runtime views, built-in validation, evidence navigation and change impact visualization.
+Task package 4: Develop authentication, personal projects, workspaces, assignments, reference publication, submissions, feedback, administration, AI explanation and export.
+Task package 5: Evaluate static findings and runtime mappings on reviewed sample projects, test repeatability, failure handling and runner cleanup, document measured limitations and deploy the platform.
+Supervisor
+Nguyễn Thế Hoàng
+HCM, date 27/08/2026
+On behalf of the Registers  
+Hoàng Vũ
+
+
+
