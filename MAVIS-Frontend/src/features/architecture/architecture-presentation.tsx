@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import type { ArchitecturalModel } from "@/types/domain";
 import { modelSchema } from "@/types/domain";
 import { ArchitectureGraph, ElementDetailsPanel } from "./components";
+import { DrawioEditor } from "./drawio-editor";
 import { DiagramPreview } from "./diagram-preview";
 import type { DiagramFormat, DrawingStyle } from "./diagram-renderer";
 import { z } from "zod";
@@ -39,7 +40,26 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
   const [style, setStyle] = useState<DrawingStyle>("clean");
   const [downloadError, setDownloadError] = useState(false);
   const selectedDiagram = diagrams.data?.find((diagram) => diagram.id === choice);
-  const input = { modelId: model.id, diagramId: selectedDiagram?.id ?? "", format };
+  const [container, setContainer] = useState("");
+  const [relationshipView, setRelationshipView] = useState<
+    "all" | "source" | "declared" | "runtime"
+  >("all");
+  const componentScope =
+    format === "DRAWIO_XML" &&
+    selectedDiagram?.notation === "C4" &&
+    selectedDiagram.level === "COMPONENT";
+  const containers = model.elements
+    .filter((node) => node.elementType === "SERVICE_CONTAINER")
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const containerId = componentScope ? container || containers[0]?.id : undefined;
+  const input = {
+    modelId: model.id,
+    diagramId: selectedDiagram?.id ?? "",
+    format,
+    containerId,
+    theme: style,
+    relationshipView: format === "DRAWIO_XML" ? relationshipView : undefined,
+  };
   const source = useApiQuery("exportDiagram", input, { enabled: !!selectedDiagram });
   const structure = useApiQuery(
     "exportDiagram",
@@ -134,7 +154,7 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
               value={style}
               onChange={(value) => {
                 setStyle(value as DrawingStyle);
-                if (format === "JSON" || format === "DRAWIO_XML") setFormat("MERMAID");
+                if (format === "JSON") setFormat("MERMAID");
                 activateRenderer();
               }}
               options={[
@@ -147,9 +167,36 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
               disabled={!source.data || source.isFetching || choice === "network"}
               onClick={download}
             >
-              Download diagram
+              Download generated diagram
             </Button>
           </div>
+          {format === "DRAWIO_XML" && (
+            <SelectField
+              label="Relationships"
+              value={relationshipView}
+              onChange={(value) => {
+                setRelationshipView(value as typeof relationshipView);
+                onSelect(null);
+              }}
+              options={[
+                { value: "all", label: "All relationships" },
+                { value: "source", label: "Source inferred" },
+                { value: "declared", label: "Declared configuration" },
+                { value: "runtime", label: "Runtime observed" },
+              ]}
+            />
+          )}
+          {componentScope && (
+            <SelectField
+              label="Component container"
+              value={containerId ?? ""}
+              onChange={(value) => {
+                setContainer(value);
+                onSelect(null);
+              }}
+              options={containers.map((node) => ({ value: node.id, label: node.name }))}
+            />
+          )}
           {choice === "network" ? (
             <p className="text-xs text-muted-foreground">
               Choose a C4 or dependency diagram above. Selecting a renderer or drawing style
@@ -157,8 +204,8 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Diagram, renderer and drawing style update the preview below. Draw.io XML and JSON
-              display their document source.
+              Diagram, renderer and drawing style update the preview below. DRAWIO_XML opens the
+              local draw.io editor; JSON displays diagram data.
             </p>
           )}
           {downloadError && (
@@ -168,24 +215,41 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
           )}
         </RequestState>
       </section>
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div
+        className={
+          format === "DRAWIO_XML" && choice !== "network"
+            ? "grid min-w-0 grid-cols-1 gap-4"
+            : "grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]"
+        }
+      >
         <div className="min-w-0 space-y-3">
           {choice === "network" ? (
             <ArchitectureGraph model={model} selectedId={selectedId} onSelect={onSelect} />
           ) : (
             <RequestState query={source}>
-              {source.data && (
-                <DiagramPreview
-                  key={`${selectedDiagram?.id}:${format}:${style}`}
-                  content={source.data.content}
-                  format={format}
-                  style={style}
-                  title={title}
-                />
-              )}
+              {source.data &&
+                (format === "DRAWIO_XML" && selectedDiagram ? (
+                  <DrawioEditor
+                    key={`${model.id}:${selectedDiagram.id}:${containerId ?? "overview"}:${relationshipView}`}
+                    xml={source.data.content}
+                    modelId={model.id}
+                    diagramId={selectedDiagram.id}
+                    title={title}
+                    scope={`${containerId ?? "overview"}:${relationshipView}`}
+                    theme={style}
+                  />
+                ) : (
+                  <DiagramPreview
+                    key={`${selectedDiagram?.id}:${format}:${style}`}
+                    content={source.data.content}
+                    format={format}
+                    style={style}
+                    title={title}
+                  />
+                ))}
             </RequestState>
           )}
-          {choice !== "network" && (
+          {choice !== "network" && format !== "DRAWIO_XML" && (
             <RequestState query={structure}>
               {structure.data && !scoped ? (
                 <p role="alert" className="text-sm text-destructive">
@@ -215,7 +279,7 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
             </RequestState>
           )}
         </div>
-        {previewModel && (
+        {previewModel && format !== "DRAWIO_XML" && (
           <ElementDetailsPanel model={previewModel} selectedId={selectedId} onSelect={onSelect} />
         )}
       </div>

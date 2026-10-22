@@ -1,0 +1,8 @@
+services:
+  drawio:
+    image: jgraph/drawio@sha256:30fefe1cf6e48c78f8816cdcd969d0a402a6bfd5077252cf5bb0428fd8ceaf69
+    ports:
+      - "127.0.0.1:8090:8080"
+    environment:
+      DRAWIO_SERVER_URL: http://127.0.0.1:8090/
+    restart: unless-stopped

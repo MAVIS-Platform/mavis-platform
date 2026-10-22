@@ -545,3 +545,136 @@ test("unclassified architecture forms a deterministic 2D network without overlap
   const disconnected = layoutGraph({ elements, edges: [] });
   assert.ok(disconnected.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)));
 });
+
+test("diagram zoom preserves the cursor's diagram point and clamps zoom", () => {
+  const { zoomDiagramCamera } = require("../src/features/architecture/diagram-camera.ts");
+  const camera = { x: 120, y: -70, zoom: 2 };
+  const origin = { x: 150, y: 40 };
+  const anchor = { x: 530, y: 280 };
+  const point = (view) => ({ x: (anchor.x - origin.x - view.x) / view.zoom, y: (anchor.y - origin.y - view.y) / view.zoom });
+  for (const factor of [1.2, 0.5, 1000, 0.00001]) {
+    const next = zoomDiagramCamera(camera, factor, anchor, origin);
+    assert.ok(next.zoom >= 0.15 && next.zoom <= 12);
+    assert.ok(Math.abs(point(next).x - point(camera).x) < 1e-9);
+    assert.ok(Math.abs(point(next).y - point(camera).y) < 1e-9);
+  }
+  const zoomed = zoomDiagramCamera(camera, 1.5, anchor, origin);
+  const restored = zoomDiagramCamera(zoomed, 1 / 1.5, anchor, origin);
+  assert.ok(Math.abs(restored.x - camera.x) < 1e-9);
+  assert.ok(Math.abs(restored.y - camera.y) < 1e-9);
+  assert.equal(restored.zoom, camera.zoom);
+});
+test("draw.io bridge accepts only local editor messages from the current iframe", () => {
+  const { DRAWIO_ORIGIN, DRAWIO_MAX_XML_LENGTH, readDrawioEvent } = require("../src/features/architecture/drawio-protocol.ts");
+  const frame = {};
+  const message = { origin: DRAWIO_ORIGIN, source: frame, data: JSON.stringify({ event: "save", xml: "<mxfile/>" }) };
+  assert.deepEqual(readDrawioEvent(message, frame), { event: "save", xml: "<mxfile/>" });
+  assert.equal(readDrawioEvent({ ...message, origin: "https://embed.diagrams.net" }, frame), null);
+  assert.equal(readDrawioEvent({ ...message, source: {} }, frame), null);
+  assert.equal(readDrawioEvent(message, null), null);
+  assert.equal(readDrawioEvent({ ...message, data: "not JSON" }, frame), null);
+  assert.equal(readDrawioEvent({ ...message, data: JSON.stringify({ event: "save", xml: 123 }) }, frame), null);
+  assert.equal(readDrawioEvent({ ...message, data: JSON.stringify({ event: "save", xml: "x".repeat(DRAWIO_MAX_XML_LENGTH + 1) }) }, frame), null);
+  assert.equal(readDrawioEvent({ ...message, data: JSON.stringify({ event: "openLink", href: "https://example.com" }) }, frame), null);
+  assert.deepEqual(readDrawioEvent({ ...message, data: JSON.stringify({ event: "init" }) }, frame), { event: "init" });
+});
+test("draw.io fit constrains height as well as width for tall diagrams", () => {
+  const { drawioFitRequest } = require("../src/features/architecture/drawio-protocol.ts");
+  const fit = drawioFitRequest({ modelBounds: { width: 1337, height: 1190 }, containerSize: { width: 1040, height: 610 } });
+  assert.equal(fit.action, "fit");
+  assert.ok(fit.maxScale * 1190 <= 610 - 48 + 1e-9);
+  assert.ok(fit.maxScale * 1337 <= 1040 - 48 + 1e-9);
+  assert.ok(fit.maxScale < 0.5, "width-only fitting would clip the bottom of this real model");
+  assert.equal(drawioFitRequest({}), null);
+  assert.equal(drawioFitRequest({ modelBounds: { width: 0, height: Infinity }, containerSize: { width: 100, height: 200 } }), null);
+});
+test("drawio projection and rules preserve scope without fabricating technology", () => {
+ const {projectDiagram,nodeText,relationLabel}=require("../src/lib/drawio/rules.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/petclinic-component.json"),"utf8").replace(/^\uFEFF/,""));
+ const service=raw.layoutJson.nodes.find(node=>node.name==="customers-service");
+ const scope=projectDiagram(raw,service.id);
+ assert.ok(scope.layoutJson.nodes.some(node=>node.name==="OwnerRepository"));
+ assert.ok(!scope.layoutJson.nodes.some(node=>node.name==="VetRepository"));
+ assert.ok(scope.omittedNodes>0);
+ assert.throws(()=>projectDiagram(raw,"missing"));
+ assert.throws(()=>projectDiagram({...raw,layoutJson:{nodes:raw.layoutJson.nodes,edges:[{id:"bad",from:"foreign",to:service.id}]}}));
+ assert.match(nodeText({id:"x",name:"Tên dịch vụ",kind:"SERVICE_CONTAINER"}).join(" "),/chưa xác định/);
+ assert.doesNotMatch(relationLabel({id:"a",type:"DECLARED_COMPOSE"}),/HTTP/);
+});
+
+test("canonical drawio routes real Petclinic container and component with zero hard collisions", async () => {
+ const {projectDiagram}=require("../src/lib/drawio/rules.ts");
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ for(const level of ["container","component"]){
+  const raw=JSON.parse(fs.readFileSync(path.join(root,`tests/fixtures/petclinic-${level}.json`),"utf8").replace(/^\uFEFF/,""));
+  const scope=projectDiagram(raw,level==="component"?raw.layoutJson.nodes.find(node=>node.name==="customers-service").id:undefined);
+  const before=JSON.stringify(scope),xml=await generateDrawio(scope);
+  const quality=JSON.parse(xml.match(/mavisQuality="([^"]*)"/)[1].replaceAll("&quot;",'"'));
+  assert.equal(quality.needsReview,false,JSON.stringify(quality));
+  assert.equal(JSON.stringify(scope),before);
+  assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,scope.layoutJson.edges.length);
+  assert.equal((xml.match(/mavisRole="edge-label"/g)||[]).length,scope.layoutJson.edges.length);
+  assert.match(xml,/mavisRuleVersion="mavis-se-1"/);
+  assert.match(xml,/font-size:16px;font-weight:bold/);
+  if(level==="component")assert.match(xml,/mavisRole="boundary"/);
+  assert.equal(await generateDrawio(scope),xml,"output must be deterministic");
+ }
+});
+
+test("drawio preserves cycle, reciprocal and disconnected nodes; escapes hostile labels", async () => {
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ const {projectDiagram}=require("../src/lib/drawio/rules.ts");
+ const document={modelVersionId:"test",notation:"DEPENDENCY_GRAPH",level:"SERVICE",layoutJson:{nodes:["a","b","c","d"].map(id=>({id,name:id==="a"?'Tên dịch vụ <script>alert(1)</script> rất dài có dấu tiếng Việt':id,kind:"SERVICE_CONTAINER"})),edges:[{id:"ab",from:"a",to:"b",type:"CODE_DEPENDENCY"},{id:"ba",from:"b",to:"a",type:"CODE_DEPENDENCY"},{id:"bc",from:"b",to:"c",type:"CODE_DEPENDENCY"},{id:"ca",from:"c",to:"a",type:"CODE_DEPENDENCY"}]}};
+ const xml=await generateDrawio(projectDiagram(document));
+ assert.equal((xml.match(/mavisRole="SERVICE_CONTAINER"/g)||[]).length,4);
+ assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,4);
+ assert.ok(!xml.includes("<script>"));
+ assert.match(xml,/mavisId="ba"/);
+ const excessive={...document,layoutJson:{nodes:Array.from({length:101},(_,i)=>({id:String(i),name:String(i)})),edges:[]}};
+ await assert.rejects(generateDrawio(projectDiagram(excessive)),/smaller diagram scope/);
+});
+
+test("drawio geometry gate catches crossings through unrelated nodes and label collisions", () => {
+ const {inspectGeometry}=require("../src/lib/drawio/geometry.ts");
+ const nodes=[{id:"a",x:0,y:0,width:50,height:50},{id:"b",x:100,y:0,width:50,height:50},{id:"obstacle",x:60,y:0,width:20,height:50}];
+ const result=inspectGeometry(nodes,[{id:"label",x:1,y:1,width:20,height:20}],[{id:"ab",from:"a",to:"b",points:[{x:50,y:25},{x:100,y:25}]}]);
+ assert.equal(result.edgeThroughNodes,1);assert.equal(result.labelNodeOverlaps,1);assert.equal(result.needsReview,true);
+});
+test("drawio relation filters disclose omitted edges instead of inventing traffic", () => {
+ const {projectDiagram,selectRelationships}=require("../src/lib/drawio/rules.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/petclinic-container.json"),"utf8").replace(/^\uFEFF/,""));
+ const doc=projectDiagram(raw),source=selectRelationships(doc,"source"),declared=selectRelationships(doc,"declared"),runtime=selectRelationships(doc,"runtime");
+ assert.equal(source.layoutJson.edges.length,0);assert.equal(source.omittedEdges,13);
+ assert.equal(declared.layoutJson.edges.length,13);assert.equal(runtime.layoutJson.edges.length,0);
+ assert.equal(runtime.layoutJson.nodes.length,11,"nodes must not silently disappear when a relation class is hidden");
+ assert.equal(selectRelationships(doc,"all"),doc);
+});
+
+test("drawio themes preserve semantic distinction and readable base palette", () => {
+ const {palette,nodeStyle}=require("../src/lib/drawio/rules.ts");
+ const luminance=hex=>{const channels=hex.slice(1).match(/../g).map(value=>parseInt(value,16)/255).map(v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4);return channels[0]*0.2126+channels[1]*0.7152+channels[2]*0.0722;};
+ for(const theme of ["clean","dark","blueprint"]){const p=palette(theme);for(const fill of [p.background,p.internal,p.data,p.external]){const a=luminance(p.text),b=luminance(fill);assert.ok((Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)>=4.5);}}
+ assert.match(nodeStyle("DATABASE","clean"),/cylinder/);assert.match(nodeStyle("QUEUE_BROKER","clean"),/shape=process/);
+});
+test("drawio supports self loops and parallel relations without dropping IDs", async () => {
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");const {projectDiagram}=require("../src/lib/drawio/rules.ts");
+ const doc=projectDiagram({modelVersionId:"test",notation:"DEPENDENCY_GRAPH",level:"SERVICE",layoutJson:{nodes:[{id:"a.b",name:"A",kind:"SERVICE_CONTAINER"},{id:"a_b",name:"B",kind:"SERVICE_CONTAINER"}],edges:[{id:"self",from:"a.b",to:"a.b",type:"CODE_DEPENDENCY"},{id:"one",from:"a.b",to:"a_b",type:"CODE_DEPENDENCY"},{id:"two",from:"a.b",to:"a_b",type:"SERVICE_HTTP_CALL"}]}});
+ const xml=await generateDrawio(doc);assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,3);assert.match(xml,/mavisId="self"/);assert.match(xml,/mavisId="a.b"/);assert.match(xml,/mavisId="a_b"/);
+});
+test("planar shared-dependency routing removes Petclinic crossings without deleting edges", async () => {
+ const {generateDrawio}=require("../src/lib/drawio/server.ts"),{projectDiagram}=require("../src/lib/drawio/rules.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/petclinic-container.json"),"utf8").replace(/^\uFEFF/,""));const xml=await generateDrawio(projectDiagram(raw));
+ const metrics=JSON.parse(xml.match(/mavisQuality="([^"]*)"/)[1].replaceAll("&quot;",'"'));
+ assert.equal(metrics.crossings,0);assert.equal(metrics.needsReview,false);assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,13);assert.equal((xml.match(/mavisRole="SERVICE_CONTAINER"/g)||[]).length,11);
+});
+
+test("pinned relayout preserves multiple fixed rectangles and safely rejects conflicting locks", async () => {
+ const {generateDrawio}=require("../src/lib/drawio/server.ts"),{projectDiagram}=require("../src/lib/drawio/rules.ts");
+ const node=(id,x,y)=>({id,name:id,kind:"SERVICE_CONTAINER",languageStack:"Java",description:"Handles requests",pinned:{x,y,width:280,height:160}});
+ const doc={modelVersionId:"pins",notation:"DEPENDENCY_GRAPH",level:"SERVICE",layoutJson:{nodes:[node("a",400,400),node("b",1000,700),{id:"c",name:"Free node",kind:"SERVICE_CONTAINER",languageStack:"Java",description:"Processes requests"}],edges:[{id:"ab",from:"a",to:"b",type:"SERVICE_HTTP_CALL"},{id:"bc",from:"b",to:"c",type:"CODE_DEPENDENCY"}]}};
+ const xml=await generateDrawio(projectDiagram(doc));
+ assert.match(xml,/mavisId="a"[\s\S]*?movable=0;resizable=0;[\s\S]*?<mxGeometry x="448" y="512" width="280" height="160"/);
+ assert.match(xml,/mavisId="b"[\s\S]*?<mxGeometry x="1048" y="812" width="280" height="160"/);
+ const quality=JSON.parse(xml.match(/mavisQuality="([^"]*)"/)[1].replaceAll("&quot;",'"'));assert.equal(quality.needsReview,false);
+ const conflict=structuredClone(doc);conflict.layoutJson.nodes[1].pinned={x:400,y:400,width:280,height:160};await assert.rejects(generateDrawio(projectDiagram(conflict)),/Locked shapes overlap/);
+});
