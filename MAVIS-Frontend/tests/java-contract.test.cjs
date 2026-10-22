@@ -64,3 +64,7 @@ test("preflight cannot be requested under another project's snapshot",async t=>{
 test("Java body errors and malformed envelopes cannot become successful view data",async t=>{
  environment(t);t.mock.method(globalThis,"fetch",async()=>Response.json({code:500,data:[]}));await assert.rejects(executeJava("projects",{},"jwt",new AbortController().signal),e=>e.kind==="contract");
 });
+
+test("fresh clone defaults to real backend mode; mock requires an explicit choice",()=>{
+ const {readAppConfiguration}=require("../src/lib/api/config.ts");assert.equal(readAppConfiguration({}).mode,"backend");assert.equal(readAppConfiguration({MAVIS_API_MODE:"mock"}).mode,"mock");
+});
