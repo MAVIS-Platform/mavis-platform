@@ -33,6 +33,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final SourceSnapshotRepository sourceSnapshotRepository;
     private final FeedbackCommentRepository feedbackCommentRepository;
     private final JobRepository jobRepository;
+    private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -156,6 +157,10 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getSubmissionsByAssignment(UUID assignmentId) {
         log.debug("Lấy danh sách bài nộp theo assignmentId: {}", assignmentId);
+        Assignment assignment = assignmentRepository.findById(assignmentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Assignment not found"));
+        if (assignment.getWorkspace() == null) throw new BusinessException(ErrorCode.FORBIDDEN, "Assignment workspace required");
+        accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
         List<SubmissionSnapshot> submissions = submissionSnapshotRepository.findByAssignmentIdOrderBySubmittedAtDesc(assignmentId);
         return mapToResponseListWithFeedbackCount(submissions);
     }
@@ -164,6 +169,8 @@ public class SubmissionServiceImpl implements SubmissionService {
     @Transactional(readOnly = true)
     public List<SubmissionResponseDTO> getSubmissionsByProject(UUID projectId) {
         log.debug("Lấy danh sách bài nộp theo projectId: {}", projectId);
+        accessPolicyService.requireProjectReadAccess(projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Project not found")));
         List<SubmissionSnapshot> submissions = submissionSnapshotRepository.findByProjectIdOrderBySubmittedAtDesc(projectId);
         return mapToResponseListWithFeedbackCount(submissions);
     }
@@ -175,6 +182,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         SubmissionSnapshot submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
 
+        accessPolicyService.requireProjectReadAccess(submission.getProject());
         long feedbackCount = feedbackCommentRepository.countBySubmissionId(submissionId);
         return SubmissionResponseDTO.fromEntity(submission, feedbackCount);
     }
@@ -187,6 +195,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         SubmissionSnapshot submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
 
+        accessPolicyService.requireProjectReadAccess(submission.getProject());
         // Kiểm tra quyền đọc
         Project project = submission.getProject();
         if (project != null) {

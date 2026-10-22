@@ -303,4 +303,16 @@ class FeedbackCommentServiceImplTest {
 
         verify(feedbackCommentRepository, never()).delete(any());
     }
+
+    @Test
+    void feedbackListRejectsUnrelatedUserBeforeQuery() {
+        Project project = Project.builder().id(UUID.randomUUID()).build();
+        submission.setProject(project);
+        when(submissionSnapshotRepository.findWithDetailsById(submissionId)).thenReturn(Optional.of(submission));
+        doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN))
+                .when(accessPolicyService).requireProjectReadAccess(project);
+        assertThatThrownBy(() -> feedbackCommentService.getFeedbacksBySubmission(submissionId))
+                .isInstanceOf(BusinessException.class);
+        verifyNoInteractions(feedbackCommentRepository);
+    }
 }
