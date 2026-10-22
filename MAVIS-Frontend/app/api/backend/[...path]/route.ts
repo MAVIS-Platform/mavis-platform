@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { githubImportRequest } from "@/lib/mainflow-api";
 import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 const cookieName = "mavis_session";
 const allowed =
-  /^(auth\/login|projects(?:\/[a-f0-9-]+)?|analyzer\/(?:upload|snapshots\/[a-f0-9-]+\/analyze|jobs\/[a-f0-9-]+(?:\/cancel)?|projects\/[a-f0-9-]+\/models|models\/[a-f0-9-]+(?:\/(?:graph|impact|diagrams))?|evidences\/(?:element|relationship)\/[a-f0-9-]+|ai\/explain|diagrams\/[a-f0-9-]+\/export))$/;
+  /^(auth\/login|projects(?:\/[a-f0-9-]+)?|analyzer\/(?:upload|import\/github|snapshots\/[a-f0-9-]+\/analyze|jobs\/[a-f0-9-]+(?:\/cancel)?|projects\/[a-f0-9-]+\/models|models\/[a-f0-9-]+(?:\/(?:graph|impact|diagrams))?|evidences\/(?:element|relationship)\/[a-f0-9-]+|ai\/explain|diagrams\/[a-f0-9-]+\/export))$/;
 async function handler(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const path = (await context.params).path.join("/");
   const jar = await cookies();
@@ -55,9 +56,37 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
     if (!login && token) headers.set("Authorization", `Bearer ${token}`);
     if (Number(request.headers.get("content-length") ?? "0") > 101 * 1024 * 1024)
       return NextResponse.json({ message: "Archive exceeds 100 MB" }, { status: 413 });
-    const body = request.method === "GET" ? undefined : await request.arrayBuffer();
+    let body = request.method === "GET" ? undefined : await request.arrayBuffer();
     if (body && body.byteLength > 101 * 1024 * 1024)
       return NextResponse.json({ message: "Archive exceeds 100 MB" }, { status: 413 });
+    if (path === "analyzer/import/github" && request.method === "POST") {
+      try {
+        const input = JSON.parse(new TextDecoder().decode(body ?? new ArrayBuffer(0)));
+        if (
+          typeof input.projectId !== "string" ||
+          typeof input.repositoryUrl !== "string" ||
+          (input.branchName != null && typeof input.branchName !== "string") ||
+          (input.commitSha != null && typeof input.commitSha !== "string")
+        )
+          throw new Error("Invalid GitHub import request");
+        body = new TextEncoder().encode(
+          JSON.stringify(
+            githubImportRequest(
+              input.projectId,
+              input.repositoryUrl,
+              input.branchName ?? "main",
+              input.commitSha ?? "",
+            ),
+          ),
+        ).buffer as ArrayBuffer;
+        headers.set("Content-Type", "application/json");
+      } catch (error) {
+        return NextResponse.json(
+          { message: error instanceof Error ? error.message : "Invalid GitHub import request" },
+          { status: 400 },
+        );
+      }
+    }
     const base = process.env["MAVIS_JAVA_URL"] ?? "http://127.0.0.1:8081";
     const upstream = await fetch(
       `${base.replace(/\/$/, "")}/api/v1/${path}${request.nextUrl.search}`,

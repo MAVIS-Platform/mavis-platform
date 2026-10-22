@@ -17,7 +17,7 @@ Sign in with an active verified account. Account registration/mail delivery is o
 ## Implemented mainflow
 
 - Login/logout via a same-origin allowlisted Next route; JWT is held in an HttpOnly SameSite cookie and stripped from login JSON. Mutations require matching Origin; session is checked against Java. Backend authorization remains authoritative.
-- Minimal personal project creation/selection. Upload ZIP up to 100 MB; explicit analysis with a stable Idempotency-Key. Retry reuses the key; preparing a new analysis creates a new key. Job polling stops at terminal status or request error, supports retry/cancel and survives refresh through URL context.
+- Minimal personal project creation/selection. Upload ZIP up to 100 MB or import a public GitHub repository by root URL, branch (default main) and optional full commit SHA; explicit analysis with a stable Idempotency-Key. Retry reuses the key; preparing a new analysis creates a new key. Job polling stops at terminal status or request error, supports retry/cancel and survives refresh through URL context.
 - Graph and model detail use explicit published model ID. Project/model and job/snapshot scope checks prevent stale context mixing. UUIDs are retained. Large graph SVG shows up to 120 matching elements, with search and full element/relationship selectors.
 - Node/edge evidence, grounded AI explanation and provider/fallback labels; no static fake metrics or canned answers. Impact uses SERVICE_CONTAINER IDs and displays excluded/unconfirmed-edge limitations.
 - Diagram selection and MERMAID/PLANTUML/DRAWIO_XML/JSON downloads. The API returns an envelope with textual content; FE downloads that content only after matching the model ID.
@@ -49,4 +49,12 @@ Browser artifacts and credentials are local and excluded from commits. Test proj
 
 ## Deferred scope
 
-Business CRUD, workspace/member/admin/assignment/submission/feedback, GitHub import, evaluation/revision and runtime UI/dispatch remain outside this static-mainflow release. Runner is still an operator adapter: approval does not itself launch a workload. SMTP delivery and live AI quota are not accepted by this suite. Do not call the entire product or the expanded runtime plan complete from these checks.
+Business CRUD, workspace/member/admin/assignment/submission/feedback, evaluation/revision and runtime UI/dispatch remain outside this static-mainflow release. Runner is still an operator adapter: approval does not itself launch a workload. SMTP delivery and live AI quota are not accepted by this suite. Do not call the entire product or the expanded runtime plan complete from these checks.
+
+## GitHub import
+
+On Import & Analyze, choose a project, click GitHub URL, enter https://github.com/owner/repository and the actual branch name, then Import from GitHub. A 40-character commit SHA is optional and overrides the branch. Once the snapshot appears, click Analyze snapshot; job polling and graph navigation are identical to ZIP import.
+
+The current Java importer does not accept GitHub credentials, so this UI supports public repositories. Private repositories can be uploaded as ZIP. URLs with credentials, non-GitHub hosts, /tree paths or query parameters are rejected both in the UI and in the Next proxy. No OAuth/PAT is collected by this form.
+
+Browser acceptance passed with spring-petclinic/spring-petclinic-microservices: branch-only main import returned 200, pinned commit 1d76b00d683e86b62867a6bf59530f8ab301244f import returned 200, analysis completed with review and graph contained 24 elements. Three server-proxy negative cases (fake GitHub host, branch query injection, invalid SHA) returned 400. Build, TypeScript, contract checks and changed-file lint passed. A separate test project was used; the user's Nhut project was not imported into or modified by acceptance.

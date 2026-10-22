@@ -29,6 +29,7 @@ try {
     contextHref,
     isImpactService,
     validateJobScope,
+    githubImportRequest,
   } = createRequire(import.meta.url)(join(temp, "mainflow-api.js"));
   assert.equal(isImpactService({ type: "SERVICE_CONTAINER" }), true);
   assert.equal(isImpactService({ type: "COMPONENT" }), false);
@@ -41,6 +42,34 @@ try {
     () =>
       validateJobScope({ projectId: "project", sourceSnapshotId: "other" }, "project", "snapshot"),
     /different project/,
+  );
+  assert.deepEqual(
+    githubImportRequest(
+      "p",
+      " https://github.com/spring-petclinic/spring-petclinic-microservices.git/ ",
+      "main",
+      "",
+    ),
+    {
+      projectId: "p",
+      repositoryUrl: "https://github.com/spring-petclinic/spring-petclinic-microservices",
+      branchName: "main",
+    },
+  );
+  for (const url of [
+    "http://github.com/a/b",
+    "https://github.com.evil.invalid/a/b",
+    "https://user:token@github.com/a/b",
+    "https://github.com/a/b/tree/main",
+    "https://127.0.0.1/a/b",
+    "https://github.com/a/b?token=secret",
+  ])
+    assert.throws(() => githubImportRequest("p", url, "main", ""));
+  assert.throws(() => githubImportRequest("p", "https://github.com/a/b", "main?download=1", ""));
+  assert.throws(() => githubImportRequest("p", "https://github.com/a/b", "main", "invalid"));
+  assert.equal(
+    githubImportRequest("p", "https://github.com/a/b", "feature/demo", "a".repeat(40)).commitSha,
+    "a".repeat(40),
   );
   let calls = [];
   globalThis.fetch = async (url, init) => {
