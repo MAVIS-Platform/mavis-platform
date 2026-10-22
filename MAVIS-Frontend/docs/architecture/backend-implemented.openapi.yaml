@@ -1,0 +1,709 @@
+openapi: 3.1.0
+info:
+  title: MAVIS — APIs khai báo trong mã nguồn
+  version: 2026-10-22-source
+  description: >-
+    5 application endpoints lấy từ controller Spring Boot và .NET Worker. Chưa gọi backend đang chạy. Tất cả
+    example là dữ liệu minh họa, không phải response đã đo. Không bao gồm endpoint framework tự sinh như
+    Swagger.
+servers:
+  - url: http://localhost:8080
+    description: Cổng Spring cấu hình trong application.yml.
+security: []
+tags:
+  - name: Spring System
+  - name: Spring Upload
+  - name: Internal Worker
+paths:
+  /api/v1/system/ping:
+    get:
+      operationId: systemPing
+      tags:
+        - Spring System
+      summary: Kiểm tra kết nối Spring
+      description: >-
+        Không có request body. SecurityConfig hiện permitAll. Ping không xác nhận sức khỏe database, worker
+        hay runtime.
+      responses:
+        "200":
+          description: Thành công.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpringStringResponse"
+              example:
+                code: 200
+                message: Thao tác thành công
+                data: Pong! MAVIS System is up and running.
+                timestamp: "2026-10-22T10:00:00"
+        "500":
+          description: Ngoại lệ chưa được xử lý.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpringError"
+              example:
+                code: 500
+                message: Đã xảy ra lỗi hệ thống, vui lòng thử lại sau
+                timestamp: "2026-10-22T10:00:00"
+  /api/v1/analyzer/upload:
+    post:
+      operationId: uploadSourceZip
+      tags:
+        - Spring Upload
+      summary: Upload ZIP và phát AnalyzeRequestEvent
+      description: >-
+        Kiểm tra file không rỗng và tên kết thúc .zip; lưu file, phát event phân tích rồi trả đường dẫn máy
+        chủ. Không trả snapshot hay jobId. Không có field name; không thấy giới hạn upload tùy chỉnh trong
+        application.yml. Lỗi binding multipart/UUID chưa được kiểm thử runtime; không gán tất cả thành 400.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - projectId
+              properties:
+                file:
+                  type: string
+                  description: File ZIP không rỗng.
+                  format: binary
+                projectId:
+                  type: string
+                  description: UUID bắt buộc.
+                  format: uuid
+      responses:
+        "200":
+          description: Đã lưu và phát event; chưa chứng minh phân tích hoàn tất.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpringStringResponse"
+              example:
+                code: 200
+                message: Tải file ZIP thành công và đã phát tín hiệu phân tích
+                data: C:\mavis\uploads\12345678-1234-4234-8234-123456789abc_source-demo.zip
+                timestamp: "2026-10-22T10:00:00"
+        "400":
+          description: BusinessException luôn trả HTTP 400, kể cả code FILE_UPLOAD_FAILED=5001.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpringError"
+              examples:
+                emptyFile:
+                  value:
+                    code: 400
+                    message: File tải lên không được để trống
+                    timestamp: "2026-10-22T10:00:00"
+                wrongExtension:
+                  value:
+                    code: 400
+                    message: Chỉ chấp nhận file định dạng .zip
+                    timestamp: "2026-10-22T10:00:00"
+                storageFailure:
+                  value:
+                    code: 5001
+                    message: Lỗi khi lưu trữ file ZIP xuống hệ thống
+                    timestamp: "2026-10-22T10:00:00"
+        "500":
+          description: Ngoại lệ khác do GlobalExceptionHandler xử lý.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpringError"
+              example:
+                code: 500
+                message: Đã xảy ra lỗi hệ thống, vui lòng thử lại sau
+                timestamp: "2026-10-22T10:00:00"
+  /api/Jobs/submit:
+    post:
+      operationId: submitWorkerAnalysis
+      tags:
+        - Internal Worker
+      servers:
+        - url: http://localhost:5082
+          description: Development HTTP launch profile; có middleware HTTPS redirection.
+        - url: https://localhost:7175
+          description: Development HTTPS launch profile; không bảo đảm là cổng production.
+      summary: Xếp hàng phân tích bất đồng bộ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisRequest"
+            example:
+              projectId: 11111111-1111-4111-8111-111111111111
+              projectName: MAVIS Demo
+              sourceLocation: ""
+              rawFindings:
+                - language: java
+                  serviceId: order-service
+                  kind: HTTP_REST_CALL
+                  target: user-service
+                  httpMethod: GET
+                  url: http://user-service/api/users
+                  filePath: order-service/OrderClient.java
+                  startLine: 42
+                  endLine: 42
+                  snippet: GET http://user-service/api/users
+              computeImpact: true
+              impactTargetServiceId: user-service
+      responses:
+        "202":
+          description: Đã xếp hàng; chưa có kết quả.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobSubmitResponse"
+              example:
+                jobId: 1234567890abcdef1234567890abcdef
+                message: Analysis job submitted successfully
+                projectId: 11111111-1111-4111-8111-111111111111
+        "400":
+          description: >-
+            ProjectId rỗng có WorkerError. JSON/body sai cấu trúc có thể do [ApiController] trả
+            ValidationProblemDetails.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerError"
+              example:
+                error: ProjectId is required
+            application/problem+json:
+              schema:
+                type: object
+                additionalProperties: true
+        "500":
+          description: Không thấy custom error envelope cho ngoại lệ Worker; body phụ thuộc environment.
+  /api/Jobs/{jobId}:
+    get:
+      operationId: getWorkerJob
+      tags:
+        - Internal Worker
+      servers:
+        - url: http://localhost:5082
+          description: Development HTTP launch profile; có middleware HTTPS redirection.
+        - url: https://localhost:7175
+          description: Development HTTPS launch profile; không bảo đảm là cổng production.
+      summary: Lấy trạng thái và kết quả job
+      description: >-
+        Hàng đợi lưu trong RAM; restart Worker làm mất job. Job thất bại vẫn GET HTTP 200 với status=Failed và
+        error có nội dung.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+          example: 1234567890abcdef1234567890abcdef
+      responses:
+        "200":
+          description: Trạng thái hiện tại; resultJson có thể null.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JobStatus"
+              example:
+                jobId: 1234567890abcdef1234567890abcdef
+                jobType: AnalysisRequest
+                status: Completed
+                enqueuedAt: "2026-10-22T03:00:00Z"
+                startedAt: "2026-10-22T03:00:00Z"
+                completedAt: "2026-10-22T03:00:00Z"
+                error: null
+                resultJson: >-
+                  {"ProjectId":"11111111-1111-4111-8111-111111111111","Manifest":{"ProjectId":"11111111-1111-4111-8111-111111111111","ProjectName":"MAVIS
+                  Demo","SourceLocation":"","Services":[{"Id":"order-service","Name":"order-service","Language":"java","Framework":null,"SourceRoot":null,"ExposedPorts":[],"Metadata":{}},{"Id":"user-service","Name":"user-service","Language":null,"Framework":null,"SourceRoot":null,"ExposedPorts":[],"Metadata":{}}],"Dependencies":[{"Id":"edge-demo-1","FromServiceId":"order-service","ToServiceId":"user-service","Kind":1,"HttpMethod":"GET","Url":"http://user-service/api/users","Evidences":[{"SourceKind":"SourceFile","FilePath":"order-service/OrderClient.java","StartLine":42,"EndLine":42,"Snippet":"GET
+                  http://user-service/api/users"}]}]},"Impact":{"TargetServiceId":"user-service","AffectedServices":[{"ServiceId":"order-service","Level":1,"Distance":1}],"Paths":[{"FromServiceId":"order-service","ToServiceId":"user-service","Hops":["order-service","user-service"]}]},"CompletedAt":"2026-10-22T03:00:00Z"}
+        "404":
+          description: Không tìm thấy job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerError"
+              example:
+                error: Job 1234567890abcdef1234567890abcdef not found
+        "500":
+          description: Ngoại lệ Worker, không có custom envelope được khai báo.
+  /api/analysis:
+    post:
+      operationId: analyzeSynchronously
+      tags:
+        - Internal Worker
+      servers:
+        - url: http://localhost:5082
+          description: Development HTTP launch profile; có middleware HTTPS redirection.
+        - url: https://localhost:7175
+          description: Development HTTPS launch profile; không bảo đảm là cổng production.
+      summary: Phân tích đồng bộ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisRequest"
+            example:
+              projectId: 11111111-1111-4111-8111-111111111111
+              projectName: MAVIS Demo
+              sourceLocation: ""
+              rawFindings:
+                - language: java
+                  serviceId: order-service
+                  kind: HTTP_REST_CALL
+                  target: user-service
+                  httpMethod: GET
+                  url: http://user-service/api/users
+                  filePath: order-service/OrderClient.java
+                  startLine: 42
+                  endLine: 42
+                  snippet: GET http://user-service/api/users
+              computeImpact: true
+              impactTargetServiceId: user-service
+      responses:
+        "200":
+          description: Manifest và impact nếu được yêu cầu.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisResult"
+              example:
+                projectId: 11111111-1111-4111-8111-111111111111
+                manifest:
+                  projectId: 11111111-1111-4111-8111-111111111111
+                  projectName: MAVIS Demo
+                  sourceLocation: ""
+                  services:
+                    - id: order-service
+                      name: order-service
+                      language: java
+                      framework: null
+                      sourceRoot: null
+                      exposedPorts: []
+                      metadata: {}
+                    - id: user-service
+                      name: user-service
+                      language: null
+                      framework: null
+                      sourceRoot: null
+                      exposedPorts: []
+                      metadata: {}
+                  dependencies:
+                    - id: edge-demo-1
+                      fromServiceId: order-service
+                      toServiceId: user-service
+                      kind: 1
+                      httpMethod: GET
+                      url: http://user-service/api/users
+                      evidences:
+                        - sourceKind: SourceFile
+                          filePath: order-service/OrderClient.java
+                          startLine: 42
+                          endLine: 42
+                          snippet: GET http://user-service/api/users
+                impact:
+                  targetServiceId: user-service
+                  affectedServices:
+                    - serviceId: order-service
+                      level: 1
+                      distance: 1
+                  paths:
+                    - fromServiceId: order-service
+                      toServiceId: user-service
+                      hops:
+                        - order-service
+                        - user-service
+                completedAt: "2026-10-22T03:00:00Z"
+        "400":
+          description: >-
+            projectId rỗng có WorkerError. JSON/body sai cấu trúc có thể do [ApiController] trả
+            ValidationProblemDetails.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkerError"
+              example:
+                error: projectId is required
+            application/problem+json:
+              schema:
+                type: object
+                additionalProperties: true
+        "500":
+          description: Không có custom error envelope được khai báo cho ngoại lệ khi phân tích.
+components:
+  schemas:
+    SpringStringResponse:
+      type: object
+      required:
+        - code
+        - message
+        - data
+        - timestamp
+      properties:
+        code:
+          type: integer
+          description: Mã ứng dụng, không phải HTTP status độc lập.
+        message:
+          type: string
+        data:
+          type: string
+        timestamp:
+          type: string
+          description: LocalDateTime của server, không có offset; giá trị minh họa.
+    SpringError:
+      type: object
+      required:
+        - code
+        - message
+        - timestamp
+      properties:
+        code:
+          type: integer
+          description: Có thể khác HTTP status, ví dụ HTTP 400 với code=5001.
+        message:
+          type: string
+        timestamp:
+          type: string
+          description: LocalDateTime của server; data bị bỏ khi null.
+    WorkerError:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+    AnalysisRequest:
+      type: object
+      required:
+        - projectId
+      properties:
+        projectId:
+          type: string
+          description: Bắt buộc không rỗng hoặc toàn khoảng trắng.
+          minLength: 1
+          pattern: \S
+        projectName:
+          type: string
+          description: Mặc định chuỗi rỗng.
+          default: ""
+        sourceLocation:
+          type: string
+          description: Vị trí source do dịch vụ nội bộ cung cấp; mặc định chuỗi rỗng. Không phải ZIP upload.
+          default: ""
+        rawFindings:
+          type: array
+          items:
+            $ref: "#/components/schemas/RawFinding"
+          default: []
+        computeImpact:
+          type: boolean
+          default: true
+        impactTargetServiceId:
+          type:
+            - string
+            - "null"
+          description: Chỉ tính impact khi computeImpact=true và target không rỗng.
+    RawFinding:
+      type: object
+      required: []
+      properties:
+        language:
+          type: string
+          default: generic
+        serviceId:
+          type: string
+          default: ""
+        kind:
+          type: string
+          description: >-
+            HTTP_REST_CALL/REST_CALL/HTTP_CALL/FEIGN_CLIENT; CONFIG_REFERENCE/CONFIGURATION_REFERENCE;
+            ENV_VAR/ENV_VAR_REFERENCE/ENVIRONMENT_VARIABLE_REFERENCE; DOCKER_NETWORK/DOCKER_NETWORK_REFERENCE.
+            Giá trị khác được ánh xạ Unknown.
+          default: ""
+        target:
+          type:
+            - string
+            - "null"
+        httpMethod:
+          type:
+            - string
+            - "null"
+        url:
+          type:
+            - string
+            - "null"
+        filePath:
+          type: string
+          default: ""
+        startLine:
+          type:
+            - integer
+            - "null"
+        endLine:
+          type:
+            - integer
+            - "null"
+        snippet:
+          type: string
+          default: ""
+    AnalysisResult:
+      type: object
+      required:
+        - projectId
+        - manifest
+        - impact
+        - completedAt
+      properties:
+        projectId:
+          type: string
+        manifest:
+          $ref: "#/components/schemas/ProjectManifest"
+        impact:
+          oneOf:
+            - $ref: "#/components/schemas/WorkerImpact"
+            - type: "null"
+        completedAt:
+          type: string
+          format: date-time
+    ProjectManifest:
+      type: object
+      required:
+        - projectId
+        - projectName
+        - sourceLocation
+        - services
+        - dependencies
+      properties:
+        projectId:
+          type: string
+        projectName:
+          type: string
+        sourceLocation:
+          type: string
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceNode"
+        dependencies:
+          type: array
+          items:
+            $ref: "#/components/schemas/DependencyEdge"
+    ServiceNode:
+      type: object
+      required:
+        - id
+        - name
+        - language
+        - framework
+        - sourceRoot
+        - exposedPorts
+        - metadata
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        language:
+          type:
+            - string
+            - "null"
+        framework:
+          type:
+            - string
+            - "null"
+        sourceRoot:
+          type:
+            - string
+            - "null"
+        exposedPorts:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    DependencyEdge:
+      type: object
+      required:
+        - id
+        - fromServiceId
+        - toServiceId
+        - kind
+        - httpMethod
+        - url
+        - evidences
+      properties:
+        id:
+          type: string
+          description: ID ổn định do resolver sinh; ví dụ trong tài liệu chỉ minh họa.
+        fromServiceId:
+          type: string
+        toServiceId:
+          type: string
+        kind:
+          type: integer
+          enum:
+            - 0
+            - 1
+            - 2
+            - 3
+            - 4
+          description: >-
+            0=Unknown, 1=HttpRestCall, 2=ConfigurationReference, 3=EnvironmentVariableReference,
+            4=DockerNetworkReference.
+        httpMethod:
+          type:
+            - string
+            - "null"
+        url:
+          type:
+            - string
+            - "null"
+        evidences:
+          type: array
+          items:
+            $ref: "#/components/schemas/WorkerEvidence"
+    WorkerEvidence:
+      type: object
+      required:
+        - sourceKind
+        - filePath
+        - startLine
+        - endLine
+        - snippet
+      properties:
+        sourceKind:
+          type: string
+          description: Chuỗi, không phải enum số.
+          default: SourceFile
+        filePath:
+          type: string
+        startLine:
+          type:
+            - integer
+            - "null"
+        endLine:
+          type:
+            - integer
+            - "null"
+        snippet:
+          type: string
+    WorkerImpact:
+      type: object
+      required:
+        - targetServiceId
+        - affectedServices
+        - paths
+      properties:
+        targetServiceId:
+          type: string
+        affectedServices:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImpactedService"
+        paths:
+          type: array
+          items:
+            $ref: "#/components/schemas/DependencyPath"
+    ImpactedService:
+      type: object
+      required:
+        - serviceId
+        - level
+        - distance
+      properties:
+        serviceId:
+          type: string
+        level:
+          type: integer
+          enum:
+            - 0
+            - 1
+            - 2
+            - 3
+          description: 0=None, 1=Direct, 2=Indirect, 3=Transitive.
+        distance:
+          type: integer
+          description: Khoảng cách qua dependency tới target.
+    DependencyPath:
+      type: object
+      required:
+        - fromServiceId
+        - toServiceId
+        - hops
+      properties:
+        fromServiceId:
+          type: string
+        toServiceId:
+          type: string
+        hops:
+          type: array
+          items:
+            type: string
+    JobSubmitResponse:
+      type: object
+      required:
+        - jobId
+        - message
+        - projectId
+      properties:
+        jobId:
+          type: string
+          description: 'Guid.ToString("N"): UUID không dấu gạch ngang.'
+        message:
+          type: string
+        projectId:
+          type: string
+    JobStatus:
+      type: object
+      required:
+        - jobId
+        - jobType
+        - status
+        - enqueuedAt
+        - startedAt
+        - completedAt
+        - error
+        - resultJson
+      properties:
+        jobId:
+          type: string
+        jobType:
+          type: string
+          enum:
+            - AnalysisRequest
+        status:
+          type: string
+          enum:
+            - Queued
+            - Processing
+            - Completed
+            - Failed
+        enqueuedAt:
+          type: string
+          format: date-time
+        startedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        completedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+        error:
+          type:
+            - string
+            - "null"
+        resultJson:
+          type:
+            - string
+            - "null"
+          description: >-
+            JSON dạng chuỗi, không phải object. Deserialize chuỗi sẽ thấy tên thuộc tính PascalCase và enum số
+            do JsonSerializer.Serialize(result) không dùng web options.

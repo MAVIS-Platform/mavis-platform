@@ -1,6 +1,7 @@
-import { MainflowProvider } from "@/components/mainflow/provider";
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AppProvider } from "@/providers/app-provider";
+import { readAppConfiguration } from "@/lib/api/config";
 import "../src/styles.css";
 
 // Runs before paint; keep the storage key and validation aligned with ThemeProvider.
@@ -13,7 +14,10 @@ export const metadata: Metadata = {
   authors: [{ name: "MAVIS" }],
 };
 
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const configuration = readAppConfiguration(process.env);
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -28,7 +32,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body>
         <ThemeProvider>
-          <MainflowProvider>{children}</MainflowProvider>
+          <AppProvider mode={configuration.mode} mockScenario={configuration.mockScenario}>
+            {children}
+          </AppProvider>
         </ThemeProvider>
       </body>
     </html>
