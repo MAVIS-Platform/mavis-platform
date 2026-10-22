@@ -1,0 +1,44 @@
+{
+  "sessionId": "fixture-session",
+  "modelVersionId": "fixture-model",
+  "sourceSnapshotId": "fixture-source",
+  "profileVersionId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "runConfigurationVersionId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "scenarioVersionId": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "resourceProject": "mavisrun-0123456789abcdef0123456789abcdef",
+  "composeYaml": "services:\n  app:\n    image: app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+  "profile": {
+    "collectorImage": "collector@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "instrumentationVolume": "mavis-agents-v1",
+    "applications": {
+      "app": {
+        "runtime": "java",
+        "containerPort": 8080,
+        "readinessPath": "/health"
+      }
+    },
+    "memoryMiB": 256,
+    "cpus": 1,
+    "timeoutSeconds": 120,
+    "approvedForLocalPoc": true,
+    "scenarioRunnerImage": "runner@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "dotnetInstrumentationVersion": "1.17.0",
+    "javaInstrumentationVersion": "2.32.0"
+  },
+  "scenario": {
+    "sessionId": "fixture-session",
+    "timeoutSeconds": 60,
+    "steps": [
+      {
+        "id": "health",
+        "service": "app",
+        "method": "GET",
+        "path": "/health",
+        "expectedStatus": 200
+      }
+    ]
+  },
+  "confirmedServiceMappings": {
+    "app": "550e8400-e29b-41d4-a716-446655440001"
+  }
+}

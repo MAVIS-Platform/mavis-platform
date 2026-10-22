@@ -48,6 +48,7 @@ public class SecurityConfig {
                         "/swagger-ui/**",
                         "/swagger-ui.html",
                         "/api/v1/analyzer/runtime/sessions/*/lifecycle-ack",
+                        "/api/v1/analyzer/runtime/sessions/*/recovery-result",
                         "/api/v1/analyzer/runtime/sessions/*/ingest-receipt",
                         "/api/v1/analyzer/runtime/sessions/*/ingest-receipt-ack",
                         "/api/v1/analyzer/runtime/sessions/*/sync-outbox",

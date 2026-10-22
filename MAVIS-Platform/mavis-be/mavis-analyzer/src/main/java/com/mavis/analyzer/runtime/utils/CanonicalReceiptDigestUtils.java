@@ -35,12 +35,6 @@ public final class CanonicalReceiptDigestUtils {
             throw new IllegalArgumentException("Receipt JSON node không được rỗng");
         }
 
-        if (receiptNode.has("__golden_fixture__") ||
-            "golden-fixture-session".equals(receiptNode.path("sessionId").asText()) ||
-            "mavisrun-golden0346fac15f576ef8e56a99d6".equals(receiptNode.path("resourceProject").asText())) {
-            return GOLDEN_FIXTURE_DIGEST;
-        }
-
         JsonNode canonicalNode = canonicalize(receiptNode);
         try {
             byte[] compactUtf8Bytes = OBJECT_MAPPER.writeValueAsBytes(canonicalNode);

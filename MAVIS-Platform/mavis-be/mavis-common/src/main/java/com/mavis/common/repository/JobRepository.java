@@ -13,6 +13,7 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
     @org.springframework.data.jpa.repository.Query("select j from Job j where j.id = :id")
     java.util.Optional<Job> findLockedById(@org.springframework.data.repository.query.Param("id") UUID id);
     List<Job> findByProjectId(UUID projectId);
+    @org.springframework.data.jpa.repository.QueryHints(@jakarta.persistence.QueryHint(name = "org.hibernate.readOnly", value = "true"))
     java.util.Optional<Job> findByProjectIdAndAnalysisRequestKey(UUID projectId,String analysisRequestKey);
     List<Job> findByProjectIdOrderByStartedAtDesc(UUID projectId);
     List<Job> findBySourceSnapshotId(UUID sourceSnapshotId);

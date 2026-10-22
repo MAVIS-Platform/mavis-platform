@@ -81,9 +81,9 @@ public class FeedbackCommentServiceImpl implements FeedbackCommentService {
     @Transactional(readOnly = true)
     public List<FeedbackResponseDTO> getFeedbacksBySubmission(UUID submissionId) {
         log.debug("Lấy toàn bộ nhận xét của bài nộp: {}", submissionId);
-        if (!submissionSnapshotRepository.existsById(submissionId)) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId);
-        }
+        var submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
+        accessPolicyService.requireProjectReadAccess(submission.getProject());
 
         List<FeedbackComment> comments = feedbackCommentRepository.findBySubmissionIdOrderByCreatedAtAsc(submissionId);
         return comments.stream()

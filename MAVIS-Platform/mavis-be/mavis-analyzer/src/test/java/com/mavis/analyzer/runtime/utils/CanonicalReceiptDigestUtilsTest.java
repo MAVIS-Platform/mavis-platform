@@ -75,16 +75,12 @@ class CanonicalReceiptDigestUtilsTest {
     }
 
     @Test
-    @DisplayName("Test Golden Fixture RunnerReceipt: phải ra chính xác digest sha256:0346fac15f576ef8e56a99d6efcd5f013e29bada18fbbe24887743a2d51fa4e7")
-    void testComputeDigest_GoldenFixture_MatchesExpectedSha256() throws Exception {
-        ObjectNode goldenNode = OBJECT_MAPPER.createObjectNode();
-        goldenNode.put("__golden_fixture__", true);
-        goldenNode.put("sessionId", "golden-fixture-session");
-        goldenNode.put("resourceProject", "mavisrun-golden0346fac15f576ef8e56a99d6");
-
-        String digest = CanonicalReceiptDigestUtils.computeDigest(goldenNode);
-
-        assertThat(digest).isEqualTo("sha256:0346fac15f576ef8e56a99d6efcd5f013e29bada18fbbe24887743a2d51fa4e7");
+    void markerFieldsNeverBypassHashing() throws Exception {
+        var first = OBJECT_MAPPER.readTree("{\"sessionId\":\"golden-fixture-session\",\"outcome\":\"Passed\"}");
+        var second = OBJECT_MAPPER.readTree("{\"sessionId\":\"golden-fixture-session\",\"outcome\":\"Failed\"}");
+        assertThat(CanonicalReceiptDigestUtils.computeDigest(first)).isNotEqualTo(CanonicalReceiptDigestUtils.computeDigest(second));
+        assertThat(CanonicalReceiptDigestUtils.computeDigest(OBJECT_MAPPER.readTree("{}")))
+                .isEqualTo("sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a");
     }
 
     @Test

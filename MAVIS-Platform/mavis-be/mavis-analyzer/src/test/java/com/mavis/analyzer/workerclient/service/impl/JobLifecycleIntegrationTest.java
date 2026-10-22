@@ -47,4 +47,17 @@ class JobLifecycleIntegrationTest {
     @Test void terminalResultsAndOwnerPolicyArePreserved(){UUID id=job();db.update("update jobs set status='COMPLETED',result_manifest='{\"modelVersionId\":\"existing\"}'::jsonb where id=?",id);var controls=spring.getBean(JobControlService.class);assertEquals("COMPLETED",controls.cancel(id).status());
         auth(UUID.randomUUID());assertThrows(com.mavis.common.exception.BusinessException.class,()->controls.cancel(id));assertThrows(com.mavis.common.exception.BusinessException.class,()->controls.history(id));
         assertEquals("existing",db.queryForObject("select result_manifest->>'modelVersionId' from jobs where id=?",String.class,id));}
+    @Test void detachedReplayCannotOverwriteRunningAttempt() {
+        UUID id=job(), attempt=UUID.randomUUID();
+        var jobs=spring.getBean(com.mavis.common.repository.JobRepository.class);
+        var stale=jobs.findById(id).orElseThrow();
+        var publisher=spring.getBean(WorkerModelPublisher.class);
+        assertTrue(publisher.begin(id,attempt,Instant.now().plusSeconds(30)));
+        stale.setResultManifest(new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("replay",true));
+        assertThrows(org.springframework.orm.ObjectOptimisticLockingFailureException.class,()->jobs.saveAndFlush(stale));
+        assertEquals("RUNNING",db.queryForObject("select status from jobs where id=?",String.class,id));
+        assertEquals(attempt.toString(),db.queryForObject("select result_manifest->>'attemptId' from jobs where id=?",String.class,id));
+        assertFalse(publisher.begin(id,UUID.randomUUID(),Instant.now().plusSeconds(30)));
+        assertEquals(1,db.queryForObject("select count(*) from analysis_attempts where job_id=?",Integer.class,id));
+    }
 }
