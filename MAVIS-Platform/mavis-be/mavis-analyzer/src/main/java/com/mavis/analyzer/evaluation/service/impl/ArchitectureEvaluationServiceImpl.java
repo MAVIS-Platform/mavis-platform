@@ -29,6 +29,7 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
     private final EvaluationRunRepository evaluationRunRepository;
     private final EvaluationFindingRepository evaluationFindingRepository;
     private final ObjectMapper objectMapper;
+    private final com.mavis.common.security.AccessPolicyService accessPolicy;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -37,6 +38,8 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
 
         ModelVersion modelVersion = modelVersionRepository.findById(modelVersionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên bản mô hình với ID: " + modelVersionId));
+
+        accessPolicy.requireProjectReadAccess(modelVersion.getProject());
 
         // [TỐI ƯU HIỆU NĂNG]: Nạp toàn bộ Elements, Relationships, Evidences lên RAM trong 3 câu query đầu tiên
         // Query 1: Elements
@@ -158,6 +161,8 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
     @Override
     @Transactional(readOnly = true)
     public List<EvaluationRunResponseDTO> getEvaluationsByModelVersion(UUID modelVersionId) {
+        var model = modelVersionRepository.findById(modelVersionId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        accessPolicy.requireProjectReadAccess(model.getProject());
         List<EvaluationRun> runs = evaluationRunRepository.findByModelVersionIdOrderByCreatedAtDesc(modelVersionId);
         return runs.stream()
                 .map(EvaluationRunResponseDTO::fromEntity)
@@ -167,6 +172,8 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
     @Override
     @Transactional(readOnly = true)
     public List<EvaluationFindingResponseDTO> getFindingsByEvaluationRunId(UUID evaluationRunId) {
+        var run = evaluationRunRepository.findById(evaluationRunId).orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND));
+        accessPolicy.requireProjectReadAccess(run.getModelVersion().getProject());
         List<EvaluationFinding> findings = evaluationFindingRepository.findByEvaluationRunId(evaluationRunId);
         return findings.stream()
                 .map(EvaluationFindingResponseDTO::fromEntity)
@@ -179,6 +186,7 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
         EvaluationRun run = evaluationRunRepository.findById(evaluationRunId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy lượt đánh giá với ID: " + evaluationRunId));
         List<EvaluationFinding> findings = evaluationFindingRepository.findByEvaluationRunId(evaluationRunId);
+        accessPolicy.requireProjectReadAccess(run.getModelVersion().getProject());
         return EvaluationRunResponseDTO.fromEntity(run, findings);
     }
 

@@ -37,27 +37,19 @@ public class GraphServiceImpl implements GraphService {
     private final ModelRelationshipRepository modelRelationshipRepository;
     private final ModelVersionRepository modelVersionRepository;
     private final com.mavis.analyzer.impact.WorkerImpactService workerImpact;
+    private final com.mavis.common.security.AccessPolicyService accessPolicy;
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public GraphDataDTO getGraphDataBySessionId(UUID sessionId) {
         log.info("Fetching graph data for session / modelVersion ID: {}", sessionId);
 
-        UUID targetModelVersionId = sessionId;
+        ModelVersion target = modelVersionRepository.findById(sessionId)
+                .orElseGet(() -> modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(sessionId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Model not found")));
+        accessPolicy.requireProjectReadAccess(target.getProject());
+        UUID targetModelVersionId = target.getId();
         List<ModelElement> modelElements = modelElementRepository.findByModelVersionId(targetModelVersionId);
-
-        // Fallback: If sessionId is actually a projectId, find the latest valid ModelVersion
-        if (modelElements.isEmpty()) {
-            Optional<ModelVersion> latest = modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(sessionId);
-            if (latest.isPresent()) {
-                targetModelVersionId = latest.get().getId();
-                modelElements = modelElementRepository.findByModelVersionId(targetModelVersionId);
-            }
-        }
-
-        if (modelElements.isEmpty()) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dữ liệu đồ thị cho ID này");
-        }
-
         List<ModelRelationship> relationships = modelRelationshipRepository.findByModelVersionId(targetModelVersionId);
 
         List<NodeDTO> nodeDTOs = modelElements.stream()
