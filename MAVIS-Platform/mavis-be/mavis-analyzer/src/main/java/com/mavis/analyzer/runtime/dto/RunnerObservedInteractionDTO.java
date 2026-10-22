@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class RunnerObservedInteractionDTO {
+
     private String traceId;
     private String fromService;
     private String toService;

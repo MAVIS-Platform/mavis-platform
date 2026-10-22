@@ -211,6 +211,7 @@ class OtelTraceApiIntegrationTest {
                 .build();
 
         MvcResult ingestResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-traces", session.getId())
+                        .header("X-Test-User-Email", user.getEmail())
                         .param("baseModelVersionId", baseVersion.getId().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(ingestRequest)))
@@ -277,6 +278,7 @@ class OtelTraceApiIntegrationTest {
 
         // --- BƯỚC 2: GET /sequence ---
         MvcResult sequenceResult = mockMvc.perform(get("/api/v1/analyzer/runtime/sessions/{sessionId}/sequence", session.getId())
+                        .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))

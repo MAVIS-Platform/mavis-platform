@@ -115,6 +115,26 @@ public class RuntimeSessionController {
         return ApiResponse.success("Đồng bộ outbox receipt thành công", response);
     }
 
+    @PostMapping("/runtime/sessions/{sessionId}/lifecycle-ack")
+    @Operation(summary = "Xác nhận các mốc vòng đời phiên thực nghiệm từ Runner/Adapter (ALLOCATED / RUNNING)",
+            description = "Xác thực resourceProject, cập nhật executionStatus sang ALLOCATED hoặc RUNNING kèm thời gian ghi nhận")
+    public ApiResponse<com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckDTO> acknowledgeLifecycle(
+            @PathVariable UUID sessionId,
+            @Valid @RequestBody com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckRequestDTO request) {
+        com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckDTO response = runtimeSessionService.acknowledgeLifecycle(sessionId, request);
+        return ApiResponse.success("Xác nhận mốc vòng đời phiên thực nghiệm thành công", response);
+    }
+
+    @PostMapping("/runtime/sessions/{sessionId}/ingest-receipt-ack")
+    @Operation(summary = "Tiếp nhận RunnerReceipt và trả về thông tin biên nhận đầy đủ (ReceiptIngestAckDTO)",
+            description = "Trả về chi tiết digest, idempotency persistenceStatus, publicationGateStatus, promotedLatest và enrichedModelVersionId")
+    public ApiResponse<com.mavis.analyzer.runtime.dto.ReceiptIngestAckDTO> ingestReceiptAck(
+            @PathVariable UUID sessionId,
+            @RequestBody com.mavis.analyzer.runtime.dto.RunnerReceiptIngestRequestDTO receipt) {
+        com.mavis.analyzer.runtime.dto.ReceiptIngestAckDTO response = runnerReceiptIngestService.ingestRunnerReceiptAck(sessionId, receipt);
+        return ApiResponse.success("Tiếp nhận và xác nhận RunnerReceipt thành công", response);
+    }
+
     @GetMapping("/runtime/sessions/{sessionId}/run-definition")
     @Operation(summary = "Xuất JSON RuntimeRunDefinition chuẩn (WJ-01)",
             description = "Khớp 100% với hợp đồng record RuntimeRunDefinition để nạp vào lệnh MAVIS.Runner run")
