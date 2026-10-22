@@ -4,9 +4,9 @@ spring:
 
   datasource:
     # URL kết nối tới Cloud PostgreSQL (Aiven)
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://pg-3979-trietleminh7979-se181979.c.aivencloud.com:15995/defaultdb?sslmode=require}
-    username: ${SPRING_DATASOURCE_USERNAME:avnadmin}
-    password: ${SPRING_DATASOURCE_PASSWORD:AVNS_YGvZC_uGzflI1GYULTx}
+    url: jdbc:postgresql://pg-3979-trietleminh7979-se181979.c.aivencloud.com:15995/defaultdb?sslmode=require
+    username: avnadmin
+    password: AVNS_YGvZC_uGzflI1GYULTx
     driver-class-name: org.postgresql.Driver
 
   jpa:
