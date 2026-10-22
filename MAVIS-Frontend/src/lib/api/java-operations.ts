@@ -1,3 +1,5 @@
+import { generateDrawio } from "../drawio/server";
+import { projectDiagram, selectRelationships, type DrawioTheme } from "../drawio/rules";
 import { z } from "zod";
 import { javaRequest } from "./java-client";
 import {
@@ -259,15 +261,46 @@ export async function executeJava(
           return { id: d.id, modelId: d.modelVersionId, notation: d.notation, level: d.level };
         });
     case "exportDiagram": {
+      const format = String(input["format"]);
+      const canonical =
+        format === "DRAWIO_XML" ||
+        (format === "JSON" && (!!input["containerId"] || !!input["relationshipView"]));
       const d = z
         .object({ modelVersionId: z.string().uuid(), content: z.string(), format: z.string() })
         .parse(
           await get(
-            `analyzer/diagrams/${id(input, "diagramId")}/export?format=${encodeURIComponent(String(input["format"]))}`,
+            `analyzer/diagrams/${id(input, "diagramId")}/export?format=${encodeURIComponent(canonical ? "JSON" : format)}`,
           ),
         );
       if (d.modelVersionId !== id(input, "modelId")) throw new ApiError("contract", 502);
-      return { modelId: d.modelVersionId, content: d.content, format: d.format };
+      if (!canonical) return { modelId: d.modelVersionId, content: d.content, format: d.format };
+      try {
+        const projected = projectDiagram(
+          JSON.parse(d.content),
+          input["containerId"] ? id(input, "containerId") : undefined,
+        );
+        const doc = selectRelationships(
+          projected,
+          (input["relationshipView"] ?? "all") as "all" | "source" | "declared" | "runtime",
+        );
+        if (
+          format === "DRAWIO_XML" &&
+          doc.notation === "C4" &&
+          doc.level === "COMPONENT" &&
+          !input["containerId"] &&
+          !doc["scopeContainerId"]
+        )
+          throw new Error("Choose a component container");
+        if (doc.modelVersionId !== d.modelVersionId)
+          throw new Error("Diagram belongs to another model");
+        const content =
+          format === "JSON"
+            ? JSON.stringify(doc)
+            : await generateDrawio(doc, (input["theme"] ?? "clean") as DrawioTheme);
+        return { modelId: d.modelVersionId, content, format };
+      } catch {
+        throw new ApiError("contract", 502);
+      }
     }
     case "impact": {
       const modelId = id(input, "modelId");

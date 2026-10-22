@@ -108,6 +108,9 @@ export const contracts = {
     z.object({
       modelId: id,
       diagramId: id,
+      containerId: id.optional(),
+      theme: z.enum(["clean", "dark", "blueprint"]).optional(),
+      relationshipView: z.enum(["all", "source", "declared", "runtime"]).optional(),
       format: z.enum(["MERMAID", "PLANTUML", "DRAWIO_XML", "JSON"]),
     }),
     z.object({ modelId: id, content: z.string(), format: z.string() }),
