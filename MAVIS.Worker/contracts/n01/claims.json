@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0",
+  "audience": "mavis-worker-analysis",
+  "projectId": "p",
+  "sourceSnapshotId": "s",
+  "jobId": "j",
+  "attemptId": "a1",
+  "artifactId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "expectedInputDigest": "9e4d9aab9488f3476fc87f6bdeef10d17bd2fd1fd7a21df7aedeb36fc99eac30",
+  "deadlineUtc": "2026-10-21T12:00:00+00:00"
+}

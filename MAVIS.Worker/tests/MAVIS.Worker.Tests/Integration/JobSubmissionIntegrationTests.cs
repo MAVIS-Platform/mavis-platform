@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Net.Http.Json;
 using MAVIS.Worker.Application.Contracts.Requests;
@@ -16,7 +17,7 @@ public class JobSubmissionIntegrationTests : IClassFixture<WebApplicationFactory
 
     public JobSubmissionIntegrationTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory;
+        _factory = factory.WithWebHostBuilder(b => b.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?> { ["WorkerAccess:EnableLegacyAnalysis"] = "true" })));
     }
 
     [Fact]

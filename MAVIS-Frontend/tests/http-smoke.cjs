@@ -2,6 +2,10 @@ const assert = require("node:assert/strict");
 const base = process.argv[2] ?? "http://127.0.0.1:3092";
 const mode = process.argv[3] ?? "mock";
 async function main() {
+  const home = await fetch(new URL("/", base), { redirect: "manual" });
+  assert.equal(home.status, mode === "backend" ? 307 : 200, "mode-specific home route");
+  if (mode === "backend")
+    assert.equal(new URL(home.headers.get("location"), base).pathname, "/import");
   const routes = [
     "/",
     "/architecture",
@@ -44,6 +48,10 @@ async function main() {
     assert.equal(response.status, 200, route);
     const html = await response.text();
     assert.ok(!html.includes("Internal Server Error"), route);
+    if (mode === "backend" && ["/import", "/architecture", "/impact", "/explain"].includes(route)) {
+      assert.ok(html.includes("Architecture analysis"), `${route}: live mainflow shell`);
+      assert.ok(!html.includes("Mock mode ·"), `${route}: no sample-mode banner`);
+    }
   }
   for (const route of ["/unknown-screen", "/administration/unknown-screen"])
     assert.equal((await fetch(new URL(route, base))).status, 404, route);

@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="NSubstitute" Version="5.1.0" />
     <PackageReference Include="xunit" Version="2.5.3" />
@@ -23,10 +23,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\..\contracts\runtime-v1\*.json" Link="RuntimeFixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\contracts\n01\*.json" Link="N01Fixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\contracts\n01\source\*" Link="N01Fixtures\source\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\contracts\fingerprint\*.json" Link="FingerprintFixtures\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\MAVIS.Worker.Domain\MAVIS.Worker.Domain.csproj" />
     <ProjectReference Include="..\..\src\MAVIS.Worker.Application\MAVIS.Worker.Application.csproj" />
     <ProjectReference Include="..\..\src\MAVIS.Worker.Infrastructure\MAVIS.Worker.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\MAVIS.Worker.Api\MAVIS.Worker.Api.csproj" />
+    <ProjectReference Include="..\..\src\MAVIS.Runner\MAVIS.Runner.csproj" />
   </ItemGroup>
 
 </Project>

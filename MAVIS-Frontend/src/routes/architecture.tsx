@@ -10,7 +10,17 @@ import {
   ModelVersionSelector,
 } from "@/features/architecture/components";
 import { useModel } from "@/features/architecture/use-model";
+import { useApi } from "@/hooks/use-api";
+import { FlowFrame } from "@/components/mainflow/shell";
+import { ModelFlow } from "@/components/mainflow/model-flow";
 export default function ArchitecturePage() {
+  const api = useApi();
+  if (api.mode === "backend")
+    return (
+      <FlowFrame title="Architecture Graph">
+        <ModelFlow mode="architecture" />
+      </FlowFrame>
+    );
   return (
     <AppShell>
       <ArchitectureWorkspace />

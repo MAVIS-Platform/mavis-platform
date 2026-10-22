@@ -1,0 +1,70 @@
+[
+  {
+    "input": {},
+    "canonical": "{}",
+    "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  {
+    "input": {
+      "z": null,
+      "b": [
+        null,
+        {
+          "y": 2,
+          "x": 1
+        }
+      ],
+      "a": "Việt"
+    },
+    "canonical": "{\"a\":\"Việt\",\"b\":[null,{\"x\":1,\"y\":2}]}",
+    "digest": "sha256:dcb64ccb1eb7677dd9186bd913e123a5220fe4e4288135d2d068700149fa3d7b"
+  },
+  {
+    "input": {
+      "quote": "a\"b",
+      "newline": "a\nb",
+      "slash": "a/b"
+    },
+    "canonical": "{\"newline\":\"a\\nb\",\"quote\":\"a\\\"b\",\"slash\":\"a/b\"}",
+    "digest": "sha256:567fb37a43d3c3f36abc18b35285fc873609a70741ecca489c2438301779473d"
+  },
+  {
+    "input": {
+      "counter": 9223372036854775807
+    },
+    "canonical": "{\"counter\":9223372036854775807}",
+    "digest": "sha256:3c245a93d223ef943761b8df226c7977967b85efe3d14c08d9cf25300d36e9ce"
+  },
+  {
+    "input": {
+      "sessionId": "fixture-session",
+      "modelVersionId": "fixture-model",
+      "sourceSnapshotId": "fixture-source",
+      "profileVersionId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "runConfigurationVersionId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "scenarioVersionId": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "resourceProject": "mavisrun-0123456789abcdef0123456789abcdef",
+      "actualImageIds": {},
+      "declaredInstrumentationVersions": {},
+      "sandboxEnforcementConfirmed": false,
+      "imageSourceCorrespondence": "Unverified",
+      "profileAcceptance": "Unverified",
+      "outcome": {
+        "executionStatus": "Failed",
+        "scenarioStatus": "NotRun",
+        "evidenceStatus": "Unavailable",
+        "cleanupStatus": "Confirmed",
+        "traceQuality": "Unavailable",
+        "mappingStatus": "Unavailable",
+        "persistenceStatus": "CallerOwned",
+        "scenario": null,
+        "trace": null,
+        "diagnostics": [
+          "SESSION_EXECUTION_FAILED_AT_DOCKER_INFO"
+        ]
+      }
+    },
+    "canonical": "{\"actualImageIds\":{},\"declaredInstrumentationVersions\":{},\"imageSourceCorrespondence\":\"Unverified\",\"modelVersionId\":\"fixture-model\",\"outcome\":{\"cleanupStatus\":\"Confirmed\",\"diagnostics\":[\"SESSION_EXECUTION_FAILED_AT_DOCKER_INFO\"],\"evidenceStatus\":\"Unavailable\",\"executionStatus\":\"Failed\",\"mappingStatus\":\"Unavailable\",\"persistenceStatus\":\"CallerOwned\",\"scenarioStatus\":\"NotRun\",\"traceQuality\":\"Unavailable\"},\"profileAcceptance\":\"Unverified\",\"profileVersionId\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"resourceProject\":\"mavisrun-0123456789abcdef0123456789abcdef\",\"runConfigurationVersionId\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sandboxEnforcementConfirmed\":false,\"scenarioVersionId\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"sessionId\":\"fixture-session\",\"sourceSnapshotId\":\"fixture-source\"}",
+    "digest": "sha256:10ef6514212cc9449f970eab9e776a58d22ee32528f6860b3c097f4794d292ac"
+  }
+]

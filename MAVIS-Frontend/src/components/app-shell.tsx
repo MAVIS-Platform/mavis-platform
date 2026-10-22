@@ -55,6 +55,8 @@ import type { Permission } from "@/lib/auth/permissions";
 
 export type AppShellProps = {
   children: ReactNode;
+  live?: boolean;
+  navigationQuery?: string;
   role?: AppRole;
   scope?: WorkspaceScope;
   activeId?: string;
@@ -69,6 +71,9 @@ export type AppShellProps = {
 
 export function AppShell(props: AppShellProps) {
   const pathname = usePathname();
+  // FlowFrame verifies the Java session. Do not run the provisional session
+  // adapter or its permission gate for the integrated backend mainflow.
+  if (props.live) return <ShellChrome {...props} />;
   const preview = Boolean(props.onPreviewNavigate);
   const permission: Permission | undefined =
     preview || ["/design-system", "/profile"].includes(pathname)
@@ -87,26 +92,16 @@ export function AppShell(props: AppShellProps) {
               ].includes(pathname)
             ? "workspace:read"
             : "project:read";
-  if (preview || pathname === "/design-system") return <ShellChrome {...props} />;
+  if (preview || pathname === "/design-system") return <ManagedShellChrome {...props} />;
   return (
     <RequireSession {...(permission ? { permission } : {})}>
-      <ShellChrome {...props} />
+      <ManagedShellChrome {...props} />
     </RequireSession>
   );
 }
 
-function ShellChrome({
-  children,
-  role: previewRole,
-  scope: scopeOverride,
-  activeId: activeOverride,
-  contextName,
-  pageTitle,
-  detailPanel,
-  onDetailClose,
-  contentVariant: contentOverride,
-  onPreviewNavigate,
-}: AppShellProps) {
+function ManagedShellChrome(props: AppShellProps) {
+  const { role: previewRole, onPreviewNavigate } = props;
   const session = useSession();
   const api = useApi();
   const signOut = useApiMutation("signOut");
@@ -138,6 +133,52 @@ function ShellChrome({
   const pathname = usePathname();
   const route = existingRouteContext(pathname);
   const scope =
+    pathname === "/submissions" && role === "lecturer" ? "workspace" : (props.scope ?? route.scope);
+  const contextName =
+    props.contextName ??
+    (scope === "project"
+      ? (projectQuery.data?.find((p) => p.id === selection.projectId)?.name ?? "Select a project")
+      : (workspaceQuery.data?.find((w) => w.id === selection.workspaceId)?.name ??
+        "Select a workspace"));
+  return (
+    <ShellChrome
+      {...props}
+      role={role}
+      contextName={contextName}
+      displayName={session.data?.user?.name ?? "Design preview"}
+      apiMode={api.mode}
+      signOutPending={signOut.isPending}
+      onSignOut={() => void logout()}
+    />
+  );
+}
+
+function ShellChrome({
+  children,
+  live = false,
+  navigationQuery = "",
+  role = "student",
+  scope: scopeOverride,
+  activeId: activeOverride,
+  contextName,
+  pageTitle,
+  detailPanel,
+  onDetailClose,
+  contentVariant: contentOverride,
+  onPreviewNavigate,
+  displayName = "Design preview",
+  apiMode,
+  signOutPending = false,
+  onSignOut,
+}: AppShellProps & {
+  displayName?: string;
+  apiMode?: "mock" | "backend";
+  signOutPending?: boolean;
+  onSignOut?: () => void;
+}) {
+  const pathname = usePathname();
+  const route = existingRouteContext(pathname);
+  const scope =
     pathname === "/submissions" && role === "lecturer"
       ? "workspace"
       : (scopeOverride ?? route.scope);
@@ -145,12 +186,7 @@ function ShellChrome({
     pathname === "/submissions" && role === "lecturer"
       ? "assignment-submissions"
       : (activeOverride ?? route.activeId);
-  const context =
-    contextName ??
-    (scope === "project"
-      ? (projectQuery.data?.find((p) => p.id === selection.projectId)?.name ?? "Select a project")
-      : (workspaceQuery.data?.find((w) => w.id === selection.workspaceId)?.name ??
-        "Select a workspace"));
+  const context = contextName ?? (scope === "project" ? "Select a project" : "Select a workspace");
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -160,14 +196,28 @@ function ShellChrome({
   const contentVariant =
     contentOverride ?? (scope === "project" || scope === "review" ? "workspace" : "standard");
   const showInlineDetail = Boolean(detailPanel) && (detailsInline || !onDetailClose);
-  const groups = contextualNavigation(role, scope).map((group) => ({
-    ...group,
-    items: group.items.map((item) =>
-      scope === "review" && contextName
-        ? { ...item, href: `/submissions/${encodeURIComponent(contextName)}#${item.id}` }
-        : item,
-    ),
-  }));
+  const decorateGroups = (navigation: readonly NavigationGroup[]): NavigationGroup[] =>
+    navigation.map((group) => ({
+      ...group,
+      items: group.items.map((item) => {
+        if (live) {
+          const liveRoutes: Record<string, string> = {
+            projects: "/import",
+            snapshots: "/import",
+            graph: "/architecture",
+            impact: "/impact",
+            explanations: "/explain",
+          };
+          const { href: _href, ...entry } = item;
+          const href = liveRoutes[item.id];
+          return href ? { ...entry, href: `${href}${navigationQuery}` } : entry;
+        }
+        return scope === "review" && contextName
+          ? { ...item, href: `/submissions/${encodeURIComponent(contextName)}#${item.id}` }
+          : item;
+      }),
+    }));
+  const groups = decorateGroups(contextualNavigation(role, scope));
   const activeItem = [...globalNavigation[role], ...groups]
     .flatMap((group) => group.items)
     .find((item) => item.id === activeId);
@@ -219,7 +269,13 @@ function ShellChrome({
         >
           <Link
             href={
-              role === "admin" ? "/administration/users" : role === "lecturer" ? "/workspaces" : "/"
+              live
+                ? `/import${navigationQuery}`
+                : role === "admin"
+                  ? "/administration/users"
+                  : role === "lecturer"
+                    ? "/workspaces"
+                    : "/"
             }
             aria-label="MAVIS home"
             className="flex items-center gap-2.5 rounded-md"
@@ -240,20 +296,22 @@ function ShellChrome({
         <div className={cn("border-b px-5 py-4", isCollapsed && "px-2 text-center")}>
           {isCollapsed ? (
             <span className="text-xs font-semibold" title={roleLabels[role]}>
-              {role === "student" ? "ST" : role === "lecturer" ? "LE" : "AD"}
+              {live ? "MV" : role === "student" ? "ST" : role === "lecturer" ? "LE" : "AD"}
             </span>
           ) : (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
                 Learning & analysis
               </p>
-              <p className="mt-1 text-xs font-medium">{roleLabels[role]}</p>
+              <p className="mt-1 text-xs font-medium">
+                {live ? "Architecture analysis" : roleLabels[role]}
+              </p>
             </>
           )}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
           <NavigationGroups
-            groups={globalNavigation[role]}
+            groups={decorateGroups(globalNavigation[role])}
             collapsed={isCollapsed}
             currentKind={scope === "global" ? "page" : "location"}
             activeId={
@@ -378,78 +436,82 @@ function ShellChrome({
             />
             <div className="flex shrink-0 items-center gap-1">
               <AppearanceSelector />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="Notifications">
-                    <Bell />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-72 p-4">
-                  <DropdownMenuLabel className="px-0">Notifications</DropdownMenuLabel>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    Notifications are unavailable. No notification service has been configured.
-                  </p>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <div className="mx-2 h-6 border-l" />
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="gap-2 px-1.5" aria-label="Profile menu">
-                    <span className="flex size-8 items-center justify-center rounded-full border bg-secondary">
-                      <UserRound className="size-4" />
-                    </span>
-                    <span className="hidden text-xs lg:block">
-                      {session.data?.user?.name ?? "Design preview"}
-                    </span>
-                    <ChevronDown className="hidden size-3 lg:block" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel>{roleLabels[role]}</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link href="/profile">
-                      <UserRound />
-                      My Profile
-                    </Link>
-                  </DropdownMenuItem>
-                  {api.mode === "mock" && (
-                    <DropdownMenuItem asChild>
-                      <Link href="/login">Choose sample role</Link>
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuItem
-                    disabled={signOut.isPending || Boolean(onPreviewNavigate)}
-                    onSelect={() => {
-                      void logout();
-                    }}
-                  >
-                    <LogOut />
-                    {signOut.isPending ? "Signing out…" : "Sign out"}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {!live && (
+                <>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" aria-label="Notifications">
+                        <Bell />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-72 p-4">
+                      <DropdownMenuLabel className="px-0">Notifications</DropdownMenuLabel>
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                        Notifications are unavailable. No notification service has been configured.
+                      </p>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <div className="mx-2 h-6 border-l" />
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" className="gap-2 px-1.5" aria-label="Profile menu">
+                        <span className="flex size-8 items-center justify-center rounded-full border bg-secondary">
+                          <UserRound className="size-4" />
+                        </span>
+                        <span className="hidden text-xs lg:block">{displayName}</span>
+                        <ChevronDown className="hidden size-3 lg:block" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuLabel>{roleLabels[role]}</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link href="/profile">
+                          <UserRound />
+                          My Profile
+                        </Link>
+                      </DropdownMenuItem>
+                      {apiMode === "mock" && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/login">Choose sample role</Link>
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        disabled={signOutPending || Boolean(onPreviewNavigate)}
+                        onSelect={() => {
+                          onSignOut?.();
+                        }}
+                      >
+                        <LogOut />
+                        {signOutPending ? "Signing out…" : "Sign out"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </>
+              )}
             </div>
           </Header>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-info-subtle px-(--page-gutter) py-2 text-xs text-info">
-            <span className="flex items-center gap-2">
-              <Info className="size-3.5 shrink-0" aria-hidden="true" />
-              <span>
-                {onPreviewNavigate || pathname === "/design-system"
-                  ? "Design preview · All content is illustrative. No live system data."
-                  : api.mode === "mock"
-                    ? "Mock mode · Explicit sample data. No live system connection. Changes reset on reload."
-                    : "Backend mode · Configured service requests. Unavailable operations report an error."}
+          {!live && (
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-info-subtle px-(--page-gutter) py-2 text-xs text-info">
+              <span className="flex items-center gap-2">
+                <Info className="size-3.5 shrink-0" aria-hidden="true" />
+                <span>
+                  {onPreviewNavigate || pathname === "/design-system"
+                    ? "Design preview · All content is illustrative. No live system data."
+                    : apiMode === "mock"
+                      ? "Mock mode · Explicit sample data. No live system connection. Changes reset on reload."
+                      : "Backend mode · Configured service requests. Unavailable operations report an error."}
+                </span>
               </span>
-            </span>
-            <button
-              onClick={() => setFeedbackOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 font-medium underline-offset-4 hover:underline"
-            >
-              <MessageSquare className="size-3.5" aria-hidden="true" />
-              Review notes
-            </button>
-          </div>
+              <button
+                onClick={() => setFeedbackOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 font-medium underline-offset-4 hover:underline"
+              >
+                <MessageSquare className="size-3.5" aria-hidden="true" />
+                Review notes
+              </button>
+            </div>
+          )}
           <div className="mavis-content-region min-w-0 flex-1">
             <div ref={contentContainer} className="mavis-content-container">
               <div

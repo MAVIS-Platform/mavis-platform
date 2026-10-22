@@ -32,3 +32,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local Next/browser verification artifacts
+.next/
+.playwright-cli/
+output/playwright/
+*.tsbuildinfo
