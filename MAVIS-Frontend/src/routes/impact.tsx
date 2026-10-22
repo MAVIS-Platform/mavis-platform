@@ -7,9 +7,18 @@ import { SelectField } from "@/components/shared/forms";
 import { ProjectSelector } from "@/features/projects/components";
 import { DependencyPathViewer, ModelVersionSelector } from "@/features/architecture/components";
 import { useModel } from "@/features/architecture/use-model";
-import { useApiQuery } from "@/hooks/use-api";
+import { useApi, useApiQuery } from "@/hooks/use-api";
+import { FlowFrame } from "@/components/mainflow/shell";
+import { ModelFlow } from "@/components/mainflow/model-flow";
 import type { ArchitecturalModel } from "@/types/domain";
 export default function ImpactPage() {
+  const api = useApi();
+  if (api.mode === "backend")
+    return (
+      <FlowFrame title="Change Impact">
+        <ModelFlow mode="impact" />
+      </FlowFrame>
+    );
   return (
     <AppShell>
       <ImpactWorkspace />

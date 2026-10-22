@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --incremental false",
     "test": "node tests/architecture.test.cjs",
+    "test:mainflow": "node scripts/check-mainflow.mjs",
     "format": "prettier --write ."
   },
   "overrides": {

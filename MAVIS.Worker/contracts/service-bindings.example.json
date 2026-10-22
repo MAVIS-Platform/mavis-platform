@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "1.0",
+  "bindings": [
+    {
+      "service": "java-gateway",
+      "projects": [],
+      "sourceRoots": ["services/gateway/src"],
+      "endpoints": ["http://java-gateway:8080", "http://localhost:5001"]
+    },
+    {
+      "service": "dotnet-orders",
+      "projects": ["services/orders/Orders.csproj"],
+      "sourceRoots": [],
+      "endpoints": ["http://dotnet-orders:8080", "http://localhost:5002"]
+    }
+  ]
+}

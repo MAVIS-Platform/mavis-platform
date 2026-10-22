@@ -8,13 +8,14 @@ const root = path.resolve(__dirname, "..");
 
 // Run the actual boundary/services with Node's test runner and the project's
 // existing TypeScript compiler; no additional test dependency or emitted files.
-require.extensions[".ts"] = (module, filename) => {
+const compileTypeScript = (module, filename) => {
   const source = fs.readFileSync(filename, "utf8");
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
       target: ts.ScriptTarget.ES2022,
       esModuleInterop: true,
+      jsx: ts.JsxEmit.ReactJSX,
     },
   }).outputText;
   module._compile(
@@ -25,6 +26,8 @@ require.extensions[".ts"] = (module, filename) => {
     filename,
   );
 };
+require.extensions[".ts"] = compileTypeScript;
+require.extensions[".tsx"] = compileTypeScript;
 const { MockAdapter } = require("../src/lib/api/mock-adapter.ts");
 const { BackendAdapter } = require("../src/lib/api/backend-adapter.ts");
 const { fromStatus } = require("../src/lib/errors/api-error.ts");
@@ -418,5 +421,100 @@ test("theme bootstraps before paint with validated preferences and denied-storag
     });
     assert.equal(dark, expected);
     assert.equal(element.style.colorScheme, expected ? "dark" : "light");
+  }
+});
+
+// Supply Next's routing context while rendering the real components on the
+// server. No browser, upstream service, or sample session is needed here.
+function loadRoutedComponent(relative, overrides = {}) {
+  const filename = path.join(root, relative);
+  const compiled = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.ReactJSX,
+      esModuleInterop: true,
+    },
+  }).outputText;
+  const exports = {};
+  vm.runInNewContext(compiled, {
+    exports,
+    URLSearchParams,
+    require: (name) => {
+      if (Object.hasOwn(overrides, name)) return overrides[name];
+      if (name === "next/navigation")
+        return {
+          usePathname: () => "/architecture",
+          useSearchParams: () => new URLSearchParams("project=project-1&model=model-1"),
+          useRouter: () => ({ push() {}, replace() {}, refresh() {} }),
+        };
+      return require(
+        name.startsWith("@/")
+          ? path.join(root, "src", name.slice(2))
+          : name.startsWith(".")
+            ? path.resolve(path.dirname(filename), name)
+            : name,
+      );
+    },
+  });
+  return exports;
+}
+
+test("live shell preserves model context without provisional session or sample UI", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { ThemeProvider } = require("../src/components/theme-provider.tsx");
+  const { AppShell } = loadRoutedComponent("src/components/app-shell.tsx");
+  // Intentionally omit AppProvider: live chrome must not invoke its adapter.
+  const html = renderToStaticMarkup(
+    React.createElement(
+      ThemeProvider,
+      null,
+      React.createElement(
+        AppShell,
+        { live: true, navigationQuery: "?project=project-1&model=model-1" },
+        "Live model content",
+      ),
+    ),
+  );
+  assert.ok(html.includes("Live model content"));
+  for (const route of ["/import", "/architecture", "/impact", "/explain"])
+    assert.ok(html.includes(`href="${route}?project=project-1&amp;model=model-1"`), route);
+  for (const excluded of ["Mock mode", "Design preview", "Profile menu", 'href="/workspaces"'])
+    assert.ok(!html.includes(excluded), excluded);
+});
+
+test("analysis routes choose isolated live mainflow in backend mode and retain mock gates", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { ThemeProvider } = require("../src/components/theme-provider.tsx");
+  const { ApiContext } = require("../src/providers/app-context.ts");
+  const { QueryClient, QueryClientProvider } = require("@tanstack/react-query");
+  const shell = loadRoutedComponent("src/components/app-shell.tsx");
+  const mainflow = loadRoutedComponent("src/components/mainflow/shell.tsx", {
+    "@/components/app-shell": shell,
+  });
+  for (const screen of ["import", "architecture", "impact", "explain"]) {
+    const Page = loadRoutedComponent(`src/routes/${screen}.tsx`, {
+      "@/components/app-shell": shell,
+      "@/components/mainflow/shell": mainflow,
+    }).default;
+    for (const mode of ["mock", "backend"]) {
+      const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } });
+      const html = renderToStaticMarkup(
+        React.createElement(
+          ThemeProvider,
+          null,
+          React.createElement(
+            ApiContext.Provider,
+            { value: mode === "mock" ? new MockAdapter() : new BackendAdapter() },
+            React.createElement(QueryClientProvider, { client }, React.createElement(Page)),
+          ),
+        ),
+      );
+      client.clear();
+      assert.ok(html.includes("Checking session"), `${screen}: ${mode} checks its session`);
+      assert.equal(html.includes("Architecture analysis"), mode === "backend", screen);
+    }
   }
 });

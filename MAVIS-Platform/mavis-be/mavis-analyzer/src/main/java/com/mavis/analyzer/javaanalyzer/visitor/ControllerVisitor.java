@@ -7,15 +7,27 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MemberValuePair;
 import com.github.javaparser.ast.visitor.VoidVisitorAdapter;
+import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.List;
 import java.util.Optional;
 
 @Slf4j
-public class ControllerVisitor extends VoidVisitorAdapter<Void> {
+public class ControllerVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>> {
+
+    private final String currentFilePath;
+
+    public ControllerVisitor() {
+        this(null);
+    }
+
+    public ControllerVisitor(String currentFilePath) {
+        this.currentFilePath = currentFilePath;
+    }
 
     @Override
-    public void visit(ClassOrInterfaceDeclaration n, Void arg) {
+    public void visit(ClassOrInterfaceDeclaration n, List<CodeEvidenceDTO> arg) {
         // a. Kiểm tra class có được đánh dấu @RestController hoặc @Controller không
         boolean isController = n.isAnnotationPresent("RestController") || n.isAnnotationPresent("Controller");
         if (!isController) {
@@ -23,16 +35,33 @@ public class ControllerVisitor extends VoidVisitorAdapter<Void> {
             return;
         }
 
-        // b. Trích xuất base path từ class-level @RequestMapping
+        String className = n.getNameAsString();
+
+        // 1. Tạo bằng chứng cho component Controller (để sinh ModelElement COMPONENT cấp con)
+        if (arg != null) {
+            Integer classLine = n.getBegin().map(p -> p.line).orElse(null);
+            String classHeader = n.getAnnotations().toString() + "\npublic class " + className;
+
+            CodeEvidenceDTO componentEvidence = CodeEvidenceDTO.builder()
+                    .elementType("CONTROLLER_COMPONENT")
+                    .identifier(className)
+                    .sourceComponent(className)
+                    .filePath(currentFilePath)
+                    .lineNumber(classLine)
+                    .codeSnippet(classHeader.length() > 500 ? classHeader.substring(0, 500) : classHeader)
+                    .build();
+            arg.add(componentEvidence);
+        }
+
+        // 2. Trích xuất base path từ class-level @RequestMapping
         String basePath = "";
         Optional<AnnotationExpr> classMappingOpt = n.getAnnotationByName("RequestMapping");
         if (classMappingOpt.isPresent()) {
             basePath = extractPathFromAnnotation(classMappingOpt.get());
         }
 
-        // c. Duyệt qua tất cả các phương thức trong class
+        // 3. Duyệt qua tất cả các phương thức trong class để trích xuất REST_API
         for (MethodDeclaration method : n.getMethods()) {
-            // d. Kiểm tra các HTTP mapping annotations
             String httpMethodType = null;
             String methodPath = "";
 
@@ -57,10 +86,25 @@ public class ControllerVisitor extends VoidVisitorAdapter<Void> {
                 methodPath = extractPathFromAnnotation(reqAnnotation);
             }
 
-            // e & f. Nếu tìm thấy HTTP mapping, kết hợp base path và ghi log
             if (httpMethodType != null) {
                 String fullEndpointPath = combinePaths(basePath, methodPath);
-                log.info("Detected API Endpoint: [{}] {}", httpMethodType, fullEndpointPath);
+                log.info("Detected API Endpoint: [{}] {} in {}", httpMethodType, fullEndpointPath, className);
+
+                if (arg != null) {
+                    Integer lineNumber = method.getBegin().map(p -> p.line).orElse(null);
+                    String rawSnippet = method.toString();
+                    String codeSnippet = rawSnippet.length() > 500 ? rawSnippet.substring(0, 500) : rawSnippet;
+
+                    CodeEvidenceDTO evidence = CodeEvidenceDTO.builder()
+                            .elementType("REST_API")
+                            .identifier(fullEndpointPath)
+                            .sourceComponent(className)
+                            .filePath(currentFilePath)
+                            .lineNumber(lineNumber)
+                            .codeSnippet(codeSnippet)
+                            .build();
+                    arg.add(evidence);
+                }
             }
         }
 

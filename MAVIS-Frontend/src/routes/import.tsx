@@ -8,10 +8,19 @@ import { FormField } from "@/components/shared/forms";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
+import { useApi, useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
+import { FlowFrame } from "@/components/mainflow/shell";
+import { ImportFlow as LiveImportFlow } from "@/components/mainflow/import-flow";
 import { ProjectSelector } from "@/features/projects/components";
 import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
 export default function ImportPage() {
+  const api = useApi();
+  if (api.mode === "backend")
+    return (
+      <FlowFrame title="Import & Analyze">
+        <LiveImportFlow />
+      </FlowFrame>
+    );
   return (
     <AppShell>
       <SourceImport />

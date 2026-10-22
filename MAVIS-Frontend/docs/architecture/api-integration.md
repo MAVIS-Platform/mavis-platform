@@ -1,6 +1,6 @@
 # API integration checklist
 
-Status: frontend operation contracts are provisional; no operation has been verified against a running MAVIS backend. Mock mode is the default. Backend mode never falls back to mock data.
+Status: the operation contracts described in this document are provisional; no `/api/mavis` operation has been verified against a running MAVIS backend. Mock mode is the default. Backend mode never falls back to mock data. The separately integrated analysis mainflow uses `/api/backend`; see [MAINFLOW_INTEGRATION.md](../MAINFLOW_INTEGRATION.md). With `MAVIS_API_MODE=backend`, Import, Architecture, Impact and Explain use that mainflow, while other screens retain the provisional operation contracts below.
 
 ## Confirmed from repository source, not live responses
 

@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.1</version>
+        <version>3.3.0</version>
         <relativePath/>
     </parent>
     <groupId>vn.edu.fpt</groupId>
@@ -17,6 +17,12 @@
     </properties>
 
     <dependencies>
+        <dependency><groupId>org.postgresql</groupId><artifactId>postgresql</artifactId><scope>test</scope></dependency>
+        <dependency>
+            <groupId>com.mavis</groupId>
+            <artifactId>worker-java-client</artifactId>
+            <version>1.0-SNAPSHOT</version>
+        </dependency>
         <!-- Gọi sang Common -->
         <dependency>
             <groupId>${project.groupId}</groupId>
@@ -28,17 +34,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
-
-        <!-- WebFlux dùng để gọi API sang C# Worker và OpenAI -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
-        </dependency>
         <!-- Swagger / OpenAPI -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>3.1.1</version>
+            <version>2.5.0</version>
         </dependency>
 
         <!-- Lombok -->
@@ -54,9 +54,26 @@
             <artifactId>javaparser-symbol-solver-core</artifactId>
             <version>3.25.8</version>
         </dependency>
+
+        <!-- Spring TX for @Transactional -->
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
+        <testResources>
+            <testResource><directory>src/test/resources</directory></testResource>
+            <testResource><directory>../../../MAVIS.Worker/contracts/n01</directory><targetPath>worker-fixtures</targetPath></testResource>
+            <testResource><directory>../mavis-bootstrap/src/main/resources/db/migration</directory><targetPath>worker-migrations</targetPath></testResource>
+        </testResources>
         <!-- Đã xóa spring-boot-maven-plugin -->
         <plugins>
             <plugin>
@@ -74,6 +91,7 @@
                                 <path>
                                     <groupId>org.projectlombok</groupId>
                                     <artifactId>lombok</artifactId>
+                                    <version>${lombok.version}</version>
                                 </path>
                             </annotationProcessorPaths>
                         </configuration>

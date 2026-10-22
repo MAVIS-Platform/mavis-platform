@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -17,7 +18,7 @@ public class EndToEndAnalysisTests : IClassFixture<WebApplicationFactory<Program
 
     public EndToEndAnalysisTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory;
+        _factory = factory.WithWebHostBuilder(b => b.ConfigureAppConfiguration((_, c) => c.AddInMemoryCollection(new Dictionary<string, string?> { ["WorkerAccess:EnableLegacyAnalysis"] = "true" })));
     }
 
     [Fact]
