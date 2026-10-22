@@ -30,7 +30,7 @@ export async function currentSession(token: string | undefined, signal?: AbortSi
     throw error;
   }
 }
-export async function signIn(input: unknown, signal?: AbortSignal) {
+export async function signIn(input: unknown, signal?: AbortSignal, google = false) {
   const raw = z
     .object({
       token: z.string().min(1),
@@ -39,7 +39,7 @@ export async function signIn(input: unknown, signal?: AbortSignal) {
       role: z.string(),
     })
     .parse(
-      await javaRequest("auth/login", undefined, {
+      await javaRequest(google ? "auth/google" : "auth/login", undefined, {
         method: "POST",
         body: JSON.stringify(input),
         ...(signal ? { signal } : {}),
