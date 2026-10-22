@@ -1,3 +1,4 @@
+import { MainflowProvider } from "@/components/mainflow/provider";
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import "../src/styles.css";
@@ -16,11 +17,19 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        <link rel="preload" href="/fonts/inter/InterVariable.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link
+          rel="preload"
+          href="/fonts/inter/InterVariable.woff2"
+          as="font"
+          type="font/woff2"
+          crossOrigin="anonymous"
+        />
         <script dangerouslySetInnerHTML={{ __html: appearanceBootstrap }} />
       </head>
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <MainflowProvider>{children}</MainflowProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
