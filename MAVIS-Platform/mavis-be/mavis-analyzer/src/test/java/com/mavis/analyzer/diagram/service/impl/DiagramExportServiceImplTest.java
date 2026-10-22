@@ -137,16 +137,37 @@ class DiagramExportServiceImplTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getFormat()).isEqualTo("MERMAID");
-        assertThat(response.getContent()).startsWith("flowchart LR");
+        assertThat(response.getContent()).startsWith("C4Container");
         assertThat(response.getContent()).contains("order-service");
-        assertThat(response.getContent()).contains("[(\"order-db\")]"); // Database shape
-        assertThat(response.getContent()).contains("-->"); // Static arrow
-        assertThat(response.getContent()).contains("call onMavisElementClick");
+        assertThat(response.getContent()).contains("ContainerDb("); // Database shape
+        assertThat(response.getContent()).contains("Rel("); // C4 relationship
+        assertThat(response.getContent()).doesNotContain("call onMavisElementClick");
         assertThat(response.getNodeClickMap()).containsKey("n_" + elementAId.toString().replace("-", ""));
         assertThat(response.getNodeClickMap()).containsKey("n_" + elementBId.toString().replace("-", ""));
         verify(accessPolicyService).requireProjectReadAccess(project);
     }
 
+    @Test
+    void c4ComponentPreservesParentContainerAndItsComponents() {
+        ObjectNode layout = (ObjectNode) diagramVersion.getLayoutJson();
+        UUID componentId = UUID.randomUUID();
+        ((ArrayNode) layout.path("nodes")).addObject().put("id", componentId.toString())
+                .put("name", "OrderController").put("kind", "COMPONENT").put("parentId", elementAId.toString());
+        diagramVersion.setLevel("COMPONENT");
+        DiagramExportResponseDTO mermaid = diagramExportService.exportDiagramById(diagramId, "MERMAID");
+        assertThat(mermaid.getContent()).startsWith("C4Component").contains("Container_Boundary(")
+                .contains("Component(n_" + componentId.toString().replace("-", ""));
+        assertThat(mermaid.getNodeClickMap()).hasSize(3);
+        DiagramExportResponseDTO plant = diagramExportService.exportDiagramById(diagramId, "PLANTUML");
+        assertThat(plant.getContent()).contains("package \"order-service components\"").contains("<<Component>>");
+    }
+
+    @Test
+    void dependencyDiagramRemainsAFlowchart() {
+        diagramVersion.setNotation("DEPENDENCY_GRAPH");
+        DiagramExportResponseDTO response = diagramExportService.exportDiagramById(diagramId, "MERMAID");
+        assertThat(response.getContent()).startsWith("flowchart LR").contains("-->");
+    }
     @Test
     @DisplayName("Ticket B3: Xuất định dạng MERMAID cho UML_SEQUENCE đọc từ mảng steps")
     void testExportDiagram_MermaidSequence_Success() {
@@ -187,9 +208,9 @@ class DiagramExportServiceImplTest {
         assertThat(response).isNotNull();
         assertThat(response.getFormat()).isEqualTo("PLANTUML");
         assertThat(response.getContent()).startsWith("@startuml");
-        assertThat(response.getContent()).contains("skinparam componentStyle uml2");
-        assertThat(response.getContent()).contains("component \"order-service\" as");
-        assertThat(response.getContent()).contains("database \"order-db\" as");
+        assertThat(response.getContent()).contains("<<Container>>");
+        assertThat(response.getContent()).contains("rectangle \"order-service");
+        assertThat(response.getContent()).contains("database \"order-db");
         assertThat(response.getContent()).contains("-->");
         assertThat(response.getContent()).endsWith("@enduml\n");
     }

@@ -1,15 +1,12 @@
 "use client";
 import { ModelTools } from "@/features/architecture/model-tools";
+import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
 import { RequestState } from "@/components/shared/request-state";
 import { ProjectSelector } from "@/features/projects/components";
-import {
-  ArchitectureGraph,
-  ElementDetailsPanel,
-  ModelVersionSelector,
-} from "@/features/architecture/components";
+import { ModelVersionSelector } from "@/features/architecture/components";
 import { useModel } from "@/features/architecture/use-model";
 import { useApi } from "@/hooks/use-api";
 import { FlowFrame } from "@/components/mainflow/shell";
@@ -43,17 +40,14 @@ export function ArchitectureWorkspace({
                 value={state.model.id}
                 onChange={state.selectModel}
               />
-              <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
-                <ArchitectureGraph
-                  key={state.model.id}
-                  model={state.model}
-                  selectedId={id}
-                  onSelect={(elementId) => {
-                    if (state.model) setSelected({ modelId: state.model.id, elementId });
-                  }}
-                />
-                <ElementDetailsPanel model={state.model} selectedId={id} />
-              </div>
+              <ArchitecturePresentation
+                model={state.model}
+                selectedId={id}
+                onSelect={(elementId) => {
+                  if (state.model)
+                    setSelected(elementId ? { modelId: state.model.id, elementId } : null);
+                }}
+              />
               <ModelTools modelId={state.model.id} />
             </>
           )}

@@ -36,8 +36,8 @@ public final class MermaidDslGenerator {
             return generateSequenceDiagram(layoutJson);
         }
 
-        if ("C4".equalsIgnoreCase(notation) && "COMPONENT".equalsIgnoreCase(level)) {
-            return generateC4ComponentDiagram(layoutJson);
+        if ("C4".equalsIgnoreCase(notation)) {
+            return generateC4Diagram(layoutJson, "COMPONENT".equalsIgnoreCase(level));
         }
 
         return generateGraphDiagram(layoutJson);
@@ -89,76 +89,58 @@ public final class MermaidDslGenerator {
                 .build();
     }
 
-    private static MermaidResult generateC4ComponentDiagram(JsonNode layoutJson) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("flowchart TB\n");
-
+    private static MermaidResult generateC4Diagram(JsonNode layoutJson, boolean componentView) {
+        StringBuilder sb = new StringBuilder(componentView ? "C4Component\n" : "C4Container\n");
         Map<String, UUID> clickMap = new LinkedHashMap<>();
-        JsonNode nodes = layoutJson.path("nodes");
-        JsonNode edges = layoutJson.path("edges");
-
-        // Gom nhóm theo parentId
-        Map<String, List<JsonNode>> componentsByParent = new LinkedHashMap<>();
-        List<JsonNode> standaloneNodes = new ArrayList<>();
-        Map<String, JsonNode> nodeById = new HashMap<>();
-
-        if (nodes.isArray()) {
-            for (JsonNode n : nodes) {
-                String id = n.path("id").asText();
-                nodeById.put(id, n);
-                String parentId = n.path("parentId").asText(null);
-                if (parentId != null && !parentId.isBlank()) {
-                    componentsByParent.computeIfAbsent(parentId, k -> new ArrayList<>()).add(n);
-                } else if ("SERVICE_CONTAINER".equalsIgnoreCase(n.path("kind").asText())
-                        || "SERVICE_CONTAINER".equalsIgnoreCase(n.path("type").asText())) {
-                    // Sẽ được vẽ kèm các component con
-                    componentsByParent.computeIfAbsent(id, k -> new ArrayList<>());
-                } else {
-                    standaloneNodes.add(n);
-                }
+        Map<String, JsonNode> nodes = new LinkedHashMap<>();
+        Map<String, List<JsonNode>> children = new LinkedHashMap<>();
+        layoutJson.path("nodes").forEach(node -> nodes.put(node.path("id").asText(), node));
+        if (componentView) {
+            for (JsonNode node : nodes.values()) {
+                String parent = node.path("parentId").asText("");
+                if (nodes.containsKey(parent)) children.computeIfAbsent(parent, key -> new ArrayList<>()).add(node);
             }
         }
-
-        // Vẽ subgraphs
-        for (Map.Entry<String, List<JsonNode>> entry : componentsByParent.entrySet()) {
-            String parentId = entry.getKey();
-            JsonNode parentNode = nodeById.get(parentId);
-            String parentName = parentNode != null ? parentNode.path("name").asText("Container") : "Container";
-            String parentAlias = toSafeAlias(parentId);
-
-            sb.append("    subgraph sub_").append(parentAlias).append(" [\"").append(escapeLabel(parentName)).append("\"]\n");
-            for (JsonNode comp : entry.getValue()) {
-                String compId = comp.path("id").asText();
-                String compName = comp.path("name").asText("Component");
-                String compAlias = toSafeAlias(compId);
-                sb.append("        ").append(compAlias).append("[\"").append(escapeLabel(compName)).append("\"]\n");
-                registerClick(clickMap, compAlias, compId);
-            }
-            sb.append("    end\n");
+        for (JsonNode node : nodes.values()) {
+            String parent = node.path("parentId").asText("");
+            if (componentView && nodes.containsKey(parent)) continue;
+            appendC4Node(sb, node, clickMap);
         }
-
-        // Vẽ standalone nodes
-        for (JsonNode n : standaloneNodes) {
-            String id = n.path("id").asText();
-            String name = n.path("name").asText("Node");
-            String kind = n.path("kind").asText(n.path("type").asText(""));
-            String alias = toSafeAlias(id);
-            sb.append("    ").append(formatNodeShape(alias, name, kind, n.path("languageStack").asText(null))).append("\n");
-            registerClick(clickMap, alias, id);
+        for (Map.Entry<String, List<JsonNode>> group : children.entrySet()) {
+            JsonNode parent = nodes.get(group.getKey());
+            sb.append("    Container_Boundary(b_").append(toSafeAlias(group.getKey()))
+                    .append(", \"").append(escapeLabel(parent.path("name").asText())).append(" components\") {\n");
+            for (JsonNode node : group.getValue()) appendC4Node(sb, node, clickMap);
+            sb.append("    }\n");
         }
-
-        // Vẽ edges
-        appendEdges(sb, edges);
-
-        // Click handlers
-        appendClickHandlers(sb, clickMap);
-
-        return MermaidResult.builder()
-                .dsl(sb.toString().trim())
-                .nodeClickMap(clickMap)
-                .build();
+        for (JsonNode edge : layoutJson.path("edges")) {
+            String from = edge.path("from").asText(edge.path("source").asText(""));
+            String to = edge.path("to").asText(edge.path("target").asText(""));
+            if (!nodes.containsKey(from) || !nodes.containsKey(to)) continue;
+            sb.append("    Rel(").append(toSafeAlias(from)).append(", ").append(toSafeAlias(to))
+                    .append(", \"").append(escapeLabel(edge.path("relationType").asText(edge.path("type").asText("Uses"))))
+                    .append("\")\n");
+        }
+        sb.append("    UpdateLayoutConfig(\"3\", \"2\")\n");
+        return MermaidResult.builder().dsl(sb.toString().trim()).nodeClickMap(clickMap).build();
     }
 
+    private static void appendC4Node(StringBuilder sb, JsonNode node, Map<String, UUID> clickMap) {
+        String id = node.path("id").asText();
+        String kind = node.path("kind").asText(node.path("type").asText(""));
+        String macro = switch (kind.toUpperCase(Locale.ROOT)) {
+            case "SERVICE_CONTAINER" -> "Container";
+            case "DATABASE" -> "ContainerDb";
+            case "QUEUE_BROKER" -> "ContainerQueue";
+            case "EXTERNAL_SYSTEM" -> "System_Ext";
+            default -> "Component";
+        };
+        sb.append("    ").append(macro).append("(").append(toSafeAlias(id)).append(", \"")
+                .append(escapeLabel(node.path("name").asText("Element"))).append("\"");
+        if (!"System_Ext".equals(macro)) sb.append(", \"").append(escapeLabel(node.path("languageStack").asText(""))).append("\"");
+        sb.append(")\n");
+        registerClick(clickMap, toSafeAlias(id), id);
+    }
     private static MermaidResult generateGraphDiagram(JsonNode layoutJson) {
         StringBuilder sb = new StringBuilder();
         sb.append("flowchart LR\n");
