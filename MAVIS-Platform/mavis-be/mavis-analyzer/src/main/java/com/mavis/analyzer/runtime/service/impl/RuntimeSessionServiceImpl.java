@@ -146,6 +146,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "Dự án chưa có ModelVersion hợp lệ. Vui lòng chạy phân tích tĩnh trước"));
         }
 
+        if (pinnedModel.getSourceSnapshot() == null || !snapshot.getId().equals(pinnedModel.getSourceSnapshot().getId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Pinned model must belong to the selected snapshot");
+        }
+
         // [WJ-01 / Chặng 11]: Suy ra confirmedServiceMappings từ model_elements của pinnedModel nếu không truyền
         Map<String, String> serviceMappings = request.getConfirmedServiceMappings();
         if (serviceMappings == null || serviceMappings.isEmpty()) {
@@ -238,7 +242,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     public RuntimeSessionResponseDTO approveAndStartSession(UUID sessionId) {
         log.info("Phê duyệt và chuẩn bị dispatch RuntimeSession ID: {}", sessionId);
 
-        RuntimeSession session = runtimeSessionRepository.findById(sessionId)
+        RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
         accessPolicyService.requireProjectWriteAccess(session.getProject());
@@ -281,18 +285,32 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     "ResourceProject không hợp lệ hoặc không khớp với phiên đã cấp phát: " + resourceProject);
         }
 
+        if (!sessionId.equals(request.getSessionId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Lifecycle session scope mismatch");
+        }
         String stage = request.getStage();
+        if (!"ALLOCATED".equals(stage) && !"RUNNING".equals(stage)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Invalid lifecycle stage");
+        }
+        String current = session.getExecutionStatus();
+        if (session.getCancelRequestedAt() != null || session.getRunnerReceiptJson() != null ||
+                session.getCompletedAt() != null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Session cannot accept lifecycle events after cancellation/completion");
+        }
+        boolean duplicate = stage.equals(current);
+        if (!duplicate && !("ALLOCATED".equals(stage) && "READY_FOR_DISPATCH".equals(current)) &&
+                !("RUNNING".equals(stage) && "ALLOCATED".equals(current))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Out-of-order lifecycle transition");
+        }
         OffsetDateTime observedAt = request.getObservedAt() != null ? request.getObservedAt() : OffsetDateTime.now();
 
-        if ("ALLOCATED".equalsIgnoreCase(stage)) {
+        if (!duplicate && "ALLOCATED".equalsIgnoreCase(stage)) {
             session.setExecutionStatus("ALLOCATED");
             session.setAllocatedAt(observedAt);
-        } else if ("RUNNING".equalsIgnoreCase(stage)) {
+        } else if (!duplicate && "RUNNING".equalsIgnoreCase(stage)) {
             session.setScenarioStatus("RUNNING");
             session.setExecutionStatus("RUNNING");
             session.setStartedAt(observedAt);
-        } else {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Stage không hợp lệ: " + stage);
         }
 
         RuntimeSession saved = runtimeSessionRepository.save(session);
@@ -314,7 +332,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     public RuntimeSessionResponseDTO stopSession(UUID sessionId) {
         log.info("Dừng phiên thực nghiệm ID: {}", sessionId);
 
-        RuntimeSession session = runtimeSessionRepository.findById(sessionId)
+        RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
         accessPolicyService.requireProjectWriteAccess(session.getProject());

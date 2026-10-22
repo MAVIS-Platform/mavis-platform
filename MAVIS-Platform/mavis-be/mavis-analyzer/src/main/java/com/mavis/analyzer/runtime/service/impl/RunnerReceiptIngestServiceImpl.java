@@ -78,6 +78,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
         // Phân quyền kép
         runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
+        if (session.getRecoveryResultJson() != null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Allocation was already recovered; late execution receipt rejected");
+        }
 
         // =========================================================================
         // 1. XÁC THỰC BẮT BUỘC CẢ 6 VERSION IDS VÀ RESOURCEPROJECT (WJ-01, WJ-02)
@@ -213,7 +216,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 }
                 if (stepNode.hasNonNull("spanId")) {
                     String sSpanId = stepNode.get("spanId").asText().toLowerCase();
-                    externalRootSpanIds.add(sSpanId);
+                    // External parent identity is scoped to its trace, never spanId alone.
                     if (stepNode.hasNonNull("traceId")) {
                         externalRootSpanIds.add((stepNode.get("traceId").asText() + ":" + sSpanId).toLowerCase());
                     }
@@ -241,7 +244,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             if (span.getParentSpanId() != null && !span.getParentSpanId().isBlank()) {
                 String parentKey = (span.getTraceId() + ":" + span.getParentSpanId()).toLowerCase();
                 String pSpanId = span.getParentSpanId().toLowerCase();
-                if (!spanMap.containsKey(parentKey) && !externalRootSpanIds.contains(pSpanId) && !externalRootSpanIds.contains(parentKey)) {
+                if (!spanMap.containsKey(parentKey) && !externalRootSpanIds.contains(parentKey)) {
                     hasBrokenInternalParent = true;
                     break;
                 }
@@ -336,7 +339,6 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
         for (ModelElement baseEl : baseElements) {
             ModelElement copy = ModelElement.builder()
-                    .id(UUID.randomUUID())
                     .modelVersion(enrichedVersion)
                     .name(baseEl.getName())
                     .elementType(baseEl.getElementType())
@@ -349,14 +351,6 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             oldToNewElementMap.put(baseEl.getId(), copy);
             if (baseEl.getName() != null) {
                 serviceNameToElementMap.put(baseEl.getName().toLowerCase(), copy);
-            }
-        }
-
-        for (int i = 0; i < baseElements.size(); i++) {
-            ModelElement baseEl = baseElements.get(i);
-            if (baseEl.getParentElement() != null) {
-                ModelElement newParent = oldToNewElementMap.get(baseEl.getParentElement().getId());
-                newElements.get(i).setParentElement(newParent);
             }
         }
 
@@ -387,8 +381,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 props.put("traceId", span.getTraceId());
 
                 ModelElement uncertainEl = ModelElement.builder()
-                        .id(UUID.randomUUID())
-                        .modelVersion(enrichedVersion)
+                            .modelVersion(enrichedVersion)
                         .name(serviceName)
                         .elementType("SERVICE_CONTAINER")
                         .status("UNCERTAIN_MAPPING")
@@ -412,6 +405,16 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             oldToNewElementMap.put(baseElements.get(i).getId(), savedElements.get(i));
         }
 
+        for (int i = 0; i < baseElements.size(); i++) {
+            ModelElement baseEl = baseElements.get(i);
+            if (baseEl.getParentElement() != null) {
+                ModelElement newParent = oldToNewElementMap.get(baseEl.getParentElement().getId());
+                savedElements.get(i).setParentElement(newParent);
+            }
+        }
+
+        modelElementRepository.saveAll(savedElements);
+
         // (4.2) Sao chép relationships từ baseVersion (bảo toàn properties và khóa ghép UUID)
         List<ModelRelationship> baseRelationships = modelRelationshipRepository.findByModelVersionId(baseVersion.getId());
         List<ModelRelationship> newRelationships = new ArrayList<>();
@@ -424,8 +427,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
             if (newSrc != null && newTgt != null) {
                 ModelRelationship copyRel = ModelRelationship.builder()
-                        .id(UUID.randomUUID())
-                        .modelVersion(enrichedVersion)
+                            .modelVersion(enrichedVersion)
                         .sourceElement(newSrc)
                         .targetElement(newTgt)
                         .relationType(baseRel.getRelationType())
