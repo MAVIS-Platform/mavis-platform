@@ -26,6 +26,7 @@ public class RuntimeSessionController {
 
     private final RuntimeSessionService runtimeSessionService;
     private final OtelTraceCorrelationService otelTraceCorrelationService;
+    private final com.mavis.analyzer.runtime.service.RunnerReceiptIngestService runnerReceiptIngestService;
 
     @PostMapping("/runtime/preflight")
     @Operation(summary = "Tiền kiểm tra bảo mật file docker-compose (Compose Preflight Check)",
@@ -92,6 +93,34 @@ public class RuntimeSessionController {
     public ApiResponse<SequenceDiagramResponseDTO> getSequenceDiagram(@PathVariable UUID sessionId) {
         SequenceDiagramResponseDTO response = otelTraceCorrelationService.getSequenceDiagramBySession(sessionId);
         return ApiResponse.success("Lấy sơ đồ tuần tự runtime thành công", response);
+    }
+
+    @PostMapping("/runtime/sessions/{sessionId}/ingest-receipt")
+    @Operation(summary = "Tiếp nhận RunnerReceipt trực tiếp từ MAVIS.Runner hoặc Gateway Adapter (WJ-02, WJ-04)",
+            description = "Xác thực scope, chống ghi đúp (idempotency), làm giàu ModelVersion RUNTIME_ENRICHED và chiếu Sequence Diagram")
+    public ApiResponse<ModelVersionResponseDTO> ingestReceipt(
+            @PathVariable UUID sessionId,
+            @RequestBody com.mavis.analyzer.runtime.dto.RunnerReceiptIngestRequestDTO receipt) {
+        ModelVersionResponseDTO response = runnerReceiptIngestService.ingestRunnerReceipt(sessionId, receipt);
+        return ApiResponse.success("Tiếp nhận RunnerReceipt thành công", response);
+    }
+
+    @PostMapping("/runtime/sessions/{sessionId}/sync-outbox")
+    @Operation(summary = "Nhập Receipt từ thư mục local outbox <state-root>/receipts/<resourceProject>.json (WJ-02)",
+            description = "Kiểm tra chống path traversal/symlink và đọc receipt từ outbox của Dedicated Runner")
+    public ApiResponse<RuntimeSessionResponseDTO> syncOutbox(
+            @PathVariable UUID sessionId,
+            @RequestParam(required = false) String resourceProject) {
+        RuntimeSessionResponseDTO response = runnerReceiptIngestService.importReceiptFromStateRoot(sessionId, resourceProject);
+        return ApiResponse.success("Đồng bộ outbox receipt thành công", response);
+    }
+
+    @GetMapping("/runtime/sessions/{sessionId}/run-definition")
+    @Operation(summary = "Xuất JSON RuntimeRunDefinition chuẩn (WJ-01)",
+            description = "Khớp 100% với hợp đồng record RuntimeRunDefinition để nạp vào lệnh MAVIS.Runner run")
+    public ApiResponse<com.mavis.analyzer.runtime.dto.RunnerDefinitionExportDTO> getRunDefinition(@PathVariable UUID sessionId) {
+        com.mavis.analyzer.runtime.dto.RunnerDefinitionExportDTO response = runtimeSessionService.exportRunDefinition(sessionId);
+        return ApiResponse.success("Xuất hợp đồng RuntimeRunDefinition thành công", response);
     }
 }
 

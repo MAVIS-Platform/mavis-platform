@@ -28,6 +28,19 @@ public class RuntimeSessionResponseDTO {
     private String traceStatus;
     private String traceStoragePath;
     private String overrideComposeYaml;
+    private UUID modelVersionId;
+    private String profileVersionId;
+    private String runConfigurationVersionId;
+    private String scenarioVersionId;
+    private java.util.Map<String, String> confirmedServiceMappings;
+    private String resourceProject;
+    private String executionStatus;
+    private String evidenceStatus;
+    private String cleanupStatus;
+    private String traceQuality;
+    private String mappingStatus;
+    private Boolean sandboxEnforcementConfirmed;
+    private OffsetDateTime cancelRequestedAt;
     private OffsetDateTime startedAt;
     private OffsetDateTime completedAt;
     private OffsetDateTime createdAt;
@@ -44,15 +57,28 @@ public class RuntimeSessionResponseDTO {
                 .id(entity.getId())
                 .projectId(entity.getProject() != null ? entity.getProject().getId() : null)
                 .sourceSnapshotId(entity.getSourceSnapshot() != null ? entity.getSourceSnapshot().getId() : null)
+                .modelVersionId(entity.getModelVersion() != null ? entity.getModelVersion().getId() : null)
                 .triggeredById(entity.getTriggeredBy() != null ? entity.getTriggeredBy().getId() : null)
                 .triggeredByName(entity.getTriggeredBy() != null ? entity.getTriggeredBy().getFullName() : null)
                 .profileName(entity.getProfileName())
+                .profileVersionId(entity.getProfileVersionId())
+                .runConfigurationVersionId(entity.getRunConfigurationVersionId())
+                .scenarioVersionId(entity.getScenarioVersionId())
+                .confirmedServiceMappings(entity.getConfirmedServiceMappings())
+                .resourceProject(entity.getResourceProject())
                 .scenarioName(entity.getScenarioName())
                 .scenarioConfig(entity.getScenarioConfig())
                 .scenarioStatus(entity.getScenarioStatus())
+                .executionStatus(entity.getExecutionStatus())
+                .evidenceStatus(entity.getEvidenceStatus())
+                .cleanupStatus(entity.getCleanupStatus())
+                .traceQuality(entity.getTraceQuality())
+                .mappingStatus(entity.getMappingStatus())
+                .sandboxEnforcementConfirmed(entity.getSandboxEnforcementConfirmed())
                 .traceStatus(entity.getTraceStatus())
                 .traceStoragePath(entity.getTraceStoragePath())
                 .overrideComposeYaml(overrideComposeYaml)
+                .cancelRequestedAt(entity.getCancelRequestedAt())
                 .startedAt(entity.getStartedAt())
                 .completedAt(entity.getCompletedAt())
                 .createdAt(entity.getCreatedAt())

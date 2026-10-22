@@ -59,4 +59,12 @@ public interface RuntimeSessionService {
      * @return RuntimeSessionResponseDTO
      */
     RuntimeSessionResponseDTO getSessionById(UUID sessionId);
+
+    /**
+     * Xuất hợp đồng RuntimeRunDefinition chuẩn khớp 100% với MAVIS.Runner CLI.
+     *
+     * @param sessionId ID của phiên thực nghiệm
+     * @return RunnerDefinitionExportDTO
+     */
+    com.mavis.analyzer.runtime.dto.RunnerDefinitionExportDTO exportRunDefinition(UUID sessionId);
 }
