@@ -3,12 +3,10 @@ spring:
     name: mavis-backend
 
   datasource:
-    # URL k?t n?i t?i con database mavis_db b?n v?a t?o
-    url: jdbc:postgresql://localhost:5432/mavis_db
-    # ?i?n username c?a PostgreSQL trn my b?n (th??ng l postgres)
-    username: postgres
-    # ?i?n m?t kh?u PostgreSQL trn my b?n vo ?y
-    password: 12345
+    # URL kết nối tới Cloud PostgreSQL (Aiven)
+    url: jdbc:postgresql://pg-3979-trietleminh7979-se181979.c.aivencloud.com:15995/defaultdb?sslmode=require
+    username: avnadmin
+    password: AVNS_YGvZC_uGzflI1GYULTx
     driver-class-name: org.postgresql.Driver
 
   jpa:
