@@ -4,9 +4,9 @@ spring:
 
   datasource:
     # URL kết nối tới Cloud PostgreSQL (Aiven)
-    url: jdbc:postgresql://pg-3979-trietleminh7979-se181979.c.aivencloud.com:15995/defaultdb?sslmode=require
-    username: avnadmin
-    password: AVNS_YGvZC_uGzflI1GYULTx
+    url: ${MAVIS_DB_URL:jdbc:postgresql://localhost:5432/mavis}
+    username: ${MAVIS_DB_USERNAME:mavis}
+    password: ${MAVIS_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
 
   jpa:

@@ -70,10 +70,12 @@ public sealed class RuntimeLifecycleTests
 
     private sealed class FailingDocker : IDockerCommands
     {
+        public bool FailHelperQuery;
         public List<IReadOnlyList<string>> Commands { get; } = [];
         public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string directory, int timeout, CancellationToken ct)
         {
             Commands.Add(args);
+            if (FailHelperQuery && args.Contains("--no-trunc")) throw new IOException("helper query unavailable");
             if (args.Count > 1 && args[0] == "volume" && args[1] == "inspect")
                 return Task.FromResult(new DockerCommandResult(0, "{\"mavis.java.version\":\"2.32.0\",\"mavis.dotnet.version\":\"1.17.0\"}"));
             return Task.FromResult(args[0] == "info" ? new DockerCommandResult(0, "linux") :
@@ -96,13 +98,16 @@ public sealed class RuntimeLifecycleTests
             await Assert.ThrowsAsync<ArgumentException>(() => SessionRecovery.RecoverAsync(root, "../other", docker));
             Assert.True(await SessionRecovery.RecoverAsync(root, project, docker));
             Assert.False(Directory.Exists(directory));
+            Assert.True(File.Exists(Path.Combine(root, ".allocation-" + project + ".json")));
             Assert.Contains(docker.Commands, c => c.Contains(project) && c.Contains("down"));
         }
         finally { Directory.Delete(root, recursive: true); }
     }
 
-    [Fact]
-    public async Task FailedComposeUpStillRunsDownAndConfirmsEveryResourceKind()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedComposeUpStillRunsDownAndConfirmsEveryResourceKind(bool helperFailure)
     {
         var root = Path.Combine(Path.GetTempPath(), "mavis-session-" + Guid.NewGuid().ToString("N"));
         var digest = new string('a', 64);
@@ -110,14 +115,14 @@ public sealed class RuntimeLifecycleTests
             new Dictionary<string, RuntimeServiceProfile> { ["app"] = new("java", 8080) }, ApprovedForLocalPoc: true, ScenarioRunnerImage: "sha256:" + digest);
         var definition = new RuntimeRunDefinition("s", "m", "snapshot", "profile", $"services:\n  app:\n    image: app@sha256:{digest}",
             profile, new("s", [new("health", "app", "GET", "/health", 200)]), new Dictionary<string, string>(), "config", "scenario");
-        var docker = new FailingDocker();
+        var docker = new FailingDocker { FailHelperQuery = helperFailure };
         try
         {
             var result = await RuntimeSessionLifecycle.RunAsync(new DockerComposeSession(definition, root, "receivers: {}", docker), 5);
-            Assert.Equal("Failed", result.ExecutionStatus); Assert.Equal("Confirmed", result.CleanupStatus);
+            Assert.Equal("Failed", result.ExecutionStatus); Assert.Equal(helperFailure ? "Incomplete" : "Confirmed", result.CleanupStatus);
             Assert.Contains(docker.Commands, c => c.Contains("down") && c.Contains("--volumes"));
             Assert.Contains(docker.Commands, c => c[0] == "volume"); Assert.Contains(docker.Commands, c => c[0] == "network");
-            Assert.Empty(Directory.GetDirectories(root));
+            Assert.Equal(helperFailure, Directory.GetDirectories(root).Any(p => Path.GetFileName(p).StartsWith("mavisrun-", StringComparison.Ordinal)));
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }

@@ -186,7 +186,7 @@ class RuntimeSessionServiceImplTest {
                 .executionStatus("NOT_STARTED")
                 .build();
 
-        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(runtimeSessionRepository.findLockedById(sessionId)).thenReturn(Optional.of(session));
 
         RuntimeSessionResponseDTO response = runtimeSessionService.approveAndStartSession(sessionId);
 
@@ -278,7 +278,7 @@ class RuntimeSessionServiceImplTest {
                 .executionStatus("READY_FOR_DISPATCH")
                 .build();
 
-        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(runtimeSessionRepository.findLockedById(sessionId)).thenReturn(Optional.of(session));
 
         RuntimeSessionResponseDTO stopped = runtimeSessionService.stopSession(sessionId);
 
@@ -303,7 +303,7 @@ class RuntimeSessionServiceImplTest {
                 .executionStatus("RUNNING")
                 .build();
 
-        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(runtimeSessionRepository.findLockedById(sessionId)).thenReturn(Optional.of(session));
 
         RuntimeSessionResponseDTO stopped = runtimeSessionService.stopSession(sessionId);
 
@@ -328,7 +328,7 @@ class RuntimeSessionServiceImplTest {
                 .executionStatus("RUNNING")
                 .build();
 
-        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(runtimeSessionRepository.findLockedById(sessionId)).thenReturn(Optional.of(session));
 
         assertThatThrownBy(() -> runtimeSessionService.stopSession(sessionId))
                 .isInstanceOf(BusinessException.class)
@@ -347,7 +347,7 @@ class RuntimeSessionServiceImplTest {
                 .cleanupStatus("CONFIRMED")
                 .build();
 
-        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(runtimeSessionRepository.findLockedById(sessionId)).thenReturn(Optional.of(session));
 
         RuntimeSessionResponseDTO result = runtimeSessionService.stopSession(sessionId);
 
@@ -402,5 +402,45 @@ class RuntimeSessionServiceImplTest {
         assertThat(exportDTO.getProfile()).isNotNull();
         assertThat(exportDTO.getScenario().path("sessionId").asText()).isEqualTo(sessionId.toString());
         assertThat(exportDTO.getConfirmedServiceMappings()).containsKey("orders");
+    }
+    @Test
+    void lifecycleRejectsLateCancelledAndOutOfOrderEventsAndPreservesDuplicateTimestamp() {
+        UUID id = UUID.randomUUID();
+        String resource = "mavisrun-0123456789abcdef0123456789abcdef";
+        RuntimeSession session = RuntimeSession.builder().id(id).project(project).resourceProject(resource)
+                .executionStatus("READY_FOR_DISPATCH").scenarioStatus("APPROVED").build();
+        when(runtimeSessionRepository.findLockedById(id)).thenReturn(Optional.of(session));
+        var event = RuntimeSessionLifecycleAckRequestDTO.builder().sessionId(id).resourceProject(resource)
+                .stage("RUNNING").observedAt(OffsetDateTime.now()).build();
+        assertThatThrownBy(() -> runtimeSessionService.acknowledgeLifecycle(id, event)).isInstanceOf(BusinessException.class);
+        event.setStage("ALLOCATED");
+        runtimeSessionService.acknowledgeLifecycle(id, event);
+        var allocated = session.getAllocatedAt();
+        event.setObservedAt(OffsetDateTime.now().plusSeconds(5));
+        runtimeSessionService.acknowledgeLifecycle(id, event);
+        assertThat(session.getAllocatedAt()).isEqualTo(allocated);
+        event.setStage("RUNNING");
+        runtimeSessionService.acknowledgeLifecycle(id, event);
+        event.setStage("ALLOCATED");
+        assertThatThrownBy(() -> runtimeSessionService.acknowledgeLifecycle(id, event)).isInstanceOf(BusinessException.class);
+        session.setCancelRequestedAt(OffsetDateTime.now());
+        event.setStage("RUNNING");
+        assertThatThrownBy(() -> runtimeSessionService.acknowledgeLifecycle(id, event)).isInstanceOf(BusinessException.class);
+        session.setCancelRequestedAt(null);
+        session.setCompletedAt(OffsetDateTime.now());
+        assertThatThrownBy(() -> runtimeSessionService.acknowledgeLifecycle(id, event)).isInstanceOf(BusinessException.class);
+        event.setSessionId(UUID.randomUUID());
+        assertThatThrownBy(() -> runtimeSessionService.acknowledgeLifecycle(id, event)).hasMessageContaining("scope mismatch");
+    }
+
+    @Test
+    void defaultPinnedModelMustMatchSnapshot() {
+        validModel.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).project(project).build());
+        when(modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId))
+                .thenReturn(Optional.of(validModel));
+        var request = RuntimeSessionCreateRequest.builder().projectId(projectId).sourceSnapshotId(snapshotId).build();
+        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(request)).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("selected snapshot");
+        verify(runtimeSessionRepository, never()).save(any());
     }
 }

@@ -137,6 +137,10 @@ public class RuntimeSession {
     @Column(name = "profile_acceptance", length = 40)
     private String profileAcceptance = "UNVERIFIED";
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "recovery_result_json")
+    private JsonNode recoveryResultJson;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

@@ -6,13 +6,16 @@ namespace MAVIS.Runner;
 
 public sealed record RuntimeRunDefinition(string SessionId, string ModelVersionId, string SourceSnapshotId,
     string ProfileVersionId, string ComposeYaml, RunnerExecutionProfile Profile, HttpScenarioDefinition Scenario,
-    IReadOnlyDictionary<string, string> ConfirmedServiceMappings, string? RunConfigurationVersionId = null, string? ScenarioVersionId = null);
+    IReadOnlyDictionary<string, string> ConfirmedServiceMappings, string? RunConfigurationVersionId = null, string? ScenarioVersionId = null,
+    string? ResourceProject = null);
 
 /// <summary>Operator-invoked local PoC adapter. Not an internet-facing arbitrary repository execution service.</summary>
 public sealed class DockerComposeSession(RuntimeRunDefinition definition, string stateRoot, string collectorConfiguration,
-    IDockerCommands docker, IReadOnlyDictionary<string, string>? secrets = null) : IRuntimeSessionBackend
+    IDockerCommands docker, IReadOnlyDictionary<string, string>? secrets = null,
+    IRuntimeLifecycleObserver? lifecycle = null) : IRuntimeSessionBackend
 {
-    public string ResourceProject { get; } = "mavisrun-" + Guid.NewGuid().ToString("N");
+    public string ResourceProject { get; } = RuntimeAllocation.ProjectName(definition.ResourceProject);
+    public bool AllocationReserved { get; private set; }
     public string Stage { get; private set; } = "VALIDATE";
     public Dictionary<string, string> ActualImageIds { get; } = new(StringComparer.Ordinal);
     public bool SandboxEnforcementConfirmed { get; private set; }
@@ -37,17 +40,20 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             definition.Profile.Applications.ToDictionary(p => p.Key, p => new Uri($"http://{p.Key}:{p.Value.ContainerPort}")),
             secrets ?? new Dictionary<string, string>());
         Stage = "ALLOCATE";
+        RuntimeAllocation.RejectLinks(stateRoot);
+        RuntimeAllocation.RejectLinks(Path.Combine(stateRoot, "runner.lock"));
         Directory.CreateDirectory(stateRoot);
         // One local allocator at a time. Every invocation must use the same operator-managed state root.
         _lease = new FileStream(Path.Combine(stateRoot, "runner.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-        _directory = Path.Combine(stateRoot, ResourceProject);
-        Directory.CreateDirectory(_directory);
+        _directory = RuntimeAllocation.Reserve(Path.GetFullPath(stateRoot), ResourceProject, definition);
+        AllocationReserved = true;
         var collectorPath = Path.Combine(_directory, "collector.yaml");
         Stage = "OVERRIDE";
         var overrides = ComposeOverrideBuilder.Build(preflight, definition.Profile, collectorPath);
         await File.WriteAllTextAsync(collectorPath, collectorConfiguration, ct);
         await File.WriteAllTextAsync(Path.Combine(_directory, "compose.yaml"), definition.ComposeYaml, ct);
         await File.WriteAllTextAsync(Path.Combine(_directory, "override.json"), overrides, ct);
+        await CheckpointAsync("ALLOCATED", 1, ct);
         Stage = "DOCKER_INFO";
         var info = await docker.RunAsync(["info", "--format", "{{.OSType}}"], _directory, 10, ct);
         if (info.ExitCode != 0 || info.StandardOutput.Trim() != "linux") throw new InvalidOperationException("Linux Docker engine is unavailable.");
@@ -111,7 +117,11 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             var steps = definition.Profile.Applications.Select(p => new HttpScenarioStep(p.Key, p.Key, "GET", p.Value.ReadinessPath, 200))
                 .Append(new("collector", "mavis-collector", "GET", "/", 200)).ToArray();
             var result = await RunInsideNetwork(new(definition.SessionId, steps, 2), _endpoints, new Dictionary<string, string>(), ct);
-            if (result.Status == "Passed") return;
+            if (result.Status == "Passed")
+            {
+                await CheckpointAsync("RUNNING", 2, ct);
+                return;
+            }
             await Task.Delay(1000, ct);
         }
         throw new InvalidOperationException("Readiness could not be confirmed.");
@@ -162,6 +172,17 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
     private HttpScenarioOutcome? _scenario;
 
+    private async Task CheckpointAsync(string stage, int sequence, CancellationToken ct)
+    {
+        Stage = "ACK_" + stage;
+        var notification = new RuntimeLifecycleEvent(definition.SessionId, definition.ModelVersionId,
+            definition.SourceSnapshotId, definition.ProfileVersionId, definition.RunConfigurationVersionId!,
+            definition.ScenarioVersionId!, ResourceProject, stage, sequence, DateTimeOffset.UtcNow);
+        RuntimeLifecycleJournal.Record(stateRoot, notification);
+        if (lifecycle is not null) await lifecycle.AcknowledgeAsync(notification, ct);
+        ct.ThrowIfCancellationRequested();
+    }
+
     public async Task<bool> CleanupAsync(CancellationToken ct)
     {
         try
@@ -169,6 +190,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             if (_directory is null) return true;
             if (_resourcesMayExist)
             {
+                var helpersRemoved = await ScenarioContainerCleanup.RemoveAsync(docker, _directory, ResourceProject, ct);
                 var down = await Command(["down", "--volumes", "--remove-orphans", "--timeout", "5"], ct);
                 if (down.ExitCode != 0) return false;
                 // Confirm no containers with this generated project label remain, including stopped workloads.
@@ -179,8 +201,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     var resources = await docker.RunAsync([kind, "ls", "-q", "--filter", "label=com.docker.compose.project=" + ResourceProject], _directory, 10, ct);
                     if (resources.ExitCode != 0 || !string.IsNullOrWhiteSpace(resources.StandardOutput)) return false;
                 }
+                if (!helpersRemoved) return false;
             }
             var expected = Path.Combine(Path.GetFullPath(stateRoot), ResourceProject);
+            RuntimeAllocation.RejectLinks(_directory);
             if (!Path.GetFullPath(_directory).Equals(expected, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
                 throw new InvalidOperationException("Unexpected cleanup target.");
             Directory.Delete(_directory, recursive: true);

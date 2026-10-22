@@ -93,6 +93,27 @@ public class GlobalExceptionHandler {
     /**
      * Điểm chốt chặn cuối cùng (Bắt toàn bộ các lỗi Unchecked Exception còn lại như NullPointerException)
      */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ApiResponse<Void> handleMissingResource(org.springframework.web.servlet.resource.NoResourceFoundException ex) {
+        return ApiResponse.error(ErrorCode.NOT_FOUND);
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    public org.springframework.http.ResponseEntity<ApiResponse<Void>> handleContentType(org.springframework.web.HttpMediaTypeNotSupportedException ex) {
+        return org.springframework.http.ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE)
+                .body(ApiResponse.error(ErrorCode.BAD_REQUEST, "Unsupported request content type"));
+    }
+
+    @ExceptionHandler({org.springframework.http.converter.HttpMessageNotReadableException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class,
+            org.springframework.web.multipart.support.MissingServletRequestPartException.class,
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class})
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleMalformedRequest(Exception ex) {
+        return ApiResponse.error(ErrorCode.BAD_REQUEST);
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleGlobalException(Exception ex) {
