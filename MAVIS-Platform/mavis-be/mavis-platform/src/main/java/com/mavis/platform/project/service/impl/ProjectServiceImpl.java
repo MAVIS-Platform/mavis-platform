@@ -40,20 +40,18 @@ public class ProjectServiceImpl implements ProjectService {
     private final AssignmentRepository assignmentRepository;
     private final SourceSnapshotRepository sourceSnapshotRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ProjectResponseDTO createProject(ProjectCreateRequest request) {
         log.info("Creating new project with name: {}", request.getName());
 
-        UUID currentUserId = SecurityUtils.getCurrentUserId();
-        User currentUser = userRepository.findById(currentUserId)
-                .orElseThrow(() -> new BusinessException(
-                        ErrorCode.NOT_FOUND,
-                        "Không tìm thấy người dùng hiện tại"));
+        User currentUser = accessPolicyService.requireCurrentActiveUser();
 
         Workspace workspace = null;
         if (request.getWorkspaceId() != null) {
+            accessPolicyService.requireWorkspaceMember(request.getWorkspaceId());
             workspace = workspaceRepository.findById(request.getWorkspaceId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "Không tìm thấy Workspace với ID: " + request.getWorkspaceId()));
@@ -197,9 +195,7 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = projectRepository.findWithDetailsById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + id));
 
-        if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền chỉnh sửa dự án này");
-        }
+        accessPolicyService.requireProjectWriteAccess(project);
 
         if (request.getName() != null && !request.getName().isBlank()) {
             project.setName(request.getName().trim());
@@ -229,11 +225,7 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = projectRepository.findWithDetailsById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + id));
 
-        UUID currentUserId = SecurityUtils.getCurrentUserId();
-        boolean isOwner = project.getOwner() != null && currentUserId.equals(project.getOwner().getId());
-        if (!isOwner && project.getWorkspace() == null) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền truy cập dự án này");
-        }
+        accessPolicyService.requireProjectReadAccess(project);
 
         return toDTO(project);
     }
@@ -258,9 +250,7 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = projectRepository.findWithDetailsById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + id));
 
-        if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền xóa dự án này");
-        }
+        accessPolicyService.requireProjectWriteAccess(project);
 
         project.setStatus("DELETED");
         project.setUpdatedAt(OffsetDateTime.now());

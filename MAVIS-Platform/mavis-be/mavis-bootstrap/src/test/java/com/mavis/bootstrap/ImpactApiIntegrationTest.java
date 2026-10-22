@@ -56,6 +56,9 @@ class ImpactApiIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.mavis.analyzer.impact.WorkerImpactService workerImpactService;
+
     @Test
     @DisplayName("API Integration Test: GET /api/v1/analyzer/impact - 3-tier chain A -> B -> C with Batch Evidence")
     void testChangeImpactAnalysisApi() throws Exception {
@@ -88,7 +91,7 @@ class ImpactApiIntegrationTest {
                 .sourceSnapshot(snapshot)
                 .revision(1)
                 .schemaVersion("1.0")
-                .origin("GENERATED")
+                .origin("USER_CONFIRMED")
                 .isLatestValid(true)
                 .createdBy(user)
                 .build());
@@ -162,27 +165,96 @@ class ImpactApiIntegrationTest {
         System.out.println("    nodeId=" + paymentNode.getId() + " (payment-service)");
         System.out.println("================================================================================");
 
+        com.mavis.workerclient.ImpactWorkerClient.Result workerResult = new com.mavis.workerclient.ImpactWorkerClient.Result(
+                modelVersion.getId().toString(),
+                "rev-1",
+                paymentNode.getId().toString(),
+                java.util.List.of(
+                        new com.mavis.workerclient.ImpactWorkerClient.Path(
+                                orderNode.getId().toString(),
+                                "Direct",
+                                1,
+                                java.util.List.of(orderNode.getId().toString(), paymentNode.getId().toString()),
+                                java.util.List.of("rel1"),
+                                java.util.List.of(evOrderPayment.getId().toString())
+                        ),
+                        new com.mavis.workerclient.ImpactWorkerClient.Path(
+                                gatewayNode.getId().toString(),
+                                "Indirect",
+                                2,
+                                java.util.List.of(gatewayNode.getId().toString(), orderNode.getId().toString(), paymentNode.getId().toString()),
+                                java.util.List.of("rel2", "rel1"),
+                                java.util.List.of(evGatewayOrder.getId().toString(), evOrderPayment.getId().toString())
+                        )
+                ),
+                false,
+                java.util.List.of(),
+                java.util.List.of()
+        );
+
+        java.util.Map<String, String> serviceNames = java.util.Map.of(
+                paymentNode.getId().toString(), "payment-service",
+                orderNode.getId().toString(), "order-service",
+                gatewayNode.getId().toString(), "api-gateway"
+        );
+
+        java.util.Map<String, com.mavis.analyzer.impact.ImpactGraphLoader.EvidenceView> evidenceMap = java.util.Map.of(
+                evOrderPayment.getId().toString(), new com.mavis.analyzer.impact.ImpactGraphLoader.EvidenceView(
+                        evOrderPayment.getId().toString(),
+                        snapshot.getId(),
+                        evOrderPayment.getLocator(),
+                        evOrderPayment.getAdapterVersion(),
+                        evOrderPayment.getSourceType(),
+                        null
+                ),
+                evGatewayOrder.getId().toString(), new com.mavis.analyzer.impact.ImpactGraphLoader.EvidenceView(
+                        evGatewayOrder.getId().toString(),
+                        snapshot.getId(),
+                        evGatewayOrder.getLocator(),
+                        evGatewayOrder.getAdapterVersion(),
+                        evGatewayOrder.getSourceType(),
+                        null
+                )
+        );
+
+        org.mockito.Mockito.when(workerImpactService.analyze(
+                org.mockito.ArgumentMatchers.eq(modelVersion.getId()),
+                org.mockito.ArgumentMatchers.eq(paymentNode.getId()),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt()
+        )).thenReturn(new com.mavis.analyzer.impact.WorkerImpactService.View(
+                workerResult,
+                serviceNames,
+                evidenceMap,
+                java.util.List.of()
+        ));
+
         // --- 2. THỰC THI API CALL ---
         MvcResult result = mockMvc.perform(get("/api/v1/analyzer/impact")
+                        .header("X-Test-User-Email", user.getEmail())
                         .param("sessionId", modelVersion.getId().toString())
                         .param("nodeId", paymentNode.getId().toString())
                         .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.targetElementName").value("payment-service"))
-                .andExpect(jsonPath("$.data.totalImpactedCount").value(2))
-                .andExpect(jsonPath("$.data.directlyImpactedCount").value(1))
-                .andExpect(jsonPath("$.data.indirectlyImpactedCount").value(1))
-                .andExpect(jsonPath("$.data.cyclicDependencyDetected").value(false))
-                .andExpect(jsonPath("$.data.impactedElements[0].name").value("order-service"))
-                .andExpect(jsonPath("$.data.impactedElements[0].impactLevel").value("DIRECTLY_IMPACTED"))
-                .andExpect(jsonPath("$.data.impactedElements[0].hopDistance").value(1))
-                .andExpect(jsonPath("$.data.impactedElements[1].name").value("api-gateway"))
-                .andExpect(jsonPath("$.data.impactedElements[1].impactLevel").value("INDIRECTLY_IMPACTED"))
-                .andExpect(jsonPath("$.data.impactedElements[1].hopDistance").value(2))
                 .andReturn();
 
+        System.out.println("DEBUG IMPACT STATUS: " + result.getResponse().getStatus());
+        System.out.println("DEBUG IMPACT CONTENT: " + result.getResponse().getContentAsString());
+        assertThat(result.getResponse().getStatus()).isEqualTo(200);
+
         String responseJson = result.getResponse().getContentAsString();
+        JsonNode jsonNode = objectMapper.readTree(responseJson);
+        assertThat(jsonNode.get("data").get("targetElementName").asText()).isEqualTo("payment-service");
+        assertThat(jsonNode.get("data").get("totalImpactedCount").asInt()).isEqualTo(2);
+        assertThat(jsonNode.get("data").get("directlyImpactedCount").asInt()).isEqualTo(1);
+        assertThat(jsonNode.get("data").get("indirectlyImpactedCount").asInt()).isEqualTo(1);
+        assertThat(jsonNode.get("data").get("cyclicDependencyDetected").asBoolean()).isFalse();
+        assertThat(jsonNode.get("data").get("impactedElements").get(0).get("name").asText()).isEqualTo("order-service");
+        assertThat(jsonNode.get("data").get("impactedElements").get(0).get("impactLevel").asText()).isEqualTo("DIRECTLY_IMPACTED");
+        assertThat(jsonNode.get("data").get("impactedElements").get(0).get("hopDistance").asInt()).isEqualTo(1);
+        assertThat(jsonNode.get("data").get("impactedElements").get(1).get("name").asText()).isEqualTo("api-gateway");
+        assertThat(jsonNode.get("data").get("impactedElements").get(1).get("impactLevel").asText()).isEqualTo("INDIRECTLY_IMPACTED");
+        assertThat(jsonNode.get("data").get("impactedElements").get(1).get("hopDistance").asInt()).isEqualTo(2);
         JsonNode responseNode = objectMapper.readTree(responseJson);
 
         System.out.println("RESPONSE BODY:");

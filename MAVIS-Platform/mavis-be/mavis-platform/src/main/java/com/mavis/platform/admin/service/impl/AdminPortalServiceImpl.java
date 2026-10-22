@@ -36,12 +36,14 @@ public class AdminPortalServiceImpl implements AdminPortalService {
     private final RuntimeSessionRepository runtimeSessionRepository;
     private final SubmissionSnapshotRepository submissionSnapshotRepository;
     private final AuditLogService auditLogService;
+    private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     private static final Set<String> ALLOWED_STATUSES = Set.of("ACTIVE", "LOCKED", "INACTIVE");
 
     @Override
     @Transactional(readOnly = true)
     public List<AdminUserResponseDTO> getAllUsers() {
+        accessPolicyService.requireSystemAdmin();
         log.debug("Lấy toàn bộ danh sách người dùng cho Admin Portal");
         List<User> users = userRepository.findAllByOrderByCreatedAtDesc();
         return users.stream()
@@ -52,6 +54,7 @@ public class AdminPortalServiceImpl implements AdminPortalService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public AdminUserResponseDTO changeUserStatus(UUID userId, String newStatus) {
+        accessPolicyService.requireSystemAdmin();
         log.info("Admin đổi trạng thái người dùng userId: {}, newStatus: {}", userId, newStatus);
 
         if (newStatus == null || !ALLOWED_STATUSES.contains(newStatus.trim().toUpperCase())) {
@@ -82,6 +85,7 @@ public class AdminPortalServiceImpl implements AdminPortalService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public AdminUserResponseDTO changeUserRole(UUID userId, String newRoleCode) {
+        accessPolicyService.requireSystemAdmin();
         log.info("Admin đổi vai trò người dùng userId: {}, newRoleCode: {}", userId, newRoleCode);
 
         if (newRoleCode == null || newRoleCode.isBlank()) {
@@ -114,6 +118,7 @@ public class AdminPortalServiceImpl implements AdminPortalService {
     @Override
     @Transactional(readOnly = true)
     public AdminDashboardStatsDTO getDashboardStats() {
+        accessPolicyService.requireSystemAdmin();
         log.debug("Tổng hợp số liệu thống kê Admin Dashboard bằng .count()");
 
         long totalUsers = userRepository.count();
@@ -140,6 +145,7 @@ public class AdminPortalServiceImpl implements AdminPortalService {
     @Override
     @Transactional(readOnly = true)
     public List<AuditLogResponseDTO> getRecentAuditLogs() {
+        accessPolicyService.requireSystemAdmin();
         return auditLogService.getRecentAuditLogs();
     }
 }

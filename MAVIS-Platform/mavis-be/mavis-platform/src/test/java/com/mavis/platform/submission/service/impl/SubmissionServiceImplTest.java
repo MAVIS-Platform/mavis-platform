@@ -59,6 +59,9 @@ class SubmissionServiceImplTest {
     @Mock
     private FeedbackCommentRepository feedbackCommentRepository;
 
+    @Mock
+    private JobRepository jobRepository;
+
     @InjectMocks
     private SubmissionServiceImpl submissionService;
 
@@ -295,5 +298,174 @@ class SubmissionServiceImplTest {
         assertThat(dto.getId()).isEqualTo(subId);
         assertThat(dto.getFeedbackCount()).isEqualTo(3L);
         assertThat(dto.getAssignmentTitle()).isEqualTo("Kiến trúc Microservices E-Commerce");
+    }
+
+    @Test
+    @DisplayName("Chặn nộp bài khi người nộp không phải chủ sở hữu dự án (403 FORBIDDEN)")
+    void testSubmitAssignment_NonOwner_ThrowsForbidden() {
+        User anotherOwner = User.builder().id(UUID.randomUUID()).build();
+        project.setOwner(anotherOwner);
+
+        SubmissionCreateRequest request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .projectId(projectId)
+                .modelVersionId(modelVersionId)
+                .diagramVersionId(diagramVersionId)
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Chỉ chủ sở hữu của dự án mới có quyền nộp bài");
+
+        verify(submissionSnapshotRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Chặn nộp bài khi ModelVersion thiếu SourceSnapshot bất biến")
+    void testSubmitAssignment_MissingSourceSnapshot_ThrowsBadRequest() {
+        modelVersion.setSourceSnapshot(null);
+
+        SubmissionCreateRequest request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .projectId(projectId)
+                .modelVersionId(modelVersionId)
+                .diagramVersionId(diagramVersionId)
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ModelVersion không gắn với SourceSnapshot bất biến hợp lệ");
+
+        verify(submissionSnapshotRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Chặn nộp bài khi ModelVersion là bản nháp PARTIAL chưa được xác nhận")
+    void testSubmitAssignment_PartialDraftJob_ThrowsBadRequest() {
+        modelVersion.setOrigin("ANALYZER");
+
+        ObjectNode manifest = objectMapper.createObjectNode();
+        manifest.put("modelVersionId", modelVersionId.toString());
+        manifest.put("completeness", "PARTIAL");
+
+        Job draftJob = Job.builder()
+                .id(UUID.randomUUID())
+                .status("COMPLETED")
+                .sourceSnapshot(snapshot)
+                .resultManifest(manifest)
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(jobRepository.findBySourceSnapshotId(snapshotId)).thenReturn(List.of(draftJob));
+
+        SubmissionCreateRequest request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .projectId(projectId)
+                .modelVersionId(modelVersionId)
+                .diagramVersionId(diagramVersionId)
+                .build();
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Không thể nộp phiên bản mô hình chưa hoàn thiện (PARTIAL)");
+
+        verify(submissionSnapshotRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Chặn nộp bài khi RuntimeSession không chạy trên cùng SourceSnapshot với ModelVersion")
+    void testSubmitAssignment_RuntimeSessionSnapshotMismatch_ThrowsBadRequest() {
+        SourceSnapshot anotherSnapshot = SourceSnapshot.builder().id(UUID.randomUUID()).build();
+        runtimeSession.setSourceSnapshot(anotherSnapshot);
+
+        SubmissionCreateRequest request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .projectId(projectId)
+                .modelVersionId(modelVersionId)
+                .diagramVersionId(diagramVersionId)
+                .runtimeSessionId(runtimeSessionId)
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(runtimeSession));
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Phiên thực nghiệm không chạy trên cùng SourceSnapshot với ModelVersion");
+
+        verify(submissionSnapshotRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Chặn nộp bài khi requireRuntimeTrace = true nhưng kịch bản bị FAILED")
+    void testSubmitAssignment_RequireRuntimeTrace_ScenarioFailed_ThrowsBadRequest() {
+        assignment.setRequireRuntimeTrace(true);
+        runtimeSession.setScenarioStatus("FAILED");
+
+        SubmissionCreateRequest request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .projectId(projectId)
+                .modelVersionId(modelVersionId)
+                .diagramVersionId(diagramVersionId)
+                .runtimeSessionId(runtimeSessionId)
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(runtimeSession));
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Đề bài yêu cầu Runtime Trace hợp lệ đã hoàn tất (PASSED)");
+
+        verify(submissionSnapshotRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Chặn nộp bài khi requireRuntimeTrace = true nhưng traceStatus là NONE")
+    void testSubmitAssignment_RequireRuntimeTrace_TraceStatusNone_ThrowsBadRequest() {
+        assignment.setRequireRuntimeTrace(true);
+        runtimeSession.setScenarioStatus("PASSED");
+        runtimeSession.setTraceStatus("NONE");
+
+        SubmissionCreateRequest request = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId)
+                .projectId(projectId)
+                .modelVersionId(modelVersionId)
+                .diagramVersionId(diagramVersionId)
+                .runtimeSessionId(runtimeSessionId)
+                .build();
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(runtimeSession));
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Đề bài yêu cầu Runtime Trace hợp lệ đã hoàn tất (PASSED)");
+
+        verify(submissionSnapshotRepository, never()).save(any());
     }
 }

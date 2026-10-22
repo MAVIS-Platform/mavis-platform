@@ -12,8 +12,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
+import lombok.extern.slf4j.Slf4j;
 import java.util.function.Function;
 
+@Slf4j
 @Service @RequiredArgsConstructor
 public class ModelVersionServiceImpl implements ModelVersionService {
     @Transactional(readOnly=true)
@@ -180,8 +182,10 @@ public class ModelVersionServiceImpl implements ModelVersionService {
     }
     private ObjectNode metadata(com.fasterxml.jackson.databind.JsonNode existing,com.fasterxml.jackson.databind.JsonNode requested){
         ObjectNode result=existing!=null&&existing.isObject()?(ObjectNode)existing.deepCopy():json.createObjectNode();
-        if(requested!=null){if(!requested.isObject()||requested.size()>100||requested.toString().length()>65536)throw invalid();
-            var fields=requested.fields();while(fields.hasNext()){var entry=fields.next();if(Set.of("logicalKey","workerLogicalId","origin","userConfirmed").contains(entry.getKey()))throw invalid();result.set(entry.getKey(),entry.getValue());}}
+        if(requested!=null && !requested.isNull()){
+            if(!requested.isObject()||requested.size()>100||requested.toString().length()>65536)throw invalid();
+            var fields=requested.fields();while(fields.hasNext()){var entry=fields.next();if(Set.of("logicalKey","workerLogicalId","origin","userConfirmed").contains(entry.getKey()))throw invalid();result.set(entry.getKey(),entry.getValue());}
+        }
         return result;
     }
     private static BusinessException invalid(){return new BusinessException(ErrorCode.BAD_REQUEST,"Invalid controlled revision or comparison input");}

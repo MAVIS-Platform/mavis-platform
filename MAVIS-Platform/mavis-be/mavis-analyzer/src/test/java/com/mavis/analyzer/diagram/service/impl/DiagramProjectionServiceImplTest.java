@@ -15,6 +15,7 @@ import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.DiagramVersionRepository;
 import com.mavis.common.repository.EvidenceRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -68,6 +69,11 @@ class DiagramProjectionServiceImplTest {
                 .project(sampleProject)
                 .revision(1)
                 .build();
+    }
+
+    @AfterEach
+    void tearDown() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
     }
 
     @Test
