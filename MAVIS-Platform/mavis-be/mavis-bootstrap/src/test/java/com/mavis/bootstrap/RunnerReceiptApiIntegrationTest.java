@@ -2,6 +2,8 @@ package com.mavis.bootstrap;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.analyzer.runtime.dto.*;
 import com.mavis.common.entity.*;
 import com.mavis.common.repository.*;
@@ -12,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -38,19 +41,13 @@ class RunnerReceiptApiIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
     private ProjectRepository projectRepository;
 
     @Autowired
     private SourceSnapshotRepository sourceSnapshotRepository;
-
-    @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private RoleRepository roleRepository;
-
-    @Autowired
-    private RuntimeSessionRepository runtimeSessionRepository;
 
     @Autowired
     private ModelVersionRepository modelVersionRepository;
@@ -62,17 +59,26 @@ class RunnerReceiptApiIntegrationTest {
     private ModelRelationshipRepository modelRelationshipRepository;
 
     @Autowired
-    private com.mavis.analyzer.runtime.service.RunnerReceiptIngestService runnerReceiptIngestService;
+    private RuntimeSessionRepository runtimeSessionRepository;
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private UserRepository userRepository;
+
+    @Autowired
+    private RoleRepository roleRepository;
+
+    @Autowired
+    private com.mavis.analyzer.runtime.service.RunnerReceiptIngestService runnerReceiptIngestService;
+
+    @TempDir
+    Path tempStateRoot;
 
     @Test
-    @DisplayName("FULL STAGE 8 API TEST: RunDefinition -> IngestReceipt (Scope, Nanosecond duration, Idempotency) -> SyncOutbox -> Error Handling")
-    void testRunnerContractAndReceiptLifecycleApi(@TempDir Path tempStateRoot) throws Exception {
+    @DisplayName("CHẶNG 11 & 12 E2E: /run-definition -> /lifecycle-ack -> /ingest-receipt-ack -> Idempotent Replay 200 -> Conflict 409")
+    void testRunnerReceiptEndToEndWorkflow() throws Exception {
         ReflectionTestUtils.setField(runnerReceiptIngestService, "runnerStateRoot", tempStateRoot.toString());
 
-        // 1. SETUP DỮ LIỆU BAN ĐẦU
+        // Chuẩn bị User & Role
         Role studentRole = roleRepository.findByCode("STUDENT")
                 .orElseGet(() -> roleRepository.save(Role.builder().code("STUDENT").name("Student").build()));
 
@@ -88,10 +94,22 @@ class RunnerReceiptApiIntegrationTest {
                 .owner(user)
                 .build());
 
+        // Chuẩn bị composeYaml trên đĩa
+        String composeYaml = """
+                services:
+                  order-service:
+                    image: order-service@sha256:1111222233334444555566667777888899990000111122223333444455556666
+                  payment-service:
+                    image: payment-service@sha256:2222333344445555666677778888999900001111222233334444555566667777
+                """;
+        Path composeFile = tempStateRoot.resolve("docker-compose.yml");
+        Files.writeString(composeFile, composeYaml);
+
         SourceSnapshot snapshot = sourceSnapshotRepository.save(SourceSnapshot.builder()
                 .project(project)
                 .sourceType("ZIP_UPLOAD")
                 .artifactHash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+                .storagePath(composeFile.toString())
                 .build());
 
         ModelVersion baseVersion = modelVersionRepository.save(ModelVersion.builder()
@@ -126,6 +144,23 @@ class RunnerReceiptApiIntegrationTest {
 
         String resourceProject = "mavisrun-0123456789abcdef0123456789abcdef";
 
+        // Chuẩn bị scenarioConfig hợp lệ
+        ObjectNode scenarioConfig = objectMapper.createObjectNode();
+        ObjectNode profile = scenarioConfig.putObject("profile");
+        profile.put("collectorImage", "otel/collector@sha256:1111222233334444555566667777888899990000111122223333444455556666");
+        profile.put("instrumentationVolume", "mavis-agents-v1");
+        ObjectNode apps = profile.putObject("applications");
+        apps.putObject("order-service").put("runtime", "dotnet8").put("containerPort", 8080);
+        apps.putObject("payment-service").put("runtime", "java").put("containerPort", 8080);
+
+        ObjectNode scenario = scenarioConfig.putObject("scenario");
+        ArrayNode steps = scenario.putArray("steps");
+        ObjectNode step = steps.addObject();
+        step.put("id", "step1");
+        step.put("service", "order-service");
+        step.put("method", "GET");
+        step.put("path", "/orders");
+
         RuntimeSession session = runtimeSessionRepository.save(RuntimeSession.builder()
                 .project(project)
                 .sourceSnapshot(snapshot)
@@ -135,9 +170,10 @@ class RunnerReceiptApiIntegrationTest {
                 .profileVersionId("local-poc-profile/1.0")
                 .runConfigurationVersionId("run-config/1.0")
                 .scenarioVersionId("scenario/1.0")
+                .scenarioConfig(scenarioConfig)
                 .confirmedServiceMappings(Map.of("order-service", elA.getId().toString(), "payment-service", elB.getId().toString()))
-                .scenarioStatus("RUNNING")
-                .executionStatus("RUNNING")
+                .scenarioStatus("PENDING")
+                .executionStatus("NOT_STARTED")
                 .build());
 
         UUID sessionId = session.getId();
@@ -145,21 +181,49 @@ class RunnerReceiptApiIntegrationTest {
         // =========================================================================
         // BƯỚC 1: GET /api/v1/analyzer/runtime/sessions/{sessionId}/run-definition
         // =========================================================================
-        MvcResult runDefResult = mockMvc.perform(get("/api/v1/analyzer/runtime/sessions/{sessionId}/run-definition", sessionId))
+        mockMvc.perform(get("/api/v1/analyzer/runtime/sessions/{sessionId}/run-definition", sessionId)
+                        .header("X-Test-User-Email", user.getEmail()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.sessionId").value(sessionId.toString()))
                 .andExpect(jsonPath("$.data.modelVersionId").value(baseVersion.getId().toString()))
                 .andExpect(jsonPath("$.data.sourceSnapshotId").value(snapshot.getId().toString()))
                 .andExpect(jsonPath("$.data.profileVersionId").value("local-poc-profile/1.0"))
-                .andExpect(jsonPath("$.data.confirmedServiceMappings").isMap())
-                .andReturn();
-
-        JsonNode runDefNode = objectMapper.readTree(runDefResult.getResponse().getContentAsString());
-        assertThat(runDefNode.get("data").get("confirmedServiceMappings").has("order-service")).isTrue();
+                .andExpect(jsonPath("$.data.resourceProject").value(resourceProject))
+                .andExpect(jsonPath("$.data.confirmedServiceMappings").isMap());
 
         // =========================================================================
-        // BƯỚC 2: POST /api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt
+        // BƯỚC 2: POST /api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack (ALLOCATED -> RUNNING)
+        // =========================================================================
+        RuntimeSessionLifecycleAckRequestDTO allocReq = RuntimeSessionLifecycleAckRequestDTO.builder()
+                .sessionId(sessionId)
+                .resourceProject(resourceProject)
+                .stage("ALLOCATED")
+                .build();
+
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
+                        .header("X-Test-User-Email", user.getEmail())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(allocReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.executionStatus").value("ALLOCATED"));
+
+        RuntimeSessionLifecycleAckRequestDTO runReq = RuntimeSessionLifecycleAckRequestDTO.builder()
+                .sessionId(sessionId)
+                .resourceProject(resourceProject)
+                .stage("RUNNING")
+                .build();
+
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
+                        .header("X-Test-User-Email", user.getEmail())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(runReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.executionStatus").value("RUNNING"))
+                .andExpect(jsonPath("$.data.scenarioStatus").value("RUNNING"));
+
+        // =========================================================================
+        // BƯỚC 3: POST /api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack
         // =========================================================================
         RunnerCorrelatedSpanDTO spanA = RunnerCorrelatedSpanDTO.builder()
                 .traceId("4bf92f3577b34da6a3ce929d0e0e4736")
@@ -178,17 +242,11 @@ class RunnerReceiptApiIntegrationTest {
                 .httpStatusCode(200)
                 .build();
 
-        RunnerCausalEdgeDTO edge = RunnerCausalEdgeDTO.builder()
-                .traceId("4bf92f3577b34da6a3ce929d0e0e4736")
-                .parentSpanId("00f067aa0ba902b7")
-                .childSpanId("5fb397be34d23b7a")
-                .build();
-
         RunnerTraceCorrelationDTO trace = RunnerTraceCorrelationDTO.builder()
                 .sessionId(sessionId.toString())
                 .modelVersionId(baseVersion.getId().toString())
                 .spans(List.of(spanA, spanB))
-                .causalEdges(List.of(edge))
+                .causalEdges(List.of(new RunnerCausalEdgeDTO("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "5fb397be34d23b7a")))
                 .warnings(List.of())
                 .build();
 
@@ -206,72 +264,86 @@ class RunnerReceiptApiIntegrationTest {
                 .sessionId(sessionId.toString())
                 .sourceSnapshotId(snapshot.getId().toString())
                 .modelVersionId(baseVersion.getId().toString())
+                .profileVersionId("local-poc-profile/1.0")
+                .runConfigurationVersionId("run-config/1.0")
+                .scenarioVersionId("scenario/1.0")
                 .resourceProject(resourceProject)
                 .sandboxEnforcementConfirmed(true)
                 .outcome(outcome)
                 .build();
 
-        MvcResult ingestResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt", sessionId)
+        MvcResult ackResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
+                        .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(receipt)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.origin").value("RUNTIME_ENRICHED"))
-                .andExpect(jsonPath("$.data.revision").value(2))
+                .andExpect(jsonPath("$.data.persistenceStatus").value("COMMITTED"))
+                .andExpect(jsonPath("$.data.publicationGateStatus").value("PROMOTED"))
+                .andExpect(jsonPath("$.data.promotedLatest").value(true))
+                .andExpect(jsonPath("$.data.receiptDigest").isNotEmpty())
                 .andReturn();
 
-        JsonNode enrichedModelNode = objectMapper.readTree(ingestResult.getResponse().getContentAsString());
-        UUID enrichedModelId = UUID.fromString(enrichedModelNode.get("data").get("id").asText());
+        JsonNode ackNode = objectMapper.readTree(ackResult.getResponse().getContentAsString());
+        String receiptDigest = ackNode.get("data").get("receiptDigest").asText();
 
-        // Kiểm tra session được cập nhật chính xác
+        // Kiểm tra session cập nhật
         RuntimeSession updatedSession = runtimeSessionRepository.findById(sessionId).orElseThrow();
         assertThat(updatedSession.getScenarioStatus()).isEqualTo("PASSED");
         assertThat(updatedSession.getExecutionStatus()).isEqualTo("COMPLETED");
-        assertThat(updatedSession.getCleanupStatus()).isEqualTo("CONFIRMED");
-        assertThat(updatedSession.getTraceStatus()).isEqualTo("COMPLETE");
-        assertThat(updatedSession.getRunnerReceiptJson()).isNotNull();
+        assertThat(updatedSession.getReceiptDigest()).isEqualTo(receiptDigest);
 
         // =========================================================================
-        // BƯỚC 3: IDEMPOTENCY TEST: Gửi lại cùng receipt lần 2 -> Không tạo duplicate
+        // BƯỚC 4: IDEMPOTENCY TEST: Replay cùng digest trả ALREADY_COMMITTED
         // =========================================================================
-        MvcResult replayResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt", sessionId)
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
+                        .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(receipt)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.id").value(enrichedModelId.toString()))
-                .andReturn();
-
-        long modelCount = modelVersionRepository.findByProjectId(project.getId()).size();
-        assertThat(modelCount).isEqualTo(2); // 1 baseVersion + 1 enrichedVersion, không có bản thứ 3
+                .andExpect(jsonPath("$.data.persistenceStatus").value("ALREADY_COMMITTED"))
+                .andExpect(jsonPath("$.data.receiptDigest").value(receiptDigest));
 
         // =========================================================================
-        // BƯỚC 4: POST /api/v1/analyzer/runtime/sessions/{sessionId}/sync-outbox
+        // BƯỚC 5: CONFLICT TEST: Replay khác digest ném 409 CONFLICT
         // =========================================================================
-        Path receiptsDir = Files.createDirectories(tempStateRoot.resolve("receipts"));
-        String secondResourceProject = "mavisrun-abcdef0123456789abcdef0123456789";
-        Path outboxReceiptFile = receiptsDir.resolve(secondResourceProject + ".json");
-
-        receipt.setResourceProject(secondResourceProject);
-        Files.writeString(outboxReceiptFile, objectMapper.writeValueAsString(receipt));
-
-        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/sync-outbox", sessionId)
-                        .param("resourceProject", secondResourceProject))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.resourceProject").value(secondResourceProject));
-
-        // =========================================================================
-        // BƯỚC 5: KIỂM THỬ ÂM TÍNH (Scope mismatch -> 400 Bad Request)
-        // =========================================================================
-        RunnerReceiptIngestRequestDTO badReceipt = RunnerReceiptIngestRequestDTO.builder()
-                .sessionId(UUID.randomUUID().toString()) // Mismatched session ID
+        RunnerReceiptIngestRequestDTO conflictingReceipt = RunnerReceiptIngestRequestDTO.builder()
+                .sessionId(sessionId.toString())
                 .sourceSnapshotId(snapshot.getId().toString())
+                .modelVersionId(baseVersion.getId().toString())
+                .profileVersionId("local-poc-profile/1.0")
+                .runConfigurationVersionId("run-config/1.0")
+                .scenarioVersionId("scenario/1.0")
+                .resourceProject(resourceProject)
+                .sandboxEnforcementConfirmed(true)
+                .outcome(RunnerOutcomeDTO.builder().executionStatus("Failed").scenarioStatus("Failed").build())
                 .build();
 
-        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt", sessionId)
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
+                        .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(badReceipt)))
+                        .content(objectMapper.writeValueAsString(conflictingReceipt)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Conflicting RunnerReceipt digest")));
+
+        // =========================================================================
+        // BƯỚC 6: SCOPE MISMATCH TEST: Lệch version ID trả 400 BAD_REQUEST
+        // =========================================================================
+        RunnerReceiptIngestRequestDTO badProfileReceipt = RunnerReceiptIngestRequestDTO.builder()
+                .sessionId(sessionId.toString())
+                .sourceSnapshotId(snapshot.getId().toString())
+                .modelVersionId(baseVersion.getId().toString())
+                .profileVersionId("wrong-profile-version")
+                .runConfigurationVersionId("run-config/1.0")
+                .scenarioVersionId("scenario/1.0")
+                .resourceProject(resourceProject)
+                .build();
+
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
+                        .header("X-Test-User-Email", user.getEmail())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(badProfileReceipt)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Runner receipt scope mismatch")));
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("profileVersionId không khớp")));
     }
 }

@@ -46,7 +46,12 @@ public class SecurityConfig {
                         "/api/v1/auth/**",
                         "/v3/api-docs/**",
                         "/swagger-ui/**",
-                        "/swagger-ui.html"
+                        "/swagger-ui.html",
+                        "/api/v1/analyzer/runtime/sessions/*/lifecycle-ack",
+                        "/api/v1/analyzer/runtime/sessions/*/ingest-receipt",
+                        "/api/v1/analyzer/runtime/sessions/*/ingest-receipt-ack",
+                        "/api/v1/analyzer/runtime/sessions/*/sync-outbox",
+                        "/api/v1/analyzer/runtime/sessions/*/run-definition"
                 ).permitAll();
 
                 if (devBypassEnabled) {

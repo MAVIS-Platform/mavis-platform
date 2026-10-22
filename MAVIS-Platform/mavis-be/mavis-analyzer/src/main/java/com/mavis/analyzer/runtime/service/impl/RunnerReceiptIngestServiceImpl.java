@@ -6,8 +6,10 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.analyzer.model.dto.ModelVersionResponseDTO;
 import com.mavis.analyzer.runtime.dto.*;
+import com.mavis.analyzer.runtime.security.RunnerServiceAuthGuard;
 import com.mavis.analyzer.runtime.service.RunnerReceiptIngestService;
 import com.mavis.analyzer.runtime.util.SecretRedactor;
+import com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils;
 import com.mavis.common.entity.*;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
@@ -33,19 +35,36 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
     private static final Pattern RESOURCE_PROJECT_PATTERN = Pattern.compile("^mavisrun-[0-9a-fA-F]{32}$");
 
     private final RuntimeSessionRepository runtimeSessionRepository;
+    private final ProjectRepository projectRepository;
     private final ModelVersionRepository modelVersionRepository;
     private final ModelElementRepository modelElementRepository;
     private final ModelRelationshipRepository modelRelationshipRepository;
     private final EvidenceRepository evidenceRepository;
     private final DiagramVersionRepository diagramVersionRepository;
+    private final RunnerServiceAuthGuard runnerServiceAuthGuard;
     private final ObjectMapper objectMapper;
 
     @Value("${mavis.runner.state-root:}")
     private String runnerStateRoot;
 
+    @Value("${mavis.runner.allow-unverified-poc-promotion:true}")
+    private boolean allowUnverifiedPocPromotion;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public ModelVersionResponseDTO ingestRunnerReceipt(UUID sessionId, RunnerReceiptIngestRequestDTO receipt) {
+        IngestResult result = processReceiptIngest(sessionId, receipt);
+        return result.enrichedVersion != null ? ModelVersionResponseDTO.fromEntity(result.enrichedVersion) : null;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public ReceiptIngestAckDTO ingestRunnerReceiptAck(UUID sessionId, RunnerReceiptIngestRequestDTO receipt) {
+        IngestResult result = processReceiptIngest(sessionId, receipt);
+        return result.ack;
+    }
+
+    private IngestResult processReceiptIngest(UUID sessionId, RunnerReceiptIngestRequestDTO receipt) {
         log.info("Tiếp nhận RunnerReceipt cho sessionId: {}, resourceProject: {}", sessionId,
                 receipt != null ? receipt.getResourceProject() : null);
 
@@ -53,50 +72,88 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt payload cannot be null");
         }
 
-        RuntimeSession session = runtimeSessionRepository.findById(sessionId)
+        // [CHẶNG 11]: Khóa bi quan RuntimeSession
+        RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
-        // =========================================================================
-        // 1. XÁC THỰC SCOPE (WJ-02)
-        // =========================================================================
-        if (receipt.getSessionId() != null && !receipt.getSessionId().isBlank()
-                && !sessionId.toString().equalsIgnoreCase(receipt.getSessionId())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: sessionId does not match");
-        }
-
-        if (receipt.getSourceSnapshotId() != null && !receipt.getSourceSnapshotId().isBlank()
-                && !session.getSourceSnapshot().getId().toString().equalsIgnoreCase(receipt.getSourceSnapshotId())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: sourceSnapshotId does not match");
-        }
-
-        if (session.getModelVersion() != null && receipt.getModelVersionId() != null && !receipt.getModelVersionId().isBlank()
-                && !session.getModelVersion().getId().toString().equalsIgnoreCase(receipt.getModelVersionId())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: modelVersionId does not match");
-        }
-
-        if (receipt.getResourceProject() != null && !receipt.getResourceProject().isBlank()) {
-            if (!RESOURCE_PROJECT_PATTERN.matcher(receipt.getResourceProject()).matches()) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: invalid resourceProject format");
-            }
-        }
+        // Phân quyền kép
+        runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
 
         // =========================================================================
-        // 2. TÍNH LŨY THỪA (IDEMPOTENCY - WJ-02)
+        // 1. XÁC THỰC BẮT BUỘC CẢ 6 VERSION IDS VÀ RESOURCEPROJECT (WJ-01, WJ-02)
         // =========================================================================
-        if (session.getRunnerReceiptJson() != null) {
-            boolean sameProject = receipt.getResourceProject() == null
-                    || receipt.getResourceProject().equalsIgnoreCase(session.getResourceProject());
-            if (sameProject) {
-                log.info("Receipt đã được xử lý cho sessionId: {}. Trả về ModelVersion hiện có (Idempotent replay).", sessionId);
+        if (receipt.getSessionId() == null || receipt.getSessionId().isBlank()
+                || !sessionId.toString().equalsIgnoreCase(receipt.getSessionId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: sessionId không khớp");
+        }
+
+        if (receipt.getSourceSnapshotId() == null || receipt.getSourceSnapshotId().isBlank()
+                || !session.getSourceSnapshot().getId().toString().equalsIgnoreCase(receipt.getSourceSnapshotId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: sourceSnapshotId không khớp");
+        }
+
+        if (session.getModelVersion() == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Phiên thực nghiệm chưa được ghim ModelVersion");
+        }
+
+        if (receipt.getModelVersionId() == null || receipt.getModelVersionId().isBlank()
+                || !session.getModelVersion().getId().toString().equalsIgnoreCase(receipt.getModelVersionId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: modelVersionId không khớp");
+        }
+
+        if (receipt.getProfileVersionId() == null || receipt.getProfileVersionId().isBlank()
+                || !receipt.getProfileVersionId().equals(session.getProfileVersionId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: profileVersionId không khớp");
+        }
+
+        if (receipt.getRunConfigurationVersionId() == null || receipt.getRunConfigurationVersionId().isBlank()
+                || !receipt.getRunConfigurationVersionId().equals(session.getRunConfigurationVersionId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: runConfigurationVersionId không khớp");
+        }
+
+        if (receipt.getScenarioVersionId() == null || receipt.getScenarioVersionId().isBlank()
+                || !receipt.getScenarioVersionId().equals(session.getScenarioVersionId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: scenarioVersionId không khớp");
+        }
+
+        if (receipt.getResourceProject() == null || !RESOURCE_PROJECT_PATTERN.matcher(receipt.getResourceProject()).matches()
+                || !receipt.getResourceProject().equalsIgnoreCase(session.getResourceProject())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runner receipt scope mismatch: resourceProject không khớp");
+        }
+
+        // =========================================================================
+        // 2. CANONICAL RECEIPT DIGEST & IDEMPOTENCY / CONFLICT (CHẶNG 11)
+        // =========================================================================
+        String incomingDigest = CanonicalReceiptDigestUtils.computeDigest(objectMapper.valueToTree(receipt));
+
+        if (session.getReceiptDigest() != null) {
+            if (session.getReceiptDigest().equals(incomingDigest)) {
+                log.info("Receipt trùng incomingDigest cho session {}. Trả về idempotent ALREADY_COMMITTED.", sessionId);
                 Optional<ModelVersion> existingEnriched = modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(sessionId);
-                if (existingEnriched.isPresent()) {
-                    return ModelVersionResponseDTO.fromEntity(existingEnriched.get());
-                }
+                ReceiptIngestAckDTO ack = ReceiptIngestAckDTO.builder()
+                        .sessionId(sessionId)
+                        .resourceProject(session.getResourceProject())
+                        .receiptDigest(incomingDigest)
+                        .persistenceStatus("ALREADY_COMMITTED")
+                        .publicationGateStatus(session.getPublicationGateStatus())
+                        .promotedLatest("PROMOTED".equalsIgnoreCase(session.getPublicationGateStatus()))
+                        .baseModelVersionId(session.getModelVersion().getId())
+                        .enrichedModelVersionId(existingEnriched.map(ModelVersion::getId).orElse(session.getEnrichedModelVersionId()))
+                        .enrichedRevision(existingEnriched.map(ModelVersion::getRevision).orElse(null))
+                        .acknowledgedAt(OffsetDateTime.now())
+                        .build();
+                return new IngestResult(existingEnriched.orElse(null), ack);
+            } else {
+                throw new BusinessException(ErrorCode.CONFLICT, "Conflicting RunnerReceipt digest for session " + sessionId);
             }
         }
 
+        session.setReceiptDigest(incomingDigest);
+        session.setImageSourceCorrespondence(receipt.getImageSourceCorrespondence() != null ? receipt.getImageSourceCorrespondence() : "Unverified");
+        session.setProfileAcceptance(receipt.getProfileAcceptance() != null ? receipt.getProfileAcceptance() : "Unverified");
+
         // =========================================================================
-        // 3. ÁNH XẠ TRẠNG THÁI CHÍNH XÁC KHÔNG MẶC ĐỊNH PASSED (WJ-04)
+        // 3. ÁNH XẠ TRẠNG THÁI VÀ BẮT CÁC LỖI CẤU TRÚC (CHẶNG 11 & 12)
         // =========================================================================
         RunnerOutcomeDTO outcome = receipt.getOutcome();
         if (outcome == null) {
@@ -113,14 +170,11 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         session.setExecutionStatus(outcome.getExecutionStatus() != null ? outcome.getExecutionStatus().toUpperCase() : "FAILED");
         session.setEvidenceStatus(outcome.getEvidenceStatus() != null ? outcome.getEvidenceStatus().toUpperCase() : "UNAVAILABLE");
         session.setCleanupStatus(outcome.getCleanupStatus() != null ? outcome.getCleanupStatus().toUpperCase() : "INCOMPLETE");
-        session.setTraceQuality(outcome.getTraceQuality() != null ? outcome.getTraceQuality().toUpperCase() : "UNAVAILABLE");
+        session.setTraceQuality(outcome.getTraceQuality() != null ? outcome.getTraceQuality() : "Unavailable");
         session.setMappingStatus(outcome.getMappingStatus() != null ? outcome.getMappingStatus().toUpperCase() : "UNAVAILABLE");
 
         if (receipt.getSandboxEnforcementConfirmed() != null) {
             session.setSandboxEnforcementConfirmed(receipt.getSandboxEnforcementConfirmed());
-        }
-        if (receipt.getResourceProject() != null && !receipt.getResourceProject().isBlank()) {
-            session.setResourceProject(receipt.getResourceProject());
         }
 
         // Ánh xạ scenarioStatus
@@ -146,12 +200,48 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 ? trace.getSpans()
                 : Collections.emptyList();
 
-        // Ánh xạ traceStatus
+        // [CHẶNG 12]: Tập hợp danh sách externalRootSpanIds từ outcome.scenario.steps
+        Set<String> externalRootSpanIds = new HashSet<>();
+        if (outcome.getScenario() != null && outcome.getScenario().has("steps") && outcome.getScenario().get("steps").isArray()) {
+            for (JsonNode stepNode : outcome.getScenario().get("steps")) {
+                if (stepNode.hasNonNull("parentSpanId")) {
+                    externalRootSpanIds.add(stepNode.get("parentSpanId").asText().toLowerCase());
+                }
+            }
+        }
+
+        // [CHẶNG 12]: hasStructuralTraceWarning
+        List<String> warnings = (trace != null && trace.getWarnings() != null) ? trace.getWarnings() : Collections.emptyList();
+        boolean hasStructuralTraceWarning = warnings.stream().anyMatch(w ->
+                !"MISSING_PARENT_SPAN".equalsIgnoreCase(w)
+                && !"ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION".equalsIgnoreCase(w));
+
+        // Build spanMap với khóa (traceId + ":" + spanId).toLowerCase()
+        Map<String, RunnerCorrelatedSpanDTO> spanMap = new HashMap<>();
+        for (RunnerCorrelatedSpanDTO s : spans) {
+            if (s.getSpanId() != null && s.getTraceId() != null) {
+                spanMap.put((s.getTraceId() + ":" + s.getSpanId()).toLowerCase(), s);
+            }
+        }
+
+        // [CHẶNG 12]: hasBrokenInternalParent
+        boolean hasBrokenInternalParent = false;
+        for (RunnerCorrelatedSpanDTO span : spans) {
+            if (span.getParentSpanId() != null && !span.getParentSpanId().isBlank()) {
+                String parentKey = (span.getTraceId() + ":" + span.getParentSpanId()).toLowerCase();
+                if (!spanMap.containsKey(parentKey) && !externalRootSpanIds.contains(span.getParentSpanId().toLowerCase())) {
+                    hasBrokenInternalParent = true;
+                    break;
+                }
+            }
+        }
+
+        // [CHẶNG 12]: Tính traceStatus theo ranh giới Capture Boundary
         if (!"Available".equalsIgnoreCase(outcome.getEvidenceStatus()) || spans.isEmpty()) {
             session.setTraceStatus("NONE");
-        } else if ("Mapped".equalsIgnoreCase(outcome.getMappingStatus()) && "CompleteForCapturedData".equalsIgnoreCase(outcome.getTraceQuality())) {
-            session.setTraceStatus("COMPLETE");
-        } else if (spans.stream().anyMatch(s -> s.getModelServiceId() == null || s.getModelServiceId().isBlank())) {
+        } else if ("Unmapped".equalsIgnoreCase(outcome.getMappingStatus()) || spans.stream().noneMatch(s -> s.getModelServiceId() != null && !s.getModelServiceId().isBlank())) {
+            session.setTraceStatus("UNMAPPED");
+        } else if ("Partial".equalsIgnoreCase(outcome.getMappingStatus()) || hasBrokenInternalParent || hasStructuralTraceWarning) {
             session.setTraceStatus("PARTIAL");
         } else {
             session.setTraceStatus("COMPLETE");
@@ -159,46 +249,74 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
         session.setRunnerReceiptJson(SecretRedactor.redactJson(objectMapper.valueToTree(receipt)));
         session.setCompletedAt(OffsetDateTime.now());
-        runtimeSessionRepository.save(session);
+
+        // [CHẶNG 11 & 12]: Đánh giá điều kiện Publication Gate
+        boolean correspondenceOk = "Verified".equalsIgnoreCase(receipt.getImageSourceCorrespondence()) || allowUnverifiedPocPromotion;
+        boolean canPromoteLatest = "Completed".equalsIgnoreCase(outcome.getExecutionStatus())
+                && "Passed".equalsIgnoreCase(outcome.getScenarioStatus())
+                && "Available".equalsIgnoreCase(outcome.getEvidenceStatus())
+                && "Confirmed".equalsIgnoreCase(outcome.getCleanupStatus())
+                && Boolean.TRUE.equals(receipt.getSandboxEnforcementConfirmed())
+                && "Mapped".equalsIgnoreCase(outcome.getMappingStatus())
+                && !hasStructuralTraceWarning
+                && correspondenceOk;
+
+        // Nếu spans rỗng -> không tạo ModelVersion mới
+        if (spans.isEmpty()) {
+            session.setEnrichedModelVersionId(null);
+            session.setPublicationGateStatus("SKIPPED_NO_EVIDENCE");
+            runtimeSessionRepository.save(session);
+
+            ReceiptIngestAckDTO ack = ReceiptIngestAckDTO.builder()
+                    .sessionId(sessionId)
+                    .resourceProject(session.getResourceProject())
+                    .receiptDigest(incomingDigest)
+                    .persistenceStatus("COMMITTED")
+                    .publicationGateStatus("SKIPPED_NO_EVIDENCE")
+                    .promotedLatest(false)
+                    .baseModelVersionId(session.getModelVersion().getId())
+                    .enrichedModelVersionId(null)
+                    .enrichedRevision(null)
+                    .acknowledgedAt(OffsetDateTime.now())
+                    .build();
+            return new IngestResult(null, ack);
+        }
 
         // =========================================================================
-        // 4. CHUYỂN ĐỔI RunnerCorrelatedSpanDTO VÀ causalEdges SANG ModelVersion (WJ-04)
+        // 4. KHÓA CẤP PROJECT & TẠO MODELVERSION RUNTIME_ENRICHED (CHẶNG 11 & 12)
         // =========================================================================
-        ModelVersion baseVersion = session.getModelVersion();
-        if (baseVersion == null && receipt.getModelVersionId() != null && !receipt.getModelVersionId().isBlank()) {
-            try {
-                baseVersion = modelVersionRepository.findById(UUID.fromString(receipt.getModelVersionId())).orElse(null);
-            } catch (Exception ignored) {}
-        }
-        if (baseVersion == null) {
-            baseVersion = modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(session.getProject().getId())
-                    .orElse(null);
-        }
+        Project project = session.getProject();
+        Project lockedProject = projectRepository.findByIdForUpdate(project.getId()).orElse(project);
 
-        if (baseVersion == null) {
-            log.warn("Không tìm thấy base ModelVersion cho session {}. Bỏ qua làm giàu mô hình.", sessionId);
-            return null;
-        }
-
-        Project project = baseVersion.getProject();
-        int maxRevision = modelVersionRepository.findMaxRevisionByProjectId(project.getId());
+        int maxRevision = modelVersionRepository.findMaxRevisionByProjectId(lockedProject.getId());
         int newRevision = maxRevision + 1;
 
+        ModelVersion baseVersion = session.getModelVersion();
+
         ModelVersion enrichedVersion = ModelVersion.builder()
-                .project(project)
+                .project(lockedProject)
                 .sourceSnapshot(baseVersion.getSourceSnapshot())
                 .runtimeSession(session)
                 .revision(newRevision)
                 .schemaVersion("1.0")
                 .origin("RUNTIME_ENRICHED")
-                .isLatestValid(true)
+                .isLatestValid(canPromoteLatest)
                 .createdBy(baseVersion.getCreatedBy())
                 .build();
 
         enrichedVersion = modelVersionRepository.save(enrichedVersion);
-        modelVersionRepository.invalidatePreviousVersions(project.getId(), enrichedVersion.getId());
 
-        // (4.1) Sao chép toàn bộ elements tĩnh từ baseVersion
+        if (canPromoteLatest) {
+            modelVersionRepository.invalidatePreviousVersions(lockedProject.getId(), enrichedVersion.getId());
+            session.setPublicationGateStatus("PROMOTED");
+        } else {
+            session.setPublicationGateStatus("HELD_NON_PROMOTED");
+        }
+
+        session.setEnrichedModelVersionId(enrichedVersion.getId());
+        runtimeSessionRepository.save(session);
+
+        // (4.1) Sao chép elements từ baseVersion sang enrichedVersion (bảo toàn properties và parentElement)
         List<ModelElement> baseElements = modelElementRepository.findByModelVersionId(baseVersion.getId());
         Map<UUID, ModelElement> oldToNewElementMap = new HashMap<>();
         Map<String, ModelElement> serviceNameToElementMap = new HashMap<>();
@@ -206,6 +324,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
         for (ModelElement baseEl : baseElements) {
             ModelElement copy = ModelElement.builder()
+                    .id(UUID.randomUUID())
                     .modelVersion(enrichedVersion)
                     .name(baseEl.getName())
                     .elementType(baseEl.getElementType())
@@ -221,7 +340,15 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             }
         }
 
-        // Kiểm tra spans: nếu có runtimeService chưa có trong static model -> UNCERTAIN_MAPPING
+        for (int i = 0; i < baseElements.size(); i++) {
+            ModelElement baseEl = baseElements.get(i);
+            if (baseEl.getParentElement() != null) {
+                ModelElement newParent = oldToNewElementMap.get(baseEl.getParentElement().getId());
+                newElements.get(i).setParentElement(newParent);
+            }
+        }
+
+        // UNCERTAIN_MAPPING cho runtimeService chưa có trong static model
         for (RunnerCorrelatedSpanDTO span : spans) {
             String serviceName = span.getRuntimeService();
             String modelServiceId = span.getModelServiceId();
@@ -248,6 +375,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 props.put("traceId", span.getTraceId());
 
                 ModelElement uncertainEl = ModelElement.builder()
+                        .id(UUID.randomUUID())
                         .modelVersion(enrichedVersion)
                         .name(serviceName)
                         .elementType("SERVICE_CONTAINER")
@@ -269,10 +397,11 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             }
         }
 
-        // (4.2) Kế thừa 100% quan hệ tĩnh (TUYỆT ĐỐI KHÔNG XÓA CẠNH TĨNH CHƯA ĐI QUA)
+        // (4.2) Sao chép relationships từ baseVersion (bảo toàn properties và khóa ghép UUID)
         List<ModelRelationship> baseRelationships = modelRelationshipRepository.findByModelVersionId(baseVersion.getId());
         List<ModelRelationship> newRelationships = new ArrayList<>();
         Map<String, ModelRelationship> relByPairKey = new HashMap<>();
+        Map<UUID, ModelRelationship> oldToNewRelMap = new HashMap<>();
 
         for (ModelRelationship baseRel : baseRelationships) {
             ModelElement newSrc = oldToNewElementMap.get(baseRel.getSourceElement().getId());
@@ -280,6 +409,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
             if (newSrc != null && newTgt != null) {
                 ModelRelationship copyRel = ModelRelationship.builder()
+                        .id(UUID.randomUUID())
                         .modelVersion(enrichedVersion)
                         .sourceElement(newSrc)
                         .targetElement(newTgt)
@@ -290,67 +420,108 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                         .build();
 
                 newRelationships.add(copyRel);
-                String pairKey = (newSrc.getName() + "->" + newTgt.getName()).toLowerCase();
+                oldToNewRelMap.put(baseRel.getId(), copyRel);
+                // Khóa ghép bằng UUID
+                String pairKey = (newSrc.getId().toString() + "->" + newTgt.getId().toString()).toLowerCase();
                 relByPairKey.put(pairKey, copyRel);
+                // Khóa phụ bằng tên
+                relByPairKey.put((newSrc.getName() + "->" + newTgt.getName()).toLowerCase(), copyRel);
             }
         }
 
-        // (4.3) Xử lý các bước gọi nhân quả / tương tác từ Runner receipt
-        Map<String, RunnerCorrelatedSpanDTO> spanMap = new HashMap<>();
-        for (RunnerCorrelatedSpanDTO s : spans) {
-            if (s.getSpanId() != null) {
-                spanMap.put(s.getSpanId().toLowerCase(), s);
-            }
-        }
-
+        // (4.3) Sao chép toàn bộ Evidence tĩnh (STATIC_CODE, CONFIG_FILE, DOCKER_COMPOSE) kèm provenance JSONB
+        List<Evidence> baseEvidences = evidenceRepository.findByModelVersionId(baseVersion.getId());
         List<Evidence> newEvidences = new ArrayList<>();
+
+        for (Evidence baseEv : baseEvidences) {
+            if ("STATIC_CODE".equalsIgnoreCase(baseEv.getSourceType())
+                    || "CONFIG_FILE".equalsIgnoreCase(baseEv.getSourceType())
+                    || "DOCKER_COMPOSE".equalsIgnoreCase(baseEv.getSourceType())) {
+                ModelElement newElement = baseEv.getElement() != null ? oldToNewElementMap.get(baseEv.getElement().getId()) : null;
+                ModelRelationship newRel = baseEv.getRelationship() != null ? oldToNewRelMap.get(baseEv.getRelationship().getId()) : null;
+
+                Evidence copyEv = Evidence.builder()
+                        .modelVersion(enrichedVersion)
+                        .sourceSnapshot(enrichedVersion.getSourceSnapshot())
+                        .element(newElement)
+                        .relationship(newRel)
+                        .sourceType(baseEv.getSourceType())
+                        .locator(baseEv.getLocator())
+                        .excerpt(baseEv.getExcerpt())
+                        .adapterVersion(baseEv.getAdapterVersion())
+                        .provenance(baseEv.getProvenance() != null ? baseEv.getProvenance().deepCopy() : null)
+                        .build();
+                newEvidences.add(copyEv);
+            }
+        }
+
+        // (4.4) Xử lý tương tác nhân quả ưu tiên interactions và UUID modelServiceId
         List<CausalStepRecord> sequenceSteps = new ArrayList<>();
         int stepOrder = 1;
+        Set<String> processedEdgeKeys = new HashSet<>();
 
-        // Ưu tiên tương tác từ causalEdges hoặc parentSpanId
+        List<RunnerObservedInteractionDTO> interactions = (trace != null && trace.getInteractions() != null)
+                ? trace.getInteractions()
+                : Collections.emptyList();
+
         List<RunnerCausalEdgeDTO> causalEdges = (trace != null && trace.getCausalEdges() != null)
                 ? trace.getCausalEdges()
                 : Collections.emptyList();
 
-        Set<String> processedEdgeKeys = new HashSet<>();
+        if (!interactions.isEmpty()) {
+            for (RunnerObservedInteractionDTO interaction : interactions) {
+                String edgeKey = interaction.getParentSpanId() + "->" + interaction.getChildSpanId();
+                if (processedEdgeKeys.add(edgeKey)) {
+                    RunnerCorrelatedSpanDTO parentSpan = spanMap.get((interaction.getTraceId() + ":" + interaction.getParentSpanId()).toLowerCase());
+                    RunnerCorrelatedSpanDTO childSpan = spanMap.get((interaction.getTraceId() + ":" + interaction.getChildSpanId()).toLowerCase());
 
-        if (!causalEdges.isEmpty()) {
+                    ModelElement caller = resolveElement(interaction.getFromModelServiceId(), interaction.getFromService(), oldToNewElementMap, serviceNameToElementMap);
+                    ModelElement callee = resolveElement(interaction.getToModelServiceId(), interaction.getToService(), oldToNewElementMap, serviceNameToElementMap);
+
+                    if (caller != null && callee != null && !caller.getId().equals(callee.getId())) {
+                        long durationMs = childSpan != null ? parseDurationMs(childSpan.getDurationNanoseconds()) : 0L;
+                        processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs, trace, outcome, relByPairKey, newRelationships, newEvidences);
+                        if (parentSpan != null && childSpan != null) {
+                            sequenceSteps.add(new CausalStepRecord(stepOrder++, parentSpan, childSpan, durationMs));
+                        }
+                    }
+                }
+            }
+        } else if (!causalEdges.isEmpty()) {
             for (RunnerCausalEdgeDTO edge : causalEdges) {
-                RunnerCorrelatedSpanDTO parentSpan = edge.getParentSpanId() != null ? spanMap.get(edge.getParentSpanId().toLowerCase()) : null;
-                RunnerCorrelatedSpanDTO childSpan = edge.getChildSpanId() != null ? spanMap.get(edge.getChildSpanId().toLowerCase()) : null;
+                String edgeKey = edge.getParentSpanId() + "->" + edge.getChildSpanId();
+                if (processedEdgeKeys.add(edgeKey)) {
+                    RunnerCorrelatedSpanDTO parentSpan = spanMap.get((edge.getTraceId() + ":" + edge.getParentSpanId()).toLowerCase());
+                    RunnerCorrelatedSpanDTO childSpan = spanMap.get((edge.getTraceId() + ":" + edge.getChildSpanId()).toLowerCase());
 
-                if (parentSpan != null && childSpan != null
-                        && parentSpan.getRuntimeService() != null && childSpan.getRuntimeService() != null
-                        && !parentSpan.getRuntimeService().equalsIgnoreCase(childSpan.getRuntimeService())) {
+                    if (parentSpan != null && childSpan != null) {
+                        ModelElement caller = resolveElement(parentSpan.getModelServiceId(), parentSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
+                        ModelElement callee = resolveElement(childSpan.getModelServiceId(), childSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
 
-                    String pairKey = (parentSpan.getRuntimeService() + "->" + childSpan.getRuntimeService()).toLowerCase();
-                    long durationMs = parseDurationMs(childSpan.getDurationNanoseconds());
-
-                    processCausalInteraction(enrichedVersion, session, parentSpan.getRuntimeService(),
-                            childSpan.getRuntimeService(), childSpan, durationMs, trace, outcome,
-                            relByPairKey, serviceNameToElementMap, newRelationships, newEvidences);
-
-                    sequenceSteps.add(new CausalStepRecord(stepOrder++, parentSpan, childSpan, durationMs));
-                    processedEdgeKeys.add(edge.getParentSpanId() + "->" + edge.getChildSpanId());
+                        if (caller != null && callee != null && !caller.getId().equals(callee.getId())) {
+                            long durationMs = parseDurationMs(childSpan.getDurationNanoseconds());
+                            processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs, trace, outcome, relByPairKey, newRelationships, newEvidences);
+                            sequenceSteps.add(new CausalStepRecord(stepOrder++, parentSpan, childSpan, durationMs));
+                        }
+                    }
                 }
             }
         } else {
-            // Fallback sang quan hệ parentSpanId -> spanId
+            // Fallback sang spans có parentSpanId
             for (RunnerCorrelatedSpanDTO childSpan : spans) {
                 if (childSpan.getParentSpanId() != null && !childSpan.getParentSpanId().isBlank()) {
-                    RunnerCorrelatedSpanDTO parentSpan = spanMap.get(childSpan.getParentSpanId().toLowerCase());
-                    if (parentSpan != null && parentSpan.getRuntimeService() != null && childSpan.getRuntimeService() != null
-                            && !parentSpan.getRuntimeService().equalsIgnoreCase(childSpan.getRuntimeService())) {
+                    String edgeKey = childSpan.getParentSpanId() + "->" + childSpan.getSpanId();
+                    if (processedEdgeKeys.add(edgeKey)) {
+                        RunnerCorrelatedSpanDTO parentSpan = spanMap.get((childSpan.getTraceId() + ":" + childSpan.getParentSpanId()).toLowerCase());
+                        if (parentSpan != null) {
+                            ModelElement caller = resolveElement(parentSpan.getModelServiceId(), parentSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
+                            ModelElement callee = resolveElement(childSpan.getModelServiceId(), childSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
 
-                        String edgeKey = childSpan.getParentSpanId() + "->" + childSpan.getSpanId();
-                        if (processedEdgeKeys.add(edgeKey)) {
-                            long durationMs = parseDurationMs(childSpan.getDurationNanoseconds());
-
-                            processCausalInteraction(enrichedVersion, session, parentSpan.getRuntimeService(),
-                                    childSpan.getRuntimeService(), childSpan, durationMs, trace, outcome,
-                                    relByPairKey, serviceNameToElementMap, newRelationships, newEvidences);
-
-                            sequenceSteps.add(new CausalStepRecord(stepOrder++, parentSpan, childSpan, durationMs));
+                            if (caller != null && callee != null && !caller.getId().equals(callee.getId())) {
+                                long durationMs = parseDurationMs(childSpan.getDurationNanoseconds());
+                                processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs, trace, outcome, relByPairKey, newRelationships, newEvidences);
+                                sequenceSteps.add(new CausalStepRecord(stepOrder++, parentSpan, childSpan, durationMs));
+                            }
                         }
                     }
                 }
@@ -360,7 +531,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         modelRelationshipRepository.saveAll(newRelationships);
         evidenceRepository.saveAll(newEvidences);
 
-        // (4.4) Sinh bản vẽ DiagramVersion notation = "UML_SEQUENCE", level = "RUNTIME_PROCESS"
+        // (4.5) Sinh UML Sequence Diagram
         ObjectNode sequenceLayout = objectMapper.createObjectNode();
         sequenceLayout.put("notation", "UML_SEQUENCE");
         sequenceLayout.put("level", "RUNTIME_PROCESS");
@@ -389,25 +560,60 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 .build();
         diagramVersionRepository.save(sequenceDiagram);
 
-        log.info("Xử lý RunnerReceipt hoàn tất cho sessionId: {}, revision mới: {}", sessionId, newRevision);
-        return ModelVersionResponseDTO.fromEntity(enrichedVersion);
+        ReceiptIngestAckDTO ack = ReceiptIngestAckDTO.builder()
+                .sessionId(sessionId)
+                .resourceProject(session.getResourceProject())
+                .receiptDigest(incomingDigest)
+                .persistenceStatus("COMMITTED")
+                .publicationGateStatus(session.getPublicationGateStatus())
+                .promotedLatest(canPromoteLatest)
+                .baseModelVersionId(baseVersion.getId())
+                .enrichedModelVersionId(enrichedVersion.getId())
+                .enrichedRevision(newRevision)
+                .acknowledgedAt(OffsetDateTime.now())
+                .build();
+
+        log.info("Xử lý RunnerReceipt hoàn tất cho sessionId: {}, revision mới: {}, gate: {}",
+                sessionId, newRevision, session.getPublicationGateStatus());
+
+        return new IngestResult(enrichedVersion, ack);
     }
 
-    private void processCausalInteraction(ModelVersion enrichedVersion,
-                                          RuntimeSession session,
-                                          String callerName,
-                                          String calleeName,
-                                          RunnerCorrelatedSpanDTO childSpan,
-                                          long durationMs,
-                                          RunnerTraceCorrelationDTO trace,
-                                          RunnerOutcomeDTO outcome,
-                                          Map<String, ModelRelationship> relByPairKey,
-                                          Map<String, ModelElement> serviceNameToElementMap,
-                                          List<ModelRelationship> newRelationships,
-                                          List<Evidence> newEvidences) {
+    private ModelElement resolveElement(String modelServiceId, String serviceName,
+                                        Map<UUID, ModelElement> oldToNewElementMap,
+                                        Map<String, ModelElement> serviceNameToElementMap) {
+        if (modelServiceId != null && !modelServiceId.isBlank()) {
+            try {
+                UUID elId = UUID.fromString(modelServiceId);
+                ModelElement el = oldToNewElementMap.get(elId);
+                if (el != null) return el;
+            } catch (IllegalArgumentException ignored) {}
+        }
+        if (serviceName != null && !serviceName.isBlank()) {
+            return serviceNameToElementMap.get(serviceName.toLowerCase());
+        }
+        return null;
+    }
 
-        String pairKey = (callerName + "->" + calleeName).toLowerCase();
-        ModelRelationship matchedRel = relByPairKey.get(pairKey);
+    private void processInteraction(ModelVersion enrichedVersion,
+                                    RuntimeSession session,
+                                    ModelElement caller,
+                                    ModelElement callee,
+                                    RunnerCorrelatedSpanDTO childSpan,
+                                    long durationMs,
+                                    RunnerTraceCorrelationDTO trace,
+                                    RunnerOutcomeDTO outcome,
+                                    Map<String, ModelRelationship> relByPairKey,
+                                    List<ModelRelationship> newRelationships,
+                                    List<Evidence> newEvidences) {
+
+        String pairKeyUuid = (caller.getId().toString() + "->" + callee.getId().toString()).toLowerCase();
+        String pairKeyName = (caller.getName() + "->" + callee.getName()).toLowerCase();
+
+        ModelRelationship matchedRel = relByPairKey.get(pairKeyUuid);
+        if (matchedRel == null) {
+            matchedRel = relByPairKey.get(pairKeyName);
+        }
 
         ObjectNode provenance = objectMapper.createObjectNode();
         if (trace != null && trace.getWarnings() != null) {
@@ -418,9 +624,12 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             ArrayNode diagArr = provenance.putArray("diagnostics");
             outcome.getDiagnostics().forEach(diagArr::add);
         }
-        if (childSpan.getScenarioStepId() != null) {
+        if (childSpan != null && childSpan.getScenarioStepId() != null) {
             provenance.put("scenarioStepId", childSpan.getScenarioStepId());
         }
+
+        String locator = childSpan != null ? (childSpan.getTraceId() + ":" + childSpan.getSpanId()) : "unknown";
+        String excerpt = caller.getName() + " -> " + callee.getName() + " (" + durationMs + "ms)";
 
         if (matchedRel != null) {
             matchedRel.setOriginLayer("STATIC_AND_RUNTIME");
@@ -432,41 +641,37 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     .relationship(matchedRel)
                     .sourceType("RUNTIME_TRACE")
                     .adapterVersion("MAVIS_RUNNER_1.0")
-                    .locator(childSpan.getTraceId() + ":" + childSpan.getSpanId())
-                    .excerpt(callerName + " -> " + calleeName + " (" + durationMs + "ms)")
+                    .locator(locator)
+                    .excerpt(excerpt)
                     .provenance(provenance)
                     .build();
             newEvidences.add(ev);
         } else {
-            ModelElement src = serviceNameToElementMap.get(callerName.toLowerCase());
-            ModelElement tgt = serviceNameToElementMap.get(calleeName.toLowerCase());
+            ModelRelationship newRel = ModelRelationship.builder()
+                    .modelVersion(enrichedVersion)
+                    .sourceElement(caller)
+                    .targetElement(callee)
+                    .relationType("RUNTIME_OBSERVED")
+                    .originLayer("RUNTIME")
+                    .direction("DIRECTED")
+                    .build();
 
-            if (src != null && tgt != null) {
-                ModelRelationship newRel = ModelRelationship.builder()
-                        .modelVersion(enrichedVersion)
-                        .sourceElement(src)
-                        .targetElement(tgt)
-                        .relationType("RUNTIME_OBSERVED")
-                        .originLayer("RUNTIME")
-                        .direction("DIRECTED")
-                        .build();
+            newRelationships.add(newRel);
+            relByPairKey.put(pairKeyUuid, newRel);
+            relByPairKey.put(pairKeyName, newRel);
 
-                newRelationships.add(newRel);
-                relByPairKey.put(pairKey, newRel);
-
-                Evidence ev = Evidence.builder()
-                        .modelVersion(enrichedVersion)
-                        .sourceSnapshot(enrichedVersion.getSourceSnapshot())
-                        .runtimeSession(session)
-                        .relationship(newRel)
-                        .sourceType("RUNTIME_TRACE")
-                        .adapterVersion("MAVIS_RUNNER_1.0")
-                        .locator(childSpan.getTraceId() + ":" + childSpan.getSpanId())
-                        .excerpt(callerName + " -> " + calleeName + " (" + durationMs + "ms)")
-                        .provenance(provenance)
-                        .build();
-                newEvidences.add(ev);
-            }
+            Evidence ev = Evidence.builder()
+                    .modelVersion(enrichedVersion)
+                    .sourceSnapshot(enrichedVersion.getSourceSnapshot())
+                    .runtimeSession(session)
+                    .relationship(newRel)
+                    .sourceType("RUNTIME_TRACE")
+                    .adapterVersion("MAVIS_RUNNER_1.0")
+                    .locator(locator)
+                    .excerpt(excerpt)
+                    .provenance(provenance)
+                    .build();
+            newEvidences.add(ev);
         }
     }
 
@@ -484,8 +689,10 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
     @Override
     @Transactional(rollbackFor = Exception.class)
     public RuntimeSessionResponseDTO importReceiptFromStateRoot(UUID sessionId, String resourceProject) {
-        RuntimeSession session = runtimeSessionRepository.findById(sessionId)
+        RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
+
+        runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
 
         String resProj = resourceProject != null && !resourceProject.isBlank()
                 ? resourceProject
@@ -507,7 +714,6 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         Path receiptsDir = stateRootPath.resolve("receipts").normalize();
 
         try {
-            // Kiểm tra chống symlink/reparse point tương tự RuntimeReceiptStore.cs
             for (Path current = receiptsDir; current != null; current = current.getParent()) {
                 if (Files.exists(current) && Files.isSymbolicLink(current)) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "Linked receipt directories are not supported");
@@ -539,4 +745,6 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
     }
 
     private record CausalStepRecord(int order, RunnerCorrelatedSpanDTO parentSpan, RunnerCorrelatedSpanDTO childSpan, long durationMs) {}
+
+    private record IngestResult(ModelVersion enrichedVersion, ReceiptIngestAckDTO ack) {}
 }

@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest;
+import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.Role;
 import com.mavis.common.entity.SourceSnapshot;
 import com.mavis.common.entity.User;
+import com.mavis.common.repository.ModelVersionRepository;
 import com.mavis.common.repository.ProjectRepository;
 import com.mavis.common.repository.RoleRepository;
 import com.mavis.common.repository.SourceSnapshotRepository;
@@ -54,6 +56,12 @@ class RuntimeSessionApiIntegrationTest {
     private RoleRepository roleRepository;
 
     @Autowired
+    private ModelVersionRepository modelVersionRepository;
+
+    @Autowired
+    private com.mavis.analyzer.runtime.service.RuntimeSessionService runtimeSessionService;
+
+    @Autowired
     private ObjectMapper objectMapper;
 
     @Test
@@ -98,6 +106,15 @@ class RuntimeSessionApiIntegrationTest {
                 .artifactHash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
                 .build());
 
+        ModelVersion baseVersion = modelVersionRepository.save(ModelVersion.builder()
+                .project(project)
+                .sourceSnapshot(snapshot)
+                .revision(1)
+                .origin("GENERATED")
+                .isLatestValid(true)
+                .createdBy(user)
+                .build());
+
         System.out.println("================================================================================");
         System.out.println(">>> [BƯỚC 1]: GỌI API POST /api/v1/analyzer/runtime/preflight?snapshotId=" + snapshot.getId());
         System.out.println("================================================================================");
@@ -105,6 +122,7 @@ class RuntimeSessionApiIntegrationTest {
         // --- BƯỚC 1: POST /api/v1/analyzer/runtime/preflight ---
         MvcResult preflightResult = mockMvc.perform(post("/api/v1/analyzer/runtime/preflight")
                         .param("snapshotId", snapshot.getId().toString())
+                        .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -142,6 +160,7 @@ class RuntimeSessionApiIntegrationTest {
                 .build();
 
         MvcResult createResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions")
+                        .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createRequest)))
                 .andExpect(status().isOk())
@@ -156,6 +175,10 @@ class RuntimeSessionApiIntegrationTest {
         System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(createNode));
 
         UUID sessionId = UUID.fromString(createNode.get("data").get("id").asText());
+        String resourceProject = createNode.get("data").get("resourceProject").asText();
+        assertThat(resourceProject).matches("^mavisrun-[0-9a-f]{32}$");
+        assertThat(createNode.get("data").get("modelVersionId").asText()).isEqualTo(baseVersion.getId().toString());
+
         JsonNode redactedConfig = createNode.get("data").get("scenarioConfig");
 
         // Xác minh toàn bộ secrets đã được đổi thành [REDACTED]
@@ -167,16 +190,17 @@ class RuntimeSessionApiIntegrationTest {
 
         System.out.println("\n================================================================================");
         System.out.println(">>> [BƯỚC 3]: GỌI API POST /api/v1/analyzer/runtime/sessions/" + sessionId + "/approve");
-        System.out.println("    Chuyển PENDING -> RUNNING và sinh file docker-compose.mavis-override.yml");
+        System.out.println("    Chuyển PENDING -> APPROVED / READY_FOR_DISPATCH và sinh file docker-compose.mavis-override.yml");
         System.out.println("================================================================================");
 
         // --- BƯỚC 3: POST /api/v1/analyzer/runtime/sessions/{sessionId}/approve ---
         MvcResult approveResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/approve", sessionId)
+                        .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.scenarioStatus").value("RUNNING"))
-                .andExpect(jsonPath("$.data.startedAt").exists())
+                .andExpect(jsonPath("$.data.scenarioStatus").value("APPROVED"))
+                .andExpect(jsonPath("$.data.executionStatus").value("READY_FOR_DISPATCH"))
                 .andExpect(jsonPath("$.data.overrideComposeYaml").exists())
                 .andReturn();
 
@@ -193,22 +217,68 @@ class RuntimeSessionApiIntegrationTest {
         assertThat(overrideYaml).contains("OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317");
 
         System.out.println("\n================================================================================");
-        System.out.println(">>> [BƯỚC 4]: GỌI API POST /api/v1/analyzer/runtime/sessions/" + sessionId + "/stop");
-        System.out.println("    Dừng phiên chạy và chuyển trạng thái sang CANCELLED");
+        System.out.println(">>> [BƯỚC 3b]: GỌI API POST /lifecycle-ack (ALLOCATED -> RUNNING)");
         System.out.println("================================================================================");
+
+        // Lifecycle-ack: ALLOCATED
+        com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckRequestDTO ackAllocated =
+                com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckRequestDTO.builder()
+                        .sessionId(sessionId)
+                        .resourceProject(resourceProject)
+                        .stage("ALLOCATED")
+                        .observedAt(java.time.OffsetDateTime.now())
+                        .build();
+
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
+                        .header("X-Test-User-Email", user.getEmail())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(ackAllocated)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.executionStatus").value("ALLOCATED"))
+                .andExpect(jsonPath("$.data.acknowledgedAt").exists());
+
+        // Lifecycle-ack: RUNNING
+        com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckRequestDTO ackRunning =
+                com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckRequestDTO.builder()
+                        .sessionId(sessionId)
+                        .resourceProject(resourceProject)
+                        .stage("RUNNING")
+                        .observedAt(java.time.OffsetDateTime.now())
+                        .build();
+
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
+                        .header("X-Test-User-Email", user.getEmail())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(ackRunning)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.scenarioStatus").value("RUNNING"))
+                .andExpect(jsonPath("$.data.executionStatus").value("RUNNING"))
+                .andExpect(jsonPath("$.data.acknowledgedAt").exists());
+
+        System.out.println("\n================================================================================");
+        System.out.println(">>> [BƯỚC 4]: GỌI API POST /api/v1/analyzer/runtime/sessions/" + sessionId + "/stop");
+        System.out.println("    Dừng phiên chạy khi RUNNING (Branch 2: Ghi cancel.request)");
+        System.out.println("================================================================================");
+
+        org.springframework.test.util.ReflectionTestUtils.setField(runtimeSessionService, "runnerStateRoot", tempDir.toString());
 
         // --- BƯỚC 4: POST /api/v1/analyzer/runtime/sessions/{sessionId}/stop ---
         MvcResult stopResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/stop", sessionId)
+                        .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.scenarioStatus").value("CANCELLED"))
-                .andExpect(jsonPath("$.data.completedAt").exists())
+                .andExpect(jsonPath("$.data.executionStatus").value("CANCELLING"))
+                .andExpect(jsonPath("$.data.cleanupStatus").value("STOP_REQUESTED"))
                 .andReturn();
+
+        assertThat(Files.exists(tempDir.resolve(resourceProject).resolve("cancel.request"))).isTrue();
 
         String stopJson = stopResult.getResponse().getContentAsString();
         JsonNode stopNode = objectMapper.readTree(stopJson);
-        System.out.println("RESPONSE (Bước 4 - Stop Session):");
+        System.out.println("RESPONSE (Bước 4 - Stop Session Branch 2):");
         System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(stopNode));
 
         System.out.println("\n================================================================================");
@@ -217,12 +287,13 @@ class RuntimeSessionApiIntegrationTest {
 
         // --- BƯỚC 5: GET /api/v1/analyzer/projects/{projectId}/runtime-sessions ---
         MvcResult listResult = mockMvc.perform(get("/api/v1/analyzer/projects/{projectId}/runtime-sessions", project.getId())
+                        .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").isArray())
                 .andExpect(jsonPath("$.data[0].id").value(sessionId.toString()))
-                .andExpect(jsonPath("$.data[0].scenarioStatus").value("CANCELLED"))
+                .andExpect(jsonPath("$.data[0].executionStatus").value("CANCELLING"))
                 .andReturn();
 
         String listJson = listResult.getResponse().getContentAsString();

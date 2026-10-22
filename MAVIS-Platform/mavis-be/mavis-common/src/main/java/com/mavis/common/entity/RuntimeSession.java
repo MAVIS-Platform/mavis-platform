@@ -116,6 +116,27 @@ public class RuntimeSession {
     @Column(name = "cancel_requested_at")
     private OffsetDateTime cancelRequestedAt;
 
+    @Column(name = "receipt_digest", length = 128)
+    private String receiptDigest;
+
+    @Column(name = "enriched_model_version_id")
+    private UUID enrichedModelVersionId;
+
+    @Builder.Default
+    @Column(name = "publication_gate_status", length = 50)
+    private String publicationGateStatus = "NONE";
+
+    @Column(name = "allocated_at")
+    private OffsetDateTime allocatedAt;
+
+    @Builder.Default
+    @Column(name = "image_source_correspondence", length = 40)
+    private String imageSourceCorrespondence = "UNVERIFIED";
+
+    @Builder.Default
+    @Column(name = "profile_acceptance", length = 40)
+    private String profileAcceptance = "UNVERIFIED";
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
