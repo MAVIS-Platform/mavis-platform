@@ -62,6 +62,9 @@ class SubmissionServiceImplTest {
     @Mock
     private JobRepository jobRepository;
 
+    @Mock
+    private com.mavis.common.security.AccessPolicyService accessPolicyService;
+
     @InjectMocks
     private SubmissionServiceImpl submissionService;
 
@@ -555,5 +558,36 @@ class SubmissionServiceImplTest {
         assertThatThrownBy(() -> submissionService.exportSubmissionBundle(subId))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Bạn không có quyền truy cập gói bài nộp này");
+    }
+
+    @Test
+    void submissionDetailRejectsUnrelatedUserBeforeReadingFeedback() {
+        UUID id = UUID.randomUUID();
+        SubmissionSnapshot entry = SubmissionSnapshot.builder().id(id).project(project).build();
+        when(submissionSnapshotRepository.findWithDetailsById(id)).thenReturn(Optional.of(entry));
+        doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN))
+                .when(accessPolicyService).requireProjectReadAccess(project);
+        assertThatThrownBy(() -> submissionService.getSubmissionById(id)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(feedbackCommentRepository);
+    }
+
+    @Test
+    void projectSubmissionListRejectsUnrelatedUserBeforeQuery() {
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN))
+                .when(accessPolicyService).requireProjectReadAccess(project);
+        assertThatThrownBy(() -> submissionService.getSubmissionsByProject(projectId)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(submissionSnapshotRepository);
+    }
+
+    @Test
+    void submissionExportRejectsUnrelatedUserBeforeLoadingArtifacts() {
+        UUID id = UUID.randomUUID();
+        SubmissionSnapshot entry = SubmissionSnapshot.builder().id(id).project(project).build();
+        when(submissionSnapshotRepository.findWithDetailsById(id)).thenReturn(Optional.of(entry));
+        doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN))
+                .when(accessPolicyService).requireProjectReadAccess(project);
+        assertThatThrownBy(() -> submissionService.exportSubmissionBundle(id)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(modelVersionRepository, diagramVersionRepository, feedbackCommentRepository);
     }
 }
