@@ -370,12 +370,31 @@ class RunnerReceiptIngestServiceImplTest {
                 .outcome(outcome)
                 .build();
 
+        Evidence staticEvidence = Evidence.builder()
+                .id(UUID.randomUUID())
+                .modelVersion(baseModelVersion)
+                .sourceSnapshot(snapshot)
+                .element(elementA)
+                .sourceType("STATIC_CODE")
+                .locator("src/main/OrderService.java#L10-L20")
+                .excerpt("class OrderService {}")
+                .provenance(objectMapper.createObjectNode().put("tool", "parser"))
+                .build();
+        when(evidenceRepository.findByModelVersionId(modelVersionId)).thenReturn(List.of(staticEvidence));
+
         ReceiptIngestAckDTO ack = runnerReceiptIngestService.ingestRunnerReceiptAck(sessionId, receipt);
 
         assertThat(ack).isNotNull();
         assertThat(session.getTraceStatus()).isEqualTo("COMPLETE"); // External root recognized!
         assertThat(ack.getPublicationGateStatus()).isEqualTo("PROMOTED");
         assertThat(ack.getPromotedLatest()).isTrue();
+
+        ArgumentCaptor<List<Evidence>> evCaptor = ArgumentCaptor.forClass(List.class);
+        verify(evidenceRepository, atLeastOnce()).saveAll(evCaptor.capture());
+        List<Evidence> allSaved = evCaptor.getAllValues().stream().flatMap(List::stream).toList();
+        assertThat(allSaved).anyMatch(ev -> "STATIC_CODE".equals(ev.getSourceType())
+                && "src/main/OrderService.java#L10-L20".equals(ev.getLocator())
+                && ev.getProvenance() != null && "parser".equals(ev.getProvenance().path("tool").asText()));
     }
 
     @Test

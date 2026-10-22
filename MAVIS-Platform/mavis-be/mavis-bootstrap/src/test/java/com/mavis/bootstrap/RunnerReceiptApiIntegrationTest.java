@@ -346,4 +346,116 @@ class RunnerReceiptApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("profileVersionId không khớp")));
     }
+
+    @Test
+    @DisplayName("CHẶNG 12: Authorization & X-Mavis-Runner-Key - User khác bị 403, Runner có key hợp lệ gọi thành công")
+    void testAuthorizationAndRunnerServiceKey() throws Exception {
+        ReflectionTestUtils.setField(runnerReceiptIngestService, "runnerStateRoot", tempStateRoot.toString());
+
+        Role studentRole = roleRepository.findByCode("STUDENT")
+                .orElseGet(() -> roleRepository.save(Role.builder().code("STUDENT").name("Student").build()));
+
+        User owner = userRepository.save(User.builder()
+                .email("owner_" + UUID.randomUUID().toString().substring(0, 8) + "@mavis.edu.vn")
+                .passwordHash("hashed")
+                .fullName("Project Owner")
+                .role(studentRole)
+                .build());
+
+        User otherUser = userRepository.save(User.builder()
+                .email("other_" + UUID.randomUUID().toString().substring(0, 8) + "@mavis.edu.vn")
+                .passwordHash("hashed")
+                .fullName("Other Student")
+                .role(studentRole)
+                .build());
+
+        Project project = projectRepository.save(Project.builder()
+                .name("Secure Project " + UUID.randomUUID().toString().substring(0, 6))
+                .owner(owner)
+                .build());
+
+        SourceSnapshot snapshot = sourceSnapshotRepository.save(SourceSnapshot.builder()
+                .project(project)
+                .sourceType("ZIP_UPLOAD")
+                .artifactHash("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+                .build());
+
+        ModelVersion baseVersion = modelVersionRepository.save(ModelVersion.builder()
+                .project(project)
+                .sourceSnapshot(snapshot)
+                .revision(1)
+                .origin("GENERATED")
+                .isLatestValid(true)
+                .build());
+
+        String resourceProject = "mavisrun-" + UUID.randomUUID().toString().replace("-", "").toLowerCase();
+        RuntimeSession session = runtimeSessionRepository.save(RuntimeSession.builder()
+                .project(project)
+                .sourceSnapshot(snapshot)
+                .modelVersion(baseVersion)
+                .scenarioName("secure-test")
+                .resourceProject(resourceProject)
+                .executionStatus("READY_FOR_DISPATCH")
+                .scenarioStatus("APPROVED")
+                .profileVersionId("sha256:1111111111111111111111111111111111111111111111111111111111111111")
+                .runConfigurationVersionId("sha256:2222222222222222222222222222222222222222222222222222222222222222")
+                .scenarioVersionId("sha256:3333333333333333333333333333333333333333333333333333333333333333")
+                .build());
+
+        RuntimeSessionLifecycleAckRequestDTO ackReq = RuntimeSessionLifecycleAckRequestDTO.builder()
+                .sessionId(session.getId())
+                .resourceProject(resourceProject)
+                .stage("ALLOCATED")
+                .build();
+
+        // 1. User khác (otherUser) gọi /lifecycle-ack không có Runner-Key -> 403 FORBIDDEN
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", session.getId())
+                        .header("X-Test-User-Email", otherUser.getEmail())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(ackReq)))
+                .andExpect(status().isForbidden());
+
+        // 2. Gọi với header X-Mavis-Runner-Key hợp lệ (không cần user auth) -> 200 OK
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", session.getId())
+                        .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(ackReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.executionStatus").value("ALLOCATED"));
+
+        // 3. User khác (otherUser) gọi /ingest-receipt-ack không có Runner-Key -> 403 FORBIDDEN
+        RunnerReceiptIngestRequestDTO receipt = RunnerReceiptIngestRequestDTO.builder()
+                .sessionId(session.getId().toString())
+                .sourceSnapshotId(snapshot.getId().toString())
+                .modelVersionId(baseVersion.getId().toString())
+                .profileVersionId(session.getProfileVersionId())
+                .runConfigurationVersionId(session.getRunConfigurationVersionId())
+                .scenarioVersionId(session.getScenarioVersionId())
+                .resourceProject(resourceProject)
+                .sandboxEnforcementConfirmed(false)
+                .outcome(RunnerOutcomeDTO.builder()
+                        .executionStatus("Failed")
+                        .scenarioStatus("NotRun")
+                        .evidenceStatus("Unavailable")
+                        .cleanupStatus("Confirmed")
+                        .traceQuality("Unavailable")
+                        .mappingStatus("Unavailable")
+                        .trace(RunnerTraceCorrelationDTO.builder().spans(List.of()).build())
+                        .build())
+                .build();
+
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", session.getId())
+                        .header("X-Test-User-Email", otherUser.getEmail())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(receipt)))
+                .andExpect(status().isForbidden());
+
+        // 4. Runner gọi /ingest-receipt-ack với X-Mavis-Runner-Key hợp lệ -> 200 OK
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", session.getId())
+                        .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(receipt)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.publicationGateStatus").value("SKIPPED_NO_EVIDENCE"));
+    }
 }

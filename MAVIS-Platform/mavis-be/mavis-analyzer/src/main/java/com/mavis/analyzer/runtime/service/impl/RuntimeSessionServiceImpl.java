@@ -379,7 +379,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         RuntimeSession session = runtimeSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
-        runnerServiceAuthGuard.checkRunnerOrProjectReadAccess(session.getProject());
+        runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
 
         SourceSnapshot snapshot = session.getSourceSnapshot();
         String composeYaml = "";

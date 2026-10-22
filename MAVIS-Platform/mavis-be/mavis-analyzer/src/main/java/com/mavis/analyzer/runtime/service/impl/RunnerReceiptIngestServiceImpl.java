@@ -205,7 +205,18 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         if (outcome.getScenario() != null && outcome.getScenario().has("steps") && outcome.getScenario().get("steps").isArray()) {
             for (JsonNode stepNode : outcome.getScenario().get("steps")) {
                 if (stepNode.hasNonNull("parentSpanId")) {
-                    externalRootSpanIds.add(stepNode.get("parentSpanId").asText().toLowerCase());
+                    String pSpanId = stepNode.get("parentSpanId").asText().toLowerCase();
+                    externalRootSpanIds.add(pSpanId);
+                    if (stepNode.hasNonNull("traceId")) {
+                        externalRootSpanIds.add((stepNode.get("traceId").asText() + ":" + pSpanId).toLowerCase());
+                    }
+                }
+                if (stepNode.hasNonNull("spanId")) {
+                    String sSpanId = stepNode.get("spanId").asText().toLowerCase();
+                    externalRootSpanIds.add(sSpanId);
+                    if (stepNode.hasNonNull("traceId")) {
+                        externalRootSpanIds.add((stepNode.get("traceId").asText() + ":" + sSpanId).toLowerCase());
+                    }
                 }
             }
         }
@@ -229,7 +240,8 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         for (RunnerCorrelatedSpanDTO span : spans) {
             if (span.getParentSpanId() != null && !span.getParentSpanId().isBlank()) {
                 String parentKey = (span.getTraceId() + ":" + span.getParentSpanId()).toLowerCase();
-                if (!spanMap.containsKey(parentKey) && !externalRootSpanIds.contains(span.getParentSpanId().toLowerCase())) {
+                String pSpanId = span.getParentSpanId().toLowerCase();
+                if (!spanMap.containsKey(parentKey) && !externalRootSpanIds.contains(pSpanId) && !externalRootSpanIds.contains(parentKey)) {
                     hasBrokenInternalParent = true;
                     break;
                 }
@@ -396,6 +408,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 serviceNameToElementMap.put(el.getName().toLowerCase(), saved);
             }
         }
+        for (int i = 0; i < baseElements.size(); i++) {
+            oldToNewElementMap.put(baseElements.get(i).getId(), savedElements.get(i));
+        }
 
         // (4.2) Sao chép relationships từ baseVersion (bảo toàn properties và khóa ghép UUID)
         List<ModelRelationship> baseRelationships = modelRelationshipRepository.findByModelVersionId(baseVersion.getId());
@@ -475,8 +490,13 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     RunnerCorrelatedSpanDTO parentSpan = spanMap.get((interaction.getTraceId() + ":" + interaction.getParentSpanId()).toLowerCase());
                     RunnerCorrelatedSpanDTO childSpan = spanMap.get((interaction.getTraceId() + ":" + interaction.getChildSpanId()).toLowerCase());
 
-                    ModelElement caller = resolveElement(interaction.getFromModelServiceId(), interaction.getFromService(), oldToNewElementMap, serviceNameToElementMap);
-                    ModelElement callee = resolveElement(interaction.getToModelServiceId(), interaction.getToService(), oldToNewElementMap, serviceNameToElementMap);
+                    String fromModelServiceId = interaction.getFromModelServiceId() != null ? interaction.getFromModelServiceId() : (parentSpan != null ? parentSpan.getModelServiceId() : null);
+                    String toModelServiceId = interaction.getToModelServiceId() != null ? interaction.getToModelServiceId() : (childSpan != null ? childSpan.getModelServiceId() : null);
+                    String fromService = interaction.getFromService() != null ? interaction.getFromService() : (parentSpan != null ? parentSpan.getRuntimeService() : null);
+                    String toService = interaction.getToService() != null ? interaction.getToService() : (childSpan != null ? childSpan.getRuntimeService() : null);
+
+                    ModelElement caller = resolveElement(fromModelServiceId, fromService, oldToNewElementMap, serviceNameToElementMap);
+                    ModelElement callee = resolveElement(toModelServiceId, toService, oldToNewElementMap, serviceNameToElementMap);
 
                     if (caller != null && callee != null && !caller.getId().equals(callee.getId())) {
                         long durationMs = childSpan != null ? parseDurationMs(childSpan.getDurationNanoseconds()) : 0L;
