@@ -49,6 +49,7 @@ class UploadWorkerApiIntegrationTest {
     @Configuration @EnableWebMvc @EnableAsync
     @Import({WorkerPublicationIntegrationTest.Config.class,UploadController.class,JobController.class,GlobalExceptionHandler.class,com.mavis.analyzer.diagram.controller.DiagramController.class,com.mavis.analyzer.model.controller.ModelVersionController.class,com.mavis.analyzer.impact.VersionedImpactController.class,com.mavis.analyzer.graph.controller.ImpactController.class,com.mavis.analyzer.orchestrator.controller.AnalysisRequestController.class,com.mavis.analyzer.orchestrator.controller.JobControlController.class})
     static class WebConfig {
+        @Bean com.mavis.analyzer.diagram.service.DiagramExportService exportService(){return org.mockito.Mockito.mock(com.mavis.analyzer.diagram.service.DiagramExportService.class);}
         @Bean StorageService storage(org.springframework.core.env.Environment env) {
             var storage=new LocalDiskStorageServiceImpl();ReflectionTestUtils.setField(storage,"uploadDir",env.getRequiredProperty("it.upload-root"));return storage;
         }

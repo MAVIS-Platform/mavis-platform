@@ -1,0 +1,15 @@
+# Activate with SPRING_PROFILES_ACTIVE=cloud. Supply secrets outside Git.
+spring:
+  datasource:
+    url: ${MAVIS_DB_URL}
+    username: ${MAVIS_DB_USERNAME}
+    password: ${MAVIS_DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: ${MAVIS_DB_MIGRATIONS_ENABLED:false}
+    clean-disabled: true
+mavis:
+  security:
+    dev-bypass-enabled: false

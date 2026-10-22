@@ -1,0 +1,1 @@
+ALTER TABLE model_elements ALTER COLUMN scope TYPE TEXT;

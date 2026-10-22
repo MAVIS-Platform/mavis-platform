@@ -40,7 +40,7 @@ public class ModelElement {
     @Column(nullable = false)
     private String name;
 
-    @Column(length = 100)
+    @Column(columnDefinition = "text")
     private String scope;
 
     @JdbcTypeCode(SqlTypes.JSON)
