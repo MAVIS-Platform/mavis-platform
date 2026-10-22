@@ -21,13 +21,14 @@ public class ImpactGraphLoader {
     private final EvidenceRepository evidence;
     private final JobRepository jobs;
     private final ObjectMapper json;
+    private final com.mavis.common.security.AccessPolicyService accessPolicy;
     public record EvidenceView(String id,UUID sourceSnapshotId,String locator,String adapterVersion,String sourceType,JsonNode provenance){}
     public record Snapshot(ImpactWorkerClient.Request request,Map<String,String> serviceNames,Map<String,EvidenceView> evidence,List<String> warnings){}
     @Transactional(readOnly=true)
     public Snapshot load(UUID modelId,UUID target,String expectedRevision,int maxDepth,int maxPaths){
         if(maxDepth<1||maxDepth>100||maxPaths<1||maxPaths>10000)throw invalid();
         var model=models.findById(modelId).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND,"Model not found"));
-        if(!model.getProject().getOwner().getId().equals(SecurityUtils.getCurrentUserId()))throw new BusinessException(ErrorCode.FORBIDDEN,"Model access denied");
+        accessPolicy.requireProjectReadAccess(model.getProject());
         boolean ready="USER_CONFIRMED".equals(model.getOrigin())||jobs.findBySourceSnapshotId(model.getSourceSnapshot().getId()).stream().anyMatch(j->"COMPLETED".equals(j.getStatus())&&j.getResultManifest()!=null&&modelId.toString().equals(j.getResultManifest().path("modelVersionId").asText())&&"ADAPTERS_COMPLETED".equals(j.getResultManifest().path("completeness").asText()));
         if(!ready)throw new BusinessException(ErrorCode.BAD_REQUEST,"Impact requires a completed, version-pinned model");
         var names=new TreeMap<String,String>();elements.findByModelVersionId(modelId).stream().filter(e->"SERVICE_CONTAINER".equals(e.getElementType())).forEach(e->names.put(e.getId().toString(),e.getName()));

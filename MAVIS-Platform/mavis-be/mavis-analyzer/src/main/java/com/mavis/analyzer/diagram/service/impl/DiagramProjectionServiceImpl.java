@@ -21,6 +21,7 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
     private final ModelRelationshipRepository relationships;
     private final EvidenceRepository evidence;
     private final ObjectMapper json;
+    private final com.mavis.common.security.AccessPolicyService accessPolicy;
 
     @Override @Transactional(propagation=Propagation.MANDATORY)
     public List<com.mavis.analyzer.diagram.dto.DiagramResponseDTO> generateDefaultDiagramsForModel(ModelVersion model,List<ModelElement> nodes,List<ModelRelationship> edges){
@@ -55,7 +56,7 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
     public DiagramView get(UUID diagram){var entity=diagrams.findById(diagram).orElseThrow(()->missing());owner(entity.getModelVersion());return view(entity);}
     @Override @Transactional
     public DiagramView updateLayout(UUID diagram,JsonNode request){
-        var entity=diagrams.findById(diagram).orElseThrow(()->missing());owner(entity.getModelVersion());
+        var entity=diagrams.findById(diagram).orElseThrow(()->missing());accessPolicy.requireProjectWriteAccess(entity.getModelVersion().getProject());
         if(request==null||!request.isObject()||request.size()!=1||!request.has("nodes")||!request.get("nodes").isArray()||request.get("nodes").size()>10000)throw invalid();
         ObjectNode copy=entity.getLayoutJson().deepCopy();var known=new HashMap<String,ObjectNode>();for(var node:copy.withArray("nodes"))known.put(node.path("id").asText(),(ObjectNode)node);
         var seen=new HashSet<String>();
@@ -72,7 +73,7 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
     public List<EvidenceView> elementEvidence(UUID id){var target=elements.findById(id).orElseThrow(()->missing());owner(target.getModelVersion());return evidence.findByElementId(id).stream().map(this::ev).toList();}
     @Override @Transactional(readOnly=true)
     public List<EvidenceView> relationshipEvidence(UUID id){var target=relationships.findById(id).orElseThrow(()->missing());owner(target.getModelVersion());return evidence.findByRelationshipId(id).stream().map(this::ev).toList();}
-    private void owner(ModelVersion model){if(!model.getProject().getOwner().getId().equals(SecurityUtils.getCurrentUserId()))throw new BusinessException(ErrorCode.FORBIDDEN,"Model access denied");}
+    private void owner(ModelVersion model){accessPolicy.requireProjectReadAccess(model.getProject());}
     private boolean containerKindsForNode(ModelElement node){return Set.of("SERVICE_CONTAINER","DATABASE","EXTERNAL_SYSTEM","QUEUE_BROKER").contains(node.getElementType());}
     private DiagramView view(DiagramVersion d){return new DiagramView(d.getId(),d.getModelVersion().getId(),d.getNotation(),d.getLevel(),d.getLayoutJson(),d.getCreatedAt());}
     private EvidenceView ev(Evidence e){return new EvidenceView(e.getId(),e.getModelVersion().getId(),e.getSourceSnapshot().getId(),e.getSourceType(),e.getLocator(),e.getAdapterVersion(),e.getProvenance());}

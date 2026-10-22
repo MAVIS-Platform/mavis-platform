@@ -50,6 +50,9 @@ class DiagramProjectionServiceImplTest {
     @org.mockito.Mock private com.mavis.common.repository.ModelElementRepository elements;
     @org.mockito.Mock private com.mavis.common.repository.ModelRelationshipRepository relationships;
     @org.mockito.Spy private ObjectMapper json = new ObjectMapper();
+    @Mock
+    private com.mavis.common.security.AccessPolicyService accessPolicy;
+
     @InjectMocks
     private DiagramProjectionServiceImpl diagramProjectionService;
 
