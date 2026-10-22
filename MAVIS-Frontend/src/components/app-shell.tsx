@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   Bell,
   ChevronDown,
@@ -102,6 +102,7 @@ export function AppShell(props: AppShellProps) {
 
 function ManagedShellChrome(props: AppShellProps) {
   const { role: previewRole, onPreviewNavigate } = props;
+  const params = useSearchParams();
   const session = useSession();
   const api = useApi();
   const signOut = useApiMutation("signOut");
@@ -113,12 +114,12 @@ function ManagedShellChrome(props: AppShellProps) {
   const projectQuery = useApiQuery(
     "projects",
     {},
-    { enabled: role === "student" && !onPreviewNavigate },
+    { enabled: (api.mode === "backend" || role === "student") && !onPreviewNavigate },
   );
   const workspaceQuery = useApiQuery(
     "workspaces",
     {},
-    { enabled: role !== "admin" && !onPreviewNavigate },
+    { enabled: role !== "admin" && !onPreviewNavigate && !!selection.workspaceId },
   );
   async function logout() {
     try {
@@ -145,6 +146,7 @@ function ManagedShellChrome(props: AppShellProps) {
       {...props}
       role={role}
       contextName={contextName}
+      navigationQuery={props.navigationQuery ?? (params.toString() ? `?${params}` : "")}
       displayName={session.data?.user?.name ?? "Design preview"}
       apiMode={api.mode}
       signOutPending={signOut.isPending}
@@ -212,6 +214,8 @@ function ShellChrome({
           const href = liveRoutes[item.id];
           return href ? { ...entry, href: `${href}${navigationQuery}` } : entry;
         }
+        if (item.href && navigationQuery && !["/design-system", "/login"].includes(item.href))
+          return { ...item, href: `${item.href}${navigationQuery}` };
         return scope === "review" && contextName
           ? { ...item, href: `/submissions/${encodeURIComponent(contextName)}#${item.id}` }
           : item;

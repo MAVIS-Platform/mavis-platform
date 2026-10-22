@@ -44,6 +44,7 @@ export function fromStatus(status: number) {
     403: "forbidden",
     404: "not-found",
     409: "conflict",
+    413: "validation",
     422: "validation",
     429: "rate-limit",
     501: "unconfigured",
@@ -53,6 +54,8 @@ export function fromStatus(status: number) {
 }
 export function normalizeError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
+  if (error instanceof Error && "status" in error && typeof error.status === "number")
+    return fromStatus(error.status);
   if (error instanceof DOMException && error.name === "AbortError")
     return new ApiError("cancelled");
   return new ApiError("network");

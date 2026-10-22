@@ -1,0 +1,3 @@
+# Machine-local environment and diagnostics
+.env.backend.local
+.artifacts/
