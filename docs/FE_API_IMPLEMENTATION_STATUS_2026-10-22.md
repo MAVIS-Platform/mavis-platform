@@ -45,3 +45,11 @@ Runtime profile/config/scenario management APIs and automatic dispatcher are not
 Business workspace/assignment/submission/feedback/admin integrations and global telemetry remain P5/P6 backlog; their mock screens are not labeled as live successes. SMTP delivery/live AI quota and production deployment are not accepted here. Petclinic Java parser logs record-language-level limitations; review status is retained and no claim of exhaustive source parsing is made.
 
 Local test accounts/projects and source artifacts are isolated from user projects. Credentials, browser logs, build output and DB dumps are excluded from commits. The primary checkout's pre-existing Worker modifications are unchanged.
+
+## Clean-clone login/startup follow-up
+
+The database was not missing: the existing Java process passed login/current-user/project reads against Aiven. A new clone needs machine-local DB credentials and matched FE/Java revisions; main was still 02c663b before PR #30 merge. Seed placeholder passwords and unconfigured SMTP also cannot produce a verified login account.
+
+Added root Start-Mavis.ps1 and .env.backend.example: initialize stable local service keys, reject placeholder DB credentials early, select cloud/backend mode explicitly, pair Worker authentication/artifact roots, skip rebuilding an already-built Worker unless requested, and report mismatched Java without /auth/me. Local .env/backend artifacts are ignored. Default FE mode is now backend; labeled mock mode must be selected explicitly.
+
+Validation: 24 FE tests passed; launcher parse/init/missing-settings checks passed. A separate Java 18081 + Worker 15082 + FE 13000 stack started with the same test DB and an isolated environment. All three readiness probes, FE login/session/projects, and authenticated Java→Worker impact returned 200. The temporary stack and plaintext test settings were removed; the user's original stack stayed running. See docs/CLEAN_CLONE_SETUP.md for the reproducible steps and account/SMTP requirements.

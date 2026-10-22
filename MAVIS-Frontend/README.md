@@ -2,7 +2,9 @@
 
 Next.js / React / strict TypeScript frontend for architecture learning, source analysis, runtime evidence and versioned coursework. Stage 2 reuses the Stage 1 shell, role navigation and Light/Dark/System semantic styles.
 
-The default is **mock mode**, with clearly labeled sample accounts/data and simulated operations. In **backend mode**, Import, Architecture, Impact and Explain use the integrated Java/Worker mainflow through `/api/backend`; see the [mainflow integration guide](docs/MAINFLOW_INTEGRATION.md). Other feature screens retain provisional operation contracts through `/api/mavis`; see the [architecture](docs/architecture/stage-2.md) and [API integration checklist](docs/architecture/api-integration.md).
+The default is **backend mode**. The shared `/api/mavis` boundary connects the component screens and source analysis to Java. Mock previews require the explicit setting `MAVIS_API_MODE=mock`.
+
+For a new Windows clone, start with [the clean-clone runbook](../docs/CLEAN_CLONE_SETUP.md) and repository-root `Start-Mavis.ps1`. Database credentials and verified-account passwords are intentionally absent from Git. Java and FE must come from the same revision; the integrated FE requires Java `/api/v1/auth/me`.
 
 This project was built with [Lovable](https://lovable.dev).
 
@@ -27,6 +29,6 @@ npm run dev
 
 Run `npm run typecheck`, `npm test`, and `npm run build` for verification. Copy `.env.example` to `.env.local` to select mock scenarios or configure backend mode. Never commit session secrets or expose them through `NEXT_PUBLIC_*` settings.
 
-In mock mode `/login` offers Student, Lecturer and Administrator sample accounts. Reload resets sample changes; switching sample roles keeps the current in-memory submissions available for review.
+In mock mode `/login` offers labeled sample accounts. For actual login, use backend mode and an active verified account stored in the configured database; seed placeholder passwords cannot authenticate.
 
-For the integrated analysis mainflow, set `MAVIS_API_MODE=backend` and `MAVIS_JAVA_URL=http://127.0.0.1:8081` in `.env.local`, then restart Next.js. Opening `/` redirects to `/import`, which verifies the Java session and presents the real sign-in form. Project/model context is retained in navigation URLs. Live mainflow queries have a separate cache from the provisional operation adapter; unavailable operations never fall back to sample data. Run `npm run test:mainflow` alongside `npm test` to check both API boundaries.
+Set `MAVIS_JAVA_URL=http://127.0.0.1:8081` server-side if running FE manually. The root launcher supplies backend mode and the paired ports/keys automatically. Restart Next.js after changing environment variables. Run `npm run typecheck`, `npm test`, `npm run test:mainflow` and `npm run build` for verification.

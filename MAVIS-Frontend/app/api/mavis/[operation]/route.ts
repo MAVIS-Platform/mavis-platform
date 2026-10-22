@@ -1,3 +1,4 @@
+import { readAppConfiguration } from "@/lib/api/config";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { contracts, isOperation } from "@/lib/api/contracts";
@@ -14,7 +15,7 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
       { status, headers: { "Cache-Control": "no-store" } },
     );
   if (
-    process.env["MAVIS_API_MODE"] !== "backend" ||
+    readAppConfiguration(process.env).mode !== "backend" ||
     !isOperation(operation) ||
     operation === "mockLogin"
   )
