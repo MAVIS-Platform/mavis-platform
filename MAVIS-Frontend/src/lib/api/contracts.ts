@@ -13,6 +13,36 @@ function contract<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
   return { input, output, mutation };
 }
 export const contracts = {
+  register: contract(
+    z.object({
+      fullName: z.string().trim().min(1).max(255),
+      email: z.string().email(),
+      password: z.string().min(6),
+    }),
+    z.object({ userId: z.string(), email: z.string(), fullName: z.string(), role: z.string() }),
+    true,
+  ),
+  verifyEmail: contract(
+    z.object({ email: z.string().email(), otpCode: z.string().trim().min(1).max(12) }),
+    ok,
+    true,
+  ),
+  resendOtp: contract(z.object({ email: z.string().email() }), ok, true),
+  forgotPassword: contract(z.object({ email: z.string().email() }), ok, true),
+  resetPassword: contract(
+    z.object({
+      email: z.string().email(),
+      otpCode: z.string().trim().min(1).max(12),
+      newPassword: z.string().min(6),
+    }),
+    ok,
+    true,
+  ),
+  googleSignIn: contract(
+    z.object({ idToken: z.string().min(1).max(10000) }),
+    d.sessionSchema,
+    true,
+  ),
   session: contract(nothing, d.sessionSchema),
   runtimeSequence: contract(
     z.object({ sessionId: id }),
