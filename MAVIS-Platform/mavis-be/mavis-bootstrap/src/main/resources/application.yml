@@ -52,4 +52,7 @@ app:
 
 mavis:
   security:
-    dev-bypass-enabled: true
+    dev-bypass-enabled: true
+  runner:
+    service-key: ${MAVIS_RUNNER_SERVICE_KEY:mavis-runner-secret-key-test}
+    allow-unverified-poc-promotion: true

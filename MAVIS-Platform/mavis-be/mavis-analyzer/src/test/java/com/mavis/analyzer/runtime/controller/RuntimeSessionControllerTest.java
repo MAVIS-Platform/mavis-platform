@@ -39,10 +39,14 @@ class RuntimeSessionControllerTest {
     @Mock
     private OtelTraceCorrelationService otelTraceCorrelationService;
 
+    @Mock
+    private com.mavis.analyzer.runtime.service.RunnerReceiptIngestService runnerReceiptIngestService;
+
     @InjectMocks
     private RuntimeSessionController runtimeSessionController;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
 
     @BeforeEach
     void setUp() {
@@ -236,6 +240,83 @@ class RuntimeSessionControllerTest {
                 .andExpect(jsonPath("$.data.diagramId").value(diagramId.toString()))
                 .andExpect(jsonPath("$.data.notation").value("UML_SEQUENCE"))
                 .andExpect(jsonPath("$.data.steps[0].callerService").value("api-gateway"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack: Xác nhận lifecycle stage")
+    void testAcknowledgeLifecycle() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        String resourceProject = "mavisrun-0123456789abcdef0123456789abcdef";
+
+        RuntimeSessionLifecycleAckRequestDTO request = RuntimeSessionLifecycleAckRequestDTO.builder()
+                .sessionId(sessionId)
+                .resourceProject(resourceProject)
+                .stage("RUNNING")
+                .observedAt(OffsetDateTime.now())
+                .build();
+
+        RuntimeSessionLifecycleAckDTO response = RuntimeSessionLifecycleAckDTO.builder()
+                .sessionId(sessionId)
+                .resourceProject(resourceProject)
+                .scenarioStatus("RUNNING")
+                .executionStatus("RUNNING")
+                .stage("RUNNING")
+                .acknowledgedAt(OffsetDateTime.now())
+                .build();
+
+        when(runtimeSessionService.acknowledgeLifecycle(eq(sessionId), any(RuntimeSessionLifecycleAckRequestDTO.class)))
+                .thenReturn(response);
+
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.sessionId").value(sessionId.toString()))
+                .andExpect(jsonPath("$.data.stage").value("RUNNING"))
+                .andExpect(jsonPath("$.data.executionStatus").value("RUNNING"));
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack: Thu nạp receipt kèm ack đầy đủ")
+    void testIngestReceiptAck() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID snapshotId = UUID.randomUUID();
+        UUID modelVersionId = UUID.randomUUID();
+        String resourceProject = "mavisrun-0123456789abcdef0123456789abcdef";
+
+        RunnerReceiptIngestRequestDTO receiptRequest = RunnerReceiptIngestRequestDTO.builder()
+                .sessionId(sessionId.toString())
+                .resourceProject(resourceProject)
+                .sourceSnapshotId(snapshotId.toString())
+                .modelVersionId(modelVersionId.toString())
+                .profileVersionId("sha256:1111222233334444555566667777888899990000111122223333444455556666")
+                .runConfigurationVersionId("sha256:2222333344445555666677778888999900001111222233334444555566667777")
+                .scenarioVersionId("sha256:3333444455556666777788889999000011112222333344445555666677778888")
+                .sandboxEnforcementConfirmed(true)
+                .build();
+
+        ReceiptIngestAckDTO ackResponse = ReceiptIngestAckDTO.builder()
+                .sessionId(sessionId)
+                .resourceProject(resourceProject)
+                .receiptDigest("sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789")
+                .persistenceStatus("COMMITTED")
+                .publicationGateStatus("PASSED")
+                .promotedLatest(true)
+                .baseModelVersionId(modelVersionId)
+                .acknowledgedAt(OffsetDateTime.now())
+                .build();
+
+        when(runnerReceiptIngestService.ingestRunnerReceiptAck(eq(sessionId), any(RunnerReceiptIngestRequestDTO.class)))
+                .thenReturn(ackResponse);
+
+        mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(receiptRequest)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.receiptDigest").value("sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"))
+                .andExpect(jsonPath("$.data.persistenceStatus").value("COMMITTED"));
     }
 }
 

@@ -49,6 +49,9 @@ class OtelTraceCorrelationServiceImplTest {
     @Mock
     private DiagramVersionRepository diagramVersionRepository;
 
+    @Mock
+    private com.mavis.common.security.AccessPolicyService accessPolicyService;
+
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 

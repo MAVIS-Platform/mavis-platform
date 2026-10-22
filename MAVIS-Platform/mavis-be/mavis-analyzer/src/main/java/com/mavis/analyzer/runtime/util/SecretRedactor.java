@@ -43,7 +43,9 @@ public class SecretRedactor {
                 String key = entry.getKey();
                 JsonNode value = entry.getValue();
 
-                if (value.isObject() || value.isArray()) {
+                if ("secretHeaders".equalsIgnoreCase(key)) {
+                    redactedNode.set(key, value.deepCopy());
+                } else if (value.isObject() || value.isArray()) {
                     redactedNode.set(key, redactJson(value));
                 } else if (isSensitiveKey(key)) {
                     redactedNode.put(key, REDACTED_MARKER);
