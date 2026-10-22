@@ -2,6 +2,8 @@ param(
     [ValidateSet('All','Java','Worker','Frontend','Check')][string]$Service = 'Check',
     [switch]$Initialize,
     [switch]$Build,
+    [switch]$WaitReady,
+    [switch]$OpenBrowser,
     [string]$SettingsPath
 )
 $ErrorActionPreference = 'Stop'
@@ -66,6 +68,7 @@ $environment.ArtifactScope__Root=$artifacts
 $environment["ArtifactScope__GrantKeys__$($environment.MAVIS_WORKER_GRANT_KEY_ID)"]=$values.MAVIS_WORKER_GRANT_KEY
 $environment.ASPNETCORE_ENVIRONMENT='Development'
 $environment.ASPNETCORE_URLS="http://127.0.0.1:$workerPort"
+$environment.MAVIS_NEXT_DIST_DIR=if($values.MAVIS_NEXT_DIST_DIR){$values.MAVIS_NEXT_DIST_DIR}else{'.artifacts/next-local'}
 $environment.MAVIS_API_MODE='backend'
 $environment.MAVIS_JAVA_URL="http://127.0.0.1:$javaPort"
 function Is-Listening([int]$Port) { return [bool](Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue) }
@@ -110,10 +113,27 @@ try {
 } finally { foreach($entry in $previous.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key,$entry.Value,'Process') } }
 if ($Service -eq 'Check') {
     foreach ($probe in @(@('Java',"http://127.0.0.1:$javaPort/v3/api-docs"),@('Worker',"http://127.0.0.1:$workerPort/api/health/ready"),@('FE',"http://127.0.0.1:$fePort/login"))) {
-        try { $response=Invoke-WebRequest $probe[1] -TimeoutSec 10; Write-Host "$($probe[0]): HTTP $($response.StatusCode)" } catch { Write-Host "$($probe[0]): unavailable; inspect .artifacts/local-run logs." }
+        try { $response=Invoke-WebRequest $probe[1] -UseBasicParsing -TimeoutSec 10; Write-Host "$($probe[0]): HTTP $($response.StatusCode)" } catch { Write-Host "$($probe[0]): unavailable; inspect .artifacts/local-run logs." }
     }
     try { $spec=Invoke-RestMethod "http://127.0.0.1:$javaPort/v3/api-docs" -TimeoutSec 10; if (-not $spec.paths.'/api/v1/auth/me') { Write-Warning 'Java is older than the integrated FE: /auth/me is missing. Pull matching source and rebuild Java.' } } catch {}
 } else {
     Write-Host "Starting services. Check logs in .artifacts/local-run, then run ./Start-Mavis.ps1 -Service Check."
 }
 Write-Host "FE: http://127.0.0.1:$fePort/login | Java: http://127.0.0.1:$javaPort/swagger-ui/index.html | Worker: http://127.0.0.1:$workerPort/swagger"
+
+if ($WaitReady) {
+    $probes=@()
+    if ($Service -in @('All','Java')) { $probes+=,@('Java',"http://127.0.0.1:$javaPort/v3/api-docs") }
+    if ($Service -in @('All','Worker')) { $probes+=,@('Worker',"http://127.0.0.1:$workerPort/api/health/ready") }
+    if ($Service -in @('All','Frontend')) { $probes+=,@('FE',"http://127.0.0.1:$fePort/login") }
+    foreach($probe in $probes) {
+        Write-Host "Waiting for $($probe[0])..."
+        $ready=$false
+        for($attempt=0;$attempt -lt 120;$attempt++) {
+            try { $null=Invoke-WebRequest $probe[1] -UseBasicParsing -TimeoutSec 3; $ready=$true; break } catch { Start-Sleep -Seconds 1 }
+        }
+        if (-not $ready) { throw "$($probe[0]) failed to become ready. Inspect .artifacts/local-run/$($probe[0].ToLower())*.log." }
+        Write-Host "$($probe[0]) ready."
+    }
+}
+if ($OpenBrowser) { Start-Process "http://127.0.0.1:$fePort/login" }

@@ -23,7 +23,15 @@ Mở `.env.backend.local` vừa tạo và điền MAVIS_DB_URL, MAVIS_DB_USERNAM
 
 Initialize sinh JWT/Runner/Worker/grant keys ổn định cho máy đó. Không ghi đè key mỗi lần restart, vì JWT cũ sẽ mất hiệu lực. Nếu đổi key Worker thì dừng và khởi động lại cả Java lẫn Worker để hai bên dùng cùng cấu hình.
 
-## Khởi động
+## Chạy bằng run.bat (khuyến nghị trên Windows)
+
+Bấm đúp `run.bat` ở thư mục gốc. Không cần tự chạy file .ps1 hay đổi execution policy của Windows. File BAT gọi Windows PowerShell có sẵn với cấu hình chỉ áp dụng cho tiến trình đó.
+
+Lần đầu, nếu chưa có `.env.backend.local`, BAT tạo file và service keys. Điền DB URL/user/password vào file đó rồi bấm lại. Sau đó BAT build Java/Worker khi cổng còn trống, chạy FE từ source hiện tại, đợi cả ba dịch vụ sẵn sàng và mở trang login. Nếu lỗi, cửa sổ giữ lại thông báo thay vì tắt ngay. `run.bat --check` chỉ kiểm tra các dịch vụ đang chạy.
+
+Các tiến trình đã chiếm cổng được giữ nguyên, không bị tự kill. Để cập nhật source khi đã có phiên cũ đang chạy, dừng đúng phiên cũ trước rồi bấm run.bat; BAT không tự git pull hay ghi đè source local.
+
+## Khởi động bằng PowerShell (tùy chọn)
 
 ```powershell
 .\Start-Mavis.ps1 -Service All

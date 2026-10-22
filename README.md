@@ -4,7 +4,7 @@ Nền tảng học tập kiến trúc microservices: nhập source, phân tích 
 
 ## Chạy trên máy mới clone
 
-Xem [hướng dẫn DB cloud và đăng nhập thật](docs/CLEAN_CLONE_SETUP.md). Chạy `./Start-Mavis.ps1 -Initialize`, điền DB credential vào `.env.backend.local`, rồi `./Start-Mavis.ps1 -Service All`. Không có secret/tài khoản demo dùng chung trong Git.
+Xem [hướng dẫn DB cloud và đăng nhập thật](docs/CLEAN_CLONE_SETUP.md). Bấm đúp `run.bat`; lần đầu điền DB credential vào `.env.backend.local` được tạo rồi bấm lại. BAT chạy Java + Worker + FE và mở trang đăng nhập. Không có secret/tài khoản demo dùng chung trong Git.
 
 ## Bắt đầu cho developer hoặc coding agent
 
