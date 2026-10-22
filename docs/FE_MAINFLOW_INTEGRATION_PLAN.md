@@ -69,3 +69,7 @@ Kiểm thử từng lát ngay khi nối API, sau đó browser E2E toàn luồng;
 ## Tiêu chí chốt đợt ưu tiên
 
 P0–P3 và P5 pass trên browser với Java/Worker thật và DB cloud; bốn màn hiện có không còn dùng dữ liệu mẫu trong mainflow. P4 báo trạng thái riêng, không chặn bàn giao luồng static nhưng chưa được gán hoàn tất. Business CRUD tiếp tục để ngoài scope.
+
+## Cập nhật GitHub import
+
+Đã triển khai phần GitHub của P4 theo yêu cầu bổ sung: repo public + branch/commit SHA → snapshot → analysis → graph. Acceptance thực với Petclinic pass (branch-only và pinned SHA, graph 24 elements). Private repo tiếp tục dùng ZIP do API Java chưa nhận GitHub credential. Các mục evaluation/revision/runtime của P4 vẫn để riêng.

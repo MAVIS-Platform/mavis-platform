@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   api,
+  githubImportRequest,
   contextHref,
   publishedModel,
   terminalJob,
@@ -22,6 +23,10 @@ export function ImportFlow() {
   const project = params.get("project") ?? "";
   const jobId = params.get("job") ?? "";
   const snapshot = params.get("snapshot") ?? "";
+  const [source, setSource] = useState<"zip" | "github">("zip");
+  const [repository, setRepository] = useState("");
+  const [branch, setBranch] = useState("main");
+  const [commit, setCommit] = useState("");
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [validation, setValidation] = useState("");
@@ -59,6 +64,14 @@ export function ImportFlow() {
       router.push(contextHref("/import", project, "", { snapshot: s.snapshotId }));
       setFile(null);
     },
+  });
+  const github = useMutation({
+    mutationFn: () =>
+      api<{ snapshotId: string }>("analyzer/import/github", {
+        method: "POST",
+        body: JSON.stringify(githubImportRequest(project, repository, branch, commit)),
+      }),
+    onSuccess: (s) => router.push(contextHref("/import", project, "", { snapshot: s.snapshotId })),
   });
   const analyze = useMutation({
     mutationFn: () =>
@@ -110,7 +123,7 @@ export function ImportFlow() {
       <section className={`${panel} space-y-4`}>
         <h2 className="font-semibold">Import & Analyze</h2>
         <p className="text-sm text-muted-foreground">
-          Upload a Java or C# ZIP, then analyze the immutable snapshot.
+          Import Java or C# from a ZIP or GitHub repository, then analyze the snapshot.
         </p>
         <form
           className="flex gap-2"
@@ -131,29 +144,99 @@ export function ImportFlow() {
             Create project
           </Button>
         </form>
-        <label className="block rounded-lg border border-dashed p-6">
-          Source archive (.zip, up to 100 MB)
-          <Input
-            className="mt-3"
-            type="file"
-            accept=".zip"
-            disabled={!project || upload.isPending}
-            onChange={(e) => {
-              const f = e.target.files?.[0] ?? null;
-              const error =
-                f && (!f.name.toLowerCase().endsWith(".zip") || f.size > 100 * 1024 * 1024)
-                  ? "Choose a ZIP up to 100 MB"
-                  : "";
-              setValidation(error);
-              setFile(error ? null : f);
+        <div className="flex gap-2" role="group" aria-label="Source type">
+          <Button
+            variant={source === "zip" ? "default" : "outline"}
+            aria-pressed={source === "zip"}
+            disabled={upload.isPending || github.isPending}
+            onClick={() => setSource("zip")}
+          >
+            Upload ZIP
+          </Button>
+          <Button
+            variant={source === "github" ? "default" : "outline"}
+            aria-pressed={source === "github"}
+            disabled={upload.isPending || github.isPending}
+            onClick={() => setSource("github")}
+          >
+            GitHub URL
+          </Button>
+        </div>
+        {source === "zip" ? (
+          <>
+            <label className="block rounded-lg border border-dashed p-6">
+              Source archive (.zip, up to 100 MB)
+              <Input
+                className="mt-3"
+                type="file"
+                accept=".zip"
+                disabled={!project || upload.isPending}
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  const error =
+                    f && (!f.name.toLowerCase().endsWith(".zip") || f.size > 100 * 1024 * 1024)
+                      ? "Choose a ZIP up to 100 MB"
+                      : "";
+                  setValidation(error);
+                  setFile(error ? null : f);
+                }}
+              />
+            </label>
+            {validation && <p role="alert">{validation}</p>}
+            <Button disabled={!project || !file || upload.isPending} onClick={submitUpload}>
+              {upload.isPending ? "Uploading…" : "Upload snapshot"}
+            </Button>
+          </>
+        ) : (
+          <form
+            className="space-y-4 rounded-lg border border-dashed p-5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (project && !github.isPending) github.mutate();
             }}
-          />
-        </label>
-        {validation && <p role="alert">{validation}</p>}
-        <Button disabled={!project || !file || upload.isPending} onClick={submitUpload}>
-          {upload.isPending ? "Uploading…" : "Upload snapshot"}
-        </Button>
-        <ErrorNotice error={create.error || upload.error} />
+          >
+            <label className="block text-sm">
+              GitHub repository URL
+              <Input
+                className="mt-2"
+                type="url"
+                placeholder="https://github.com/owner/repository"
+                required
+                value={repository}
+                onChange={(e) => setRepository(e.target.value)}
+                disabled={!project || github.isPending}
+              />
+            </label>
+            <label className="block text-sm">
+              Branch
+              <Input
+                className="mt-2"
+                placeholder="main"
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
+                disabled={github.isPending}
+              />
+            </label>
+            <label className="block text-sm">
+              Commit SHA (optional)
+              <Input
+                className="mt-2"
+                placeholder="Full 40-character SHA; overrides branch"
+                value={commit}
+                onChange={(e) => setCommit(e.target.value)}
+                disabled={github.isPending}
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Public repositories only. Use the repository root URL and its actual branch name. For
+              private repositories, upload a ZIP.
+            </p>
+            <Button disabled={!project || !repository.trim() || github.isPending}>
+              {github.isPending ? "Importing from GitHub…" : "Import from GitHub"}
+            </Button>
+          </form>
+        )}
+        <ErrorNotice error={create.error || (source === "zip" ? upload.error : github.error)} />
         {snapshot && (
           <div className="space-y-3 border-t pt-4">
             <p className="break-all text-sm">Snapshot: {snapshot}</p>

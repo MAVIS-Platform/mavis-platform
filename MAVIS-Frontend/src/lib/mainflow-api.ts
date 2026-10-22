@@ -110,3 +110,51 @@ export function impactWarning(warning: string): string {
     )[warning] ?? warning
   );
 }
+
+export function githubImportRequest(
+  projectId: string,
+  repository: string,
+  branch: string,
+  commit: string,
+) {
+  let url: URL;
+  try {
+    url = new URL(repository.trim());
+  } catch {
+    throw new Error("Enter a GitHub repository URL such as https://github.com/owner/repository");
+  }
+  const path = url.pathname.replace(/\/+$/, "").replace(/\.git$/, "");
+  if (
+    url.protocol !== "https:" ||
+    url.hostname !== "github.com" ||
+    url.port ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    !/^\/[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+$/.test(path)
+  )
+    throw new Error(
+      "Use the HTTPS repository root: https://github.com/owner/repository (without /tree, credentials or query parameters)",
+    );
+  const branchName = branch.trim() || "main";
+  if (
+    branchName.length > 255 ||
+    /[\s~^:?*[\]\\]/.test(branchName) ||
+    branchName.includes("..") ||
+    branchName.includes("@{") ||
+    branchName.startsWith("/") ||
+    branchName.endsWith("/") ||
+    branchName.endsWith(".")
+  )
+    throw new Error("Enter a valid branch name");
+  const commitSha = commit.trim();
+  if (commitSha && !/^[a-fA-F0-9]{40}$/.test(commitSha))
+    throw new Error("Commit SHA must contain 40 hexadecimal characters");
+  return {
+    projectId,
+    repositoryUrl: `https://github.com${path}`,
+    branchName,
+    ...(commitSha ? { commitSha } : {}),
+  };
+}
