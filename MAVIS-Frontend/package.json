@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --incremental false",
-    "test": "node tests/architecture.test.cjs",
+    "test": "node --test tests/architecture.test.cjs tests/java-contract.test.cjs",
     "test:mainflow": "node scripts/check-mainflow.mjs",
     "format": "prettier --write ."
   },

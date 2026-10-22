@@ -21,10 +21,13 @@ export class BackendAdapter implements ApiAdapter {
     signal?.addEventListener("abort", cancel, { once: true });
     if (signal?.aborted) controller.abort();
     let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, 20000);
+    const timer = setTimeout(
+      () => {
+        timedOut = true;
+        controller.abort();
+      },
+      ["importSource", "importGithub"].includes(operation) ? 120000 : 20000,
+    );
     try {
       const mutation = contracts[operation].mutation;
       let multipart: FormData | undefined;

@@ -14,6 +14,84 @@ function contract<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
 }
 export const contracts = {
   session: contract(nothing, d.sessionSchema),
+  runtimeSequence: contract(
+    z.object({ sessionId: id }),
+    z.object({
+      sessionId: id,
+      modelId: id,
+      steps: z.array(
+        z.object({
+          stepOrder: z.number().nullish(),
+          callerService: z.string().nullish(),
+          calleeService: z.string().nullish(),
+          operation: z.string().nullish(),
+          httpMethod: z.string().nullish(),
+          httpStatusCode: z.number().nullish(),
+          durationMs: z.number().nullish(),
+          traceId: z.string().nullish(),
+        }),
+      ),
+    }),
+  ),
+  runtimeReadSessions: contract(project, z.array(d.runtimeReadSchema)),
+  runtimeReadSession: contract(z.object({ sessionId: id }), d.runtimeReadSchema),
+  runtimePreflight: contract(
+    project.extend({ snapshotId: id }),
+    z.object({
+      compatible: z.boolean(),
+      detectedServices: z.array(z.string()),
+      securityWarnings: z.array(z.string()),
+      recommendedProfile: z.string().nullable(),
+    }),
+    true,
+  ),
+  runtimeStop: contract(z.object({ sessionId: id }), d.runtimeReadSchema, true),
+  runtimeApprove: contract(z.object({ sessionId: id }), d.runtimeReadSchema, true),
+  signIn: contract(
+    z.object({ email: z.string().email(), password: z.string().min(1) }),
+    d.sessionSchema,
+    true,
+  ),
+  createProject: contract(
+    z.object({ name: z.string().trim().min(1).max(255) }),
+    d.projectSchema,
+    true,
+  ),
+  importGithub: contract(
+    project.extend({
+      repositoryUrl: z.string().min(1),
+      branchName: z.string().default("main"),
+      commitSha: z.string().optional(),
+    }),
+    d.snapshotSchema,
+    true,
+  ),
+  cancelAnalysis: contract(z.object({ jobId: id }), d.analysisJobSchema, true),
+  modelVersions: contract(project, z.array(d.modelSummarySchema)),
+  elementEvidence: contract(z.object({ modelId: id, elementId: id }), z.array(d.evidenceSchema)),
+  relationshipEvidence: contract(
+    z.object({ modelId: id, relationshipId: id }),
+    z.array(d.evidenceSchema),
+  ),
+  diagrams: contract(z.object({ modelId: id }), z.array(d.diagramSchema)),
+  exportDiagram: contract(
+    z.object({
+      modelId: id,
+      diagramId: id,
+      format: z.enum(["MERMAID", "PLANTUML", "DRAWIO_XML", "JSON"]),
+    }),
+    z.object({ modelId: id, content: z.string(), format: z.string() }),
+  ),
+  compareModels: contract(
+    z.object({ baseModelId: id, targetModelId: id }),
+    z.object({ baseModelId: id, targetModelId: id, result: z.record(z.unknown()) }),
+  ),
+  evaluateModel: contract(z.object({ modelId: id }), d.evaluationSchema, true),
+  evaluations: contract(z.object({ modelId: id }), z.array(d.evaluationSchema)),
+  evaluationFindings: contract(
+    z.object({ evaluationId: id, modelId: id.optional() }),
+    z.array(z.record(z.unknown())),
+  ),
   mockLogin: contract(z.object({ role: d.roleSchema }), d.sessionSchema, true),
   signOut: contract(nothing, ok, true),
   projects: contract(nothing, z.array(d.projectSchema)),
@@ -26,17 +104,21 @@ export const contracts = {
       size: z
         .number()
         .positive()
-        .max(200 * 1024 * 1024),
+        .max(100 * 1024 * 1024),
       archive: z.instanceof(Blob),
     }),
     d.snapshotSchema,
     true,
   ),
   analysisJobs: contract(project, z.array(d.analysisJobSchema)),
-  startAnalysis: contract(project.extend({ snapshotId: id }), d.analysisJobSchema, true),
+  startAnalysis: contract(
+    project.extend({ snapshotId: id, idempotencyKey: z.string().min(1).optional() }),
+    d.analysisJobSchema,
+    true,
+  ),
   analysisJob: contract(z.object({ jobId: id }), d.analysisJobSchema),
   models: contract(project, z.array(d.modelSchema)),
-  model: contract(z.object({ modelId: id }), d.modelSchema),
+  model: contract(z.object({ modelId: id, projectId: id.optional() }), d.modelSchema),
   saveModel: contract(
     z.object({
       modelId: id,

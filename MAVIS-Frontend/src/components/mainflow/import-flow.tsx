@@ -5,18 +5,14 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  api,
-  githubImportRequest,
-  contextHref,
-  publishedModel,
-  terminalJob,
-  validateJobScope,
-  type Job,
-  type Project,
-} from "@/lib/mainflow-api";
+import { contextHref } from "@/lib/mainflow-api";
+import { useApi } from "@/hooks/use-api";
+import { ApiError } from "@/lib/errors/api-error";
 import { ErrorNotice, panel } from "./shell";
 export function ImportFlow() {
+  const adapter = useApi();
+  const terminalJob = (job: { status: string }) =>
+    ["completed", "failed", "cancelled", "timed-out", "partial"].includes(job.status);
   const params = useSearchParams();
   const router = useRouter();
   const cache = useQueryClient();
@@ -40,62 +36,66 @@ export function ImportFlow() {
     }
   }, [snapshot]);
   const create = useMutation({
-    mutationFn: () =>
-      api<Project>("projects", {
-        method: "POST",
-        body: JSON.stringify({ name, projectType: "PERSONAL" }),
-      }),
+    mutationFn: () => adapter.execute("createProject", { name }),
     onSuccess: (p) => {
-      cache.invalidateQueries({ queryKey: ["projects"] });
+      setName("");
+      cache.invalidateQueries({ queryKey: ["api", "projects"] });
       router.push(contextHref("/import", p.id));
     },
   });
   const upload = useMutation({
     mutationFn: async () => {
       if (!file || !project) throw new Error("Choose project and ZIP first");
-      const body = new FormData();
-      body.append("file", file);
-      return api<{ snapshotId: string; jobId?: string }>(`analyzer/upload?projectId=${project}`, {
-        method: "POST",
-        body,
+      return adapter.execute("importSource", {
+        projectId: project,
+        name: file.name,
+        fileName: file.name,
+        size: file.size,
+        archive: file,
       });
     },
     onSuccess: (s) => {
-      router.push(contextHref("/import", project, "", { snapshot: s.snapshotId }));
+      router.push(contextHref("/import", project, "", { snapshot: s.id }));
       setFile(null);
     },
   });
   const github = useMutation({
     mutationFn: () =>
-      api<{ snapshotId: string }>("analyzer/import/github", {
-        method: "POST",
-        body: JSON.stringify(githubImportRequest(project, repository, branch, commit)),
+      adapter.execute("importGithub", {
+        projectId: project,
+        repositoryUrl: repository,
+        branchName: branch,
+        commitSha: commit,
       }),
-    onSuccess: (s) => router.push(contextHref("/import", project, "", { snapshot: s.snapshotId })),
+    onSuccess: (s) => router.push(contextHref("/import", project, "", { snapshot: s.id })),
   });
   const analyze = useMutation({
     mutationFn: () =>
-      api<{ jobId: string }>(`analyzer/snapshots/${snapshot}/analyze`, {
-        method: "POST",
-        headers: { "Idempotency-Key": key },
+      adapter.execute("startAnalysis", {
+        projectId: project,
+        snapshotId: snapshot,
+        idempotencyKey: key,
       }),
-    onSuccess: (j) => router.push(contextHref("/import", project, "", { snapshot, job: j.jobId })),
+    onSuccess: (j) => router.push(contextHref("/import", project, "", { snapshot, job: j.id })),
   });
   const job = useQuery({
-    queryKey: ["job", project, snapshot, jobId],
-    queryFn: ({ signal }) =>
-      api<Job>(`analyzer/jobs/${jobId}`, { signal }).then((j) =>
-        validateJobScope(j, project, snapshot),
-      ),
+    queryKey: ["api", "analysisJob", { jobId, project, snapshot }],
+    queryFn: async ({ signal }) => {
+      const j = await adapter.execute("analysisJob", { jobId }, signal);
+      if (j.projectId !== project || (snapshot && j.snapshotId !== snapshot))
+        throw new ApiError("contract", 502);
+      return j;
+    },
     enabled: !!jobId,
     refetchInterval: (query) =>
       query.state.error || (query.state.data && terminalJob(query.state.data)) ? false : 1500,
   });
   const cancel = useMutation({
-    mutationFn: () => api(`analyzer/jobs/${jobId}/cancel`, { method: "POST" }),
-    onSuccess: () => cache.invalidateQueries({ queryKey: ["job", project, snapshot, jobId] }),
+    mutationFn: () => adapter.execute("cancelAnalysis", { jobId }),
+    onSuccess: () =>
+      cache.invalidateQueries({ queryKey: ["api", "analysisJob", { jobId, project, snapshot }] }),
   });
-  const coverage = job.data?.resultManifest?.["dotnetCoverage"] as { mode?: string } | undefined;
+
   function newAnalysis() {
     const next = crypto.randomUUID();
     sessionStorage.setItem(`analysis:${snapshot}`, next);
@@ -103,9 +103,13 @@ export function ImportFlow() {
     analyze.reset();
     router.push(contextHref("/import", project, "", { snapshot }));
   }
-  const model = job.data && publishedModel(job.data);
+  const model = job.data?.modelId;
   useEffect(() => {
-    if (model) cache.invalidateQueries({ queryKey: ["models", project] });
+    if (model)
+      cache.invalidateQueries({
+        predicate: (q) =>
+          q.queryKey[0] === "api" && ["modelVersions", "model"].includes(String(q.queryKey[1])),
+      });
   }, [model, project, cache]);
   async function submitUpload() {
     if (inFlight.current) return;
@@ -262,16 +266,8 @@ export function ImportFlow() {
             <p className="break-all text-xs">Job: {jobId}</p>
             <p className="text-lg font-semibold">{job.data?.status ?? "Loading…"}</p>
             {job.data?.analysisState && <p>Analysis: {job.data.analysisState}</p>}
-            {job.data?.dotnetStatus && <p>C# Worker: {job.data.dotnetStatus}</p>}
-            {coverage?.mode && (
-              <p className="text-sm text-muted-foreground">
-                C# coverage: {coverage.mode}. Review inferred mappings and warnings before using
-                this model.
-              </p>
-            )}
-            {job.data?.errorDiagnostics && (
-              <p className="whitespace-pre-wrap text-sm">{job.data.errorDiagnostics}</p>
-            )}
+            {job.data?.workerStatus && <p>C# Worker: {job.data.workerStatus}</p>}
+            {job.data?.message && <p className="whitespace-pre-wrap text-sm">{job.data.message}</p>}
             <ErrorNotice error={job.error || cancel.error} />
             {job.error && (
               <Button variant="outline" onClick={() => job.refetch()}>

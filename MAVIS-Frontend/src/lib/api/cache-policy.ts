@@ -1,7 +1,13 @@
 import type { Operation } from "./contracts";
 
 export const mutationInvalidations: Partial<Record<Operation, readonly Operation[]>> = {
+  runtimeStop: ["runtimeReadSessions", "runtimeReadSession"],
+  runtimeApprove: ["runtimeReadSessions", "runtimeReadSession"],
   importSource: ["snapshots"],
+  importGithub: ["snapshots"],
+  createProject: ["projects"],
+  cancelAnalysis: ["analysisJobs", "analysisJob"],
+  evaluateModel: ["evaluations"],
   startAnalysis: [
     "analysisJobs",
     "analysisJob",
@@ -10,7 +16,7 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
     "project",
     "platformSummary",
   ],
-  saveModel: ["models", "model"],
+  saveModel: ["models", "modelVersions", "model", "compareModels"],
   saveRuntimeConfiguration: ["runtimeConfiguration"],
   saveScenario: ["scenarios"],
   startRuntime: ["runtimeSessions", "platformSummary"],
@@ -35,7 +41,9 @@ export function terminalSignature(operation: Operation, data: unknown): string {
         typeof value !== "object" ||
         !("id" in value) ||
         !("status" in value) ||
-        !["completed", "failed", "cancelled", "terminated"].includes(String(value.status))
+        !["completed", "failed", "cancelled", "terminated", "timed-out", "partial"].includes(
+          String(value.status),
+        )
       )
         return [];
       return [`${String(value.id)}:${String(value.status)}`];

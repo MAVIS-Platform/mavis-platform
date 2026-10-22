@@ -1,11 +1,18 @@
 "use client";
+import { useApi, useApiQuery } from "@/hooks/use-api";
+import { RequestState } from "@/components/shared/request-state";
 import { useId, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DetailPanel } from "@/components/shared/data";
 import { EmptyState } from "@/components/shared/request-state";
 import { FilterControls, Pagination, SearchInput, SelectField } from "@/components/shared/forms";
-import type { ArchitecturalModel, ArchitectureElement, Evidence } from "@/types/domain";
+import type {
+  ArchitecturalModel,
+  ArchitectureElement,
+  Evidence,
+  ModelSummary,
+} from "@/types/domain";
 import { layoutGraph, NODE_WIDTH, NODE_HEIGHT } from "./graph-layout";
 
 export function ModelVersionSelector({
@@ -13,7 +20,7 @@ export function ModelVersionSelector({
   value,
   onChange,
 }: {
-  models: readonly ArchitecturalModel[];
+  models: readonly ModelSummary[];
   value: string;
   onChange: (id: string) => void;
 }) {
@@ -58,7 +65,7 @@ export function GraphToolbar({
           label="Layer"
           value={layer}
           onChange={onLayer}
-          options={["all", "edge", "domain", "platform", "data"].map((value) => ({
+          options={["all", "edge", "domain", "platform", "data", "unclassified"].map((value) => ({
             value,
             label: value,
           }))}
@@ -94,7 +101,7 @@ export function EvidenceViewer({ evidence }: { evidence: readonly Evidence[] }) 
               {entry.kind === "source" ? "Source-inferred" : "Runtime-observed"}
             </Badge>
             <span className="break-all font-mono text-xs">{entry.location}</span>
-            {!entry.complete && <Badge variant="warning">Incomplete evidence</Badge>}
+            {entry.complete === false && <Badge variant="warning">Incomplete evidence</Badge>}
           </div>
           <pre className="overflow-auto p-3 text-xs">
             <code>{entry.snippet}</code>
@@ -113,13 +120,29 @@ export function ElementDetailsPanel({
 }) {
   const element = model.elements.find((e) => e.id === selectedId);
   const edge = model.edges.find((e) => e.id === selectedId);
+  const api = useApi();
+  const evidence = useApiQuery(
+    element ? "elementEvidence" : "relationshipEvidence",
+    element
+      ? { modelId: model.id, elementId: element.id }
+      : { modelId: model.id, relationshipId: edge?.id ?? "" },
+    { enabled: api.mode === "backend" && !!(element || edge) },
+  );
+  const resolved =
+    api.mode === "backend" ? (
+      <RequestState query={evidence}>
+        <EvidenceViewer evidence={evidence.data ?? []} />
+      </RequestState>
+    ) : (
+      <EvidenceViewer evidence={element?.evidence ?? edge?.evidence ?? []} />
+    );
   return (
     <DetailPanel title="Element details">
       {element ? (
         <>
           <h3 className="font-mono text-sm font-semibold">{element.name}</h3>
           <p className="text-sm text-muted-foreground">{element.description}</p>
-          <EvidenceViewer evidence={element.evidence} />
+          {resolved}
         </>
       ) : edge ? (
         <>
@@ -127,7 +150,7 @@ export function ElementDetailsPanel({
             {edge.from} → {edge.to} · {edge.protocol}
           </h3>
           {edge.uncertain && <Badge variant="warning">Uncertain mapping</Badge>}
-          <EvidenceViewer evidence={edge.evidence} />
+          {resolved}
         </>
       ) : (
         <p className="text-sm text-muted-foreground">Select a service or relationship.</p>
@@ -161,6 +184,7 @@ export function ArchitectureGraph({
   const connections = model.edges.filter((e) => visible.has(e.from) && visible.has(e.to));
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const large = filtered.length > 300 || connections.length > 1000;
+  const width = nodes.reduce((max, node) => Math.max(max, node.x + NODE_WIDTH + 40), 1040);
   const height = nodes.reduce((max, node) => Math.max(max, node.y + 100), 500);
   function selectNode(node: ArchitectureElement) {
     onSelect(node.id);
@@ -191,9 +215,9 @@ export function ArchitectureGraph({
           {!large && (
             <div className="h-[620px] overflow-auto bg-[radial-gradient(circle_at_1px_1px,var(--border)_1px,transparent_0)] [background-size:22px_22px]">
               <svg
-                width={1040 * zoom}
+                width={width * zoom}
                 height={height * zoom}
-                viewBox={`0 0 1040 ${height}`}
+                viewBox={`0 0 ${width} ${height}`}
                 role="img"
                 aria-label="Architecture diagram; use the service and relationship controls below to inspect evidence"
               >
