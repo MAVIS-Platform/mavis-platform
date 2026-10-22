@@ -40,4 +40,13 @@ public interface SubmissionService {
      * @return SubmissionResponseDTO
      */
     SubmissionResponseDTO getSubmissionById(UUID submissionId);
+
+    /**
+     * Xuất gói bài nộp bất biến (SubmissionExportBundleDTO) bao gồm phiên bản ghim, Mermaid DSL,
+     * điểm tuân thủ, kết quả runtime, danh sách phản hồi và báo cáo tổng hợp Markdown (Ticket V11, T15).
+     *
+     * @param submissionId ID của bài nộp bất biến
+     * @return SubmissionExportBundleDTO
+     */
+    com.mavis.platform.submission.dto.SubmissionExportBundleDTO exportSubmissionBundle(UUID submissionId);
 }

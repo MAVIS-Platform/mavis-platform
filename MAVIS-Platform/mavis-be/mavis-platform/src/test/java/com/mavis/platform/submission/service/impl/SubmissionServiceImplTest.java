@@ -468,4 +468,92 @@ class SubmissionServiceImplTest {
 
         verify(submissionSnapshotRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("Ticket V11/T15: exportSubmissionBundle thành công trả về đầy đủ gói bài nộp bất biến")
+    void testExportSubmissionBundle_Success() {
+        UUID subId = UUID.randomUUID();
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode layout = mapper.createObjectNode();
+        layout.putArray("nodes").addObject().put("id", UUID.randomUUID().toString()).put("name", "order-service").put("kind", "SERVICE_CONTAINER");
+        diagramVersion.setLayoutJson(layout);
+
+        ObjectNode metrics = mapper.createObjectNode().put("complianceScore", 95.5);
+        EvaluationRun evalRun = EvaluationRun.builder()
+                .id(UUID.randomUUID())
+                .modelVersion(modelVersion)
+                .summaryMetrics(metrics)
+                .build();
+
+        SubmissionSnapshot subSnapshot = SubmissionSnapshot.builder()
+                .id(subId)
+                .assignment(assignment)
+                .project(project)
+                .submittedBy(student)
+                .sourceSnapshot(this.snapshot)
+                .modelVersion(modelVersion)
+                .diagramVersion(diagramVersion)
+                .evaluationRun(evalRun)
+                .runtimeSession(runtimeSession)
+                .submissionNotes("Bài tập hoàn chỉnh")
+                .submittedAt(OffsetDateTime.now())
+                .build();
+
+        FeedbackComment feedback = FeedbackComment.builder()
+                .id(UUID.randomUUID())
+                .submission(subSnapshot)
+                .lecturer(student)
+                .commentText("Thiết kế rất tốt")
+                .createdAt(OffsetDateTime.now())
+                .build();
+
+        when(submissionSnapshotRepository.findWithDetailsById(subId)).thenReturn(Optional.of(subSnapshot));
+        when(feedbackCommentRepository.findBySubmissionIdOrderByCreatedAtAsc(subId)).thenReturn(List.of(feedback));
+
+        com.mavis.platform.submission.dto.SubmissionExportBundleDTO bundle = submissionService.exportSubmissionBundle(subId);
+
+        assertThat(bundle).isNotNull();
+        assertThat(bundle.getSubmissionId()).isEqualTo(subId);
+        assertThat(bundle.getProjectName()).isEqualTo(project.getName());
+        assertThat(bundle.getAssignmentTitle()).isEqualTo(assignment.getTitle());
+        assertThat(bundle.getComplianceScore()).isEqualTo(95.5);
+        assertThat(bundle.getMermaidDsl()).contains("order-service");
+        assertThat(bundle.getLecturerFeedbacks()).hasSize(1);
+        assertThat(bundle.getMarkdownSummaryReport()).contains("BÁO CÁO TỔNG HỢP GÓI BÀI NỘP BẤT BIẾN");
+        assertThat(bundle.getMarkdownSummaryReport()).contains("95.5");
+    }
+
+    @Test
+    @DisplayName("Ticket V11/T15: exportSubmissionBundle ném NOT_FOUND khi submissionId không tồn tại")
+    void testExportSubmissionBundle_NotFound() {
+        UUID nonExistent = UUID.randomUUID();
+        when(submissionSnapshotRepository.findWithDetailsById(nonExistent)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> submissionService.exportSubmissionBundle(nonExistent))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Không tìm thấy bài nộp với ID");
+    }
+
+    @Test
+    @DisplayName("Ticket V11/T15: exportSubmissionBundle ném FORBIDDEN khi người dùng lạ không có quyền đọc")
+    void testExportSubmissionBundle_Forbidden() {
+        UUID subId = UUID.randomUUID();
+        UUID otherUserId = UUID.randomUUID();
+        User otherOwner = User.builder().id(otherUserId).build();
+        Project otherProject = Project.builder().id(UUID.randomUUID()).owner(otherOwner).build();
+
+        SubmissionSnapshot subSnapshot = SubmissionSnapshot.builder()
+                .id(subId)
+                .assignment(assignment)
+                .project(otherProject)
+                .submittedBy(otherOwner)
+                .build();
+
+        when(submissionSnapshotRepository.findWithDetailsById(subId)).thenReturn(Optional.of(subSnapshot));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student)); // student has no lecturer/admin role
+
+        assertThatThrownBy(() -> submissionService.exportSubmissionBundle(subId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Bạn không có quyền truy cập gói bài nộp này");
+    }
 }
