@@ -197,6 +197,7 @@ public class DiagramExportServiceImpl implements DiagramExportService {
     }
 
     private String generatePlantUml(DiagramVersion diagram) {
+        if ("C4".equalsIgnoreCase(diagram.getNotation())) return generateC4PlantUml(diagram);
         StringBuilder sb = new StringBuilder();
         sb.append("@startuml\n");
         sb.append("skinparam componentStyle uml2\n");
@@ -265,6 +266,59 @@ public class DiagramExportServiceImpl implements DiagramExportService {
         return sb.toString();
     }
 
+    private String generateC4PlantUml(DiagramVersion diagram) {
+        StringBuilder sb = new StringBuilder("@startuml\nleft to right direction\nskinparam shadowing false\nskinparam roundcorner 8\nskinparam rectangle {\n BackgroundColor #1168BD\n FontColor white\n BorderColor #0B4884\n}\n");
+        Map<String, JsonNode> nodes = new LinkedHashMap<>();
+        Map<String, List<JsonNode>> groups = new LinkedHashMap<>();
+        JsonNode layout = diagram.getLayoutJson();
+        if (layout != null) layout.path("nodes").forEach(node -> nodes.put(node.path("id").asText(), node));
+        boolean componentView = "COMPONENT".equalsIgnoreCase(diagram.getLevel());
+        if (componentView) {
+            for (JsonNode node : nodes.values()) {
+                String parent = node.path("parentId").asText("");
+                if (nodes.containsKey(parent)) groups.computeIfAbsent(parent, key -> new ArrayList<>()).add(node);
+            }
+        }
+        for (JsonNode node : nodes.values()) {
+            if (componentView && nodes.containsKey(node.path("parentId").asText(""))) continue;
+            appendC4PlantNode(sb, node);
+        }
+        for (Map.Entry<String, List<JsonNode>> group : groups.entrySet()) {
+            sb.append("package \"").append(escapePlantUml(nodes.get(group.getKey()).path("name").asText()))
+                    .append(" components\" as b_").append(MermaidDslGenerator.toSafeAlias(group.getKey())).append(" {\n");
+            for (JsonNode node : group.getValue()) appendC4PlantNode(sb, node);
+            sb.append("}\n");
+        }
+        if (layout != null) for (JsonNode edge : layout.path("edges")) {
+            String from = edge.path("from").asText(edge.path("source").asText(""));
+            String to = edge.path("to").asText(edge.path("target").asText(""));
+            if (!nodes.containsKey(from) || !nodes.containsKey(to)) continue;
+            sb.append(MermaidDslGenerator.toSafeAlias(from)).append(" --> ")
+                    .append(MermaidDslGenerator.toSafeAlias(to)).append(" : ")
+                    .append(escapePlantUml(edge.path("relationType").asText(edge.path("type").asText("Uses")))).append("\n");
+        }
+        return sb.append("@enduml\n").toString();
+    }
+
+    private void appendC4PlantNode(StringBuilder sb, JsonNode node) {
+        String kind = node.path("kind").asText(node.path("type").asText(""));
+        String stereotype = switch (kind.toUpperCase(Locale.ROOT)) {
+            case "SERVICE_CONTAINER", "DATABASE", "QUEUE_BROKER" -> "Container";
+            case "EXTERNAL_SYSTEM" -> "Software System";
+            default -> "Component";
+        };
+        String shape = switch (kind.toUpperCase(Locale.ROOT)) {
+            case "DATABASE" -> "database";
+            case "QUEUE_BROKER" -> "queue";
+            default -> "rectangle";
+        };
+        sb.append(shape).append(" \"").append(escapePlantUml(node.path("name").asText("Element")))
+                .append("\\n[").append(stereotype);
+        String technology = node.path("languageStack").asText("");
+        if (!technology.isBlank()) sb.append(": ").append(escapePlantUml(technology));
+        sb.append("]\" as ").append(MermaidDslGenerator.toSafeAlias(node.path("id").asText()))
+                .append(" <<").append(stereotype).append(">>\n");
+    }
     private String generateDrawioXml(DiagramVersion diagram) {
         StringBuilder sb = new StringBuilder();
         sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");

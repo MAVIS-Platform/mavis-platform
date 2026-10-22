@@ -483,3 +483,65 @@ test("analysis routes share the authenticated guard in backend mode and mock mod
     }
   }
 });
+
+test("unclassified architecture forms a deterministic 2D network without overlapping nodes", () => {
+  const {
+    layoutGraph,
+    graphEdgePath,
+    NODE_WIDTH,
+    NODE_HEIGHT,
+  } = require("../src/features/architecture/graph-layout.ts");
+  const elements = Array.from({ length: 24 }, (_, i) => ({
+    id: `node-${i}`,
+    name: `Service ${i}`,
+    layer: "unclassified",
+    description: "",
+    evidence: [],
+  }));
+  const edges = elements
+    .slice(1)
+    .map((node, i) => ({
+      id: `edge-${i}`,
+      from: elements[Math.floor(i / 3)].id,
+      to: node.id,
+      protocol: "HTTP",
+      uncertain: false,
+      evidence: [],
+    }));
+  const model = { elements, edges };
+  const original = JSON.stringify(model);
+  const nodes = layoutGraph(model);
+  assert.equal(JSON.stringify(model), original, "layout must not alter analyzed data");
+  assert.deepEqual(nodes, layoutGraph(model));
+  assert.deepEqual(nodes, layoutGraph({ ...model, elements: [...elements].reverse() }));
+  assert.ok(
+    new Set(nodes.map((node) => Math.round(node.x))).size > 3,
+    "unclassified nodes must not form one column",
+  );
+  const width = Math.max(...nodes.map((node) => node.x)) + NODE_WIDTH;
+  const height = Math.max(...nodes.map((node) => node.y)) + NODE_HEIGHT;
+  assert.ok(
+    width / height > 0.5 && width / height < 3,
+    "network should fit a useful 2D aspect ratio",
+  );
+  for (let i = 0; i < nodes.length; i++)
+    for (let j = i + 1; j < nodes.length; j++) {
+      assert.ok(
+        Math.abs(nodes[i].x - nodes[j].x) >= NODE_WIDTH ||
+          Math.abs(nodes[i].y - nodes[j].y) >= NODE_HEIGHT,
+        "node rectangles overlap",
+      );
+    }
+  assert.deepEqual(layoutGraph({ elements: [], edges: [] }), []);
+  assert.equal(layoutGraph({ elements: elements.slice(0, 1), edges: [] }).length, 1);
+  for (const [from, to, self] of [
+    [nodes[0], nodes[1], false],
+    [nodes[0], nodes[0], true],
+  ]) {
+    const path = graphEdgePath(from, to, self);
+    assert.ok(!/NaN|Infinity/.test(path));
+    assert.match(path, /^M /);
+  }
+  const disconnected = layoutGraph({ elements, edges: [] });
+  assert.ok(disconnected.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)));
+});
