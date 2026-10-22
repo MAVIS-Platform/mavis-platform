@@ -22,12 +22,16 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class FeedbackCommentServiceImplTest {
 
     @Mock
@@ -44,6 +48,9 @@ class FeedbackCommentServiceImplTest {
 
     @Mock
     private ModelRelationshipRepository modelRelationshipRepository;
+
+    @Mock
+    private com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     @InjectMocks
     private FeedbackCommentServiceImpl feedbackCommentService;
@@ -103,6 +110,8 @@ class FeedbackCommentServiceImplTest {
                 .id(submissionId)
                 .modelVersion(modelVersion)
                 .build();
+
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(lecturer);
     }
 
     @AfterEach
@@ -181,7 +190,29 @@ class FeedbackCommentServiceImplTest {
 
         assertThatThrownBy(() -> feedbackCommentService.addFeedback(submissionId, request))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Phần tử kiến trúc không thuộc phiên bản mô hình");
+                .hasMessageContaining("Phần tử nhận xét không thuộc về phiên bản mô hình đã nộp");
+
+        verify(feedbackCommentRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Chặn ghim nhận xét khi Relationship không thuộc ModelVersion của bài nộp")
+    void testAddFeedback_RelationshipMismatch_ThrowsBadRequest() {
+        ModelVersion anotherMv = ModelVersion.builder().id(UUID.randomUUID()).build();
+        relationship.setModelVersion(anotherMv);
+
+        FeedbackCreateRequest request = FeedbackCreateRequest.builder()
+                .relationshipId(relationshipId)
+                .commentText("Test relationship mismatch")
+                .build();
+
+        when(userRepository.findById(lecturerId)).thenReturn(Optional.of(lecturer));
+        when(submissionSnapshotRepository.findById(submissionId)).thenReturn(Optional.of(submission));
+        when(modelRelationshipRepository.findById(relationshipId)).thenReturn(Optional.of(relationship));
+
+        assertThatThrownBy(() -> feedbackCommentService.addFeedback(submissionId, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Quan hệ nhận xét không thuộc về phiên bản mô hình đã nộp");
 
         verify(feedbackCommentRepository, never()).save(any());
     }

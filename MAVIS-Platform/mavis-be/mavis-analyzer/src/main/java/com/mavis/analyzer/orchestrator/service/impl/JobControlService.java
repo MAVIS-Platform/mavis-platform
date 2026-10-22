@@ -45,6 +45,60 @@ public class JobControlService {
             executions.interrupt(id);
         }
     }
+
+    /**
+     * Renew attempt lease for a running job if valid and alive.
+     * Capped at maximum 1 renewal of at most 60 seconds.
+     */
+    @Transactional
+    public boolean renewAttemptLease(UUID jobId, UUID attemptId, Duration extension) {
+        var jobOpt = jobs.findLockedById(jobId);
+        if (jobOpt.isEmpty()) {
+            return false;
+        }
+        Job job = jobOpt.get();
+        if (!"RUNNING".equals(job.getStatus())) {
+            return false;
+        }
+        var attemptOpt = attempts.findById(attemptId);
+        if (attemptOpt.isEmpty()) {
+            return false;
+        }
+        AnalysisAttempt attempt = attemptOpt.get();
+        if (attempt.getJob() == null || !jobId.equals(attempt.getJob().getId())) {
+            return false;
+        }
+        if (!"RUNNING".equals(attempt.getStatus())) {
+            return false;
+        }
+
+        ObjectNode manifest = job.getResultManifest() != null && job.getResultManifest().isObject()
+                ? (ObjectNode) job.getResultManifest().deepCopy()
+                : json.createObjectNode();
+
+        int leaseRenewalCount = manifest.path("leaseRenewalCount").asInt(0);
+        if (leaseRenewalCount >= 1) {
+            return false;
+        }
+
+        long secondsToAdd = extension != null ? extension.toSeconds() : 60L;
+        if (secondsToAdd <= 0) {
+            return false;
+        }
+        secondsToAdd = Math.min(secondsToAdd, 60L);
+
+        OffsetDateTime currentDeadline = attempt.getDeadlineUtc() != null ? attempt.getDeadlineUtc() : OffsetDateTime.now();
+        attempt.setDeadlineUtc(currentDeadline.plusSeconds(secondsToAdd));
+        attempts.save(attempt);
+
+        manifest.put("leaseRenewalCount", leaseRenewalCount + 1);
+        manifest.put("leaseRenewedAtUtc", Instant.now().toString());
+        job.setResultManifest(manifest);
+        jobs.save(job);
+
+        return true;
+    }
+
     private Optional<AnalysisAttempt> attempt(Job job){try{return attempts.findById(UUID.fromString(job.getResultManifest().path("attemptId").asText()));}catch(IllegalArgumentException|NullPointerException e){return Optional.empty();}}
     private void owner(Job job){if(!job.getProject().getOwner().getId().equals(SecurityUtils.getCurrentUserId()))throw new BusinessException(ErrorCode.FORBIDDEN,"Job access denied");}
     private static BusinessException missing(){return new BusinessException(ErrorCode.NOT_FOUND,"Job not found");}

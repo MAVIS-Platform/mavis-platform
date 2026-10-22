@@ -32,6 +32,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final RuntimeSessionRepository runtimeSessionRepository;
     private final SourceSnapshotRepository sourceSnapshotRepository;
     private final FeedbackCommentRepository feedbackCommentRepository;
+    private final JobRepository jobRepository;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -51,9 +52,17 @@ public class SubmissionServiceImpl implements SubmissionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Đã quá hạn nộp bài cho đề bài này");
         }
 
-        // 2. Kiểm tra dự án
+        // 2. Kiểm tra dự án và quyền sở hữu
         Project project = projectRepository.findById(request.getProjectId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + request.getProjectId()));
+
+        if (project.getOwner() == null || !project.getOwner().getId().equals(currentUserId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Chỉ chủ sở hữu của dự án mới có quyền nộp bài");
+        }
+
+        if (assignment.getWorkspace() != null && (project.getWorkspace() == null || !project.getWorkspace().getId().equals(assignment.getWorkspace().getId()))) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Dự án không thuộc về không gian làm việc của đề bài");
+        }
 
         // 3. Kiểm tra ModelVersion thuộc đúng project
         ModelVersion modelVersion = modelVersionRepository.findById(request.getModelVersionId())
@@ -62,19 +71,31 @@ public class SubmissionServiceImpl implements SubmissionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Phiên bản mô hình không thuộc về dự án đã chọn");
         }
 
-        // 4. Kiểm tra DiagramVersion thuộc đúng modelVersion
+        // 4. Lấy SourceSnapshot bất biến trực tiếp từ ModelVersion (KHÔNG fallback)
+        SourceSnapshot sourceSnapshot = modelVersion.getSourceSnapshot();
+        if (sourceSnapshot == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "ModelVersion không gắn với SourceSnapshot bất biến hợp lệ");
+        }
+
+        // 5. Kiểm tra tính toàn vẹn của ModelVersion (không cho phép nộp bản nháp PARTIAL chưa được xác nhận)
+        if (!"USER_CONFIRMED".equalsIgnoreCase(modelVersion.getOrigin())) {
+            boolean isPartialDraft = jobRepository.findBySourceSnapshotId(sourceSnapshot.getId()).stream()
+                    .anyMatch(j -> j.getResultManifest() != null
+                            && modelVersion.getId().toString().equals(j.getResultManifest().path("modelVersionId").asText())
+                            && "PARTIAL".equalsIgnoreCase(j.getResultManifest().path("completeness").asText()));
+            if (isPartialDraft) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Không thể nộp phiên bản mô hình chưa hoàn thiện (PARTIAL) trừ khi đã được xác nhận");
+            }
+        }
+
+        // 6. Kiểm tra DiagramVersion thuộc đúng modelVersion
         DiagramVersion diagramVersion = diagramVersionRepository.findById(request.getDiagramVersionId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bản vẽ kiến trúc với ID: " + request.getDiagramVersionId()));
         if (!diagramVersion.getModelVersion().getId().equals(modelVersion.getId())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Bản vẽ sơ đồ không thuộc về phiên bản mô hình đã chọn");
         }
 
-        // 5. Kiểm tra điều kiện bắt buộc Runtime Trace (BR-41..BR-45, BR-61..BR-64)
-        if (Boolean.TRUE.equals(assignment.getRequireRuntimeTrace()) && request.getRuntimeSessionId() == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Đề bài này bắt buộc đính kèm phiên chạy thực nghiệm Runtime Trace");
-        }
-
-        // 6. Kiểm tra EvaluationRun (nếu có đính kèm)
+        // 7. Kiểm tra EvaluationRun (nếu có đính kèm)
         EvaluationRun evaluationRun = null;
         if (request.getEvaluationRunId() != null) {
             evaluationRun = evaluationRunRepository.findById(request.getEvaluationRunId())
@@ -84,7 +105,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
         }
 
-        // 7. Kiểm tra RuntimeSession (nếu có đính kèm)
+        // 8. Kiểm tra RuntimeSession (nếu có đính kèm)
         RuntimeSession runtimeSession = null;
         if (request.getRuntimeSessionId() != null) {
             runtimeSession = runtimeSessionRepository.findById(request.getRuntimeSessionId())
@@ -92,16 +113,24 @@ public class SubmissionServiceImpl implements SubmissionService {
             if (!runtimeSession.getProject().getId().equals(project.getId())) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Phiên thực nghiệm không thuộc về dự án đã chọn");
             }
+            if (runtimeSession.getSourceSnapshot() == null || !runtimeSession.getSourceSnapshot().getId().equals(sourceSnapshot.getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Phiên thực nghiệm không chạy trên cùng SourceSnapshot với ModelVersion");
+            }
+            if (modelVersion.getRuntimeSession() != null && !modelVersion.getRuntimeSession().getId().equals(runtimeSession.getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Phiên thực nghiệm không khớp với phiên thực nghiệm gắn trên ModelVersion");
+            }
         }
 
-        // 8. Xác định SourceSnapshot bất biến
-        SourceSnapshot sourceSnapshot = modelVersion.getSourceSnapshot();
-        if (sourceSnapshot == null && runtimeSession != null) {
-            sourceSnapshot = runtimeSession.getSourceSnapshot();
-        }
-        if (sourceSnapshot == null) {
-            sourceSnapshot = sourceSnapshotRepository.findFirstByProjectIdOrderByCreatedAtDesc(project.getId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "Không tìm thấy bản chụp mã nguồn (SourceSnapshot) hợp lệ của dự án"));
+        // 9. Kiểm tra điều kiện bắt buộc Runtime Trace (BR-41..BR-45, BR-61..BR-64)
+        if (Boolean.TRUE.equals(assignment.getRequireRuntimeTrace())) {
+            if (runtimeSession == null) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Đề bài này bắt buộc đính kèm phiên chạy thực nghiệm Runtime Trace");
+            }
+            boolean scenarioPassed = "PASSED".equalsIgnoreCase(runtimeSession.getScenarioStatus());
+            boolean traceValid = "COMPLETE".equalsIgnoreCase(runtimeSession.getTraceStatus()) || "PARTIAL".equalsIgnoreCase(runtimeSession.getTraceStatus());
+            if (!scenarioPassed || !traceValid) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Đề bài yêu cầu Runtime Trace hợp lệ đã hoàn tất (PASSED) trên đúng SourceSnapshot của mô hình");
+            }
         }
 
         // 9. Lưu bản ghi nộp bài bất biến vào submission_snapshots

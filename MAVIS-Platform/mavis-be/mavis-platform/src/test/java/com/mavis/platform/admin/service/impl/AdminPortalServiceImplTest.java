@@ -61,6 +61,9 @@ class AdminPortalServiceImplTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private com.mavis.common.security.AccessPolicyService accessPolicyService;
+
     @InjectMocks
     private AdminPortalServiceImpl adminPortalService;
 
