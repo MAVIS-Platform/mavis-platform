@@ -16,18 +16,24 @@ export function ProjectOverview() {
           <ProjectStatusBadge status={query.data.status} />
           <p className="font-mono text-xs text-muted-foreground">{query.data.repository}</p>
           <div className="grid gap-4 sm:grid-cols-2">
-            <SummaryCard label="Services" value={query.data.services} />
+            <SummaryCard label="Services" value={query.data.services ?? "Unknown"} />
             <SummaryCard
               label="Runtime"
-              value={query.data.runtimeSupported ? "Supported" : "Unavailable"}
+              value={
+                query.data.runtimeSupported === null
+                  ? "Not checked"
+                  : query.data.runtimeSupported
+                    ? "Supported"
+                    : "Unavailable"
+              }
             />
           </div>
           <div className="flex flex-wrap gap-3">
             <Button asChild>
-              <Link href="/import">Import source</Link>
+              <Link href={`/import?project=${projectId}`}>Import source</Link>
             </Button>
             <Button asChild variant="outline">
-              <Link href="/architecture">Inspect model versions</Link>
+              <Link href={`/architecture?project=${projectId}`}>Inspect model versions</Link>
             </Button>
           </div>
         </DetailPanel>
@@ -47,11 +53,28 @@ export function SourceSnapshots() {
         columns={[
           { key: "name", label: "Source", render: (s) => s.name },
           { key: "id", label: "Version", render: (s) => s.id },
+          {
+            key: "analyze",
+            label: "Analysis",
+            render: (s) => (
+              <Link
+                className="text-primary underline"
+                href={`/import?project=${projectId}&snapshot=${s.id}`}
+              >
+                Analyze snapshot
+              </Link>
+            ),
+          },
           { key: "validation", label: "Validation", render: (s) => s.validation },
           {
             key: "coverage",
             label: "Evidence",
-            render: (s) => (s.evidenceComplete ? "Complete" : "Incomplete"),
+            render: (s) =>
+              s.evidenceComplete === null
+                ? "Unknown"
+                : s.evidenceComplete
+                  ? "Complete"
+                  : "Incomplete",
           },
         ]}
       />
@@ -71,7 +94,10 @@ export function AnalysisHistory() {
         <DetailPanel key={job.id} title={`Source ${job.snapshotId}`}>
           <AnalysisStatusIndicator job={job} />
           {job.modelId && (
-            <Link className="text-sm text-primary underline" href="/architecture">
+            <Link
+              className="text-sm text-primary underline"
+              href={`/architecture?project=${projectId}&model=${job.modelId}`}
+            >
               Inspect result versions
             </Link>
           )}

@@ -11,12 +11,15 @@ export function AnalysisStatusIndicator({ job }: { job: AnalysisJob }) {
       />
       <progress
         max={100}
-        value={job.progress}
+        value={job.progress ?? undefined}
         aria-label="Analysis progress"
         className="h-2 w-full accent-primary"
       />
+      {job.workerStatus && (
+        <p className="text-xs text-muted-foreground">C# Worker: {job.workerStatus}</p>
+      )}
       <p className="text-sm text-muted-foreground">
-        {job.progress}% · {job.message}
+        {job.progress === null ? "Progress not reported" : `${job.progress}%`} · {job.message}
       </p>
     </div>
   );

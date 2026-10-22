@@ -1,26 +1,48 @@
 "use client";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiMutation } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ErrorState } from "@/components/shared/request-state";
 import type { AppRole } from "@/types/domain";
 export default function LoginPage() {
   const api = useApi();
   const login = useApiMutation("mockLogin");
+  const real = useApiMutation("signIn");
   const client = useQueryClient();
   const router = useRouter();
-  async function signIn(role: AppRole) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const finish = async (session: { user: { role: AppRole } | null }) => {
+    await client.cancelQueries();
+    client.clear();
+    client.setQueryData(["api", "session", {}], session);
+    router.push(
+      api.mode === "backend"
+        ? "/"
+        : session.user?.role === "admin"
+          ? "/administration/users"
+          : session.user?.role === "lecturer"
+            ? "/workspaces"
+            : "/",
+    );
+  };
+  async function sample(role: AppRole) {
     try {
-      const session = await login.mutateAsync({ role });
-      await client.cancelQueries();
-      client.clear();
-      client.setQueryData(["api", "session", {}], session);
-      router.push(
-        role === "admin" ? "/administration/users" : role === "lecturer" ? "/workspaces" : "/",
-      );
+      await finish(await login.mutateAsync({ role }));
     } catch {
-      /* Error is rendered below. */
+      /* Request error is rendered by the form. */
+    }
+  }
+  async function signIn() {
+    try {
+      const session = await real.mutateAsync({ email, password });
+      setPassword("");
+      await finish(session);
+    } catch {
+      /* Request error is rendered by the form. */
     }
   }
   return (
@@ -31,15 +53,9 @@ export default function LoginPage() {
           <p className="text-sm text-muted-foreground">
             Mock mode. Choose a sample account to explore role permissions. Changes reset on reload.
           </p>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex gap-3">
             {(["student", "lecturer", "admin"] as const).map((role) => (
-              <Button
-                key={role}
-                disabled={login.isPending}
-                onClick={() => {
-                  void signIn(role);
-                }}
-              >
+              <Button key={role} disabled={login.isPending} onClick={() => void sample(role)}>
                 {role}
               </Button>
             ))}
@@ -47,11 +63,37 @@ export default function LoginPage() {
           {login.isError && <ErrorState error={login.error} />}
         </>
       ) : (
-        <p role="status" className="text-sm text-muted-foreground">
-          Backend mode requires a server-managed session. The sign-in / identity-provider contract
-          has not been supplied. Configure authentication with the backend team, then reload the
-          protected page. No demo account is available in backend mode.
-        </p>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void signIn();
+          }}
+        >
+          <p className="text-sm text-muted-foreground">Sign in with your verified MAVIS account.</p>
+          <label className="block">
+            Email
+            <Input
+              type="email"
+              autoComplete="username"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+          <label className="block">
+            Password
+            <Input
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          {real.isError && <ErrorState error={real.error} />}
+          <Button disabled={real.isPending}>{real.isPending ? "Signing in…" : "Sign in"}</Button>
+        </form>
       )}
     </main>
   );

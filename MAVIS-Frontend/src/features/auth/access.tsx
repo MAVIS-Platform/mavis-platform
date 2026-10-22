@@ -1,7 +1,7 @@
 "use client";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { useSession } from "@/hooks/use-api";
+import { useApi, useSession } from "@/hooks/use-api";
 import { hasPermission, type Permission } from "@/lib/auth/permissions";
 import { LoadingState, ErrorState } from "@/components/shared/request-state";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ export function RequireSession({
   permission?: Permission;
 }) {
   const session = useSession();
+  const api = useApi();
   if (session.isPending)
     return (
       <div className="mx-auto max-w-lg p-8">
@@ -46,7 +47,11 @@ export function RequireSession({
         </Button>
       </div>
     );
-  if (permission && !hasPermission(session.data.user.role, permission))
+  if (
+    permission &&
+    !hasPermission(session.data.user.role, permission) &&
+    !(api.mode === "backend" && permission.startsWith("project:"))
+  )
     return (
       <div className="mx-auto max-w-lg space-y-4 p-8" role="alert">
         <h1 className="text-xl font-semibold">Access unavailable</h1>

@@ -11,9 +11,9 @@ export const projectSchema = z.object({
   id: z.string(),
   name: z.string(),
   repository: z.string(),
-  status: z.enum(["ready", "processing", "failed"]),
-  services: z.number().int().nonnegative(),
-  runtimeSupported: z.boolean(),
+  status: z.enum(["ready", "processing", "failed", "unknown"]),
+  services: z.number().int().nonnegative().nullable(),
+  runtimeSupported: z.boolean().nullable(),
 });
 export type Project = z.infer<typeof projectSchema>;
 export const snapshotSchema = z.object({
@@ -21,16 +21,27 @@ export const snapshotSchema = z.object({
   projectId: z.string(),
   name: z.string(),
   createdAt: z.string(),
-  validation: z.enum(["valid", "invalid", "unsupported"]),
-  evidenceComplete: z.boolean(),
+  validation: z.enum(["valid", "invalid", "unsupported", "pending", "unknown"]),
+  evidenceComplete: z.boolean().nullable(),
 });
 export type SourceSnapshot = z.infer<typeof snapshotSchema>;
 export const analysisJobSchema = z.object({
   id: z.string(),
   projectId: z.string(),
   snapshotId: z.string(),
-  status: z.enum(["queued", "processing", "completed", "failed"]),
-  progress: z.number().min(0).max(100),
+  status: z.enum([
+    "queued",
+    "processing",
+    "completed",
+    "failed",
+    "cancelling",
+    "cancelled",
+    "timed-out",
+    "partial",
+  ]),
+  progress: z.number().min(0).max(100).nullable(),
+  analysisState: z.string().optional(),
+  workerStatus: z.string().nullable().optional(),
   modelId: z.string().nullable(),
   message: z.string(),
 });
@@ -40,13 +51,15 @@ export const evidenceSchema = z.object({
   kind: z.enum(["source", "runtime"]),
   location: z.string(),
   snippet: z.string(),
-  complete: z.boolean(),
+  complete: z.boolean().nullable(),
 });
 export type Evidence = z.infer<typeof evidenceSchema>;
 export const elementSchema = z.object({
   id: z.string(),
   name: z.string(),
-  layer: z.enum(["edge", "domain", "platform", "data"]),
+  layer: z.enum(["edge", "domain", "platform", "data", "unclassified"]),
+  elementType: z.string().optional(),
+  properties: z.record(z.unknown()).optional(),
   description: z.string(),
   evidence: z.array(evidenceSchema),
 });
@@ -132,6 +145,8 @@ export const explanationSchema = z.object({
   text: z.string(),
   evidenceIds: z.array(z.string()),
   sample: z.boolean(),
+  providerMode: z.string().optional(),
+  epistemicBadge: z.string().optional(),
 });
 export const workspaceSchema = z.object({
   id: z.string(),
@@ -196,4 +211,44 @@ export const auditSchema = z.object({
   action: z.string(),
   actorId: z.string(),
   resourceId: z.string(),
+});
+
+export const modelSummarySchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  snapshotId: z.string(),
+  revision: z.number().int().positive(),
+  label: z.string(),
+  latest: z.boolean().optional(),
+  createdAt: z.string().nullable().optional(),
+});
+export type ModelSummary = z.infer<typeof modelSummarySchema>;
+export const diagramSchema = z.object({
+  id: z.string(),
+  modelId: z.string(),
+  notation: z.string(),
+  level: z.string(),
+});
+export const evaluationSchema = z.object({
+  id: z.string(),
+  modelId: z.string(),
+  result: z.record(z.unknown()),
+});
+
+export const runtimeReadSchema = z.object({
+  id: z.string(),
+  projectId: z.string(),
+  snapshotId: z.string(),
+  modelId: z.string().nullable(),
+  scenarioName: z.string().nullable(),
+  profileName: z.string().nullable(),
+  executionStatus: z.string(),
+  scenarioStatus: z.string(),
+  evidenceStatus: z.string(),
+  cleanupStatus: z.string(),
+  traceQuality: z.string(),
+  mappingStatus: z.string(),
+  createdAt: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  completedAt: z.string().nullable(),
 });
