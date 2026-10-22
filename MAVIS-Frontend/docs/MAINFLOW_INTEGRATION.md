@@ -6,11 +6,14 @@ Requires Node.js 20.9+ and Java API running. From MAVIS-Frontend:
 
 ```powershell
 npm ci
-# Copy .env.example to .env.local and set MAVIS_JAVA_URL when Java uses another port.
+# Copy .env.example to .env.local, set MAVIS_API_MODE=backend,
+# and set MAVIS_JAVA_URL when Java uses another port.
 npm run dev
 ```
 
 Local acceptance uses http://127.0.0.1:3000, Java http://127.0.0.1:8081 and Worker http://localhost:5082. Java and Worker share immutable artifact storage and service/grant configuration. FE needs only the Java URL; it never receives database credentials, Worker keys or Runner keys.
+
+The frontend defaults to mock mode. Set `MAVIS_API_MODE=backend` to use this live mainflow on `/import`, `/architecture`, `/impact` and `/explain`; `/` then redirects to `/import`. These routes use `/api/backend` and the Java session, independently of the provisional `/api/mavis` mappings used by other feature screens. Live navigation retains project/model URL context and leaves features outside this mainflow disabled.
 
 Sign in with an active verified account. Account registration/mail delivery is outside this UI scope. Seed placeholder passwords are not usable login credentials. A dedicated cloud test account was created for acceptance; its credentials stay in the operator's local artifacts, outside Git.
 

@@ -26,7 +26,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type AppRole = "student" | "lecturer" | "admin";
+import type { AppRole } from "@/types/domain";
+export type { AppRole } from "@/types/domain";
 export type WorkspaceScope = "global" | "project" | "workspace" | "review";
 
 export type NavigationItem = {
@@ -58,35 +59,70 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
     {
       label: "Education",
       items: [
-        { id: "workspaces", label: "My Workspaces", icon: Users },
-        { id: "submissions", label: "My Submissions", icon: ClipboardCheck },
+        { id: "workspaces", label: "My Workspaces", icon: Users, href: "/workspaces" },
+        { id: "submissions", label: "My Submissions", icon: ClipboardCheck, href: "/submissions" },
       ],
     },
   ],
   lecturer: [
-    { label: "Workspaces", items: [{ id: "workspaces", label: "My Workspaces", icon: Users }] },
+    {
+      label: "Workspaces",
+      items: [{ id: "workspaces", label: "My Workspaces", icon: Users, href: "/workspaces" }],
+    },
   ],
   admin: [
-    { label: "User Management", items: [{ id: "users", label: "User Account List", icon: Users }] },
+    {
+      label: "User Management",
+      items: [
+        { id: "users", label: "User Account List", icon: Users, href: "/administration/users" },
+      ],
+    },
     {
       label: "Integrations",
-      items: [{ id: "integrations", label: "Integration Management", icon: Plug }],
+      items: [
+        {
+          id: "integrations",
+          label: "Integration Management",
+          icon: Plug,
+          href: "/administration/integrations",
+        },
+      ],
     },
     {
       label: "Monitoring",
       items: [
-        { id: "health", label: "System Health", icon: Activity },
-        { id: "jobs", label: "Analysis Jobs", icon: ListChecks },
-        { id: "usage", label: "Platform Usage", icon: LayoutGrid },
-        { id: "runtime-summary", label: "Runtime Summary", icon: Server },
+        { id: "health", label: "System Health", icon: Activity, href: "/administration/health" },
+        { id: "jobs", label: "Analysis Jobs", icon: ListChecks, href: "/administration/jobs" },
+        { id: "usage", label: "Platform Usage", icon: LayoutGrid, href: "/administration/usage" },
+        {
+          id: "runtime-summary",
+          label: "Runtime Summary",
+          icon: Server,
+          href: "/administration/runtime-summary",
+        },
       ],
     },
-    { label: "Audit", items: [{ id: "audit", label: "Audit Records", icon: ScrollText }] },
+    {
+      label: "Audit",
+      items: [
+        { id: "audit", label: "Audit Records", icon: ScrollText, href: "/administration/audit" },
+      ],
+    },
     {
       label: "Runtime Administration",
       items: [
-        { id: "profiles", label: "Runtime Execution Profiles", icon: ShieldCheck },
-        { id: "admin-sessions", label: "Runtime Sessions", icon: Play },
+        {
+          id: "profiles",
+          label: "Runtime Execution Profiles",
+          icon: ShieldCheck,
+          href: "/administration/profiles",
+        },
+        {
+          id: "admin-sessions",
+          label: "Runtime Sessions",
+          icon: Play,
+          href: "/administration/admin-sessions",
+        },
       ],
     },
   ],
@@ -96,27 +132,42 @@ export const projectNavigation: readonly NavigationGroup[] = [
   {
     label: "Project",
     items: [
-      { id: "project-overview", label: "Project Overview", icon: LayoutGrid },
-      { id: "snapshots", label: "Source Snapshots", icon: Files },
-      { id: "analysis-history", label: "Analysis History", icon: FileClock },
+      {
+        id: "project-overview",
+        label: "Project Overview",
+        icon: LayoutGrid,
+        href: "/project-overview",
+      },
+      { id: "snapshots", label: "Source Snapshots", icon: Files, href: "/snapshots" },
+      {
+        id: "analysis-history",
+        label: "Analysis History",
+        icon: FileClock,
+        href: "/analysis-history",
+      },
     ],
   },
   {
     label: "Architecture",
     items: [
       { id: "graph", label: "Architecture Graph Explorer", icon: Network, href: "/architecture" },
-      { id: "model", label: "Architecture Model Editor", icon: Boxes },
-      { id: "diagrams", label: "Architecture Diagrams", icon: Workflow },
-      { id: "compare", label: "Compare Model Versions", icon: GitCompareArrows },
+      { id: "model", label: "Architecture Model Editor", icon: Boxes, href: "/model" },
+      { id: "diagrams", label: "Architecture Diagrams", icon: Workflow, href: "/diagrams" },
+      { id: "compare", label: "Compare Model Versions", icon: GitCompareArrows, href: "/compare" },
       { id: "impact", label: "Change Impact Analysis", icon: GitFork, href: "/impact" },
     ],
   },
   {
     label: "Runtime",
     items: [
-      { id: "runtime-config", label: "Runtime Configuration", icon: Settings2 },
-      { id: "scenarios", label: "Runtime Scenarios", icon: ListChecks },
-      { id: "sessions", label: "Runtime Sessions", icon: Play },
+      {
+        id: "runtime-config",
+        label: "Runtime Configuration",
+        icon: Settings2,
+        href: "/runtime-config",
+      },
+      { id: "scenarios", label: "Runtime Scenarios", icon: ListChecks, href: "/scenarios" },
+      { id: "sessions", label: "Runtime Sessions", icon: Play, href: "/sessions" },
     ],
   },
   {
@@ -129,11 +180,26 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
   {
     label: "Workspace",
     items: [
-      { id: "workspace-overview", label: "Workspace Overview", icon: LayoutGrid },
-      { id: "members", label: "Workspace Members", icon: Users },
-      { id: "assignments", label: "Assignments", icon: BookOpen },
-      { id: "references", label: "Reference Source Versions", icon: FileCode2 },
-      { id: "assignment-submissions", label: "Assignment Submissions", icon: ClipboardCheck },
+      {
+        id: "workspace-overview",
+        label: "Workspace Overview",
+        icon: LayoutGrid,
+        href: "/workspace-overview",
+      },
+      { id: "members", label: "Workspace Members", icon: Users, href: "/members" },
+      { id: "assignments", label: "Assignments", icon: BookOpen, href: "/assignments" },
+      {
+        id: "references",
+        label: "Reference Source Versions",
+        icon: FileCode2,
+        href: "/references",
+      },
+      {
+        id: "assignment-submissions",
+        label: "Assignment Submissions",
+        icon: ClipboardCheck,
+        href: "/submissions",
+      },
     ],
   },
 ];

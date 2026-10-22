@@ -7,6 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, contextHref, type Project, type Model } from "@/lib/mainflow-api";
+import { MainflowProvider } from "./provider";
 export const panel = "rounded-xl border border-border bg-card p-5";
 export function ErrorNotice({ error }: { error: unknown }) {
   return error ? (
@@ -20,9 +21,11 @@ export function ErrorNotice({ error }: { error: unknown }) {
 }
 export function FlowFrame({ children, title }: { children: React.ReactNode; title: string }) {
   return (
-    <Suspense fallback={<p className="p-8">Loading…</p>}>
-      <Authenticated title={title}>{children}</Authenticated>
-    </Suspense>
+    <MainflowProvider>
+      <Suspense fallback={<p className="p-8">Loading…</p>}>
+        <Authenticated title={title}>{children}</Authenticated>
+      </Suspense>
+    </MainflowProvider>
   );
 }
 function Authenticated({ children, title }: { children: React.ReactNode; title: string }) {

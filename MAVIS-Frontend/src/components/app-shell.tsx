@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import {
   Bell,
   ChevronDown,
-  ChevronRight,
   Hexagon,
   Info,
   LogOut,
@@ -48,6 +47,11 @@ import {
   type WorkspaceScope,
 } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+import { useApi, useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
+import { RequireSession } from "@/features/auth/access";
+import { Breadcrumbs, ContextPanel, Header, Sidebar } from "@/components/layout/page";
+import { useQueryClient } from "@tanstack/react-query";
+import type { Permission } from "@/lib/auth/permissions";
 
 export type AppShellProps = {
   children: ReactNode;
@@ -65,7 +69,91 @@ export type AppShellProps = {
   onPreviewNavigate?: (id: string) => void;
 };
 
-export function AppShell({
+export function AppShell(props: AppShellProps) {
+  const pathname = usePathname();
+  // FlowFrame verifies the Java session. Do not run the provisional session
+  // adapter or its permission gate for the integrated backend mainflow.
+  if (props.live) return <ShellChrome {...props} />;
+  const preview = Boolean(props.onPreviewNavigate);
+  const permission: Permission | undefined =
+    preview || ["/design-system", "/profile"].includes(pathname)
+      ? undefined
+      : pathname.startsWith("/administration")
+        ? "admin:manage"
+        : pathname.startsWith("/submissions/")
+          ? "workspace:read"
+          : [
+                "/workspaces",
+                "/workspace-overview",
+                "/assignments",
+                "/submissions",
+                "/members",
+                "/references",
+              ].includes(pathname)
+            ? "workspace:read"
+            : "project:read";
+  if (preview || pathname === "/design-system") return <ManagedShellChrome {...props} />;
+  return (
+    <RequireSession {...(permission ? { permission } : {})}>
+      <ManagedShellChrome {...props} />
+    </RequireSession>
+  );
+}
+
+function ManagedShellChrome(props: AppShellProps) {
+  const { role: previewRole, onPreviewNavigate } = props;
+  const session = useSession();
+  const api = useApi();
+  const signOut = useApiMutation("signOut");
+  const queryClient = useQueryClient();
+  const role = onPreviewNavigate
+    ? (previewRole ?? "student")
+    : (session.data?.user?.role ?? "student");
+  const selection = useSelection();
+  const projectQuery = useApiQuery(
+    "projects",
+    {},
+    { enabled: role === "student" && !onPreviewNavigate },
+  );
+  const workspaceQuery = useApiQuery(
+    "workspaces",
+    {},
+    { enabled: role !== "admin" && !onPreviewNavigate },
+  );
+  async function logout() {
+    try {
+      await signOut.mutateAsync({});
+      await queryClient.cancelQueries();
+      queryClient.clear();
+      queryClient.setQueryData(["api", "session", {}], { user: null });
+    } catch {
+      /* Mutation feedback is shown by the provider. */
+    }
+  }
+  const pathname = usePathname();
+  const route = existingRouteContext(pathname);
+  const scope =
+    pathname === "/submissions" && role === "lecturer" ? "workspace" : (props.scope ?? route.scope);
+  const contextName =
+    props.contextName ??
+    (scope === "project"
+      ? (projectQuery.data?.find((p) => p.id === selection.projectId)?.name ?? "Select a project")
+      : (workspaceQuery.data?.find((w) => w.id === selection.workspaceId)?.name ??
+        "Select a workspace"));
+  return (
+    <ShellChrome
+      {...props}
+      role={role}
+      contextName={contextName}
+      displayName={session.data?.user?.name ?? "Design preview"}
+      apiMode={api.mode}
+      signOutPending={signOut.isPending}
+      onSignOut={() => void logout()}
+    />
+  );
+}
+
+function ShellChrome({
   children,
   live = false,
   navigationQuery = "",
@@ -78,12 +166,27 @@ export function AppShell({
   onDetailClose,
   contentVariant: contentOverride,
   onPreviewNavigate,
-}: AppShellProps) {
+  displayName = "Design preview",
+  apiMode,
+  signOutPending = false,
+  onSignOut,
+}: AppShellProps & {
+  displayName?: string;
+  apiMode?: "mock" | "backend";
+  signOutPending?: boolean;
+  onSignOut?: () => void;
+}) {
   const pathname = usePathname();
   const route = existingRouteContext(pathname);
-  const scope = scopeOverride ?? route.scope;
-  const activeId = activeOverride ?? route.activeId;
-  const context = contextName ?? (scope === "project" ? "Sample project" : "Sample workspace");
+  const scope =
+    pathname === "/submissions" && role === "lecturer"
+      ? "workspace"
+      : (scopeOverride ?? route.scope);
+  const activeId =
+    pathname === "/submissions" && role === "lecturer"
+      ? "assignment-submissions"
+      : (activeOverride ?? route.activeId);
+  const context = contextName ?? (scope === "project" ? "Select a project" : "Select a workspace");
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -93,13 +196,24 @@ export function AppShell({
   const contentVariant =
     contentOverride ?? (scope === "project" || scope === "review" ? "workspace" : "standard");
   const showInlineDetail = Boolean(detailPanel) && (detailsInline || !onDetailClose);
-  const decorateGroups = (items: readonly NavigationGroup[]): NavigationGroup[] =>
-    items.map((group) => ({
+  const decorateGroups = (navigation: readonly NavigationGroup[]): NavigationGroup[] =>
+    navigation.map((group) => ({
       ...group,
       items: group.items.map((item) => {
-        const href = item.id === "snapshots" && live ? "/import" : item.href;
-        return href && live && href !== "/design-system"
-          ? { ...item, href: `${href === "/" ? "/import" : href}${navigationQuery}` }
+        if (live) {
+          const liveRoutes: Record<string, string> = {
+            projects: "/import",
+            snapshots: "/import",
+            graph: "/architecture",
+            impact: "/impact",
+            explanations: "/explain",
+          };
+          const { href: _href, ...entry } = item;
+          const href = liveRoutes[item.id];
+          return href ? { ...entry, href: `${href}${navigationQuery}` } : entry;
+        }
+        return scope === "review" && contextName
+          ? { ...item, href: `/submissions/${encodeURIComponent(contextName)}#${item.id}` }
           : item;
       }),
     }));
@@ -153,7 +267,19 @@ export function AppShell({
             isCollapsed && "justify-center px-0",
           )}
         >
-          <Link href="/" aria-label="MAVIS home" className="flex items-center gap-2.5 rounded-md">
+          <Link
+            href={
+              live
+                ? `/import${navigationQuery}`
+                : role === "admin"
+                  ? "/administration/users"
+                  : role === "lecturer"
+                    ? "/workspaces"
+                    : "/"
+            }
+            aria-label="MAVIS home"
+            className="flex items-center gap-2.5 rounded-md"
+          >
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
               <Hexagon className="size-5" aria-hidden="true" />
             </span>
@@ -264,17 +390,9 @@ export function AppShell({
         >
           Skip to content
         </a>
-        <aside
-          aria-label="Application sidebar"
-          className={cn(
-            "sticky top-0 z-(--z-sidebar) hidden h-svh shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground md:flex",
-            collapsed ? "w-(--sidebar-collapsed)" : "w-(--sidebar-width)",
-          )}
-        >
-          {navigation(collapsed)}
-        </aside>
+        <Sidebar collapsed={collapsed}>{navigation(collapsed)}</Sidebar>
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-(--z-header) flex h-(--header-height) shrink-0 items-center gap-2 border-b bg-card px-(--page-gutter) sm:gap-3">
+          <Header>
             <Button
               variant="ghost"
               size="icon"
@@ -309,25 +427,13 @@ export function AppShell({
                 {navigation(false)}
               </SheetContent>
             </Sheet>
-            <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
-              <ol className="flex items-center gap-2 text-xs text-muted-foreground">
-                <li className="hidden sm:block">MAVIS</li>
-                <li className="hidden sm:block" aria-hidden="true">
-                  <ChevronRight className="size-3" />
-                </li>
-                {scope !== "global" && (
-                  <>
-                    <li className="hidden min-w-0 max-w-40 truncate lg:block">{context}</li>
-                    <li className="hidden lg:block" aria-hidden="true">
-                      <ChevronRight className="size-3" />
-                    </li>
-                  </>
-                )}
-                <li className="truncate font-medium text-foreground" aria-current="page">
-                  {title}
-                </li>
-              </ol>
-            </nav>
+            <Breadcrumbs
+              items={[
+                { label: "MAVIS", visibility: "sm" },
+                ...(scope !== "global" ? [{ label: context, visibility: "lg" as const }] : []),
+                { label: title },
+              ]}
+            />
             <div className="flex shrink-0 items-center gap-1">
               <AppearanceSelector />
               {!live && (
@@ -341,7 +447,7 @@ export function AppShell({
                     <DropdownMenuContent align="end" className="w-72 p-4">
                       <DropdownMenuLabel className="px-0">Notifications</DropdownMenuLabel>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        Design preview. Notifications are not connected to a live service.
+                        Notifications are unavailable. No notification service has been configured.
                       </p>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -352,32 +458,50 @@ export function AppShell({
                         <span className="flex size-8 items-center justify-center rounded-full border bg-secondary">
                           <UserRound className="size-4" />
                         </span>
-                        <span className="hidden text-xs lg:block">Preview account</span>
+                        <span className="hidden text-xs lg:block">{displayName}</span>
                         <ChevronDown className="hidden size-3 lg:block" />
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuLabel>Account · design preview</DropdownMenuLabel>
+                      <DropdownMenuLabel>{roleLabels[role]}</DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem disabled>
-                        <UserRound />
-                        My Profile · planned
+                      <DropdownMenuItem asChild>
+                        <Link href="/profile">
+                          <UserRound />
+                          My Profile
+                        </Link>
                       </DropdownMenuItem>
-                      <DropdownMenuItem disabled>
+                      {apiMode === "mock" && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/login">Choose sample role</Link>
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuItem
+                        disabled={signOutPending || Boolean(onPreviewNavigate)}
+                        onSelect={() => {
+                          onSignOut?.();
+                        }}
+                      >
                         <LogOut />
-                        Logout → Login · planned
+                        {signOutPending ? "Signing out…" : "Sign out"}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </>
               )}
             </div>
-          </header>
+          </Header>
           {!live && (
             <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-info-subtle px-(--page-gutter) py-2 text-xs text-info">
               <span className="flex items-center gap-2">
                 <Info className="size-3.5 shrink-0" aria-hidden="true" />
-                <span>Design preview · All content is illustrative. No live system data.</span>
+                <span>
+                  {onPreviewNavigate || pathname === "/design-system"
+                    ? "Design preview · All content is illustrative. No live system data."
+                    : apiMode === "mock"
+                      ? "Mock mode · Explicit sample data. No live system connection. Changes reset on reload."
+                      : "Backend mode · Configured service requests. Unavailable operations report an error."}
+                </span>
               </span>
               <button
                 onClick={() => setFeedbackOpen(true)}
@@ -414,12 +538,7 @@ export function AppShell({
                   </div>
                 </main>
                 {showInlineDetail && (
-                  <aside
-                    aria-label="Contextual detail panel"
-                    className="mavis-panel min-w-0 self-start p-6"
-                  >
-                    {detailPanel}
-                  </aside>
+                  <ContextPanel title="Contextual detail panel">{detailPanel}</ContextPanel>
                 )}
               </div>
             </div>
