@@ -1,7 +1,7 @@
 "use client";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import { RequestState } from "@/components/shared/request-state";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DetailPanel } from "@/components/shared/data";
@@ -13,7 +13,7 @@ import type {
   Evidence,
   ModelSummary,
 } from "@/types/domain";
-import { layoutGraph, NODE_WIDTH, NODE_HEIGHT } from "./graph-layout";
+import { graphEdgePath, layoutGraph, NODE_WIDTH, NODE_HEIGHT } from "./graph-layout";
 
 export function ModelVersionSelector({
   models,
@@ -84,12 +84,22 @@ export function GraphToolbar({
     </div>
   );
 }
-export function EvidenceViewer({ evidence }: { evidence: readonly Evidence[] }) {
+export function EvidenceViewer({
+  evidence,
+  subject = "relationship",
+}: {
+  evidence: readonly Evidence[];
+  subject?: "element" | "relationship";
+}) {
   if (!evidence.length)
     return (
       <EmptyState
-        title="Evidence unavailable"
-        description="This relationship has no attached evidence. Treat its mapping as uncertain."
+        title="No evidence attached"
+        description={
+          subject === "element"
+            ? "No source or runtime evidence is attached to this element. This does not mean it has no connections; see the relationships above."
+            : "This relationship is present in the model, but no source or runtime evidence is attached to it. Its mapping is not verified."
+        }
       />
     );
   return (
@@ -114,12 +124,55 @@ export function EvidenceViewer({ evidence }: { evidence: readonly Evidence[] }) 
 export function ElementDetailsPanel({
   model,
   selectedId,
+  onSelect,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
+  onSelect?: (id: string) => void;
 }) {
   const element = model.elements.find((e) => e.id === selectedId);
   const edge = model.edges.find((e) => e.id === selectedId);
+  const incoming = element ? model.edges.filter((relation) => relation.to === element.id) : [];
+  const outgoing = element ? model.edges.filter((relation) => relation.from === element.id) : [];
+  const nameOf = (id: string) => model.elements.find((node) => node.id === id)?.name ?? id;
+  function connectionList(title: string, relations: ArchitecturalModel["edges"]) {
+    return (
+      <section aria-label={`${title} relationships`} className="space-y-2">
+        <h4 className="text-sm font-semibold">
+          {title} ({relations.length})
+        </h4>
+        {relations.length ? (
+          <ul className="space-y-2">
+            {relations.map((relation) => (
+              <li key={relation.id} className="rounded-md border p-2 text-xs">
+                {onSelect ? (
+                  <button
+                    type="button"
+                    className="w-full break-words text-left text-primary underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2"
+                    onClick={() => onSelect(relation.id)}
+                  >
+                    {nameOf(relation.from)} → {nameOf(relation.to)}
+                  </button>
+                ) : (
+                  <p className="break-words">
+                    {nameOf(relation.from)} → {nameOf(relation.to)}
+                  </p>
+                )}
+                <p className="mt-1 text-muted-foreground">
+                  {relation.protocol}
+                  {relation.uncertain ? " · Uncertain mapping" : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No {title.toLowerCase()} relationships in this model.
+          </p>
+        )}
+      </section>
+    );
+  }
   const api = useApi();
   const evidence = useApiQuery(
     element ? "elementEvidence" : "relationshipEvidence",
@@ -131,10 +184,16 @@ export function ElementDetailsPanel({
   const resolved =
     api.mode === "backend" ? (
       <RequestState query={evidence}>
-        <EvidenceViewer evidence={evidence.data ?? []} />
+        <EvidenceViewer
+          evidence={evidence.data ?? []}
+          subject={element ? "element" : "relationship"}
+        />
       </RequestState>
     ) : (
-      <EvidenceViewer evidence={element?.evidence ?? edge?.evidence ?? []} />
+      <EvidenceViewer
+        evidence={element?.evidence ?? edge?.evidence ?? []}
+        subject={element ? "element" : "relationship"}
+      />
     );
   return (
     <DetailPanel title="Element details">
@@ -142,12 +201,15 @@ export function ElementDetailsPanel({
         <>
           <h3 className="font-mono text-sm font-semibold">{element.name}</h3>
           <p className="text-sm text-muted-foreground">{element.description}</p>
+          {connectionList("Incoming", incoming)}
+          {connectionList("Outgoing", outgoing)}
+          <h4 className="text-sm font-semibold">Evidence for this element</h4>
           {resolved}
         </>
       ) : edge ? (
         <>
           <h3 className="text-sm">
-            {edge.from} → {edge.to} · {edge.protocol}
+            {nameOf(edge.from)} → {nameOf(edge.to)} · {edge.protocol}
           </h3>
           {edge.uncertain && <Badge variant="warning">Uncertain mapping</Badge>}
           {resolved}
@@ -175,17 +237,48 @@ export function ArchitectureGraph({
   const [zoom, setZoom] = useState(1);
   const [page, setPage] = useState(1);
   const marker = useId().replace(/:/g, "");
-  const nodes = useMemo(() => layoutGraph(model), [model]);
-  const filtered = nodes.filter(
-    (n) =>
-      (layer === "all" || n.layer === layer) && n.name.toLowerCase().includes(query.toLowerCase()),
-  );
-  const visible = new Set(filtered.map((n) => n.id));
-  const connections = model.edges.filter((e) => visible.has(e.from) && visible.has(e.to));
-  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const viewport = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(900);
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setViewportWidth(entry.contentRect.width);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const filtered = useMemo(() => {
+    const elements = model.elements.filter(
+      (node) =>
+        (layer === "all" || node.layer === layer) &&
+        node.name.toLowerCase().includes(query.toLowerCase()),
+    );
+    const ids = new Set(elements.map((node) => node.id));
+    return layoutGraph({
+      ...model,
+      elements,
+      edges: model.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)),
+    });
+  }, [model, layer, query]);
+  const visible = new Set(filtered.map((node) => node.id));
+  const connections = model.edges.filter((edge) => visible.has(edge.from) && visible.has(edge.to));
+  const byId = new Map(filtered.map((node) => [node.id, node]));
   const large = filtered.length > 300 || connections.length > 1000;
-  const width = nodes.reduce((max, node) => Math.max(max, node.x + NODE_WIDTH + 40), 1040);
-  const height = nodes.reduce((max, node) => Math.max(max, node.y + 100), 500);
+  const width = filtered.reduce((max, node) => Math.max(max, node.x + NODE_WIDTH + 55), 300);
+  const height = filtered.reduce((max, node) => Math.max(max, node.y + NODE_HEIGHT + 55), 200);
+  const fitScale = Math.min(viewportWidth / width, 620 / height, 1);
+  const scale = fitScale * zoom;
+  const adjacent = new Set<string>();
+  if (selectedId) {
+    adjacent.add(selectedId);
+    connections.forEach((edge) => {
+      if (edge.id === selectedId || edge.from === selectedId || edge.to === selectedId) {
+        adjacent.add(edge.from);
+        adjacent.add(edge.to);
+      }
+    });
+  }
   function selectNode(node: ArchitectureElement) {
     onSelect(node.id);
   }
@@ -202,118 +295,131 @@ export function ArchitectureGraph({
           setLayer(v);
           setPage(1);
         }}
-        onZoom={(factor) => setZoom((z) => Math.max(0.4, Math.min(2.4, z * factor)))}
+        onZoom={(factor) => setZoom((z) => Math.max(0.4, Math.min(8, z * factor)))}
         onReset={() => setZoom(1)}
       />
-      {!filtered.length ? (
-        <EmptyState
-          title="No graph elements"
-          description="Change the filters or analyze a source snapshot."
-        />
-      ) : (
-        <>
-          {!large && (
-            <div className="h-[620px] overflow-auto bg-[radial-gradient(circle_at_1px_1px,var(--border)_1px,transparent_0)] [background-size:22px_22px]">
-              <svg
-                width={width * zoom}
-                height={height * zoom}
-                viewBox={`0 0 ${width} ${height}`}
-                role="img"
-                aria-label="Architecture diagram; use the service and relationship controls below to inspect evidence"
-              >
-                <defs>
-                  <marker
-                    id={marker}
-                    viewBox="0 0 10 10"
-                    refX="9"
-                    refY="5"
-                    markerWidth="6"
-                    markerHeight="6"
-                    orient="auto-start-reverse"
-                  >
-                    <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--graph-edge)" />
-                  </marker>
-                </defs>
-                {connections.map((edge) => {
-                  const from = byId.get(edge.from);
-                  const to = byId.get(edge.to);
-                  if (!from || !to) return null;
-                  return (
-                    <path
-                      key={edge.id}
-                      d={`M ${from.x + NODE_WIDTH} ${from.y + 31} C ${from.x + NODE_WIDTH + 50} ${from.y + 31}, ${to.x - 50} ${to.y + 31}, ${to.x} ${to.y + 31}`}
-                      fill="none"
-                      stroke={selectedId === edge.id ? "var(--primary)" : "var(--graph-edge)"}
-                      strokeWidth={selectedId === edge.id ? 3 : 1.5}
-                      strokeDasharray={edge.uncertain ? "5 4" : undefined}
-                      markerEnd={`url(#${marker})`}
-                    />
-                  );
-                })}
-                {filtered.map((node) => (
-                  <g
-                    key={node.id}
-                    transform={`translate(${node.x},${node.y})`}
-                    onClick={() => onSelect(node.id)}
-                    className="cursor-pointer"
-                  >
-                    <rect
-                      width={NODE_WIDTH}
-                      height={NODE_HEIGHT}
-                      rx={8}
-                      fill="var(--card)"
-                      stroke={selectedId === node.id ? "var(--primary)" : "var(--border)"}
-                      strokeWidth={selectedId === node.id ? 2 : 1}
-                    />
-                    <text x={12} y={25} fill="var(--foreground)" fontSize={12}>
-                      {node.name.slice(0, 23)}
-                    </text>
-                    <text x={12} y={45} fill="var(--muted-foreground)" fontSize={11}>
-                      {node.layer}
-                    </text>
-                  </g>
-                ))}
-              </svg>
-            </div>
-          )}
-          {large && (
-            <p className="p-4 text-sm text-muted-foreground">
-              Large model: use the paginated service list and filters to inspect elements.
-            </p>
-          )}
-          <div className="space-y-3 border-t p-4">
-            <p className="text-xs text-muted-foreground">Select a service ({filtered.length})</p>
-            <div className="flex flex-wrap gap-2">
-              {filtered.slice((page - 1) * 30, page * 30).map((node) => (
-                <Button
-                  key={node.id}
-                  variant={selectedId === node.id ? "secondary" : "outline"}
-                  size="sm"
-                  aria-pressed={selectedId === node.id}
-                  onClick={() => selectNode(node)}
+      <div ref={viewport}>
+        {!filtered.length ? (
+          <EmptyState
+            title="No graph elements"
+            description="Change the filters or analyze a source snapshot."
+          />
+        ) : (
+          <>
+            {!large && (
+              <div className="h-[620px] overflow-auto bg-[radial-gradient(circle_at_1px_1px,var(--border)_1px,transparent_0)] [background-size:22px_22px]">
+                <svg
+                  className="mx-auto block"
+                  width={width * scale}
+                  height={height * scale}
+                  viewBox={`0 0 ${width} ${height}`}
+                  role="img"
+                  aria-label="Architecture diagram; use the service and relationship controls below to inspect evidence"
                 >
-                  {node.name}
-                </Button>
-              ))}
-            </div>
-            {filtered.length > 30 && (
-              <Pagination
-                page={page}
-                pageCount={Math.ceil(filtered.length / 30)}
-                onPageChange={setPage}
-              />
+                  <defs>
+                    <marker
+                      id={marker}
+                      viewBox="0 0 10 10"
+                      refX="9"
+                      refY="5"
+                      markerWidth="6"
+                      markerHeight="6"
+                      orient="auto-start-reverse"
+                    >
+                      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--graph-edge)" />
+                    </marker>
+                  </defs>
+                  {connections.map((edge) => {
+                    const from = byId.get(edge.from);
+                    const to = byId.get(edge.to);
+                    if (!from || !to) return null;
+                    return (
+                      <path
+                        key={edge.id}
+                        d={graphEdgePath(from, to, edge.from === edge.to)}
+                        opacity={
+                          !selectedId ||
+                          selectedId === edge.id ||
+                          selectedId === edge.from ||
+                          selectedId === edge.to
+                            ? 0.8
+                            : 0.15
+                        }
+                        fill="none"
+                        stroke={selectedId === edge.id ? "var(--primary)" : "var(--graph-edge)"}
+                        strokeWidth={selectedId === edge.id ? 3 : 1.5}
+                        strokeDasharray={edge.uncertain ? "5 4" : undefined}
+                        markerEnd={`url(#${marker})`}
+                      />
+                    );
+                  })}
+                  {filtered.map((node) => (
+                    <g
+                      key={node.id}
+                      transform={`translate(${node.x},${node.y})`}
+                      opacity={!selectedId || adjacent.has(node.id) ? 1 : 0.35}
+                      onClick={() => onSelect(node.id)}
+                      className="cursor-pointer"
+                    >
+                      <rect
+                        width={NODE_WIDTH}
+                        height={NODE_HEIGHT}
+                        rx={8}
+                        fill="var(--card)"
+                        stroke={selectedId === node.id ? "var(--primary)" : "var(--border)"}
+                        strokeWidth={selectedId === node.id ? 2 : 1}
+                      />
+                      <text x={12} y={25} fill="var(--foreground)" fontSize={12}>
+                        {node.name.slice(0, 23)}
+                      </text>
+                      <text x={12} y={45} fill="var(--muted-foreground)" fontSize={11}>
+                        {node.layer}
+                      </text>
+                    </g>
+                  ))}
+                </svg>
+              </div>
             )}
-            <SelectField
-              label="Inspect relationship"
-              value={connections.some((e) => e.id === selectedId) ? (selectedId ?? "") : ""}
-              onChange={onSelect}
-              options={connections
-                .slice(0, 1000)
-                .map((e) => ({ value: e.id, label: `${e.from} → ${e.to} · ${e.protocol}` }))}
-            />
-          </div>
-        </>
-      )}
+            {large && (
+              <p className="p-4 text-sm text-muted-foreground">
+                Large model: use the paginated service list and filters to inspect elements.
+              </p>
+            )}
+            <div className="space-y-3 border-t p-4">
+              <p className="text-xs text-muted-foreground">Select a service ({filtered.length})</p>
+              <div className="flex flex-wrap gap-2">
+                {filtered.slice((page - 1) * 30, page * 30).map((node) => (
+                  <Button
+                    key={node.id}
+                    variant={selectedId === node.id ? "secondary" : "outline"}
+                    size="sm"
+                    aria-pressed={selectedId === node.id}
+                    onClick={() => selectNode(node)}
+                  >
+                    {node.name}
+                  </Button>
+                ))}
+              </div>
+              {filtered.length > 30 && (
+                <Pagination
+                  page={page}
+                  pageCount={Math.ceil(filtered.length / 30)}
+                  onPageChange={setPage}
+                />
+              )}
+              <SelectField
+                label="Inspect relationship"
+                value={connections.some((e) => e.id === selectedId) ? (selectedId ?? "") : ""}
+                onChange={onSelect}
+                options={connections.slice(0, 1000).map((e) => ({
+                  value: e.id,
+                  label: `${byId.get(e.from)?.name ?? e.from} → ${byId.get(e.to)?.name ?? e.to} · ${e.protocol}`,
+                }))}
+              />
+            </div>
+          </>
+        )}
+      </div>
     </section>
   );
 }
