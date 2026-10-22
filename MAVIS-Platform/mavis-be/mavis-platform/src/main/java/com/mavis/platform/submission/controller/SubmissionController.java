@@ -53,6 +53,14 @@ public class SubmissionController {
         return ApiResponse.success("Lấy chi tiết bài nộp thành công", submission);
     }
 
+    @GetMapping("/api/v1/submissions/{submissionId}/export")
+    @Operation(summary = "Xuất toàn bộ gói bài nộp bất biến (Ticket V11 & T15)",
+            description = "Xuất SubmissionExportBundleDTO chứa toàn bộ phiên bản ghim, Mermaid DSL, điểm số và báo cáo tổng hợp Markdown")
+    public ApiResponse<com.mavis.platform.submission.dto.SubmissionExportBundleDTO> exportSubmissionBundle(@PathVariable UUID submissionId) {
+        com.mavis.platform.submission.dto.SubmissionExportBundleDTO bundle = submissionService.exportSubmissionBundle(submissionId);
+        return ApiResponse.success("Xuất gói bài nộp bất biến thành công", bundle);
+    }
+
     @PostMapping("/api/v1/submissions/{submissionId}/feedbacks")
     @Operation(summary = "Giảng viên ghim nhận xét / góp ý chấm bài (BR-63)",
             description = "Ghim nhận xét vào Node (elementId), Edge (relationshipId), hoặc nhận xét chung toàn bài")
