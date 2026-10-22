@@ -27,4 +27,16 @@ public interface RunnerReceiptIngestService {
      * @return RuntimeSessionResponseDTO thông tin phiên thực nghiệm sau khi đồng bộ
      */
     RuntimeSessionResponseDTO importReceiptFromStateRoot(UUID sessionId, String resourceProject);
+
+    /**
+     * Tiếp nhận RunnerReceipt và trả về chi tiết xác nhận (ReceiptIngestAckDTO) gồm receiptDigest,
+     * persistenceStatus, publicationGateStatus, promotedLatest và enrichedModelVersionId (nullable).
+     *
+     * @param sessionId ID phiên thực nghiệm
+     * @param receipt   Dữ liệu receipt từ MAVIS.Runner
+     * @return ReceiptIngestAckDTO
+     */
+    com.mavis.analyzer.runtime.dto.ReceiptIngestAckDTO ingestRunnerReceiptAck(
+            UUID sessionId,
+            RunnerReceiptIngestRequestDTO receipt);
 }

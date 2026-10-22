@@ -67,4 +67,15 @@ public interface RuntimeSessionService {
      * @return RunnerDefinitionExportDTO
      */
     com.mavis.analyzer.runtime.dto.RunnerDefinitionExportDTO exportRunDefinition(UUID sessionId);
+
+    /**
+     * Xác nhận các mốc vòng đời phiên thực nghiệm từ Runner/Adapter (ALLOCATED / RUNNING).
+     *
+     * @param sessionId ID phiên thực nghiệm
+     * @param request Payload chứa stage và resourceProject
+     * @return RuntimeSessionLifecycleAckDTO
+     */
+    com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckDTO acknowledgeLifecycle(
+            UUID sessionId,
+            com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckRequestDTO request);
 }

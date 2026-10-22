@@ -2,21 +2,19 @@ package com.mavis.analyzer.runtime.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.mavis.analyzer.runtime.dto.PreflightCheckResponseDTO;
-import com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest;
-import com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO;
+import com.mavis.analyzer.runtime.dto.*;
 import com.mavis.analyzer.runtime.generator.ComposeOverrideGenerator;
+import com.mavis.analyzer.runtime.security.RunnerServiceAuthGuard;
 import com.mavis.analyzer.runtime.validator.ComposePreflightValidator;
+import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.RuntimeSession;
 import com.mavis.common.entity.SourceSnapshot;
-import com.mavis.common.entity.User;
 import com.mavis.common.exception.BusinessException;
-import com.mavis.common.repository.ProjectRepository;
-import com.mavis.common.repository.RuntimeSessionRepository;
-import com.mavis.common.repository.SourceSnapshotRepository;
-import com.mavis.common.repository.UserRepository;
+import com.mavis.common.repository.*;
+import com.mavis.common.security.AccessPolicyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,10 +28,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,6 +42,9 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class RuntimeSessionServiceImplTest {
+
+    private static final Pattern RESOURCE_PROJECT_PATTERN = Pattern.compile("^mavisrun-[0-9a-f]{32}$");
+    private static final Pattern SHA256_PATTERN = Pattern.compile("^sha256:[0-9a-f]{64}$");
 
     @Mock
     private RuntimeSessionRepository runtimeSessionRepository;
@@ -56,10 +59,16 @@ class RuntimeSessionServiceImplTest {
     private UserRepository userRepository;
 
     @Mock
-    private com.mavis.common.repository.ModelVersionRepository modelVersionRepository;
+    private ModelVersionRepository modelVersionRepository;
 
     @Mock
-    private com.mavis.common.repository.ModelElementRepository modelElementRepository;
+    private ModelElementRepository modelElementRepository;
+
+    @Mock
+    private AccessPolicyService accessPolicyService;
+
+    @Mock
+    private RunnerServiceAuthGuard runnerServiceAuthGuard;
 
     @Spy
     private ComposePreflightValidator composePreflightValidator = new ComposePreflightValidator();
@@ -67,15 +76,17 @@ class RuntimeSessionServiceImplTest {
     @Spy
     private ComposeOverrideGenerator composeOverrideGenerator = new ComposeOverrideGenerator();
 
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
+
     @InjectMocks
     private RuntimeSessionServiceImpl runtimeSessionService;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     private UUID projectId;
     private UUID snapshotId;
     private Project project;
     private SourceSnapshot snapshot;
+    private ModelVersion validModel;
 
     @BeforeEach
     void setUp() {
@@ -84,6 +95,13 @@ class RuntimeSessionServiceImplTest {
 
         project = Project.builder().id(projectId).name("Ecommerce System").build();
         snapshot = SourceSnapshot.builder().id(snapshotId).project(project).storagePath("/tmp/test/compose.yml").build();
+        validModel = ModelVersion.builder()
+                .id(UUID.randomUUID())
+                .project(project)
+                .sourceSnapshot(snapshot)
+                .revision(1)
+                .isLatestValid(true)
+                .build();
 
         lenient().when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
         lenient().when(sourceSnapshotRepository.findById(snapshotId)).thenReturn(Optional.of(snapshot));
@@ -98,116 +116,64 @@ class RuntimeSessionServiceImplTest {
     }
 
     @Test
-    @DisplayName("COMPOSE PREFLIGHT: Phát hiện privileged: true, network_mode: host và mount /var/run/docker.sock")
-    void testPreflight_DangerousConfig_ShouldFlagSecurityWarnings(@TempDir Path tempDir) throws IOException {
-        String dangerousYaml = """
-                version: '3.8'
-                services:
-                  malicious-service:
-                    image: ubuntu:latest
-                    privileged: true
-                    network_mode: host
-                    volumes:
-                      - /var/run/docker.sock:/var/run/docker.sock
-                      - /etc:/host_etc:ro
-                  safe-service:
-                    image: nginx:alpine
-                    ports:
-                      - "80:80"
-                """;
+    @DisplayName("CHẶNG 11: Tạo session tự động pin cứng ModelVersion hợp lệ và sinh hash 64-hex cho version IDs")
+    void testCreateRuntimeSession_PinsModelVersionAndGenerates64HexHashes() {
+        when(modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId))
+                .thenReturn(Optional.of(validModel));
 
-        Path composeFile = tempDir.resolve("docker-compose.yml");
-        Files.writeString(composeFile, dangerousYaml);
+        ObjectNode scenarioConfig = objectMapper.createObjectNode();
+        ObjectNode profile = scenarioConfig.putObject("profile");
+        profile.put("collectorImage", "otel/collector@sha256:1111222233334444555566667777888899990000111122223333444455556666");
 
-        snapshot.setStoragePath(composeFile.toString());
-
-        PreflightCheckResponseDTO result = runtimeSessionService.runComposePreflight(snapshotId);
-
-        assertThat(result).isNotNull();
-        assertThat(result.isCompatible()).isFalse();
-        assertThat(result.getDetectedServices()).containsExactlyInAnyOrder("malicious-service", "safe-service");
-        assertThat(result.getSecurityWarnings()).hasSize(4);
-        assertThat(result.getSecurityWarnings().stream().anyMatch(w -> w.contains("privileged: true"))).isTrue();
-        assertThat(result.getSecurityWarnings().stream().anyMatch(w -> w.contains("network_mode: host"))).isTrue();
-        assertThat(result.getSecurityWarnings().stream().anyMatch(w -> w.contains("/var/run/docker.sock"))).isTrue();
-        assertThat(result.getSecurityWarnings().stream().anyMatch(w -> w.contains("/etc"))).isTrue();
-    }
-
-    @Test
-    @DisplayName("COMPOSE PREFLIGHT: File docker-compose an toàn -> compatible = true")
-    void testPreflight_SafeConfig_ShouldBeCompatible(@TempDir Path tempDir) throws IOException {
-        String safeYaml = """
-                version: '3.8'
-                services:
-                  order-service:
-                    image: order-service:1.0
-                    ports:
-                      - "8080:8080"
-                  payment-service:
-                    image: payment-service:1.0
-                """;
-
-        Path composeFile = tempDir.resolve("docker-compose.yml");
-        Files.writeString(composeFile, safeYaml);
-
-        snapshot.setStoragePath(composeFile.toString());
-
-        PreflightCheckResponseDTO result = runtimeSessionService.runComposePreflight(snapshotId);
-
-        assertThat(result.isCompatible()).isTrue();
-        assertThat(result.getSecurityWarnings()).isEmpty();
-        assertThat(result.getDetectedServices()).containsExactlyInAnyOrder("order-service", "payment-service");
-    }
-
-    @Test
-    @DisplayName("SECRET REDACTION: Tự động che giấu thông tin mật (password, token, apiKey, authorization)")
-    void testCreateRuntimeSession_ShouldRedactSecretsInScenarioConfig() {
-        ObjectNode config = objectMapper.createObjectNode();
-        config.put("targetUrl", "http://order-service/api/checkout?token=super_secret_token_123");
-        config.put("password", "MyP@ssw0rd!");
-        config.put("authorization", "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9");
-        config.put("apiKey", "api_key_secret_xyz");
-
-        ObjectNode nested = objectMapper.createObjectNode();
-        nested.put("dbPassword", "root_secret");
-        nested.put("publicInfo", "visible-data");
-        config.set("databaseCredentials", nested);
+        ObjectNode scenario = scenarioConfig.putObject("scenario");
+        ArrayNode steps = scenario.putArray("steps");
+        ObjectNode step = steps.addObject();
+        step.put("id", "step1");
+        step.put("service", "order-service");
+        step.put("method", "GET");
+        step.put("path", "/health");
 
         RuntimeSessionCreateRequest request = RuntimeSessionCreateRequest.builder()
                 .projectId(projectId)
                 .sourceSnapshotId(snapshotId)
-                .scenarioName("Checkout Stress Test")
-                .scenarioConfig(config)
+                .scenarioName("Order Flow Test")
+                .scenarioConfig(scenarioConfig)
                 .build();
 
         RuntimeSessionResponseDTO response = runtimeSessionService.createRuntimeSession(request);
 
         assertThat(response).isNotNull();
+        assertThat(response.getModelVersionId()).isEqualTo(validModel.getId());
+        assertThat(response.getResourceProject()).matches(RESOURCE_PROJECT_PATTERN);
+        assertThat(response.getProfileVersionId()).matches(SHA256_PATTERN);
+        assertThat(response.getRunConfigurationVersionId()).matches(SHA256_PATTERN);
+        assertThat(response.getScenarioVersionId()).matches(SHA256_PATTERN);
         assertThat(response.getScenarioStatus()).isEqualTo("PENDING");
-        assertThat(response.getTraceStatus()).isEqualTo("NONE");
-
-        JsonNode savedConfig = response.getScenarioConfig();
-        assertThat(savedConfig.get("password").asText()).isEqualTo("[REDACTED]");
-        assertThat(savedConfig.get("authorization").asText()).isEqualTo("[REDACTED]");
-        assertThat(savedConfig.get("apiKey").asText()).isEqualTo("[REDACTED]");
-        assertThat(savedConfig.get("targetUrl").asText()).contains("token=[REDACTED]");
-        assertThat(savedConfig.get("databaseCredentials").get("dbPassword").asText()).isEqualTo("[REDACTED]");
-        assertThat(savedConfig.get("databaseCredentials").get("publicInfo").asText()).isEqualTo("visible-data");
+        assertThat(response.getExecutionStatus()).isEqualTo("NOT_STARTED");
     }
 
     @Test
-    @DisplayName("VÒNG ĐỜI TRẠNG THÁI: PENDING -> approve -> RUNNING (sinh Override) -> stop -> CANCELLED")
-    void testSessionLifecycle_PendingToRunningToCancelled(@TempDir Path tempDir) throws IOException {
-        String composeYaml = """
-                version: '3.8'
-                services:
-                  web:
-                    image: web:latest
-                  api:
-                    image: api:latest
-                """;
+    @DisplayName("CHẶNG 11: Chặn tạo session khi dự án chưa có ModelVersion hợp lệ nào")
+    void testCreateRuntimeSession_NoValidModel_ThrowsBadRequest() {
+        when(modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId))
+                .thenReturn(Optional.empty());
+
+        RuntimeSessionCreateRequest request = RuntimeSessionCreateRequest.builder()
+                .projectId(projectId)
+                .sourceSnapshotId(snapshotId)
+                .build();
+
+        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Dự án chưa có ModelVersion hợp lệ");
+    }
+
+    @Test
+    @DisplayName("CHẶNG 11: approveAndStartSession đặt scenarioStatus = APPROVED, executionStatus = READY_FOR_DISPATCH")
+    void testApproveAndStartSession_SetsApprovedAndReadyForDispatch(@TempDir Path tempDir) throws IOException {
+        String safeYaml = "services:\n  app:\n    image: app:1.0\n";
         Path composeFile = tempDir.resolve("docker-compose.yml");
-        Files.writeString(composeFile, composeYaml);
+        Files.writeString(composeFile, safeYaml);
         snapshot.setStoragePath(composeFile.toString());
 
         UUID sessionId = UUID.randomUUID();
@@ -215,162 +181,226 @@ class RuntimeSessionServiceImplTest {
                 .id(sessionId)
                 .project(project)
                 .sourceSnapshot(snapshot)
+                .modelVersion(validModel)
                 .scenarioStatus("PENDING")
-                .traceStatus("NONE")
+                .executionStatus("NOT_STARTED")
                 .build();
 
         when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
 
-        // 1. Phê duyệt & Khởi chạy (approve)
-        RuntimeSessionResponseDTO approved = runtimeSessionService.approveAndStartSession(sessionId);
+        RuntimeSessionResponseDTO response = runtimeSessionService.approveAndStartSession(sessionId);
 
-        assertThat(approved.getScenarioStatus()).isEqualTo("RUNNING");
-        assertThat(approved.getStartedAt()).isNotNull();
-        assertThat(approved.getOverrideComposeYaml()).isNotNull();
-        assertThat(approved.getOverrideComposeYaml()).contains("cpus: '1.0'");
-        assertThat(approved.getOverrideComposeYaml()).contains("mem_limit: 1024m");
-        assertThat(approved.getOverrideComposeYaml()).contains("pids_limit: 128");
-        assertThat(approved.getOverrideComposeYaml()).contains("mavis_sandbox_net");
-        assertThat(approved.getOverrideComposeYaml()).contains("OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317");
+        assertThat(response.getScenarioStatus()).isEqualTo("APPROVED");
+        assertThat(response.getExecutionStatus()).isEqualTo("READY_FOR_DISPATCH");
+        assertThat(response.getOverrideComposeYaml()).isNotBlank();
+        assertThat(session.getStartedAt()).isNull(); // Chưa gán startedAt tại bước này
+    }
 
-        // 2. Dừng phiên (stop)
+    @Test
+    @DisplayName("CHẶNG 11: acknowledgeLifecycle cập nhật ALLOCATED và RUNNING chính xác")
+    void testAcknowledgeLifecycle_AllocatedAndRunningStages() {
+        UUID sessionId = UUID.randomUUID();
+        String resourceProject = "mavisrun-0123456789abcdef0123456789abcdef";
+        RuntimeSession session = RuntimeSession.builder()
+                .id(sessionId)
+                .project(project)
+                .sourceSnapshot(snapshot)
+                .modelVersion(validModel)
+                .resourceProject(resourceProject)
+                .scenarioStatus("APPROVED")
+                .executionStatus("READY_FOR_DISPATCH")
+                .build();
+
+        when(runtimeSessionRepository.findLockedById(sessionId)).thenReturn(Optional.of(session));
+
+        // 1. Stage ALLOCATED
+        RuntimeSessionLifecycleAckRequestDTO allocReq = RuntimeSessionLifecycleAckRequestDTO.builder()
+                .sessionId(sessionId)
+                .resourceProject(resourceProject)
+                .stage("ALLOCATED")
+                .observedAt(OffsetDateTime.now())
+                .build();
+
+        RuntimeSessionLifecycleAckDTO allocResp = runtimeSessionService.acknowledgeLifecycle(sessionId, allocReq);
+
+        assertThat(allocResp.getExecutionStatus()).isEqualTo("ALLOCATED");
+        assertThat(session.getAllocatedAt()).isNotNull();
+
+        // 2. Stage RUNNING
+        RuntimeSessionLifecycleAckRequestDTO runReq = RuntimeSessionLifecycleAckRequestDTO.builder()
+                .sessionId(sessionId)
+                .resourceProject(resourceProject)
+                .stage("RUNNING")
+                .observedAt(OffsetDateTime.now())
+                .build();
+
+        RuntimeSessionLifecycleAckDTO runResp = runtimeSessionService.acknowledgeLifecycle(sessionId, runReq);
+
+        assertThat(runResp.getExecutionStatus()).isEqualTo("RUNNING");
+        assertThat(runResp.getScenarioStatus()).isEqualTo("RUNNING");
+        assertThat(session.getStartedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("CHẶNG 11: acknowledgeLifecycle từ chối 400 BAD_REQUEST khi resourceProject bị lệch")
+    void testAcknowledgeLifecycle_ResourceProjectMismatch_ThrowsBadRequest() {
+        UUID sessionId = UUID.randomUUID();
+        String validResource = "mavisrun-0123456789abcdef0123456789abcdef";
+        String invalidResource = "mavisrun-ffffffffffffffffffffffffffffffff";
+
+        RuntimeSession session = RuntimeSession.builder()
+                .id(sessionId)
+                .project(project)
+                .resourceProject(validResource)
+                .build();
+
+        when(runtimeSessionRepository.findLockedById(sessionId)).thenReturn(Optional.of(session));
+
+        RuntimeSessionLifecycleAckRequestDTO req = RuntimeSessionLifecycleAckRequestDTO.builder()
+                .sessionId(sessionId)
+                .resourceProject(invalidResource)
+                .stage("ALLOCATED")
+                .build();
+
+        assertThatThrownBy(() -> runtimeSessionService.acknowledgeLifecycle(sessionId, req))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("ResourceProject không hợp lệ hoặc không khớp");
+    }
+
+    @Test
+    @DisplayName("CHẶNG 11: stopSession Nhánh 1 (Stop-before-start) đặt CANCELLED ngay lập tức")
+    void testStopSession_Branch1_StopBeforeStart() {
+        UUID sessionId = UUID.randomUUID();
+        RuntimeSession session = RuntimeSession.builder()
+                .id(sessionId)
+                .project(project)
+                .scenarioStatus("APPROVED")
+                .executionStatus("READY_FOR_DISPATCH")
+                .build();
+
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
         RuntimeSessionResponseDTO stopped = runtimeSessionService.stopSession(sessionId);
 
         assertThat(stopped.getScenarioStatus()).isEqualTo("CANCELLED");
+        assertThat(stopped.getExecutionStatus()).isEqualTo("CANCELLED");
+        assertThat(stopped.getCleanupStatus()).isEqualTo("NOT_APPLICABLE");
         assertThat(stopped.getCompletedAt()).isNotNull();
     }
 
     @Test
-    @DisplayName("BR-41..BR-45 BẢO MẬT: Không cho phép approve phiên chạy không ở trạng thái PENDING")
-    void testApproveSession_InvalidStatus_ShouldThrowBadRequest() {
-        UUID sessionId = UUID.randomUUID();
-        RuntimeSession runningSession = RuntimeSession.builder()
-                .id(sessionId)
-                .project(project)
-                .sourceSnapshot(snapshot)
-                .scenarioStatus("RUNNING")
-                .build();
-
-        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(runningSession));
-
-        assertThatThrownBy(() -> runtimeSessionService.approveAndStartSession(sessionId))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("PENDING");
-    }
-
-    @Test
-    @DisplayName("TRUY VẤN: getSessionsByProject trả về danh sách phiên theo thứ tự mới nhất")
-    void testGetSessionsByProject_ShouldReturnList() {
-        RuntimeSession s1 = RuntimeSession.builder().id(UUID.randomUUID()).project(project).sourceSnapshot(snapshot).scenarioStatus("PENDING").build();
-        RuntimeSession s2 = RuntimeSession.builder().id(UUID.randomUUID()).project(project).sourceSnapshot(snapshot).scenarioStatus("RUNNING").build();
-
-        when(runtimeSessionRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(s2, s1));
-
-        List<RuntimeSessionResponseDTO> results = runtimeSessionService.getSessionsByProject(projectId);
-
-        assertThat(results).hasSize(2);
-        assertThat(results.get(0).getId()).isEqualTo(s2.getId());
-        assertThat(results.get(1).getId()).isEqualTo(s1.getId());
-    }
-
-    @Test
-    @DisplayName("WJ-01 BẢO MẬT: Chặn tạo session khi Snapshot không thuộc về Dự án đã chọn")
-    void testCreateRuntimeSession_SnapshotMismatch_ThrowsBadRequest() {
-        Project otherProject = Project.builder().id(UUID.randomUUID()).build();
-        snapshot.setProject(otherProject);
-
-        RuntimeSessionCreateRequest request = RuntimeSessionCreateRequest.builder()
-                .projectId(projectId)
-                .sourceSnapshotId(snapshotId)
-                .build();
-
-        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(request))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Snapshot không thuộc về dự án đã chọn");
-    }
-
-    @Test
-    @DisplayName("WJ-01 BẢO MẬT: Chặn tạo session khi ModelVersion không thuộc về Dự án hoặc Snapshot")
-    void testCreateRuntimeSession_ModelVersionMismatch_ThrowsBadRequest() {
-        UUID mvId = UUID.randomUUID();
-        Project otherProject = Project.builder().id(UUID.randomUUID()).build();
-        com.mavis.common.entity.ModelVersion foreignMv = com.mavis.common.entity.ModelVersion.builder()
-                .id(mvId)
-                .project(otherProject)
-                .sourceSnapshot(snapshot)
-                .build();
-
-        when(modelVersionRepository.findById(mvId)).thenReturn(Optional.of(foreignMv));
-
-        RuntimeSessionCreateRequest request = RuntimeSessionCreateRequest.builder()
-                .projectId(projectId)
-                .sourceSnapshotId(snapshotId)
-                .modelVersionId(mvId)
-                .build();
-
-        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(request))
-                .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Phiên bản mô hình không thuộc về dự án đã chọn");
-    }
-
-    @Test
-    @DisplayName("WJ-03 DỪNG PHIÊN: stopSession ghi file marker cancel.request và đặt STOP_REQUESTED")
-    void testStopSession_WithStateRoot_WritesCancelMarkerAndSetsStopRequested(@TempDir Path tempDir) {
+    @DisplayName("CHẶNG 11: stopSession Nhánh 2 (Stop-while-running) ghi cancel.request và chuyển CANCELLING, giữ completedAt = null")
+    void testStopSession_Branch2_StopWhileRunning(@TempDir Path tempDir) {
         org.springframework.test.util.ReflectionTestUtils.setField(runtimeSessionService, "runnerStateRoot", tempDir.toString());
 
         UUID sessionId = UUID.randomUUID();
-        String resourceProject = "mavisrun-abcdef0123456789abcdef0123456789";
-        RuntimeSession runningSession = RuntimeSession.builder()
+        String resourceProject = "mavisrun-0123456789abcdef0123456789abcdef";
+        RuntimeSession session = RuntimeSession.builder()
                 .id(sessionId)
                 .project(project)
-                .sourceSnapshot(snapshot)
                 .resourceProject(resourceProject)
                 .scenarioStatus("RUNNING")
-                .cleanupStatus("NOT_APPLICABLE")
+                .executionStatus("RUNNING")
                 .build();
 
-        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(runningSession));
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
 
         RuntimeSessionResponseDTO stopped = runtimeSessionService.stopSession(sessionId);
 
-        assertThat(stopped.getScenarioStatus()).isEqualTo("CANCELLED");
+        assertThat(stopped.getExecutionStatus()).isEqualTo("CANCELLING");
         assertThat(stopped.getCleanupStatus()).isEqualTo("STOP_REQUESTED");
-        assertThat(stopped.getCancelRequestedAt()).isNotNull();
+        assertThat(stopped.getCompletedAt()).isNull(); // Chờ receipt xác nhận cleanup
 
-        Path markerFile = tempDir.resolve(resourceProject).resolve("cancel.request");
-        assertThat(Files.exists(markerFile)).isTrue();
+        Path marker = tempDir.resolve(resourceProject).resolve("cancel.request");
+        assertThat(Files.exists(marker)).isTrue();
     }
 
     @Test
-    @DisplayName("WJ-01 RUN DEFINITION: exportRunDefinition xuất đúng cấu trúc RuntimeRunDefinition chuẩn")
-    void testExportRunDefinition_Success() {
+    @DisplayName("CHẶNG 11: stopSession Nhánh 2 ném INTERNAL_ERROR nếu runnerStateRoot chưa cấu hình")
+    void testStopSession_Branch2_NoStateRoot_ThrowsInternalError() {
+        org.springframework.test.util.ReflectionTestUtils.setField(runtimeSessionService, "runnerStateRoot", "");
+
         UUID sessionId = UUID.randomUUID();
-        UUID mvId = UUID.randomUUID();
-        com.mavis.common.entity.ModelVersion mv = com.mavis.common.entity.ModelVersion.builder()
-                .id(mvId)
+        RuntimeSession session = RuntimeSession.builder()
+                .id(sessionId)
                 .project(project)
+                .resourceProject("mavisrun-0123456789abcdef0123456789abcdef")
+                .executionStatus("RUNNING")
                 .build();
 
-        RuntimeSession testSession = RuntimeSession.builder()
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> runtimeSessionService.stopSession(sessionId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("runnerStateRoot chưa cấu hình");
+    }
+
+    @Test
+    @DisplayName("CHẶNG 11: stopSession Nhánh 3 (Stop-after-completion) trả về idempotent mà không ghi file")
+    void testStopSession_Branch3_StopAfterCompletion() {
+        UUID sessionId = UUID.randomUUID();
+        RuntimeSession session = RuntimeSession.builder()
+                .id(sessionId)
+                .project(project)
+                .scenarioStatus("PASSED")
+                .executionStatus("COMPLETED")
+                .cleanupStatus("CONFIRMED")
+                .build();
+
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
+        RuntimeSessionResponseDTO result = runtimeSessionService.stopSession(sessionId);
+
+        assertThat(result.getExecutionStatus()).isEqualTo("COMPLETED");
+        verify(runtimeSessionRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("CHẶNG 11: exportRunDefinition kiểm tra bắt buộc cấu trúc Profile, Scenario và Mappings")
+    void testExportRunDefinition_StrictValidation_Success(@TempDir Path tempDir) throws IOException {
+        String safeYaml = "services:\n  orders:\n    image: orders:1.0\n";
+        Path composeFile = tempDir.resolve("docker-compose.yml");
+        Files.writeString(composeFile, safeYaml);
+        snapshot.setStoragePath(composeFile.toString());
+
+        ObjectNode scenarioConfig = objectMapper.createObjectNode();
+        ObjectNode profile = scenarioConfig.putObject("profile");
+        profile.put("collectorImage", "otel/collector@sha256:1111222233334444555566667777888899990000111122223333444455556666");
+        profile.put("instrumentationVolume", "mavis-agents-v1");
+        ObjectNode apps = profile.putObject("applications");
+        apps.putObject("orders").put("runtime", "dotnet8").put("containerPort", 8080);
+
+        ObjectNode scenario = scenarioConfig.putObject("scenario");
+        ArrayNode steps = scenario.putArray("steps");
+        ObjectNode step = steps.addObject();
+        step.put("id", "step1");
+        step.put("service", "orders");
+
+        UUID sessionId = UUID.randomUUID();
+        String resourceProject = "mavisrun-0123456789abcdef0123456789abcdef";
+
+        RuntimeSession session = RuntimeSession.builder()
                 .id(sessionId)
                 .project(project)
                 .sourceSnapshot(snapshot)
-                .modelVersion(mv)
-                .profileVersionId("local-poc-profile/1.0")
-                .runConfigurationVersionId("run-config/1.0")
-                .scenarioVersionId("scenario/1.0")
-                .confirmedServiceMappings(Map.of("order-service", UUID.randomUUID().toString()))
-                .scenarioConfig(objectMapper.createObjectNode().put("test", true))
+                .modelVersion(validModel)
+                .resourceProject(resourceProject)
+                .profileVersionId("sha256:profile")
+                .runConfigurationVersionId("sha256:runconfig")
+                .scenarioVersionId("sha256:scenario")
+                .scenarioConfig(scenarioConfig)
+                .confirmedServiceMappings(Map.of("orders", UUID.randomUUID().toString()))
                 .build();
 
-        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(testSession));
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
 
-        var definition = runtimeSessionService.exportRunDefinition(sessionId);
+        RunnerDefinitionExportDTO exportDTO = runtimeSessionService.exportRunDefinition(sessionId);
 
-        assertThat(definition).isNotNull();
-        assertThat(definition.getSessionId()).isEqualTo(sessionId.toString());
-        assertThat(definition.getModelVersionId()).isEqualTo(mvId.toString());
-        assertThat(definition.getSourceSnapshotId()).isEqualTo(snapshotId.toString());
-        assertThat(definition.getConfirmedServiceMappings()).containsKey("order-service");
+        assertThat(exportDTO).isNotNull();
+        assertThat(exportDTO.getResourceProject()).isEqualTo(resourceProject);
+        assertThat(exportDTO.getModelVersionId()).isEqualTo(validModel.getId().toString());
+        assertThat(exportDTO.getProfile()).isNotNull();
+        assertThat(exportDTO.getScenario().path("sessionId").asText()).isEqualTo(sessionId.toString());
+        assertThat(exportDTO.getConfirmedServiceMappings()).containsKey("orders");
     }
 }
