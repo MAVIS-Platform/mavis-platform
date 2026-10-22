@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test:mainflow": "node scripts/check-mainflow.mjs"
   },
   "overrides": {
     "rolldown": "1.2.1"
