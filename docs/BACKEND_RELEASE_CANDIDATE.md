@@ -7,9 +7,11 @@ Candidate kết hợp: worktree `C:/Users/nhuth/.codex/worktrees/java-runtime-fi
 - Java `6ade22a`: runtime/replay/schema/cloud config/recovery fixes.
 - Runner `ba58c8a`: cherry-pick commit `936bdd2` từ feat/runtime-allocation.
 
-Chưa push/PR/merge main. Local Worker API edits có trước vẫn ngoài candidate. Candidate .NET đã restore/build/test được từ worktree sạch, không phụ thuộc các edits đó.
+Đã push và tạo PR #27: https://github.com/MAVIS-Platform/mavis-platform/pull/27. Chưa merge main. Local Worker API edits có trước vẫn ngoài candidate. Candidate .NET đã restore/build/test được từ worktree sạch, không phụ thuộc các edits đó.
 
 ## Evidence
+
+- Final Java reactor package BUILD SUCCESS sau audit; policy/handler 12/12 và submission/feedback 26/26.
 
 - .NET candidate: 218 pass, 3 skip / 221. Hai skip Linux filesystem, một Docker opt-in; actual Java/Docker E2E chạy riêng.
 - Java recovery/session/receipt/digest targeted: 24/24, package thành công.
@@ -37,3 +39,7 @@ JWT/mail/AI/Worker configs phải override theo môi trường. Seed password hi
 Submission detail/list/export và feedback list đã thêm project/workspace authorization. Malformed request trả 400, unknown resource 404, unsupported content type 415. Cloud yêu cầu MAVIS_JWT_SECRET và MAVIS_RUNNER_SERVICE_KEY, tắt unverified PoC promotion.
 
 Còn PR/merge, CI/release và FE/browser E2E. SMTP delivery và quota/provider AI thật chưa được xác nhận; cloud smoke dùng SMTP giả và OTP của riêng tài khoản test. Không gọi production acceptance 100%.
+
+## PR gate
+
+PR-Agent check thất bại vì Gemini API trả 404 cho gemini/gemini-2.5-flash (run 39743157611), chưa tạo nhận xét code. Không bypass check hoặc gán lỗi provider thành lỗi compile/test của BE.
