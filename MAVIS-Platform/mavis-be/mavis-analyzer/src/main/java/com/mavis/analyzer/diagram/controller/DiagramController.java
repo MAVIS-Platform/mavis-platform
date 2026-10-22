@@ -20,6 +20,7 @@ import java.util.UUID;
 public class DiagramController {
 
     private final DiagramProjectionService diagramProjectionService;
+    private final com.mavis.analyzer.diagram.service.DiagramExportService diagramExportService;
 
     @GetMapping("/models/{modelVersionId}/diagrams")
     @Operation(summary = "Lấy danh sách các sơ đồ kiến trúc của một ModelVersion",
@@ -34,6 +35,24 @@ public class DiagramController {
     public ApiResponse<DiagramResponseDTO> getDiagramById(@PathVariable UUID diagramId) {
         DiagramResponseDTO diagram = diagramProjectionService.getDiagramById(diagramId);
         return ApiResponse.success("Lấy thông tin sơ đồ thành công", diagram);
+    }
+
+    @GetMapping("/diagrams/{diagramId}/export")
+    @Operation(summary = "Xuất sơ đồ kiến trúc đa định dạng (Ticket B3, T09, T15)",
+            description = "Hỗ trợ các định dạng: MERMAID, PLANTUML, DRAWIO_XML, JSON. Mặc định là MERMAID.")
+    public ApiResponse<com.mavis.analyzer.diagram.dto.DiagramExportResponseDTO> exportDiagramById(
+            @PathVariable UUID diagramId,
+            @RequestParam(defaultValue = "MERMAID") String format) {
+        com.mavis.analyzer.diagram.dto.DiagramExportResponseDTO response = diagramExportService.exportDiagramById(diagramId, format);
+        return ApiResponse.success("Xuất sơ đồ kiến trúc thành công", response);
+    }
+
+    @PostMapping("/models/{modelVersionId}/diagrams/deployment")
+    @Operation(summary = "Tạo hoặc lấy bản vẽ kiến trúc 4+1 Deployment",
+            description = "Chiếu bản vẽ VIEW_4_PLUS_1 DEPLOYMENT cho ModelVersion theo yêu cầu")
+    public ApiResponse<DiagramResponseDTO> generateOrGetDeploymentDiagram(@PathVariable UUID modelVersionId) {
+        DiagramResponseDTO response = diagramExportService.generateOrGet4Plus1DeploymentDiagram(modelVersionId);
+        return ApiResponse.success("Lấy bản vẽ 4+1 Deployment thành công", response);
     }
 
     @PutMapping("/diagrams/{diagramId}/layout")
