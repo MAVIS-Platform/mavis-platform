@@ -1,0 +1,28 @@
+{
+  "sessionId": "fixture-session",
+  "modelVersionId": "fixture-model",
+  "sourceSnapshotId": "fixture-source",
+  "profileVersionId": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "runConfigurationVersionId": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "scenarioVersionId": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "resourceProject": "mavisrun-0123456789abcdef0123456789abcdef",
+  "actualImageIds": {},
+  "declaredInstrumentationVersions": {},
+  "sandboxEnforcementConfirmed": false,
+  "imageSourceCorrespondence": "Unverified",
+  "profileAcceptance": "Unverified",
+  "outcome": {
+    "executionStatus": "Failed",
+    "scenarioStatus": "NotRun",
+    "evidenceStatus": "Unavailable",
+    "cleanupStatus": "Confirmed",
+    "traceQuality": "Unavailable",
+    "mappingStatus": "Unavailable",
+    "persistenceStatus": "CallerOwned",
+    "scenario": null,
+    "trace": null,
+    "diagnostics": [
+      "SESSION_EXECUTION_FAILED_AT_DOCKER_INFO"
+    ]
+  }
+}

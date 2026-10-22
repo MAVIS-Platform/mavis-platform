@@ -1,5 +1,7 @@
 # MAVIS Dedicated Runner
 
+Managed Java adapter, lifecycle journal and receipt delivery: see [MANAGED_RUNTIME.md](MANAGED_RUNTIME.md) for commands, contract status and verification limits.
+
 `src/MAVIS.Runner` is a separate .NET 8 executable. The Roslyn API does not launch Docker. The local PoC adapter supports prebuilt, content-addressed Linux images and synchronous HTTP scenarios. It is not a production service for unrestricted repositories.
 
 ## Reproduce the two sample projects
@@ -55,7 +57,9 @@ $env:MAVIS_RUNNER_ALLOW_LOCAL_POC = '1'
 dotnet run --project src/MAVIS.Runner -- run C:/test/session.json C:/test/collector.yaml C:/private/mavis-runner-state
 ```
 
-One allocator lease is allowed per state root. All local invocations must use the same operator-managed root; this does not replace a platform-wide capacity policy. Each session uses a generated `mavisrun-<32 hex>` project name. stderr emits `MAVIS_SESSION_RESOURCE=<id>` for orchestration without revealing credentials. The receipt includes selected versions, actual application/Collector image IDs, declared instrumentation versions and sandbox-check outcome. Source/image correspondence and platform profile acceptance remain explicitly `Unverified` until the platform establishes them.
+One allocator lease is allowed per state root. All local invocations must use the same operator-managed root; this does not replace a platform-wide capacity policy. `RuntimeRunDefinition.resourceProject` optionally supplies the Java-pinned `mavisrun-<32 lowercase hex>` project name. Omitting it preserves generated IDs for existing operator invocations. An invalid supplied ID is rejected rather than silently replaced. stderr emits `MAVIS_SESSION_RESOURCE=<id>` as a proposed identity, before execution; it is not allocation/start acknowledgement. The receipt includes selected versions, actual application/Collector image IDs, declared instrumentation versions and sandbox-check outcome. Source/image correspondence and platform profile acceptance remain explicitly `Unverified` until the platform establishes them.
+
+Allocation rejects existing session paths, receipt/ack paths and linked state paths before running Docker. Under the allocator lease it atomically creates `<state-root>/.allocation-<resource-project>.json`, then creates the session directory. This persistent no-reuse record remains after cleanup/recovery, including the interval before receipt publication; do not remove it to rerun a managed session. A new execution needs a new allocation ID. Recovery of older sessions also retains a no-reuse record. A rejected allocation neither cleans another session nor publishes a receipt. This is local allocation ownership, not the Java lifecycle callback or durable HTTP delivery (implemented separately).
 
 Scenario profile: ordered GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS, expected HTTP status, JSON bodies with string-variable substitution, earlier-step variables through object JSON pointers, literal headers or protected header references. Definitions, dependencies and known references are validated before allocation. Responses are bounded to 1 MiB; bodies/extracted values/headers are not returned in results. Setup/reset may be authored as ordinary supported HTTP requests; there is no automatic database rollback or guarantee that later reset steps run after a failed request.
 
