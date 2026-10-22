@@ -9,6 +9,7 @@ class GlobalExceptionHandlerTest {
   var handler=new GlobalExceptionHandler();
   assertNotNull(handler.handleMissingResource(new NoResourceFoundException(HttpMethod.GET,"unknown")));
   assertEquals(415,handler.handleContentType(new HttpMediaTypeNotSupportedException("invalid")).getStatusCode().value());
+  assertEquals(413,handler.handleUploadTooLarge(new org.springframework.web.multipart.MaxUploadSizeExceededException(100)).getStatusCode().value());
   assertNotNull(handler.handleMalformedRequest(new IllegalArgumentException()));
  }
 }
