@@ -507,6 +507,16 @@ export async function executeJava(
       };
       return operation === "evaluateModel" ? convert(result) : list.parse(result).map(convert);
     }
+    case "findingEvidence": {
+      const runId = id(input, "evaluationId"),
+        modelId = id(input, "modelId"),
+        findingId = id(input, "findingId");
+      const run = object.parse(await get("analyzer/evaluations/" + runId));
+      if (run["modelVersionId"] !== modelId) throw new ApiError("contract", 502);
+      return list
+        .parse(await get("analyzer/evaluations/" + runId + "/findings/" + findingId + "/evidence"))
+        .map(evidenceView);
+    }
     case "evaluationFindings": {
       const evaluationId = id(input, "evaluationId");
       const run = object.parse(await get(`analyzer/evaluations/${evaluationId}`));

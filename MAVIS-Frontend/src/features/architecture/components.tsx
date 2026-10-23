@@ -25,15 +25,43 @@ export function ModelVersionSelector({
   value: string;
   onChange: (id: string) => void;
 }) {
+  const newest = Math.max(0, ...models.map((model) => model.revision));
+  const dateFormat = new Intl.DateTimeFormat("vi-VN", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
   return (
-    <SelectField
-      label="Model version"
-      value={value}
-      onChange={onChange}
-      options={models.map((m) => ({ value: m.id, label: `${m.label} · ${m.snapshotId}` }))}
-    />
+    <div className="space-y-2">
+      <SelectField
+        label="Bản kiến trúc"
+        value={value}
+        onChange={onChange}
+        options={models.map((model) => {
+          const date = model.createdAt ? new Date(model.createdAt) : null;
+          const created = date && !Number.isNaN(date.getTime()) ? dateFormat.format(date) : "";
+          const customLabel =
+            model.label && !/^Revision \d+$/i.test(model.label) ? model.label : "";
+          return {
+            value: model.id,
+            label: [
+              `Bản ${model.revision}`,
+              model.revision === newest ? "Mới nhất" : "",
+              customLabel,
+              created,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          };
+        })}
+      />
+      <p className="text-xs text-muted-foreground">
+        Mỗi bản lưu một kết quả phân tích hoặc chỉnh sửa kiến trúc. Chọn bản cũ để xem lại kết quả
+        trước đó.
+      </p>
+    </div>
   );
 }
+
 export function GraphLegend() {
   return (
     <div className="flex flex-wrap gap-2 text-xs">
