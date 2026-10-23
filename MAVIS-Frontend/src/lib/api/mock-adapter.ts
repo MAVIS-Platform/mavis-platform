@@ -234,6 +234,8 @@ export class MockAdapter implements ApiAdapter {
         return { ok: true };
       case "projects":
         return this.scenario === "empty" ? [] : this.projects;
+      case "projectOverviews":
+        return this.scenario === "empty" ? [] : this.projects;
       case "project":
         return this.find(
           this.projects,

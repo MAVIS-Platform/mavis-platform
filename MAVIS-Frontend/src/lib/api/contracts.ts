@@ -179,6 +179,7 @@ export const contracts = {
   mockLogin: contract(z.object({ role: d.roleSchema }), d.sessionSchema, true),
   signOut: contract(nothing, ok, true),
   projects: contract(nothing, z.array(d.projectSchema)),
+  projectOverviews: contract(nothing, z.array(d.projectSchema)),
   project: contract(project, d.projectSchema),
   snapshots: contract(project, z.array(d.snapshotSchema)),
   importSource: contract(

@@ -66,7 +66,7 @@ export function useApiQuery<K extends Operation>(
     if (!terminal) return;
     const related = operation.startsWith("runtime")
       ? ["platformSummary"]
-      : ["models", "modelVersions", "model", "projects", "project", "platformSummary"];
+      : ["models", "modelVersions", "model", "projects", "projectOverviews", "project", "platformSummary"];
     void client.invalidateQueries({
       predicate: (entry) => related.includes(String(entry.queryKey[1])),
     });

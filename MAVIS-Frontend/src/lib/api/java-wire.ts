@@ -6,6 +6,7 @@ import {
   evidenceSchema,
   modelSchema,
   modelSummarySchema,
+  type Project,
 } from "@/types/domain";
 import { ApiError } from "@/lib/errors/api-error";
 export const object = z.record(z.unknown());
@@ -24,6 +25,69 @@ export function projectView(raw: unknown) {
     status: "unknown",
     services: null,
     runtimeSupported: null,
+  });
+}
+const javaJobLite = z.object({
+  status: z.string(),
+  analysisState: nullableText,
+});
+const processingJobStatuses = new Set([
+  "PENDING",
+  "QUEUED",
+  "DISPATCHED",
+  "RUNNING",
+  "PROCESSING",
+  "CANCELLING",
+]);
+const failedJobStatuses = new Set(["FAILED", "TIMED_OUT", "TIMEOUT"]);
+const javaModelLite = z.object({
+  id: z.string().uuid(),
+  isLatestValid: z.boolean().nullish(),
+  revision: z.number().int(),
+});
+export function projectStatusFromJobs(rows: unknown[]): Project["status"] {
+  const jobs = rows.flatMap((row) => {
+    const parsed = javaJobLite.safeParse(row);
+    return parsed.success ? [parsed.data] : [];
+  });
+  const upper = (value: string | null | undefined) => value?.toUpperCase() ?? "";
+  if (jobs.some((j) => processingJobStatuses.has(upper(j.status)))) return "processing";
+  if (jobs.some((j) => upper(j.status) === "COMPLETED" && upper(j.analysisState) !== "PARTIAL"))
+    return "ready";
+  if (jobs.some((j) => upper(j.analysisState) === "PARTIAL")) return "partial";
+  if (jobs.some((j) => failedJobStatuses.has(upper(j.status)))) return "failed";
+  return "unknown";
+}
+export function latestModelSummaryId(models: unknown[]): string | null {
+  const rows = models.flatMap((raw) => {
+    const parsed = javaModelLite.safeParse(raw);
+    return parsed.success ? [parsed.data] : [];
+  });
+  const latestValid = rows
+    .filter((m) => m.isLatestValid === true)
+    .sort((a, b) => b.revision - a.revision)[0];
+  const fallback = rows.slice().sort((a, b) => b.revision - a.revision)[0];
+  return (latestValid ?? fallback)?.id ?? null;
+}
+export function serviceCountFromGraph(graph: unknown): number | null {
+  const parsed = z.object({ nodes: z.array(z.object({ type: z.string() })) }).safeParse(graph);
+  if (!parsed.success) return null;
+  return parsed.data.nodes.filter((n) => n.type === "SERVICE_CONTAINER").length;
+}
+export function projectOverviewView(
+  raw: unknown,
+  jobs: unknown,
+  graph: unknown,
+  sessions: unknown,
+) {
+  const p = javaProject.parse(raw);
+  return projectSchema.parse({
+    id: p.id,
+    name: p.name,
+    repository: p.repositoryUrl ?? "",
+    status: projectStatusFromJobs(Array.isArray(jobs) ? jobs : []),
+    services: graph === null ? null : serviceCountFromGraph(graph),
+    runtimeSupported: Array.isArray(sessions) ? (sessions.length > 0 ? true : null) : null,
   });
 }
 export const javaSnapshot = z.object({

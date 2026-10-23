@@ -11,7 +11,7 @@ export const projectSchema = z.object({
   id: z.string(),
   name: z.string(),
   repository: z.string(),
-  status: z.enum(["ready", "processing", "failed", "unknown"]),
+  status: z.enum(["ready", "processing", "failed", "partial", "unknown"]),
   services: z.number().int().nonnegative().nullable(),
   runtimeSupported: z.boolean().nullable(),
 });
