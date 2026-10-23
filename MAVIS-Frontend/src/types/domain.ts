@@ -59,6 +59,8 @@ export const elementSchema = z.object({
   name: z.string(),
   layer: z.enum(["edge", "domain", "platform", "data", "unclassified"]),
   elementType: z.string().optional(),
+  parentId: z.string().nullable().optional(),
+  technology: z.string().nullable().optional(),
   properties: z.record(z.unknown()).optional(),
   description: z.string(),
   evidence: z.array(evidenceSchema),
@@ -71,6 +73,9 @@ export const edgeSchema = z.object({
   protocol: z.string(),
   evidence: z.array(evidenceSchema),
   uncertain: z.boolean(),
+  originLayer: z.string().optional(),
+  resolutionStatus: z.string().optional(),
+  underlyingEdgeIds: z.array(z.string()).optional(),
 });
 export const modelSchema = z
   .object({

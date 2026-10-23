@@ -27,7 +27,7 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
     public List<com.mavis.analyzer.diagram.dto.DiagramResponseDTO> generateDefaultDiagramsForModel(ModelVersion model,List<ModelElement> nodes,List<ModelRelationship> edges){
         if(nodes.size()>10000 || edges.size()>50000)throw new BusinessException(ErrorCode.BAD_REQUEST,"Diagram projection exceeds supported budget");
         var ordered=nodes.stream().sorted(Comparator.comparing(e->e.getId().toString())).toList();
-        var containerKinds=Set.of("SERVICE_CONTAINER","DATABASE","EXTERNAL_SYSTEM","QUEUE_BROKER");
+        var containerKinds=Set.of("SERVICE_CONTAINER","DATABASE","EXTERNAL_SYSTEM","QUEUE_BROKER","MESSAGE_CHANNEL");
         var containers=ordered.stream().filter(e->containerKinds.contains(e.getElementType())).toList();
         var components=ordered.stream().filter(e->!"CLASS_INTERFACE".equals(e.getElementType())).toList();
         return diagrams.saveAll(List.of(create(model,"DEPENDENCY_GRAPH","SERVICE",containers,edges),create(model,"C4","CONTAINER",containers,edges),create(model,"C4","COMPONENT",components,edges))).stream().map(com.mavis.analyzer.diagram.dto.DiagramResponseDTO::fromEntity).toList();
@@ -39,6 +39,10 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
             var node=nodes.get(i);ids.add(node.getId());
             var point=positions.addObject().put("id",node.getId().toString()).put("name",node.getName()).put("kind",node.getElementType()).put("type",node.getElementType()).put("status",node.getStatus()).put("x",(i%8)*280).put("y",(i/8)*180);
             point.put("languageStack",node.getLanguageStack());
+            if (node.getProperties() != null) {
+                point.set("properties", node.getProperties());
+                point.put("description", node.getProperties().path("responsibility").asText(node.getProperties().path("description").asText("")));
+            }
             point.putObject("position").put("x",(i%8)*280).put("y",(i/8)*180);
             point.putObject("data").put("label",node.getName()).put("status",node.getStatus()).put("technology",node.getLanguageStack());
             if("C4".equals(notation))point.put("c4Type","COMPONENT".equals(level)&&!containerKindsForNode(node)?"Component":"Container");
@@ -47,7 +51,8 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
         var connections=layout.putArray("edges");
         edges.stream().filter(e->ids.contains(e.getSourceElement().getId())&&ids.contains(e.getTargetElement().getId())).sorted(Comparator.comparing(e->e.getId().toString())).forEach(e->connections.addObject()
                 .put("id",e.getId().toString()).put("from",e.getSourceElement().getId().toString()).put("to",e.getTargetElement().getId().toString()).put("type",e.getRelationType())
-                .put("source",e.getSourceElement().getId().toString()).put("target",e.getTargetElement().getId().toString()).put("relationType",e.getRelationType()).put("label",e.getRelationType()).put("originLayer",e.getOriginLayer()).put("direction",e.getDirection()));
+                .put("source",e.getSourceElement().getId().toString()).put("target",e.getTargetElement().getId().toString()).put("relationType",e.getRelationType()).put("label",e.getRelationType()).put("originLayer",e.getOriginLayer()).put("direction",e.getDirection())
+                .put("resolutionStatus", e.getProperties() == null ? "UNKNOWN" : e.getProperties().path("resolutionStatus").asText("UNKNOWN")));
         return DiagramVersion.builder().modelVersion(model).notation(notation).level(level).layoutJson(layout).build();
     }
     @Override @Transactional(readOnly=true)
@@ -74,7 +79,7 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
     @Override @Transactional(readOnly=true)
     public List<EvidenceView> relationshipEvidence(UUID id){var target=relationships.findById(id).orElseThrow(()->missing());owner(target.getModelVersion());return evidence.findByRelationshipId(id).stream().map(this::ev).toList();}
     private void owner(ModelVersion model){accessPolicy.requireProjectReadAccess(model.getProject());}
-    private boolean containerKindsForNode(ModelElement node){return Set.of("SERVICE_CONTAINER","DATABASE","EXTERNAL_SYSTEM","QUEUE_BROKER").contains(node.getElementType());}
+    private boolean containerKindsForNode(ModelElement node){return Set.of("SERVICE_CONTAINER","DATABASE","EXTERNAL_SYSTEM","QUEUE_BROKER","MESSAGE_CHANNEL").contains(node.getElementType());}
     private DiagramView view(DiagramVersion d){return new DiagramView(d.getId(),d.getModelVersion().getId(),d.getNotation(),d.getLevel(),d.getLayoutJson(),d.getCreatedAt());}
     private EvidenceView ev(Evidence e){return new EvidenceView(e.getId(),e.getModelVersion().getId(),e.getSourceSnapshot().getId(),e.getSourceType(),e.getLocator(),e.getAdapterVersion(),e.getProvenance());}
     private static BusinessException missing(){return new BusinessException(ErrorCode.NOT_FOUND,"Model artifact not found");}

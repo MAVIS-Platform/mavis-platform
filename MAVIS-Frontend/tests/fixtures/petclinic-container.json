@@ -1,0 +1,390 @@
+{
+  "notation": "C4",
+  "diagramId": "dbaf1076-7da5-4d85-9d01-962c7ca5d081",
+  "layoutJson": {
+    "edges": [
+      {
+        "id": "2edbd75a-6551-431b-95a4-3cddfcab1091",
+        "to": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "from": "fdd95602-22a0-4b97-a91f-ca56bcd8a653",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "fdd95602-22a0-4b97-a91f-ca56bcd8a653",
+        "target": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "38aa075d-9f66-4825-b561-cb13a6bdf595",
+        "to": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "from": "1b899a1a-8a8d-4059-8449-3ba0f8f48ab9",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "1b899a1a-8a8d-4059-8449-3ba0f8f48ab9",
+        "target": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "44bc8f33-2f99-419b-b49f-ede9dce83ad7",
+        "to": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "from": "7436269a-c480-4cc8-b912-2e89e31d622c",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "7436269a-c480-4cc8-b912-2e89e31d622c",
+        "target": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "641fa77a-1e01-4d41-ad08-92861ca0e70e",
+        "to": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "from": "ab030422-64d5-40e6-8511-20137dff0759",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "ab030422-64d5-40e6-8511-20137dff0759",
+        "target": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "66aa0260-b97d-491e-8c86-fdcd8d84292c",
+        "to": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "from": "1b899a1a-8a8d-4059-8449-3ba0f8f48ab9",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "1b899a1a-8a8d-4059-8449-3ba0f8f48ab9",
+        "target": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "7a26a727-a627-4b44-93e3-15c82ffff37d",
+        "to": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "from": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "target": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "8744f7fb-6de2-4567-ada6-d60062467a52",
+        "to": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "from": "ab030422-64d5-40e6-8511-20137dff0759",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "ab030422-64d5-40e6-8511-20137dff0759",
+        "target": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "c2e2dc7b-bc63-46ac-a42c-a613dcc6037e",
+        "to": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "from": "be82718b-4447-48fd-a5e2-b5ef65353127",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "be82718b-4447-48fd-a5e2-b5ef65353127",
+        "target": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "e2456042-023c-4f4f-a879-7a86c1b3f212",
+        "to": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "from": "7436269a-c480-4cc8-b912-2e89e31d622c",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "7436269a-c480-4cc8-b912-2e89e31d622c",
+        "target": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "ece7de9c-3607-4e84-a52e-cab232e795f1",
+        "to": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "from": "be82718b-4447-48fd-a5e2-b5ef65353127",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "be82718b-4447-48fd-a5e2-b5ef65353127",
+        "target": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "ed751c3f-3a78-41f4-8bc3-4f00c4c39f30",
+        "to": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "from": "03dda35b-97fa-4bf9-8359-11a0e3b99d41",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "03dda35b-97fa-4bf9-8359-11a0e3b99d41",
+        "target": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "f1632a17-a787-46ac-88f8-cac3035796f3",
+        "to": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "from": "03dda35b-97fa-4bf9-8359-11a0e3b99d41",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "03dda35b-97fa-4bf9-8359-11a0e3b99d41",
+        "target": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      },
+      {
+        "id": "fe0921c1-33ea-460f-bf89-a517b7745a04",
+        "to": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "from": "fdd95602-22a0-4b97-a91f-ca56bcd8a653",
+        "type": "DECLARED_COMPOSE",
+        "label": "DECLARED_COMPOSE",
+        "source": "fdd95602-22a0-4b97-a91f-ca56bcd8a653",
+        "target": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "direction": "DIRECTED",
+        "originLayer": "DEPLOYMENT",
+        "relationType": "DECLARED_COMPOSE"
+      }
+    ],
+    "nodes": [
+      {
+        "x": 0,
+        "y": 0,
+        "id": "03dda35b-97fa-4bf9-8359-11a0e3b99d41",
+        "data": {
+          "label": "api-gateway",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "api-gateway",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "languageStack": "JAVA_SPRING"
+      },
+      {
+        "x": 280,
+        "y": 0,
+        "id": "1b899a1a-8a8d-4059-8449-3ba0f8f48ab9",
+        "data": {
+          "label": "admin-server",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "admin-server",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 280,
+          "y": 0
+        },
+        "languageStack": "JAVA_SPRING"
+      },
+      {
+        "x": 560,
+        "y": 0,
+        "id": "1d967c3c-a872-44ad-afa8-fab313da2411",
+        "data": {
+          "label": "discovery-server",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "discovery-server",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 560,
+          "y": 0
+        },
+        "languageStack": "JAVA_SPRING"
+      },
+      {
+        "x": 840,
+        "y": 0,
+        "id": "29a37a02-f81b-4c39-aac9-db3e51e45b44",
+        "data": {
+          "label": "tracing-server",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "tracing-server",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 840,
+          "y": 0
+        },
+        "languageStack": "JAVA_SPRING"
+      },
+      {
+        "x": 1120,
+        "y": 0,
+        "id": "7436269a-c480-4cc8-b912-2e89e31d622c",
+        "data": {
+          "label": "customers-service",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "customers-service",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 1120,
+          "y": 0
+        },
+        "languageStack": "JAVA_SPRING"
+      },
+      {
+        "x": 1400,
+        "y": 0,
+        "id": "83590c78-1bce-40a7-949f-7c8076ea01ea",
+        "data": {
+          "label": "grafana-server",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "grafana-server",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 1400,
+          "y": 0
+        },
+        "languageStack": "JAVA_SPRING"
+      },
+      {
+        "x": 1680,
+        "y": 0,
+        "id": "944933ea-aab9-4b58-bc84-ecc126e12af8",
+        "data": {
+          "label": "config-server",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "config-server",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 1680,
+          "y": 0
+        },
+        "languageStack": "JAVA_SPRING"
+      },
+      {
+        "x": 1960,
+        "y": 0,
+        "id": "ab030422-64d5-40e6-8511-20137dff0759",
+        "data": {
+          "label": "visits-service",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "visits-service",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 1960,
+          "y": 0
+        },
+        "languageStack": "JAVA_SPRING"
+      },
+      {
+        "x": 0,
+        "y": 180,
+        "id": "be82718b-4447-48fd-a5e2-b5ef65353127",
+        "data": {
+          "label": "vets-service",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "vets-service",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 0,
+          "y": 180
+        },
+        "languageStack": "JAVA_SPRING"
+      },
+      {
+        "x": 280,
+        "y": 180,
+        "id": "f999c24e-ebc4-4cce-95a7-1336a77168b4",
+        "data": {
+          "label": "prometheus-server",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "prometheus-server",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 280,
+          "y": 180
+        },
+        "languageStack": "JAVA_SPRING"
+      },
+      {
+        "x": 560,
+        "y": 180,
+        "id": "fdd95602-22a0-4b97-a91f-ca56bcd8a653",
+        "data": {
+          "label": "genai-service",
+          "status": "VALIDATED",
+          "technology": "JAVA_SPRING"
+        },
+        "kind": "SERVICE_CONTAINER",
+        "name": "genai-service",
+        "type": "SERVICE_CONTAINER",
+        "c4Type": "Container",
+        "status": "VALIDATED",
+        "position": {
+          "x": 560,
+          "y": 180
+        },
+        "languageStack": "JAVA_SPRING"
+      }
+    ],
+    "schemaVersion": "1.0",
+    "modelVersionId": "26be22bb-f951-4a51-8459-e1e2f4f1ea62"
+  },
+  "modelVersionId": "26be22bb-f951-4a51-8459-e1e2f4f1ea62",
+  "level": "CONTAINER"
+}

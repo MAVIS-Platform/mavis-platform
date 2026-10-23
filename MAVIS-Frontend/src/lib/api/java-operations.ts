@@ -1,3 +1,7 @@
+import { planArchitectureViews } from "../architecture/view-planner";
+import { githubBranches, githubRevision } from "../github/branches";
+import { generateDrawio } from "../drawio/server";
+import { projectDiagram, selectRelationships, type DrawioTheme } from "../drawio/rules";
 import { z } from "zod";
 import { javaRequest } from "./java-client";
 import {
@@ -172,7 +176,12 @@ export async function executeJava(
         .parse(await post(`analyzer/upload?projectId=${id(input, "projectId")}`, form));
       return snapshotView(await get(`analyzer/snapshots/${result.snapshotId}`));
     }
+    case "githubBranches":
+      return githubBranches(String(input["repositoryUrl"]), signal);
     case "importGithub": {
+      const commit = String(input["commitSha"] ?? "").trim();
+      if (commit && !/^[a-fA-F0-9]{40}$/.test(commit))
+        throw new ApiError("validation", 422, "GITHUB_COMMIT");
       let request;
       try {
         request = githubImportRequest(
@@ -182,11 +191,30 @@ export async function executeJava(
           String(input["commitSha"] ?? ""),
         );
       } catch {
-        throw new ApiError("validation", 422);
+        throw new ApiError("validation", 422, "GITHUB_URL");
       }
-      const result = z
-        .object({ snapshotId: z.string().uuid() })
-        .parse(await post("analyzer/import/github", request));
+      if (!request.commitSha) {
+        const refs = await githubBranches(request.repositoryUrl, signal);
+        if (!refs.branches.includes(request.branchName) && !refs.truncated)
+          throw new ApiError("invalid", 400, "GITHUB_BRANCH");
+      }
+      request = {
+        ...request,
+        commitSha: await githubRevision(
+          request.repositoryUrl,
+          request.commitSha ?? request.branchName,
+          signal,
+        ),
+      };
+      let imported: unknown;
+      try {
+        imported = await post("analyzer/import/github", request);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 400)
+          throw new ApiError("invalid", 400, "GITHUB_IMPORT");
+        throw error;
+      }
+      const result = z.object({ snapshotId: z.string().uuid() }).parse(imported);
       return snapshotView(await get(`analyzer/snapshots/${result.snapshotId}`));
     }
     case "analysisJobs":
@@ -243,6 +271,62 @@ export async function executeJava(
       }
       return data.map(evidenceView);
     }
+    case "architectureDocument":
+    case "saveArchitectureDocument": {
+      const modelId = id(input, "modelId");
+      const viewId = z
+        .string()
+        .regex(/^[a-zA-Z0-9:_-]{1,160}$/)
+        .parse(input["viewId"]);
+      const path = `analyzer/models/${modelId}/documents/${encodeURIComponent(viewId)}`;
+      const result =
+        operation === "architectureDocument"
+          ? await get(path + (input["revision"] ? `?revision=${Number(input["revision"])}` : ""))
+          : await post(path, { expectedRevision: input["expectedRevision"], xml: input["xml"] });
+      const doc = z
+        .object({
+          modelId: z.string().uuid(),
+          viewId: z.string(),
+          revision: z.number().int().nonnegative(),
+          xml: z.string().nullable(),
+        })
+        .parse(result);
+      if (doc.modelId !== modelId || doc.viewId !== viewId) throw new ApiError("contract", 502);
+      return doc;
+    }
+    case "architectureViews":
+    case "renderArchitectureView": {
+      const modelId = id(input, "modelId");
+      const diagrams = z
+        .array(
+          z.object({
+            id: z.string().uuid(),
+            modelVersionId: z.string().uuid(),
+            notation: z.string(),
+            level: z.string(),
+          }),
+        )
+        .parse(await get(`analyzer/models/${modelId}/diagrams`));
+      const component = diagrams.find(
+        (d) => d.notation === "C4" && d.level === "COMPONENT" && d.modelVersionId === modelId,
+      );
+      if (!component) throw new ApiError("not-found", 404);
+      const exported = z
+        .object({ modelVersionId: z.string().uuid(), content: z.string() })
+        .parse(await get(`analyzer/diagrams/${component.id}/export?format=JSON`));
+      if (exported.modelVersionId !== modelId) throw new ApiError("contract", 502);
+      const pack = planArchitectureViews(JSON.parse(exported.content));
+      if (pack.modelId !== modelId) throw new ApiError("contract", 502);
+      if (operation === "architectureViews") return pack;
+      const view = pack.views.find((view) => view.id === input["viewId"]);
+      if (!view) throw new ApiError("not-found", 404);
+      return {
+        modelId,
+        viewId: view.id,
+        format: "DRAWIO_XML",
+        content: await generateDrawio(view.document, (input["theme"] ?? "clean") as DrawioTheme),
+      };
+    }
     case "diagrams":
       return list
         .parse(await get(`analyzer/models/${id(input, "modelId")}/diagrams`))
@@ -259,15 +343,46 @@ export async function executeJava(
           return { id: d.id, modelId: d.modelVersionId, notation: d.notation, level: d.level };
         });
     case "exportDiagram": {
+      const format = String(input["format"]);
+      const canonical =
+        format === "DRAWIO_XML" ||
+        (format === "JSON" && (!!input["containerId"] || !!input["relationshipView"]));
       const d = z
         .object({ modelVersionId: z.string().uuid(), content: z.string(), format: z.string() })
         .parse(
           await get(
-            `analyzer/diagrams/${id(input, "diagramId")}/export?format=${encodeURIComponent(String(input["format"]))}`,
+            `analyzer/diagrams/${id(input, "diagramId")}/export?format=${encodeURIComponent(canonical ? "JSON" : format)}`,
           ),
         );
       if (d.modelVersionId !== id(input, "modelId")) throw new ApiError("contract", 502);
-      return { modelId: d.modelVersionId, content: d.content, format: d.format };
+      if (!canonical) return { modelId: d.modelVersionId, content: d.content, format: d.format };
+      try {
+        const projected = projectDiagram(
+          JSON.parse(d.content),
+          input["containerId"] ? id(input, "containerId") : undefined,
+        );
+        const doc = selectRelationships(
+          projected,
+          (input["relationshipView"] ?? "all") as "all" | "source" | "declared" | "runtime",
+        );
+        if (
+          format === "DRAWIO_XML" &&
+          doc.notation === "C4" &&
+          doc.level === "COMPONENT" &&
+          !input["containerId"] &&
+          !doc["scopeContainerId"]
+        )
+          throw new Error("Choose a component container");
+        if (doc.modelVersionId !== d.modelVersionId)
+          throw new Error("Diagram belongs to another model");
+        const content =
+          format === "JSON"
+            ? JSON.stringify(doc)
+            : await generateDrawio(doc, (input["theme"] ?? "clean") as DrawioTheme);
+        return { modelId: d.modelVersionId, content, format };
+      } catch {
+        throw new ApiError("contract", 502);
+      }
     }
     case "impact": {
       const modelId = id(input, "modelId");
