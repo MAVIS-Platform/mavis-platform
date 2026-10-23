@@ -256,6 +256,51 @@ export const contracts = {
   impact: contract(z.object({ modelId: id, targetId: id }), d.impactSchema),
   explain: contract(z.object({ modelId: id, elementId: id }), d.explanationSchema, true),
   workspaces: contract(nothing, z.array(d.workspaceSchema)),
+  createWorkspace: contract(
+    z.object({
+      code: z.string().trim().min(1).max(50),
+      name: z.string().trim().min(1).max(255),
+      description: z.string().max(5000).optional(),
+    }),
+    d.workspaceSchema,
+    true,
+  ),
+  updateWorkspace: contract(
+    z.object({
+      workspaceId: id,
+      name: z.string().trim().min(1).max(255),
+      description: z.string().max(5000).optional(),
+    }),
+    d.workspaceSchema,
+    true,
+  ),
+  archiveWorkspace: contract(z.object({ workspaceId: id }), d.workspaceSchema, true),
+  addWorkspaceMember: contract(
+    z.object({
+      workspaceId: id,
+      email: z.string().email(),
+      memberRole: z.enum(["STUDENT", "LECTURER"]),
+    }),
+    d.workspaceSchema,
+    true,
+  ),
+  removeWorkspaceMember: contract(
+    z.object({ workspaceId: id, userId: id }),
+    d.workspaceSchema,
+    true,
+  ),
+  createAssignment: contract(
+    z.object({
+      workspaceId: id,
+      title: z.string().trim().min(1).max(255),
+      description: z.string().max(10000).optional(),
+      dueAt: z.string().datetime({ offset: true }).nullable(),
+      requiredDiagramTypes: z.array(z.string()).max(10),
+      requireRuntimeTrace: z.boolean(),
+    }),
+    d.assignmentSchema,
+    true,
+  ),
   assignments: contract(z.object({ workspaceId: id }), z.array(d.assignmentSchema)),
   referenceVersions: contract(
     z.object({ workspaceId: id }),
@@ -264,12 +309,27 @@ export const contracts = {
   submissions: contract(nothing, z.array(d.submissionSchema)),
   submission: contract(z.object({ submissionId: id }), d.submissionSchema),
   submit: contract(
-    z.object({ assignmentId: id, modelId: id, snapshotId: id, runtimeSessionId: id.nullable() }),
+    z.object({
+      assignmentId: id,
+      projectId: id.optional(),
+      modelId: id,
+      snapshotId: id,
+      diagramVersionId: id.optional(),
+      evaluationRunId: id.nullable().optional(),
+      runtimeSessionId: id.nullable(),
+      submissionNotes: z.string().max(5000).optional(),
+    }),
     d.submissionSchema,
     true,
   ),
   feedback: contract(
-    z.object({ submissionId: id, modelId: id, text: z.string().trim().min(1).max(5000) }),
+    z.object({
+      submissionId: id,
+      modelId: id,
+      text: z.string().trim().min(1).max(5000),
+      elementId: id.nullable().optional(),
+      relationshipId: id.nullable().optional(),
+    }),
     d.submissionSchema,
     true,
   ),

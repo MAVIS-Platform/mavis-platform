@@ -130,3 +130,29 @@ test("stage13 update profile forwards PATCH and refreshes identity without crede
  assert.equal(sent.options.method,"PATCH");assert.ok(sent.url.endsWith("auth/me"));assert.equal(result.user.name,"Updated");assert.ok(!JSON.stringify(result).includes("secret"));
  const {contracts}=require("../src/lib/api/contracts.ts");assert.equal(contracts.updateProfile.input.safeParse({fullName:" ",newPassword:"123"}).success,false);
 });
+
+test("education joins workspace members using user IDs and maps assignment policy",async t=>{
+ environment(t);t.mock.method(globalThis,"fetch",async url=>Response.json({code:200,data:url.endsWith("/members")?[{id:node,userId:job,fullName:"Student",memberRole:"STUDENT"}]:url.endsWith("/assignments")?[{id:node,workspaceId:project,title:"Task",description:"Instructions",dueAt:null,requireRuntimeTrace:true,requiredDiagramTypes:["C4"]}]:[{id:project,code:"SE",name:"Class",status:"ACTIVE",myRoleInWorkspace:"LECTURER"}]}));
+ const workspaces=validateResponse("workspaces",{},await executeJava("workspaces",{},"jwt",new AbortController().signal));assert.equal(workspaces[0].members[0].id,job);assert.equal(workspaces[0].myRole,"LECTURER");
+ const input={workspaceId:project};const assignments=validateResponse("assignments",input,await executeJava("assignments",input,"jwt",new AbortController().signal));assert.equal(assignments[0].instructions,"Instructions");assert.equal(assignments[0].requireRuntimeTrace,true);assert.equal(assignments[0].dueAt,"No deadline");
+});
+test("submit rejects mismatched source and missing diagram before any mutation",async t=>{
+ environment(t);let posts=0;t.mock.method(globalThis,"fetch",async(url,options)=>{if(options.method==="POST")posts++;return Response.json({code:200,data:url.endsWith("/diagrams")?[]:metadata});});
+ const input={assignmentId:job,modelId:model,snapshotId:snapshot,runtimeSessionId:null};
+ await assert.rejects(executeJava("submit",{...input,snapshotId:node},"jwt",new AbortController().signal),e=>e.status===422);
+ await assert.rejects(executeJava("submit",input,"jwt",new AbortController().signal),e=>e.status===422&&e.code==="SUBMISSION_DIAGRAM");assert.equal(posts,0);
+});
+test("submit sends complete pinned payload and hydrates the submitted version rather than latest",async t=>{
+ environment(t);let payload;
+ const sub={id:job,assignmentId:node,projectId:project,submittedById:node,submittedAt:"2026-10-23T00:00:00Z",sourceSnapshotId:snapshot,modelVersionId:model,runtimeSessionId:null};
+ t.mock.method(globalThis,"fetch",async(url,o)=>{let data;if(url.endsWith("/submissions")&&o.method==="POST"){payload=JSON.parse(o.body);data=sub;}else if(url.endsWith("/feedbacks"))data=[];else if(url.endsWith("/diagrams"))data=[{id:node,modelVersionId:model}];else if(url.endsWith("/graph"))data={nodes:[],edges:[]};else if(url.endsWith("/elements"))data=[];else if(url.includes("/snapshots/"))data={id:snapshot,projectId:project};else data=metadata;return Response.json({code:200,data});});
+ const input={assignmentId:node,modelId:model,snapshotId:snapshot,runtimeSessionId:null};const result=validateResponse("submit",input,await executeJava("submit",input,"jwt",new AbortController().signal));assert.equal(result.model.id,model);assert.equal(result.snapshot.id,snapshot);assert.equal(payload.projectId,project);assert.equal(payload.diagramVersionId,node);assert.equal(payload.modelVersionId,model);
+});
+test("feedback uses commentText and rejects a foreign model before writing",async t=>{
+ environment(t);let writes=0;t.mock.method(globalThis,"fetch",async(url,o)=>{if(o.method==="POST")writes++;return Response.json({code:200,data:{modelVersionId:job}});});await assert.rejects(executeJava("feedback",{submissionId:job,modelId:model,text:"Review"},"jwt",new AbortController().signal),e=>e.status===422);assert.equal(writes,0);
+});
+test("reference lookup never substitutes a model from another source snapshot",async t=>{
+ environment(t);t.mock.method(globalThis,"fetch",async url=>Response.json({code:200,data:url.endsWith("reference-snapshots")?[{id:snapshot,projectId:project}]:[{...metadata,sourceSnapshotId:job}]}));await assert.rejects(executeJava("referenceVersions",{workspaceId:project},"jwt",new AbortController().signal),e=>e.code==="REFERENCE_MODEL");
+});
+
+test("browser displays only allowlisted submission validation errors",async t=>{const {BackendAdapter}=require("../src/lib/api/backend-adapter.ts");t.mock.method(globalThis,"fetch",async()=>Response.json({code:"SUBMISSION_DIAGRAM"},{status:422}));await assert.rejects(new BackendAdapter().execute("submit",{assignmentId:node,modelId:model,snapshotId:snapshot,runtimeSessionId:null}),e=>e.code==="SUBMISSION_DIAGRAM"&&e.message.includes("Save a diagram"));});

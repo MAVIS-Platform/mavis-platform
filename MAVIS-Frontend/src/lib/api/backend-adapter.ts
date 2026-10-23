@@ -61,7 +61,7 @@ export class BackendAdapter implements ApiAdapter {
       });
       if (operation === "session" && response.status === 401) return { user: null } as Response<K>;
       if (!response.ok) {
-        if (["githubBranches", "importGithub"].includes(operation)) {
+        {
           try {
             const error: unknown = await response.json();
             const code = publicErrorCode(

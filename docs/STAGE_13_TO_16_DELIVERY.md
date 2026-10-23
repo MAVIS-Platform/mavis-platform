@@ -32,6 +32,15 @@ Verification on 23 October 2026:
 
 Production/runtime acceptance remains for stage 16; no claim of exhaustive or production verification.
 
-Stage 14: pending stage 13 push.
-Stage 15: pending stage 14 verification and push.
+### Stage 14 — verified
+
+Connected workspace/member/assignment management forms and real API adapters, published reference model lookup, exact pinned submission hydration, complete submit payload and feedback commentText. Added current-user submission listing (own or workspace lecturer, admin all) with SQL EXISTS to avoid duplicates. Closed inactive/outsider/classmate read paths, student teaching-workspace creation, removed-member submission and reference-publishing permissions. Export uses the central project policy instead of comparing role display names. Read-list filtering uses a boolean policy check so a denied row does not mark the transaction rollback-only.
+
+Verification:
+- Common + platform unit reactor: 112 passed, zero skipped/failures. Existing authorization and version/deadline tests retained. Fixtures updated to explicitly supply the teaching workspace/policy denial after centralizing authorization.
+- Stage14EducationApiIntegrationTest: passed against task PostgreSQL15 with dev bypass disabled. Exercises anonymous rejection, student creation denial, lecturer workspace/member/assignment creation, outsider denial, classmate private-project filtering, pinned submit, both list aliases for student/lecturer/admin, foreign detail denial, student feedback denial, lecturer feedback, admin export, rename, creator-removal denial, member removal, feedback read, archive and removed-member submit rejection. Stored submission count remains one.
+- Frontend: 58 tests, typecheck, targeted lint and production build passed. Build caught an exactOptionalPropertyTypes mismatch in the new management form; corrected using the contract-derived type and rebuilt. Submission validation messages are allowlisted through the browser adapter.
+- Final self-review and diff whitespace checks passed; generated Next config edits restored. Logs: E:/Mavis/analysis/stage14/. Worker unchanged; its stage13 verification remains applicable. Browser-operated full runtime acceptance is still pending stage16.
+
+Stage 15: pending stage 14 push.
 Stage 16: pending stage 15 verification and push.
