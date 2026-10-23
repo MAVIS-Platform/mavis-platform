@@ -42,6 +42,7 @@ public interface AccessPolicyService {
      * Ngăn chặn triệt để việc sinh viên A xem đồ án của sinh viên B khác.
      */
     void requireProjectReadAccess(Project project);
+    boolean canReadProject(Project project);
 
     /**
      * Kiểm tra quyền chỉnh sửa/xóa đồ án (Project):

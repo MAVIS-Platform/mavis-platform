@@ -52,6 +52,12 @@ export function validateResponse<K extends Operation>(
     value.some((entry: unknown) => !record(entry) || entry["projectId"] !== request["projectId"])
   )
     fail();
+  if (
+    Array.isArray(value) &&
+    ["assignments", "referenceVersions"].includes(operation) &&
+    value.some((v) => !record(v) || v["workspaceId"] !== request["workspaceId"])
+  )
+    fail();
   if (record(value)) {
     for (const key of [
       "projectId",
