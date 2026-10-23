@@ -68,7 +68,7 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
         // =========================================================================
         // RULE-02 (NO_SHARED_DATABASE_ANTI_PATTERN): Nút DATABASE bị >= 2 SERVICE_CONTAINER truy cập
         // =========================================================================
-        List<EvaluationFinding> rule02Findings = evaluateRule02NoSharedDatabase(elements, relationships, elementMap);
+        List<EvaluationFinding> rule02Findings = SharedDatabaseRule.evaluate(elements, relationships, objectMapper);
         allFindings.addAll(rule02Findings);
         updateRuleStatus(ruleStatusMap, "RULE-02", rule02Findings);
 
@@ -96,6 +96,33 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
         // =========================================================================
         // TÍNH ĐIỂM COMPLIANCE SCORE (0..100) VÀ TỔNG HỢP SUMMARY METRICS
         // =========================================================================
+        for (EvaluationFinding finding : allFindings) {
+
+            ObjectNode details = finding.getDetails() instanceof ObjectNode d ? d : objectMapper.createObjectNode();
+            details.put("contractVersion", "3e/2");
+            details.put("ruleSetVersion", "3e-2");
+            if (!details.has("applicability")) details.put("applicability", finding.getElement()==null && finding.getRelationship()==null ? "MODEL_SCOPE" : "APPLICABLE");
+            var nodeIds = new HashSet<String>();
+            if (finding.getElement()!=null) nodeIds.add(finding.getElement().getId().toString());
+            details.path("relatedElementIds").forEach(n -> nodeIds.add(n.asText()));
+            var relationIds = new HashSet<String>();
+            if (finding.getRelationship()!=null) relationIds.add(finding.getRelationship().getId().toString());
+            details.path("relatedRelationshipIds").forEach(n -> relationIds.add(n.asText()));
+            var evidenceIds = details.putArray("supportingEvidenceIds");
+            evidences.stream().filter(e -> e.getExcerpt()!=null && !e.getExcerpt().isBlank())
+                .filter(e -> e.getElement()!=null && nodeIds.contains(e.getElement().getId().toString()) || e.getRelationship()!=null && relationIds.contains(e.getRelationship().getId().toString()))
+                .map(Evidence::getId).filter(Objects::nonNull).distinct().sorted().forEach(id -> evidenceIds.add(id.toString()));
+            if (evidenceIds.isEmpty()) {
+                details.put("evidenceSufficiency","INCOMPLETE");
+                if("RULE-02".equals(finding.getRuleId()) && ("PASS".equals(finding.getStatus()) || "VIOLATION".equals(finding.getStatus()))) {
+                    finding.setStatus("NEEDS_REVIEW"); finding.setSeverity("INFO");
+                    finding.setMessage("Mô hình có ánh xạ logical datastore nhưng chưa có đoạn bằng chứng gắn với truy cập. Cần đối chiếu source và datasource trước khi kết luận.");
+                }
+            } else if(!details.has("evidenceSufficiency")) details.put("evidenceSufficiency","SOURCE_REFERENCES");
+            finding.setDetails(details);
+        }
+
+        updateRuleStatus(ruleStatusMap,"RULE-02",rule02Findings);
         double score = 100.0;
         int passedCount = 0;
         int violationCount = 0;
@@ -139,15 +166,13 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
         // Lưu EvaluationRun
         EvaluationRun evaluationRun = EvaluationRun.builder()
                 .modelVersion(modelVersion)
-                .ruleSetVersion((ruleSetVersion != null && !ruleSetVersion.isBlank()) ? ruleSetVersion : "1.0")
+                .ruleSetVersion("3e-2")
                 .summaryMetrics(metricsNode)
                 .build();
         EvaluationRun savedRun = evaluationRunRepository.save(evaluationRun);
 
         // Gán EvaluationRun cho toàn bộ findings
-        for (EvaluationFinding finding : allFindings) {
-            finding.setEvaluationRun(savedRun);
-        }
+        for(EvaluationFinding finding:allFindings) finding.setEvaluationRun(savedRun);
 
         // [TỐI ƯU HIỆU NĂNG]: Lưu toàn bộ EvaluationFinding bằng 1 lệnh saveAll() duy nhất
         List<EvaluationFinding> savedFindings = evaluationFindingRepository.saveAll(allFindings);
@@ -317,75 +342,6 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
     /**
      * RULE-02 (NO_SHARED_DATABASE_ANTI_PATTERN):
      * Kiểm tra có nút DATABASE nào bị >= 2 SERVICE_CONTAINER khác nhau cùng truy cập (DATABASE_ACCESS) không.
-     */
-    private List<EvaluationFinding> evaluateRule02NoSharedDatabase(List<ModelElement> elements,
-                                                                  List<ModelRelationship> relationships,
-                                                                  Map<UUID, ModelElement> elementMap) {
-        List<EvaluationFinding> findings = new ArrayList<>();
-
-        List<ModelElement> databases = elements.stream()
-                .filter(e -> "DATABASE".equalsIgnoreCase(e.getElementType()))
-                .collect(Collectors.toList());
-
-        Map<UUID, Set<UUID>> dbAccessingServices = new HashMap<>();
-        Map<UUID, List<ModelRelationship>> dbAccessingRels = new HashMap<>();
-
-        for (ModelRelationship rel : relationships) {
-            ModelElement target = elementMap.getOrDefault(rel.getTargetElement().getId(), rel.getTargetElement());
-            boolean isDbTarget = "DATABASE".equalsIgnoreCase(target.getElementType());
-            boolean isDbAccessRel = "DATABASE_ACCESS".equalsIgnoreCase(rel.getRelationType());
-
-            if (isDbTarget || isDbAccessRel) {
-                UUID serviceId = getServiceContainerId(rel.getSourceElement(), elementMap);
-                UUID dbId = isDbTarget ? target.getId() : getDatabaseId(target, elementMap);
-
-                if (serviceId != null && dbId != null) {
-                    dbAccessingServices.computeIfAbsent(dbId, k -> new HashSet<>()).add(serviceId);
-                    dbAccessingRels.computeIfAbsent(dbId, k -> new ArrayList<>()).add(rel);
-                }
-            }
-        }
-
-        boolean hasViolation = false;
-        for (ModelElement db : databases) {
-            Set<UUID> accessingServices = dbAccessingServices.getOrDefault(db.getId(), Collections.emptySet());
-            if (accessingServices.size() >= 2) {
-                hasViolation = true;
-                String serviceNames = accessingServices.stream()
-                        .map(sId -> elementMap.containsKey(sId) ? elementMap.get(sId).getName() : sId.toString())
-                        .collect(Collectors.joining(", "));
-
-                List<ModelRelationship> rels = dbAccessingRels.getOrDefault(db.getId(), Collections.emptyList());
-                ModelRelationship sampleRel = rels.isEmpty() ? null : rels.get(0);
-
-                findings.add(EvaluationFinding.builder()
-                        .ruleId("RULE-02")
-                        .severity("WARNING")
-                        .status("VIOLATION")
-                        .element(db)
-                        .relationship(sampleRel)
-                        .message("Phát hiện anti-pattern dùng chung cơ sở dữ liệu (Shared Database Anti-Pattern): Cơ sở dữ liệu '"
-                                + db.getName() + "' bị truy cập đồng thời bởi " + accessingServices.size()
-                                + " dịch vụ khác nhau: [" + serviceNames + "].")
-                        .build());
-            }
-        }
-
-        if (!hasViolation) {
-            findings.add(EvaluationFinding.builder()
-                    .ruleId("RULE-02")
-                    .severity("INFO")
-                    .status("PASS")
-                    .message("Không phát hiện anti-pattern chia sẻ cơ sở dữ liệu (Shared Database Anti-Pattern). Mỗi cơ sở dữ liệu được quản lý độc lập hoặc chỉ được truy cập bởi tối đa một dịch vụ.")
-                    .build());
-        }
-
-        return findings;
-    }
-
-    /**
-     * RULE-03 (ISOLATED_SERVICE_WARNING):
-     * Kiểm tra có SERVICE_CONTAINER nào có bậc vào = 0 và bậc ra = 0 không.
      */
     private List<EvaluationFinding> evaluateRule03IsolatedServices(List<ModelElement> elements,
                                                                  List<ModelRelationship> relationships,
@@ -596,6 +552,8 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
             statusMap.put(ruleCode, "VIOLATION");
         } else if (hasReview) {
             statusMap.put(ruleCode, "NEEDS_REVIEW");
+        } else if(findings.stream().allMatch(f -> "NOT_APPLICABLE".equals(f.getStatus()))) {
+            statusMap.put(ruleCode, "NOT_APPLICABLE");
         } else {
             statusMap.put(ruleCode, "PASS");
         }

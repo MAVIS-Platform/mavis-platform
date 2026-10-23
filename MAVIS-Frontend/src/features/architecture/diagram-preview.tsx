@@ -2,6 +2,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { zoomDiagramCamera, type DiagramCamera } from "./diagram-camera";
 import { assessReadability, minimumSvgFont } from "@/lib/architecture/readability";
+import { svgHitTargets, type DiagramHit } from "./diagram-selection";
 import { Button } from "@/components/ui/button";
 import { renderDiagram, type DiagramFormat, type DrawingStyle } from "./diagram-renderer";
 export function DiagramPreview({
@@ -10,12 +11,18 @@ export function DiagramPreview({
   style,
   title,
   svg,
+  semanticXml,
+  onSelect,
+  selectedId,
 }: {
   content: string;
   format: DiagramFormat;
   style: DrawingStyle;
   title: string;
   svg?: string;
+  semanticXml?: string;
+  onSelect?: (id: string) => void;
+  selectedId?: string | null;
 }) {
   const [result, setResult] = useState<{
     url: string;
@@ -24,9 +31,16 @@ export function DiagramPreview({
     minimumFontPx: number;
   } | null>(null);
   const [error, setError] = useState("");
+  const [hits, setHits] = useState<DiagramHit[]>([]);
   const [camera, setCamera] = useState<DiagramCamera>({ x: 0, y: 0, zoom: 1 });
   const [dragging, setDragging] = useState(false);
-  const drag = useRef<{ id: number; x: number; y: number } | null>(null);
+  const drag = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    moved: boolean;
+    selection?: string | undefined;
+  } | null>(null);
   const instructions = useId();
   const viewport = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
@@ -135,12 +149,13 @@ export function DiagramPreview({
     <section
       className="overflow-hidden rounded-xl border bg-card shadow-sm"
       aria-label="Selected diagram preview"
-      data-format={format}
+      data-format={svg ? "DRAWIO_SVG" : format}
       data-style={style}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
         <h2 className="text-sm font-semibold">
-          {title} · {format}
+          {title}
+          {!svg ? ` · ${format}` : ""}
         </h2>
         {graphical && (
           <div className="flex gap-2">
@@ -163,16 +178,48 @@ export function DiagramPreview({
             <Button size="sm" variant="outline" onClick={resetCamera}>
               Fit diagram
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                void (
+                  document.fullscreenElement
+                    ? document.exitFullscreen()
+                    : viewport.current
+                        ?.closest("[data-architecture-workspace]")
+                        ?.requestFullscreen()
+                )?.catch(() => {});
+              }}
+            >
+              Fullscreen
+            </Button>
           </div>
         )}
       </div>
+      {svg && semanticXml && (
+        <iframe
+          title="Diagram shape measurement"
+          tabIndex={-1}
+          aria-hidden="true"
+          className="pointer-events-none fixed -left-[10000px] top-0 h-[1200px] w-[2400px]"
+          sandbox="allow-same-origin"
+          srcDoc={svg}
+          onLoad={(event) => {
+            const root = event.currentTarget.contentDocument?.querySelector("svg");
+            if (root) setHits(svgHitTargets(root as SVGSVGElement, semanticXml));
+          }}
+        />
+      )}
       {svg && readability && (
-        <p className="border-b px-4 py-2 text-xs text-muted-foreground">
-          At fit: smallest text approximately {readability.minimumScreenFontPx.toFixed(1)}px · A3
-          landscape: {readability.minimumA3FontPt.toFixed(1)}pt.{" "}
-          {!readability.screenReadable && "Use a detail view for reading individual labels."}{" "}
-          {!readability.printReadable && "Choose a narrower view before printing."}
-        </p>
+        <details className="border-b px-4 py-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Readability details</summary>
+          <p>
+            At fit: smallest text approximately {readability.minimumScreenFontPx.toFixed(1)}px · A3
+            landscape: {readability.minimumA3FontPt.toFixed(1)}pt.{" "}
+            {!readability.screenReadable && "Use a detail view for reading individual labels."}{" "}
+            {!readability.printReadable && "Choose a narrower view before printing."}
+          </p>
+        </details>
       )}
       <div
         ref={viewport}
@@ -189,7 +236,16 @@ export function DiagramPreview({
           event.preventDefault();
           event.currentTarget.focus({ preventScroll: true });
           event.currentTarget.setPointerCapture(event.pointerId);
-          drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+          drag.current = {
+            id: event.pointerId,
+            x: event.clientX,
+            y: event.clientY,
+            moved: false,
+            selection:
+              (event.target as Element)
+                .closest("[data-semantic-id]")
+                ?.getAttribute("data-semantic-id") ?? undefined,
+          };
           setDragging(true);
         }}
         onPointerMove={(event) => {
@@ -197,11 +253,13 @@ export function DiagramPreview({
           if (!previous || previous.id !== event.pointerId) return;
           const dx = event.clientX - previous.x;
           const dy = event.clientY - previous.y;
-          drag.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+          if (!previous.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+          drag.current = { ...previous, x: event.clientX, y: event.clientY, moved: true };
           setCamera((current) => ({ ...current, x: current.x + dx, y: current.y + dy }));
         }}
         onPointerUp={(event) => {
           if (drag.current?.id !== event.pointerId) return;
+          if (!drag.current.moved && drag.current.selection) onSelect?.(drag.current.selection);
           drag.current = null;
           setDragging(false);
           if (event.currentTarget.hasPointerCapture(event.pointerId))
@@ -219,7 +277,7 @@ export function DiagramPreview({
           if (graphical) resetCamera();
         }}
         onKeyDown={(event) => {
-          if (!graphical) return;
+          if (!graphical || event.target !== event.currentTarget) return;
           const movement: Record<string, [number, number]> = {
             ArrowLeft: [-40, 0],
             ArrowRight: [40, 0],
@@ -256,17 +314,46 @@ export function DiagramPreview({
             </p>
           ) : result ? (
             // SVG is displayed as an image, isolated from the application's DOM.
-            <img
-              src={result.url}
-              alt={`${title} rendered with ${format}`}
-              width={imageWidth}
-              height={imageHeight}
-              draggable={false}
-              className="pointer-events-none absolute left-0 top-0 block max-w-none origin-top-left"
+            <div
+              className="absolute left-0 top-0 origin-top-left"
               style={{
-                transform: `translate(${originX + camera.x}px, ${originY + camera.y}px) scale(${camera.zoom})`,
+                width: imageWidth,
+                height: imageHeight,
+                transform: `translate(${originX + camera.x}px,${originY + camera.y}px) scale(${camera.zoom})`,
               }}
-            />
+            >
+              <img
+                src={result.url}
+                alt={`${title} rendered with ${format}`}
+                width={imageWidth}
+                height={imageHeight}
+                draggable={false}
+                className="pointer-events-none absolute left-0 top-0 block max-w-none origin-top-left"
+              />
+              {onSelect &&
+                hits.map((hit, index) => (
+                  <button
+                    key={`${hit.cellId}:${index}`}
+                    type="button"
+                    data-semantic-id={hit.id}
+                    aria-label={`Select ${hit.label}`}
+                    aria-pressed={selectedId === hit.id}
+                    onClick={(event) => {
+                      if (event.detail === 0) onSelect(hit.id);
+                    }}
+                    className="absolute cursor-pointer rounded-sm border-2 border-transparent bg-transparent hover:border-blue-400 focus-visible:border-blue-600 focus-visible:outline-none"
+                    style={{
+                      left: hit.x * fit,
+                      top: hit.y * fit,
+                      width: hit.width * fit,
+                      height: hit.height * fit,
+                      ...(selectedId === hit.id
+                        ? { borderColor: "#2563eb", background: "#2563eb0d" }
+                        : {}),
+                    }}
+                  />
+                ))}
+            </div>
           ) : (
             <p role="status" className="p-5 text-sm text-slate-500">
               Rendering {format} diagram…
@@ -288,7 +375,7 @@ export function DiagramPreview({
           double-click to fit
         </p>
       )}
-      {graphical && (
+      {graphical && !svg && (
         <details className="border-t p-4">
           <summary className="cursor-pointer text-sm">View {format} source</summary>
           <pre className="mt-3 max-h-80 overflow-auto text-xs">

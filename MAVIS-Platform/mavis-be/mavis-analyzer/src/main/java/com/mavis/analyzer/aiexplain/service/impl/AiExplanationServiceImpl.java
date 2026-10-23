@@ -56,6 +56,8 @@ public class AiExplanationServiceImpl implements AiExplanationService {
 
     @Autowired(required = false)
     private AccessPolicyService accessPolicyService;
+    @Autowired
+    private GroundedFindingExplanation groundedFindingExplanation;
 
     @Value("${mavis.ai.endpoint-url:}")
     private String customEndpointUrl;
@@ -117,6 +119,9 @@ public class AiExplanationServiceImpl implements AiExplanationService {
             }
         }
 
+        if ("RULE_FINDING".equals(scope)) {
+            return groundedFindingExplanation.explain(request, modelVersion, targetElement, targetRelationship);
+        }
         // 4. Kiểm tra Cache trong DB (nếu không forceRefresh và không có câu hỏi riêng)
         boolean hasCustomQuestion = request.getUserQuestion() != null && !request.getUserQuestion().isBlank();
         if (!Boolean.TRUE.equals(request.getForceRefresh()) && !hasCustomQuestion) {
@@ -138,6 +143,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         // Lọc evidences liên quan trực tiếp đến ngữ cảnh được yêu cầu
         List<Evidence> relevantEvidences = filterRelevantEvidences(scope, targetElement, targetRelationship, targetSession, versionEvidences);
 
+        allowedEvidenceIds = relevantEvidences.stream().map(Evidence::getId).collect(Collectors.toSet());
         // 6. Khử sạch bí mật mã nguồn (SecretRedactor) trên các đoạn trích & câu hỏi người dùng
         String sanitizedQuestion = SecretRedactor.redactString(request.getUserQuestion());
         List<EvidenceSummaryDTO> sanitizedEvidenceSummaries = relevantEvidences.stream()
@@ -170,7 +176,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
 
         // 8. HẬU KIỂM CHỐNG ẢO GIÁC (Citation Allowlist Validation - D2)
         List<UUID> validatedCitedIds = genResult.rawCitedEvidenceIds.stream()
-                .filter(allowedEvidenceIds::contains)
+                .filter(relevantEvidences.stream().map(Evidence::getId).collect(Collectors.toSet())::contains)
                 .distinct()
                 .collect(Collectors.toList());
 
@@ -263,8 +269,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
             }
         } else if ("RUNTIME_TRACE".equals(scope)) {
             return allEvidences.stream()
-                    .filter(e -> "RUNTIME_TRACE".equalsIgnoreCase(e.getSourceType())
-                            || (session != null && e.getRuntimeSession() != null && e.getRuntimeSession().getId().equals(session.getId())))
+                    .filter(e -> e.getSourceType()!=null && e.getSourceType().startsWith("RUNTIME") && session != null && e.getRuntimeSession() != null && e.getRuntimeSession().getId().equals(session.getId()))
                     .toList();
         }
 
@@ -470,6 +475,12 @@ public class AiExplanationServiceImpl implements AiExplanationService {
                 .elementName(entity.getElement() != null ? entity.getElement().getName() : null)
                 .relationshipId(entity.getRelationship() != null ? entity.getRelationship().getId() : null)
                 .runtimeSessionId(entity.getRuntimeSession() != null ? entity.getRuntimeSession().getId() : null)
+                .contractVersion(entity.getGroundingContext()==null ? "legacy" : "3e/2")
+                .groundingContext(entity.getGroundingContext())
+                .structuredContent(entity.getGroundingContext()==null ? null : entity.getGroundingContext().path("structuredContent"))
+                .findingId(entity.getGroundingContext()==null ? null : UUID.fromString(entity.getGroundingContext().path("findingId").asText()))
+                .evaluationRunId(entity.getGroundingContext()==null ? null : UUID.fromString(entity.getGroundingContext().path("evaluationRunId").asText()))
+                .ruleSetVersion(entity.getGroundingContext()==null ? null : entity.getGroundingContext().path("ruleSetVersion").asText())
                 .explanationText(entity.getExplanationText())
                 .citedEvidenceIds(citedIds)
                 .citedEvidences(evidenceSummaries)

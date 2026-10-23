@@ -35,6 +35,8 @@ public class AiExplainRequestDTO {
 
     @Schema(description = "Câu hỏi bổ sung từ người dùng (nếu có)")
     private String userQuestion;
+    private UUID findingId;
+    private UUID evaluationRunId;
 
     @Builder.Default
     @Schema(description = "Bắt buộc gọi mới không dùng cache (mặc định false)")

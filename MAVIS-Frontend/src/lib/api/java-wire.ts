@@ -120,6 +120,7 @@ export function evidenceView(raw: unknown) {
   return evidenceSchema.parse({
     id: e.id,
     kind: e.sourceType.startsWith("RUNTIME") ? "runtime" : "source",
+    sourceType: e.sourceType,
     location: e.locator ?? "",
     snippet: e.excerpt ?? "",
     complete: null,
