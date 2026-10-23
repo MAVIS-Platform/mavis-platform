@@ -157,6 +157,7 @@ class RunnerReceiptIngestServiceImplTest {
         lenient().when(modelVersionRepository.findMaxRevisionByProjectId(projectId)).thenReturn(1);
         lenient().when(modelVersionRepository.save(any(ModelVersion.class))).thenAnswer(inv -> {
             ModelVersion mv = inv.getArgument(0);
+            assertThat(mv.getBaseModelVersion()).isSameAs(baseModelVersion);
             if (mv.getId() == null) mv.setId(UUID.randomUUID());
             return mv;
         });

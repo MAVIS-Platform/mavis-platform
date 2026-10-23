@@ -1,6 +1,7 @@
 import type { Operation } from "./contracts";
 
 export const mutationInvalidations: Partial<Record<Operation, readonly Operation[]>> = {
+  updateProfile: ["session"],
   runtimeStop: ["runtimeReadSessions", "runtimeReadSession"],
   runtimeApprove: ["runtimeReadSessions", "runtimeReadSession"],
   importSource: ["snapshots"],

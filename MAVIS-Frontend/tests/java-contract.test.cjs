@@ -119,3 +119,14 @@ test("GitHub imports pin the selected branch to an immutable commit before downl
  await executeJava("importGithub",{projectId:project,repositoryUrl:"https://github.com/owner/repo.git",branchName:"master"},"jwt",new AbortController().signal);
  assert.equal(submitted.commitSha,sha);assert.equal(submitted.branchName,"master");
 });
+test("stage13 project wire retains educational scope without inventing runtime capability",()=>{
+ const p=wire.projectView({id:project,name:"Class project",status:"ACTIVE",projectType:"STUDENT_WORKING",workspaceId:job,assignmentId:snapshot,isReferenceTemplate:false,description:"Scope"});
+ assert.equal(p.status,"ready");assert.equal(p.backendStatus,"ACTIVE");assert.equal(p.workspaceId,job);assert.equal(p.projectType,"STUDENT_WORKING");assert.equal(p.runtimeSupported,null);
+ assert.equal(wire.projectView({id:project,name:"Archived",status:"ARCHIVED"}).status,"unknown");
+});
+test("stage13 update profile forwards PATCH and refreshes identity without credentials in response",async t=>{
+ environment(t);let sent;t.mock.method(globalThis,"fetch",async(url,options)=>{sent={url,options};return Response.json({code:200,data:{id:project,fullName:"Updated",role:"STUDENT"}});});
+ const result=await executeJava("updateProfile",{fullName:"Updated",currentPassword:"old",newPassword:"new-secret"},"jwt",new AbortController().signal);
+ assert.equal(sent.options.method,"PATCH");assert.ok(sent.url.endsWith("auth/me"));assert.equal(result.user.name,"Updated");assert.ok(!JSON.stringify(result).includes("secret"));
+ const {contracts}=require("../src/lib/api/contracts.ts");assert.equal(contracts.updateProfile.input.safeParse({fullName:" ",newPassword:"123"}).success,false);
+});

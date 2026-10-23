@@ -310,6 +310,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
         ModelVersion enrichedVersion = ModelVersion.builder()
                 .project(lockedProject)
+                .baseModelVersion(baseVersion)
                 .sourceSnapshot(baseVersion.getSourceSnapshot())
                 .runtimeSession(session)
                 .revision(newRevision)
