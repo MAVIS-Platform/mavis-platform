@@ -143,6 +143,8 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
           sourceNodeId: z.string().uuid(),
           targetNodeId: z.string().uuid(),
           kind: z.string(),
+          originLayer: z.string().optional(),
+          resolutionStatus: z.string().optional(),
         }),
       ),
     })
@@ -154,6 +156,8 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
         modelVersionId: z.string().uuid(),
         name: z.string(),
         elementType: z.string(),
+        parentElementId: z.string().uuid().nullable().optional(),
+        languageStack: z.string().nullable().optional(),
         properties: z.unknown().optional(),
       }),
     )
@@ -173,8 +177,15 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
         id: n.id,
         name: n.name,
         elementType: n.type,
+        parentId: detail?.parentElementId ?? null,
+        technology: detail?.languageStack ?? null,
         layer,
-        description: typeof properties["description"] === "string" ? properties["description"] : "",
+        description:
+          typeof properties["description"] === "string"
+            ? properties["description"]
+            : typeof properties["responsibility"] === "string"
+              ? properties["responsibility"]
+              : "",
         properties,
         evidence: [],
       };
@@ -184,7 +195,9 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
       from: e.sourceNodeId,
       to: e.targetNodeId,
       protocol: e.kind,
-      uncertain: true,
+      uncertain: e.resolutionStatus !== "RESOLVED",
+      originLayer: e.originLayer,
+      resolutionStatus: e.resolutionStatus ?? "UNKNOWN",
       evidence: [],
     })),
   });

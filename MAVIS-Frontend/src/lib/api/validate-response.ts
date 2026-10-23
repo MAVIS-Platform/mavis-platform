@@ -60,6 +60,7 @@ export function validateResponse<K extends Operation>(
       "snapshotId",
       "scenarioId",
       "modelId",
+      "viewId",
       "elementId",
       "targetId",
       "configurationRevision",
@@ -68,6 +69,11 @@ export function validateResponse<K extends Operation>(
       if (Object.hasOwn(request, key) && Object.hasOwn(value, key) && request[key] !== value[key])
         fail();
     }
+    if (
+      operation === "saveArchitectureDocument" &&
+      value["revision"] !== Number(request["expectedRevision"]) + 1
+    )
+      fail();
     if (
       operation === "saveModel" &&
       (value["id"] === request["modelId"] ||

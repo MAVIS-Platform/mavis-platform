@@ -598,7 +598,7 @@ test("drawio projection and rules preserve scope without fabricating technology"
  assert.ok(scope.omittedNodes>0);
  assert.throws(()=>projectDiagram(raw,"missing"));
  assert.throws(()=>projectDiagram({...raw,layoutJson:{nodes:raw.layoutJson.nodes,edges:[{id:"bad",from:"foreign",to:service.id}]}}));
- assert.match(nodeText({id:"x",name:"Tên dịch vụ",kind:"SERVICE_CONTAINER"}).join(" "),/chưa xác định/);
+ assert.doesNotMatch(nodeText({id:"x",name:"Tên dịch vụ",kind:"SERVICE_CONTAINER"}).join(" "),/not extracted|technology unknown/);
  assert.doesNotMatch(relationLabel({id:"a",type:"DECLARED_COMPOSE"}),/HTTP/);
 });
 
@@ -614,7 +614,7 @@ test("canonical drawio routes real Petclinic container and component with zero h
   assert.equal(JSON.stringify(scope),before);
   assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,scope.layoutJson.edges.length);
   assert.equal((xml.match(/mavisRole="edge-label"/g)||[]).length,scope.layoutJson.edges.length);
-  assert.match(xml,/mavisRuleVersion="mavis-se-1"/);
+  assert.match(xml,/mavisRuleVersion="mavis-se-3"/);
   assert.match(xml,/font-size:16px;font-weight:bold/);
   if(level==="component")assert.match(xml,/mavisRole="boundary"/);
   assert.equal(await generateDrawio(scope),xml,"output must be deterministic");
@@ -677,4 +677,58 @@ test("pinned relayout preserves multiple fixed rectangles and safely rejects con
  assert.match(xml,/mavisId="b"[\s\S]*?<mxGeometry x="1048" y="812" width="280" height="160"/);
  const quality=JSON.parse(xml.match(/mavisQuality="([^"]*)"/)[1].replaceAll("&quot;",'"'));assert.equal(quality.needsReview,false);
  const conflict=structuredClone(doc);conflict.layoutJson.nodes[1].pinned={x:400,y:400,width:280,height:160};await assert.rejects(generateDrawio(projectDiagram(conflict)),/Locked shapes overlap/);
+});
+test("FTGO component scope selects populated service and distinguishes infrastructure with no internals", async () => {
+ const {componentContainers,projectDiagram,relationLabel,nodeText}=require("../src/lib/drawio/rules.ts");
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ const doc=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));
+ const containers=componentContainers(doc);
+ assert.equal(containers[0].name,"ftgo-order-service");assert.equal(containers[0].componentCount,5);
+ assert.equal(containers.find(c=>c.name==="cdc-service").componentCount,0);
+ assert.equal(containers.reduce((count,c)=>count+c.componentCount,0),23);
+ const scope=projectDiagram(doc,containers[0].id);
+ assert.equal(scope.layoutJson.nodes.filter(n=>n.kind==="COMPONENT"&&n.parentId===containers[0].id).length,5);
+ assert.ok(!scope.layoutJson.nodes.some(n=>n.name==="cdc-service"));
+ assert.equal(relationLabel({id:"e",type:"DECLARED_COMPOSE"}),"Compose dependency");
+ assert.equal(relationLabel({id:"e",type:"CODE_DEPENDENCY"}),"Code dependency");
+ assert.doesNotMatch(nodeText({id:"n",name:"Service",kind:"SERVICE_CONTAINER"}).join(" "),/Responsibility not extracted/);
+ const xml=await generateDrawio(scope);assert.match(xml,/mavisRole="boundary"/);assert.doesNotMatch(xml,/Phụ thuộc|Trách nhiệm/);
+});
+test("architecture pack keeps Compose ordering outside application interactions and retains source IDs",()=>{
+ const {planArchitectureViews}=require("../src/lib/architecture/view-planner.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));const before=JSON.stringify(raw);const pack=planArchitectureViews(raw);
+ const app=pack.views.find(v=>v.id==="containers"),deployment=pack.views.find(v=>v.id==="deployment");
+ assert.ok(!app.document.layoutJson.edges.some(e=>e.type==="DECLARED_COMPOSE"));
+ assert.equal(deployment.document.layoutJson.edges.length,33);
+ assert.equal(pack.views.filter(v=>v.kind==="component").length,8);
+ assert.ok(app.document.layoutJson.edges.every(e=>e.underlyingEdgeIds.length>0));
+ assert.ok(app.document.layoutJson.edges.every(e=>raw.layoutJson.nodes.find(n=>n.id===e.from)?.kind!=="COMPONENT"));
+ assert.equal(JSON.stringify(raw),before);assert.equal(pack.status,"requires-review");
+ assert.equal(pack.coverage.relationships,53);assert.equal(pack.coverage.relationshipsWithoutResolutionMetadata,53);
+ assert.ok(!pack.views.some(v=>v.id==="components:3be666c8-af02-46f9-ab2d-64115802d618"));
+});
+test("grouped overview accounts for every service member without pretending a group is a C4 container",()=>{
+ const {planArchitectureViews}=require("../src/lib/architecture/view-planner.ts");const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));const pack=planArchitectureViews(raw);const view=pack.views.find(v=>v.id==="overview");
+ assert.equal(view.document.notation,"ARCHITECTURE_OVERVIEW");const group=view.document.layoutJson.nodes.find(n=>n.kind==="SERVICE_GROUP");assert.equal(group.underlyingNodeIds.length,8);assert.match(group.description,/ftgo-order-service/);
+ for(const member of group.underlyingNodeIds)assert.ok(view.document.projection.includedNodeIds.includes(member));
+ assert.ok(pack.views.some(v=>v.id==="containers"));
+});
+test("readability checks the effective font after fitting and A3 export, not XML font size alone",()=>{
+ const {assessReadability}=require("../src/lib/architecture/readability.ts");
+ const dense=assessReadability({width:1728,height:1540,minimumFontPx:12,viewportWidth:1000,viewportHeight:620});assert.equal(dense.screenReadable,false);assert.ok(dense.minimumScreenFontPx<5);
+ const readable=assessReadability({width:800,height:450,minimumFontPx:14,viewportWidth:1000,viewportHeight:620});assert.equal(readable.screenReadable,true);assert.equal(readable.printReadable,true);
+ assert.throws(()=>assessReadability({width:0,height:1,minimumFontPx:12,viewportWidth:1,viewportHeight:1}));
+});
+test("graph collapse preserves every underlying relationship and separates deployment filters",()=>{
+ const {projectGraphModel}=require("../src/features/architecture/graph-projection.ts");
+ const model={id:"m",projectId:"p",snapshotId:"s",revision:1,label:"Model",elements:[{id:"a",name:"A",elementType:"SERVICE_CONTAINER",layer:"unclassified",description:"",evidence:[]},{id:"c",name:"C",parentId:"a",elementType:"COMPONENT",layer:"unclassified",description:"",evidence:[]},{id:"b",name:"B",layer:"unclassified",description:"",evidence:[]}],edges:[{id:"one",from:"c",to:"b",protocol:"HTTP",originLayer:"STATIC",uncertain:false,evidence:[]},{id:"two",from:"a",to:"b",protocol:"HTTP",originLayer:"STATIC",uncertain:false,evidence:[]},{id:"boot",from:"a",to:"b",protocol:"DECLARED_COMPOSE",originLayer:"DEPLOYMENT",uncertain:false,evidence:[]}]};
+ const source=projectGraphModel(model,false,"source");assert.equal(source.model.elements.length,2);assert.equal(source.model.edges.length,1);assert.deepEqual(source.model.edges[0].underlyingEdgeIds,["one","two"]);assert.equal(source.filteredRelationships,1);
+ const expanded=projectGraphModel(model,true,"all");assert.equal(expanded.model.elements.length,3);assert.equal(expanded.model.edges.length,3);assert.equal(model.edges[0].from,"c");
+});
+test("compact overview routes explicit service/channel/data groups without collisions",()=>{
+ const {compactOverview}=require("../src/lib/drawio/compact-overview.ts");
+ const result=compactOverview([{id:"app",kind:"SERVICE_GROUP",width:280,height:232},{id:"channel",kind:"CHANNEL_GROUP",width:280,height:132},{id:"data",kind:"DATASTORE_GROUP",width:280,height:192}],[{id:"pub",from:"app",to:"channel",type:"MESSAGE_PUBLISH"},{id:"sub",from:"channel",to:"app",type:"MESSAGE_SUBSCRIBE"},{id:"db",from:"app",to:"data",type:"DATABASE_ACCESS"}]);
+ assert.ok(result);assert.equal(result.quality.needsReview,false);assert.equal(result.quality.crossings,0);assert.equal(result.routes.length,3);
+ assert.ok(Math.max(...result.rects.map(rect=>rect.y+rect.height))<450);
+ assert.ok(result.graph.height>350,"Layout bounds must keep the legend below the drawing");
 });

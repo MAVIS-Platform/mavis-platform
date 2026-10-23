@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useId, useRef, useState } from "react";
 import { zoomDiagramCamera, type DiagramCamera } from "./diagram-camera";
+import { assessReadability, minimumSvgFont } from "@/lib/architecture/readability";
 import { Button } from "@/components/ui/button";
 import { renderDiagram, type DiagramFormat, type DrawingStyle } from "./diagram-renderer";
 export function DiagramPreview({
@@ -8,13 +9,20 @@ export function DiagramPreview({
   format,
   style,
   title,
+  svg,
 }: {
   content: string;
   format: DiagramFormat;
   style: DrawingStyle;
   title: string;
+  svg?: string;
 }) {
-  const [result, setResult] = useState<{ url: string; width: number; height: number } | null>(null);
+  const [result, setResult] = useState<{
+    url: string;
+    width: number;
+    height: number;
+    minimumFontPx: number;
+  } | null>(null);
   const [error, setError] = useState("");
   const [camera, setCamera] = useState<DiagramCamera>({ x: 0, y: 0, zoom: 1 });
   const [dragging, setDragging] = useState(false);
@@ -22,7 +30,7 @@ export function DiagramPreview({
   const instructions = useId();
   const viewport = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
-  const graphical = format === "MERMAID" || format === "PLANTUML";
+  const graphical = !!svg || format === "MERMAID" || format === "PLANTUML";
   useEffect(() => {
     const element = viewport.current;
     if (!element) return;
@@ -33,10 +41,12 @@ export function DiagramPreview({
     return () => observer.disconnect();
   }, []);
   useEffect(() => {
-    if (format !== "MERMAID" && format !== "PLANTUML") return;
+    if (!svg && format !== "MERMAID" && format !== "PLANTUML") return;
     let live = true;
     let objectUrl: string | undefined;
-    void renderDiagram(content, format, style)
+    void (
+      svg ? Promise.resolve(svg) : renderDiagram(content, format as "MERMAID" | "PLANTUML", style)
+    )
       .then((svg) => {
         if (!live) return;
         const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
@@ -52,7 +62,13 @@ export function DiagramPreview({
         objectUrl = URL.createObjectURL(
           new Blob([new XMLSerializer().serializeToString(root)], { type: "image/svg+xml" }),
         );
-        setResult({ url: objectUrl, width: w, height: h });
+        const minimumFontPx = minimumSvgFont(root);
+        setResult({
+          url: objectUrl,
+          width: w,
+          height: h,
+          minimumFontPx,
+        });
       })
       .catch((cause) => {
         if (live)
@@ -64,7 +80,16 @@ export function DiagramPreview({
       live = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [content, format, style]);
+  }, [content, format, style, svg]);
+  const readability = result
+    ? assessReadability({
+        width: result.width,
+        height: result.height,
+        minimumFontPx: result.minimumFontPx,
+        viewportWidth: Math.max(1, width),
+        viewportHeight: 620,
+      })
+    : null;
   const fit = result ? Math.min(width / result.width, 620 / result.height, 1) : 1;
   const imageWidth = result ? result.width * fit : 0;
   const imageHeight = result ? result.height * fit : 0;
@@ -141,6 +166,14 @@ export function DiagramPreview({
           </div>
         )}
       </div>
+      {svg && readability && (
+        <p className="border-b px-4 py-2 text-xs text-muted-foreground">
+          At fit: smallest text approximately {readability.minimumScreenFontPx.toFixed(1)}px · A3
+          landscape: {readability.minimumA3FontPt.toFixed(1)}pt.{" "}
+          {!readability.screenReadable && "Use a detail view for reading individual labels."}{" "}
+          {!readability.printReadable && "Choose a narrower view before printing."}
+        </p>
+      )}
       <div
         ref={viewport}
         className={`relative h-[620px] ${graphical ? `touch-none select-none overflow-hidden ${dragging ? "cursor-grabbing" : "cursor-grab"}` : "overflow-auto"}`}

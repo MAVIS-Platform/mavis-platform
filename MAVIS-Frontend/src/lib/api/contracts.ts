@@ -87,6 +87,10 @@ export const contracts = {
     d.projectSchema,
     true,
   ),
+  githubBranches: contract(
+    z.object({ repositoryUrl: z.string().min(1) }),
+    z.object({ defaultBranch: z.string(), branches: z.array(z.string()), truncated: z.boolean() }),
+  ),
   importGithub: contract(
     project.extend({
       repositoryUrl: z.string().min(1),
@@ -104,6 +108,49 @@ export const contracts = {
     z.array(d.evidenceSchema),
   ),
   diagrams: contract(z.object({ modelId: id }), z.array(d.diagramSchema)),
+  architectureDocument: contract(
+    z.object({ modelId: id, viewId: id, revision: z.number().int().positive().optional() }),
+    z.object({
+      modelId: id,
+      viewId: id,
+      revision: z.number().int().nonnegative(),
+      xml: z.string().nullable(),
+    }),
+  ),
+  saveArchitectureDocument: contract(
+    z.object({
+      modelId: id,
+      viewId: id,
+      expectedRevision: z.number().int().nonnegative(),
+      xml: z.string().min(1).max(2000000),
+    }),
+    z.object({ modelId: id, viewId: id, revision: z.number().int().positive(), xml: z.string() }),
+    true,
+  ),
+  architectureViews: contract(
+    z.object({ modelId: id }),
+    z.object({
+      modelId: id,
+      policyVersion: z.string(),
+      status: z.literal("requires-review"),
+      coverage: z.record(z.number()),
+      findings: z.array(z.object({ code: z.string(), elementId: id, name: z.string() })),
+      limitations: z.array(z.string()),
+      views: z.array(
+        z.object({
+          id,
+          title: z.string(),
+          purpose: z.string(),
+          kind: z.enum(["overview", "container", "component", "deployment", "messaging"]),
+          document: z.unknown(),
+        }),
+      ),
+    }),
+  ),
+  renderArchitectureView: contract(
+    z.object({ modelId: id, viewId: id, theme: z.enum(["clean", "dark", "blueprint"]).optional() }),
+    z.object({ modelId: id, viewId: id, content: z.string(), format: z.literal("DRAWIO_XML") }),
+  ),
   exportDiagram: contract(
     z.object({
       modelId: id,
