@@ -80,3 +80,42 @@ test("Google credential exchange keeps the returned JWT inside HttpOnly cookie",
  environment(t);t.mock.method(globalThis,"fetch",async(url,options)=>{assert.equal(url,"https://java.invalid/api/v1/auth/google");assert.deepEqual(JSON.parse(options.body),{idToken:"google-issued-id-token"});return Response.json({code:200,data:{token:"private-jwt",userId:project,fullName:"Google user",role:"STUDENT"}});});
  const response=await route.POST(new NextRequest("http://localhost:3000/api/mavis/googleSignIn",{method:"POST",headers:{host:"localhost:3000",origin:"http://localhost:3000","Content-Type":"application/json"},body:JSON.stringify({idToken:"google-issued-id-token"})}),{params:Promise.resolve({operation:"googleSignIn"})});assert.equal(response.status,200);assert.match(response.headers.get("set-cookie"),/HttpOnly/);assert.ok(!JSON.stringify(await response.json()).includes("private-jwt"));
 });
+
+test("GitHub dropdown discovers actual default and all paginated branches without sending session token",async t=>{
+ const {githubBranches}=require("../src/lib/github/branches.ts");const calls=[];
+ t.mock.method(globalThis,"fetch",async(url,options)=>{calls.push({url,options});return Response.json(url.endsWith("/repo")?{default_branch:"master"}:new URL(url).searchParams.get("page")==="1"?Array.from({length:100},(_,i)=>({name:i===0?"master":`feature/${i}`})):[{name:"release"}]);});
+ const result=await githubBranches("https://github.com/owner/repo.git");
+ assert.equal(result.defaultBranch,"master");assert.equal(result.branches.length,101);assert.ok(result.branches.includes("release"));assert.equal(result.truncated,false);assert.equal(calls.length,3);assert.equal(calls[0].options.headers.Authorization,undefined);
+});
+test("GitHub validation distinguishes URL, missing repository, rate limit and missing branch",async t=>{
+ const {githubBranches}=require("../src/lib/github/branches.ts");let calls=0;
+ t.mock.method(globalThis,"fetch",async()=>{calls++;return Response.json({},{status:404});});
+ await assert.rejects(githubBranches("http://localhost/private"),e=>e.code==="GITHUB_URL");assert.equal(calls,0);
+ await assert.rejects(githubBranches("https://github.com/owner/missing"),e=>e.code==="GITHUB_REPOSITORY");
+ t.mock.method(globalThis,"fetch",async()=>Response.json({},{status:429}));await assert.rejects(githubBranches("https://github.com/owner/repo"),e=>e.code==="GITHUB_LIMIT");
+ t.mock.method(globalThis,"fetch",async url=>Response.json(url.endsWith("/repo")?{default_branch:"master"}:[{name:"master"}]));
+ await assert.rejects(executeJava("importGithub",{projectId:project,repositoryUrl:"https://github.com/owner/repo",branchName:"main"},"jwt",new AbortController().signal),e=>e.code==="GITHUB_BRANCH");
+ await assert.rejects(executeJava("importGithub",{projectId:project,repositoryUrl:"https://github.com/owner/repo",commitSha:"invalid"},"jwt",new AbortController().signal),e=>e.code==="GITHUB_COMMIT");
+});
+test("browser adapter displays only approved actionable GitHub errors",async t=>{
+ const {BackendAdapter}=require("../src/lib/api/backend-adapter.ts");const api=new BackendAdapter();
+ t.mock.method(globalThis,"fetch",async()=>Response.json({code:"GITHUB_BRANCH",message:"private backend detail"},{status:400}));
+ await assert.rejects(api.execute("importGithub",{projectId:project,repositoryUrl:"https://github.com/owner/repo",branchName:"main"}),e=>e.code==="GITHUB_BRANCH"&&e.message.includes("không tồn tại")&&!e.message.includes("private backend"));
+ t.mock.method(globalThis,"fetch",async()=>Response.json({code:"RAW_SECRET",message:"private backend detail"},{status:400}));
+ await assert.rejects(api.execute("githubBranches",{repositoryUrl:"https://github.com/owner/repo"}),e=>!e.code&&!e.message.includes("private backend"));
+});
+test("graph wire preserves origin and resolved status without inventing evidence",()=>{
+ const value=wire.modelView(metadata,{nodes:[{id:node,name:"A",type:"SERVICE_CONTAINER"}],edges:[{id:job,sourceNodeId:node,targetNodeId:node,kind:"DECLARED_COMPOSE",originLayer:"DEPLOYMENT",resolutionStatus:"RESOLVED"}]},[{id:node,modelVersionId:model,name:"A",elementType:"SERVICE_CONTAINER",parentElementId:null,languageStack:"Apache Kafka"}]);
+ assert.equal(value.edges[0].uncertain,false);assert.equal(value.edges[0].originLayer,"DEPLOYMENT");assert.deepEqual(value.edges[0].evidence,[]);assert.equal(value.elements[0].technology,"Apache Kafka");
+ assert.throws(()=>validateResponse("saveArchitectureDocument",{modelId:model,viewId:"containers",expectedRevision:2,xml:"x"},{modelId:model,viewId:"containers",revision:2,xml:"x"}));
+});
+test("GitHub imports pin the selected branch to an immutable commit before downloading source",async t=>{
+ environment(t);const sha="a".repeat(40);let submitted;
+ t.mock.method(globalThis,"fetch",async(url,options)=>{
+  if(url.startsWith("https://api.github.com/"))return Response.json(url.includes("/commits/")?{sha}:url.includes("/branches?")?[{name:"master"}]:{default_branch:"master"});
+  if(options.method==="POST"){submitted=JSON.parse(options.body);return Response.json({code:200,data:{snapshotId:snapshot}});}
+  return Response.json({code:200,data:{id:snapshot,projectId:project,sourceType:"GITHUB_COMMIT",branchName:"master",createdAt:"2026-10-23T00:00:00Z"}});
+ });
+ await executeJava("importGithub",{projectId:project,repositoryUrl:"https://github.com/owner/repo.git",branchName:"master"},"jwt",new AbortController().signal);
+ assert.equal(submitted.commitSha,sha);assert.equal(submitted.branchName,"master");
+});

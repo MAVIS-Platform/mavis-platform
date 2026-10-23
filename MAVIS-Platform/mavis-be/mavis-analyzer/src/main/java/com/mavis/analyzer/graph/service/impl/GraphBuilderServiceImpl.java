@@ -101,18 +101,19 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
     public List<ModelElement> buildAndSaveElements(ModelVersion modelVersion, List<String> detectedServices, String sourcePath) {
         List<ModelElement> elements = new ArrayList<>();
         Set<String> addedElementNames = new HashSet<>();
+        List<DetectedContainerDTO> detectedContainers = List.of();
 
         // 1. Dò tìm từ DockerDetectorService nếu khả dụng
         if (dockerDetectorService != null && sourcePath != null) {
             try {
-                List<DetectedContainerDTO> containers = dockerDetectorService.detectContainers(sourcePath);
-                for (DetectedContainerDTO c : containers) {
+                detectedContainers = dockerDetectorService.detectContainers(sourcePath);
+                for (DetectedContainerDTO c : detectedContainers) {
                     if (addedElementNames.add(c.getServiceName().toLowerCase())) {
                         ModelElement element = ModelElement.builder()
                                 .modelVersion(modelVersion)
                                 .name(c.getServiceName())
                                 .elementType(c.getElementType())
-                                .languageStack("DATABASE".equals(c.getElementType()) ? "SQL" : "JAVA_SPRING")
+                                .languageStack(ArchitectureResolver.technology(c.getImage()))
                                 .scope(sourcePath)
                                 .properties(createContainerPropertiesNode(c, sourcePath))
                                 .status("VALIDATED")
@@ -125,6 +126,15 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             }
         }
 
+        // Logical databases are separate from the shared deployment host/server.
+        for(var container:detectedContainers) {
+            if(container.getDatasourceHost()==null||container.getDatasourceDatabase()==null)continue;
+            String databaseName=container.getDatasourceDatabase()+" @ "+container.getDatasourceHost();
+            if(addedElementNames.add(databaseName.toLowerCase())) {
+                var properties=objectMapper.createObjectNode().put("resourceRole","LOGICAL_DATASTORE").put("physicalHost",container.getDatasourceHost()).put("database",container.getDatasourceDatabase()).put("ownerService",container.getServiceName()).put("classificationSource","COMPOSE_JDBC_BINDING").put("locator",container.getComposeFilePath()+":"+container.getDatasourceLineNumber()).put("responsibility","Stores application data for "+container.getServiceName());
+                elements.add(ModelElement.builder().modelVersion(modelVersion).name(databaseName).elementType("DATABASE").languageStack(container.getDatasourceTechnology()+" protocol").scope(sourcePath).properties(properties).status("VALIDATED").build());
+            }
+        }
         // 2. Bổ sung từ danh sách detectedServices nếu chưa có
         if (detectedServices != null) {
             for (String serviceName : detectedServices) {
@@ -133,7 +143,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                             .modelVersion(modelVersion)
                             .name(serviceName)
                             .elementType("SERVICE_CONTAINER")
-                            .languageStack("JAVA_SPRING")
+                            .languageStack(null)
                             .scope(sourcePath)
                             .properties(createPropertiesNode(sourcePath))
                             .status("VALIDATED")
@@ -148,7 +158,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             try {
                 List<DetectedSpringConfigDTO> configs = springConfigDetectorService.detectConfigs(sourcePath);
                 for (DetectedSpringConfigDTO cfg : configs) {
-                    if (cfg.getDatasourceHost() != null && !cfg.getDatasourceHost().isBlank()) {
+                    if (cfg.getDatasourceHost() != null && !cfg.getDatasourceHost().isBlank() && !cfg.getDatasourceHost().equalsIgnoreCase("localhost") && !cfg.getDatasourceHost().equals("127.0.0.1")) {
                         String dbHost = cfg.getDatasourceHost().toLowerCase();
                         if (addedElementNames.add(dbHost)) {
                             ModelElement dbElement = ModelElement.builder()
@@ -180,10 +190,10 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     .modelVersion(modelVersion)
                     .name(projectName)
                     .elementType("SERVICE_CONTAINER")
-                    .languageStack("JAVA_SPRING")
+                    .languageStack(null)
                     .scope(sourcePath)
                     .properties(createPropertiesNode(sourcePath))
-                    .status("VALIDATED")
+                    .status("UNCERTAIN_MAPPING")
                     .build();
             elements.add(fallbackElement);
         }
@@ -232,12 +242,16 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             for (CodeEvidenceDTO ev : evidences) {
                 String type = ev.getElementType();
                 if ("CONTROLLER_COMPONENT".equals(type) || "SERVICE_COMPONENT".equals(type)
-                        || "DATABASE_REPOSITORY".equals(type) || "GENERAL_COMPONENT".equals(type)) {
+                        || "DATABASE_REPOSITORY".equals(type) || "GENERAL_COMPONENT".equals(type) || "MESSAGING_COMPONENT".equals(type)) {
 
                     String compName = ev.getIdentifier();
                     ModelElement owningContainer = findOwningContainer(elements, ev.getFilePath());
+                    if(owningContainer!=null) {
+                        String technology="MESSAGING_COMPONENT".equals(type)?"JAVA":"JAVA_SPRING";
+                        if(owningContainer.getLanguageStack()==null||"JAVA".equals(owningContainer.getLanguageStack()))owningContainer.setLanguageStack(technology);
+                    }
                     String containerName = owningContainer != null ? owningContainer.getName() : "default";
-                    String compKey = containerName + ":" + compName;
+                    String compKey = containerName + ":" + (ev.getQualifiedName() != null ? ev.getQualifiedName() : ev.getFilePath() + ":" + compName);
 
                     if (processedComponents.add(compKey)) {
                         ModelElement compEl = ModelElement.builder()
@@ -247,8 +261,8 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                                 .elementType("COMPONENT")
                                 .languageStack("JAVA_SPRING")
                                 .scope(ev.getFilePath())
-                                .properties(createPropertiesNode(ev.getFilePath()))
-                                .status("VALIDATED")
+                                .properties(componentProperties(ev, owningContainer))
+                                .status(owningContainer == null ? "UNCERTAIN_MAPPING" : "VALIDATED")
                                 .build();
                         componentsToSave.add(compEl);
                     }
@@ -271,7 +285,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                 }
 
                 String containerName = owningContainer != null ? owningContainer.getName() : "default";
-                String compKey = containerName + ":" + compName;
+                String compKey = containerName + ":" + csharpEl.getScope() + ":" + compName;
 
                 if (processedComponents.add(compKey)) {
                     ModelElement compEl = ModelElement.builder()
@@ -297,13 +311,34 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
 
         List<ModelElement> allElements = new ArrayList<>(elements);
         allElements.addAll(savedComponents);
+        Map<String,String> messagingBindings = new HashMap<>();
+        if(dockerDetectorService!=null&&sourcePath!=null)for(var container:dockerDetectorService.detectContainers(sourcePath))if(container.getMessageBrokerAuthority()!=null)messagingBindings.put(container.getServiceName(),container.getMessageBrokerAuthority());
+        Map<String,ModelElement> channels = new HashMap<>();
+        if(evidences!=null)for(var ev:evidences)if(("MESSAGE_PUBLISH".equals(ev.getElementType())||"MESSAGE_SUBSCRIBE".equals(ev.getElementType()))&&!ev.getIdentifier().isBlank()) {
+            String key=messageKey(ev,allElements,messagingBindings);
+            channels.computeIfAbsent(key, ignored -> {
+                ModelElement owner=findOwningContainer(allElements,ev.getFilePath());
+                String transport=owner==null?null:messagingBindings.get(owner.getName());
+                ObjectNode properties=objectMapper.createObjectNode().put("channelName",ev.getIdentifier()).put("protocol",ev.getEndpointAlias()).put("logicalKey",key).put("transportAuthority",transport);
+                properties.put("responsibility",transport==null?"Transport binding unresolved":"Declared channel on "+transport);
+                if(transport==null)properties.put("resolutionIssue","UNRESOLVED_MESSAGE_TRANSPORT");
+                return ModelElement.builder().modelVersion(modelVersion).name(ev.getIdentifier()+" ["+ev.getEndpointAlias()+"]").elementType("MESSAGE_CHANNEL").languageStack(ev.getEndpointAlias()).properties(properties).status(transport==null?"UNCERTAIN_MAPPING":"VALIDATED").build();
+            });
+        }
+        if(!channels.isEmpty())allElements.addAll(modelElementRepository.saveAll(new ArrayList<>(channels.values())));
+        if(evidences!=null)for(var ev:evidences)if("UNRESOLVED_MESSAGE_CHANNEL".equals(ev.getElementType())) {
+            var component=findComponentByName(allElements,ev.getSourceComponent(),ev.getFilePath());
+            if(component!=null) {var properties=component.getProperties() instanceof ObjectNode existing?existing.deepCopy():objectMapper.createObjectNode();properties.put("resolutionIssue","UNRESOLVED_MESSAGE_CHANNEL");component.setProperties(properties);component.setStatus("UNCERTAIN_MAPPING");}
+        }
 
         // =========================================================================
         // XÂY DỰNG HASHMAP O(1) CHO VIỆC TÌM KIẾM PHẦN TỬ LIÊN NGÔN NGỮ (CROSS-LANGUAGE)
         // =========================================================================
         Map<String, ModelElement> elementByNameMap = new HashMap<>();
+        Set<String> ambiguousNames = new HashSet<>();
         for (ModelElement el : allElements) {
             if (el.getName() != null) {
+                if (elementByNameMap.containsKey(el.getName().toLowerCase().trim())) ambiguousNames.add(el.getName().toLowerCase().trim());
                 elementByNameMap.put(el.getName().toLowerCase().trim(), el);
             }
         }
@@ -311,12 +346,13 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         // =========================================================================
         // BƯỚC 2: XÂY DỰNG VÀ LƯU BATCH REST_API EVIDENCES (JAVA + C#)
         // =========================================================================
+        ambiguousNames.forEach(elementByNameMap::remove);
         List<Evidence> allEvidencesToSave = new ArrayList<>();
 
         if (evidences != null) {
             for (CodeEvidenceDTO ev : evidences) {
                 if ("REST_API".equalsIgnoreCase(ev.getElementType())) {
-                    ModelElement owningEl = elementByNameMap.get(ev.getSourceComponent() != null ? ev.getSourceComponent().toLowerCase().trim() : "");
+                    ModelElement owningEl = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
                     if (owningEl == null) {
                         owningEl = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
                     }
@@ -365,11 +401,22 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         List<ModelRelationship> relationshipsToSave = new ArrayList<>();
         List<RelEvidenceContext> relEvidenceContexts = new ArrayList<>();
 
+        if(evidences!=null)for(var ev:evidences)if("MESSAGE_PUBLISH".equals(ev.getElementType())||"MESSAGE_SUBSCRIBE".equals(ev.getElementType())) {
+            ModelElement endpoint=findComponentOrContainer(allElements,ev.getSourceComponent(),ev.getFilePath());
+            ModelElement channel=channels.get(messageKey(ev,allElements,messagingBindings));
+            if(endpoint==null||channel==null)continue;
+            boolean publish="MESSAGE_PUBLISH".equals(ev.getElementType());
+            ModelElement from=publish?endpoint:channel,to=publish?channel:endpoint;
+            if(containsRelationship(relationshipsToSave,from,to,ev.getElementType()))continue;
+            var relationship=ModelRelationship.builder().modelVersion(modelVersion).sourceElement(from).targetElement(to).relationType(ev.getElementType()).originLayer("STATIC").direction("DIRECTED").build();
+            relationshipsToSave.add(relationship);
+            relEvidenceContexts.add(new RelEvidenceContext(relationship,ev.getFilePath()+":"+ev.getLineNumber(),"STATIC_CODE",ev.getCodeSnippet(),"JAVA_MESSAGING_1"));
+        }
         // (1) DECLARED_COMPOSE: Từ depends_on trong docker-compose.yml
         if (dockerDetectorService != null && sourcePath != null) {
             try {
-                List<DetectedContainerDTO> containers = dockerDetectorService.detectContainers(sourcePath);
-                for (DetectedContainerDTO c : containers) {
+                List<DetectedContainerDTO> composeContainers = dockerDetectorService.detectContainers(sourcePath);
+                for (DetectedContainerDTO c : composeContainers) {
                     ModelElement sourceContainer = elementByNameMap.get(c.getServiceName().toLowerCase().trim());
                     if (sourceContainer == null) sourceContainer = matchTargetElement(elements, c.getServiceName());
 
@@ -413,10 +460,8 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                         targetElement = matchTargetElement(elements, targetServiceName);
                     }
 
-                    if (targetElement != null) {
-                        ModelElement sourceElement = (ev.getSourceComponent() != null && !ev.getSourceComponent().isBlank())
-                                ? elementByNameMap.get(ev.getSourceComponent().toLowerCase().trim())
-                                : null;
+                    if (targetElement != null && findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath()) != null) {
+                        ModelElement sourceElement = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
                         if (sourceElement == null) {
                             sourceElement = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
                         }
@@ -484,10 +529,10 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     String tgtCompName = ev.getTargetComponent();
                     if (srcCompName == null || srcCompName.isBlank() || tgtCompName == null || tgtCompName.isBlank()) continue;
 
-                    ModelElement srcEl = elementByNameMap.get(srcCompName.toLowerCase().trim());
+                    ModelElement srcEl = findComponentByName(allElements, srcCompName, ev.getFilePath());
                     if (srcEl == null) srcEl = findComponentByName(allElements, srcCompName, ev.getFilePath());
 
-                    ModelElement tgtEl = elementByNameMap.get(tgtCompName.toLowerCase().trim());
+                    ModelElement tgtEl = findComponentByName(allElements, tgtCompName, ev.getFilePath());
                     if (tgtEl == null) tgtEl = findComponentByName(allElements, tgtCompName, ev.getFilePath());
 
                     if (srcEl != null && tgtEl != null && !srcEl.equals(tgtEl)) {
@@ -516,11 +561,17 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     String repoName = ev.getSourceComponent() != null ? ev.getSourceComponent() : ev.getIdentifier();
                     if (repoName == null || repoName.isBlank()) continue;
 
-                    ModelElement repoEl = elementByNameMap.get(repoName.toLowerCase().trim());
+                    ModelElement repoEl = findComponentByName(allElements, repoName, ev.getFilePath());
                     if (repoEl == null) repoEl = findComponentByName(allElements, repoName, ev.getFilePath());
 
                     ModelElement dbEl = findDatabaseElementForFile(allElements, elements, ev.getFilePath(), serviceToDbHostMap);
 
+                    if (repoEl != null && dbEl == null) {
+                        ObjectNode properties = repoEl.getProperties() instanceof ObjectNode existing ? existing.deepCopy() : objectMapper.createObjectNode();
+                        properties.put("resolutionIssue", "UNRESOLVED_DATABASE_BINDING");
+                        repoEl.setProperties(properties);
+                        repoEl.setStatus("UNCERTAIN_MAPPING");
+                    }
                     if (repoEl != null && dbEl != null) {
                         ModelRelationship rel = ModelRelationship.builder()
                                 .modelVersion(modelVersion)
@@ -583,6 +634,12 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         // =========================================================================
         // BƯỚC 4: LƯU BATCH RELATIONSHIPS VÀ BẰNG CHỨNG LIÊN QUAN
         // =========================================================================
+        for (ModelRelationship relationship : relationshipsToSave) {
+            ObjectNode properties = relationship.getProperties() instanceof ObjectNode existing ? existing.deepCopy() : objectMapper.createObjectNode();
+            properties.put("resolutionStatus", "RESOLVED");
+            properties.put("resolverVersion", "architecture-2");
+            relationship.setProperties(properties);
+        }
         if (!relationshipsToSave.isEmpty()) {
             List<ModelRelationship> savedRelationships = modelRelationshipRepository.saveAll(relationshipsToSave);
             log.info("Successfully batch saved {} model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)",
@@ -640,6 +697,12 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         if (c.getImage() != null) {
             node.put("image", c.getImage());
         }
+        if (c.getBuildContext() != null && !c.getBuildContext().contains("${") && c.getComposeFilePath() != null) {
+            java.nio.file.Path compose = java.nio.file.Path.of(c.getComposeFilePath()).toAbsolutePath();
+            node.put("buildContext", compose.getParent().resolve(c.getBuildContext()).normalize().toString());
+        }
+        node.put("sourceType", "DOCKER_COMPOSE");
+        node.put("locator", c.getComposeFilePath() + ":" + c.getLineNumber());
         if (c.getPorts() != null && !c.getPorts().isEmpty()) {
             node.putPOJO("ports", c.getPorts());
         }
@@ -664,111 +727,67 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         return null;
     }
 
+    private String messageKey(CodeEvidenceDTO evidence,List<ModelElement> elements,Map<String,String> bindings) {
+        ModelElement owner=findOwningContainer(elements,evidence.getFilePath());
+        String transport=owner==null?null:bindings.get(owner.getName());
+        return evidence.getEndpointAlias()+":"+(transport!=null?transport:"unresolved:"+(owner==null?evidence.getFilePath():owner.getName()))+":"+evidence.getIdentifier();
+    }
     private ModelElement findOwningContainer(List<ModelElement> elements, String filePath) {
-        if (elements == null || elements.isEmpty()) {
-            return null;
-        }
-        if (filePath != null) {
-            for (ModelElement el : elements) {
-                if ("SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType())) {
-                    if (el.getName() != null && filePath.contains(el.getName())) {
-                        return el;
-                    }
-                }
-            }
-            for (ModelElement el : elements) {
-                if ("SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType())) {
-                    return el;
-                }
-            }
-        }
-        return elements.get(0);
+        return ArchitectureResolver.owner(elements, filePath);
     }
-
-    private ModelElement findComponentOrContainer(List<ModelElement> allElements, String componentName, String filePath) {
-        if (componentName != null) {
-            for (ModelElement el : allElements) {
-                if (el.getName() != null && el.getName().equalsIgnoreCase(componentName)) {
-                    return el;
-                }
-            }
-        }
-        return findOwningContainer(allElements, filePath);
+    private ModelElement findComponentOrContainer(List<ModelElement> elements, String name, String filePath) {
+        ModelElement component = ArchitectureResolver.component(elements, name, filePath);
+        return component != null ? component : ArchitectureResolver.owner(elements, filePath);
     }
-
-    private ModelElement findComponentByName(List<ModelElement> allElements, String compName, String filePath) {
-        if (compName == null) return null;
-        for (ModelElement el : allElements) {
-            if ("COMPONENT".equalsIgnoreCase(el.getElementType()) && compName.equalsIgnoreCase(el.getName())) {
-                return el;
-            }
-        }
-        for (ModelElement el : allElements) {
-            if (compName.equalsIgnoreCase(el.getName())) {
-                return el;
-            }
-        }
-        return null;
+    private ModelElement findComponentByName(List<ModelElement> elements, String name, String filePath) {
+        return ArchitectureResolver.component(elements, name, filePath);
     }
-
-    private ModelElement matchTargetElement(List<ModelElement> elements, String targetServiceName) {
-        if (targetServiceName == null || targetServiceName.isBlank()) {
-            return null;
-        }
-        // 1. Exact match
-        for (ModelElement el : elements) {
-            if (el.getName() != null && el.getName().equalsIgnoreCase(targetServiceName)) {
-                return el;
-            }
-        }
-        // 2. Contains match
-        String targetLower = targetServiceName.toLowerCase();
-        for (ModelElement el : elements) {
-            if (el.getName() != null) {
-                String nodeNameLower = el.getName().toLowerCase();
-                if (nodeNameLower.contains(targetLower) || targetLower.contains(nodeNameLower)) {
-                    return el;
-                }
-            }
-        }
-        return null;
+    private ModelElement matchTargetElement(List<ModelElement> elements, String name) {
+        return ArchitectureResolver.target(elements, name);
     }
-
-    private ModelElement findDatabaseElementForFile(List<ModelElement> allElements, List<ModelElement> containerElements,
-                                                  String filePath, Map<String, String> serviceToDbHostMap) {
-        if (filePath != null) {
-            for (Map.Entry<String, String> entry : serviceToDbHostMap.entrySet()) {
-                if (filePath.contains(entry.getKey())) {
-                    ModelElement dbEl = matchTargetElement(containerElements, entry.getValue());
-                    if (dbEl != null) {
-                        return dbEl;
-                    }
-                }
-            }
-        }
-        // Fallback: Tìm node DATABASE đầu tiên
-        for (ModelElement el : allElements) {
-            if ("DATABASE".equalsIgnoreCase(el.getElementType())) {
-                return el;
-            }
-        }
-        return null;
+    private ModelElement findDatabaseElementForFile(List<ModelElement> all, List<ModelElement> containers,
+                                                    String file, Map<String, String> bindings) {
+        ModelElement owner = ArchitectureResolver.owner(containers, file);
+        if (owner == null) return null;
+        String host = bindings.get(owner.getName());
+        if (host == null || host.isBlank() || host.equalsIgnoreCase("localhost") || host.equals("127.0.0.1")) return null;
+        ModelElement db = ArchitectureResolver.target(containers, host);
+        return db != null && "DATABASE".equals(db.getElementType()) ? db : null;
     }
-
+    private ObjectNode componentProperties(CodeEvidenceDTO evidence, ModelElement owner) {
+        ObjectNode properties = createPropertiesNode(evidence.getFilePath());
+        properties.put("componentBasis", "MESSAGING_COMPONENT".equals(evidence.getElementType()) ? "MESSAGING_ENDPOINT" : "SPRING_BEAN");
+        properties.put("qualifiedName", evidence.getQualifiedName());
+        properties.put("responsibility", switch (evidence.getElementType()) {
+            case "CONTROLLER_COMPONENT" -> "Exposes HTTP endpoints";
+            case "DATABASE_REPOSITORY" -> "Persists and retrieves application data";
+            case "SERVICE_COMPONENT" -> "Implements application operations";
+            case "MESSAGING_COMPONENT" -> "Declares message publishing or handling endpoints";
+            default -> "Spring application component";
+        });
+        if (owner == null) properties.put("resolutionIssue", "UNRESOLVED_COMPONENT_OWNER");
+        return properties;
+    }
     private Map<String, String> mapServicesToDatabases(String sourcePath) {
         Map<String, String> map = new HashMap<>();
         if (springConfigDetectorService != null && sourcePath != null) {
             try {
                 List<DetectedSpringConfigDTO> configs = springConfigDetectorService.detectConfigs(sourcePath);
                 for (DetectedSpringConfigDTO cfg : configs) {
-                    if (cfg.getDatasourceHost() != null && !cfg.getDatasourceHost().isBlank()) {
+                    if (cfg.getDatasourceHost() != null && !cfg.getDatasourceHost().isBlank() && !cfg.getDatasourceHost().equalsIgnoreCase("localhost") && !cfg.getDatasourceHost().equals("127.0.0.1")) {
                         String sName = cfg.getApplicationName() != null ? cfg.getApplicationName() : cfg.getServiceName();
                         if (sName != null) {
-                            map.put(sName, cfg.getDatasourceHost());
+                            String previous = map.putIfAbsent(sName, cfg.getDatasourceHost());
+                            if (previous != null && !previous.equals(cfg.getDatasourceHost())) map.put(sName, "");
                         }
                     }
                 }
             } catch (Exception ignored) {
+            }
+        }
+        if (dockerDetectorService != null && sourcePath != null) {
+            for (DetectedContainerDTO container : dockerDetectorService.detectContainers(sourcePath)) {
+                if(container.getDatasourceHost()!=null) map.put(container.getServiceName(),container.getDatasourceDatabase()!=null?container.getDatasourceDatabase()+" @ "+container.getDatasourceHost():container.getDatasourceHost());
             }
         }
         return map;

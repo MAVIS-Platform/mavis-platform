@@ -67,6 +67,9 @@ public class GraphServiceImpl implements GraphService {
                         .sourceNodeId(rel.getSourceElement().getId())
                         .targetNodeId(rel.getTargetElement().getId())
                         .kind(rel.getRelationType())
+                        .originLayer(rel.getOriginLayer())
+                        .direction(rel.getDirection())
+                        .resolutionStatus(rel.getProperties() == null ? "UNKNOWN" : rel.getProperties().path("resolutionStatus").asText("UNKNOWN"))
                         .description(extractDescription(rel))
                         .build())
                 .collect(Collectors.toList());

@@ -13,6 +13,7 @@ import type {
   Evidence,
   ModelSummary,
 } from "@/types/domain";
+import { projectGraphModel } from "./graph-projection";
 import { graphEdgePath, layoutGraph, NODE_WIDTH, NODE_HEIGHT } from "./graph-layout";
 
 export function ModelVersionSelector({
@@ -38,6 +39,7 @@ export function GraphLegend() {
     <div className="flex flex-wrap gap-2 text-xs">
       <Badge variant="source">Source-inferred</Badge>
       <Badge variant="runtime">Runtime-observed</Badge>
+      <Badge variant="secondary">Declared configuration</Badge>
       <Badge variant="warning">Uncertain mapping</Badge>
     </div>
   );
@@ -211,6 +213,10 @@ export function ElementDetailsPanel({
           <h3 className="text-sm">
             {nameOf(edge.from)} → {nameOf(edge.to)} · {edge.protocol}
           </h3>
+          <p className="text-xs text-muted-foreground">
+            Origin: {edge.originLayer ?? "unknown"} · Resolution:{" "}
+            {edge.resolutionStatus ?? "unknown"}
+          </p>
           {edge.uncertain && <Badge variant="warning">Uncertain mapping</Badge>}
           {resolved}
         </>
@@ -233,6 +239,13 @@ export function ArchitectureGraph({
   onSelect: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const [showComponents, setShowComponents] = useState(false);
+  const [origin, setOrigin] = useState<"all" | "source" | "deployment" | "runtime">("source");
+  const projection = useMemo(
+    () => projectGraphModel(model, showComponents, origin),
+    [model, showComponents, origin],
+  );
+  const displayed = projection.model;
   const [layer, setLayer] = useState("all");
   const [zoom, setZoom] = useState(1);
   const [page, setPage] = useState(1);
@@ -249,20 +262,22 @@ export function ArchitectureGraph({
     return () => observer.disconnect();
   }, []);
   const filtered = useMemo(() => {
-    const elements = model.elements.filter(
+    const elements = displayed.elements.filter(
       (node) =>
         (layer === "all" || node.layer === layer) &&
         node.name.toLowerCase().includes(query.toLowerCase()),
     );
     const ids = new Set(elements.map((node) => node.id));
     return layoutGraph({
-      ...model,
+      ...displayed,
       elements,
-      edges: model.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)),
+      edges: displayed.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)),
     });
-  }, [model, layer, query]);
+  }, [displayed, layer, query]);
   const visible = new Set(filtered.map((node) => node.id));
-  const connections = model.edges.filter((edge) => visible.has(edge.from) && visible.has(edge.to));
+  const connections = displayed.edges.filter(
+    (edge) => visible.has(edge.from) && visible.has(edge.to),
+  );
   const byId = new Map(filtered.map((node) => [node.id, node]));
   const large = filtered.length > 300 || connections.length > 1000;
   const width = filtered.reduce((max, node) => Math.max(max, node.x + NODE_WIDTH + 55), 300);
@@ -273,7 +288,12 @@ export function ArchitectureGraph({
   if (selectedId) {
     adjacent.add(selectedId);
     connections.forEach((edge) => {
-      if (edge.id === selectedId || edge.from === selectedId || edge.to === selectedId) {
+      if (
+        edge.id === selectedId ||
+        !!edge.underlyingEdgeIds?.includes(selectedId ?? "") ||
+        edge.from === selectedId ||
+        edge.to === selectedId
+      ) {
         adjacent.add(edge.from);
         adjacent.add(edge.to);
       }
@@ -298,6 +318,26 @@ export function ArchitectureGraph({
         onZoom={(factor) => setZoom((z) => Math.max(0.4, Math.min(8, z * factor)))}
         onReset={() => setZoom(1)}
       />
+      <div className="flex flex-wrap items-end gap-3 border-y p-4">
+        <SelectField
+          label="Relationship origin"
+          value={origin}
+          onChange={(value) => setOrigin(value as typeof origin)}
+          options={[
+            { value: "source", label: "Source and configured interactions" },
+            { value: "all", label: "All relationships" },
+            { value: "deployment", label: "Deployment dependencies" },
+            { value: "runtime", label: "Runtime observations" },
+          ]}
+        />
+        <Button variant="outline" onClick={() => setShowComponents((value) => !value)}>
+          {showComponents ? "Collapse service internals" : "Expand service internals"}
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          {projection.filteredRelationships} relationships outside this filter ·{" "}
+          {projection.internalRelationships} internal relationships available when expanded
+        </p>
+      </div>
       <div ref={viewport}>
         {!filtered.length ? (
           <EmptyState
@@ -340,15 +380,34 @@ export function ArchitectureGraph({
                         opacity={
                           !selectedId ||
                           selectedId === edge.id ||
+                          !!edge.underlyingEdgeIds?.includes(selectedId ?? "") ||
                           selectedId === edge.from ||
                           selectedId === edge.to
                             ? 0.8
                             : 0.15
                         }
                         fill="none"
-                        stroke={selectedId === edge.id ? "var(--primary)" : "var(--graph-edge)"}
-                        strokeWidth={selectedId === edge.id ? 3 : 1.5}
-                        strokeDasharray={edge.uncertain ? "5 4" : undefined}
+                        stroke={
+                          selectedId === edge.id ||
+                          !!edge.underlyingEdgeIds?.includes(selectedId ?? "")
+                            ? "var(--primary)"
+                            : "var(--graph-edge)"
+                        }
+                        strokeWidth={
+                          selectedId === edge.id ||
+                          !!edge.underlyingEdgeIds?.includes(selectedId ?? "")
+                            ? 3
+                            : 1.5
+                        }
+                        strokeDasharray={
+                          edge.originLayer === "DEPLOYMENT" || edge.protocol === "DECLARED_COMPOSE"
+                            ? "8 5"
+                            : edge.uncertain
+                              ? "2 4"
+                              : undefined
+                        }
+                        onClick={() => onSelect(edge.id)}
+                        className="cursor-pointer"
                         markerEnd={`url(#${marker})`}
                       />
                     );
@@ -361,6 +420,7 @@ export function ArchitectureGraph({
                       onClick={() => onSelect(node.id)}
                       className="cursor-pointer"
                     >
+                      <title>{node.name}</title>
                       <rect
                         width={NODE_WIDTH}
                         height={NODE_HEIGHT}
@@ -373,7 +433,9 @@ export function ArchitectureGraph({
                         {node.name.slice(0, 23)}
                       </text>
                       <text x={12} y={45} fill="var(--muted-foreground)" fontSize={11}>
-                        {node.layer}
+                        {Number(node.properties?.["componentCount"] ?? 0) > 0
+                          ? `${node.properties?.["componentCount"]} internal components`
+                          : (node.elementType?.replaceAll("_", " ").toLowerCase() ?? node.layer)}
                       </text>
                     </g>
                   ))}
@@ -405,6 +467,27 @@ export function ArchitectureGraph({
                   page={page}
                   pageCount={Math.ceil(filtered.length / 30)}
                   onPageChange={setPage}
+                />
+              )}
+              {connections.some(
+                (edge) =>
+                  edge.underlyingEdgeIds?.includes(selectedId ?? "") &&
+                  (edge.underlyingEdgeIds?.length ?? 0) > 1,
+              ) && (
+                <SelectField
+                  label="Connections in selected group"
+                  value={selectedId ?? ""}
+                  onChange={onSelect}
+                  options={model.edges
+                    .filter((edge) =>
+                      connections
+                        .find((group) => group.underlyingEdgeIds?.includes(selectedId ?? ""))
+                        ?.underlyingEdgeIds?.includes(edge.id),
+                    )
+                    .map((edge) => ({
+                      value: edge.id,
+                      label: `${model.elements.find((node) => node.id === edge.from)?.name} → ${model.elements.find((node) => node.id === edge.to)?.name} · ${edge.protocol}`,
+                    }))}
                 />
               )}
               <SelectField

@@ -4,6 +4,11 @@ import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.analyzer.javaanalyzer.visitor.CodeDependencyVisitor;
+import com.mavis.analyzer.javaanalyzer.visitor.BeanMessagingVisitor;
+import java.util.Map;
+import java.util.Set;
+import java.util.HashMap;
+import java.util.HashSet;
 import com.mavis.analyzer.javaanalyzer.visitor.ControllerVisitor;
 import com.mavis.analyzer.javaanalyzer.visitor.DatabaseAccessVisitor;
 import com.mavis.analyzer.javaanalyzer.visitor.HttpClientVisitor;
@@ -26,6 +31,8 @@ public class JavaSourceParser {
 
     public List<CodeEvidenceDTO> parseProject(String extractedPath) {
         List<CodeEvidenceDTO> allEvidences = new ArrayList<>();
+        Map<String,String> constants = new HashMap<>();
+        Set<String> localTypes = new HashSet<>();
 
         if (extractedPath == null || extractedPath.isBlank()) {
             log.warn("Đường dẫn trích xuất mã nguồn trống hoặc không hợp lệ: {}", extractedPath);
@@ -45,16 +52,32 @@ public class JavaSourceParser {
                     // BR-26: Bỏ qua hoàn toàn thư mục test, target, build, .git
                     .filter(path -> !isIgnoredPath(path))
                     .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".java"))
-                    .forEach(file -> parseJavaFile(file, allEvidences));
+                    .sorted()
+                    .forEach(file -> parseJavaFile(file, allEvidences, constants, localTypes));
         } catch (IOException e) {
             log.error("Lỗi khi duyệt thư mục dự án: {}", extractedPath, e);
         }
 
+        for (var evidence:allEvidences) {
+            if("BEAN_COMPONENT".equals(evidence.getElementType())) {
+                var matches=evidence.getSymbolCandidates().stream().filter(localTypes::contains).distinct().toList();
+                if(matches.size()==1) {evidence.setElementType("GENERAL_COMPONENT");evidence.setQualifiedName(matches.get(0));}
+            } else if("CODE_DEPENDENCY".equals(evidence.getElementType())) {
+                var matches=evidence.getSymbolCandidates().stream().filter(localTypes::contains).distinct().toList();
+                if(matches.size()==1)evidence.setTargetComponent(matches.get(0));
+                evidence.setSourceComponent(evidence.getQualifiedName());
+            } else if(evidence.getElementType().startsWith("MESSAGE_")&&evidence.getIdentifier().isBlank()) {
+                var values=evidence.getSymbolCandidates().stream().filter(constants::containsKey).map(constants::get).filter(java.util.Objects::nonNull).distinct().toList();
+                if(values.size()==1)evidence.setIdentifier(values.get(0));
+                else evidence.setElementType("UNRESOLVED_MESSAGE_CHANNEL");
+            }
+        }
+        allEvidences.removeIf(e->"BEAN_COMPONENT".equals(e.getElementType()));
         log.info("Đã hoàn tất phân tích AST. Tổng số code evidences trích xuất được: {}", allEvidences.size());
         return allEvidences;
     }
 
-    private void parseJavaFile(Path javaFile, List<CodeEvidenceDTO> allEvidences) {
+    private void parseJavaFile(Path javaFile, List<CodeEvidenceDTO> allEvidences, Map<String,String> constants, Set<String> localTypes) {
         try {
             StringBuilder codeBuilder = new StringBuilder();
             try (BufferedReader reader = Files.newBufferedReader(javaFile, StandardCharsets.UTF_8)) {
@@ -69,11 +92,24 @@ public class JavaSourceParser {
             CompilationUnit cu = StaticJavaParser.parse(sourceCode);
             String currentFilePath = javaFile.toAbsolutePath().toString();
 
+            for (var type:cu.findAll(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration.class)) {
+                String qualified=type.getFullyQualifiedName().orElse(type.getNameAsString());localTypes.add(qualified);
+                for(var field:type.getFields())if((field.isStatic()&&field.isFinal())||type.isInterface())for(var variable:field.getVariables())variable.getInitializer().filter(value->value.isStringLiteralExpr()).ifPresent(value->{String key=qualified+"."+variable.getNameAsString(),literal=value.asStringLiteralExpr().asString();if(!constants.containsKey(key))constants.put(key,literal);else if(!java.util.Objects.equals(constants.get(key),literal))constants.put(key,null);});
+            }
+            int evidenceStart = allEvidences.size();
             // Thực thi đủ 4 AST Visitors
+            new BeanMessagingVisitor(currentFilePath).visit(cu, allEvidences);
             new ControllerVisitor(currentFilePath).visit(cu, allEvidences);
             new HttpClientVisitor(currentFilePath).visit(cu, allEvidences);
             new CodeDependencyVisitor(currentFilePath).visit(cu, allEvidences);
             new DatabaseAccessVisitor(currentFilePath).visit(cu, allEvidences);
+            String packageName = cu.getPackageDeclaration().map(p -> p.getNameAsString() + ".").orElse("");
+            for (int i = evidenceStart; i < allEvidences.size(); i++) {
+                CodeEvidenceDTO evidence = allEvidences.get(i);
+                String symbol = evidence.getSourceComponent() != null ? evidence.getSourceComponent() : evidence.getIdentifier();
+                evidence.setQualifiedName(packageName + symbol);
+                if("CODE_DEPENDENCY".equals(evidence.getElementType()))evidence.setSymbolCandidates(BeanMessagingVisitor.candidates(cu,evidence.getTargetComponent()));
+            }
         } catch (Exception e) {
             log.error("Lỗi khi phân tích cú pháp file Java: {}", javaFile.toAbsolutePath(), e);
         }

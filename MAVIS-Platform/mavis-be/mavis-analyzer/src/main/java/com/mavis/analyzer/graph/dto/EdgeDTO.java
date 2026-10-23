@@ -17,4 +17,7 @@ public class EdgeDTO {
     private UUID targetNodeId;
     private String kind;
     private String description;
+    private String originLayer;
+    private String direction;
+    private String resolutionStatus;
 }

@@ -1,3 +1,23 @@
+export const publicErrors = {
+  GITHUB_URL: "GitHub URL không hợp lệ. Dùng https://github.com/owner/repository.",
+  GITHUB_REPOSITORY:
+    "Không tìm thấy repository công khai trên GitHub. Kiểm tra URL; repository private cần tải ZIP.",
+  GITHUB_BRANCH: "Nhánh đã chọn không tồn tại hoặc đã bị xóa. Tải lại danh sách nhánh và chọn lại.",
+  GITHUB_LIMIT: "GitHub đang giới hạn truy cập. Vui lòng thử lại sau.",
+  GITHUB_CONNECTION: "Không kết nối được GitHub hoặc GitHub đang gặp lỗi. Vui lòng thử lại.",
+  GITHUB_EMPTY: "Repository chưa có nhánh/source để import.",
+  GITHUB_COMMIT_MISSING:
+    "Không tìm thấy commit trong repository công khai này. Kiểm tra URL và Commit SHA.",
+  GITHUB_COMMIT: "Commit SHA phải là đầy đủ 40 ký tự hexadecimal.",
+  GITHUB_IMPORT:
+    "Không thể tải hoặc xử lý archive GitHub. Kiểm tra commit SHA, giới hạn kích thước và source Java/C#. Có thể thử tải ZIP.",
+} as const;
+export type PublicErrorCode = keyof typeof publicErrors;
+export function publicErrorCode(value: unknown): PublicErrorCode | undefined {
+  return typeof value === "string" && Object.hasOwn(publicErrors, value)
+    ? (value as PublicErrorCode)
+    : undefined;
+}
 export type ErrorKind =
   | "invalid"
   | "unauthorized"
@@ -32,8 +52,9 @@ export class ApiError extends Error {
   constructor(
     public readonly kind: ErrorKind,
     public readonly status?: number,
+    public readonly code?: PublicErrorCode,
   ) {
-    super(messages[kind]);
+    super(code ? publicErrors[code] : messages[kind]);
     this.name = "ApiError";
   }
 }
