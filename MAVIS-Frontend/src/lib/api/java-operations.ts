@@ -6,6 +6,9 @@ import { z } from "zod";
 import { javaRequest } from "./java-client";
 import {
   projectView,
+  projectOverviewView,
+  latestModelSummaryId,
+  javaProject,
   snapshotView,
   modelSummary,
   jobView,
@@ -158,6 +161,24 @@ export async function executeJava(
     }
     case "projects":
       return list.parse(await get("projects")).map(projectView);
+    case "projectOverviews": {
+      const rows = list.parse(await get("projects"));
+      const enrich = async (raw: unknown) => {
+        const projectId = javaProject.parse(raw).id;
+        const jobs = await get(`analyzer/projects/${projectId}/jobs`).catch(() => null);
+        const models = await get(`analyzer/projects/${projectId}/models`).catch(() => null);
+        let graph: unknown = null;
+        if (Array.isArray(models) && models.length > 0) {
+          const modelId = latestModelSummaryId(models);
+          if (modelId) graph = await get(`analyzer/models/${modelId}/graph`).catch(() => null);
+        }
+        const sessions = await get(`analyzer/projects/${projectId}/runtime-sessions`).catch(
+          () => null,
+        );
+        return projectOverviewView(raw, jobs, graph, sessions);
+      };
+      return Promise.all(rows.map(enrich));
+    }
     case "project":
       return projectView(await get(`projects/${id(input, "projectId")}`));
     case "createProject":
