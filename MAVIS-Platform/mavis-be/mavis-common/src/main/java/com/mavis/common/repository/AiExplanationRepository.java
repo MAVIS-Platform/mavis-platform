@@ -13,6 +13,7 @@ import java.util.UUID;
 public interface AiExplanationRepository extends JpaRepository<AiExplanation, UUID> {
 
     List<AiExplanation> findByModelVersionId(UUID modelVersionId);
+    Optional<AiExplanation> findFirstByModelVersionIdAndContextKeyOrderByCreatedAtDesc(UUID modelVersionId, String contextKey);
 
     @EntityGraph(attributePaths = {"modelVersion", "element", "relationship", "runtimeSession", "requestedBy"})
     List<AiExplanation> findByModelVersionIdOrderByCreatedAtDesc(UUID modelVersionId);

@@ -79,7 +79,7 @@ class ArchitectureEvaluationServiceImplTest {
         // Arrange: 2 services, 1 DB riêng cho Service B, Service A gọi Service B (có evidence), Service B truy cập DB (có evidence)
         ModelElement serviceA = ModelElement.builder().id(UUID.randomUUID()).name("order-service").elementType("SERVICE_CONTAINER").status("CONFIRMED").build();
         ModelElement serviceB = ModelElement.builder().id(UUID.randomUUID()).name("payment-service").elementType("SERVICE_CONTAINER").status("CONFIRMED").build();
-        ModelElement dbB = ModelElement.builder().id(UUID.randomUUID()).name("payment-db").elementType("DATABASE").status("CONFIRMED").build();
+        ModelElement dbB = ModelElement.builder().id(UUID.randomUUID()).name("payment-db").elementType("DATABASE").properties(objectMapper.createObjectNode().put("resourceRole","LOGICAL_DATASTORE").put("physicalHost","mysql").put("database","test_database")).status("CONFIRMED").build();
 
         List<ModelElement> elements = List.of(serviceA, serviceB, dbB);
 
@@ -100,7 +100,7 @@ class ArchitectureEvaluationServiceImplTest {
         List<ModelRelationship> relationships = List.of(relHttp, relDb);
 
         Evidence evHttp = Evidence.builder().id(UUID.randomUUID()).relationship(relHttp).sourceType("CODE").locator("OrderClient.java:25").build();
-        Evidence evDb = Evidence.builder().id(UUID.randomUUID()).relationship(relDb).sourceType("CONFIG").locator("application.yml:10").build();
+        Evidence evDb = Evidence.builder().id(UUID.randomUUID()).relationship(relDb).sourceType("CONFIG").excerpt("spring.datasource.url=jdbc:mysql://mysql/test_database").locator("application.yml:10").build();
         List<Evidence> evidences = List.of(evHttp, evDb);
 
         when(modelElementRepository.findByModelVersionId(modelVersionId)).thenReturn(elements);
@@ -178,7 +178,7 @@ class ArchitectureEvaluationServiceImplTest {
         // Arrange: Service A và Service B cùng truy cập chung database 'shared-mysql'
         ModelElement serviceA = ModelElement.builder().id(UUID.randomUUID()).name("order-service").elementType("SERVICE_CONTAINER").status("CONFIRMED").build();
         ModelElement serviceB = ModelElement.builder().id(UUID.randomUUID()).name("inventory-service").elementType("SERVICE_CONTAINER").status("CONFIRMED").build();
-        ModelElement sharedDb = ModelElement.builder().id(UUID.randomUUID()).name("shared-mysql").elementType("DATABASE").status("CONFIRMED").build();
+        ModelElement sharedDb = ModelElement.builder().id(UUID.randomUUID()).name("shared-mysql").elementType("DATABASE").properties(objectMapper.createObjectNode().put("resourceRole","LOGICAL_DATASTORE").put("physicalHost","mysql").put("database","test_database")).status("CONFIRMED").build();
 
         List<ModelElement> elements = List.of(serviceA, serviceB, sharedDb);
 
@@ -187,8 +187,8 @@ class ArchitectureEvaluationServiceImplTest {
         List<ModelRelationship> relationships = List.of(relAtoDb, relBtoDb);
 
         List<Evidence> evidences = List.of(
-                Evidence.builder().id(UUID.randomUUID()).relationship(relAtoDb).sourceType("CONFIG").locator("order:app.yml").build(),
-                Evidence.builder().id(UUID.randomUUID()).relationship(relBtoDb).sourceType("CONFIG").locator("inv:app.yml").build()
+                Evidence.builder().id(UUID.randomUUID()).relationship(relAtoDb).sourceType("CONFIG").excerpt("spring.datasource.url=jdbc:mysql://mysql/test_database").locator("order:app.yml").build(),
+                Evidence.builder().id(UUID.randomUUID()).relationship(relBtoDb).sourceType("CONFIG").excerpt("spring.datasource.url=jdbc:mysql://mysql/test_database").locator("inv:app.yml").build()
         );
 
         when(modelElementRepository.findByModelVersionId(modelVersionId)).thenReturn(elements);
@@ -210,10 +210,10 @@ class ArchitectureEvaluationServiceImplTest {
 
         assertThat(rule02Finding.getStatus()).isEqualTo("VIOLATION");
         assertThat(rule02Finding.getSeverity()).isEqualTo("WARNING");
-        assertThat(rule02Finding.getMessage()).contains("Shared Database Anti-Pattern");
-        assertThat(rule02Finding.getMessage()).contains("shared-mysql");
-        assertThat(rule02Finding.getMessage()).contains("order-service");
-        assertThat(rule02Finding.getMessage()).contains("inventory-service");
+        assertThat(rule02Finding.getMessage()).contains("logical datastore");
+        assertThat(rule02Finding.getDetails().path("relatedElementIds").toString()).contains(sharedDb.getId().toString());
+        assertThat(rule02Finding.getDetails().path("relatedElementIds").toString()).contains(serviceA.getId().toString());
+        assertThat(rule02Finding.getDetails().path("relatedElementIds").toString()).contains(serviceB.getId().toString());
     }
 
     @Test
@@ -399,5 +399,17 @@ class ArchitectureEvaluationServiceImplTest {
         EvaluationRunResponseDTO detail = evaluationService.getEvaluationRunById(runId);
         assertThat(detail.getId()).isEqualTo(runId);
         assertThat(detail.getFindings()).hasSize(1);
+    }
+    @Test
+    void missingAccessEvidenceMustNotPassLogicalDatabaseRule() {
+        var service=ModelElement.builder().id(UUID.randomUUID()).name("service").elementType("SERVICE_CONTAINER").build();
+        var db=ModelElement.builder().id(UUID.randomUUID()).name("data").elementType("DATABASE").properties(objectMapper.createObjectNode().put("resourceRole","LOGICAL_DATASTORE").put("physicalHost","mysql").put("database","data")).build();
+        var edge=ModelRelationship.builder().id(UUID.randomUUID()).sourceElement(service).targetElement(db).relationType("DATABASE_ACCESS").originLayer("STATIC").build();
+        when(modelElementRepository.findByModelVersionId(modelVersionId)).thenReturn(List.of(service,db));
+        when(modelRelationshipRepository.findByModelVersionId(modelVersionId)).thenReturn(List.of(edge));
+        when(evidenceRepository.findByModelVersionId(modelVersionId)).thenReturn(List.of());
+        var response=evaluationService.evaluateModel(modelVersionId,"1.0");
+        assertThat(response.getFindings()).filteredOn(f -> "RULE-02".equals(f.getRuleId())).allMatch(f -> "NEEDS_REVIEW".equals(f.getStatus()));
+        assertThat(response.getComplianceScore()).isLessThan(100.0);
     }
 }

@@ -101,6 +101,7 @@ export function componentContainers(raw: unknown) {
     .sort((a, b) => b.componentCount - a.componentCount || a.name.localeCompare(b.name));
 }
 const relations: Record<string, string> = {
+  USES_API: "Uses exposed API",
   DECLARED_COMPOSE: "Compose dependency",
   CODE_DEPENDENCY: "Code dependency",
   SERVICE_HTTP_CALL: "HTTP call",
@@ -132,26 +133,36 @@ export function wrapText(text: string, max = 30) {
 }
 export function nodeText(node: DiagramNode) {
   const type = kindOf(node);
+  const labels: Record<string, string> = {
+    PROCESS_UNIT: "Process unit · declared",
+    LOGICAL_COMPONENT: "Logical component",
+    CLASS_INTERFACE: "Class / Interface",
+  };
   const label =
-    type === "DATASTORE_GROUP"
-      ? "Data store group"
-      : type === "SERVICE_GROUP"
-        ? "Service group"
-        : type === "CHANNEL_GROUP"
-          ? "Channel group"
-          : type === "SERVICE_CONTAINER"
-            ? "Container"
-            : type === "COMPONENT"
-              ? "Component"
-              : type === "MESSAGE_CHANNEL"
-                ? "Message channel"
-                : type === "DATABASE"
-                  ? "Database"
-                  : type === "QUEUE_BROKER"
-                    ? "Queue / Broker"
-                    : type === "EXTERNAL_SYSTEM"
-                      ? "External system"
-                      : "Unknown element";
+    labels[type] ??
+    (type === "SYSTEM"
+      ? "Software system"
+      : type === "PACKAGE"
+        ? "Source package"
+        : type === "DATASTORE_GROUP"
+          ? "Data store group"
+          : type === "SERVICE_GROUP"
+            ? "Service group"
+            : type === "CHANNEL_GROUP"
+              ? "Channel group"
+              : type === "SERVICE_CONTAINER"
+                ? "Container"
+                : type === "COMPONENT"
+                  ? "Component"
+                  : type === "MESSAGE_CHANNEL"
+                    ? "Message channel"
+                    : type === "DATABASE"
+                      ? "Database"
+                      : type === "QUEUE_BROKER"
+                        ? "Queue / Broker"
+                        : type === "EXTERNAL_SYSTEM"
+                          ? "External system"
+                          : "Unknown element");
   const technology =
     node.languageStack === "JAVA_SPRING"
       ? "Java / Spring"
