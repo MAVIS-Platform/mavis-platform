@@ -8,6 +8,12 @@ spring:
     username: avnadmin
     password: AVNS_YGvZC_uGzflI1GYULTx
     driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      idle-timeout: 30000
+      max-lifetime: 60000
+      connection-timeout: 20000
 
   jpa:
     # Khng cho php JPA t? ??ng t?o b?ng v chng ta s? dng Flyway

@@ -1,0 +1,3 @@
+com\mavis\workerclient\ClientContractTest.class
+com\mavis\workerclient\LiveWorkerIntegrationTest.class
+com\mavis\workerclient\ImpactWorkerClientTest.class

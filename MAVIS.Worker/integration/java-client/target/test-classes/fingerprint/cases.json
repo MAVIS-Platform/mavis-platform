@@ -1,0 +1,158 @@
+[
+  {
+    "name": "utf8",
+    "files": [
+      {
+        "path": "App.csproj",
+        "contentBase64": "PFByb2plY3QgLz4=",
+        "included": true
+      },
+      {
+        "path": "src/Café.cs",
+        "contentBase64": "bmFtZXNwYWNlIERlbW87IGNsYXNzIENhZsOpIHsgfQ0K",
+        "included": true
+      },
+      {
+        "path": "Generated.g.cs",
+        "contentBase64": "Ly8gPGF1dG8tZ2VuZXJhdGVkIC8+",
+        "included": true
+      },
+      {
+        "path": "obj/Ignore.cs",
+        "contentBase64": "Y2xhc3MgSWdub3JlIHt9",
+        "included": false
+      }
+    ],
+    "expectedDigest": "b2425cbed141415223b9ef9dcff9aa3dd053a462a99a46c3ba8337dc99a39f22"
+  },
+  {
+    "name": "utf8bom",
+    "files": [
+      {
+        "path": "App.csproj",
+        "contentBase64": "PFByb2plY3QgLz4=",
+        "included": true
+      },
+      {
+        "path": "src/Café.cs",
+        "contentBase64": "77u/bmFtZXNwYWNlIERlbW87IGNsYXNzIENhZsOpIHsgfQ0K",
+        "included": true
+      },
+      {
+        "path": "Generated.g.cs",
+        "contentBase64": "Ly8gPGF1dG8tZ2VuZXJhdGVkIC8+",
+        "included": true
+      },
+      {
+        "path": "obj/Ignore.cs",
+        "contentBase64": "Y2xhc3MgSWdub3JlIHt9",
+        "included": false
+      }
+    ],
+    "expectedDigest": "b2425cbed141415223b9ef9dcff9aa3dd053a462a99a46c3ba8337dc99a39f22"
+  },
+  {
+    "name": "utf16le",
+    "files": [
+      {
+        "path": "App.csproj",
+        "contentBase64": "PFByb2plY3QgLz4=",
+        "included": true
+      },
+      {
+        "path": "src/Café.cs",
+        "contentBase64": "//5uAGEAbQBlAHMAcABhAGMAZQAgAEQAZQBtAG8AOwAgAGMAbABhAHMAcwAgAEMAYQBmAOkAIAB7ACAAfQANAAoA",
+        "included": true
+      },
+      {
+        "path": "Generated.g.cs",
+        "contentBase64": "Ly8gPGF1dG8tZ2VuZXJhdGVkIC8+",
+        "included": true
+      },
+      {
+        "path": "obj/Ignore.cs",
+        "contentBase64": "Y2xhc3MgSWdub3JlIHt9",
+        "included": false
+      }
+    ],
+    "expectedDigest": "b2425cbed141415223b9ef9dcff9aa3dd053a462a99a46c3ba8337dc99a39f22"
+  },
+  {
+    "name": "utf16be",
+    "files": [
+      {
+        "path": "App.csproj",
+        "contentBase64": "PFByb2plY3QgLz4=",
+        "included": true
+      },
+      {
+        "path": "src/Café.cs",
+        "contentBase64": "/v8AbgBhAG0AZQBzAHAAYQBjAGUAIABEAGUAbQBvADsAIABjAGwAYQBzAHMAIABDAGEAZgDpACAAewAgAH0ADQAK",
+        "included": true
+      },
+      {
+        "path": "Generated.g.cs",
+        "contentBase64": "Ly8gPGF1dG8tZ2VuZXJhdGVkIC8+",
+        "included": true
+      },
+      {
+        "path": "obj/Ignore.cs",
+        "contentBase64": "Y2xhc3MgSWdub3JlIHt9",
+        "included": false
+      }
+    ],
+    "expectedDigest": "b2425cbed141415223b9ef9dcff9aa3dd053a462a99a46c3ba8337dc99a39f22"
+  },
+  {
+    "name": "utf32le",
+    "files": [
+      {
+        "path": "App.csproj",
+        "contentBase64": "PFByb2plY3QgLz4=",
+        "included": true
+      },
+      {
+        "path": "src/Café.cs",
+        "contentBase64": "//4AAG4AAABhAAAAbQAAAGUAAABzAAAAcAAAAGEAAABjAAAAZQAAACAAAABEAAAAZQAAAG0AAABvAAAAOwAAACAAAABjAAAAbAAAAGEAAABzAAAAcwAAACAAAABDAAAAYQAAAGYAAADpAAAAIAAAAHsAAAAgAAAAfQAAAA0AAAAKAAAA",
+        "included": true
+      },
+      {
+        "path": "Generated.g.cs",
+        "contentBase64": "Ly8gPGF1dG8tZ2VuZXJhdGVkIC8+",
+        "included": true
+      },
+      {
+        "path": "obj/Ignore.cs",
+        "contentBase64": "Y2xhc3MgSWdub3JlIHt9",
+        "included": false
+      }
+    ],
+    "expectedDigest": "b2425cbed141415223b9ef9dcff9aa3dd053a462a99a46c3ba8337dc99a39f22"
+  },
+  {
+    "name": "utf32be",
+    "files": [
+      {
+        "path": "App.csproj",
+        "contentBase64": "PFByb2plY3QgLz4=",
+        "included": true
+      },
+      {
+        "path": "src/Café.cs",
+        "contentBase64": "AAD+/wAAAG4AAABhAAAAbQAAAGUAAABzAAAAcAAAAGEAAABjAAAAZQAAACAAAABEAAAAZQAAAG0AAABvAAAAOwAAACAAAABjAAAAbAAAAGEAAABzAAAAcwAAACAAAABDAAAAYQAAAGYAAADpAAAAIAAAAHsAAAAgAAAAfQAAAA0AAAAK",
+        "included": true
+      },
+      {
+        "path": "Generated.g.cs",
+        "contentBase64": "Ly8gPGF1dG8tZ2VuZXJhdGVkIC8+",
+        "included": true
+      },
+      {
+        "path": "obj/Ignore.cs",
+        "contentBase64": "Y2xhc3MgSWdub3JlIHt9",
+        "included": false
+      }
+    ],
+    "expectedDigest": "b2425cbed141415223b9ef9dcff9aa3dd053a462a99a46c3ba8337dc99a39f22"
+  }
+]
