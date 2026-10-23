@@ -1,3 +1,4 @@
+import { compactOverview } from "./compact-overview";
 import { respectPins } from "./pinned-layout";
 import { twoHubLayout } from "./two-hub-layout";
 import type { ElkNode, ElkExtendedEdge } from "elkjs/lib/elk-api";
@@ -33,7 +34,11 @@ export async function generateDrawio(
   theme: DrawioTheme = "clean",
   layout: (graph: ElkNode) => Promise<ElkNode>,
 ) {
-  const nodes = [...doc.layoutJson.nodes].sort((a, b) => a.id.localeCompare(b.id));
+  const nodes = [...doc.layoutJson.nodes].sort((a, b) =>
+    `${a.name}:${a.kind ?? a.type}:${a.parentId ?? ""}`.localeCompare(
+      `${b.name}:${b.kind ?? b.type}:${b.parentId ?? ""}`,
+    ),
+  );
   const edges = [...doc.layoutJson.edges].sort((a, b) => a.id.localeCompare(b.id));
   if (nodes.length > 100 || edges.length > 200)
     throw new Error("Select a smaller diagram scope (maximum 100 nodes / 200 relationships).");
@@ -184,7 +189,21 @@ export async function generateDrawio(
       quality: inspectGeometry(rects, labels, routes),
     };
   };
-  for (let attempt = 0; attempt < 3; attempt++) {
+  if (doc.notation === "ARCHITECTURE_OVERVIEW")
+    best =
+      compactOverview(
+        nodes.map((node) => ({
+          ...node,
+          width: graphs.get(node.id)!.width!,
+          height: graphs.get(node.id)!.height!,
+        })),
+        edges,
+      ) ?? undefined;
+  for (
+    let attempt = 0;
+    attempt < 3 && !(doc.notation === "ARCHITECTURE_OVERVIEW" && best && !best.quality.needsReview);
+    attempt++
+  ) {
     const candidateRoot = structuredClone(root);
     const vertical = attempt === 1;
     function alignPorts(node: ElkNode) {
@@ -258,16 +277,16 @@ export async function generateDrawio(
   if (best.quality.needsReview)
     throw new Error("Diagram requires a smaller scope: layout has geometry collisions");
   const p = palette(theme),
-    offset = { x: 48, y: 112 };
+    offset = doc.notation === "ARCHITECTURE_OVERVIEW" ? { x: 24, y: 84 } : { x: 48, y: 112 };
   const quality = escape(JSON.stringify(best.quality));
   const cells: string[] = ['<mxCell id="0"/>', '<mxCell id="1" parent="0"/>'];
   const geometry = (x: number, y: number, width: number, height: number) =>
     `<mxGeometry x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" as="geometry"/>`;
   cells.push(
-    `<mxCell id="mavis_title" mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisOmittedNodes="${Number(doc["omittedNodes"] ?? 0)}" mavisOmittedEdges="${Number(doc["omittedEdges"] ?? 0)}" value="${escape(doc.notation + " · " + doc.level + (doc["scopeContainerId"] ? " · " + nodes.find((node) => node.id === doc["scopeContainerId"])?.name : " · overview"))}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(48, 24, 1000, 36)}</mxCell>`,
+    `<mxCell id="mavis_title" mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisOmittedNodes="${Number(doc["omittedNodes"] ?? 0)}" mavisOmittedEdges="${Number(doc["omittedEdges"] ?? 0)}" value="${escape(doc["viewTitle"] ?? doc.notation + " · " + doc.level + (doc["scopeContainerId"] ? " · " + nodes.find((node) => node.id === doc["scopeContainerId"])?.name : " · overview"))}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(offset.x, 24, doc.notation === "ARCHITECTURE_OVERVIEW" ? 900 : 1000, 36)}</mxCell>`,
   );
   cells.push(
-    `<mxCell id="mavis_scope" value="${escape(`${RULE_VERSION} · ${nodes.length} elements · ${edges.length} relationships · omitted ${doc["omittedNodes"] ?? 0} elements / ${doc["omittedEdges"] ?? 0} relationships`)}" style="text;html=0;fontFamily=Arial;fontSize=12;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(48, 64, 1000, 28)}</mxCell>`,
+    `<mxCell id="mavis_scope" value="${escape(`${doc["policyVersion"] ? "Semantic review required" : RULE_VERSION} · ${nodes.length} shapes · ${edges.length} displayed relationships`)}" style="text;html=0;fontFamily=Arial;fontSize=12;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(offset.x, 64, doc.notation === "ARCHITECTURE_OVERVIEW" ? 900 : 1000, 28)}</mxCell>`,
   );
   for (const group of best.groups) {
     const owner = group.id.slice("boundary_".length);
@@ -317,10 +336,12 @@ export async function generateDrawio(
   }
   const bottom = (best.graph.height ?? 0) + offset.y + 32;
   const legend =
-    "Legend: Container / Component / Database / Queue / External. Solid = source-inferred; dashed = declared configuration. No runtime status is implied. Missing technology or responsibility remains unknown. Crossings: " +
-    best.quality.crossings;
+    doc.notation === "ARCHITECTURE_OVERVIEW"
+      ? "Groups list their members. Open detailed views for individual connections. Arrows describe source/configuration declarations; runtime traffic has not been observed."
+      : "Legend: Container / Component / Database / Queue / External. Solid = source-inferred; dashed = declared configuration. No runtime status is implied. Missing technology or responsibility remains unknown. Crossings: " +
+        best.quality.crossings;
   cells.push(
-    `<mxCell id="mavis_legend" value="${escape(wrapText(legend, 100).join("\n"))}" mavisRole="legend" style="text;html=0;fontFamily=Arial;fontSize=13;fontColor=${p.text};fillColor=${p.background};whiteSpace=wrap;align=left;spacing=12;" vertex="1" parent="1">${geometry(48, bottom, 900, 100)}</mxCell>`,
+    `<mxCell id="mavis_legend" value="${escape(wrapText(legend, 100).join("\n"))}" mavisRole="legend" style="text;html=0;fontFamily=Arial;fontSize=13;fontColor=${p.text};fillColor=${p.background};whiteSpace=wrap;align=left;spacing=12;" vertex="1" parent="1">${geometry(offset.x, bottom, 900, doc.notation === "ARCHITECTURE_OVERVIEW" ? 64 : 100)}</mxCell>`,
   );
-  return `<?xml version="1.0" encoding="UTF-8"?><mxfile host="MAVIS" agent="MAVIS" version="1"><diagram id="${escape(doc["diagramId"] ?? doc.modelVersionId)}" name="${escape(doc.notation + " · " + doc.level)}"><mxGraphModel mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisContainerId="${escape(doc["scopeContainerId"] ?? "")}" grid="0" gridSize="16" page="0" background="${p.background}" connect="1" arrows="1" math="0" shadow="0"><root>${cells.join("")}</root></mxGraphModel></diagram></mxfile>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><mxfile host="MAVIS" agent="MAVIS" version="1"><diagram id="${escape(doc["diagramId"] ?? doc.modelVersionId)}" name="${escape(doc.notation + " · " + doc.level)}"><mxGraphModel mavisModelId="${escape(doc.modelVersionId)}" mavisViewId="${escape(doc["viewId"] ?? "")}" mavisSemanticStatus="${doc["policyVersion"] ? "requires-review" : "unassessed"}" mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisContainerId="${escape(doc["scopeContainerId"] ?? "")}" grid="0" gridSize="16" page="0" background="${p.background}" connect="1" arrows="1" math="0" shadow="0"><root>${cells.join("")}</root></mxGraphModel></diagram></mxfile>`;
 }

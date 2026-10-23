@@ -21,7 +21,7 @@ export function ImportFlow() {
   const snapshot = params.get("snapshot") ?? "";
   const [source, setSource] = useState<"zip" | "github">("zip");
   const [repository, setRepository] = useState("");
-  const [branch, setBranch] = useState("main");
+  const [branch, setBranch] = useState("");
   const [commit, setCommit] = useState("");
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -59,12 +59,32 @@ export function ImportFlow() {
       setFile(null);
     },
   });
+  const [branchRepository, setBranchRepository] = useState("");
+  const branches = useQuery({
+    queryKey: ["api", "githubBranches", branchRepository],
+    queryFn: ({ signal }) =>
+      adapter.execute("githubBranches", { repositoryUrl: branchRepository }, signal),
+    enabled: source === "github" && !!branchRepository,
+    retry: false,
+    staleTime: 60000,
+  });
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setBranchRepository(repository.trim());
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [repository]);
+  const branchOptions = branches.data?.branches ?? [];
+  const selectedBranch = branchOptions.includes(branch)
+    ? branch
+    : (branches.data?.defaultBranch ?? "");
+  const branchesCurrent = repository.trim() === branchRepository && branches.isSuccess;
   const github = useMutation({
     mutationFn: () =>
       adapter.execute("importGithub", {
         projectId: project,
         repositoryUrl: repository,
-        branchName: branch,
+        branchName: selectedBranch,
         commitSha: commit,
       }),
     onSuccess: (s) => router.push(contextHref("/import", project, "", { snapshot: s.id })),
@@ -207,19 +227,59 @@ export function ImportFlow() {
                 placeholder="https://github.com/owner/repository"
                 required
                 value={repository}
-                onChange={(e) => setRepository(e.target.value)}
+                onChange={(e) => {
+                  setRepository(e.target.value);
+                  setBranch("");
+                  github.reset();
+                }}
                 disabled={!project || github.isPending}
               />
             </label>
             <label className="block text-sm">
               Branch
-              <Input
-                className="mt-2"
-                placeholder="main"
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                disabled={github.isPending}
-              />
+              <select
+                aria-label="Branch"
+                className="mt-2 w-full rounded-md border bg-background p-2 text-sm"
+                value={selectedBranch}
+                onChange={(e) => {
+                  setBranch(e.target.value);
+                  github.reset();
+                }}
+                disabled={github.isPending || !branchesCurrent || !!commit.trim()}
+              >
+                {!branchesCurrent && (
+                  <option value="">
+                    {branches.isFetching ? "Đang tải các nhánh…" : "Nhập URL GitHub để chọn nhánh"}
+                  </option>
+                )}
+                {branchOptions.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                    {value === branches.data?.defaultBranch ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+              {branches.data?.truncated && (
+                <p className="mt-1 text-xs">
+                  Đã tải 1.000 nhánh đầu. Dùng Commit SHA cho nhánh ngoài danh sách.
+                </p>
+              )}
+              <ErrorNotice error={branches.error} />
+              {repository.trim() && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  disabled={branches.isFetching || github.isPending}
+                  onClick={() => {
+                    setBranchRepository(repository.trim());
+                    if (branchRepository === repository.trim()) void branches.refetch();
+                  }}
+                >
+                  Tải lại nhánh
+                </Button>
+              )}
             </label>
             <label className="block text-sm">
               Commit SHA (optional)
@@ -235,7 +295,14 @@ export function ImportFlow() {
               Public repositories only. Use the repository root URL and its actual branch name. For
               private repositories, upload a ZIP.
             </p>
-            <Button disabled={!project || !repository.trim() || github.isPending}>
+            <Button
+              disabled={
+                !project ||
+                !repository.trim() ||
+                github.isPending ||
+                (!commit.trim() && (!branchesCurrent || !selectedBranch))
+              }
+            >
               {github.isPending ? "Importing from GitHub…" : "Import from GitHub"}
             </Button>
           </form>

@@ -18,4 +18,7 @@ public class CodeEvidenceDTO {
     private String sourceComponent;
     private String targetComponent;
     private String endpointAlias;
+    private String qualifiedName;
+    @Builder.Default
+    private java.util.List<String> symbolCandidates = new java.util.ArrayList<>();
 }

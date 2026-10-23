@@ -1,5 +1,5 @@
 import { z } from "zod";
-export const RULE_VERSION = "mavis-se-1";
+export const RULE_VERSION = "mavis-se-3";
 export type DrawioTheme = "clean" | "dark" | "blueprint";
 const nodeSchema = z
   .object({
@@ -87,16 +87,31 @@ export function projectDiagram(raw: unknown, containerId?: string): DiagramDocum
     },
   };
 }
+export function componentContainers(raw: unknown) {
+  const doc = diagramDocument.parse(raw);
+  return doc.layoutJson.nodes
+    .filter((node) => kindOf(node) === "SERVICE_CONTAINER")
+    .map((node) => ({
+      id: node.id,
+      name: node.name,
+      componentCount: doc.layoutJson.nodes.filter(
+        (child) => child.parentId === node.id && kindOf(child) === "COMPONENT",
+      ).length,
+    }))
+    .sort((a, b) => b.componentCount - a.componentCount || a.name.localeCompare(b.name));
+}
 const relations: Record<string, string> = {
-  DECLARED_COMPOSE: "Phụ thuộc cấu hình Compose",
-  CODE_DEPENDENCY: "Phụ thuộc mã nguồn",
-  SERVICE_HTTP_CALL: "Gọi dịch vụ HTTP",
-  DATABASE_ACCESS: "Truy cập dữ liệu",
-  DATABASE_QUERY: "Truy vấn dữ liệu",
+  DECLARED_COMPOSE: "Compose dependency",
+  CODE_DEPENDENCY: "Code dependency",
+  SERVICE_HTTP_CALL: "HTTP call",
+  DATABASE_ACCESS: "Database access",
+  DATABASE_QUERY: "Database query",
+  MESSAGE_PUBLISH: "Declares publishing to",
+  MESSAGE_SUBSCRIBE: "Delivers messages to",
 };
 export function relationLabel(edge: DiagramDocument["layoutJson"]["edges"][number]) {
   const raw = edge.relationType ?? edge.type ?? "";
-  return relations[raw] ?? (raw.replaceAll("_", " ") || "Quan hệ chưa phân loại");
+  return relations[raw] ?? (raw.replaceAll("_", " ") || "Unclassified relationship");
 }
 export function wrapText(text: string, max = 30) {
   const result: string[] = [];
@@ -118,21 +133,35 @@ export function wrapText(text: string, max = 30) {
 export function nodeText(node: DiagramNode) {
   const type = kindOf(node);
   const label =
-    type === "SERVICE_CONTAINER"
-      ? "Container"
-      : type === "COMPONENT"
-        ? "Component"
-        : type === "DATABASE"
-          ? "Database"
-          : type === "QUEUE_BROKER"
-            ? "Queue / Broker"
-            : type === "EXTERNAL_SYSTEM"
-              ? "External system"
-              : "Unknown element";
+    type === "DATASTORE_GROUP"
+      ? "Data store group"
+      : type === "SERVICE_GROUP"
+        ? "Service group"
+        : type === "CHANNEL_GROUP"
+          ? "Channel group"
+          : type === "SERVICE_CONTAINER"
+            ? "Container"
+            : type === "COMPONENT"
+              ? "Component"
+              : type === "MESSAGE_CHANNEL"
+                ? "Message channel"
+                : type === "DATABASE"
+                  ? "Database"
+                  : type === "QUEUE_BROKER"
+                    ? "Queue / Broker"
+                    : type === "EXTERNAL_SYSTEM"
+                      ? "External system"
+                      : "Unknown element";
+  const technology =
+    node.languageStack === "JAVA_SPRING"
+      ? "Java / Spring"
+      : node.languageStack === "CSHARP_DOTNET"
+        ? "C# / .NET"
+        : node.languageStack;
   return [
     ...wrapText(node.name),
-    ...wrapText(`[${label} · ${node.languageStack || "technology chưa xác định"}]`),
-    ...wrapText(node.description || "Trách nhiệm chưa xác định từ source"),
+    ...wrapText(`[${label}${technology ? " · " + technology : ""}]`),
+    ...(node.description ? wrapText(node.description) : []),
   ];
 }
 export function palette(theme: DrawioTheme) {
@@ -171,10 +200,16 @@ export function nodeStyle(kind: string, theme: DrawioTheme) {
   const shape =
     kind === "DATABASE"
       ? "shape=cylinder3;size=16;"
-      : kind === "QUEUE_BROKER"
+      : ["QUEUE_BROKER", "MESSAGE_CHANNEL"].includes(kind)
         ? "shape=process;"
         : "rounded=1;arcSize=8;";
-  const fill = ["DATABASE", "QUEUE_BROKER"].includes(kind)
+  const fill = [
+    "DATABASE",
+    "QUEUE_BROKER",
+    "MESSAGE_CHANNEL",
+    "DATASTORE_GROUP",
+    "CHANNEL_GROUP",
+  ].includes(kind)
     ? p.data
     : kind === "EXTERNAL_SYSTEM" || kind === "UNKNOWN"
       ? p.external

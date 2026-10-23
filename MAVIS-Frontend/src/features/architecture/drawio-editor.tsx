@@ -30,6 +30,9 @@ export function DrawioEditor({
   title,
   scope = "overview",
   theme = "clean",
+  onSave,
+  generatedXml,
+  preferProvidedXml = false,
 }: {
   xml: string;
   modelId: string;
@@ -37,12 +40,20 @@ export function DrawioEditor({
   title: string;
   scope?: string;
   theme?: DrawioTheme;
+  onSave?: (xml: string) => Promise<void>;
+  generatedXml?: string;
+  preferProvidedXml?: boolean;
 }) {
   const session = useSession();
   const frame = useRef<HTMLIFrameElement>(null);
   const container = useRef<HTMLElement>(null);
-  const original = useRef(xml);
-  original.current = xml;
+  const original = useRef(generatedXml ?? xml);
+  original.current = generatedXml ?? xml;
+  const initial = useRef(xml);
+  initial.current = xml;
+  const saveCallback = useRef(onSave);
+  saveCallback.current = onSave;
+  const cloudPending = useRef(false);
   const pending = useRef<"style" | "regenerate" | "relayout" | null>(null);
   const currentTheme = useRef(theme);
   currentTheme.current = theme;
@@ -69,11 +80,11 @@ export function DrawioEditor({
     setReady(false);
     setError("");
     setStatus("Loading local draw.io editor…");
-    latest.current = original.current;
+    latest.current = initial.current;
     let restored = false;
     try {
       const saved = localStorage.getItem(storageKey);
-      if (saved) {
+      if (saved && !preferProvidedXml) {
         const record = JSON.parse(saved) as { xml?: unknown };
         if (typeof record.xml === "string" && validXml(record.xml)) {
           latest.current = record.xml;
@@ -156,7 +167,9 @@ export function DrawioEditor({
         setError("");
         setStatus(
           restored
-            ? "Browser draft restored"
+            ? latest.current.includes(`mavisRuleVersion="${RULE_VERSION}"`)
+              ? "Browser draft restored"
+              : "Draft uses earlier drawing rules. Regenerate to apply the updated labels and layout; existing edits stay in this draft until then."
             : "Ready to edit · changes are saved as a browser draft",
         );
       } else if (data.event === "layout") {
@@ -226,6 +239,22 @@ export function DrawioEditor({
         }
         if (saveDraft(data.xml))
           send({ action: "status", message: "Draft saved in this browser", modified: false });
+        if (cloudPending.current && saveCallback.current) {
+          cloudPending.current = false;
+          setProcessing(true);
+          try {
+            await saveCallback.current(data.xml);
+            setStatus("Saved to project document history");
+          } catch (error) {
+            setError(
+              error instanceof Error
+                ? error.message
+                : "Server save failed. Your browser draft is preserved.",
+            );
+          } finally {
+            setProcessing(false);
+          }
+        }
         if (downloadPending.current) {
           downloadPending.current = false;
           const url = URL.createObjectURL(
@@ -244,7 +273,7 @@ export function DrawioEditor({
       window.removeEventListener("message", receive);
       window.clearTimeout(timeout);
     };
-  }, [storageKey, attempt, title, modelId, diagramId, scope]);
+  }, [storageKey, attempt, title, modelId, diagramId, scope, preferProvidedXml]);
   useEffect(() => {
     if (!ready || previousTheme.current === theme) return;
     previousTheme.current = theme;
@@ -353,6 +382,18 @@ export function DrawioEditor({
           >
             Save draft
           </Button>
+          {onSave && (
+            <Button
+              size="sm"
+              disabled={!ready || processing}
+              onClick={() => {
+                cloudPending.current = true;
+                requestXml(false);
+              }}
+            >
+              Save to project
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"

@@ -7,10 +7,12 @@ import { Button } from "@/components/ui/button";
 import type { ArchitecturalModel } from "@/types/domain";
 import { modelSchema } from "@/types/domain";
 import { ArchitectureGraph, ElementDetailsPanel } from "./components";
+import { ArchitectureWorkbook } from "./architecture-workbook";
 import { DrawioEditor } from "./drawio-editor";
 import { DiagramPreview } from "./diagram-preview";
 import type { DiagramFormat, DrawingStyle } from "./diagram-renderer";
 import { z } from "zod";
+import { componentContainers } from "@/lib/drawio/rules";
 const layoutSchema = z.object({
   layoutJson: z.object({
     nodes: z.array(z.object({ id: z.string() })),
@@ -24,8 +26,29 @@ type Props = {
 };
 export function ArchitecturePresentation(props: Props) {
   const api = useApi();
+  const [mode, setMode] = useState<"documents" | "explorer">("documents");
   return api.mode === "backend" ? (
-    <BackendPresentation key={props.model.id} {...props} />
+    <div>
+      <div className="mt-4 flex gap-2">
+        <Button
+          variant={mode === "documents" ? "default" : "outline"}
+          onClick={() => setMode("documents")}
+        >
+          Architecture documents
+        </Button>
+        <Button
+          variant={mode === "explorer" ? "default" : "outline"}
+          onClick={() => setMode("explorer")}
+        >
+          Graph and advanced views
+        </Button>
+      </div>
+      {mode === "documents" ? (
+        <ArchitectureWorkbook key={props.model.id} modelId={props.model.id} />
+      ) : (
+        <BackendPresentation key={props.model.id} {...props} />
+      )}
+    </div>
   ) : (
     <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
       <ArchitectureGraph {...props} />
@@ -48,10 +71,22 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
     format === "DRAWIO_XML" &&
     selectedDiagram?.notation === "C4" &&
     selectedDiagram.level === "COMPONENT";
-  const containers = model.elements
-    .filter((node) => node.elementType === "SERVICE_CONTAINER")
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const containerId = componentScope ? container || containers[0]?.id : undefined;
+  const componentCatalog = useApiQuery(
+    "exportDiagram",
+    { modelId: model.id, diagramId: selectedDiagram?.id ?? "", format: "JSON" },
+    { enabled: componentScope },
+  );
+  const containers = useMemo(() => {
+    if (!componentCatalog.data) return [];
+    try {
+      return componentContainers(JSON.parse(componentCatalog.data.content));
+    } catch {
+      return [];
+    }
+  }, [componentCatalog.data]);
+  const selectedContainer = containers.find((node) => node.id === container) ?? containers[0];
+  const containerId = componentScope ? selectedContainer?.id : undefined;
+  const hasComponents = !componentScope || (selectedContainer?.componentCount ?? 0) > 0;
   const input = {
     modelId: model.id,
     diagramId: selectedDiagram?.id ?? "",
@@ -60,11 +95,13 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
     theme: style,
     relationshipView: format === "DRAWIO_XML" ? relationshipView : undefined,
   };
-  const source = useApiQuery("exportDiagram", input, { enabled: !!selectedDiagram });
+  const source = useApiQuery("exportDiagram", input, {
+    enabled: !!selectedDiagram && hasComponents,
+  });
   const structure = useApiQuery(
     "exportDiagram",
     { ...input, format: "JSON" },
-    { enabled: !!selectedDiagram },
+    { enabled: !!selectedDiagram && hasComponents },
   );
   const scoped = useMemo(() => {
     if (!selectedDiagram || !structure.data) return null;
@@ -164,7 +201,7 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
               ]}
             />
             <Button
-              disabled={!source.data || source.isFetching || choice === "network"}
+              disabled={!source.data || source.isFetching || choice === "network" || !hasComponents}
               onClick={download}
             >
               Download generated diagram
@@ -194,8 +231,20 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
                 setContainer(value);
                 onSelect(null);
               }}
-              options={containers.map((node) => ({ value: node.id, label: node.name }))}
+              options={containers.map((node) => ({
+                value: node.id,
+                label: `${node.name} · ${node.componentCount} components`,
+              }))}
             />
+          )}
+          {componentScope && (
+            <RequestState query={componentCatalog}>
+              <p className="text-sm text-muted-foreground">
+                {hasComponents
+                  ? `Showing ${selectedContainer?.componentCount} source-extracted components inside ${selectedContainer?.name}. Select another container to inspect its internals.`
+                  : `No components were extracted for ${selectedContainer?.name ?? "this container"}. Choose a container with components, or use C4 Container for service dependencies. External infrastructure may have no source in this repository.`}
+              </p>
+            </RequestState>
           )}
           {choice === "network" ? (
             <p className="text-xs text-muted-foreground">
@@ -226,28 +275,30 @@ function BackendPresentation({ model, selectedId, onSelect }: Props) {
           {choice === "network" ? (
             <ArchitectureGraph model={model} selectedId={selectedId} onSelect={onSelect} />
           ) : (
-            <RequestState query={source}>
-              {source.data &&
-                (format === "DRAWIO_XML" && selectedDiagram ? (
-                  <DrawioEditor
-                    key={`${model.id}:${selectedDiagram.id}:${containerId ?? "overview"}:${relationshipView}`}
-                    xml={source.data.content}
-                    modelId={model.id}
-                    diagramId={selectedDiagram.id}
-                    title={title}
-                    scope={`${containerId ?? "overview"}:${relationshipView}`}
-                    theme={style}
-                  />
-                ) : (
-                  <DiagramPreview
-                    key={`${selectedDiagram?.id}:${format}:${style}`}
-                    content={source.data.content}
-                    format={format}
-                    style={style}
-                    title={title}
-                  />
-                ))}
-            </RequestState>
+            hasComponents && (
+              <RequestState query={source}>
+                {source.data &&
+                  (format === "DRAWIO_XML" && selectedDiagram ? (
+                    <DrawioEditor
+                      key={`${model.id}:${selectedDiagram.id}:${containerId ?? "overview"}:${relationshipView}`}
+                      xml={source.data.content}
+                      modelId={model.id}
+                      diagramId={selectedDiagram.id}
+                      title={title}
+                      scope={`${containerId ?? "overview"}:${relationshipView}`}
+                      theme={style}
+                    />
+                  ) : (
+                    <DiagramPreview
+                      key={`${selectedDiagram?.id}:${format}:${style}`}
+                      content={source.data.content}
+                      format={format}
+                      style={style}
+                      title={title}
+                    />
+                  ))}
+              </RequestState>
+            )
           )}
           {choice !== "network" && format !== "DRAWIO_XML" && (
             <RequestState query={structure}>

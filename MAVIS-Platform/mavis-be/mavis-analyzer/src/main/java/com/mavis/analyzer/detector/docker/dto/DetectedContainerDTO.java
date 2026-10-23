@@ -16,6 +16,12 @@ public class DetectedContainerDTO {
 
     private String serviceName;
     private String image;
+    private String buildContext;
+    private String messageBrokerAuthority;
+    private String datasourceHost;
+    private String datasourceDatabase;
+    private String datasourceTechnology;
+    private Integer datasourceLineNumber;
     private String elementType; // "SERVICE_CONTAINER", "DATABASE", "QUEUE_BROKER"
 
     @Builder.Default

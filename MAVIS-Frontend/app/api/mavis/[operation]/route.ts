@@ -122,6 +122,11 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
   } catch (error) {
     if (error instanceof z.ZodError) return fail(502);
     if (error instanceof SyntaxError) return fail(400);
+    if (error instanceof ApiError && error.code)
+      return NextResponse.json(
+        { error: "Request unavailable", code: error.code },
+        { status: error.status ?? 502, headers: { "Cache-Control": "no-store" } },
+      );
     if (error instanceof ApiError) return fail(error.status ?? 502);
     return fail(502);
   }
