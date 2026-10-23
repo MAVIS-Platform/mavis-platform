@@ -349,6 +349,9 @@ export const contracts = {
   configureProfile: contract(
     z.object({
       profileId: id,
+      memoryMiB: z.number().int().min(64).max(2048).optional(),
+      cpus: z.number().positive().max(4).optional(),
+      timeoutSeconds: z.number().int().positive().max(300).optional(),
       enabled: z.boolean(),
       expectedRevision: z.number().int().positive(),
     }),

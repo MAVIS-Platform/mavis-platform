@@ -126,7 +126,7 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Vui lòng xác thực Email trước khi đăng nhập");
         }
 
-        if ("LOCKED".equals(user.getStatus())) {
+        if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa");
         }
 
@@ -172,7 +172,7 @@ public class AuthServiceImpl implements AuthService {
 
             if (optionalUser.isPresent()) {
                 user = optionalUser.get();
-                if ("LOCKED".equals(user.getStatus())) {
+                if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
                     throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa");
                 }
                 // Có thể update status thành ACTIVE nếu trước đó PENDING_VERIFICATION vì Google đã verify mail
@@ -273,7 +273,7 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Tài khoản đã được kích hoạt. Bạn có thể đăng nhập bình thường.");
         }
 
-        if ("LOCKED".equals(user.getStatus())) {
+        if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa.");
         }
 

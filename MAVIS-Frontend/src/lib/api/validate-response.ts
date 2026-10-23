@@ -76,7 +76,9 @@ export function validateResponse<K extends Operation>(
         fail();
     }
     if (
-      operation === "saveArchitectureDocument" &&
+      ["saveArchitectureDocument", "configureIntegration", "configureProfile"].includes(
+        operation,
+      ) &&
       value["revision"] !== Number(request["expectedRevision"]) + 1
     )
       fail();

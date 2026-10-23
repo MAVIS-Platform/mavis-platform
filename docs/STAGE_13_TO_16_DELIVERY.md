@@ -42,5 +42,16 @@ Verification:
 - Frontend: 58 tests, typecheck, targeted lint and production build passed. Build caught an exactOptionalPropertyTypes mismatch in the new management form; corrected using the contract-derived type and rebuilt. Submission validation messages are allowlisted through the browser adapter.
 - Final self-review and diff whitespace checks passed; generated Next config edits restored. Logs: E:/Mavis/analysis/stage14/. Worker unchanged; its stage13 verification remains applicable. Browser-operated full runtime acceptance is still pending stage16.
 
-Stage 15: pending stage 14 push.
-Stage 16: pending stage 15 verification and push.
+### Stage 15 — verified
+
+Connected all admin adapters and forms (including actual newStatus account payload), active global runtime monitoring, revision-checked integration/profile configuration and audit records. Common process-local settings are consumed by GitHub ingestion, AI key resolution, runtime creation, approval and run-definition export. Resource limits are pinned into new session profiles and hashed; disabled/reduced profiles block new dispatch rather than rewriting old pinned inputs. INACTIVE users cannot obtain login credentials. Dashboard counts ALLOCATED/RUNNING/CANCELLING only and reports health unknown; no fabricated service-health claim.
+
+Verification:
+- Full targeted Java unit reactor: 324 discovered, 321 passed, 3 environment skips, zero failures. Additional final consumer run: 28 passed, covering AI disable, GitHub disable before network/writes, runtime integration disable and current limits/export. Includes new competing-writer and audit-failure atomicity tests for process-local settings.
+- Stage15AdminApiIntegrationTest: passed on isolated PostgreSQL with strict auth. Checks non-admin denials, configuration updates, stale revisions, invalid resource limits, audit persistence, account locking, current-session denial and INACTIVE login denial.
+- Frontend: 62 tests passed; final contract-only regression 30 passed; typecheck, targeted lint and final production build passed. Generated Next configuration restored. No application dependency or Flyway migration added.
+- Self-review and whitespace checks passed. Logs: E:/Mavis/analysis/stage15/.
+
+Limits: configuration switches reset on restart and are specific to one platform process, as requested by this stage. They store no credentials. CONFIGURED means key/config presence, not a successful external connection test. Live GitHub/AI/collector connectivity and physical Runner acceptance are not claimed.
+
+Stage 16: pending stage15 push. Implementation will persist configuration/scenario revisions (additive V14), rather than pretending that preflight or session history is a save. Start must atomically check revisions and snapshot/model ownership, freeze the saved plan into a real session and queue approval only. The dedicated Runner remains responsible for execution and cleanup acknowledgements.

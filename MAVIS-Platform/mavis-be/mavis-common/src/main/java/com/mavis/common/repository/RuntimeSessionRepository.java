@@ -16,6 +16,7 @@ import java.util.UUID;
 @Repository
 public interface RuntimeSessionRepository extends JpaRepository<RuntimeSession, UUID> {
     List<RuntimeSession> findByProjectId(UUID projectId);
+    long countByExecutionStatusIn(java.util.Collection<String> statuses);
 
     @EntityGraph(attributePaths = {"project", "sourceSnapshot", "triggeredBy"})
     List<RuntimeSession> findByProjectIdOrderByCreatedAtDesc(UUID projectId);

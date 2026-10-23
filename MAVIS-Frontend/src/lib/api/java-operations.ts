@@ -12,6 +12,7 @@ import {
   evidenceView,
   modelView,
   userView,
+  roleView,
   object,
 } from "./java-wire";
 import { ApiError } from "@/lib/errors/api-error";
@@ -254,7 +255,89 @@ export async function executeJava(
       completedAt: value.completedAt ?? null,
     };
   };
+  const account = (raw: unknown) => {
+    const a = z
+      .object({
+        id: z.string().uuid(),
+        fullName: z.string(),
+        roleCode: z.string(),
+        status: z.string(),
+      })
+      .parse(raw);
+    return {
+      id: a.id,
+      name: a.fullName,
+      role: roleView(a.roleCode),
+      locked: a.status === "LOCKED",
+      status: a.status,
+    };
+  };
+  const patch = (path: string, body: unknown) =>
+    javaRequest(path, token, { method: "PATCH", body: JSON.stringify(body), signal });
   switch (operation) {
+    case "accounts":
+      return list.parse(await get("admin/users")).map(account);
+    case "setAccountLock":
+      return account(
+        await patch(`admin/users/${id(input, "accountId")}/status`, {
+          newStatus: input["locked"] ? "LOCKED" : "ACTIVE",
+        }),
+      );
+    case "integrations":
+      return get("admin/integrations");
+    case "profiles":
+      return get("admin/profiles");
+    case "configureIntegration":
+      return patch(
+        `admin/integrations/${encodeURIComponent(z.string().min(1).parse(input["integrationId"]))}`,
+        input,
+      );
+    case "configureProfile":
+      return patch(
+        `admin/profiles/${encodeURIComponent(z.string().min(1).parse(input["profileId"]))}`,
+        input,
+      );
+    case "audit":
+      return z
+        .array(
+          z.object({
+            id: z.string().uuid(),
+            createdAt: z.string(),
+            action: z.string(),
+            actorId: z.string().nullish(),
+            targetId: z.string().nullish(),
+          }),
+        )
+        .parse(await get("admin/audit-logs"))
+        .map((a) => ({
+          id: a.id,
+          at: a.createdAt,
+          action: a.action,
+          actorId: a.actorId ?? "SYSTEM",
+          resourceId: a.targetId ?? "SYSTEM",
+        }));
+    case "adminJobs":
+      return list.parse(await get("admin/jobs")).map(jobView);
+    case "platformSummary": {
+      const a = z
+        .object({
+          totalProjects: z.number().int().nonnegative(),
+          totalUsers: z.number().int().nonnegative(),
+          totalJobs: z.number().int().nonnegative(),
+          runningRuntimeSessions: z.number().int().nonnegative(),
+        })
+        .parse(await get("admin/dashboard-stats"));
+      return {
+        health: "unknown",
+        message:
+          "Inventory counts are available. External services and Runner health have not been probed.",
+        projects: a.totalProjects,
+        users: a.totalUsers,
+        analysisJobs: a.totalJobs,
+        runningSessions: a.runningRuntimeSessions,
+      };
+    }
+
     case "workspaces":
       return Promise.all(list.parse(await get("workspaces")).map(workspace));
     case "createWorkspace":
@@ -380,7 +463,13 @@ export async function executeJava(
     }
     case "runtimeReadSessions":
       return list
-        .parse(await get(`analyzer/projects/${id(input, "projectId")}/runtime-sessions`))
+        .parse(
+          await get(
+            input["projectId"] === "*"
+              ? "admin/runtime-sessions"
+              : `analyzer/projects/${id(input, "projectId")}/runtime-sessions`,
+          ),
+        )
         .map(runtimeView);
     case "runtimeReadSession":
       return runtimeView(await get(`analyzer/runtime/sessions/${id(input, "sessionId")}`));

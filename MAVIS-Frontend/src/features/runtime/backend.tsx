@@ -25,8 +25,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const preflight = useApiMutation("runtimePreflight");
   const list = useApiQuery(
     "runtimeReadSessions",
-    { projectId },
-    { enabled: !!projectId, poll: true },
+    { projectId: administrative ? "*" : projectId },
+    { enabled: administrative || !!projectId, poll: true },
   );
   const [selected, setSelected] = useState("");
   const selectedId = selected || list.data?.[0]?.id || "";
@@ -49,7 +49,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const stop = useApiMutation("runtimeStop");
   const approve = useApiMutation("runtimeApprove");
   const [action, setAction] = useState<"stop" | "approve" | null>(null);
-  if (!projectId)
+  if (!projectId && !administrative)
     return (
       <DetailPanel title="Runtime">
         <p>Select a project to check source eligibility and inspect its runtime sessions.</p>
@@ -60,37 +60,39 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     );
   return (
     <div className="space-y-5">
-      <DetailPanel title="Runtime prerequisites">
-        <p className="text-sm text-muted-foreground">
-          Execution profiles and scenario versions are provisioned by the operator. Approval queues
-          an existing session; it does not prove that a workload is running. Automatic launch is not
-          connected in this interface.
-        </p>
-        <RequestState query={snapshots} empty={!snapshots.data?.length}>
-          <SelectField
-            disabled={preflight.isPending}
-            label="Runtime source snapshot"
-            value={snapshot}
-            onChange={(value) => {
-              setSnapshot(value);
-              preflight.reset();
-            }}
-            options={(snapshots.data ?? []).map((s) => ({
-              value: s.id,
-              label: `${s.name} · ${s.id.slice(0, 8)}`,
-            }))}
-          />
-          <Button
-            className="mt-3"
-            disabled={!snapshot || preflight.isPending}
-            onClick={() => preflight.mutate({ projectId, snapshotId: snapshot })}
-          >
-            Check runtime eligibility
-          </Button>
-          {preflight.isError && <ErrorState error={preflight.error} />}
-          <PreflightResult result={preflight.data} />
-        </RequestState>
-      </DetailPanel>
+      {!administrative && (
+        <DetailPanel title="Runtime prerequisites">
+          <p className="text-sm text-muted-foreground">
+            Execution profiles and scenario versions are provisioned by the operator. Approval
+            queues an existing session; it does not prove that a workload is running. Automatic
+            launch is not connected in this interface.
+          </p>
+          <RequestState query={snapshots} empty={!snapshots.data?.length}>
+            <SelectField
+              disabled={preflight.isPending}
+              label="Runtime source snapshot"
+              value={snapshot}
+              onChange={(value) => {
+                setSnapshot(value);
+                preflight.reset();
+              }}
+              options={(snapshots.data ?? []).map((s) => ({
+                value: s.id,
+                label: `${s.name} · ${s.id.slice(0, 8)}`,
+              }))}
+            />
+            <Button
+              className="mt-3"
+              disabled={!snapshot || preflight.isPending}
+              onClick={() => preflight.mutate({ projectId, snapshotId: snapshot })}
+            >
+              Check runtime eligibility
+            </Button>
+            {preflight.isError && <ErrorState error={preflight.error} />}
+            <PreflightResult result={preflight.data} />
+          </RequestState>
+        </DetailPanel>
+      )}
       <DetailPanel title="Runtime sessions">
         <RequestState
           query={list}

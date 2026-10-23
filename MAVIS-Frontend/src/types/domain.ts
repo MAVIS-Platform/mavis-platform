@@ -222,18 +222,25 @@ export const submissionSchema = z
   });
 export type Submission = z.infer<typeof submissionSchema>;
 export const accountSchema = z.object({
+  status: z.string().optional(),
   id: z.string(),
   name: z.string(),
   role: roleSchema,
   locked: z.boolean(),
 });
 export const integrationSchema = z.object({
+  status: z.string().optional(),
+  persistence: z.string().optional(),
+  connectionVerified: z.boolean().optional(),
   id: z.string(),
   name: z.string(),
   enabled: z.boolean(),
   revision: z.number().int().positive(),
 });
 export const profileSchema = z.object({
+  memoryMiB: z.number().int().min(64).max(2048).optional(),
+  cpus: z.number().positive().max(4).optional(),
+  timeoutSeconds: z.number().int().positive().max(300).optional(),
   id: z.string(),
   name: z.string(),
   enabled: z.boolean(),
