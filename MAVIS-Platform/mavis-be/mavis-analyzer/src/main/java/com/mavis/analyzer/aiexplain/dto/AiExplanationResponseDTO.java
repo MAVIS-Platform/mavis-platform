@@ -24,6 +24,12 @@ public class AiExplanationResponseDTO {
     private UUID relationshipId;
     private UUID runtimeSessionId;
     private String explanationText;
+    private String contractVersion;
+    private UUID findingId;
+    private UUID evaluationRunId;
+    private String ruleSetVersion;
+    private com.fasterxml.jackson.databind.JsonNode structuredContent;
+    private com.fasterxml.jackson.databind.JsonNode groundingContext;
 
     @Builder.Default
     private List<UUID> citedEvidenceIds = new ArrayList<>();

@@ -102,6 +102,10 @@ export const contracts = {
   ),
   cancelAnalysis: contract(z.object({ jobId: id }), d.analysisJobSchema, true),
   modelVersions: contract(project, z.array(d.modelSummarySchema)),
+  findingEvidence: contract(
+    z.object({ modelId: id, evaluationId: id, findingId: id }),
+    z.array(d.evidenceSchema),
+  ),
   elementEvidence: contract(z.object({ modelId: id, elementId: id }), z.array(d.evidenceSchema)),
   relationshipEvidence: contract(
     z.object({ modelId: id, relationshipId: id }),

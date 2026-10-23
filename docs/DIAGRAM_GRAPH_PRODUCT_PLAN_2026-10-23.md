@@ -1,3 +1,5 @@
+> Phạm vi UI/view pack trong tài liệu này được thay thế bởi [Graph, C4, 4+1 và 3E](GRAPH_C4_4PLUS1_3E_SCOPE_PLAN_2026-10-23.md) theo yêu cầu người dùng ngày 2026-10-23. Không tiếp tục mở rộng dropdown bộ view.
+
 # MAVIS — Kế hoạch nâng diagram và graph thành đầu ra sản phẩm
 
 Ngày: 2026-10-23 (Asia/Saigon).
