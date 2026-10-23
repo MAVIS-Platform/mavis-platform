@@ -28,7 +28,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.Random;
@@ -75,7 +76,7 @@ public class AuthServiceImpl implements AuthService {
                 .user(user)
                 .otpCode(otpCode)
                 .purpose("EMAIL_VERIFICATION")
-                .expiryTime(LocalDateTime.now().plusMinutes(5)) // Hết hạn sau 5 phút
+                .expiryTime(OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5)) // Hết hạn sau 5 phút
                 .isUsed(false)
                 .build();
         userOtpRepository.save(userOtp);
@@ -104,7 +105,7 @@ public class AuthServiceImpl implements AuthService {
         UserOtp userOtp = userOtpRepository.findFirstByUserAndOtpCodeAndIsUsedFalseOrderByCreatedAtDesc(user, request.getOtpCode())
                 .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không hợp lệ hoặc đã được sử dụng"));
 
-        if (userOtp.getExpiryTime().isBefore(LocalDateTime.now())) {
+        if (userOtp.getExpiryTime().isBefore(OffsetDateTime.now(ZoneOffset.UTC))) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP đã hết hạn");
         }
 
@@ -229,7 +230,7 @@ public class AuthServiceImpl implements AuthService {
                 .user(user)
                 .otpCode(otpCode)
                 .purpose("PASSWORD_RESET")
-                .expiryTime(LocalDateTime.now().plusMinutes(5))
+                .expiryTime(OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5))
                 .isUsed(false)
                 .build();
         userOtpRepository.save(userOtp);
@@ -251,7 +252,7 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không dùng để reset mật khẩu");
         }
 
-        if (userOtp.getExpiryTime().isBefore(LocalDateTime.now())) {
+        if (userOtp.getExpiryTime().isBefore(OffsetDateTime.now(ZoneOffset.UTC))) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP đã hết hạn");
         }
 
@@ -282,7 +283,7 @@ public class AuthServiceImpl implements AuthService {
                 .user(user)
                 .otpCode(otpCode)
                 .purpose("EMAIL_VERIFICATION")
-                .expiryTime(LocalDateTime.now().plusMinutes(5)) // Hết hạn sau 5 phút
+                .expiryTime(OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5)) // Hết hạn sau 5 phút
                 .isUsed(false)
                 .build();
         userOtpRepository.save(userOtp);

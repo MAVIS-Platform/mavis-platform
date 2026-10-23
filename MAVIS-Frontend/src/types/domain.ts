@@ -14,6 +14,16 @@ export const projectSchema = z.object({
   status: z.enum(["ready", "processing", "failed", "unknown"]),
   services: z.number().int().nonnegative().nullable(),
   runtimeSupported: z.boolean().nullable(),
+  description: z.string().nullable().optional(),
+  defaultBranch: z.string().nullable().optional(),
+  projectType: z.string().nullable().optional(),
+  workspaceId: z.string().nullable().optional(),
+  assignmentId: z.string().nullable().optional(),
+  isReferenceTemplate: z.boolean().nullable().optional(),
+  referenceSnapshotId: z.string().nullable().optional(),
+  backendStatus: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
+  updatedAt: z.string().nullable().optional(),
 });
 export type Project = z.infer<typeof projectSchema>;
 export const snapshotSchema = z.object({

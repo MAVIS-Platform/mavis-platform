@@ -117,6 +117,16 @@ export async function executeJava(
     };
   };
   switch (operation) {
+    case "updateProfile":
+      return {
+        user: userView(
+          await javaRequest("auth/me", token, {
+            method: "PATCH",
+            body: JSON.stringify(input),
+            signal,
+          }),
+        ),
+      };
     case "runtimeSequence": {
       const sessionId = id(input, "sessionId");
       const value = z

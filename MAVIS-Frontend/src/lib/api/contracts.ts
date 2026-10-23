@@ -13,6 +13,15 @@ function contract<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
   return { input, output, mutation };
 }
 export const contracts = {
+  updateProfile: contract(
+    z.object({
+      fullName: z.string().trim().min(1).max(255),
+      currentPassword: z.string().max(100).optional(),
+      newPassword: z.string().min(6).max(100).optional(),
+    }),
+    d.sessionSchema,
+    true,
+  ),
   register: contract(
     z.object({
       fullName: z.string().trim().min(1).max(255),
