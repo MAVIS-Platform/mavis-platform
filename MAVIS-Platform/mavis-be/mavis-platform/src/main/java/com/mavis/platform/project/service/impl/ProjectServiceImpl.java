@@ -142,6 +142,8 @@ public class ProjectServiceImpl implements ProjectService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
 
         validateProjectOwnershipOrLecturer(project, currentUserId);
+        if(project.getWorkspace()==null) throw new BusinessException(ErrorCode.FORBIDDEN,"A teaching workspace is required to publish references");
+        accessPolicyService.requireWorkspaceLecturer(project.getWorkspace().getId());
 
         SourceSnapshot snapshot = sourceSnapshotRepository.findById(snapshotId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
@@ -165,12 +167,14 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional(readOnly = true)
     public List<ProjectResponseDTO> getProjectsByWorkspace(UUID workspaceId) {
+        accessPolicyService.requireWorkspaceMember(workspaceId);
         log.info("Fetching projects for workspace {}", workspaceId);
         workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy Workspace với ID: " + workspaceId));
 
         List<Project> projects = projectRepository.findByWorkspaceIdAndStatusNotOrderByCreatedAtDesc(workspaceId, "DELETED");
         return projects.stream()
+                .filter(accessPolicyService::canReadProject)
                 .map(this::toDTO)
                 .collect(Collectors.toList());
     }
@@ -178,6 +182,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional(readOnly = true)
     public List<SourceSnapshotResponseDTO> getPublishedSnapshotsByWorkspace(UUID workspaceId) {
+        accessPolicyService.requireWorkspaceMember(workspaceId);
         log.info("Fetching published reference snapshots for workspace {}", workspaceId);
         workspaceRepository.findById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy Workspace với ID: " + workspaceId));

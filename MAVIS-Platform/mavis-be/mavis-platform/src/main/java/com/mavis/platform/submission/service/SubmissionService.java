@@ -15,6 +15,8 @@ public interface SubmissionService {
      * @param request Yêu cầu nộp bài
      * @return SubmissionResponseDTO chứa đầy đủ thông tin bài nộp
      */
+    List<SubmissionResponseDTO> getMySubmissions();
+
     SubmissionResponseDTO submitAssignment(SubmissionCreateRequest request);
 
     /**

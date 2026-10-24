@@ -36,6 +36,14 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     @Override
+    @Transactional(readOnly = true)
+    public List<SubmissionResponseDTO> getMySubmissions() {
+        User user = accessPolicyService.requireCurrentActiveUser();
+        boolean admin = user.getRole()!=null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode());
+        return mapToResponseListWithFeedbackCount(submissionSnapshotRepository.findVisibleTo(user.getId(), admin));
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public SubmissionResponseDTO submitAssignment(SubmissionCreateRequest request) {
         log.info("Xử lý nộp bài tập kiến trúc: assignmentId={}, projectId={}, modelVersionId={}",
@@ -47,6 +55,9 @@ public class SubmissionServiceImpl implements SubmissionService {
 
         Assignment assignment = assignmentRepository.findById(request.getAssignmentId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy đề bài tập với ID: " + request.getAssignmentId()));
+
+        accessPolicyService.requireCurrentActiveUser();
+        if (assignment.getWorkspace()!=null) accessPolicyService.requireWorkspaceMember(assignment.getWorkspace().getId());
 
         // 1. Kiểm tra hạn nộp bài (BR-14)
         if (assignment.getDueAt() != null && OffsetDateTime.now().isAfter(assignment.getDueAt())) {
@@ -129,7 +140,10 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
             boolean scenarioPassed = "PASSED".equalsIgnoreCase(runtimeSession.getScenarioStatus());
             boolean traceValid = "COMPLETE".equalsIgnoreCase(runtimeSession.getTraceStatus()) || "PARTIAL".equalsIgnoreCase(runtimeSession.getTraceStatus());
-            if (!scenarioPassed || !traceValid) {
+            boolean verifiedExecution="COMPLETED".equalsIgnoreCase(runtimeSession.getExecutionStatus())
+                && "AVAILABLE".equalsIgnoreCase(runtimeSession.getEvidenceStatus()) && "CONFIRMED".equalsIgnoreCase(runtimeSession.getCleanupStatus())
+                && runtimeSession.getRunnerReceiptJson()!=null;
+            if (!scenarioPassed || !traceValid || !verifiedExecution) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Đề bài yêu cầu Runtime Trace hợp lệ đã hoàn tất (PASSED) trên đúng SourceSnapshot của mô hình");
             }
         }
@@ -198,30 +212,6 @@ public class SubmissionServiceImpl implements SubmissionService {
         accessPolicyService.requireProjectReadAccess(submission.getProject());
         // Kiểm tra quyền đọc
         Project project = submission.getProject();
-        if (project != null) {
-            UUID currentUserId = SecurityUtils.getCurrentUserId();
-            // Cho phép chủ sở hữu, người nộp bài hoặc nếu có role LECTURER/ADMIN
-            boolean isOwner = project.getOwner() != null && project.getOwner().getId().equals(currentUserId);
-            boolean isSubmitter = submission.getSubmittedBy() != null && submission.getSubmittedBy().getId().equals(currentUserId);
-            if (!isOwner && !isSubmitter) {
-                // Kiểm tra nếu là Giảng viên hoặc Admin
-                try {
-                    User currentUser = userRepository.findById(currentUserId).orElse(null);
-                    if (currentUser != null && currentUser.getRole() != null) {
-                        String role = currentUser.getRole().getName();
-                        if (!"SYSTEM_ADMIN".equalsIgnoreCase(role) && !"LECTURER".equalsIgnoreCase(role)) {
-                            throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền truy cập gói bài nộp này");
-                        }
-                    } else {
-                        throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền truy cập gói bài nộp này");
-                    }
-                } catch (Exception e) {
-                    if (e instanceof BusinessException) throw e;
-                    throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền truy cập gói bài nộp này");
-                }
-            }
-        }
-
         // Lấy danh sách feedbacks
         List<com.mavis.platform.submission.dto.FeedbackResponseDTO> feedbacks = feedbackCommentRepository
                 .findBySubmissionIdOrderByCreatedAtAsc(submissionId).stream()

@@ -38,7 +38,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class RuntimeSessionApiIntegrationTest {
+class RuntimeSessionApiIntegrationTest extends ApiIntegrationContext {
 
     @Autowired
     private MockMvc mockMvc;
@@ -230,6 +230,7 @@ class RuntimeSessionApiIntegrationTest {
                         .build();
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
+                        .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test")
                         .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(ackAllocated)))
@@ -248,6 +249,7 @@ class RuntimeSessionApiIntegrationTest {
                         .build();
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
+                        .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test")
                         .header("X-Test-User-Email", user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(ackRunning)))

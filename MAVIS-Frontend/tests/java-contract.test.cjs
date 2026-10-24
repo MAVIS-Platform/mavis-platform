@@ -48,7 +48,7 @@ test("same-origin login stores token only in HttpOnly cookie and unknown operati
  const context=operation=>({params:Promise.resolve({operation})});const request=origin=>new NextRequest("http://127.0.0.1:3000/api/mavis/signIn",{method:"POST",headers:{host:"127.0.0.1:3000",origin,"Content-Type":"application/json"},body:JSON.stringify({email:"user@example.invalid",password:"test"})});
  assert.equal((await route.POST(request("https://evil.invalid"),context("signIn"))).status,403);assert.equal(calls,0);
  const response=await route.POST(request("http://127.0.0.1:3000"),context("signIn"));assert.equal(response.status,200);const data=await response.json();assert.deepEqual(data,{user:{id:project,name:"Actual user",role:"student"}});assert.ok(!JSON.stringify(data).includes("server-jwt"));assert.match(response.headers.get("set-cookie"),/HttpOnly/);
- const unavailable=await route.GET(new NextRequest("http://127.0.0.1:3000/api/mavis/profiles",{headers:{cookie:"mavis_session=opaque"}}),context("profiles"));assert.equal(unavailable.status,501);
+ const unavailable=await route.GET(new NextRequest("http://127.0.0.1:3000/api/mavis/notAnOperation"),context("notAnOperation"));assert.equal(unavailable.status,501);
 });
 test("session rejection clears identity instead of trusting browser metadata",async t=>{environment(t);t.mock.method(globalThis,"fetch",async()=>Response.json({message:"disabled"},{status:403}));assert.deepEqual(await currentSession("stale"),{user:null});});
 
@@ -118,4 +118,69 @@ test("GitHub imports pin the selected branch to an immutable commit before downl
  });
  await executeJava("importGithub",{projectId:project,repositoryUrl:"https://github.com/owner/repo.git",branchName:"master"},"jwt",new AbortController().signal);
  assert.equal(submitted.commitSha,sha);assert.equal(submitted.branchName,"master");
+});
+test("stage13 project wire retains educational scope without inventing runtime capability",()=>{
+ const p=wire.projectView({id:project,name:"Class project",status:"ACTIVE",projectType:"STUDENT_WORKING",workspaceId:job,assignmentId:snapshot,isReferenceTemplate:false,description:"Scope"});
+ assert.equal(p.status,"ready");assert.equal(p.backendStatus,"ACTIVE");assert.equal(p.workspaceId,job);assert.equal(p.projectType,"STUDENT_WORKING");assert.equal(p.runtimeSupported,null);
+ assert.equal(wire.projectView({id:project,name:"Archived",status:"ARCHIVED"}).status,"unknown");
+});
+test("stage13 update profile forwards PATCH and refreshes identity without credentials in response",async t=>{
+ environment(t);let sent;t.mock.method(globalThis,"fetch",async(url,options)=>{sent={url,options};return Response.json({code:200,data:{id:project,fullName:"Updated",role:"STUDENT"}});});
+ const result=await executeJava("updateProfile",{fullName:"Updated",currentPassword:"old",newPassword:"new-secret"},"jwt",new AbortController().signal);
+ assert.equal(sent.options.method,"PATCH");assert.ok(sent.url.endsWith("auth/me"));assert.equal(result.user.name,"Updated");assert.ok(!JSON.stringify(result).includes("secret"));
+ const {contracts}=require("../src/lib/api/contracts.ts");assert.equal(contracts.updateProfile.input.safeParse({fullName:" ",newPassword:"123"}).success,false);
+});
+
+test("education joins workspace members using user IDs and maps assignment policy",async t=>{
+ environment(t);t.mock.method(globalThis,"fetch",async url=>Response.json({code:200,data:url.endsWith("/members")?[{id:node,userId:job,fullName:"Student",memberRole:"STUDENT"}]:url.endsWith("/assignments")?[{id:node,workspaceId:project,title:"Task",description:"Instructions",dueAt:null,requireRuntimeTrace:true,requiredDiagramTypes:["C4"]}]:[{id:project,code:"SE",name:"Class",status:"ACTIVE",myRoleInWorkspace:"LECTURER"}]}));
+ const workspaces=validateResponse("workspaces",{},await executeJava("workspaces",{},"jwt",new AbortController().signal));assert.equal(workspaces[0].members[0].id,job);assert.equal(workspaces[0].myRole,"LECTURER");
+ const input={workspaceId:project};const assignments=validateResponse("assignments",input,await executeJava("assignments",input,"jwt",new AbortController().signal));assert.equal(assignments[0].instructions,"Instructions");assert.equal(assignments[0].requireRuntimeTrace,true);assert.equal(assignments[0].dueAt,"No deadline");
+});
+test("submit rejects mismatched source and missing diagram before any mutation",async t=>{
+ environment(t);let posts=0;t.mock.method(globalThis,"fetch",async(url,options)=>{if(options.method==="POST")posts++;return Response.json({code:200,data:url.endsWith("/diagrams")?[]:metadata});});
+ const input={assignmentId:job,modelId:model,snapshotId:snapshot,runtimeSessionId:null};
+ await assert.rejects(executeJava("submit",{...input,snapshotId:node},"jwt",new AbortController().signal),e=>e.status===422);
+ await assert.rejects(executeJava("submit",input,"jwt",new AbortController().signal),e=>e.status===422&&e.code==="SUBMISSION_DIAGRAM");assert.equal(posts,0);
+});
+test("submit sends complete pinned payload and hydrates the submitted version rather than latest",async t=>{
+ environment(t);let payload;
+ const sub={id:job,assignmentId:node,projectId:project,submittedById:node,submittedAt:"2026-10-23T00:00:00Z",sourceSnapshotId:snapshot,modelVersionId:model,runtimeSessionId:null};
+ t.mock.method(globalThis,"fetch",async(url,o)=>{let data;if(url.endsWith("/submissions")&&o.method==="POST"){payload=JSON.parse(o.body);data=sub;}else if(url.endsWith("/feedbacks"))data=[];else if(url.endsWith("/diagrams"))data=[{id:node,modelVersionId:model}];else if(url.endsWith("/graph"))data={nodes:[],edges:[]};else if(url.endsWith("/elements"))data=[];else if(url.includes("/snapshots/"))data={id:snapshot,projectId:project};else data=metadata;return Response.json({code:200,data});});
+ const input={assignmentId:node,modelId:model,snapshotId:snapshot,runtimeSessionId:null};const result=validateResponse("submit",input,await executeJava("submit",input,"jwt",new AbortController().signal));assert.equal(result.model.id,model);assert.equal(result.snapshot.id,snapshot);assert.equal(payload.projectId,project);assert.equal(payload.diagramVersionId,node);assert.equal(payload.modelVersionId,model);
+});
+test("feedback uses commentText and rejects a foreign model before writing",async t=>{
+ environment(t);let writes=0;t.mock.method(globalThis,"fetch",async(url,o)=>{if(o.method==="POST")writes++;return Response.json({code:200,data:{modelVersionId:job}});});await assert.rejects(executeJava("feedback",{submissionId:job,modelId:model,text:"Review"},"jwt",new AbortController().signal),e=>e.status===422);assert.equal(writes,0);
+});
+test("reference lookup never substitutes a model from another source snapshot",async t=>{
+ environment(t);t.mock.method(globalThis,"fetch",async url=>Response.json({code:200,data:url.endsWith("reference-snapshots")?[{id:snapshot,projectId:project}]:[{...metadata,sourceSnapshotId:job}]}));await assert.rejects(executeJava("referenceVersions",{workspaceId:project},"jwt",new AbortController().signal),e=>e.code==="REFERENCE_MODEL");
+});
+
+test("browser displays only allowlisted submission validation errors",async t=>{const {BackendAdapter}=require("../src/lib/api/backend-adapter.ts");t.mock.method(globalThis,"fetch",async()=>Response.json({code:"SUBMISSION_DIAGRAM"},{status:422}));await assert.rejects(new BackendAdapter().execute("submit",{assignmentId:node,modelId:model,snapshotId:snapshot,runtimeSessionId:null}),e=>e.code==="SUBMISSION_DIAGRAM"&&e.message.includes("Save a diagram"));});
+
+test("admin accounts use role codes and the actual newStatus payload",async t=>{environment(t);let body;t.mock.method(globalThis,"fetch",async(url,o)=>{if(o.body)body=JSON.parse(o.body);return Response.json({code:200,data:{id:project,fullName:"Account",roleCode:"SYSTEM_ADMIN",status:"LOCKED"}});});const input={accountId:project,locked:true};const a=validateResponse("setAccountLock",input,await executeJava("setAccountLock",input,"jwt",new AbortController().signal));assert.equal(a.role,"admin");assert.equal(a.locked,true);assert.deepEqual(body,{newStatus:"LOCKED"});});
+test("admin settings preserve stable string IDs, revisions and resource limits",async t=>{environment(t);let target,body;t.mock.method(globalThis,"fetch",async(url,o)=>{target=url;body=JSON.parse(o.body);return Response.json({code:200,data:{id:"JAVA_SPRING_OTEL_V1",name:"Java",enabled:false,revision:3,memoryMiB:512,cpus:0.5,timeoutSeconds:60}});});const input={profileId:"JAVA_SPRING_OTEL_V1",enabled:false,expectedRevision:2,memoryMiB:512,cpus:0.5,timeoutSeconds:60};const p=validateResponse("configureProfile",input,await executeJava("configureProfile",input,"jwt",new AbortController().signal));assert.equal(p.revision,3);assert.equal(p.memoryMiB,512);assert.ok(target.endsWith("admin/profiles/JAVA_SPRING_OTEL_V1"));assert.equal(body.expectedRevision,2);});
+test("admin inventory is not a service health probe and uses only running-session counts",async t=>{environment(t);t.mock.method(globalThis,"fetch",async()=>Response.json({code:200,data:{totalProjects:3,totalUsers:4,totalJobs:5,totalRuntimeSessions:99,runningRuntimeSessions:2,healthStatus:"available"}}));const v=validateResponse("platformSummary",{},await executeJava("platformSummary",{},"jwt",new AbortController().signal));assert.equal(v.health,"unknown");assert.equal(v.runningSessions,2);assert.match(v.message,/not been probed/);});
+test("administrative runtime monitoring uses the guarded global endpoint",async t=>{environment(t);let path;t.mock.method(globalThis,"fetch",async url=>{path=url;return Response.json({code:200,data:[]});});assert.deepEqual(await executeJava("runtimeReadSessions",{projectId:"*"},"jwt",new AbortController().signal),[]);assert.ok(path.endsWith("admin/runtime-sessions"));});
+
+test("runtime configuration reads and saves durable revisions rather than treating preflight as a save",async t=>{environment(t);const calls=[];const config={projectId:project,snapshotId:snapshot,modelId:model,profileId:"JAVA_SPRING_OTEL_V1",profile:{},revision:0,configured:false,supported:true,ready:false,prerequisites:["Save first"]};t.mock.method(globalThis,"fetch",async(url,o)=>{calls.push({url,o});return Response.json({code:200,data:o.method==="PUT"?{...config,revision:1,configured:true,ready:true}:config});});assert.equal(validateResponse("runtimeConfiguration",{projectId:project},await executeJava("runtimeConfiguration",{projectId:project},"jwt",new AbortController().signal)).ready,false);const input={projectId:project,snapshotId:snapshot,modelId:model,profileId:"JAVA_SPRING_OTEL_V1",profile:{collectorImage:"actual"},expectedRevision:0};assert.equal(validateResponse("saveRuntimeConfiguration",input,await executeJava("saveRuntimeConfiguration",input,"jwt",new AbortController().signal)).revision,1);assert.equal(calls[1].o.method,"PUT");assert.ok(calls.every(x=>x.url.endsWith("runtime-plan")));});
+test("starting runtime queues exact approved revisions without inventing execution or cleanup",async t=>{environment(t);let body;const sessionId=job;const response={id:sessionId,projectId:project,sourceSnapshotId:snapshot,executionStatus:"READY_FOR_DISPATCH",scenarioStatus:"APPROVED",evidenceStatus:"UNAVAILABLE",cleanupStatus:"NOT_APPLICABLE",traceStatus:"NONE",scenarioConfig:{planning:{scenarioId:node,configurationRevision:2,scenarioRevision:3}}};t.mock.method(globalThis,"fetch",async(url,o)=>{body=JSON.parse(o.body);return Response.json({code:200,data:response});});const input={projectId:project,snapshotId:snapshot,scenarioId:node,configurationRevision:2,scenarioRevision:3,approved:true};const r=validateResponse("startRuntime",input,await executeJava("startRuntime",input,"jwt",new AbortController().signal));assert.equal(r.status,"pending");assert.equal(r.executionStatus,"READY_FOR_DISPATCH");assert.equal(r.cleanupStatus,"NOT_APPLICABLE");assert.equal(r.approvedAt,null);assert.equal(r.outcome,"unknown");assert.deepEqual(body,input);});
+test("scenario creation and revision updates use real persisted API paths",async t=>{environment(t);const calls=[];t.mock.method(globalThis,"fetch",async(url,o)=>{calls.push({url,o});const b=JSON.parse(o.body);return Response.json({code:200,data:{id:node,projectId:project,name:b.name,steps:b.steps,revision:b.expectedRevision+1}});});const input={projectId:project,name:"Health",steps:['{"id":"s","service":"orders","method":"GET","path":"/health","expectedStatus":200}']};assert.equal(validateResponse("createScenario",input,await executeJava("createScenario",input,"jwt",new AbortController().signal)).revision,1);const update={...input,scenarioId:node,expectedRevision:1};assert.equal(validateResponse("saveScenario",update,await executeJava("saveScenario",update,"jwt",new AbortController().signal)).revision,2);assert.equal(calls[0].o.method,"POST");assert.equal(calls[1].o.method,"PUT");});
+test("runtime stop preserves cancelling until separate cleanup acknowledgement",async t=>{environment(t);t.mock.method(globalThis,"fetch",async()=>Response.json({code:200,data:{id:job,projectId:project,sourceSnapshotId:snapshot,executionStatus:"CANCELLING",scenarioStatus:"RUNNING",cleanupStatus:"STOP_REQUESTED",traceStatus:"NONE"}}));const input={sessionId:job,action:"terminate"};const r=validateResponse("stopRuntime",input,await executeJava("stopRuntime",input,"jwt",new AbortController().signal));assert.equal(r.status,"cancelling");assert.equal(r.cleanupStatus,"STOP_REQUESTED");assert.equal(r.outcome,"unknown");});
+
+test("merged 3E finding evidence retains provenance and refuses another model's evaluation",async t=>{
+ environment(t);const calls=[];let foreign=false;
+ t.mock.method(globalThis,"fetch",async url=>{
+  calls.push(url);
+  return Response.json({code:200,data:url.endsWith("/evidence")
+   ?[{id:project,sourceType:"STATIC_CODE",locator:"src/Repository.java",excerpt:"findAll()"}]
+   :{id:job,modelVersionId:foreign?snapshot:model}});
+ });
+ const input={modelId:model,evaluationId:job,findingId:node};
+ const result=validateResponse("findingEvidence",input,await executeJava("findingEvidence",input,"jwt",new AbortController().signal));
+ assert.equal(result[0].sourceType,"STATIC_CODE");assert.equal(result[0].kind,"source");
+ assert.equal(result[0].location,"src/Repository.java");assert.equal(result[0].complete,null);
+ assert.ok(calls[1].endsWith(`/evaluations/${job}/findings/${node}/evidence`));
+ foreign=true;calls.length=0;
+ await assert.rejects(executeJava("findingEvidence",input,"jwt",new AbortController().signal),e=>e.status===502);
+ assert.equal(calls.length,1);assert.ok(!calls[0].endsWith("/evidence"));
 });

@@ -12,9 +12,10 @@ import { Button } from "@/components/ui/button";
 import { RuntimeSessionTimeline, RuntimeStatusBadge, TraceViewer } from "./components";
 import type { Response } from "@/lib/api/contracts";
 
+import { RuntimePlanEditor } from "./planning";
 export function RuntimeConfiguration() {
   const api = useApi();
-  return api.mode === "backend" ? <BackendRuntime /> : <MockRuntimeConfiguration />;
+  return api.mode === "backend" ? <RuntimePlanEditor /> : <MockRuntimeConfiguration />;
 }
 function MockRuntimeConfiguration() {
   const { projectId } = useSelection();
@@ -84,7 +85,7 @@ function ConfigurationForm({ config }: { config: Response<"runtimeConfiguration"
 }
 export function RuntimeScenarios() {
   const api = useApi();
-  return api.mode === "backend" ? <BackendRuntime /> : <MockRuntimeScenarios />;
+  return api.mode === "backend" ? <RuntimePlanEditor /> : <MockRuntimeScenarios />;
 }
 function MockRuntimeScenarios() {
   const { projectId } = useSelection();
@@ -149,7 +150,10 @@ function ScenarioForm({ scenario }: { scenario: Response<"scenarios">[number] })
 export function RuntimeSessions({ administrative = false }: { administrative?: boolean }) {
   const api = useApi();
   return api.mode === "backend" ? (
-    <BackendRuntime administrative={administrative} />
+    <>
+      {!administrative && <RuntimePlanEditor />}
+      <BackendRuntime administrative={administrative} />
+    </>
   ) : (
     <MockRuntimeSessions administrative={administrative} />
   );
