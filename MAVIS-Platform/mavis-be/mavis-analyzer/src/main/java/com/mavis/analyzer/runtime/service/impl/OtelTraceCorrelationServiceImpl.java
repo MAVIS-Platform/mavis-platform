@@ -121,12 +121,12 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                 .revision(newRevision)
                 .schemaVersion("1.0")
                 .origin("RUNTIME_ENRICHED")
-                .isLatestValid(true)
+                .isLatestValid(false)
                 .createdBy(baseVersion.getCreatedBy())
                 .build();
 
         enrichedVersion = modelVersionRepository.save(enrichedVersion);
-        modelVersionRepository.invalidatePreviousVersions(project.getId(), enrichedVersion.getId());
+        session.setPublicationGateStatus("HELD_NON_PROMOTED");
 
         // (1) Sao chép toàn bộ elements tĩnh sang version mới
         List<ModelElement> baseElements = modelElementRepository.findByModelVersionId(baseModelVersionId);

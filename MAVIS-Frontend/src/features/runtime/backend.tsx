@@ -97,7 +97,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         <RequestState
           query={list}
           empty={!list.data?.length}
-          emptyMessage="No runtime session exists for this project. An operator must create a pinned session before it can be approved."
+          emptyMessage="No runtime session exists for this project. Save a configuration and scenario above, then approve and queue a session."
         >
           <SelectField
             label="Runtime session"

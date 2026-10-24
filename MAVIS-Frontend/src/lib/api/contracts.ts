@@ -220,17 +220,32 @@ export const contracts = {
   ),
   runtimeConfiguration: contract(project, d.runtimeConfigurationSchema),
   saveRuntimeConfiguration: contract(
-    project.extend({ profileId: id, expectedRevision: z.number().int().positive() }),
+    project.extend({
+      profileId: id,
+      snapshotId: id.optional(),
+      modelId: id.optional(),
+      profile: z.record(z.unknown()).optional(),
+      expectedRevision: z.number().int().nonnegative(),
+    }),
     d.runtimeConfigurationSchema,
     true,
   ),
   scenarios: contract(project, z.array(d.scenarioSchema)),
+  createScenario: contract(
+    project.extend({
+      name: z.string().trim().min(1).max(100),
+      steps: z.array(z.string().trim().min(1).max(10000)).min(1).max(30),
+    }),
+    d.scenarioSchema,
+    true,
+  ),
   saveScenario: contract(
     z.object({
       scenarioId: id,
+      projectId: id.optional(),
       expectedRevision: z.number().int().positive(),
       name: z.string().trim().min(1).max(100),
-      steps: z.array(z.string().trim().min(1).max(500)).min(1).max(30),
+      steps: z.array(z.string().trim().min(1).max(10000)).min(1).max(30),
     }),
     d.scenarioSchema,
     true,

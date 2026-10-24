@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 @SpringBootTest(properties="mavis.security.dev-bypass-enabled=false") @AutoConfigureMockMvc @Transactional
-class Stage14EducationApiIntegrationTest {
+class Stage14EducationApiIntegrationTest extends ApiIntegrationContext {
  @Autowired MockMvc mvc; @Autowired ObjectMapper json; @Autowired JwtUtil jwt;
  @Autowired UserRepository users; @Autowired RoleRepository roles; @Autowired WorkspaceRepository workspaces;
  @Autowired WorkspaceMemberRepository members; @Autowired AssignmentRepository assignments; @Autowired ProjectRepository projects;

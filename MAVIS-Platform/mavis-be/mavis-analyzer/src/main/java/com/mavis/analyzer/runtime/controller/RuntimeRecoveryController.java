@@ -28,7 +28,7 @@ public class RuntimeRecoveryController {
     @Transactional(rollbackFor = Exception.class)
     public ApiResponse<Ack> recover(@PathVariable UUID id, @RequestBody Result result) {
         var session=sessions.findLockedById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND,"Session not found"));
-        access.checkRunnerOrProjectWriteAccess(session.getProject());
+        access.requireRunnerService();
         if(result==null || !id.toString().equals(result.sessionId()) || session.getModelVersion()==null ||
             !session.getModelVersion().getId().toString().equals(result.modelVersionId()) ||
             !session.getSourceSnapshot().getId().toString().equals(result.sourceSnapshotId()) ||

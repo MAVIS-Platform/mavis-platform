@@ -40,7 +40,11 @@ export function TraceViewer({ session }: { session: RuntimeSession }) {
           caption="Observed interactions"
           columns={[
             { key: "path", label: "Interaction", render: (t) => `${t.from} → ${t.to}` },
-            { key: "time", label: "Duration", render: (t) => `${t.durationMs} ms` },
+            {
+              key: "time",
+              label: "Duration",
+              render: (t) => (t.durationMs === null ? "Unknown duration" : `${t.durationMs} ms`),
+            },
             {
               key: "mapping",
               label: "Mapping",
