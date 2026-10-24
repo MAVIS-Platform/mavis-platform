@@ -84,7 +84,7 @@ try {
     if ($Service -in @('All','Java')) {
         if (Is-Listening $javaPort) { Write-Host "Java port $javaPort already in use; leaving the running service unchanged." }
         else {
-            $java=(Get-Command java.exe -ErrorAction Stop).Source
+            $java=if($env:JAVA_HOME -and (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'bin\java.exe'))){Join-Path $env:JAVA_HOME 'bin\java.exe'}else{(Get-Command java.exe -ErrorAction Stop).Source}
             $be=Join-Path $repo 'MAVIS-Platform\mavis-be'
             $jar=Join-Path $be 'mavis-bootstrap\target\mavis-bootstrap-0.0.1-SNAPSHOT.jar'
             if ($Build -or -not (Test-Path -LiteralPath $jar)) { Push-Location $be; try { & '.\mvnw.cmd' '-DskipTests' 'package'; if ($LASTEXITCODE -ne 0) { throw 'Java build failed.' } } finally { Pop-Location } }
