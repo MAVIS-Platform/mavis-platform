@@ -121,6 +121,13 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
                 .modelVersion(modelVersion)
                 .name("global-ecommerce-db")
                 .elementType("DATABASE")
+                .languageStack("POSTGRESQL")
+                .properties(objectMapper.createObjectNode()
+                        .put("resourceRole", "LOGICAL_DATASTORE")
+                        .put("physicalHost", "shared-db")
+                        .put("port", "5432")
+                        .put("database", "global-ecommerce-db")
+                        .put("schema", "public"))
                 .status("STUDENT_CONFIRMED")
                 .build());
 
@@ -178,22 +185,25 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
                 .relationship(relAtoB)
                 .sourceType("STATIC_CODE")
                 .locator("OrderController.java:45")
+                .excerpt("paymentClient.sendOrder(order)")
                 .build());
 
-        evidenceRepository.save(Evidence.builder()
+        Evidence dbEvidenceA = evidenceRepository.save(Evidence.builder()
                 .modelVersion(modelVersion)
                 .sourceSnapshot(snapshot)
                 .relationship(relAtoDb)
                 .sourceType("CONFIG_FILE")
                 .locator("application.yml:12")
+                .excerpt("spring.datasource.url=jdbc:postgresql://shared-db:5432/global-ecommerce-db")
                 .build());
 
-        evidenceRepository.save(Evidence.builder()
+        Evidence dbEvidenceB = evidenceRepository.save(Evidence.builder()
                 .modelVersion(modelVersion)
                 .sourceSnapshot(snapshot)
                 .relationship(relBtoDb)
                 .sourceType("CONFIG_FILE")
                 .locator("payment.yml:8")
+                .excerpt("spring.datasource.url=jdbc:postgresql://shared-db:5432/global-ecommerce-db")
                 .build());
         // relBtoA cố ý KHÔNG có evidence để kích hoạt RULE-04
 
@@ -231,6 +241,7 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
         assertThat(evalNode.get("data").get("summaryMetrics").get("violationCount").asInt()).isEqualTo(3);
         assertThat(evalNode.get("data").get("summaryMetrics").get("needsReviewCount").asInt()).isEqualTo(2);
         assertThat(evalNode.get("data").get("summaryMetrics").get("passedCount").asInt()).isEqualTo(0);
+        assertThat(evalNode.path("data").path("ruleSetVersion").asText()).isEqualTo("3e-2");
 
         System.out.println("\n================================================================================");
         System.out.println(">>> [BƯỚC 2]: GỌI API GET /api/v1/analyzer/models/" + modelVersion.getId() + "/evaluations");
@@ -257,7 +268,6 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
         // --- BƯỚC 3: GET /api/v1/analyzer/evaluations/{evaluationRunId}/findings ---
         MvcResult getFindingsResult = mockMvc.perform(get("/api/v1/analyzer/evaluations/{evaluationRunId}/findings", evaluationRunId)
                         .header("X-Test-User-Email",user.getEmail())
-                        .header("X-Test-User-Email",user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -271,6 +281,46 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
 
         JsonNode findingsArray = getFindingsNode.get("data");
         assertThat(findingsArray.size()).isEqualTo(5);
+
+        JsonNode sharedFinding = null;
+        for (JsonNode finding : findingsArray) {
+            if ("RULE-02".equals(finding.path("ruleId").asText())) sharedFinding = finding;
+        }
+        assertThat(sharedFinding).isNotNull();
+        assertThat(sharedFinding.path("status").asText()).isEqualTo("VIOLATION");
+        String findingId = sharedFinding.path("id").asText();
+        MvcResult evidenceResult = mockMvc.perform(get(
+                        "/api/v1/analyzer/evaluations/{run}/findings/{finding}/evidence", evaluationRunId, findingId)
+                        .header("X-Test-User-Email", user.getEmail()))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode evidenceRows = objectMapper.readTree(evidenceResult.getResponse().getContentAsString()).path("data");
+        assertThat(evidenceRows.size()).isEqualTo(2);
+        assertThat(java.util.stream.StreamSupport.stream(evidenceRows.spliterator(), false)
+                .map(row -> row.path("id").asText()).toList())
+                .containsExactlyInAnyOrder(dbEvidenceA.getId().toString(), dbEvidenceB.getId().toString());
+
+        var explanation = objectMapper.createObjectNode()
+                .put("modelVersionId", modelVersion.getId().toString())
+                .put("elementId", sharedDb.getId().toString()).put("explanationScope", "RULE_FINDING")
+                .put("evaluationRunId", evaluationRunId.toString()).put("findingId", findingId);
+        mockMvc.perform(post("/api/v1/analyzer/ai/explain")
+                        .header("X-Test-User-Email", user.getEmail()).contentType(MediaType.APPLICATION_JSON)
+                        .content(explanation.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.contractVersion").value("3e/2"))
+                .andExpect(jsonPath("$.data.findingId").value(findingId))
+                .andExpect(jsonPath("$.data.citedEvidenceIds.length()").value(2));
+        explanation.put("elementId", serviceIsolated.getId().toString());
+        mockMvc.perform(post("/api/v1/analyzer/ai/explain")
+                        .header("X-Test-User-Email", user.getEmail()).contentType(MediaType.APPLICATION_JSON)
+                        .content(explanation.toString()))
+                .andExpect(status().isBadRequest());
+
+        User outsider = userRepository.save(User.builder().email("outsider_" + UUID.randomUUID() + "@example.invalid")
+                .passwordHash("fixture-only").fullName("Unrelated student").role(studentRole).build());
+        mockMvc.perform(get("/api/v1/analyzer/evaluations/{run}/findings/{finding}/evidence", evaluationRunId, findingId)
+                        .header("X-Test-User-Email", outsider.getEmail()))
+                .andExpect(status().isForbidden());
 
         System.out.println("\n>>> [XÁC MINH CHI TIẾT TỪNG QUY TẮC]:");
         for (JsonNode finding : findingsArray) {

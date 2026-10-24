@@ -166,3 +166,21 @@ test("runtime configuration reads and saves durable revisions rather than treati
 test("starting runtime queues exact approved revisions without inventing execution or cleanup",async t=>{environment(t);let body;const sessionId=job;const response={id:sessionId,projectId:project,sourceSnapshotId:snapshot,executionStatus:"READY_FOR_DISPATCH",scenarioStatus:"APPROVED",evidenceStatus:"UNAVAILABLE",cleanupStatus:"NOT_APPLICABLE",traceStatus:"NONE",scenarioConfig:{planning:{scenarioId:node,configurationRevision:2,scenarioRevision:3}}};t.mock.method(globalThis,"fetch",async(url,o)=>{body=JSON.parse(o.body);return Response.json({code:200,data:response});});const input={projectId:project,snapshotId:snapshot,scenarioId:node,configurationRevision:2,scenarioRevision:3,approved:true};const r=validateResponse("startRuntime",input,await executeJava("startRuntime",input,"jwt",new AbortController().signal));assert.equal(r.status,"pending");assert.equal(r.executionStatus,"READY_FOR_DISPATCH");assert.equal(r.cleanupStatus,"NOT_APPLICABLE");assert.equal(r.approvedAt,null);assert.equal(r.outcome,"unknown");assert.deepEqual(body,input);});
 test("scenario creation and revision updates use real persisted API paths",async t=>{environment(t);const calls=[];t.mock.method(globalThis,"fetch",async(url,o)=>{calls.push({url,o});const b=JSON.parse(o.body);return Response.json({code:200,data:{id:node,projectId:project,name:b.name,steps:b.steps,revision:b.expectedRevision+1}});});const input={projectId:project,name:"Health",steps:['{"id":"s","service":"orders","method":"GET","path":"/health","expectedStatus":200}']};assert.equal(validateResponse("createScenario",input,await executeJava("createScenario",input,"jwt",new AbortController().signal)).revision,1);const update={...input,scenarioId:node,expectedRevision:1};assert.equal(validateResponse("saveScenario",update,await executeJava("saveScenario",update,"jwt",new AbortController().signal)).revision,2);assert.equal(calls[0].o.method,"POST");assert.equal(calls[1].o.method,"PUT");});
 test("runtime stop preserves cancelling until separate cleanup acknowledgement",async t=>{environment(t);t.mock.method(globalThis,"fetch",async()=>Response.json({code:200,data:{id:job,projectId:project,sourceSnapshotId:snapshot,executionStatus:"CANCELLING",scenarioStatus:"RUNNING",cleanupStatus:"STOP_REQUESTED",traceStatus:"NONE"}}));const input={sessionId:job,action:"terminate"};const r=validateResponse("stopRuntime",input,await executeJava("stopRuntime",input,"jwt",new AbortController().signal));assert.equal(r.status,"cancelling");assert.equal(r.cleanupStatus,"STOP_REQUESTED");assert.equal(r.outcome,"unknown");});
+
+test("merged 3E finding evidence retains provenance and refuses another model's evaluation",async t=>{
+ environment(t);const calls=[];let foreign=false;
+ t.mock.method(globalThis,"fetch",async url=>{
+  calls.push(url);
+  return Response.json({code:200,data:url.endsWith("/evidence")
+   ?[{id:project,sourceType:"STATIC_CODE",locator:"src/Repository.java",excerpt:"findAll()"}]
+   :{id:job,modelVersionId:foreign?snapshot:model}});
+ });
+ const input={modelId:model,evaluationId:job,findingId:node};
+ const result=validateResponse("findingEvidence",input,await executeJava("findingEvidence",input,"jwt",new AbortController().signal));
+ assert.equal(result[0].sourceType,"STATIC_CODE");assert.equal(result[0].kind,"source");
+ assert.equal(result[0].location,"src/Repository.java");assert.equal(result[0].complete,null);
+ assert.ok(calls[1].endsWith(`/evaluations/${job}/findings/${node}/evidence`));
+ foreign=true;calls.length=0;
+ await assert.rejects(executeJava("findingEvidence",input,"jwt",new AbortController().signal),e=>e.status===502);
+ assert.equal(calls.length,1);assert.ok(!calls[0].endsWith("/evidence"));
+});

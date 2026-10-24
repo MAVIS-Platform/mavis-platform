@@ -732,3 +732,76 @@ test("compact overview routes explicit service/channel/data groups without colli
  assert.ok(Math.max(...result.rects.map(rect=>rect.y+rect.height))<450);
  assert.ok(result.graph.height>350,"Layout bounds must keep the legend below the drawing");
 });
+test("simplified C4/4+1 catalog preserves element IDs and never relabels static edges as processes",()=>{
+ const {modelView}=require("../src/lib/api/java-wire.ts");const {selectDiagram,diagramKinds,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));
+ const model={id:raw.modelVersionId,projectId:"p",snapshotId:"s",revision:1,label:"Model",elements:raw.layoutJson.nodes.map(n=>({id:n.id,name:n.name,elementType:n.kind,parentId:n.parentId,technology:n.languageStack,properties:n.properties,description:n.description??"",layer:"unclassified",evidence:[]})),edges:raw.layoutJson.edges.map(e=>({id:e.id,from:e.from,to:e.to,protocol:e.type,originLayer:e.originLayer,uncertain:true,evidence:[]}))};
+ assert.deepEqual(diagramKinds.C4.map(d=>d.value),["CONTEXT","CONTAINER","COMPONENT"]);assert.equal(diagramKinds['4+1'].length,5);
+ const container=selectDiagram(model,'CONTAINER');assert.equal(container.document.notation,'C4');assert.equal(container.document.level,'CONTAINER');assert.ok(container.document.layoutJson.nodes.every(n=>model.elements.some(e=>e.id===n.id)));
+ const service=model.elements.find(n=>n.name==='ftgo-order-service');const component=selectDiagram(model,'COMPONENT',service.id);assert.ok(component.document.layoutJson.nodes.some(n=>n.parentId===service.id));
+ const process=selectDiagram(model,'PROCESS');assert.equal(process.document.level,'PROCESS');assert.ok(!process.document.layoutJson.edges.some(e=>e.type==='DECLARED_COMPOSE'));
+ assert.equal(selectDiagram(model,'LOGICAL').document.level,'LOGICAL');assert.equal(selectDiagram(model,'CONTEXT').document.level,'CONTEXT');
+ const deployment=selectDiagram(model,'DEPLOYMENT');assert.equal(deployment.document.notation,'VIEW_4_PLUS_1');assert.ok(deployment.document.layoutJson.edges.every(e=>e.type==='DECLARED_COMPOSE'));
+ const aggregate=container.document.layoutJson.edges.find(e=>e.underlyingEdgeIds?.length);if(aggregate)assert.ok(diagramMembers(container.document,aggregate.id,model).length>0);
+});
+
+test("Development diagram groups only qualified source packages with explicit ownership",()=>{
+ const {selectDiagram,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,name,parentId,qualifiedName)=>({id,name,parentId,elementType:parentId?'COMPONENT':'SERVICE_CONTAINER',properties:{qualifiedName},description:'',layer:'unclassified',evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('service','Orders',null,null),node('c','Controller','service','orders.web.Controller'),node('r','Repository','service','orders.data.Repository')],edges:[{id:'e',from:'c',to:'r',protocol:'CODE_DEPENDENCY',uncertain:false,evidence:[]}]};
+ const result=selectDiagram(model,'DEVELOPMENT');assert.equal(result.document.layoutJson.nodes.length,2);assert.equal(result.document.layoutJson.edges.length,1);const group=result.document.layoutJson.nodes.find(n=>n.name==='orders.web');assert.deepEqual(diagramMembers(result.document,group.id,model),['c']);assert.equal(model.elements[1].id,'c');
+});
+test("System Context groups internal elements and excludes Compose startup arrows",()=>{
+ const {selectDiagram,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,name,type)=>({id,name,elementType:type,description:'',layer:'unclassified',evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('service','Orders','SERVICE_CONTAINER'),node('external','Payment provider','EXTERNAL_SYSTEM')],edges:[{id:'api',from:'service',to:'external',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]},{id:'boot',from:'service',to:'external',protocol:'DECLARED_COMPOSE',originLayer:'DEPLOYMENT',uncertain:false,evidence:[]}]};
+ const result=selectDiagram(model,'CONTEXT');assert.equal(result.document.notation,'C4');assert.equal(result.document.level,'CONTEXT');assert.equal(result.document.layoutJson.edges.length,1);assert.equal(result.document.layoutJson.edges[0].to,'external');assert.deepEqual(diagramMembers(result.document,'system:p',model),['service']);
+});
+test("context remains visible without actors and never promotes internal infrastructure to external systems",()=>{
+ const {selectDiagram,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,type,parentId,properties={})=>({id,name:id,elementType:type,parentId,properties,description:'',layer:'unclassified',evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('app','SERVICE_CONTAINER'),node('db','DATABASE'),node('queue','QUEUE_BROKER')],edges:[]};
+ const bare=selectDiagram(model,'CONTEXT');assert.equal(bare.document.layoutJson.nodes.length,1);assert.equal(bare.document.layoutJson.nodes[0].kind,'SYSTEM');assert.equal(bare.document.layoutJson.edges.length,0);
+ model.elements.push(node('controller','COMPONENT','app',{responsibility:'Exposes HTTP endpoints'}));
+ const inferred=selectDiagram(model,'CONTEXT');assert.equal(inferred.document.layoutJson.nodes.length,2);assert.match(inferred.notice,/unidentified caller/);assert.equal(inferred.document.layoutJson.nodes.filter(n=>n.kind==='EXTERNAL_SYSTEM').length,1);assert.deepEqual(diagramMembers(inferred.document,'api-clients:p',model),['controller']);assert.deepEqual(diagramMembers(inferred.document,'inbound:p',model),['controller']);
+});
+test("Logical keeps explicitly owned abstractions separate from deployment and other services",()=>{
+ const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,type,parentId)=>({id,name:id,elementType:type,parentId,description:'',layer:'unclassified',evidence:[]});
+ const edge=(id,from,to,protocol,originLayer='STATIC')=>({id,from,to,protocol,originLayer,uncertain:false,evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('a','SERVICE_CONTAINER'),node('b','SERVICE_CONTAINER'),node('controller','COMPONENT','a'),node('service','COMPONENT','a'),node('other','COMPONENT','b'),node('db','DATABASE')],edges:[edge('usage','controller','service','CODE_DEPENDENCY'),edge('wrong-scope','controller','other','CODE_DEPENDENCY'),edge('startup','a','b','DECLARED_COMPOSE','DEPLOYMENT'),edge('data','service','db','DATABASE_ACCESS')]};
+ const result=selectDiagram(model,'LOGICAL','a');assert.equal(result.key,'logical:a');assert.deepEqual(result.document.layoutJson.nodes.map(n=>n.id),['controller','service']);assert.deepEqual(result.document.layoutJson.edges.map(e=>e.id),['usage']);assert.equal(selectDiagram(model,'LOGICAL','b').key,'logical:b');assert.ok(!result.document.layoutJson.nodes.some(n=>n.kind==='SERVICE_CONTAINER'));
+});
+test("Process aggregates communications through component ownership without inventing IPC from code or startup dependencies",()=>{
+ const {selectDiagram,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,type,parentId)=>({id,name:id,elementType:type,parentId,description:'',layer:'unclassified',evidence:[]});
+ const edge=(id,from,to,protocol,originLayer='STATIC')=>({id,from,to,protocol,originLayer,uncertain:false,evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('a','SERVICE_CONTAINER'),node('b','SERVICE_CONTAINER'),node('x','COMPONENT','a'),node('y','COMPONENT','b'),node('queue','MESSAGE_CHANNEL')],edges:[edge('http','x','y','SERVICE_HTTP_CALL'),edge('http2','a','b','SERVICE_HTTP_CALL'),edge('pub','x','queue','MESSAGE_PUBLISH'),edge('code','x','y','CODE_DEPENDENCY'),edge('boot','a','b','DECLARED_COMPOSE','DEPLOYMENT')]};
+ const result=selectDiagram(model,'PROCESS');assert.equal(result.document.level,'PROCESS');assert.equal(result.document.layoutJson.nodes.find(n=>n.id==='a').kind,'PROCESS_UNIT');assert.equal(result.document.layoutJson.edges.length,2);assert.ok(!result.document.layoutJson.nodes.some(n=>n.kind==='COMPONENT'));const http=result.document.layoutJson.edges.find(e=>e.type==='SERVICE_HTTP_CALL');assert.deepEqual(diagramMembers(result.document,http.id,model),['http','http2']);assert.match(result.notice,/Thread scheduling/);
+});
+test("Designed scenarios preserve explicit order, repeats and canonical IDs across XML export and reload",()=>{
+ const {scenarioXml,readScenarioDesign,scenarioInteractions}=require("../src/features/architecture/scenario-design.ts");
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:['a','b'].map(id=>({id,name:id==='a'?'Orders <script>':'Payments',elementType:'SERVICE_CONTAINER',description:'',layer:'unclassified',evidence:[]})),edges:[{id:'ab',from:'a',to:'b',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]},{id:'boot',from:'a',to:'b',protocol:'DECLARED_COMPOSE',originLayer:'DEPLOYMENT',uncertain:false,evidence:[]}]};
+ const design={modelId:'m',name:'Place order & pay',edgeIds:['ab','ab']};const xml=scenarioXml(model,design);assert.deepEqual(readScenarioDesign(xml,model),design);assert.equal((xml.match(/mavisRole="participant"/g)||[]).length,2);assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,2);assert.match(xml,/1\. HTTP call/);assert.match(xml,/2\. HTTP call/);assert.doesNotMatch(xml,/<script>/);assert.match(xml,/not observed execution/);assert.equal(scenarioInteractions(model).length,1);
+ assert.equal(readScenarioDesign(xml,{...model,id:'other'}),null);assert.equal(readScenarioDesign(xml,{...model,edges:[]}),null);assert.equal(readScenarioDesign('<invalid>',model),null);assert.throws(()=>scenarioXml(model,{...design,edgeIds:['boot']}),/not present/);assert.throws(()=>scenarioXml(model,{...design,modelId:'wrong'}),/another model/);
+});
+
+test("Sequence headers and message ports leave room for long wrapped participant names",()=>{
+ const {scenarioXml}=require("../src/features/architecture/scenario-design.ts");
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:['a','b'].map(id=>({id,name:id==='a'?'AccountingServiceCommandHandlerWithAnExtremelyLongQualifiedComponentName':'Eventuate command channel',elementType:'COMPONENT',description:'',layer:'unclassified',evidence:[]})),edges:[{id:'call',from:'a',to:'b',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]}]};
+ const xml=scenarioXml(model,{modelId:'m',name:'Long participant names',edgeIds:['call']});
+ const header=Number(/size=(\d+);html=0/.exec(xml)[1]);assert.ok(header>=86,"3+ lines need more than the former 64px header");
+ const height=Number(/height="([\d.]+)" as="geometry"\/><\/mxCell><mxCell id="participant-1"/.exec(xml)[1]);
+ const anchor=Number(/exitY=([\d.]+);exitPerimeter/.exec(xml)[1]);assert.ok(anchor*height>header+20,"message must start below the header");
+ assert.match(xml,/&#xa;/,"wrapped label lines must survive XML attribute parsing");
+});
+test("3E preserves configuration provenance and hides machine-local paths without inventing line numbers",()=>{
+ const {sourceLabel,shortLocator}=require('../src/features/architecture/three-e-content.ts');
+ assert.equal(sourceLabel({kind:'source',sourceType:'CONFIG_FILE'}),'Từ cấu hình');assert.equal(sourceLabel({kind:'source',sourceType:'SOURCE_CODE'}),'Từ mã nguồn');assert.equal(sourceLabel({kind:'runtime',sourceType:'RUNTIME_TRACE'}),'Quan sát khi chạy');assert.equal(sourceLabel({kind:'source'}),'Nguồn chưa phân loại');
+ assert.equal(shortLocator('C:\\Users\\machine\\uploads\\snapshot_source_extracted\\project-sha\\orders\\src\\Repo.java:5'),'orders/src/Repo.java:5');assert.ok(!shortLocator('C:\\Users\\name\\src\\Repo.java').includes('C:'));assert.equal(shortLocator('src/Repo.java'),'src/Repo.java');
+});
+test("3E treats Compose as startup declaration and physical database identity as unresolved",()=>{
+ const {selectionSummary,findingRelated}=require('../src/features/architecture/three-e-content.ts');
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[{id:'a',name:'orders',elementType:'SERVICE_CONTAINER',description:'',layer:'unclassified',evidence:[]},{id:'db',name:'mysql',elementType:'DATABASE',description:'',layer:'data',evidence:[]}],edges:[{id:'boot',from:'a',to:'db',protocol:'DECLARED_COMPOSE',uncertain:false,evidence:[]}]};
+ assert.match(selectionSummary(model,'boot').summary,/chưa chứng minh/);assert.match(selectionSummary(model,'db').type,/phạm vi cần xác minh/);assert.equal(findingRelated({elementId:'db',details:{relatedElementIds:['a']}},'a'),true);assert.equal(findingRelated({elementId:'other',message:'a'},'a'),false);
+});

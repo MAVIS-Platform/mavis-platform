@@ -1,5 +1,4 @@
 "use client";
-import { ModelTools } from "@/features/architecture/model-tools";
 import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
@@ -18,9 +17,7 @@ export default function ArchitecturePage() {
     </AppShell>
   );
 }
-export function ArchitectureWorkspace({
-  title = "Microservices architecture graph",
-}: { title?: string } = {}) {
+export function ArchitectureWorkspace({ title = "Architecture" }: { title?: string } = {}) {
   const state = useModel();
   const [selected, setSelected] = useState<{ modelId: string; elementId: string } | null>(null);
   const id = selected?.modelId === state.model?.id ? (selected?.elementId ?? null) : null;
@@ -28,7 +25,7 @@ export function ArchitectureWorkspace({
     <PageContainer>
       <SectionHeader
         title={title}
-        description="Inspect model versions, source evidence, and uncertain mappings."
+        description="Explore the dependency graph or a C4 / 4+1 diagram. Select an element to open 3E."
       />
       <ProjectSelector />
       {state.projectId && (
@@ -48,7 +45,6 @@ export function ArchitectureWorkspace({
                     setSelected(elementId ? { modelId: state.model.id, elementId } : null);
                 }}
               />
-              <ModelTools modelId={state.model.id} />
             </>
           )}
         </RequestState>

@@ -59,6 +59,7 @@ export type AnalysisJob = z.infer<typeof analysisJobSchema>;
 export const evidenceSchema = z.object({
   id: z.string(),
   kind: z.enum(["source", "runtime"]),
+  sourceType: z.string().optional(),
   location: z.string(),
   snippet: z.string(),
   complete: z.boolean().nullable(),
