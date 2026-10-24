@@ -356,7 +356,7 @@ class ProjectServiceImplTest {
         UUID projectId = UUID.randomUUID();
         Project project = Project.builder()
                 .id(projectId)
-                .owner(currentUser)
+                .owner(currentUser).workspace(workspace)
                 .build();
 
         Project otherProject = Project.builder()
@@ -393,6 +393,7 @@ class ProjectServiceImplTest {
         when(projectRepository.findByWorkspaceIdAndStatusNotOrderByCreatedAtDesc(workspaceId, "DELETED"))
                 .thenReturn(List.of(p1));
 
+        when(accessPolicyService.canReadProject(p1)).thenReturn(true);
         List<ProjectResponseDTO> results = projectService.getProjectsByWorkspace(workspaceId);
 
         assertThat(results).hasSize(1);

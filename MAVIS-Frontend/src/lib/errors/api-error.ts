@@ -1,4 +1,7 @@
 export const publicErrors = {
+  SUBMISSION_DIAGRAM: "Save a diagram for this exact model version before submitting.",
+  REFERENCE_MODEL:
+    "This published snapshot has no matching model version. Ask the lecturer to finish the reference analysis.",
   GITHUB_URL: "GitHub URL không hợp lệ. Dùng https://github.com/owner/repository.",
   GITHUB_REPOSITORY:
     "Không tìm thấy repository công khai trên GitHub. Kiểm tra URL; repository private cần tải ZIP.",

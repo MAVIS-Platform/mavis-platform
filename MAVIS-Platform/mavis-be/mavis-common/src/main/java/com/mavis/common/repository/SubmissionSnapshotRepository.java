@@ -37,6 +37,10 @@ public interface SubmissionSnapshotRepository extends JpaRepository<SubmissionSn
     @Query("SELECT s FROM SubmissionSnapshot s WHERE s.id = :id")
     Optional<SubmissionSnapshot> findWithDetailsById(@Param("id") UUID id);
 
+    @EntityGraph(attributePaths = {"assignment", "project", "submittedBy", "sourceSnapshot", "modelVersion", "diagramVersion", "evaluationRun", "runtimeSession"})
+    @Query("SELECT s FROM SubmissionSnapshot s WHERE :admin = true OR s.submittedBy.id = :userId OR EXISTS (SELECT wm.id FROM WorkspaceMember wm WHERE wm.workspace = s.assignment.workspace AND wm.user.id = :userId AND wm.memberRole = 'LECTURER') ORDER BY s.submittedAt DESC")
+    List<SubmissionSnapshot> findVisibleTo(@Param("userId") UUID userId, @Param("admin") boolean admin);
+
     boolean existsByAssignmentId(UUID assignmentId);
     long countByAssignmentId(UUID assignmentId);
     boolean existsBySourceSnapshotId(UUID sourceSnapshotId);

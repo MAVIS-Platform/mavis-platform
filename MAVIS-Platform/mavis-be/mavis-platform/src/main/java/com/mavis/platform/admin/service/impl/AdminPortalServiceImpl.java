@@ -131,6 +131,8 @@ public class AdminPortalServiceImpl implements AdminPortalService {
         long totalSubmissions = submissionSnapshotRepository.count();
 
         return AdminDashboardStatsDTO.builder()
+                .runningRuntimeSessions(runtimeSessionRepository.countByExecutionStatusIn(List.of("ALLOCATED","RUNNING","CANCELLING")))
+                .healthStatus("unknown")
                 .totalUsers(totalUsers)
                 .totalWorkspaces(totalWorkspaces)
                 .totalProjects(totalProjects)

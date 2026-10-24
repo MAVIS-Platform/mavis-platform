@@ -50,6 +50,11 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên bản mô hình gốc với ID: " + baseModelVersionId));
 
         accessPolicyService.requireProjectWriteAccess(session.getProject());
+        if (!baseVersion.getProject().getId().equals(session.getProject().getId())
+                || baseVersion.getSourceSnapshot()==null || session.getSourceSnapshot()==null
+                || !baseVersion.getSourceSnapshot().getId().equals(session.getSourceSnapshot().getId())
+                || (session.getModelVersion()!=null && !session.getModelVersion().getId().equals(baseModelVersionId)))
+            throw new BusinessException(com.mavis.common.exception.ErrorCode.BAD_REQUEST,"Trace model/session scope mismatch");
 
         List<OtelSpanDTO> rawSpans = (request != null && request.getSpans() != null)
                 ? request.getSpans()
@@ -81,7 +86,7 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         Map<String, OtelSpanDTO> spanByIdMap = new LinkedHashMap<>();
         for (OtelSpanDTO span : rawSpans) {
             if (span.getSpanId() != null && !span.getSpanId().isBlank()) {
-                spanByIdMap.put(span.getSpanId(), span);
+                spanByIdMap.put(spanKey(span.getTraceId(),span.getSpanId()), span);
             }
         }
 
@@ -90,7 +95,7 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
 
         for (OtelSpanDTO child : rawSpans) {
             if (child.getParentSpanId() != null && !child.getParentSpanId().isBlank()) {
-                OtelSpanDTO parent = spanByIdMap.get(child.getParentSpanId());
+                OtelSpanDTO parent = spanByIdMap.get(spanKey(child.getTraceId(),child.getParentSpanId()));
                 if (parent != null && parent.getServiceName() != null && child.getServiceName() != null) {
                     if (!parent.getServiceName().equalsIgnoreCase(child.getServiceName())) {
                         causalSteps.add(new CausalCallStep(stepIndex++, parent, child));
@@ -110,17 +115,18 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
 
         ModelVersion enrichedVersion = ModelVersion.builder()
                 .project(project)
+                .baseModelVersion(baseVersion)
                 .sourceSnapshot(baseVersion.getSourceSnapshot())
                 .runtimeSession(session)
                 .revision(newRevision)
                 .schemaVersion("1.0")
                 .origin("RUNTIME_ENRICHED")
-                .isLatestValid(true)
+                .isLatestValid(false)
                 .createdBy(baseVersion.getCreatedBy())
                 .build();
 
         enrichedVersion = modelVersionRepository.save(enrichedVersion);
-        modelVersionRepository.invalidatePreviousVersions(project.getId(), enrichedVersion.getId());
+        session.setPublicationGateStatus("HELD_NON_PROMOTED");
 
         // (1) Sao chép toàn bộ elements tĩnh sang version mới
         List<ModelElement> baseElements = modelElementRepository.findByModelVersionId(baseModelVersionId);
@@ -312,6 +318,10 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                 enrichedVersion.getId(), newRevision, session.getTraceStatus());
 
         return ModelVersionResponseDTO.fromEntity(enrichedVersion);
+    }
+
+    private static String spanKey(String trace, String span) {
+        return (Objects.toString(trace,"")+":"+Objects.toString(span,"")).toLowerCase(Locale.ROOT);
     }
 
     @Override

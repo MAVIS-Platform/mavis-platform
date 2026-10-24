@@ -52,6 +52,12 @@ export function validateResponse<K extends Operation>(
     value.some((entry: unknown) => !record(entry) || entry["projectId"] !== request["projectId"])
   )
     fail();
+  if (
+    Array.isArray(value) &&
+    ["assignments", "referenceVersions"].includes(operation) &&
+    value.some((v) => !record(v) || v["workspaceId"] !== request["workspaceId"])
+  )
+    fail();
   if (record(value)) {
     for (const key of [
       "projectId",
@@ -70,7 +76,13 @@ export function validateResponse<K extends Operation>(
         fail();
     }
     if (
-      operation === "saveArchitectureDocument" &&
+      [
+        "saveArchitectureDocument",
+        "configureIntegration",
+        "configureProfile",
+        "saveRuntimeConfiguration",
+        "saveScenario",
+      ].includes(operation) &&
       value["revision"] !== Number(request["expectedRevision"]) + 1
     )
       fail();

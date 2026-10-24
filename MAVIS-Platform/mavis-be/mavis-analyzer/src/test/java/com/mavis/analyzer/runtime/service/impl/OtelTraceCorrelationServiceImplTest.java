@@ -151,6 +151,8 @@ class OtelTraceCorrelationServiceImplTest {
         when(modelVersionRepository.findMaxRevisionByProjectId(projectId)).thenReturn(1);
         when(modelVersionRepository.save(any(ModelVersion.class))).thenAnswer(inv -> {
             ModelVersion mv = inv.getArgument(0);
+            assertThat(mv.getBaseModelVersion()).isSameAs(baseVersion);
+            assertThat(mv.getIsLatestValid()).isFalse();
             mv.setId(UUID.randomUUID());
             return mv;
         });
@@ -279,6 +281,7 @@ class OtelTraceCorrelationServiceImplTest {
         when(modelVersionRepository.findMaxRevisionByProjectId(projectId)).thenReturn(1);
         when(modelVersionRepository.save(any(ModelVersion.class))).thenAnswer(inv -> {
             ModelVersion mv = inv.getArgument(0);
+            assertThat(mv.getBaseModelVersion()).isSameAs(baseVersion);
             mv.setId(UUID.randomUUID());
             return mv;
         });
@@ -399,5 +402,25 @@ class OtelTraceCorrelationServiceImplTest {
 
         assertThatThrownBy(() -> otelTraceCorrelationService.getSequenceDiagramBySession(sessionId))
                 .isInstanceOf(BusinessException.class);
+    }
+    @Test void rejectsModelFromAnotherProjectBeforePublication() {
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        baseVersion.setProject(Project.builder().id(UUID.randomUUID()).build());
+        when(modelVersionRepository.findById(baseModelVersionId)).thenReturn(Optional.of(baseVersion));
+        assertThatThrownBy(()->otelTraceCorrelationService.ingestTraces(sessionId,baseModelVersionId,new RuntimeTraceIngestRequestDTO())).isInstanceOf(BusinessException.class);
+        verify(modelVersionRepository,never()).save(any());
+    }
+    @Test void identicalSpanIdsFromDifferentTracesCannotFormACall() {
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(modelVersionRepository.findById(baseModelVersionId)).thenReturn(Optional.of(baseVersion));
+        when(modelVersionRepository.findMaxRevisionByProjectId(projectId)).thenReturn(1);
+        when(modelVersionRepository.save(any())).thenAnswer(inv->{ModelVersion m=inv.getArgument(0);m.setId(UUID.randomUUID());return m;});
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(inv->inv.getArgument(0));
+        var a=OtelSpanDTO.builder().traceId("trace-a").spanId("parent").serviceName("a").build();
+        var b=OtelSpanDTO.builder().traceId("trace-b").spanId("child").parentSpanId("parent").serviceName("b").build();
+        var req=new RuntimeTraceIngestRequestDTO();req.setSpans(List.of(a,b));
+        otelTraceCorrelationService.ingestTraces(sessionId,baseModelVersionId,req);
+        var saved=ArgumentCaptor.forClass(DiagramVersion.class);verify(diagramVersionRepository).save(saved.capture());
+        assertThat(saved.getValue().getLayoutJson().path("totalSteps").asInt()).isZero();
     }
 }

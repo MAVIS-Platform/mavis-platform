@@ -4,6 +4,7 @@ import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
 import { RequestState, ErrorState } from "@/components/shared/request-state";
 import { ConfirmDialog, SearchInput } from "@/components/shared/forms";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
 import type { Response } from "@/lib/api/contracts";
@@ -27,7 +28,7 @@ export function Accounts() {
             label: "Status",
             render: (a) => (
               <StatusBadge
-                status={a.locked ? "Locked" : "Active"}
+                status={a.status ?? (a.locked ? "Locked" : "Active")}
                 variant={a.locked ? "warning" : "success"}
               />
             ),
@@ -80,7 +81,8 @@ export function Integrations() {
         <DetailPanel key={item.id} title={item.name}>
           <StatusBadge status={item.enabled ? "Enabled" : "Disabled"} />
           <p className="text-xs text-muted-foreground">
-            Revision {item.revision}. Credentials are configured server-side.
+            Revision {item.revision} · {item.status ?? "Unverified"}. Process-local settings reset
+            on restart. Connection has not been probed. Credentials remain server-side.
           </p>
           <Button
             variant="outline"
@@ -118,47 +120,83 @@ export function Integrations() {
   );
 }
 export function RuntimeProfiles() {
-  const query = useApiQuery("profiles", {});
-  const mutation = useApiMutation("configureProfile");
-  const [selected, setSelected] = useState<Response<"profiles">[number] | null>(null);
+  const q = useApiQuery("profiles", {});
   return (
-    <RequestState query={query} empty={!query.data?.length}>
-      {query.data?.map((item) => (
-        <DetailPanel key={item.id} title={item.name}>
-          <StatusBadge status={item.enabled ? "Enabled" : "Disabled"} />
-          <Button
-            variant="outline"
-            onClick={() => {
-              mutation.reset();
-              setSelected(item);
-            }}
-          >
-            {item.enabled ? "Disable" : "Enable"} profile
-          </Button>
-        </DetailPanel>
+    <RequestState query={q} empty={!q.data?.length}>
+      {q.data?.map((p) => (
+        <ProfileForm key={p.id + ":" + p.revision} item={p} />
       ))}
-      <ConfirmDialog
-        open={Boolean(selected)}
-        onOpenChange={(open) => {
-          if (!open) setSelected(null);
-        }}
-        title="Change runtime execution profile?"
-        description={`${selected?.name}; revision ${selected?.revision}. New runtime runs must meet profile prerequisites.`}
-        pending={mutation.isPending}
-        error={mutation.isError ? <ErrorState error={mutation.error} /> : undefined}
-        onConfirm={() => {
-          if (selected)
-            mutation.mutate(
-              {
-                profileId: selected.id,
-                enabled: !selected.enabled,
-                expectedRevision: selected.revision,
-              },
-              { onSuccess: () => setSelected(null) },
-            );
-        }}
-      />
     </RequestState>
+  );
+}
+function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
+  const save = useApiMutation("configureProfile");
+  const [enabled, setEnabled] = useState(item.enabled),
+    [memory, setMemory] = useState(item.memoryMiB ?? 256),
+    [cpus, setCpus] = useState(item.cpus ?? 1),
+    [timeout, setTimeout] = useState(item.timeoutSeconds ?? 120);
+  return (
+    <DetailPanel title={item.name}>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          save.mutate({
+            profileId: item.id,
+            expectedRevision: item.revision,
+            enabled,
+            memoryMiB: memory,
+            cpus,
+            timeoutSeconds: timeout,
+          });
+        }}
+      >
+        <p className="text-xs text-muted-foreground">
+          Revision {item.revision}. Process-local settings reset on restart. Limits apply to new
+          sessions; existing pinned sessions cannot exceed current limits.
+        </p>
+        <label className="flex gap-2">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          Enabled
+        </label>
+        <label>
+          Memory (MiB)
+          <Input
+            type="number"
+            min={64}
+            max={2048}
+            required
+            value={memory}
+            onChange={(e) => setMemory(Number(e.target.value))}
+          />
+        </label>
+        <label>
+          CPU cores
+          <Input
+            type="number"
+            min={0.01}
+            max={4}
+            step={0.01}
+            required
+            value={cpus}
+            onChange={(e) => setCpus(Number(e.target.value))}
+          />
+        </label>
+        <label>
+          Timeout (seconds)
+          <Input
+            type="number"
+            min={1}
+            max={300}
+            required
+            value={timeout}
+            onChange={(e) => setTimeout(Number(e.target.value))}
+          />
+        </label>
+        <Button disabled={save.isPending}>Save execution profile</Button>
+        {save.error && <ErrorState error={save.error} />}
+      </form>
+    </DetailPanel>
   );
 }
 export function PlatformSummary() {

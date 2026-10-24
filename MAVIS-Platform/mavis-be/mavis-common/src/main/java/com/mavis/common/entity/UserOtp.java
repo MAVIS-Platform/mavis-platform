@@ -15,7 +15,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.hibernate.annotations.CreationTimestamp;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
@@ -41,12 +41,12 @@ public class UserOtp {
     private String purpose;
 
     @Column(name = "expiry_time", nullable = false)
-    private LocalDateTime expiryTime;
+    private OffsetDateTime expiryTime;
 
     @Column(name = "is_used", nullable = false)
     private boolean isUsed;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    private OffsetDateTime createdAt;
 }

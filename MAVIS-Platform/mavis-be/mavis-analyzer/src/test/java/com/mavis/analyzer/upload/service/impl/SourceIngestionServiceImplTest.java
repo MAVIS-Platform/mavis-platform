@@ -69,6 +69,8 @@ class SourceIngestionServiceImplTest {
     @Mock
     private HttpResponse<InputStream> httpResponse;
 
+    @Mock private com.mavis.common.config.PlatformRuntimeSettings settings;
+
     @InjectMocks
     private SourceIngestionServiceImpl sourceIngestionService;
 
@@ -279,4 +281,5 @@ class SourceIngestionServiceImplTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BAD_REQUEST);
     }
+ @Test void disabledGitHubRejectsBeforeNetworkOrWrites(){doThrow(new BusinessException(ErrorCode.FORBIDDEN)).when(settings).requireIntegration("github");assertThatThrownBy(()->sourceIngestionService.ingestFromGitHub(null)).isInstanceOf(BusinessException.class);verifyNoInteractions(projectRepository,storageService,eventPublisher);}
 }

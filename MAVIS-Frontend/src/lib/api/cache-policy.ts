@@ -1,6 +1,13 @@
 import type { Operation } from "./contracts";
 
 export const mutationInvalidations: Partial<Record<Operation, readonly Operation[]>> = {
+  updateProfile: ["session"],
+  createWorkspace: ["workspaces"],
+  updateWorkspace: ["workspaces"],
+  archiveWorkspace: ["workspaces"],
+  addWorkspaceMember: ["workspaces"],
+  removeWorkspaceMember: ["workspaces"],
+  createAssignment: ["assignments"],
   runtimeStop: ["runtimeReadSessions", "runtimeReadSession"],
   runtimeApprove: ["runtimeReadSessions", "runtimeReadSession"],
   importSource: ["snapshots"],
@@ -18,8 +25,9 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
   ],
   saveModel: ["models", "modelVersions", "model", "compareModels"],
   saveRuntimeConfiguration: ["runtimeConfiguration"],
+  createScenario: ["scenarios"],
   saveScenario: ["scenarios"],
-  startRuntime: ["runtimeSessions", "platformSummary"],
+  startRuntime: ["runtimeSessions", "runtimeReadSessions", "runtimeReadSession", "platformSummary"],
   stopRuntime: ["runtimeSessions", "runtimeSession", "platformSummary", "audit"],
   submit: ["submissions", "submission"],
   feedback: ["submissions", "submission"],

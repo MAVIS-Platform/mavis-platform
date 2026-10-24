@@ -79,6 +79,8 @@ class RuntimeSessionServiceImplTest {
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
 
+    @Spy private com.mavis.common.config.PlatformRuntimeSettings settings=new com.mavis.common.config.PlatformRuntimeSettings();
+
     @InjectMocks
     private RuntimeSessionServiceImpl runtimeSessionService;
 
@@ -443,4 +445,5 @@ class RuntimeSessionServiceImplTest {
                 .hasMessageContaining("selected snapshot");
         verify(runtimeSessionRepository, never()).save(any());
     }
+ @Test void disabledRuntimeIntegrationBlocksCreationBeforePersistence(){settings.updateIntegration("otel-collector",false,1,n->{});assertThatThrownBy(()->runtimeSessionService.createRuntimeSession(RuntimeSessionCreateRequest.builder().projectId(projectId).sourceSnapshotId(snapshotId).build())).isInstanceOf(BusinessException.class);verify(runtimeSessionRepository,never()).save(any());}
 }
