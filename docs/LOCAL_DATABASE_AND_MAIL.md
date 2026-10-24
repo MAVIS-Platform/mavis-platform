@@ -22,6 +22,19 @@ The regular launcher deliberately forces migrations **off** and uses `ddl-auto=v
 
 Disposable databases created with the original runtime V14 must be recreated for the new migration sequence. Existing team databases with ThreeE V14 upgrade normally to V15. The installed Flyway 10.10.0 warns that PostgreSQL 18 is newer than its tested support; record the warning and test against the exact server major rather than silently treating it as certified support.
 
+## Windows launcher toolchain
+
+`run.bat` starts Java, the .NET Worker and the frontend through `scripts/Start-Mavis.ps1`. It builds the current checkout and uses the ignored backend settings; migrations stay disabled. The Java build requires JDK 21 and the Worker SDK is pinned by `MAVIS.Worker/global.json`.
+
+If the correct tools are not already on PATH, configure the existing installations in `.env.backend.local`:
+
+```dotenv
+MAVIS_JAVA_HOME=C:\path\to\jdk-21
+MAVIS_DOTNET_ROOT=C:\path\to\dotnet-10.0.204
+```
+
+The launcher checks these paths and sets JAVA_HOME, DOTNET_ROOT and PATH only for its child build/service processes. It does not change the machine's global configuration or download a new SDK. Optional `DOTNET_CLI_HOME` and `NUGET_PACKAGES` settings can reuse existing CLI/package caches. Leave these unset to retain the tools' normal defaults. Run `run.bat --check` to inspect Java `8081`, Worker `5082` and frontend `3000` after startup; the application URL is `http://127.0.0.1:3000/login`.
+
 ## Gmail and local SMTP
 
 Backend settings:

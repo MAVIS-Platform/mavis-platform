@@ -24,6 +24,7 @@ public class EvaluationFindingResponseDTO {
     private String severity;
     private String status;
     private String message;
+    private com.fasterxml.jackson.databind.JsonNode details;
 
     public static EvaluationFindingResponseDTO fromEntity(EvaluationFinding entity) {
         if (entity == null) {
@@ -41,6 +42,7 @@ public class EvaluationFindingResponseDTO {
                 .severity(entity.getSeverity())
                 .status(entity.getStatus())
                 .message(entity.getMessage())
+                .details(entity.getDetails())
                 .build();
     }
 }
