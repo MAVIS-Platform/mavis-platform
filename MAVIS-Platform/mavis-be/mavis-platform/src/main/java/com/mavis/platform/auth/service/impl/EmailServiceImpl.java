@@ -6,6 +6,8 @@ import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.MailException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -17,13 +19,17 @@ public class EmailServiceImpl implements EmailService {
 
     private final JavaMailSender javaMailSender;
 
+    @Value("${MAIL_FROM:${spring.mail.username:}}")
+    private String fromAddress;
+
     @Override
     @Async
     public void sendOtpEmail(String toEmail, String otpCode, String purpose) {
         try {
             MimeMessage message = javaMailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-
+            if (fromAddress == null || fromAddress.isBlank()) throw new MessagingException("SMTP sender is not configured");
+            helper.setFrom(fromAddress);
             helper.setTo(toEmail);
 
             String subject;
@@ -62,8 +68,9 @@ public class EmailServiceImpl implements EmailService {
             javaMailSender.send(message);
 
             log.info("Email OTP sent successfully to {} for purpose {}", toEmail, purpose);
-        } catch (MessagingException e) {
-            log.error("Failed to send OTP email to {}", toEmail, e);
+        } catch (MessagingException | MailException e) {
+            // SMTP exception text may contain provider/account details; never log OTP or credentials.
+            log.error("OTP email delivery failed; check SMTP sender, TLS and credentials ({})", e.getClass().getSimpleName());
         }
     }
 }

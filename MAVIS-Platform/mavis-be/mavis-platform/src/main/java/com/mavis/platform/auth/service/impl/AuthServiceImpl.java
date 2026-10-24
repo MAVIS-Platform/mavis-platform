@@ -32,13 +32,14 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.Optional;
-import java.util.Random;
+import java.security.SecureRandom;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AuthServiceImpl implements AuthService {
+    private static final SecureRandom OTP_RANDOM = new SecureRandom();
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -71,7 +72,7 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
 
         // Tạo mã OTP 6 số
-        String otpCode = String.format("%06d", new Random().nextInt(999999));
+        String otpCode = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
         UserOtp userOtp = UserOtp.builder()
                 .user(user)
                 .otpCode(otpCode)
@@ -102,8 +103,16 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Tài khoản đã được xác thực trước đó");
         }
 
+        if (!"PENDING_VERIFICATION".equals(user.getStatus())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản không ở trạng thái chờ xác thực");
+        }
+
         UserOtp userOtp = userOtpRepository.findFirstByUserAndOtpCodeAndIsUsedFalseOrderByCreatedAtDesc(user, request.getOtpCode())
                 .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không hợp lệ hoặc đã được sử dụng"));
+
+        if (!"EMAIL_VERIFICATION".equals(userOtp.getPurpose())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không dùng để xác thực email");
+        }
 
         if (userOtp.getExpiryTime().isBefore(OffsetDateTime.now(ZoneOffset.UTC))) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP đã hết hạn");
@@ -225,7 +234,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // Generate OTP
-        String otpCode = String.format("%06d", new Random().nextInt(999999));
+        String otpCode = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
         UserOtp userOtp = UserOtp.builder()
                 .user(user)
                 .otpCode(otpCode)
@@ -278,7 +287,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // Tạo OTP mới
-        String otpCode = String.format("%06d", new Random().nextInt(999999));
+        String otpCode = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
         UserOtp userOtp = UserOtp.builder()
                 .user(user)
                 .otpCode(otpCode)
