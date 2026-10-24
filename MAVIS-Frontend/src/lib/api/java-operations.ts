@@ -179,9 +179,44 @@ export async function executeJava(
         })),
     };
   };
-  const courseworkRuntime = (raw: unknown) => {
+  const courseworkRuntime = async (raw: unknown) => {
     const r = object.parse(raw);
     const execution = String(r["executionStatus"] ?? "UNKNOWN");
+    const config = object.safeParse(r["scenarioConfig"]),
+      planning = object.safeParse(config.success ? config.data["planning"] : undefined);
+    const plan = planning.success ? planning.data : {};
+    const traces: {
+      id: string;
+      from: string;
+      to: string;
+      durationMs: number | null;
+      uncertain: boolean;
+    }[] = [];
+    if (["COMPLETE", "PARTIAL"].includes(String(r["traceStatus"]))) {
+      const sequence = z
+        .object({
+          runtimeSessionId: z.string(),
+          steps: z.array(
+            z.object({
+              traceId: z.string().nullish(),
+              spanId: z.string().nullish(),
+              callerService: z.string(),
+              calleeService: z.string(),
+              durationMs: z.number().nonnegative().nullish(),
+            }),
+          ),
+        })
+        .parse(await get(`analyzer/runtime/sessions/${r["id"]}/sequence`));
+      if (sequence.runtimeSessionId !== r["id"]) throw new ApiError("contract", 502);
+      for (const [index, t] of sequence.steps.entries())
+        traces.push({
+          id: `${t.traceId ?? "unknown"}:${t.spanId ?? index}`,
+          from: t.callerService,
+          to: t.calleeService,
+          durationMs: t.durationMs ?? null,
+          uncertain: r["traceStatus"] !== "COMPLETE" || r["mappingStatus"] !== "MAPPED",
+        });
+    }
     const statuses: Record<string, string> = {
       NOT_STARTED: "pending",
       READY_FOR_DISPATCH: "pending",
@@ -198,9 +233,9 @@ export async function executeJava(
       id: r["id"],
       projectId: r["projectId"],
       snapshotId: r["sourceSnapshotId"],
-      scenarioId: null,
-      configurationRevision: null,
-      scenarioRevision: null,
+      scenarioId: plan["scenarioId"] ?? null,
+      configurationRevision: plan["configurationRevision"] ?? null,
+      scenarioRevision: plan["scenarioRevision"] ?? null,
       status: statuses[execution] ?? "unknown",
       executionStatus: execution,
       scenarioStatus: String(r["scenarioStatus"] ?? "UNKNOWN"),
@@ -213,8 +248,15 @@ export async function executeJava(
             ? "failed"
             : "unknown",
       approvedAt: null,
-      events: [],
-      traces: [],
+      events: r["createdAt"]
+        ? [
+            {
+              at: String(r["createdAt"]),
+              message: `Execution: ${execution}; scenario: ${r["scenarioStatus"]}; evidence: ${r["evidenceStatus"]}; cleanup: ${r["cleanupStatus"]}`,
+            },
+          ]
+        : [],
+      traces,
     };
   };
   const runtimeView = (raw: unknown) => {
@@ -275,6 +317,49 @@ export async function executeJava(
   const patch = (path: string, body: unknown) =>
     javaRequest(path, token, { method: "PATCH", body: JSON.stringify(body), signal });
   switch (operation) {
+    case "runtimeConfiguration":
+      return get(`analyzer/projects/${id(input, "projectId")}/runtime-plan`);
+    case "saveRuntimeConfiguration":
+      return javaRequest(`analyzer/projects/${id(input, "projectId")}/runtime-plan`, token, {
+        method: "PUT",
+        body: JSON.stringify(input),
+        signal,
+      });
+    case "scenarios":
+      return get(`analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios`);
+    case "createScenario":
+      return post(`analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios`, {
+        ...input,
+        expectedRevision: 0,
+      });
+    case "saveScenario":
+      return javaRequest(
+        `analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios/${id(input, "scenarioId")}`,
+        token,
+        { method: "PUT", body: JSON.stringify(input), signal },
+      );
+    case "startRuntime":
+      return courseworkRuntime(
+        await post(`analyzer/projects/${id(input, "projectId")}/runtime-plan/start`, input),
+      );
+    case "runtimeSessions":
+      return Promise.all(
+        list
+          .parse(
+            await get(
+              input["projectId"] === "*"
+                ? "admin/runtime-sessions"
+                : `analyzer/projects/${id(input, "projectId")}/runtime-sessions`,
+            ),
+          )
+          .map(courseworkRuntime),
+      );
+    case "runtimeSession":
+      return courseworkRuntime(await get(`analyzer/runtime/sessions/${id(input, "sessionId")}`));
+    case "stopRuntime":
+      return courseworkRuntime(
+        await post(`analyzer/runtime/sessions/${id(input, "sessionId")}/stop`),
+      );
     case "accounts":
       return list.parse(await get("admin/users")).map(account);
     case "setAccountLock":

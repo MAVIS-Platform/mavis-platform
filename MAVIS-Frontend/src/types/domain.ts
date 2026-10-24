@@ -112,11 +112,15 @@ export const modelSchema = z
 export type ArchitecturalModel = z.infer<typeof modelSchema>;
 export const runtimeConfigurationSchema = z.object({
   projectId: z.string(),
+  snapshotId: z.string().nullable().optional(),
+  modelId: z.string().nullable().optional(),
+  profile: z.record(z.unknown()).optional(),
+  configured: z.boolean().optional(),
   profileId: z.string(),
   supported: z.boolean(),
   prerequisites: z.array(z.string()),
   ready: z.boolean(),
-  revision: z.number().int().positive(),
+  revision: z.number().int().nonnegative(),
 });
 export const scenarioSchema = z.object({
   id: z.string(),
@@ -155,7 +159,7 @@ export const runtimeSessionSchema = z.object({
       id: z.string(),
       from: z.string(),
       to: z.string(),
-      durationMs: z.number().nonnegative(),
+      durationMs: z.number().nonnegative().nullable(),
       uncertain: z.boolean(),
     }),
   ),

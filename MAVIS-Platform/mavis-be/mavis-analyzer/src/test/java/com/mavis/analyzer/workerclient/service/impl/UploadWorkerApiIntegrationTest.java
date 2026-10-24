@@ -42,7 +42,7 @@ class UploadWorkerApiIntegrationTest {
     private AnnotationConfigWebApplicationContext spring;
     private MockMvc mvc;
     private JdbcTemplate db;
-    private UUID owner,project;
+    private UUID owner,project,outsider;
     private String previousAnalysisKey;
     private final ObjectMapper json=new ObjectMapper();
 
@@ -70,7 +70,8 @@ class UploadWorkerApiIntegrationTest {
         spring=new AnnotationConfigWebApplicationContext();spring.setServletContext(new MockServletContext());
         spring.getEnvironment().getPropertySources().addFirst(new MapPropertySource("integration",Map.of("it.upload-root",uploads.toString(),"mavis.storage.upload-dir",uploads.toString(),"it.service-key",validKey?"test-service-key":"wrong-key")));
         spring.register(WebConfig.class);spring.refresh();mvc=MockMvcBuilders.webAppContextSetup(spring).build();
-        db=new JdbcTemplate(spring.getBean(DriverManagerDataSource.class));owner=db.queryForObject("select id from users limit 1",UUID.class);project=UUID.randomUUID();
+        db=new JdbcTemplate(spring.getBean(DriverManagerDataSource.class));owner=db.queryForObject("select id from users limit 1",UUID.class);project=UUID.randomUUID();outsider=UUID.randomUUID();
+        db.update("insert into users(id,email,password_hash,full_name,role_id,status) values (?,?,?,?,(select id from roles where code='STUDENT'),'ACTIVE')",outsider,outsider+"@example.invalid","fixture-only","Other student");
         db.update("insert into projects(id,owner_id,name,project_type) values(?,?,?,?)",project,owner,"public API integration","PERSONAL");authenticate(owner);
     }
     private void authenticate(UUID user){SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(user.toString(),"test",List.of()));}
@@ -84,7 +85,7 @@ class UploadWorkerApiIntegrationTest {
         String snapshot=imported.required("snapshotId").asText();
         assertEquals(0,db.queryForObject("select count(*) from jobs where source_snapshot_id=?",Integer.class,UUID.fromString(snapshot)));
         mvc.perform(post("/api/v1/analyzer/snapshots/"+snapshot+"/analyze")).andExpect(status().isBadRequest());
-        authenticate(UUID.randomUUID());mvc.perform(post("/api/v1/analyzer/snapshots/"+snapshot+"/analyze").header("Idempotency-Key","foreign")).andExpect(status().isForbidden());authenticate(owner);
+        authenticate(outsider);mvc.perform(post("/api/v1/analyzer/snapshots/"+snapshot+"/analyze").header("Idempotency-Key","foreign")).andExpect(status().isForbidden());authenticate(owner);
         if(previousAnalysisKey!=null)mvc.perform(post("/api/v1/analyzer/snapshots/"+snapshot+"/analyze").header("Idempotency-Key",previousAnalysisKey)).andExpect(status().isConflict());
         String key=UUID.randomUUID().toString();
         previousAnalysisKey=key;
@@ -135,7 +136,7 @@ class UploadWorkerApiIntegrationTest {
         assertEquals(accepted.required("snapshotId").asText(),evidence.get(0).required("sourceSnapshotId").asText());assertTrue(evidence.get(0).required("provenance").hasNonNull("fileHash"));
         positions.withArray("nodes").removeAll().addObject().put("id",UUID.randomUUID().toString()).put("x",1).put("y",2);
         mvc.perform(put("/api/v1/analyzer/diagrams/"+diagramId+"/layout").contentType("application/json").content(positions.toString())).andExpect(status().isBadRequest());
-        authenticate(UUID.randomUUID());mvc.perform(get("/api/v1/analyzer/diagrams/"+diagramId)).andExpect(status().isForbidden());
+        authenticate(outsider);mvc.perform(get("/api/v1/analyzer/diagrams/"+diagramId)).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/analyzer/evidences/element/"+element)).andExpect(status().isForbidden());authenticate(owner);
         // Revision creation must preserve source evidence and identity while changing only the new model.
         String type=db.queryForObject("select id from model_elements where model_version_id=? and name='App' and element_type='CLASS_INTERFACE'",UUID.class,UUID.fromString(model)).toString();
@@ -149,7 +150,7 @@ class UploadWorkerApiIntegrationTest {
         var compared=mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",model).param("targetVersionId",revised)).andExpect(status().isOk()).andReturn();
         var diff=json.readTree(compared.getResponse().getContentAsString()).required("data").required("elements");
         assertEquals(1,diff.required("modified").size());assertEquals(0,diff.required("added").size());assertEquals(0,diff.required("removed").size());
-        mvc.perform(post("/api/v1/analyzer/models/"+model+"/revisions").contentType("application/json").content(edit.toString())).andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/analyzer/models/"+model+"/revisions").contentType("application/json").content(edit.toString())).andExpect(status().isConflict());
         var add=json.createObjectNode();var additions=add.putArray("addedElements");
         additions.addObject().put("name","Gateway").put("elementType","SERVICE_CONTAINER").put("languageStack","JAVA");
         additions.addObject().put("name","Orders").put("elementType","SERVICE_CONTAINER").put("languageStack","CSHARP_DOTNET");
@@ -179,8 +180,8 @@ class UploadWorkerApiIntegrationTest {
         String removed=json.readTree(removedResponse.getResponse().getContentAsString()).required("data").required("id").asText();
         var removeDiff=mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",added).param("targetVersionId",removed)).andExpect(status().isOk()).andReturn();
         var removedData=json.readTree(removeDiff.getResponse().getContentAsString()).required("data");assertEquals(1,removedData.required("elements").required("removed").size());assertEquals(1,removedData.required("relationships").required("removed").size());
-        authenticate(UUID.randomUUID());mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",model).param("targetVersionId",revised)).andExpect(status().isForbidden());authenticate(owner);
-        authenticate(UUID.randomUUID());mvc.perform(get("/api/v1/analyzer/jobs/"+accepted.required("jobId").asText()+"/attempts")).andExpect(status().isForbidden());
+        authenticate(outsider);mvc.perform(get("/api/v1/analyzer/models/compare").param("baseVersionId",model).param("targetVersionId",revised)).andExpect(status().isForbidden());authenticate(owner);
+        authenticate(outsider);mvc.perform(get("/api/v1/analyzer/jobs/"+accepted.required("jobId").asText()+"/attempts")).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/analyzer/jobs/"+accepted.required("jobId").asText())).andExpect(status().isForbidden());
         mvc.perform(get("/api/v1/analyzer/projects/"+project+"/jobs")).andExpect(status().isForbidden());
         mvc.perform(post("/api/v1/analyzer/jobs/"+accepted.required("jobId").asText()+"/cancel")).andExpect(status().isForbidden());authenticate(owner);
@@ -197,7 +198,7 @@ class UploadWorkerApiIntegrationTest {
         assertEquals("NOT_APPLICABLE",complete.required("dotnetStatus").asText());assertTrue(complete.required("promotedLatest").asBoolean());
     }
     @Test void uploadOwnershipAndInvalidFileDoNotCreateJobs()throws Exception {
-        start(true);authenticate(UUID.randomUUID());
+        start(true);authenticate(outsider);
         mvc.perform(multipart("/api/v1/analyzer/upload").file(new MockMultipartFile("file","source.zip","application/zip",zip(Map.of("App.csproj","<Project />")))).param("projectId",project.toString())).andExpect(status().isForbidden());
         authenticate(owner);
         mvc.perform(multipart("/api/v1/analyzer/upload").file(new MockMultipartFile("file","source.txt","text/plain","bad".getBytes())).param("projectId",project.toString())).andExpect(status().isBadRequest());

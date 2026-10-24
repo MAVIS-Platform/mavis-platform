@@ -153,7 +153,7 @@ class SubmissionServiceImplTest {
                 .id(runtimeSessionId)
                 .project(project)
                 .sourceSnapshot(snapshot)
-                .scenarioStatus("PASSED")
+                .scenarioStatus("PASSED").executionStatus("COMPLETED").evidenceStatus("AVAILABLE").cleanupStatus("CONFIRMED").runnerReceiptJson(objectMapper.createObjectNode())
                 .traceStatus("COMPLETE")
                 .build();
     }

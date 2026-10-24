@@ -154,6 +154,7 @@ class RunnerReceiptIngestServiceImplTest {
         lenient().when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
         lenient().when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
         lenient().when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(baseModelVersion));
+        lenient().when(modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId)).thenReturn(Optional.of(baseModelVersion));
         lenient().when(modelVersionRepository.findMaxRevisionByProjectId(projectId)).thenReturn(1);
         lenient().when(modelVersionRepository.save(any(ModelVersion.class))).thenAnswer(inv -> {
             ModelVersion mv = inv.getArgument(0);
@@ -456,4 +457,12 @@ class RunnerReceiptIngestServiceImplTest {
         assertThat(ack.getEnrichedModelVersionId()).isNotNull();
         verify(modelVersionRepository, never()).invalidatePreviousVersions(any(), any());
     }
+ @Test void lateReceiptCannotReplaceANewerStaticOrConfirmedRevision(){
+  when(modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId)).thenReturn(Optional.of(ModelVersion.builder().id(UUID.randomUUID()).project(project).revision(2).isLatestValid(true).build()));
+  var span=RunnerCorrelatedSpanDTO.builder().traceId("4bf92f3577b34da6a3ce929d0e0e4736").spanId("00f067aa0ba902b7").runtimeService("order-service").modelServiceId(serviceAId.toString()).durationNanoseconds("1000000").httpStatusCode(200).build();
+  var trace=RunnerTraceCorrelationDTO.builder().sessionId(sessionId.toString()).modelVersionId(modelVersionId.toString()).spans(List.of(span)).causalEdges(List.of()).warnings(List.of()).build();
+  var outcome=RunnerOutcomeDTO.builder().executionStatus("Completed").scenarioStatus("Passed").evidenceStatus("Available").cleanupStatus("Confirmed").traceQuality("CompleteForCapturedData").mappingStatus("Mapped").trace(trace).build();
+  var result=runnerReceiptIngestService.ingestRunnerReceipt(sessionId,createValidReceiptBuilder().outcome(outcome).build());
+  assertThat(result.getIsLatestValid()).isFalse();assertThat(session.getPublicationGateStatus()).isEqualTo("HELD_NON_PROMOTED");verify(modelVersionRepository,never()).invalidatePreviousVersions(any(),any());
+ }
 }

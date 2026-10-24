@@ -140,7 +140,10 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
             boolean scenarioPassed = "PASSED".equalsIgnoreCase(runtimeSession.getScenarioStatus());
             boolean traceValid = "COMPLETE".equalsIgnoreCase(runtimeSession.getTraceStatus()) || "PARTIAL".equalsIgnoreCase(runtimeSession.getTraceStatus());
-            if (!scenarioPassed || !traceValid) {
+            boolean verifiedExecution="COMPLETED".equalsIgnoreCase(runtimeSession.getExecutionStatus())
+                && "AVAILABLE".equalsIgnoreCase(runtimeSession.getEvidenceStatus()) && "CONFIRMED".equalsIgnoreCase(runtimeSession.getCleanupStatus())
+                && runtimeSession.getRunnerReceiptJson()!=null;
+            if (!scenarioPassed || !traceValid || !verifiedExecution) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Đề bài yêu cầu Runtime Trace hợp lệ đã hoàn tất (PASSED) trên đúng SourceSnapshot của mô hình");
             }
         }

@@ -15,7 +15,7 @@ import java.util.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 @SpringBootTest(properties="mavis.security.dev-bypass-enabled=false") @AutoConfigureMockMvc @Transactional @DirtiesContext(classMode=DirtiesContext.ClassMode.AFTER_CLASS)
-class Stage15AdminApiIntegrationTest {
+class Stage15AdminApiIntegrationTest extends ApiIntegrationContext {
  @Autowired MockMvc mvc;@Autowired ObjectMapper json;@Autowired UserRepository users;@Autowired RoleRepository roles;@Autowired JwtUtil jwt;
  User user(String role){return users.saveAndFlush(User.builder().email(UUID.randomUUID()+"@example.invalid").fullName(role).status("ACTIVE").passwordHash("irrelevant").role(roles.findByCode(role).orElseThrow()).build());}
  String auth(User u){return "Bearer "+jwt.generateToken(u.getEmail(),u.getId(),u.getRole().getCode());}

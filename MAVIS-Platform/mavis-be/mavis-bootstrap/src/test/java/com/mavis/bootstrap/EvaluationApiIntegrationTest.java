@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class EvaluationApiIntegrationTest {
+class EvaluationApiIntegrationTest extends ApiIntegrationContext {
 
     @Autowired
     private MockMvc mockMvc;
@@ -203,6 +203,7 @@ class EvaluationApiIntegrationTest {
 
         // --- BƯỚC 1: POST /api/v1/analyzer/models/{modelVersionId}/evaluate ---
         MvcResult evalResult = mockMvc.perform(post("/api/v1/analyzer/models/{modelVersionId}/evaluate", modelVersion.getId())
+                        .header("X-Test-User-Email",user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -237,6 +238,7 @@ class EvaluationApiIntegrationTest {
 
         // --- BƯỚC 2: GET /api/v1/analyzer/models/{modelVersionId}/evaluations ---
         MvcResult getEvaluationsResult = mockMvc.perform(get("/api/v1/analyzer/models/{modelVersionId}/evaluations", modelVersion.getId())
+                        .header("X-Test-User-Email",user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -254,6 +256,8 @@ class EvaluationApiIntegrationTest {
 
         // --- BƯỚC 3: GET /api/v1/analyzer/evaluations/{evaluationRunId}/findings ---
         MvcResult getFindingsResult = mockMvc.perform(get("/api/v1/analyzer/evaluations/{evaluationRunId}/findings", evaluationRunId)
+                        .header("X-Test-User-Email",user.getEmail())
+                        .header("X-Test-User-Email",user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))

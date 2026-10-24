@@ -93,7 +93,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                         String entryName = entry.getName().toLowerCase();
                         if (entryName.endsWith("docker-compose.yml") || entryName.endsWith("docker-compose.yaml")) {
                             try (InputStream is = zipFile.getInputStream(entry)) {
-                                String yamlContent = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                                String yamlContent = new String(readBounded(is), StandardCharsets.UTF_8);
                                 return composePreflightValidator.validate(yamlContent);
                             }
                         }
@@ -286,7 +286,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
-        runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
+        runnerServiceAuthGuard.requireRunnerService();
 
         String resourceProject = request.getResourceProject();
         if (resourceProject == null || !RESOURCE_PROJECT_PATTERN.matcher(resourceProject).matches()
@@ -428,7 +428,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                             String entryName = entry.getName().toLowerCase();
                             if (entryName.endsWith("docker-compose.yml") || entryName.endsWith("docker-compose.yaml")) {
                                 try (InputStream is = zipFile.getInputStream(entry)) {
-                                    composeYaml = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                                    composeYaml = new String(readBounded(is), StandardCharsets.UTF_8);
                                     break;
                                 }
                             }
@@ -547,5 +547,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         var pinnedProfile=session.getScenarioConfig()==null?objectMapper.createObjectNode():session.getScenarioConfig().path("profile");
         if(pinnedProfile.path("memoryMiB").asInt(256)>limit.memoryMiB() || pinnedProfile.path("cpus").asDouble(1)>limit.cpus() || pinnedProfile.path("timeoutSeconds").asInt(120)>limit.timeoutSeconds())
             throw new BusinessException(ErrorCode.CONFLICT,"Pinned profile exceeds current administrative limits; create a new session");
+    }
+    private static byte[] readBounded(InputStream input) throws java.io.IOException {
+        byte[] bytes=input.readNBytes(1_048_577);
+        if(bytes.length>1_048_576)throw new java.io.IOException("Compose file exceeds 1 MiB");
+        return bytes;
     }
 }

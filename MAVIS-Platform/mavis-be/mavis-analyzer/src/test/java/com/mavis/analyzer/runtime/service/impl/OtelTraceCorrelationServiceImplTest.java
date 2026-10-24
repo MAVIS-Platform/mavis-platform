@@ -152,6 +152,7 @@ class OtelTraceCorrelationServiceImplTest {
         when(modelVersionRepository.save(any(ModelVersion.class))).thenAnswer(inv -> {
             ModelVersion mv = inv.getArgument(0);
             assertThat(mv.getBaseModelVersion()).isSameAs(baseVersion);
+            assertThat(mv.getIsLatestValid()).isFalse();
             mv.setId(UUID.randomUUID());
             return mv;
         });

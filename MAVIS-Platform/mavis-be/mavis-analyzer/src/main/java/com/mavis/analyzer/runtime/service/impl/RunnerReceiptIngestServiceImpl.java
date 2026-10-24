@@ -77,7 +77,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
         // Phân quyền kép
-        runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
+        runnerServiceAuthGuard.requireRunnerService();
         if (session.getRecoveryResultJson() != null) {
             throw new BusinessException(ErrorCode.CONFLICT, "Allocation was already recovered; late execution receipt rejected");
         }
@@ -274,7 +274,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 && Boolean.TRUE.equals(receipt.getSandboxEnforcementConfirmed())
                 && "Mapped".equalsIgnoreCase(outcome.getMappingStatus())
                 && !hasStructuralTraceWarning
-                && correspondenceOk;
+                && correspondenceOk
+                && modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(session.getProject().getId())
+                    .map(latest->latest.getId().equals(session.getModelVersion().getId())).orElse(false);
 
         // Nếu spans rỗng -> không tạo ModelVersion mới
         if (spans.isEmpty()) {
@@ -715,7 +717,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
-        runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
+        runnerServiceAuthGuard.requireRunnerService();
 
         String resProj = resourceProject != null && !resourceProject.isBlank()
                 ? resourceProject

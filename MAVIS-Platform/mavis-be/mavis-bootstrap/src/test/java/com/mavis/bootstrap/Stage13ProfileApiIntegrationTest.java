@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest @AutoConfigureMockMvc @Transactional
-class Stage13ProfileApiIntegrationTest {
+class Stage13ProfileApiIntegrationTest extends ApiIntegrationContext {
     @Autowired MockMvc mvc; @Autowired UserRepository users; @Autowired RoleRepository roles;
     @Autowired UserOtpRepository otps; @Autowired PasswordEncoder passwords; @Autowired JwtUtil jwt;
     @Autowired EntityManager em;
