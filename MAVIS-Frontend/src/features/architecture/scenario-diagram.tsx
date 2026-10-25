@@ -1,24 +1,49 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { DesignedScenario } from "./designed-scenario";
 import { useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { SelectField } from "@/components/shared/forms";
 import { RequestState } from "@/components/shared/request-state";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { SelectablePreview, download } from "./selectable-diagram-preview";
+import {
+  createDesignedCopyFromObserved,
+  interactionToDrawioXml,
+  projectObservedSequenceToInteraction,
+  verifyObservedLineage,
+  type InteractionDocument,
+} from "./scenario-design";
+import {
+  resolveSequenceSelectionContext,
+  type SequenceSelectionContext,
+} from "./three-e-content";
+
 function ObservedScenarioDiagram({
   model,
+  selectedId,
   onSelect,
+  onSelectSequence,
+  onCreateDesignedCopy,
 }: {
   model: ArchitecturalModel;
+  selectedId?: string | null | undefined;
   onSelect: (id: string) => void;
+  onSelectSequence?:
+    | ((id: string | null, seqCtx: SequenceSelectionContext | null) => void)
+    | undefined;
+  onCreateDesignedCopy: (copy: InteractionDocument) => void;
 }) {
   const sessions = useApiQuery("runtimeReadSessions", { projectId: model.projectId });
   const [session, setSession] = useState(""),
     [trace, setTrace] = useState(""),
     [page, setPage] = useState(0);
+
   const available = (sessions.data ?? []).filter(
-    (s) => s.modelId === model.id && s.snapshotId === model.snapshotId,
+    (s) =>
+      (s.modelId === model.id || s.enrichedModelId === model.id) &&
+      (!s.snapshotId || s.snapshotId === model.snapshotId),
   );
   const selected = available.find((s) => s.id === session) ?? available[0];
   const sequence = useApiQuery(
@@ -26,28 +51,62 @@ function ObservedScenarioDiagram({
     { sessionId: selected?.id ?? "" },
     { enabled: !!selected },
   );
-  const valid = sequence.data?.modelId === model.id;
-  const traces = Array.from(
-    new Set((valid ? (sequence.data?.steps ?? []) : []).map((s) => s.traceId ?? "unidentified")),
-  );
-  const chosen = traces.includes(trace) ? trace : traces[0];
-  const steps = (valid ? (sequence.data?.steps ?? []) : [])
-    .filter((s) => (s.traceId ?? "unidentified") === chosen)
-    .sort((a, b) => (a.stepOrder ?? 0) - (b.stepOrder ?? 0));
-  const visible = steps.slice(page * 30, (page + 1) * 30);
-  const names = Array.from(
-    new Set(
-      visible
-        .flatMap((s) => [s.callerService, s.calleeService])
-        .filter((name): name is string => !!name),
-    ),
-  );
-  const canonical = (name: string) => {
-    const matches = model.elements.filter((n) => n.name === name);
-    return matches.length === 1 ? matches[0] : undefined;
-  };
-  const width = Math.max(720, names.length * 220),
-    height = 140 + visible.length * 64;
+
+  const lineageCheck = sequence.data
+    ? verifyObservedLineage(sequence.data, model, selected?.modelId)
+    : { valid: false, summary: "" };
+  const valid = lineageCheck.valid;
+
+  const projection = useMemo(() => {
+    if (!sequence.data || !valid) return null;
+    return projectObservedSequenceToInteraction(sequence.data, model, {
+      traceId: trace || null,
+      page,
+      pageSize: 30,
+      scenarioName: selected?.scenarioName ?? null,
+    });
+  }, [sequence.data, valid, model, selected?.scenarioName, trace, page]);
+
+  const traces = projection?.availableTraceIds ?? [];
+  const chosen = trace && traces.includes(trace) ? trace : (traces[0] ?? "");
+  const interaction = projection?.document ?? null;
+
+  let drawioXml = "";
+  if (interaction && interaction.messages.length > 0) {
+    try {
+      drawioXml = interactionToDrawioXml(interaction, model);
+    } catch {
+      drawioXml = "";
+    }
+  }
+
+  function handleSelectObservedItem(itemId: string) {
+    if (!interaction) return;
+    const seqCtx = resolveSequenceSelectionContext(interaction, itemId, {
+      sessionId: selected?.id ?? null,
+      traceId: chosen || null,
+    });
+    let canonicalTargetId = itemId;
+    if (
+      seqCtx.itemKind === "participant" &&
+      seqCtx.modelElementId &&
+      seqCtx.resolutionStatus === "RESOLVED"
+    ) {
+      canonicalTargetId = seqCtx.modelElementId;
+    } else if (
+      seqCtx.itemKind === "message" &&
+      seqCtx.sourceRelationshipIds &&
+      seqCtx.sourceRelationshipIds.length === 1
+    ) {
+      canonicalTargetId = seqCtx.sourceRelationshipIds[0]!;
+    }
+    if (onSelectSequence) {
+      onSelectSequence(canonicalTargetId, seqCtx);
+    } else {
+      onSelect(canonicalTargetId);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <RequestState query={sessions}>
@@ -65,6 +124,7 @@ function ObservedScenarioDiagram({
                 setSession(v);
                 setTrace("");
                 setPage(0);
+                onSelectSequence?.(null, null);
               }}
               options={available.map((s) => ({
                 value: s.id,
@@ -73,134 +133,190 @@ function ObservedScenarioDiagram({
             />
             <RequestState query={sequence}>
               {sequence.data && !valid ? (
-                <p role="alert">The trace belongs to another model revision.</p>
-              ) : !steps.length ? (
+                <p role="alert" className="rounded-lg border border-destructive p-3 text-sm text-destructive">
+                  The trace belongs to another model revision ({lineageCheck.summary}).
+                </p>
+              ) : !interaction || !interaction.messages.length ? (
                 <p className="text-sm text-muted-foreground">
                   No sequence evidence is available for this scenario.
                 </p>
               ) : (
                 <>
-                  {traces.length > 1 && (
-                    <SelectField
-                      label="Observed trace"
-                      value={chosen ?? ""}
-                      onChange={(v) => {
-                        setTrace(v);
-                        setPage(0);
-                      }}
-                      options={traces.map((id) => ({ value: id, label: id }))}
-                    />
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Observed interactions · steps {page * 30 + 1}–{page * 30 + visible.length} of{" "}
-                    {steps.length}. Order reflects the recorded sequence, not proof of thread
-                    synchronization.
-                  </p>
-                  <div className="max-h-[680px] overflow-auto rounded-xl border bg-card">
-                    <svg width={width} height={height} aria-label="Observed scenario diagram">
-                      {names.map((name, i) => {
-                        const node = canonical(name),
-                          x = 110 + i * 220;
-                        return (
-                          <g key={name}>
-                            <line
-                              x1={x}
-                              y1={70}
-                              x2={x}
-                              y2={height - 20}
-                              stroke="var(--border)"
-                              strokeDasharray="4 4"
-                            />
-                            <g
-                              role={node ? "button" : undefined}
-                              tabIndex={node ? 0 : undefined}
-                              aria-label={node ? `Select ${name}` : undefined}
-                              onClick={() => node && onSelect(node.id)}
-                              onKeyDown={(e) => {
-                                if (node && e.key === "Enter") onSelect(node.id);
-                              }}
-                              className={node ? "cursor-pointer" : ""}
-                            >
-                              <rect
-                                x={x - 90}
-                                y={14}
-                                width={180}
-                                height={48}
-                                rx={6}
-                                fill="var(--card)"
-                                stroke="var(--border)"
-                              />
-                              <text
-                                x={x}
-                                y={43}
-                                textAnchor="middle"
-                                fontSize={12}
-                                fill="var(--foreground)"
-                              >
-                                {name}
-                              </text>
-                            </g>
-                          </g>
-                        );
-                      })}
-                      {visible.map((step, i) => {
-                        const from = 110 + names.indexOf(step.callerService ?? "") * 220,
-                          to = 110 + names.indexOf(step.calleeService ?? "") * 220,
-                          y = 110 + i * 64;
-                        const direction = to >= from ? 1 : -1;
-                        return (
-                          <g key={`${step.stepOrder}:${i}`}>
-                            <title>
-                              {step.operation ?? "Observed call"} · {step.durationMs ?? "?"}ms
-                            </title>
-                            {from === to ? (
-                              <path
-                                d={`M ${from} ${y} h 45 v 24 h -45`}
-                                fill="none"
-                                stroke="var(--primary)"
-                              />
-                            ) : (
-                              <>
-                                <line x1={from} x2={to} y1={y} y2={y} stroke="var(--primary)" />
-                                <path
-                                  d={`M ${to - direction * 8} ${y - 4} L ${to} ${y} L ${to - direction * 8} ${y + 4}`}
-                                  fill="none"
-                                  stroke="var(--primary)"
-                                />
-                              </>
-                            )}
-                            <text
-                              x={(from + to) / 2}
-                              y={y - 9}
-                              fontSize={11}
-                              textAnchor="middle"
-                              fill="var(--foreground)"
-                            >
-                              {String(step.stepOrder ?? page * 30 + i + 1)}. {step.httpMethod ?? ""}{" "}
-                              {(step.operation ?? "Observed interaction").slice(0, 50)}
-                            </text>
-                          </g>
-                        );
-                      })}
-                    </svg>
-                  </div>
-                  {steps.length > 30 && (
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        disabled={!page}
-                        onClick={() => setPage((p) => p - 1)}
-                      >
-                        Previous steps
-                      </Button>
-                      <Button
-                        variant="outline"
-                        disabled={(page + 1) * 30 >= steps.length}
-                        onClick={() => setPage((p) => p + 1)}
-                      >
-                        Next steps
-                      </Button>
+                  <div className="space-y-3 rounded-xl border bg-card p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge variant="runtime">OBSERVED RUNTIME</Badge>
+                        {sequence.data?.traceStatus && (
+                          <Badge variant="outline">Trace: {sequence.data.traceStatus}</Badge>
+                        )}
+                        <Badge variant="outline">
+                          Semantic: {interaction.semanticStatus}
+                        </Badge>
+                        {interaction.limitations.map((lim: string) => (
+                          <Badge key={lim} variant="secondary" className="font-mono text-[10px]">
+                            {lim}
+                          </Badge>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const copy = createDesignedCopyFromObserved(
+                              interaction,
+                              model,
+                              `${selected?.scenarioName ?? "Observed scenario"} (Designed copy)`,
+                            );
+                            onCreateDesignedCopy(copy);
+                          }}
+                        >
+                          Create designed copy
+                        </Button>
+                        {drawioXml && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              download(
+                                drawioXml,
+                                `mavis-observed-sequence-${selected?.id.slice(0, 8) ?? "trace"}.drawio`,
+                                "application/xml",
+                              )
+                            }
+                          >
+                            Download .drawio
+                          </Button>
+                        )}
+                      </div>
                     </div>
+
+                    {traces.length > 1 && (
+                      <SelectField
+                        label="Observed trace"
+                        value={chosen}
+                        onChange={(v) => {
+                          setTrace(v);
+                          setPage(0);
+                          onSelectSequence?.(null, null);
+                        }}
+                        options={traces.map((id) => ({ value: id, label: id }))}
+                      />
+                    )}
+
+                    {projection?.paginationSplitWarning && (
+                      <p
+                        role="status"
+                        data-pagination-split-warning
+                        className="rounded-md border border-amber-500/50 bg-amber-500/10 p-2.5 text-xs"
+                      >
+                        {projection.paginationSplitWarning}
+                      </p>
+                    )}
+
+                    <p className="text-xs text-muted-foreground">
+                      Observed interactions · steps {page * 30 + 1}–
+                      {page * 30 + interaction.messages.length} of {projection?.totalSteps ?? 0}.
+                      Order reflects recorded partial order &amp; span causality; span{" "}
+                      <code>endTime</code> does not fabricate synthetic <code>REPLY</code> messages,
+                      and single traces do not infer <code>alt</code>/<code>opt</code>/
+                      <code>loop</code> fragments.
+                    </p>
+
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Observed Lifelines ({interaction.participants.length}):
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {interaction.participants.map((p) => (
+                          <Button
+                            key={p.participantId}
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => handleSelectObservedItem(p.participantId)}
+                          >
+                            {p.name} [{p.resolutionStatus}]
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Observed Steps ({interaction.messages.length}):
+                      </p>
+                      <ol aria-label="Observed sequence steps" className="space-y-1.5">
+                        {interaction.messages.map((m) => {
+                          const fromP = interaction.participants.find(
+                            (p) => p.participantId === m.fromParticipantId,
+                          );
+                          const toP = interaction.participants.find(
+                            (p) => p.participantId === m.toParticipantId,
+                          );
+                          return (
+                            <li
+                              key={m.messageId}
+                              className="flex flex-wrap items-center justify-between gap-2 rounded border bg-background p-2 text-xs"
+                            >
+                              <button
+                                type="button"
+                                className="text-left font-medium underline-offset-4 hover:underline"
+                                onClick={() => handleSelectObservedItem(m.messageId)}
+                              >
+                                #{m.sequenceIndex} {fromP?.name ?? m.fromParticipantId} →{" "}
+                                {toP?.name ?? m.toParticipantId} · {m.label}
+                              </button>
+                              <span className="font-mono text-[11px] text-muted-foreground">
+                                {m.messageSort}
+                                {m.durationMs !== null && m.durationMs !== undefined
+                                  ? ` · ${m.durationMs}ms`
+                                  : ""}
+                                {m.httpStatusCode !== null && m.httpStatusCode !== undefined
+                                  ? ` · HTTP ${m.httpStatusCode}`
+                                  : ""}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    </div>
+
+                    {(projection?.totalSteps ?? 0) > 30 && (
+                      <div className="flex gap-2 pt-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!page}
+                          onClick={() => {
+                            setPage((p) => p - 1);
+                            onSelectSequence?.(null, null);
+                          }}
+                        >
+                          Previous steps
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={(page + 1) * 30 >= (projection?.totalSteps ?? 0)}
+                          onClick={() => {
+                            setPage((p) => p + 1);
+                            onSelectSequence?.(null, null);
+                          }}
+                        >
+                          Next steps
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {drawioXml && (
+                    <SelectablePreview
+                      xml={drawioXml}
+                      title={`4+1 · Observed Scenario · ${interaction.name}`}
+                      selectedId={selectedId ?? null}
+                      onSelect={(hitId) => handleSelectObservedItem(hitId)}
+                    />
                   )}
                 </>
               )}
@@ -214,9 +330,20 @@ function ObservedScenarioDiagram({
 
 export function ScenarioDiagram(props: {
   model: ArchitecturalModel;
+  selectedId?: string | null | undefined;
   onSelect: (id: string) => void;
+  onSelectSequence?:
+    | ((id: string | null, seqCtx: SequenceSelectionContext | null) => void)
+    | undefined;
 }) {
   const [mode, setMode] = useState<"designed" | "observed">("designed");
+  const [copiedInteraction, setCopiedInteraction] = useState<InteractionDocument | null>(null);
+
+  function switchMode(nextMode: "designed" | "observed") {
+    setMode(nextMode);
+    props.onSelectSequence?.(null, null);
+  }
+
   return (
     <div className="space-y-4">
       <div role="tablist" aria-label="Scenario source" className="flex gap-2">
@@ -224,7 +351,7 @@ export function ScenarioDiagram(props: {
           role="tab"
           aria-selected={mode === "designed"}
           variant={mode === "designed" ? "default" : "outline"}
-          onClick={() => setMode("designed")}
+          onClick={() => switchMode("designed")}
         >
           Designed scenario
         </Button>
@@ -232,15 +359,27 @@ export function ScenarioDiagram(props: {
           role="tab"
           aria-selected={mode === "observed"}
           variant={mode === "observed" ? "default" : "outline"}
-          onClick={() => setMode("observed")}
+          onClick={() => switchMode("observed")}
         >
           Observed runtime
         </Button>
       </div>
       <div hidden={mode !== "designed"}>
-        <DesignedScenario {...props} />
+        <DesignedScenario
+          {...props}
+          initialInteraction={copiedInteraction}
+          onConsumedInitialInteraction={() => setCopiedInteraction(null)}
+        />
       </div>
-      {mode === "observed" && <ObservedScenarioDiagram {...props} />}
+      {mode === "observed" && (
+        <ObservedScenarioDiagram
+          {...props}
+          onCreateDesignedCopy={(copy) => {
+            setCopiedInteraction(copy);
+            switchMode("designed");
+          }}
+        />
+      )}
     </div>
   );
 }

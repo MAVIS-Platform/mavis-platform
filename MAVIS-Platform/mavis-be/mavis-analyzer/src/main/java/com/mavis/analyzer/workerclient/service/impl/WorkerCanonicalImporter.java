@@ -25,6 +25,22 @@ public class WorkerCanonicalImporter {
         var byId=new LinkedHashMap<String,ModelElement>();
         for(var element:result.canonical().elements()) {
             ObjectNode properties=json.valueToTree(element.properties()==null?Map.of():element.properties());
+            if (properties.has("umlClassifierJson") && properties.get("umlClassifierJson").isTextual()) {
+                try {
+                    var parsedUml = json.readTree(properties.get("umlClassifierJson").asText());
+                    properties.set("umlClassifier", parsedUml);
+                    if (parsedUml.hasNonNull("qualifiedName") && !properties.hasNonNull("qualifiedName")) {
+                        properties.put("qualifiedName", parsedUml.get("qualifiedName").asText());
+                    }
+                    if (parsedUml.hasNonNull("packageName") && !properties.hasNonNull("packageName")) {
+                        properties.put("packageName", parsedUml.get("packageName").asText());
+                    }
+                    if (parsedUml.hasNonNull("typeKind") && !properties.hasNonNull("typeKind")) {
+                        properties.put("typeKind", parsedUml.get("typeKind").asText());
+                    }
+                } catch (Exception ignored) {
+                }
+            }
             properties.put("workerLogicalId",element.id());properties.put("workerProjectPath",element.projectPath());
             properties.put("workerResolutionStatus",element.resolutionStatus());properties.put("adapterVersion",result.analyzerVersion());
             properties.put("requiresCanonicalMerge",true);
@@ -43,7 +59,47 @@ public class WorkerCanonicalImporter {
         for(var relation:result.canonical().relationships()) {
             ObjectNode properties=json.createObjectNode().put("workerLogicalId",relation.id()).put("dependencyKind",relation.dependencyKind())
                     .put("resolutionStatus",relation.resolutionStatus()).put("sourceOrigin",relation.origin()).put("requiresCanonicalMerge",true);
-            relById.put(relation.id(),ModelRelationship.builder().modelVersion(version).sourceElement(byId.get(relation.fromId())).targetElement(byId.get(relation.toId()))
+            if (relation.dependencyKind() != null) {
+                String umlRelKind = switch (relation.dependencyKind().toUpperCase(Locale.ROOT)) {
+                    case "INHERITS", "GENERALIZATION" -> "GENERALIZATION";
+                    case "IMPLEMENTS", "REALIZATION" -> "REALIZATION";
+                    case "ASSOCIATION" -> "ASSOCIATION";
+                    case "DI", "CODEDEPENDENCY", "DEPENDENCY" -> "DEPENDENCY";
+                    default -> null;
+                };
+                if (umlRelKind != null) {
+                    properties.put("umlRelationKind", umlRelKind);
+                    properties.put("multiplicityStatus", "UNKNOWN");
+                    properties.put("provenance", "SOURCE_EXTRACTED");
+                }
+            }
+            var srcEl = byId.get(relation.fromId());
+            var tgtEl = byId.get(relation.toId());
+            if (srcEl != null && tgtEl != null && srcEl.getProperties() != null && srcEl.getProperties().has("umlClassifier")) {
+                var structuralRels = srcEl.getProperties().path("umlClassifier").path("structuralRelations");
+                if (structuralRels.isArray()) {
+                    for (var sr : structuralRels) {
+                        String srTarget = sr.path("targetType").asText("");
+                        String tgtQualified = tgtEl.getProperties() != null ? tgtEl.getProperties().path("qualifiedName").asText(tgtEl.getName()) : tgtEl.getName();
+                        if (srTarget.equals(tgtEl.getName()) || srTarget.equals(tgtQualified)) {
+                            if (sr.hasNonNull("umlRelationKind")) {
+                                properties.put("umlRelationKind", sr.get("umlRelationKind").asText());
+                            }
+                            if (sr.hasNonNull("roleName")) {
+                                properties.put("roleName", sr.get("roleName").asText());
+                            }
+                            if (sr.hasNonNull("memberName")) {
+                                properties.put("memberName", sr.get("memberName").asText());
+                            }
+                            if (sr.hasNonNull("memberSignature")) {
+                                properties.put("memberSignature", sr.get("memberSignature").asText());
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            relById.put(relation.id(),ModelRelationship.builder().modelVersion(version).sourceElement(srcEl).targetElement(tgtEl)
                     .relationType(relation.type()).originLayer("STATIC").direction("DIRECTED").properties(properties).build());
         }
         relationships.saveAll(relById.values());relationships.flush();

@@ -10,6 +10,7 @@ import { FilterControls, Pagination, SearchInput, SelectField } from "@/componen
 import { Button } from "@/components/ui/button";
 import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { ProjectStatusBadge } from "@/features/projects/components";
+import type { Project } from "@/types/domain";
 export default function Index() {
   return (
     <AppShell>
@@ -17,8 +18,31 @@ export default function Index() {
     </AppShell>
   );
 }
+function servicesSummary(projects: Project[] | undefined): string | number {
+  if (!projects) return "Unknown";
+  if (projects.length === 0) return 0;
+  const known = projects.filter((p) => p.services !== null);
+  const total = known.reduce((sum, p) => sum + (p.services ?? 0), 0);
+  if (known.length === projects.length) return total;
+  return known.length > 0 ? `${total}+` : "Unknown";
+}
+function readySummary(projects: Project[] | undefined): string | number {
+  if (!projects) return "Unknown";
+  if (projects.length === 0) return 0;
+  const ready = projects.filter((p) => p.status === "ready").length;
+  const unknown = projects.filter((p) => p.status === "unknown").length;
+  if (unknown === 0) return ready;
+  return `${ready} of ${projects.length}`;
+}
+function runtimeSummary(projects: Project[] | undefined): string | number {
+  if (!projects) return "Not checked";
+  if (projects.length === 0) return 0;
+  const unchecked = projects.filter((p) => p.runtimeSupported === null).length;
+  if (unchecked === projects.length) return "Not checked";
+  return `${projects.filter((p) => p.runtimeSupported).length} of ${projects.length}`;
+}
 function Projects() {
-  const projects = useApiQuery("projects", {});
+  const projects = useApiQuery("projectOverviews", {});
   const selection = useSelection();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
@@ -47,30 +71,9 @@ function Projects() {
       >
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <SummaryCard label="Projects" value={projects.data?.length ?? 0} />
-          <SummaryCard
-            label="Services indexed"
-            value={
-              projects.data?.some((p) => p.services === null)
-                ? "Unknown"
-                : (projects.data?.reduce((sum, p) => sum + (p.services ?? 0), 0) ?? "Unknown")
-            }
-          />
-          <SummaryCard
-            label="Ready projects"
-            value={
-              projects.data?.some((p) => p.status === "unknown")
-                ? "Unknown"
-                : (projects.data?.filter((p) => p.status === "ready").length ?? "Unknown")
-            }
-          />
-          <SummaryCard
-            label="Runtime capable"
-            value={
-              projects.data?.some((p) => p.runtimeSupported === null)
-                ? "Not checked"
-                : (projects.data?.filter((p) => p.runtimeSupported).length ?? "Not checked")
-            }
-          />
+          <SummaryCard label="Services indexed" value={servicesSummary(projects.data)} />
+          <SummaryCard label="Ready projects" value={readySummary(projects.data)} />
+          <SummaryCard label="Runtime capable" value={runtimeSummary(projects.data)} />
         </div>
         <div className="mt-6 grid gap-6 xl:grid-cols-3">
           <section className="space-y-4 xl:col-span-2">
@@ -90,7 +93,7 @@ function Projects() {
                   setStatus(value);
                   setPage(1);
                 }}
-                options={["all", "ready", "processing", "failed"].map((value) => ({
+                options={["all", "ready", "processing", "failed", "partial"].map((value) => ({
                   value,
                   label: value,
                 }))}

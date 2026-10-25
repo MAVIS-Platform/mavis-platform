@@ -10,13 +10,46 @@ export type DiagramHit = {
 export function xmlSemanticCells(xml: string) {
   const doc = new DOMParser().parseFromString(xml, "text/xml");
   if (doc.querySelector("parsererror")) return [];
+  const root = doc.querySelector("mxGraphModel");
+  const isSequence =
+    root?.getAttribute("mavisNotation") === "UML_SEQUENCE" ||
+    !!doc.querySelector('[mavisRole="metadata-carrier"][mavisInteraction]');
   return Array.from(doc.querySelectorAll("[mavisId]")).flatMap((entry) => {
-    const role = entry.getAttribute("mavisRole");
-    if (!role || role === "edge" || role === "edge-label" || role === "legend") return [];
+    const role = entry.getAttribute("mavisRole") ?? entry.getAttribute("mavisUmlRole");
+    if (
+      !role ||
+      role === "edge-label" ||
+      role === "legend" ||
+      role === "metadata-carrier" ||
+      role === "lifeline" ||
+      role === "execution" ||
+      role === "destruction" ||
+      role === "fragment-operand" ||
+      role === "activity-partition"
+    ) {
+      return [];
+    }
+    const isEdgeRole =
+      role === "edge" ||
+      role === "class-relation" ||
+      role === "package-edge" ||
+      role === "deployment-edge" ||
+      role === "activity-edge" ||
+      role === "state-transition" ||
+      entry.getAttribute("edge") === "1";
+    if (isEdgeRole && !isSequence) return [];
     const cell = entry.localName === "mxCell" ? entry : entry.querySelector("mxCell");
-    const cellId = entry.getAttribute("id") ?? cell?.getAttribute("id"),
-      id = entry.getAttribute("mavisId");
-    return cellId && id ? [{ cellId, id, label: entry.getAttribute("mavisName") ?? id }] : [];
+    const cellId = entry.getAttribute("id") ?? cell?.getAttribute("id");
+    const id = isSequence
+      ? (entry.getAttribute("mavisMessageId") ??
+        entry.getAttribute("mavisFragmentId") ??
+        entry.getAttribute("mavisInteractionUseId") ??
+        entry.getAttribute("mavisParticipantId") ??
+        entry.getAttribute("mavisId"))
+      : entry.getAttribute("mavisId");
+    return cellId && id
+      ? [{ cellId, id, label: entry.getAttribute("mavisName") ?? id, role }]
+      : [];
   });
 }
 export function svgHitTargets(root: SVGSVGElement, xml: string): DiagramHit[] {
@@ -47,13 +80,21 @@ export function svgHitTargets(root: SVGSVGElement, xml: string): DiagramHit[] {
         right = Math.max(...corners.map((p) => p.x)),
         top = Math.min(...corners.map((p) => p.y)),
         bottom = Math.max(...corners.map((p) => p.y));
-      if (box.width < 1 || box.height < 1) continue;
+      const isEdge = entry.role === "edge";
+      if (!isEdge && (box.width < 1 || box.height < 1)) continue;
+      if (isEdge && box.width < 1 && box.height < 1) continue;
+      const rawWidth = right - left;
+      const rawHeight = bottom - top;
+      const padY = isEdge && rawHeight < 14 ? (14 - rawHeight) / 2 : 0;
+      const padX = isEdge && rawWidth < 14 ? (14 - rawWidth) / 2 : 0;
       result.push({
-        ...entry,
-        x: left,
-        y: top,
-        width: right - left,
-        height: bottom - top,
+        cellId: entry.cellId,
+        id: entry.id,
+        label: entry.label,
+        x: left - padX,
+        y: top - padY,
+        width: rawWidth + padX * 2,
+        height: rawHeight + padY * 2,
       });
     } catch {
       /* A hidden or invalid shape cannot be selected. */

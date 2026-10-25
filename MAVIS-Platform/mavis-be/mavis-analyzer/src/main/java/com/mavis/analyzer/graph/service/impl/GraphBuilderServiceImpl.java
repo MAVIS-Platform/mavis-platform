@@ -132,6 +132,9 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             String databaseName=container.getDatasourceDatabase()+" @ "+container.getDatasourceHost();
             if(addedElementNames.add(databaseName.toLowerCase())) {
                 var properties=objectMapper.createObjectNode().put("resourceRole","LOGICAL_DATASTORE").put("physicalHost",container.getDatasourceHost()).put("database",container.getDatasourceDatabase()).put("ownerService",container.getServiceName()).put("classificationSource","COMPOSE_JDBC_BINDING").put("locator",container.getComposeFilePath()+":"+container.getDatasourceLineNumber()).put("responsibility","Stores application data for "+container.getServiceName());
+                if(container.getDatasourceTechnology()!=null&&!container.getDatasourceTechnology().isBlank()){
+                    properties.put("protocol",container.getDatasourceTechnology());
+                }
                 elements.add(ModelElement.builder().modelVersion(modelVersion).name(databaseName).elementType("DATABASE").languageStack(container.getDatasourceTechnology()+" protocol").scope(sourcePath).properties(properties).status("VALIDATED").build());
             }
         }
@@ -237,8 +240,17 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         List<ModelElement> componentsToSave = new ArrayList<>();
         Set<String> processedComponents = new HashSet<>();
 
-        // 1a. Java Components (Controller, Service, Repository, Component)
+        // 1a. Java Components (Controller, Service, Repository, Component) + UML Classifiers (CLASS_INTERFACE)
+        Map<String, CodeEvidenceDTO> classifierEvidencesByKey = new LinkedHashMap<>();
         if (evidences != null && !evidences.isEmpty()) {
+            for (CodeEvidenceDTO ev : evidences) {
+                if ("CLASS_INTERFACE".equals(ev.getElementType())) {
+                    ModelElement owningContainer = findOwningContainer(elements, ev.getFilePath());
+                    String containerName = owningContainer != null ? owningContainer.getName() : "default";
+                    String compKey = containerName + ":" + (ev.getQualifiedName() != null ? ev.getQualifiedName() : ev.getFilePath() + ":" + ev.getIdentifier());
+                    classifierEvidencesByKey.put(compKey, ev);
+                }
+            }
             for (CodeEvidenceDTO ev : evidences) {
                 String type = ev.getElementType();
                 if ("CONTROLLER_COMPONENT".equals(type) || "SERVICE_COMPONENT".equals(type)
@@ -254,6 +266,11 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     String compKey = containerName + ":" + (ev.getQualifiedName() != null ? ev.getQualifiedName() : ev.getFilePath() + ":" + compName);
 
                     if (processedComponents.add(compKey)) {
+                        ObjectNode props = componentProperties(ev, owningContainer);
+                        CodeEvidenceDTO umlEv = classifierEvidencesByKey.get(compKey);
+                        if (umlEv != null) {
+                            attachUmlClassifierMetadata(props, umlEv);
+                        }
                         ModelElement compEl = ModelElement.builder()
                                 .modelVersion(modelVersion)
                                 .parentElement(owningContainer) // Gán parent_element_id theo C4
@@ -261,11 +278,42 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                                 .elementType("COMPONENT")
                                 .languageStack("JAVA_SPRING")
                                 .scope(ev.getFilePath())
-                                .properties(componentProperties(ev, owningContainer))
+                                .properties(props)
                                 .status(owningContainer == null ? "UNCERTAIN_MAPPING" : "VALIDATED")
                                 .build();
                         componentsToSave.add(compEl);
                     }
+                }
+            }
+            List<ModelElement> serviceContainers = elements.stream()
+                    .filter(e -> "SERVICE_CONTAINER".equals(e.getElementType()))
+                    .toList();
+            for (Map.Entry<String, CodeEvidenceDTO> entry : classifierEvidencesByKey.entrySet()) {
+                String compKey = entry.getKey();
+                CodeEvidenceDTO umlEv = entry.getValue();
+                if (processedComponents.add(compKey)) {
+                    ModelElement owningContainer = findOwningContainer(elements, umlEv.getFilePath());
+                    if (owningContainer == null && serviceContainers.size() == 1) {
+                        owningContainer = serviceContainers.get(0);
+                    }
+                    ObjectNode props = createPropertiesNode(umlEv.getFilePath());
+                    props.put("componentBasis", "UML_CLASSIFIER");
+                    props.put("qualifiedName", umlEv.getQualifiedName());
+                    attachUmlClassifierMetadata(props, umlEv);
+                    if (owningContainer == null) {
+                        props.put("resolutionIssue", "UNRESOLVED_COMPONENT_OWNER");
+                    }
+                    ModelElement clsEl = ModelElement.builder()
+                            .modelVersion(modelVersion)
+                            .parentElement(owningContainer)
+                            .name(umlEv.getIdentifier())
+                            .elementType("CLASS_INTERFACE")
+                            .languageStack("JAVA_SPRING")
+                            .scope(umlEv.getFilePath())
+                            .properties(props)
+                            .status(owningContainer == null ? "UNCERTAIN_MAPPING" : "VALIDATED")
+                            .build();
+                    componentsToSave.add(clsEl);
                 }
             }
         }
@@ -521,7 +569,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             }
         }
 
-        // (3) CODE_DEPENDENCY: Giữa các Component trong cùng service (Java)
+        // (3) CODE_DEPENDENCY: Giữa các Component trong cùng service (Java) + UML_RELATIONSHIP (Class/Interface/Enum)
         if (evidences != null) {
             for (CodeEvidenceDTO ev : evidences) {
                 if ("CODE_DEPENDENCY".equalsIgnoreCase(ev.getElementType())) {
@@ -549,6 +597,70 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                         String loc = (ev.getFilePath() != null ? ev.getFilePath() : "") + ":" + ev.getLineNumber();
                         relEvidenceContexts.add(new RelEvidenceContext(rel, loc, "STATIC_CODE", ev.getCodeSnippet(), "JAVAPARSER_3.25"));
                     }
+                }
+            }
+            for (CodeEvidenceDTO ev : evidences) {
+                if ("UML_RELATIONSHIP".equalsIgnoreCase(ev.getElementType())) {
+                    String srcCompName = ev.getSourceComponent();
+                    String tgtCompName = ev.getTargetComponent();
+                    if (srcCompName == null || srcCompName.isBlank() || tgtCompName == null || tgtCompName.isBlank()) continue;
+
+                    ModelElement srcEl = findClassifierElement(allElements, srcCompName, ev.getFilePath());
+                    ModelElement tgtEl = findClassifierElement(allElements, tgtCompName, ev.getFilePath());
+                    if (srcEl == null || tgtEl == null || srcEl.equals(tgtEl)) continue;
+
+                    Map<String, Object> meta = ev.getMetadata() != null ? ev.getMetadata() : Map.of();
+                    String umlRelKind = String.valueOf(meta.getOrDefault("umlRelationKind", "DEPENDENCY"));
+                    String memberName = meta.get("memberName") != null ? String.valueOf(meta.get("memberName")) : null;
+
+                    ModelRelationship unenrichedExisting = null;
+                    boolean exactUmlDuplicate = false;
+                    for (ModelRelationship r : relationshipsToSave) {
+                        if ("CODE_DEPENDENCY".equals(r.getRelationType())
+                                && srcEl.equals(r.getSourceElement())
+                                && tgtEl.equals(r.getTargetElement())) {
+                            JsonNode p = r.getProperties();
+                            if (p == null || !p.hasNonNull("umlRelationKind")) {
+                                unenrichedExisting = r;
+                                break;
+                            } else {
+                                String existingKind = p.path("umlRelationKind").asText("");
+                                String existingMember = p.path("memberName").asText("");
+                                if (umlRelKind.equals(existingKind) && Objects.equals(memberName != null ? memberName : "", existingMember)) {
+                                    exactUmlDuplicate = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    if (exactUmlDuplicate) {
+                        continue;
+                    }
+                    if (unenrichedExisting != null) {
+                        ObjectNode relProps = unenrichedExisting.getProperties() instanceof ObjectNode existing
+                                ? existing.deepCopy()
+                                : objectMapper.createObjectNode();
+                        populateUmlRelationshipProperties(relProps, meta, ev.getIdentifier());
+                        unenrichedExisting.setProperties(relProps);
+                        continue;
+                    }
+
+                    ObjectNode relProps = objectMapper.createObjectNode();
+                    populateUmlRelationshipProperties(relProps, meta, ev.getIdentifier());
+                    ModelRelationship rel = ModelRelationship.builder()
+                            .modelVersion(modelVersion)
+                            .sourceElement(srcEl)
+                            .targetElement(tgtEl)
+                            .relationType("CODE_DEPENDENCY")
+                            .originLayer("STATIC")
+                            .direction("DIRECTED")
+                            .properties(relProps)
+                            .build();
+                    relationshipsToSave.add(rel);
+
+                    String loc = (ev.getFilePath() != null ? ev.getFilePath() : "") + ":" + ev.getLineNumber();
+                    relEvidenceContexts.add(new RelEvidenceContext(rel, loc, "STATIC_CODE", ev.getCodeSnippet(), "JAVAPARSER_3.25"));
                 }
             }
         }
@@ -706,7 +818,103 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         if (c.getPorts() != null && !c.getPorts().isEmpty()) {
             node.putPOJO("ports", c.getPorts());
         }
+        ObjectNode deploymentMeta = objectMapper.createObjectNode();
+        String elType = c.getElementType() != null ? c.getElementType() : "SERVICE_CONTAINER";
+        deploymentMeta.put("nodeStereotype", "DATABASE".equals(elType) ? "<<device>>" : "<<executionEnvironment>>");
+        deploymentMeta.put("executionEnvironment", switch (elType) {
+            case "DATABASE" -> c.getImage() != null ? c.getImage() : "Database Server";
+            case "QUEUE_BROKER" -> c.getImage() != null ? c.getImage() : "Message Broker";
+            default -> "Docker Container";
+        });
+        boolean hasExplicitImage = c.getImage() != null && !c.getImage().isBlank() && !c.getImage().contains("${");
+        boolean hasBuildContext = c.getBuildContext() != null && !c.getBuildContext().isBlank() && !c.getBuildContext().contains("${");
+        if (hasExplicitImage) {
+            deploymentMeta.put("artifactName", c.getImage().trim());
+            deploymentMeta.put("artifactKind", "CONTAINER_IMAGE");
+            deploymentMeta.put("artifactResolution", "EXPLICIT_CONTAINER_IMAGE");
+        } else if (hasBuildContext) {
+            deploymentMeta.put("declaredBuildContext", c.getBuildContext().trim());
+            deploymentMeta.put("artifactResolution", "BUILD_CONTEXT_ONLY_UNRESOLVED_ARTIFACT");
+        } else {
+            deploymentMeta.put("artifactResolution", "NO_ARTIFACT_DECLARED");
+        }
+        if (c.getComposeFilePath() != null) {
+            deploymentMeta.put("composeFilePath", c.getComposeFilePath());
+            String fileName = java.nio.file.Path.of(c.getComposeFilePath()).getFileName().toString().toLowerCase(Locale.ROOT);
+            String envName = fileName.contains("prod") ? "production" : (fileName.contains("dev") ? "development" : (fileName.contains("stage") || fileName.contains("staging") ? "staging" : "default"));
+            deploymentMeta.put("environment", envName);
+        }
+        if (c.getLineNumber() != null) {
+            deploymentMeta.put("lineNumber", c.getLineNumber());
+        }
+        node.set("deploymentMetadata", deploymentMeta);
         return node;
+    }
+
+    private void attachUmlClassifierMetadata(ObjectNode props, CodeEvidenceDTO umlEv) {
+        if (umlEv == null || umlEv.getMetadata() == null || umlEv.getMetadata().isEmpty()) return;
+        JsonNode metaNode = objectMapper.valueToTree(umlEv.getMetadata());
+        JsonNode umlNode = metaNode.hasNonNull("umlClassifier") ? metaNode.get("umlClassifier") : metaNode;
+        props.set("umlClassifier", umlNode);
+        if (metaNode.hasNonNull("packageName")) {
+            props.put("packageName", metaNode.get("packageName").asText());
+        } else if (umlNode.hasNonNull("packageName")) {
+            props.put("packageName", umlNode.get("packageName").asText());
+        }
+        if (metaNode.hasNonNull("typeKind")) {
+            props.put("typeKind", metaNode.get("typeKind").asText());
+        } else if (umlNode.hasNonNull("typeKind")) {
+            props.put("typeKind", umlNode.get("typeKind").asText());
+        }
+    }
+
+    private void populateUmlRelationshipProperties(ObjectNode relProps, Map<String, Object> meta, String description) {
+        if (description != null && !description.isBlank()) {
+            relProps.put("description", description);
+        }
+        for (Map.Entry<String, Object> entry : meta.entrySet()) {
+            if (entry.getValue() != null) {
+                relProps.set(entry.getKey(), objectMapper.valueToTree(entry.getValue()));
+            }
+        }
+        if (!relProps.hasNonNull("multiplicityStatus")) {
+            relProps.put("multiplicityStatus", "UNKNOWN");
+        }
+        if (!relProps.hasNonNull("provenance")) {
+            relProps.put("provenance", "SOURCE_EXTRACTED");
+        }
+    }
+
+    private ModelElement findClassifierElement(List<ModelElement> allElements, String nameOrQualified, String filePath) {
+        if (nameOrQualified == null || nameOrQualified.isBlank()) return null;
+        ModelElement comp = ArchitectureResolver.component(allElements, nameOrQualified, filePath);
+        if (comp != null) return comp;
+
+        List<ModelElement> classifiers = allElements.stream()
+                .filter(e -> "COMPONENT".equals(e.getElementType()) || "CLASS_INTERFACE".equals(e.getElementType()))
+                .toList();
+        ModelElement owner = ArchitectureResolver.owner(allElements, filePath);
+        if (owner != null) {
+            List<ModelElement> inOwner = classifiers.stream()
+                    .filter(e -> e.getParentElement() != null && ArchitectureResolver.same(e.getParentElement(), owner))
+                    .filter(e -> matchesClassifierName(e, nameOrQualified))
+                    .toList();
+            if (inOwner.size() == 1) return inOwner.get(0);
+        }
+        List<ModelElement> exactQualified = classifiers.stream()
+                .filter(e -> e.getProperties() != null && nameOrQualified.equals(e.getProperties().path("qualifiedName").asText()))
+                .toList();
+        if (exactQualified.size() == 1) return exactQualified.get(0);
+
+        List<ModelElement> exactSimple = classifiers.stream()
+                .filter(e -> nameOrQualified.equals(e.getName()))
+                .toList();
+        return exactSimple.size() == 1 ? exactSimple.get(0) : null;
+    }
+
+    private boolean matchesClassifierName(ModelElement e, String nameOrQualified) {
+        if (nameOrQualified.equals(e.getName())) return true;
+        return e.getProperties() != null && nameOrQualified.equals(e.getProperties().path("qualifiedName").asText());
     }
 
     private JsonNode convertPropertiesNode(Map<String, Object> props, String fallbackScope) {

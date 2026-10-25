@@ -2,7 +2,7 @@ import type { ArchitecturalModel } from "@/types/domain";
 import { contextProjection, logicalProjection, processProjection } from "./diagram-projections";
 import { planArchitectureViews } from "@/lib/architecture/view-planner";
 import type { DiagramDocument } from "@/lib/drawio/rules";
-export type DiagramFamily = "C4" | "4+1";
+export type DiagramFamily = "C4" | "4+1" | "UML";
 export type DiagramKind =
   | "CONTEXT"
   | "CONTAINER"
@@ -11,7 +11,13 @@ export type DiagramKind =
   | "DEVELOPMENT"
   | "PROCESS"
   | "DEPLOYMENT"
-  | "SCENARIOS";
+  | "SCENARIOS"
+  | "UML_SEQUENCE"
+  | "UML_CLASS"
+  | "UML_PACKAGE"
+  | "UML_DEPLOYMENT"
+  | "UML_ACTIVITY"
+  | "UML_STATE";
 export const diagramKinds: Record<
   DiagramFamily,
   { value: DiagramKind; label: string; description: string }[]
@@ -60,7 +66,56 @@ export const diagramKinds: Record<
       description: "Designed collaboration scenarios or observed runtime interactions.",
     },
   ],
+  UML: [
+    {
+      value: "UML_SEQUENCE",
+      label: "UML Sequence",
+      description:
+        "Lifeline interactions, activation bars, fragments (alt/opt/loop/par/break/critical), and interaction uses.",
+    },
+    {
+      value: "UML_CLASS",
+      label: "UML Class",
+      description:
+        "Classifiers, visibility, compartments, overloads, and structural/dependency relationships.",
+    },
+    {
+      value: "UML_PACKAGE",
+      label: "UML Package",
+      description:
+        "Namespace/package hierarchy, classifier ownership, and package-level dependencies.",
+    },
+    {
+      value: "UML_DEPLOYMENT",
+      label: "UML Deployment",
+      description:
+        "Deployment nodes, execution environments, artifacts, manifestations, and communication paths.",
+    },
+    {
+      value: "UML_ACTIVITY",
+      label: "UML Activity",
+      description:
+        "Service-partitioned control/object workflows, actions, decisions/merges, and fork/join nodes.",
+    },
+    {
+      value: "UML_STATE",
+      label: "UML State Machine",
+      description:
+        "Entity lifecycle states, initial/choice/final pseudostates, and guarded transitions.",
+    },
+  ],
 };
+export const canonicalNineDiagramCatalog = [
+  { id: "C4_CONTEXT", family: "C4", kind: "CONTEXT", milestone: "M1", label: "C4 Level 1 · System Context" },
+  { id: "C4_CONTAINER", family: "C4", kind: "CONTAINER", milestone: "M1", label: "C4 Level 2 · Container" },
+  { id: "C4_COMPONENT", family: "C4", kind: "COMPONENT", milestone: "M2", label: "C4 Level 3 · Component" },
+  { id: "UML_SEQUENCE", family: "UML", kind: "UML_SEQUENCE", milestone: "M3", label: "UML Sequence Diagram" },
+  { id: "UML_CLASS", family: "UML", kind: "UML_CLASS", milestone: "M4", label: "UML Class Diagram" },
+  { id: "UML_PACKAGE", family: "UML", kind: "UML_PACKAGE", milestone: "M4", label: "UML Package Diagram" },
+  { id: "UML_DEPLOYMENT", family: "UML", kind: "UML_DEPLOYMENT", milestone: "M5", label: "UML Deployment Diagram" },
+  { id: "UML_ACTIVITY", family: "UML", kind: "UML_ACTIVITY", milestone: "M6", label: "UML Activity Diagram" },
+  { id: "UML_STATE", family: "UML", kind: "UML_STATE", milestone: "M7", label: "UML State Machine Diagram" },
+] as const;
 export function modelDocument(model: ArchitecturalModel): DiagramDocument {
   return {
     modelVersionId: model.id,
@@ -84,6 +139,7 @@ export function modelDocument(model: ArchitecturalModel): DiagramDocument {
         relationType: edge.protocol,
         originLayer: edge.originLayer,
         resolutionStatus: edge.resolutionStatus,
+        properties: edge.properties,
       })),
     },
   };
@@ -92,9 +148,10 @@ export function selectDiagram(
   model: ArchitecturalModel,
   kind: DiagramKind,
   containerId?: string,
+  options?: { systemName?: string | undefined },
 ): { document: DiagramDocument | null; notice?: string; reason?: string; key: string } {
   const raw = modelDocument(model),
-    pack = planArchitectureViews(raw);
+    pack = planArchitectureViews(raw, options);
   const key = `${kind.toLowerCase()}${["COMPONENT", "LOGICAL"].includes(kind) ? ":" + (containerId ?? "") : ""}`;
   function ready(document: DiagramDocument, notice?: string) {
     return {
@@ -123,7 +180,7 @@ export function selectDiagram(
             "No source components are assigned to this service. Choose another service or inspect its Container view.",
         };
   }
-  if (kind === "CONTEXT") return { key, ...contextProjection(model, raw) };
+  if (kind === "CONTEXT") return { key, ...contextProjection(model, raw, options) };
   if (kind === "DEVELOPMENT") {
     const groups = new Map<
         string,

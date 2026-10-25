@@ -508,7 +508,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         List<RuntimeSession> sessions = runtimeSessionRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         return sessions.stream()
-                .map(RuntimeSessionResponseDTO::fromEntity)
+                .map(this::toSessionResponse)
                 .collect(Collectors.toList());
     }
 
@@ -518,7 +518,20 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         RuntimeSession session = runtimeSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
         accessPolicyService.requireProjectReadAccess(session.getProject());
-        return RuntimeSessionResponseDTO.fromEntity(session);
+        return toSessionResponse(session);
+    }
+
+    private RuntimeSessionResponseDTO toSessionResponse(RuntimeSession session) {
+        if (session == null) {
+            return null;
+        }
+        UUID enrichedId = null;
+        if (session.getId() != null && modelVersionRepository != null) {
+            enrichedId = modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(session.getId())
+                    .map(com.mavis.common.entity.ModelVersion::getId)
+                    .orElse(null);
+        }
+        return RuntimeSessionResponseDTO.fromEntity(session, null, enrichedId);
     }
 
     private Optional<Path> findComposeFileInDirectory(Path dir) {

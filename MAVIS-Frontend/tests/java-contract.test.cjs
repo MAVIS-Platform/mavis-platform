@@ -118,12 +118,102 @@ test("GitHub imports pin the selected branch to an immutable commit before downl
  });
  await executeJava("importGithub",{projectId:project,repositoryUrl:"https://github.com/owner/repo.git",branchName:"master"},"jwt",new AbortController().signal);
  assert.equal(submitted.commitSha,sha);assert.equal(submitted.branchName,"master");
+});test("project overview aggregates real analysis/runtime evidence and keeps unknowns explicit",async t=>{
+ environment(t);const p2="77777777-7777-4777-8777-777777777777",session="88888888-8888-4888-8888-888888888888";
+ t.mock.method(globalThis,"fetch",async url=>{
+  const path=new URL(url).pathname.replace("/api/v1","");
+  const data={
+   "/projects":[{id:project,name:"Ready project",repositoryUrl:"acme/one"},{id:p2,name:"Failed project",repositoryUrl:null}],
+   [`/analyzer/projects/${project}/jobs`]:[{jobId:job,status:"COMPLETED",analysisState:"COMPLETED_WITH_REVIEW"},{jobId:p2,status:"RUNNING",analysisState:"RUNNING"}],
+   [`/analyzer/projects/${project}/models`]:[{id:job,projectId:project,sourceSnapshotId:snapshot,revision:1,isLatestValid:false},{id:model,projectId:project,sourceSnapshotId:snapshot,revision:2,isLatestValid:true}],
+   [`/analyzer/models/${model}/graph`]:{nodes:[{id:node,name:"A",type:"SERVICE_CONTAINER"},{id:job,name:"B",type:"SERVICE_CONTAINER"},{id:session,name:"C",type:"COMPONENT"}],edges:[]},
+   [`/analyzer/projects/${project}/runtime-sessions`]:[],
+   [`/analyzer/projects/${p2}/jobs`]:[{jobId:p2,status:"FAILED",analysisState:"FAILED"}],
+   [`/analyzer/projects/${p2}/models`]:[],
+   [`/analyzer/projects/${p2}/runtime-sessions`]:[{id:session,projectId:p2}]
+  };
+  if(!(path in data))throw new Error("unexpected call "+path);
+  return Response.json({code:200,data:data[path]});
+ });
+ const rows=await executeJava("projectOverviews",{},"jwt",new AbortController().signal);
+ assert.equal(rows.length,2);
+ assert.deepEqual(validateResponse("projectOverviews",{},rows).map(r=>[r.status,r.services,r.runtimeSupported]),[["processing",2,null],["failed",null,true]]);
+});
+test("project overview degrades a broken per-project source to explicit unknowns instead of failing the page",async t=>{
+ environment(t);t.mock.method(globalThis,"fetch",async url=>{
+  const path=new URL(url).pathname.replace("/api/v1","");
+  if(path==="/projects")return Response.json({code:200,data:[{id:project,name:"Broken",repositoryUrl:null}]});
+  return Response.json({code:500,message:"down"},{status:500});
+ });
+ const rows=await executeJava("projectOverviews",{},"jwt",new AbortController().signal);
+ assert.deepEqual(validateResponse("projectOverviews",{},rows),[{id:project,name:"Broken",repository:"",status:"unknown",services:null,runtimeSupported:null,description:null,defaultBranch:null,projectType:null,workspaceId:null,assignmentId:null,isReferenceTemplate:null,referenceSnapshotId:null,backendStatus:null,createdAt:null,updatedAt:null}]);
+});
+test("project status mapping keeps partial, cancelled and invented states honest",()=>{
+ assert.equal(wire.projectStatusFromJobs([]),"unknown");
+ assert.equal(wire.projectStatusFromJobs([{status:"PENDING",analysisState:"PENDING"}]),"processing");
+ assert.equal(wire.projectStatusFromJobs([{status:"COMPLETED",analysisState:"COMPLETED"}]),"ready");
+ assert.equal(wire.projectStatusFromJobs([{status:"COMPLETED",analysisState:"COMPLETED_LEGACY"}]),"ready");
+ assert.equal(wire.projectStatusFromJobs([{status:"COMPLETED",analysisState:"PARTIAL"}]),"partial");
+ assert.equal(wire.projectStatusFromJobs([{status:"CANCELLED",analysisState:"CANCELLED"}]),"unknown");
+ assert.equal(wire.projectStatusFromJobs([{status:"TIMED_OUT",analysisState:"TIMED_OUT"}]),"failed");
+ assert.equal(wire.projectStatusFromJobs([{status:"WEIRD",analysisState:null}]),"unknown");
+});
+test("latest model selection prefers the latest-valid revision and falls back to newest draft",()=>{
+ const ma="99999999-9999-4999-8999-999999999999",mb="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+ assert.equal(wire.latestModelSummaryId([]),null);
+ assert.equal(wire.latestModelSummaryId([{id:ma,revision:1,isLatestValid:false},{id:mb,revision:2,isLatestValid:true}]),mb);
+ assert.equal(wire.latestModelSummaryId([{id:ma,revision:3,isLatestValid:false},{id:mb,revision:2,isLatestValid:false}]),ma);
+ assert.equal(wire.latestModelSummaryId([{id:"not-a-uuid",revision:9,isLatestValid:true}]),null);
+ assert.equal(wire.serviceCountFromGraph({nodes:[{type:"SERVICE_CONTAINER"},{type:"COMPONENT"},{type:"SERVICE_CONTAINER"}]}),2);
+ assert.equal(wire.serviceCountFromGraph({nodes:[]}),0);
+ assert.equal(wire.serviceCountFromGraph(null),null);
+});
+test("node metadata precedence: graph wins, explicit null hides detail, absent falls back to detail",()=>{
+ const detailProps=()=>({protocol:"detail-kafka",transportAuthority:"detail-kafka",resolutionIssue:"DETAIL_ISSUE",other:"keep-me"});
+ const nodeWith=meta=>wire.modelView(metadata,
+  {nodes:[Object.assign({id:node,name:"order-events [kafka]",type:"MESSAGE_CHANNEL",sourcePath:null},meta)],edges:[]},
+  [{id:node,modelVersionId:model,name:"order-events [kafka]",elementType:"MESSAGE_CHANNEL",properties:detailProps()}]).elements[0];
+ const resolved=nodeWith({protocol:"kafka",transportAuthority:"kafka",resolutionIssue:"UNRESOLVED_MESSAGE_TRANSPORT"});
+ assert.equal(resolved.properties.protocol,"kafka");assert.equal(resolved.properties.transportAuthority,"kafka");assert.equal(resolved.properties.resolutionIssue,"UNRESOLVED_MESSAGE_TRANSPORT");
+ const unknown=nodeWith({protocol:null,transportAuthority:null,resolutionIssue:null});
+ assert.equal(unknown.properties.protocol,null);assert.equal(unknown.properties.transportAuthority,null);assert.equal(unknown.properties.resolutionIssue,null);
+ const legacy=nodeWith({});
+ assert.equal(legacy.properties.protocol,"detail-kafka");assert.equal(legacy.properties.transportAuthority,"detail-kafka");assert.equal(legacy.properties.resolutionIssue,"DETAIL_ISSUE");
+ assert.equal(resolved.properties.other,"keep-me");assert.equal(resolved.id,node);assert.equal(resolved.elementType,"MESSAGE_CHANNEL");
+});
+test("node metadata blank and wrong-typed values never become display data",()=>{
+ const run=meta=>wire.modelView(metadata,
+  {nodes:[Object.assign({id:node,name:"ch",type:"MESSAGE_CHANNEL",sourcePath:null},meta)],edges:[]},
+  [{id:node,modelVersionId:model,name:"ch",elementType:"MESSAGE_CHANNEL",properties:{other:"keep"}}]).elements[0];
+ const blank=run({protocol:"",transportAuthority:"   "});
+ assert.equal(blank.properties.protocol,null);assert.equal(blank.properties.transportAuthority,null);
+ const wrong=run({protocol:42,transportAuthority:{bad:true},resolutionIssue:["a"]});
+ assert.equal(wrong.properties.protocol,null);assert.equal(wrong.properties.transportAuthority,null);assert.equal(wrong.properties.resolutionIssue,null);
+ assert.equal(wrong.properties.other,"keep");assert.equal(wrong.technology,null);assert.equal(wrong.parentId,null);assert.deepEqual(wrong.evidence,[]);
+});
+test("first architecture document save uses expectedRevision 0 (fresh view) per Java CAS contract",()=>{
+ const {contracts}=require("../src/lib/api/contracts.ts");
+ const input={modelId:model,viewId:"components:fresh",expectedRevision:0,xml:"<mxfile/>"};
+ assert.doesNotThrow(()=>contracts.saveArchitectureDocument.input.parse(input),"expectedRevision 0 must be accepted for a first save");
+ assert.throws(()=>contracts.saveArchitectureDocument.input.parse({modelId:model,viewId:"components:fresh",expectedRevision:-1,xml:"<mxfile/>"}),"negative revisions stay invalid");
+ assert.throws(()=>contracts.saveArchitectureDocument.input.parse({modelId:model,viewId:"components:fresh",xml:"<mxfile/>"}),"missing expectedRevision stays invalid");
+ const saved={modelId:model,viewId:"components:fresh",revision:1,xml:"<mxfile/>"};
+ const {validateResponse}=require("../src/lib/api/validate-response.ts");
+ assert.equal(validateResponse("saveArchitectureDocument",input,saved).revision,1,"saved document response keeps a positive revision");
 });
 test("stage13 project wire retains educational scope without inventing runtime capability",()=>{
  const p=wire.projectView({id:project,name:"Class project",status:"ACTIVE",projectType:"STUDENT_WORKING",workspaceId:job,assignmentId:snapshot,isReferenceTemplate:false,description:"Scope"});
  assert.equal(p.status,"ready");assert.equal(p.backendStatus,"ACTIVE");assert.equal(p.workspaceId,job);assert.equal(p.projectType,"STUDENT_WORKING");assert.equal(p.runtimeSupported,null);
  assert.equal(wire.projectView({id:project,name:"Archived",status:"ARCHIVED"}).status,"unknown");
 });
+test("merged project overview retains stage13 educational metadata",()=>{
+ const raw={id:project,name:"Class project",status:"ACTIVE",projectType:"STUDENT_WORKING",workspaceId:job,assignmentId:snapshot,isReferenceTemplate:false,description:"Scope"};
+ const overview=wire.projectOverviewView(raw,[],null,[]);
+ const detail=wire.projectView(raw);
+ for(const key of ["backendStatus","workspaceId","assignmentId","projectType","description","isReferenceTemplate"]) assert.equal(overview[key],detail[key],key);
+ assert.equal(overview.status,"unknown");assert.equal(overview.services,null);assert.equal(overview.runtimeSupported,null);
+});
+
 test("stage13 update profile forwards PATCH and refreshes identity without credentials in response",async t=>{
  environment(t);let sent;t.mock.method(globalThis,"fetch",async(url,options)=>{sent={url,options};return Response.json({code:200,data:{id:project,fullName:"Updated",role:"STUDENT"}});});
  const result=await executeJava("updateProfile",{fullName:"Updated",currentPassword:"old",newPassword:"new-secret"},"jwt",new AbortController().signal);

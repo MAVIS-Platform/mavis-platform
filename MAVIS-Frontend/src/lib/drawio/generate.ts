@@ -8,6 +8,8 @@ import {
   kindOf,
   ends,
   relationLabel,
+  containerMessagingLabel,
+  containerDatabaseLabel,
   nodeText,
   nodeStyle,
   nodeHtml,
@@ -43,9 +45,13 @@ export async function generateDrawio(
   if (nodes.length > 100 || edges.length > 200)
     throw new Error("Select a smaller diagram scope (maximum 100 nodes / 200 relationships).");
   const nodeIds = new Set(nodes.map((node) => node.id));
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const component = doc.notation === "C4" && doc.level === "COMPONENT";
+  // S2d: the C4 Container view nests internal containers under a named system boundary node
+  // (kind SYSTEM_BOUNDARY); external/unresolved nodes stay outside the boundary group.
+  const systemBoundary = doc.notation === "C4" && doc.level === "CONTAINER";
   const parents = new Set(
-    component
+    component || systemBoundary
       ? nodes
           .filter((node) => node.parentId && nodeIds.has(node.parentId))
           .map((node) => node.parentId!)
@@ -54,17 +60,27 @@ export async function generateDrawio(
   const graphs = new Map<string, ElkNode>();
   const groupGraphs = new Map<string, ElkNode>();
   const groupOf = new Map<string, string>();
+  // Boundary headers wrap and size dynamically so long system/view names never cover nodes.
+  const boundaryHeader = (record: (typeof nodes)[number]) => {
+    const text =
+      kindOf(record) === "SYSTEM_BOUNDARY"
+        ? `${record.name} · ${record.description ?? "Software system"}`
+        : record.name + " · Components";
+    const lines = wrapText(text, 60);
+    return { text: lines.join("\n"), height: 24 + lines.length * 20 };
+  };
   for (const parent of parents) {
     const record = nodes.find((node) => node.id === parent)!;
+    const header = boundaryHeader(record);
     const group: ElkNode = {
       id: "boundary_" + parent,
       children: [],
       ports: [],
       layoutOptions: {
-        "elk.padding": "[top=60,left=32,bottom=32,right=32]",
+        "elk.padding": `[top=${header.height + 16},left=32,bottom=32,right=32]`,
         "elk.algorithm": "layered",
       },
-      labels: [{ text: record.name + " · Components", width: 280, height: 28 }],
+      labels: [{ text: header.text, width: 280, height: header.height }],
     };
     groupGraphs.set(parent, group);
   }
@@ -94,6 +110,14 @@ export async function generateDrawio(
       groupOf.set(node.id, parent);
     }
   }
+  // S2e: one shared label formatter for both the ELK label sizing and the exported label cell,
+  // so measured width and rendered text can never diverge. Protocol augmentation is enabled
+  // only for the C4 Container view and only for MESSAGE_PUBLISH/MESSAGE_SUBSCRIBE edges.
+  const labelText = (edge: (typeof edges)[number]) =>
+    wrapText(
+      (systemBoundary ? (containerMessagingLabel(edge, nodesById) ?? containerDatabaseLabel(edge, nodesById)) : null) ?? relationLabel(edge),
+      24,
+    ).join("\n");
   const elkEdges: ElkExtendedEdge[] = edges.map((edge) => {
     const { from, to } = ends(edge);
     const out = edge.id + "_out",
@@ -104,7 +128,7 @@ export async function generateDrawio(
     graphs
       .get(to)!
       .ports!.push({ id: input, width: 2, height: 2, layoutOptions: { "elk.port.side": "WEST" } });
-    const text = wrapText(relationLabel(edge), 24).join("\n");
+    const text = labelText(edge);
     return {
       id: edge.id,
       sources: [out],
@@ -279,19 +303,27 @@ export async function generateDrawio(
   const p = palette(theme),
     offset = doc.notation === "ARCHITECTURE_OVERVIEW" ? { x: 24, y: 84 } : { x: 48, y: 112 };
   const quality = escape(JSON.stringify(best.quality));
+  // Persist view semantics separately from geometry. Relayout reads these back instead of
+  // reconstructing scope, provenance, or boundary types from labels and screen titles.
+  const { layoutJson: _layoutJson, ...documentMetadata } = doc;
+  const metadata = (record: Record<string, unknown>, keys: string[]) =>
+    escape(JSON.stringify(Object.fromEntries(keys.filter((key) => record[key] !== undefined).map((key) => [key, record[key]]))));
   const cells: string[] = ['<mxCell id="0"/>', '<mxCell id="1" parent="0"/>'];
   const geometry = (x: number, y: number, width: number, height: number) =>
     `<mxGeometry x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" as="geometry"/>`;
   cells.push(
-    `<mxCell id="mavis_title" mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisOmittedNodes="${Number(doc["omittedNodes"] ?? 0)}" mavisOmittedEdges="${Number(doc["omittedEdges"] ?? 0)}" value="${escape(doc["viewTitle"] ?? doc.notation + " · " + doc.level + (doc["scopeContainerId"] ? " · " + nodes.find((node) => node.id === doc["scopeContainerId"])?.name : " · overview"))}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(offset.x, 24, doc.notation === "ARCHITECTURE_OVERVIEW" ? 900 : 1000, 36)}</mxCell>`,
+    `<mxCell id="mavis_title" mavisDocument="${escape(JSON.stringify(documentMetadata))}" mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisOmittedNodes="${Number(doc["omittedNodes"] ?? 0)}" mavisOmittedEdges="${Number(doc["omittedEdges"] ?? 0)}" value="${escape(doc["viewTitle"] ?? doc.notation + " · " + doc.level + (doc["scopeContainerId"] ? " · " + nodes.find((node) => node.id === doc["scopeContainerId"])?.name : " · overview"))}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(offset.x, 24, doc.notation === "ARCHITECTURE_OVERVIEW" ? 900 : 1000, 36)}</mxCell>`,
   );
   cells.push(
     `<mxCell id="mavis_scope" value="${escape(`${doc["policyVersion"] ? "Semantic review required" : RULE_VERSION} · ${nodes.length} shapes · ${edges.length} displayed relationships`)}" style="text;html=0;fontFamily=Arial;fontSize=12;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(offset.x, 64, doc.notation === "ARCHITECTURE_OVERVIEW" ? 900 : 1000, 28)}</mxCell>`,
   );
   for (const group of best.groups) {
     const owner = group.id.slice("boundary_".length);
+    const ownerNode = nodes.find((node) => node.id === owner);
+    const systemScope = ownerNode && kindOf(ownerNode) === "SYSTEM_BOUNDARY";
+    const header = boundaryHeader(ownerNode!);
     cells.push(
-      `<mxCell id="${safe(group.id)}" mavisId="${escape(owner)}" mavisName="${escape(nodes.find((node) => node.id === owner)?.name ?? "Container")}" value="${escape(nodes.find((node) => node.id === owner)?.name + " · component scope")}" mavisRole="boundary" style="swimlane;horizontal=1;startSize=44;rounded=1;dashed=1;fillColor=${p.background};swimlaneFillColor=${p.background};fontColor=${p.text};strokeColor=${p.border};fontFamily=Arial;fontSize=16;collapsible=0;${nodes.find((node) => node.id === owner)?.["pinned"] ? "movable=0;resizable=0;rotatable=0;deletable=0;editable=0;locked=1;connectable=0;" : ""}" vertex="1" parent="1">${geometry(group.x + offset.x, group.y + offset.y, group.width, group.height)}</mxCell>`,
+      `<mxCell id="${safe(group.id)}" mavisId="${escape(owner)}" mavisName="${escape(ownerNode?.name ?? "Container")}" mavisKind="${escape(kindOf(ownerNode!))}" mavisTechnology="${escape(ownerNode?.languageStack ?? "")}" mavisDescription="${escape(ownerNode?.description ?? "")}" mavisProperties="${escape(JSON.stringify(ownerNode?.["properties"] ?? {}))}" mavisNodeMetadata="${metadata(ownerNode!, ["viewLocal", "underlyingNodeIds", "inference"])}" value="${escape(header.text)}" mavisRole="boundary" style="swimlane;horizontal=1;startSize=${header.height};rounded=1;dashed=1;fillColor=${p.background};swimlaneFillColor=${p.background};fontColor=${p.text};strokeColor=${p.border};fontFamily=Arial;fontSize=16;collapsible=0;${ownerNode?.["pinned"] ? "movable=0;resizable=0;rotatable=0;deletable=0;editable=0;locked=1;connectable=0;" : ""}" vertex="1" parent="1">${geometry(group.x + offset.x, group.y + offset.y, group.width, group.height)}</mxCell>`,
     );
   }
   for (const node of nodes) {
@@ -300,7 +332,7 @@ export async function generateDrawio(
     const parent = groupOf.get(node.id);
     const group = parent ? best.groups.find((item) => item.id === "boundary_" + parent) : null;
     cells.push(
-      `<mxCell id="${safe(node.id)}" value="${escape(nodeHtml(node))}" mavisId="${escape(node.id)}" mavisRole="${escape(kindOf(node))}" mavisName="${escape(node.name)}" mavisTechnology="${escape(node.languageStack ?? "")}" mavisDescription="${escape(node.description ?? "")}" style="${nodeStyle(kindOf(node), theme).replace("html=0", "html=1")}${node["pinned"] ? "movable=0;resizable=0;rotatable=0;deletable=0;editable=0;locked=1;connectable=0;" : ""}" vertex="1" parent="${group ? safe(group.id) : "1"}">${geometry(rect.x + (group ? -group.x : offset.x), rect.y + (group ? -group.y : offset.y), rect.width, rect.height)}</mxCell>`,
+      `<mxCell id="${safe(node.id)}" value="${escape(nodeHtml(node))}" mavisId="${escape(node.id)}" mavisRole="${escape(kindOf(node))}" mavisName="${escape(node.name)}" mavisTechnology="${escape(node.languageStack ?? "")}" mavisDescription="${escape(node.description ?? "")}" mavisProperties="${escape(node["properties"] && Object.keys(node["properties"]).length ? JSON.stringify(node["properties"]) : "")}" mavisNodeMetadata="${metadata(node, ["viewLocal", "underlyingNodeIds", "inference"])}" style="${nodeStyle(kindOf(node), theme).replace("html=0", "html=1")}${node["pinned"] ? "movable=0;resizable=0;rotatable=0;deletable=0;editable=0;locked=1;connectable=0;" : ""}" vertex="1" parent="${group ? safe(group.id) : "1"}">${geometry(rect.x + (group ? -group.x : offset.x), rect.y + (group ? -group.y : offset.y), rect.width, rect.height)}</mxCell>`,
     );
   }
   for (const edge of edges) {
@@ -327,11 +359,11 @@ export async function generateDrawio(
       .map((point) => `<mxPoint x="${n(point.x + offset.x)}" y="${n(point.y + offset.y)}"/>`)
       .join("");
     cells.push(
-      `<mxCell id="${safe(edge.id)}" value="" mavisId="${escape(edge.id)}" mavisRole="edge" mavisRelationType="${escape(edge.relationType ?? edge.type ?? "")}" mavisOriginLayer="${escape(edge.originLayer ?? "")}" style="edgeStyle=none;orthogonal=1;rounded=0;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=${p.line};dashed=${declared ? 1 : 0};exitX=${out.x};exitY=${out.y};exitPerimeter=0;entryX=${input.x};entryY=${input.y};entryPerimeter=0;" edge="1" parent="1" source="${safe(parents.has(route.from) ? "boundary_" + route.from : route.from)}" target="${safe(parents.has(route.to) ? "boundary_" + route.to : route.to)}"><mxGeometry relative="1" as="geometry"><Array as="points">${points}</Array></mxGeometry></mxCell>`,
+      `<mxCell id="${safe(edge.id)}" value="" mavisId="${escape(edge.id)}" mavisRole="edge" mavisRelationType="${escape(edge.relationType ?? edge.type ?? "")}" mavisOriginLayer="${escape(edge.originLayer ?? "")}" mavisEdgeMetadata="${metadata(edge, ["underlyingEdgeIds", "resolutionStatus", "uncertain", "direction"])}" style="edgeStyle=none;orthogonal=1;rounded=0;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=${p.line};dashed=${declared ? 1 : 0};exitX=${out.x};exitY=${out.y};exitPerimeter=0;entryX=${input.x};entryY=${input.y};entryPerimeter=0;" edge="1" parent="1" source="${safe(parents.has(route.from) ? "boundary_" + route.from : route.from)}" target="${safe(parents.has(route.to) ? "boundary_" + route.to : route.to)}"><mxGeometry relative="1" as="geometry"><Array as="points">${points}</Array></mxGeometry></mxCell>`,
     );
     if (label)
       cells.push(
-        `<mxCell id="label_${safe(edge.id)}" value="${escape(wrapText(relationLabel(edge), 24).join("\n"))}" mavisRole="edge-label" mavisEdgeId="${escape(edge.id)}" style="text;html=0;fontFamily=Arial;fontSize=13;fontColor=${p.text};fillColor=${p.background};strokeColor=none;whiteSpace=wrap;spacing=4;align=center;verticalAlign=middle;" vertex="1" parent="1">${geometry(label.x + offset.x, label.y + offset.y, label.width, label.height)}</mxCell>`,
+        `<mxCell id="label_${safe(edge.id)}" value="${escape(labelText(edge))}" mavisRole="edge-label" mavisEdgeId="${escape(edge.id)}" style="text;html=0;fontFamily=Arial;fontSize=13;fontColor=${p.text};fillColor=${p.background};strokeColor=none;whiteSpace=wrap;spacing=4;align=center;verticalAlign=middle;" vertex="1" parent="1">${geometry(label.x + offset.x, label.y + offset.y, label.width, label.height)}</mxCell>`,
       );
   }
   const bottom = (best.graph.height ?? 0) + offset.y + 32;
@@ -339,9 +371,12 @@ export async function generateDrawio(
     doc.notation === "ARCHITECTURE_OVERVIEW"
       ? "Groups list their members. Open detailed views for individual connections. Arrows describe source/configuration declarations; runtime traffic has not been observed."
       : "Legend: Container / Component / Database / Queue / External. Solid = source-inferred; dashed = declared configuration. No runtime status is implied. Missing technology or responsibility remains unknown. Crossings: " +
-        best.quality.crossings;
+        best.quality.crossings +
+        (typeof doc["scopeWarning"] === "string" ? ` ${doc["scopeWarning"]}` : "");
+  const legendLines = wrapText(legend, 100);
+  const legendHeight = Math.max(64, legendLines.length * 17 + 24);
   cells.push(
-    `<mxCell id="mavis_legend" value="${escape(wrapText(legend, 100).join("\n"))}" mavisRole="legend" style="text;html=0;fontFamily=Arial;fontSize=13;fontColor=${p.text};fillColor=${p.background};whiteSpace=wrap;align=left;spacing=12;" vertex="1" parent="1">${geometry(offset.x, bottom, 900, doc.notation === "ARCHITECTURE_OVERVIEW" ? 64 : 100)}</mxCell>`,
+    `<mxCell id="mavis_legend" value="${escape(legendLines.join("\n"))}" mavisRole="legend" style="text;html=0;fontFamily=Arial;fontSize=13;fontColor=${p.text};fillColor=${p.background};whiteSpace=wrap;align=left;spacing=12;" vertex="1" parent="1">${geometry(offset.x, bottom, 900, legendHeight)}</mxCell>`,
   );
-  return `<?xml version="1.0" encoding="UTF-8"?><mxfile host="MAVIS" agent="MAVIS" version="1"><diagram id="${escape(doc["diagramId"] ?? doc.modelVersionId)}" name="${escape(doc.notation + " · " + doc.level)}"><mxGraphModel mavisModelId="${escape(doc.modelVersionId)}" mavisViewId="${escape(doc["viewId"] ?? "")}" mavisSemanticStatus="${doc["policyVersion"] ? "requires-review" : "unassessed"}" mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisContainerId="${escape(doc["scopeContainerId"] ?? "")}" grid="0" gridSize="16" page="0" background="${p.background}" connect="1" arrows="1" math="0" shadow="0"><root>${cells.join("")}</root></mxGraphModel></diagram></mxfile>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><mxfile host="MAVIS" agent="MAVIS" version="1"><diagram id="${escape(doc["diagramId"] ?? doc.modelVersionId)}" name="${escape(doc.notation + " · " + doc.level)}"><mxGraphModel mavisDocument="${escape(JSON.stringify(documentMetadata))}" mavisModelId="${escape(doc.modelVersionId)}" mavisViewId="${escape(doc["viewId"] ?? "")}" mavisSemanticStatus="${doc["policyVersion"] ? "requires-review" : "unassessed"}" mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisContainerId="${escape(doc["scopeContainerId"] ?? "")}" grid="0" gridSize="16" page="0" background="${p.background}" connect="1" arrows="1" math="0" shadow="0"><root>${cells.join("")}</root></mxGraphModel></diagram></mxfile>`;
 }

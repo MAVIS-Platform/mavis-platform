@@ -11,7 +11,7 @@ export const projectSchema = z.object({
   id: z.string(),
   name: z.string(),
   repository: z.string(),
-  status: z.enum(["ready", "processing", "failed", "unknown"]),
+  status: z.enum(["ready", "processing", "failed", "partial", "unknown"]),
   services: z.number().int().nonnegative().nullable(),
   runtimeSupported: z.boolean().nullable(),
   description: z.string().nullable().optional(),
@@ -87,6 +87,9 @@ export const edgeSchema = z.object({
   originLayer: z.string().optional(),
   resolutionStatus: z.string().optional(),
   underlyingEdgeIds: z.array(z.string()).optional(),
+  evidenceCount: z.number().int().nonnegative().nullable().optional(),
+  evidenceIds: z.array(z.string()).optional(),
+  properties: z.record(z.unknown()).optional(),
 });
 export const modelSchema = z
   .object({
@@ -286,6 +289,7 @@ export const runtimeReadSchema = z.object({
   projectId: z.string(),
   snapshotId: z.string(),
   modelId: z.string().nullable(),
+  enrichedModelId: z.string().nullable().optional(),
   scenarioName: z.string().nullable(),
   profileName: z.string().nullable(),
   executionStatus: z.string(),
@@ -293,8 +297,11 @@ export const runtimeReadSchema = z.object({
   evidenceStatus: z.string(),
   cleanupStatus: z.string(),
   traceQuality: z.string(),
+  traceStatus: z.string().optional(),
   mappingStatus: z.string(),
   createdAt: z.string().nullable(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
 });
+export type RuntimeReadSession = z.infer<typeof runtimeReadSchema>;
+

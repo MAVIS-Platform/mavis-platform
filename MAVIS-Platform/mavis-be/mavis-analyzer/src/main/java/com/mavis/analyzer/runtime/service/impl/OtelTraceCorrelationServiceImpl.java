@@ -82,26 +82,53 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
 
         // =========================================================================
         // BƯỚC 2: DỰNG QUAN HỆ NHÂN QUẢ parentSpanId -> spanId THEO BR-46 TRONG O(N)
+        // KÈM GỘP CẶP CLIENT/SERVER SPAN VÀ THEO DÕI CAUSAL PARENT MESSAGES (M3)
         // =========================================================================
         Map<String, OtelSpanDTO> spanByIdMap = new LinkedHashMap<>();
         for (OtelSpanDTO span : rawSpans) {
             if (span.getSpanId() != null && !span.getSpanId().isBlank()) {
-                spanByIdMap.put(spanKey(span.getTraceId(),span.getSpanId()), span);
+                spanByIdMap.put(spanKey(span.getTraceId(), span.getSpanId()), span);
             }
         }
 
         List<CausalCallStep> causalSteps = new ArrayList<>();
+        Map<String, String> childSpanKeyToMessageId = new LinkedHashMap<>();
+        Set<String> deduplicatedCallKeys = new LinkedHashSet<>();
+        List<String> correlationLimitations = new ArrayList<>();
+        correlationLimitations.add("NO_SYNTHETIC_REPLY_FROM_END_TIME");
+        correlationLimitations.add("NO_COMBINED_FRAGMENTS_FROM_SINGLE_TRACE");
+        boolean clockSkewDetected = false;
         int stepIndex = 1;
 
         for (OtelSpanDTO child : rawSpans) {
             if (child.getParentSpanId() != null && !child.getParentSpanId().isBlank()) {
-                OtelSpanDTO parent = spanByIdMap.get(spanKey(child.getTraceId(),child.getParentSpanId()));
+                OtelSpanDTO parent = spanByIdMap.get(spanKey(child.getTraceId(), child.getParentSpanId()));
                 if (parent != null && parent.getServiceName() != null && child.getServiceName() != null) {
                     if (!parent.getServiceName().equalsIgnoreCase(child.getServiceName())) {
-                        causalSteps.add(new CausalCallStep(stepIndex++, parent, child));
+                        String effectiveOperation = resolveSpanOperation(parent, child);
+                        String dedupKey = (Objects.toString(child.getTraceId(), "") + "|"
+                                + parent.getServiceName().toLowerCase(Locale.ROOT) + "->"
+                                + child.getServiceName().toLowerCase(Locale.ROOT) + "|"
+                                + resolveEffectiveCallerRootSpanId(parent, spanByIdMap) + "|"
+                                + effectiveOperation).toLowerCase(Locale.ROOT);
+                        if ( isDuplicateClientServerHop(parent, child, deduplicatedCallKeys, dedupKey) ) {
+                            continue;
+                        }
+                        if (hasTimestampClockSkew(parent, child)) {
+                            clockSkewDetected = true;
+                        }
+                        int order = stepIndex++;
+                        String messageId = "msg-obs-" + order;
+                        List<String> causalParents = resolveCausalParentMessageIds(parent, spanByIdMap, childSpanKeyToMessageId);
+                        CausalCallStep step = new CausalCallStep(order, messageId, parent, child, causalParents);
+                        causalSteps.add(step);
+                        childSpanKeyToMessageId.put(spanKey(child.getTraceId(), child.getSpanId()), messageId);
                     }
                 }
             }
+        }
+        if (clockSkewDetected) {
+            correlationLimitations.add("CLOCK_SKEW_DETECTED_CAUSAL_ORDER_PRESERVED");
         }
 
         log.debug("Đã phát hiện {} bước gọi nhân quả liên dịch vụ từ {} spans", causalSteps.size(), rawSpans.size());
@@ -128,10 +155,11 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         enrichedVersion = modelVersionRepository.save(enrichedVersion);
         session.setPublicationGateStatus("HELD_NON_PROMOTED");
 
-        // (1) Sao chép toàn bộ elements tĩnh sang version mới
+        // (1) Sao chép toàn bộ elements tĩnh sang version mới (không đoán bằng tên đầu tiên nếu trùng tên)
         List<ModelElement> baseElements = modelElementRepository.findByModelVersionId(baseModelVersionId);
-        Map<UUID, ModelElement> oldToNewElementMap = new HashMap<>();
-        Map<String, ModelElement> serviceNameToElementMap = new HashMap<>();
+        Map<UUID, ModelElement> oldToNewElementMap = new LinkedHashMap<>();
+        IdentityHashMap<ModelElement, UUID> newToBaseIdMap = new IdentityHashMap<>();
+        Map<String, List<ModelElement>> elementsByLowerName = new LinkedHashMap<>();
         List<ModelElement> newElements = new ArrayList<>();
 
         for (ModelElement baseEl : baseElements) {
@@ -145,18 +173,52 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                     .status(baseEl.getStatus())
                     .build();
             newElements.add(copy);
-            oldToNewElementMap.put(baseEl.getId(), copy);
-            serviceNameToElementMap.put(baseEl.getName().toLowerCase(), copy);
+            if (baseEl.getId() != null) {
+                oldToNewElementMap.put(baseEl.getId(), copy);
+                newToBaseIdMap.put(copy, baseEl.getId());
+            }
+            if (baseEl.getName() != null) {
+                elementsByLowerName.computeIfAbsent(baseEl.getName().toLowerCase(Locale.ROOT), k -> new ArrayList<>()).add(copy);
+            }
         }
 
-        // Kiểm tra xem có service nào trong Span không khớp phần tử tĩnh -> Gắn cờ UNCERTAIN_MAPPING
+        Map<String, String> confirmedMappings = session.getConfirmedServiceMappings() != null
+                ? session.getConfirmedServiceMappings()
+                : Collections.emptyMap();
+
+        Map<String, ModelElement> uniqueServiceElementMap = new LinkedHashMap<>();
+        Set<String> ambiguousServiceNames = new LinkedHashSet<>();
+
+        for (Map.Entry<String, List<ModelElement>> entry : elementsByLowerName.entrySet()) {
+            String lowerName = entry.getKey();
+            List<ModelElement> candidates = entry.getValue();
+            ModelElement confirmed = resolveConfirmedMapping(lowerName, confirmedMappings, oldToNewElementMap);
+            if (confirmed != null) {
+                uniqueServiceElementMap.put(lowerName, confirmed);
+            } else if (candidates.size() == 1) {
+                uniqueServiceElementMap.put(lowerName, candidates.get(0));
+            } else {
+                List<ModelElement> serviceContainers = candidates.stream()
+                        .filter(c -> "SERVICE_CONTAINER".equalsIgnoreCase(c.getElementType()))
+                        .toList();
+                if (serviceContainers.size() == 1) {
+                    uniqueServiceElementMap.put(lowerName, serviceContainers.get(0));
+                } else {
+                    ambiguousServiceNames.add(lowerName);
+                }
+            }
+        }
+
+        // Kiểm tra xem có service nào trong Span không khớp hoặc bị nhập nhằng -> Gắn cờ UNCERTAIN_MAPPING / AMBIGUOUS
         boolean hasUncertainMapping = false;
+        Map<String, ModelElement> runtimeDiscoveredByLowerName = new LinkedHashMap<>();
         for (OtelSpanDTO span : rawSpans) {
-            String svcName = span.getServiceName();
-            if (svcName != null && !svcName.isBlank()) {
-                String lowerName = svcName.toLowerCase();
-                if (!serviceNameToElementMap.containsKey(lowerName)) {
-                    hasUncertainMapping = true;
+            SpanElementResolution res = resolveSpanElement(span, confirmedMappings, oldToNewElementMap, uniqueServiceElementMap, ambiguousServiceNames, runtimeDiscoveredByLowerName);
+            if ("UNCERTAIN_MAPPING".equals(res.status)) {
+                hasUncertainMapping = true;
+                String svcName = span.getServiceName();
+                String lowerName = svcName.toLowerCase(Locale.ROOT);
+                if (!runtimeDiscoveredByLowerName.containsKey(lowerName)) {
                     ObjectNode props = objectMapper.createObjectNode();
                     props.put("discoveredVia", "OTEL_SPAN");
                     props.put("traceId", span.getTraceId());
@@ -170,22 +232,46 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                             .build();
 
                     newElements.add(uncertainEl);
-                    serviceNameToElementMap.put(lowerName, uncertainEl);
+                    runtimeDiscoveredByLowerName.put(lowerName, uncertainEl);
                 }
+            } else if ("AMBIGUOUS".equals(res.status)) {
+                hasUncertainMapping = true;
             }
         }
 
         // Lưu toàn bộ elements bằng saveAll()
         List<ModelElement> savedElements = modelElementRepository.saveAll(newElements);
-        for (int i = 0; i < newElements.size(); i++) {
-            ModelElement el = newElements.get(i);
-            serviceNameToElementMap.put(el.getName().toLowerCase(), savedElements.get(i));
+        IdentityHashMap<ModelElement, ModelElement> unsavedToSavedElement = new IdentityHashMap<>();
+        for (int i = 0; i < newElements.size() && i < savedElements.size(); i++) {
+            ModelElement orig = newElements.get(i);
+            ModelElement saved = savedElements.get(i);
+            unsavedToSavedElement.put(orig, saved);
+            UUID baseId = newToBaseIdMap.get(orig);
+            if (baseId != null) {
+                oldToNewElementMap.put(baseId, saved);
+                newToBaseIdMap.put(saved, baseId);
+            }
+        }
+        for (Map.Entry<String, ModelElement> entry : new ArrayList<>(uniqueServiceElementMap.entrySet())) {
+            ModelElement saved = unsavedToSavedElement.get(entry.getValue());
+            if (saved != null) {
+                uniqueServiceElementMap.put(entry.getKey(), saved);
+            }
+        }
+        for (Map.Entry<String, ModelElement> entry : new ArrayList<>(runtimeDiscoveredByLowerName.entrySet())) {
+            ModelElement saved = unsavedToSavedElement.get(entry.getValue());
+            if (saved != null) {
+                runtimeDiscoveredByLowerName.put(entry.getKey(), saved);
+            }
         }
 
         // (2) Kế thừa 100% cạnh tĩnh và nâng cấp / thêm mới theo bước gọi nhân quả
         List<ModelRelationship> baseRelationships = modelRelationshipRepository.findByModelVersionId(baseModelVersionId);
         List<ModelRelationship> newRelationships = new ArrayList<>();
-        Map<String, ModelRelationship> relByPairKey = new HashMap<>();
+        IdentityHashMap<ModelRelationship, UUID> newToBaseRelIdMap = new IdentityHashMap<>();
+        Map<UUID, ModelRelationship> copiedByBaseRelId = new LinkedHashMap<>();
+        Map<String, List<ModelRelationship>> staticRelsByPairKey = new LinkedHashMap<>();
+        Map<String, ModelRelationship> runtimeRelByPairKey = new LinkedHashMap<>();
 
         for (ModelRelationship baseRel : baseRelationships) {
             ModelElement newSrc = oldToNewElementMap.get(baseRel.getSourceElement().getId());
@@ -203,21 +289,78 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                         .build();
 
                 newRelationships.add(copyRel);
-                String pairKey = (newSrc.getName() + "->" + newTgt.getName()).toLowerCase();
-                relByPairKey.put(pairKey, copyRel);
+                if (baseRel.getId() != null) {
+                    newToBaseRelIdMap.put(copyRel, baseRel.getId());
+                    copiedByBaseRelId.put(baseRel.getId(), copyRel);
+                }
+                UUID srcBaseId = newToBaseIdMap.get(newSrc);
+                UUID tgtBaseId = newToBaseIdMap.get(newTgt);
+                if (srcBaseId != null && tgtBaseId != null) {
+                    String idPairKey = (srcBaseId + "->" + tgtBaseId).toLowerCase(Locale.ROOT);
+                    staticRelsByPairKey.computeIfAbsent(idPairKey, k -> new ArrayList<>()).add(copyRel);
+                }
+                String namePairKey = (newSrc.getName() + "->" + newTgt.getName()).toLowerCase(Locale.ROOT);
+                staticRelsByPairKey.computeIfAbsent(namePairKey, k -> new ArrayList<>()).add(copyRel);
             }
         }
 
         List<Evidence> newEvidences = new ArrayList<>();
+        boolean hasAmbiguousRelationshipCandidates = false;
+        boolean hasUnknownMessageSort = false;
 
         for (CausalCallStep step : causalSteps) {
+            SpanElementResolution callerRes = resolveSpanElement(
+                    step.parentSpan, confirmedMappings, oldToNewElementMap, uniqueServiceElementMap, ambiguousServiceNames, runtimeDiscoveredByLowerName);
+            SpanElementResolution calleeRes = resolveSpanElement(
+                    step.childSpan, confirmedMappings, oldToNewElementMap, uniqueServiceElementMap, ambiguousServiceNames, runtimeDiscoveredByLowerName);
+            step.callerResolution = callerRes;
+            step.calleeResolution = calleeRes;
+
             String callerName = step.parentSpan.getServiceName();
             String calleeName = step.childSpan.getServiceName();
-            String pairKey = (callerName + "->" + calleeName).toLowerCase();
+            UUID callerBaseId = callerRes.element != null ? newToBaseIdMap.get(callerRes.element) : null;
+            UUID calleeBaseId = calleeRes.element != null ? newToBaseIdMap.get(calleeRes.element) : null;
 
-            ModelRelationship matchedRel = relByPairKey.get(pairKey);
+            ModelRelationship matchedRel = resolveExplicitSpanRelationship(step.parentSpan, step.childSpan, copiedByBaseRelId);
+            List<ModelRelationship> candidateStaticRels = Collections.emptyList();
+            if (matchedRel == null) {
+                if (callerBaseId != null && calleeBaseId != null) {
+                    candidateStaticRels = staticRelsByPairKey.getOrDefault(
+                            (callerBaseId + "->" + calleeBaseId).toLowerCase(Locale.ROOT),
+                            Collections.emptyList()
+                    );
+                }
+                String pairKey = (callerName + "->" + calleeName).toLowerCase(Locale.ROOT);
+                if (candidateStaticRels.isEmpty() && !"AMBIGUOUS".equals(callerRes.status) && !"AMBIGUOUS".equals(calleeRes.status)) {
+                    candidateStaticRels = staticRelsByPairKey.getOrDefault(pairKey, Collections.emptyList());
+                }
+                if (candidateStaticRels.size() == 1) {
+                    matchedRel = candidateStaticRels.get(0);
+                } else if (candidateStaticRels.size() > 1) {
+                    hasAmbiguousRelationshipCandidates = true;
+                    List<UUID> sortedBaseIds = candidateStaticRels.stream()
+                            .map(newToBaseRelIdMap::get)
+                            .filter(Objects::nonNull)
+                            .distinct()
+                            .sorted(Comparator.comparing(UUID::toString))
+                            .toList();
+                    step.candidateBaseRelationshipIds = sortedBaseIds;
+                }
+            }
+            if (matchedRel != null && step.candidateBaseRelationshipIds.isEmpty()) {
+                UUID singleBaseId = newToBaseRelIdMap.get(matchedRel);
+                if (singleBaseId != null) {
+                    step.candidateBaseRelationshipIds = List.of(singleBaseId);
+                }
+            }
+
+            String pairKey = (callerName + "->" + calleeName).toLowerCase(Locale.ROOT);
+            String httpMethod = firstNonBlank(step.childSpan.getHttpMethod(), step.parentSpan.getHttpMethod());
+            String httpUrl = firstNonBlank(step.childSpan.getHttpUrl(), step.parentSpan.getHttpUrl());
+            Integer statusCode = step.childSpan.getHttpStatusCode() != null ? step.childSpan.getHttpStatusCode() : step.parentSpan.getHttpStatusCode();
+            Long durationMs = step.childSpan.getDurationMs() != null ? step.childSpan.getDurationMs() : step.parentSpan.getDurationMs();
+
             if (matchedRel != null) {
-                // Trùng với cạnh tĩnh -> Nâng cấp originLayer = "STATIC_AND_RUNTIME"
                 matchedRel.setOriginLayer("STATIC_AND_RUNTIME");
 
                 Evidence ev = Evidence.builder()
@@ -228,27 +371,31 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                         .sourceType("RUNTIME_TRACE")
                         .adapterVersion("OTEL_COLLECTOR_1.0")
                         .locator(step.childSpan.getTraceId() + ":" + step.childSpan.getSpanId())
-                        .excerpt("HTTP " + step.childSpan.getHttpMethod() + " " + step.childSpan.getHttpUrl()
-                                + " -> " + step.childSpan.getHttpStatusCode() + " (" + step.childSpan.getDurationMs() + "ms)")
+                        .excerpt("HTTP " + httpMethod + " " + httpUrl
+                                + " -> " + statusCode + " (" + durationMs + "ms)")
                         .build();
                 newEvidences.add(ev);
+                step.relationship = matchedRel;
+                step.evidence = ev;
             } else {
-                // Chưa có trong tĩnh -> Tạo cạnh mới relationType = "RUNTIME_OBSERVED", originLayer = "RUNTIME"
-                ModelElement src = serviceNameToElementMap.get(callerName.toLowerCase());
-                ModelElement tgt = serviceNameToElementMap.get(calleeName.toLowerCase());
+                ModelElement src = callerRes.element;
+                ModelElement tgt = calleeRes.element;
 
                 if (src != null && tgt != null) {
-                    ModelRelationship newRuntimeRel = ModelRelationship.builder()
-                            .modelVersion(enrichedVersion)
-                            .sourceElement(src)
-                            .targetElement(tgt)
-                            .relationType("RUNTIME_OBSERVED")
-                            .originLayer("RUNTIME")
-                            .direction("DIRECTED")
-                            .build();
+                    ModelRelationship newRuntimeRel = runtimeRelByPairKey.get(pairKey);
+                    if (newRuntimeRel == null) {
+                        newRuntimeRel = ModelRelationship.builder()
+                                .modelVersion(enrichedVersion)
+                                .sourceElement(src)
+                                .targetElement(tgt)
+                                .relationType("RUNTIME_OBSERVED")
+                                .originLayer("RUNTIME")
+                                .direction("DIRECTED")
+                                .build();
 
-                    newRelationships.add(newRuntimeRel);
-                    relByPairKey.put(pairKey, newRuntimeRel);
+                        newRelationships.add(newRuntimeRel);
+                        runtimeRelByPairKey.put(pairKey, newRuntimeRel);
+                    }
 
                     Evidence ev = Evidence.builder()
                             .modelVersion(enrichedVersion)
@@ -258,10 +405,14 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                             .sourceType("RUNTIME_TRACE")
                             .adapterVersion("OTEL_COLLECTOR_1.0")
                             .locator(step.childSpan.getTraceId() + ":" + step.childSpan.getSpanId())
-                            .excerpt("HTTP " + step.childSpan.getHttpMethod() + " " + step.childSpan.getHttpUrl()
-                                    + " -> " + step.childSpan.getHttpStatusCode() + " (" + step.childSpan.getDurationMs() + "ms)")
+                            .excerpt("HTTP " + httpMethod + " " + httpUrl
+                                    + " -> " + statusCode + " (" + durationMs + "ms)")
                             .build();
                     newEvidences.add(ev);
+                    if (step.candidateBaseRelationshipIds.size() <= 1) {
+                        step.relationship = newRuntimeRel;
+                    }
+                    step.evidence = ev;
                 }
             }
         }
@@ -270,28 +421,105 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         modelRelationshipRepository.saveAll(newRelationships);
         evidenceRepository.saveAll(newEvidences);
 
+        if (hasUncertainMapping) {
+            correlationLimitations.add("PARTIAL_OR_AMBIGUOUS_PARTICIPANT_MAPPING");
+        }
+        if (hasAmbiguousRelationshipCandidates) {
+            correlationLimitations.add("AMBIGUOUS_STATIC_RELATIONSHIP_CANDIDATES");
+        }
+
         // =========================================================================
         // BƯỚC 4: SINH BẢN VẼ DiagramVersion notation = "UML_SEQUENCE", level = "RUNTIME_PROCESS"
         // =========================================================================
         ObjectNode sequenceLayout = objectMapper.createObjectNode();
         sequenceLayout.put("notation", "UML_SEQUENCE");
         sequenceLayout.put("level", "RUNTIME_PROCESS");
+        sequenceLayout.put("schemaVersion", 2);
+        sequenceLayout.put("baseModelVersionId", baseVersion.getId() != null ? baseVersion.getId().toString() : null);
+        sequenceLayout.put("enrichedModelVersionId", enrichedVersion.getId() != null ? enrichedVersion.getId().toString() : null);
+        sequenceLayout.put("traceStatus", hasUncertainMapping ? "PARTIAL" : "COMPLETE");
         sequenceLayout.put("totalSteps", causalSteps.size());
 
         ArrayNode stepsArray = objectMapper.createArrayNode();
         for (CausalCallStep step : causalSteps) {
             ObjectNode stepNode = objectMapper.createObjectNode();
+            String callerSvc = step.parentSpan.getServiceName();
+            String calleeSvc = step.childSpan.getServiceName();
+            UUID callerBaseId = step.callerResolution != null && step.callerResolution.element != null
+                    ? newToBaseIdMap.get(step.callerResolution.element)
+                    : null;
+            UUID calleeBaseId = step.calleeResolution != null && step.calleeResolution.element != null
+                    ? newToBaseIdMap.get(step.calleeResolution.element)
+                    : null;
+            UUID callerElId = step.callerResolution != null && step.callerResolution.element != null
+                    ? (step.callerResolution.element.getId() != null ? step.callerResolution.element.getId() : callerBaseId)
+                    : null;
+            UUID calleeElId = step.calleeResolution != null && step.calleeResolution.element != null
+                    ? (step.calleeResolution.element.getId() != null ? step.calleeResolution.element.getId() : calleeBaseId)
+                    : null;
+            String callerStatus = step.callerResolution != null ? step.callerResolution.status : "UNMAPPED";
+            String calleeStatus = step.calleeResolution != null ? step.calleeResolution.status : "UNMAPPED";
+            String callerParticipantId = buildParticipantId(step.parentSpan, callerBaseId, callerElId, callerSvc, callerStatus);
+            String calleeParticipantId = buildParticipantId(step.childSpan, calleeBaseId, calleeElId, calleeSvc, calleeStatus);
+
+            UUID baseRelId = step.relationship != null ? newToBaseRelIdMap.get(step.relationship) : null;
+            UUID relId = step.relationship != null
+                    ? (step.relationship.getId() != null ? step.relationship.getId() : baseRelId)
+                    : null;
+            UUID evId = step.evidence != null ? step.evidence.getId() : null;
+
+            String httpMethod = firstNonBlank(step.childSpan.getHttpMethod(), step.parentSpan.getHttpMethod());
+            String httpUrl = firstNonBlank(step.childSpan.getHttpUrl(), step.parentSpan.getHttpUrl());
+            Integer statusCode = step.childSpan.getHttpStatusCode() != null ? step.childSpan.getHttpStatusCode() : step.parentSpan.getHttpStatusCode();
+            Long durationMs = step.childSpan.getDurationMs() != null ? step.childSpan.getDurationMs() : step.parentSpan.getDurationMs();
+            String operation = resolveSpanOperation(step.parentSpan, step.childSpan);
+            String messageSort = inferObservedMessageSort(step.parentSpan, step.childSpan);
+            if ("UNKNOWN".equals(messageSort)) {
+                hasUnknownMessageSort = true;
+            }
+
             stepNode.put("stepOrder", step.order);
-            stepNode.put("callerService", step.parentSpan.getServiceName());
-            stepNode.put("calleeService", step.childSpan.getServiceName());
-            stepNode.put("operation", step.childSpan.getOperationName() != null ? step.childSpan.getOperationName() : (step.childSpan.getHttpMethod() + " " + step.childSpan.getHttpUrl()));
-            stepNode.put("httpMethod", step.childSpan.getHttpMethod());
-            stepNode.put("httpStatusCode", step.childSpan.getHttpStatusCode());
-            stepNode.put("durationMs", step.childSpan.getDurationMs());
-            stepNode.put("traceId", step.childSpan.getTraceId());
-            stepNode.put("spanId", step.childSpan.getSpanId());
-            stepNode.put("parentSpanId", step.childSpan.getParentSpanId());
+            stepNode.put("messageId", step.messageId);
+            stepNode.put("callerService", callerSvc);
+            stepNode.put("calleeService", calleeSvc);
+            stepNode.put("callerParticipantId", callerParticipantId);
+            stepNode.put("calleeParticipantId", calleeParticipantId);
+            putUuidOrNull(stepNode, "callerElementId", callerElId);
+            putUuidOrNull(stepNode, "calleeElementId", calleeElId);
+            putUuidOrNull(stepNode, "callerBaseElementId", callerBaseId);
+            putUuidOrNull(stepNode, "calleeBaseElementId", calleeBaseId);
+            stepNode.put("callerResolutionStatus", callerStatus);
+            stepNode.put("calleeResolutionStatus", calleeStatus);
+            stepNode.put("operation", operation != null ? operation : (httpMethod + " " + httpUrl));
+            stepNode.put("messageSort", messageSort);
+            putStringOrNull(stepNode, "httpMethod", httpMethod);
+            putIntOrNull(stepNode, "httpStatusCode", statusCode);
+            putLongOrNull(stepNode, "durationMs", durationMs);
+            putStringOrNull(stepNode, "traceId", step.childSpan.getTraceId());
+            putStringOrNull(stepNode, "spanId", step.childSpan.getSpanId());
+            putStringOrNull(stepNode, "parentSpanId", step.childSpan.getParentSpanId());
+            putUuidOrNull(stepNode, "relationshipId", relId);
+            putUuidOrNull(stepNode, "baseRelationshipId", baseRelId);
+            ArrayNode candidateRelsNode = stepNode.putArray("candidateRelationshipIds");
+            for (UUID candId : step.candidateBaseRelationshipIds) {
+                if (candId != null) {
+                    candidateRelsNode.add(candId.toString());
+                }
+            }
+            putUuidOrNull(stepNode, "evidenceId", evId);
+            stepNode.put("provenanceType", "OBSERVED");
+            ArrayNode parentsNode = stepNode.putArray("causalParentMessageIds");
+            for (String parentMsgId : step.causalParentMessageIds) {
+                parentsNode.add(parentMsgId);
+            }
             stepsArray.add(stepNode);
+        }
+        if (hasUnknownMessageSort && !correlationLimitations.contains("UNCLASSIFIED_MESSAGE_SORT_WITHOUT_EXPLICIT_SPAN_ATTRIBUTE")) {
+            correlationLimitations.add("UNCLASSIFIED_MESSAGE_SORT_WITHOUT_EXPLICIT_SPAN_ATTRIBUTE");
+        }
+        ArrayNode limitationsNode = sequenceLayout.putArray("limitations");
+        for (String lim : correlationLimitations) {
+            limitationsNode.add(lim);
         }
         sequenceLayout.set("steps", stepsArray);
 
@@ -311,6 +539,7 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                 : "PASSED";
         session.setScenarioStatus(outcome);
         session.setTraceStatus(hasUncertainMapping ? "PARTIAL" : "COMPLETE");
+        session.setEnrichedModelVersionId(enrichedVersion.getId());
         session.setCompletedAt(OffsetDateTime.now());
         runtimeSessionRepository.save(session);
 
@@ -321,7 +550,7 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
     }
 
     private static String spanKey(String trace, String span) {
-        return (Objects.toString(trace,"")+":"+Objects.toString(span,"")).toLowerCase(Locale.ROOT);
+        return (Objects.toString(trace, "") + ":" + Objects.toString(span, "")).toLowerCase(Locale.ROOT);
     }
 
     @Override
@@ -348,42 +577,483 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         List<SequenceStepDTO> steps = new ArrayList<>();
 
         if (diagram.getLayoutJson() != null && diagram.getLayoutJson().has("steps")) {
+            int fallbackOrder = 1;
             for (var node : diagram.getLayoutJson().get("steps")) {
+                int stepOrder = node.path("stepOrder").asInt(fallbackOrder++);
+                String messageId = textOrNull(node, "messageId");
+                if (messageId == null) {
+                    messageId = "msg-obs-" + stepOrder;
+                }
+                String callerService = textOrNull(node, "callerService");
+                String calleeService = textOrNull(node, "calleeService");
+                UUID callerElementId = uuidOrNull(node, "callerElementId");
+                UUID calleeElementId = uuidOrNull(node, "calleeElementId");
+                UUID callerBaseElementId = uuidOrNull(node, "callerBaseElementId");
+                UUID calleeBaseElementId = uuidOrNull(node, "calleeBaseElementId");
+
+                String callerResolutionStatus = textOrNull(node, "callerResolutionStatus");
+                if (callerResolutionStatus == null) {
+                    callerResolutionStatus = (callerElementId != null || callerBaseElementId != null) ? "RESOLVED" : "UNMAPPED";
+                }
+                String calleeResolutionStatus = textOrNull(node, "calleeResolutionStatus");
+                if (calleeResolutionStatus == null) {
+                    calleeResolutionStatus = (calleeElementId != null || calleeBaseElementId != null) ? "RESOLVED" : "UNMAPPED";
+                }
+
+                String callerParticipantId = textOrNull(node, "callerParticipantId");
+                if (callerParticipantId == null) {
+                    callerParticipantId = buildParticipantId(null, callerBaseElementId, callerElementId, callerService, callerResolutionStatus);
+                }
+                String calleeParticipantId = textOrNull(node, "calleeParticipantId");
+                if (calleeParticipantId == null) {
+                    calleeParticipantId = buildParticipantId(null, calleeBaseElementId, calleeElementId, calleeService, calleeResolutionStatus);
+                }
+
+                String messageSort = textOrNull(node, "messageSort");
+                if (messageSort == null) {
+                    messageSort = "UNKNOWN";
+                }
+                String provenanceType = textOrNull(node, "provenanceType");
+                if (provenanceType == null) {
+                    provenanceType = "OBSERVED";
+                }
+
+                List<String> causalParents = new ArrayList<>();
+                if (node.has("causalParentMessageIds") && node.get("causalParentMessageIds").isArray()) {
+                    for (var p : node.get("causalParentMessageIds")) {
+                        if (p != null && !p.isNull() && !p.asText().isBlank()) {
+                            causalParents.add(p.asText());
+                        }
+                    }
+                }
+
+                List<UUID> candidateRelIds = new ArrayList<>();
+                if (node.has("candidateRelationshipIds") && node.get("candidateRelationshipIds").isArray()) {
+                    for (var cr : node.get("candidateRelationshipIds")) {
+                        if (cr != null && !cr.isNull() && !cr.asText().isBlank()) {
+                            try {
+                                candidateRelIds.add(UUID.fromString(cr.asText().trim()));
+                            } catch (IllegalArgumentException ignored) {
+                            }
+                        }
+                    }
+                }
+
                 steps.add(SequenceStepDTO.builder()
-                        .stepOrder(node.path("stepOrder").asInt())
-                        .callerService(node.path("callerService").asText())
-                        .calleeService(node.path("calleeService").asText())
-                        .operation(node.path("operation").asText())
-                        .httpMethod(node.path("httpMethod").asText())
-                        .httpStatusCode(node.path("httpStatusCode").asInt())
-                        .durationMs(node.path("durationMs").asLong())
-                        .traceId(node.path("traceId").asText())
-                        .spanId(node.path("spanId").asText())
-                        .parentSpanId(node.path("parentSpanId").asText())
+                        .stepOrder(stepOrder)
+                        .messageId(messageId)
+                        .callerService(callerService)
+                        .calleeService(calleeService)
+                        .callerParticipantId(callerParticipantId)
+                        .calleeParticipantId(calleeParticipantId)
+                        .callerElementId(callerElementId)
+                        .calleeElementId(calleeElementId)
+                        .callerBaseElementId(callerBaseElementId)
+                        .calleeBaseElementId(calleeBaseElementId)
+                        .callerResolutionStatus(callerResolutionStatus)
+                        .calleeResolutionStatus(calleeResolutionStatus)
+                        .operation(textOrNull(node, "operation"))
+                        .messageSort(messageSort)
+                        .httpMethod(textOrNull(node, "httpMethod"))
+                        .httpStatusCode(intOrNull(node, "httpStatusCode"))
+                        .durationMs(longOrNull(node, "durationMs"))
+                        .traceId(textOrNull(node, "traceId"))
+                        .spanId(textOrNull(node, "spanId"))
+                        .parentSpanId(textOrNull(node, "parentSpanId"))
+                        .relationshipId(uuidOrNull(node, "relationshipId"))
+                        .baseRelationshipId(uuidOrNull(node, "baseRelationshipId"))
+                        .candidateRelationshipIds(candidateRelIds)
+                        .evidenceId(uuidOrNull(node, "evidenceId"))
+                        .provenanceType(provenanceType)
+                        .causalParentMessageIds(causalParents)
                         .build());
             }
         }
 
+        ModelVersion baseMv = mv.getBaseModelVersion();
+        RuntimeSession session = mv.getRuntimeSession();
+        UUID baseModelVersionId = baseMv != null
+                ? baseMv.getId()
+                : (session != null && session.getModelVersion() != null
+                        ? session.getModelVersion().getId()
+                        : uuidOrNull(diagram.getLayoutJson(), "baseModelVersionId"));
+        UUID sourceSnapshotId = mv.getSourceSnapshot() != null
+                ? mv.getSourceSnapshot().getId()
+                : (session != null && session.getSourceSnapshot() != null ? session.getSourceSnapshot().getId() : null);
+
+        List<String> limitations = new ArrayList<>();
+        if (diagram.getLayoutJson() != null && diagram.getLayoutJson().has("limitations") && diagram.getLayoutJson().get("limitations").isArray()) {
+            for (var lim : diagram.getLayoutJson().get("limitations")) {
+                if (lim != null && !lim.isNull() && !lim.asText().isBlank()) {
+                    limitations.add(lim.asText());
+                }
+            }
+        }
+        if (limitations.isEmpty()) {
+            limitations.add("NO_SYNTHETIC_REPLY_FROM_END_TIME");
+            limitations.add("NO_COMBINED_FRAGMENTS_FROM_SINGLE_TRACE");
+        }
+
+        String traceStatus = session != null && session.getTraceStatus() != null
+                ? session.getTraceStatus()
+                : textOrNull(diagram.getLayoutJson(), "traceStatus");
+        String mappingStatus = session != null ? session.getMappingStatus() : null;
+
         return SequenceDiagramResponseDTO.builder()
                 .diagramId(diagram.getId())
                 .modelVersionId(mv.getId())
+                .baseModelVersionId(baseModelVersionId)
+                .sourceSnapshotId(sourceSnapshotId)
+                .modelRevision(mv.getRevision())
+                .baseModelRevision(baseMv != null ? baseMv.getRevision() : null)
+                .modelOrigin(mv.getOrigin())
                 .runtimeSessionId(sessionId)
                 .notation("UML_SEQUENCE")
                 .level("RUNTIME_PROCESS")
+                .traceStatus(traceStatus)
+                .mappingStatus(mappingStatus)
+                .startedAt(session != null ? session.getStartedAt() : null)
+                .completedAt(session != null ? session.getCompletedAt() : null)
+                .limitations(limitations)
                 .layoutJson(diagram.getLayoutJson())
                 .steps(steps)
                 .build();
     }
 
+    private static ModelRelationship resolveExplicitSpanRelationship(OtelSpanDTO parent,
+                                                                     OtelSpanDTO child,
+                                                                     Map<UUID, ModelRelationship> copiedByBaseRelId) {
+        for (OtelSpanDTO s : Arrays.asList(child, parent)) {
+            if (s != null && s.getAttributes() != null) {
+                for (String key : List.of("mavis.model.relationshipId", "model.relationship.id", "relationshipId")) {
+                    String raw = s.getAttributes().get(key);
+                    if (raw != null && !raw.isBlank()) {
+                        try {
+                            UUID id = UUID.fromString(raw.trim());
+                            ModelRelationship matched = copiedByBaseRelId.get(id);
+                            if (matched != null) {
+                                return matched;
+                            }
+                        } catch (IllegalArgumentException ignored) {
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static ModelElement resolveConfirmedMapping(String lowerServiceName,
+                                                        Map<String, String> confirmedMappings,
+                                                        Map<UUID, ModelElement> oldToNewElementMap) {
+        if (confirmedMappings == null || confirmedMappings.isEmpty()) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : confirmedMappings.entrySet()) {
+            if (entry.getKey() != null && entry.getKey().equalsIgnoreCase(lowerServiceName) && entry.getValue() != null) {
+                try {
+                    UUID id = UUID.fromString(entry.getValue().trim());
+                    ModelElement resolved = oldToNewElementMap.get(id);
+                    if (resolved != null) {
+                        return resolved;
+                    }
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    private static SpanElementResolution resolveSpanElement(OtelSpanDTO span,
+                                                            Map<String, String> confirmedMappings,
+                                                            Map<UUID, ModelElement> oldToNewElementMap,
+                                                            Map<String, ModelElement> uniqueServiceElementMap,
+                                                            Set<String> ambiguousServiceNames,
+                                                            Map<String, ModelElement> runtimeDiscoveredByLowerName) {
+        if (span == null) {
+            return new SpanElementResolution(null, "UNMAPPED");
+        }
+        Map<String, String> attrs = span.getAttributes();
+        if (attrs != null) {
+            for (String key : List.of("mavis.model.elementId", "model.element.id", "modelServiceId")) {
+                String rawId = attrs.get(key);
+                if (rawId != null && !rawId.isBlank()) {
+                    try {
+                        UUID id = UUID.fromString(rawId.trim());
+                        ModelElement resolved = oldToNewElementMap.get(id);
+                        if (resolved != null) {
+                            return new SpanElementResolution(resolved, "RESOLVED");
+                        }
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            }
+        }
+        String svcName = span.getServiceName();
+        if (svcName == null || svcName.isBlank()) {
+            return new SpanElementResolution(null, "UNMAPPED");
+        }
+        String lower = svcName.toLowerCase(Locale.ROOT);
+        ModelElement confirmed = resolveConfirmedMapping(lower, confirmedMappings, oldToNewElementMap);
+        if (confirmed != null) {
+            return new SpanElementResolution(confirmed, "RESOLVED");
+        }
+        if (ambiguousServiceNames.contains(lower)) {
+            return new SpanElementResolution(null, "AMBIGUOUS");
+        }
+        ModelElement unique = uniqueServiceElementMap.get(lower);
+        if (unique != null) {
+            return new SpanElementResolution(unique, "RESOLVED");
+        }
+        ModelElement discovered = runtimeDiscoveredByLowerName.get(lower);
+        return new SpanElementResolution(discovered, "UNCERTAIN_MAPPING");
+    }
+
+    private static String buildParticipantId(OtelSpanDTO span,
+                                             UUID baseElementId,
+                                             UUID elementId,
+                                             String serviceName,
+                                             String resolutionStatus) {
+        String role = null;
+        if (span != null && span.getAttributes() != null) {
+            role = firstNonBlank(span.getAttributes().get("mavis.participant.role"), span.getAttributes().get("participant.role"));
+        }
+        UUID canonicalId = baseElementId != null ? baseElementId : elementId;
+        if (canonicalId != null && "RESOLVED".equalsIgnoreCase(resolutionStatus)) {
+            return role != null && !role.isBlank()
+                    ? "part:" + canonicalId + ":" + role.trim().toLowerCase(Locale.ROOT)
+                    : "part:" + canonicalId;
+        }
+        String safeService = serviceName != null && !serviceName.isBlank()
+                ? serviceName.trim().toLowerCase(Locale.ROOT)
+                : "unknown";
+        if ("AMBIGUOUS".equalsIgnoreCase(resolutionStatus)) {
+            return "part:ambiguous:" + safeService;
+        }
+        return "part:service:" + safeService;
+    }
+
+    private static String resolveEffectiveCallerRootSpanId(OtelSpanDTO callerSpan, Map<String, OtelSpanDTO> spanByIdMap) {
+        if (callerSpan == null) {
+            return "";
+        }
+        String kind = spanKind(callerSpan);
+        if ("CLIENT".equals(kind) && callerSpan.getParentSpanId() != null && !callerSpan.getParentSpanId().isBlank()) {
+            OtelSpanDTO parent = spanByIdMap.get(spanKey(callerSpan.getTraceId(), callerSpan.getParentSpanId()));
+            if (parent != null && parent.getServiceName() != null
+                    && parent.getServiceName().equalsIgnoreCase(callerSpan.getServiceName())) {
+                return parent.getSpanId();
+            }
+        }
+        return Objects.toString(callerSpan.getSpanId(), "");
+    }
+
+    private static boolean isDuplicateClientServerHop(OtelSpanDTO parent,
+                                                      OtelSpanDTO child,
+                                                      Set<String> deduplicatedCallKeys,
+                                                      String dedupKey) {
+        String parentKind = spanKind(parent);
+        String childKind = spanKind(child);
+        if ("CLIENT".equals(parentKind) || "SERVER".equals(childKind)) {
+            return !deduplicatedCallKeys.add(dedupKey);
+        }
+        return false;
+    }
+
+    private static List<String> resolveCausalParentMessageIds(OtelSpanDTO callerSpan,
+                                                              Map<String, OtelSpanDTO> spanByIdMap,
+                                                              Map<String, String> childSpanKeyToMessageId) {
+        List<String> result = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
+        OtelSpanDTO curr = callerSpan;
+        String callerService = callerSpan != null ? callerSpan.getServiceName() : null;
+        while (curr != null && curr.getSpanId() != null && visited.add(spanKey(curr.getTraceId(), curr.getSpanId()))) {
+            String key = spanKey(curr.getTraceId(), curr.getSpanId());
+            String msgId = childSpanKeyToMessageId.get(key);
+            if (msgId != null && !result.contains(msgId)) {
+                result.add(msgId);
+                break;
+            }
+            if (curr.getParentSpanId() == null || curr.getParentSpanId().isBlank()) {
+                break;
+            }
+            OtelSpanDTO next = spanByIdMap.get(spanKey(curr.getTraceId(), curr.getParentSpanId()));
+            if (next == null || callerService == null || next.getServiceName() == null
+                    || !callerService.equalsIgnoreCase(next.getServiceName())) {
+                break;
+            }
+            curr = next;
+        }
+        return result;
+    }
+
+    private static boolean hasTimestampClockSkew(OtelSpanDTO parent, OtelSpanDTO child) {
+        Long pStart = parseTimestampAttr(parent);
+        Long cStart = parseTimestampAttr(child);
+        return pStart != null && cStart != null && cStart < pStart;
+    }
+
+    private static Long parseTimestampAttr(OtelSpanDTO span) {
+        if (span == null || span.getAttributes() == null) {
+            return null;
+        }
+        for (String key : List.of("startTimeUnixNano", "start.time.nano", "timestampMs")) {
+            String v = span.getAttributes().get(key);
+            if (v != null && !v.isBlank()) {
+                try {
+                    return Long.parseLong(v.trim());
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String spanKind(OtelSpanDTO span) {
+        if (span == null || span.getAttributes() == null) {
+            return "";
+        }
+        String k = firstNonBlank(span.getAttributes().get("span.kind"), span.getAttributes().get("otel.span.kind"));
+        return k != null ? k.trim().toUpperCase(Locale.ROOT) : "";
+    }
+
+    private static String resolveSpanOperation(OtelSpanDTO parent, OtelSpanDTO child) {
+        if (child != null && child.getOperationName() != null && !child.getOperationName().isBlank()) {
+            return child.getOperationName();
+        }
+        if (parent != null && "CLIENT".equals(spanKind(parent))
+                && parent.getOperationName() != null && !parent.getOperationName().isBlank()) {
+            return parent.getOperationName();
+        }
+        String method = firstNonBlank(child != null ? child.getHttpMethod() : null, parent != null ? parent.getHttpMethod() : null);
+        String url = firstNonBlank(child != null ? child.getHttpUrl() : null, parent != null ? parent.getHttpUrl() : null);
+        if (method != null || url != null) {
+            return (method != null ? method : "") + (method != null && url != null ? " " : "") + (url != null ? url : "");
+        }
+        return null;
+    }
+
+    private static String inferObservedMessageSort(OtelSpanDTO parent, OtelSpanDTO child) {
+        for (OtelSpanDTO s : Arrays.asList(child, parent)) {
+            if (s != null && s.getAttributes() != null) {
+                String explicitSort = firstNonBlank(s.getAttributes().get("mavis.message.sort"), s.getAttributes().get("message.sort"));
+                if (explicitSort != null) {
+                    String upper = explicitSort.trim().toUpperCase(Locale.ROOT);
+                    if (Set.of("SYNCH_CALL", "ASYNCH_CALL", "ASYNCH_SIGNAL", "REPLY", "CREATE", "DELETE", "UNKNOWN").contains(upper)) {
+                        return upper;
+                    }
+                }
+            }
+        }
+        // Transport fields (HTTP method/status/URL or messaging.system) do NOT prove UML MessageSort
+        return "UNKNOWN";
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) {
+            return a;
+        }
+        if (b != null && !b.isBlank()) {
+            return b;
+        }
+        return null;
+    }
+
+    private static String textOrNull(com.fasterxml.jackson.databind.JsonNode node, String field) {
+        if (node == null || !node.hasNonNull(field)) {
+            return null;
+        }
+        String text = node.get(field).asText();
+        return (text == null || text.isBlank() || "null".equalsIgnoreCase(text)) ? null : text;
+    }
+
+    private static Integer intOrNull(com.fasterxml.jackson.databind.JsonNode node, String field) {
+        if (node == null || !node.hasNonNull(field) || !node.get(field).isNumber()) {
+            return null;
+        }
+        return node.get(field).asInt();
+    }
+
+    private static Long longOrNull(com.fasterxml.jackson.databind.JsonNode node, String field) {
+        if (node == null || !node.hasNonNull(field) || !node.get(field).isNumber()) {
+            return null;
+        }
+        return node.get(field).asLong();
+    }
+
+    private static UUID uuidOrNull(com.fasterxml.jackson.databind.JsonNode node, String field) {
+        String text = textOrNull(node, field);
+        if (text == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(text.trim());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private static void putStringOrNull(ObjectNode node, String field, String value) {
+        if (value != null) {
+            node.put(field, value);
+        } else {
+            node.putNull(field);
+        }
+    }
+
+    private static void putUuidOrNull(ObjectNode node, String field, UUID value) {
+        if (value != null) {
+            node.put(field, value.toString());
+        } else {
+            node.putNull(field);
+        }
+    }
+
+    private static void putIntOrNull(ObjectNode node, String field, Integer value) {
+        if (value != null) {
+            node.put(field, value);
+        } else {
+            node.putNull(field);
+        }
+    }
+
+    private static void putLongOrNull(ObjectNode node, String field, Long value) {
+        if (value != null) {
+            node.put(field, value);
+        } else {
+            node.putNull(field);
+        }
+    }
+
+    private static class SpanElementResolution {
+        final ModelElement element;
+        final String status;
+
+        SpanElementResolution(ModelElement element, String status) {
+            this.element = element;
+            this.status = status;
+        }
+    }
+
     private static class CausalCallStep {
         final int order;
+        final String messageId;
         final OtelSpanDTO parentSpan;
         final OtelSpanDTO childSpan;
+        final List<String> causalParentMessageIds;
+        SpanElementResolution callerResolution;
+        SpanElementResolution calleeResolution;
+        ModelRelationship relationship;
+        List<UUID> candidateBaseRelationshipIds = Collections.emptyList();
+        Evidence evidence;
 
-        CausalCallStep(int order, OtelSpanDTO parentSpan, OtelSpanDTO childSpan) {
+        CausalCallStep(int order, String messageId, OtelSpanDTO parentSpan, OtelSpanDTO childSpan, List<String> causalParentMessageIds) {
             this.order = order;
+            this.messageId = messageId;
             this.parentSpan = parentSpan;
             this.childSpan = childSpan;
+            this.causalParentMessageIds = causalParentMessageIds;
         }
     }
 }
+
