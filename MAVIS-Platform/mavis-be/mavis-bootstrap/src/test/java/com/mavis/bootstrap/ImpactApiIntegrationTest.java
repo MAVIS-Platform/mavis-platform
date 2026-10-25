@@ -24,7 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class ImpactApiIntegrationTest {
+class ImpactApiIntegrationTest extends ApiIntegrationContext {
 
     @Autowired
     private MockMvc mockMvc;

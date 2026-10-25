@@ -21,6 +21,11 @@ public class SubmissionController {
     private final SubmissionService submissionService;
     private final FeedbackCommentService feedbackCommentService;
 
+    @GetMapping({"/api/v1/submissions/me", "/api/v1/submissions"})
+    public ApiResponse<List<SubmissionResponseDTO>> getMySubmissions() {
+        return ApiResponse.success(submissionService.getMySubmissions());
+    }
+
     @PostMapping("/api/v1/submissions")
     @Operation(summary = "Nộp bài tập kiến trúc bất biến (Submission Snapshot)",
             description = "Đóng gói toàn bộ SourceSnapshot, ModelVersion, DiagramVersion, EvaluationRun và RuntimeSession thành bản ghi nộp bài")

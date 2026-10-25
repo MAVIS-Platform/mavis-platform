@@ -150,4 +150,27 @@ class DockerDetectorServiceImplTest {
         List<DetectedContainerDTO> containers = dockerDetectorService.detectContainers(tempDir.toString());
         assertThat(containers).isEmpty();
     }
-}
+
+    @Test
+    void composeDatabaseBindingUsesSelectedDeploymentAndNeverParsesCredentials() throws IOException {
+        Files.writeString(tempDir.resolve("docker-compose.yml"), """
+                services:
+                  api:
+                    build:
+                      context: ./modules/orders
+                    environment:
+                      SPRING_DATASOURCE_URL: jdbc:mysql://mysql/orders
+                      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+                      SPRING_DATASOURCE_PASSWORD: do-not-import
+                  mysql:
+                    image: mysql:8
+                """);
+        var containers=dockerDetectorService.detectContainers(tempDir.toString());
+        assertThat(containers.get(0).getBuildContext()).isEqualTo("./modules/orders");
+        assertThat(containers.get(0).getDatasourceHost()).isEqualTo("mysql");
+        assertThat(containers.get(0).getDatasourceTechnology()).isEqualTo("mysql");
+        assertThat(containers.get(0).getDatasourceDatabase()).isEqualTo("orders");
+        assertThat(containers.get(0).getMessageBrokerAuthority()).isEqualTo("kafka:9092");
+        assertThat(DockerDetectorServiceImpl.resolveElementType("provectuslabs/kafka-ui:latest","kafka-ui")).isEqualTo("SERVICE_CONTAINER");
+        assertThat(DockerDetectorServiceImpl.resolveElementType("amazon/dynamodb-local:latest","dynamodblocal")).isEqualTo("DATABASE");
+    }}

@@ -31,11 +31,30 @@ export function useApiQuery<K extends Operation>(
     refetchInterval: options.poll
       ? (query) => {
           const data: unknown = query.state.data;
-          const active = (value: unknown) =>
-            typeof value === "object" &&
-            value !== null &&
-            "status" in value &&
-            ["queued", "processing", "running"].includes(String(value.status));
+          const active = (value: unknown) => {
+            if (!value || typeof value !== "object") return false;
+            if ("executionStatus" in value)
+              return [
+                "NOT_STARTED",
+                "PENDING",
+                "READY_FOR_DISPATCH",
+                "APPROVED",
+                "ALLOCATED",
+                "RUNNING",
+                "CANCELLING",
+              ].includes(String(value.executionStatus));
+            return (
+              "status" in value &&
+              [
+                "queued",
+                "processing",
+                "cancelling",
+                "running",
+                "ready-for-dispatch",
+                "allocated",
+              ].includes(String(value.status))
+            );
+          };
           if (query.state.error) return false;
           if (Array.isArray(data)) return data.some(active) ? 1500 : false;
           return data === undefined || active(data) ? 1500 : false;
@@ -47,7 +66,7 @@ export function useApiQuery<K extends Operation>(
     if (!terminal) return;
     const related = operation.startsWith("runtime")
       ? ["platformSummary"]
-      : ["models", "model", "projects", "project", "platformSummary"];
+      : ["models", "modelVersions", "model", "projects", "projectOverviews", "project", "platformSummary"];
     void client.invalidateQueries({
       predicate: (entry) => related.includes(String(entry.queryKey[1])),
     });
@@ -65,8 +84,10 @@ export function useApiMutation<K extends Operation>(operation: K) {
       toast.success(
         operation === "signOut"
           ? "Signed out"
-          : operation === "mockLogin"
-            ? "Sample account selected"
+          : ["mockLogin", "signIn"].includes(operation)
+            ? api.mode === "mock"
+              ? "Sample account selected"
+              : "Signed in"
             : api.mode === "mock"
               ? "Sample change saved for this browser session"
               : "Change saved",
@@ -82,5 +103,9 @@ export function useSession() {
 }
 export function usePermission(permission: Permission) {
   const session = useSession();
-  return hasPermission(session.data?.user?.role, permission);
+  const api = useApi();
+  return (
+    hasPermission(session.data?.user?.role, permission) ||
+    (api.mode === "backend" && !!session.data?.user && permission.startsWith("project:"))
+  );
 }

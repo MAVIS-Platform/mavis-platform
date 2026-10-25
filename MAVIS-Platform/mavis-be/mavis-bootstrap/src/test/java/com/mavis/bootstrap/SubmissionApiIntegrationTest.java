@@ -28,11 +28,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class SubmissionApiIntegrationTest {
+class SubmissionApiIntegrationTest extends ApiIntegrationContext {
 
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired private WorkspaceMemberRepository members;
     @Autowired
     private WorkspaceRepository workspaceRepository;
 
@@ -80,11 +81,13 @@ class SubmissionApiIntegrationTest {
                 .role(studentRole)
                 .build());
 
+        User lecturer=userRepository.saveAndFlush(User.builder().email(UUID.randomUUID()+"@example.invalid").fullName("Lecturer").passwordHash("test-only").role(roleRepository.findByCode("LECTURER").orElseThrow()).build());
         Workspace workspace = workspaceRepository.saveAndFlush(Workspace.builder()
                 .name("Kien Truc Phan Mem K18")
                 .code("SE1801_" + UUID.randomUUID().toString().substring(0, 4))
-                .createdBy(user)
+                .createdBy(lecturer)
                 .build());
+        members.saveAndFlush(WorkspaceMember.builder().workspace(workspace).user(user).memberRole("STUDENT").build());
 
         // Đề bài yêu cầu bắt buộc Runtime Trace (requireRuntimeTrace = true)
         Assignment assignment = assignmentRepository.saveAndFlush(Assignment.builder()
@@ -140,7 +143,7 @@ class SubmissionApiIntegrationTest {
                 .sourceSnapshot(snapshot)
                 .triggeredBy(user)
                 .scenarioName("Order Fulfillment E2E")
-                .scenarioStatus("PASSED")
+                .scenarioStatus("PASSED").executionStatus("COMPLETED").evidenceStatus("AVAILABLE").cleanupStatus("CONFIRMED").runnerReceiptJson(objectMapper.createObjectNode())
                 .traceStatus("COMPLETE")
                 .startedAt(OffsetDateTime.now().minusMinutes(10))
                 .completedAt(OffsetDateTime.now())
@@ -210,7 +213,7 @@ class SubmissionApiIntegrationTest {
         System.out.println("================================================================================");
 
         // --- BƯỚC 3: GET /api/v1/assignments/{assignmentId}/submissions ---
-        MvcResult classSubmissionsResult = mockMvc.perform(get("/api/v1/assignments/{assignmentId}/submissions", assignment.getId())
+        MvcResult classSubmissionsResult = mockMvc.perform(get("/api/v1/assignments/{assignmentId}/submissions", assignment.getId()).header("X-Test-User-Email",lecturer.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -232,6 +235,7 @@ class SubmissionApiIntegrationTest {
 
         // --- BƯỚC 4: GET /api/v1/projects/{projectId}/submissions ---
         MvcResult projectSubmissionsResult = mockMvc.perform(get("/api/v1/projects/{projectId}/submissions", project.getId())
+                        .header("X-Test-User-Email",user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -251,6 +255,7 @@ class SubmissionApiIntegrationTest {
 
         // --- BƯỚC 5: GET /api/v1/submissions/{submissionId} ---
         MvcResult detailResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}", submissionId)
+                        .header("X-Test-User-Email",user.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))

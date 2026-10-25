@@ -39,7 +39,7 @@ public sealed class ManagedDockerRuntimeTests
             var events = new List<string>();
             var handler = new FakeJava(definition, root, cancel, events);
             using var java = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080"), "fixture-managed-key", handler);
-            var outcome = await new ManagedRuntimeAdapter(java, new DockerCommands()).RunAsync(session, Path.Combine(poc, "collector.yaml"), root);
+            var outcome = await new ManagedRuntimeAdapter(java, new RecordedDocker(root)).RunAsync(session, Path.Combine(poc, "collector.yaml"), root);
             Assert.Equal(cancel ? "Cancelled" : "Completed", outcome.ExecutionStatus);
             Assert.Equal("Confirmed", outcome.CleanupStatus);
             if (!cancel)
@@ -59,6 +59,24 @@ public sealed class ManagedDockerRuntimeTests
             // Cleanup result itself checks actual containers, volumes and networks through DockerCommands.
         }
         // Keep redacted receipts/events as local evidence; never delete leftover Docker state after a failing assertion.
+    }
+
+    // Keep command timing, never stdin/headers, so an opt-in infrastructure failure is diagnosable.
+    private sealed class RecordedDocker(string root) : IDockerCommands
+    {
+        private readonly DockerCommands docker = new();
+        public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string directory, int timeout, CancellationToken ct)
+            => Record(args, () => docker.RunAsync(args, directory, timeout, ct));
+        public Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> args, string directory, int timeout, string input, CancellationToken ct)
+            => Record(args, () => docker.RunWithInputAsync(args, directory, timeout, input, ct));
+        private async Task<DockerCommandResult> Record(IReadOnlyList<string> args, Func<Task<DockerCommandResult>> run)
+        {
+            var timer = System.Diagnostics.Stopwatch.StartNew();
+            try { var result = await run(); Log("exit=" + result.ExitCode); return result; }
+            catch (Exception ex) { Log(ex.GetType().Name); throw; }
+            void Log(string result) => File.AppendAllText(Path.Combine(root, "docker-commands.log"),
+                $"{timer.ElapsedMilliseconds}ms {result} {string.Join(' ', args)}{Environment.NewLine}");
+        }
     }
 
     private sealed class FakeJava(RuntimeRunDefinition definition, string root, bool cancel, List<string> events) : HttpMessageHandler

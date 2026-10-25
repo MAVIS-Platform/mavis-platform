@@ -1,0 +1,12 @@
+# Machine-local environment and diagnostics
+.env.backend.local
+.artifacts/
+
+# Generated review, document and browser QA artifacts (keep locally)
+/output/
+/outputs/
+/.doc_review/
+/.playwright-cli/
+/test-results/
+/MAVIS-Frontend/.next*/
+/MAVIS.Worker/integration/java-client/target/

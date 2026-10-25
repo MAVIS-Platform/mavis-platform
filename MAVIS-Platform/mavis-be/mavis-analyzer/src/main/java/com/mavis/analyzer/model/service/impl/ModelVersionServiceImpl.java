@@ -18,6 +18,7 @@ import java.util.function.Function;
 @Slf4j
 @Service @RequiredArgsConstructor
 public class ModelVersionServiceImpl implements ModelVersionService {
+    private final com.mavis.common.security.AccessPolicyService accessPolicy;
     @Transactional(readOnly=true)
     public List<com.mavis.analyzer.model.dto.ModelVersionResponseDTO> getModelVersionsByProject(UUID id){
         list(id);return models.findByProjectId(id).stream().sorted(Comparator.comparing(ModelVersion::getRevision).reversed()).map(com.mavis.analyzer.model.dto.ModelVersionResponseDTO::fromEntity).toList();
@@ -92,10 +93,10 @@ public class ModelVersionServiceImpl implements ModelVersionService {
     @Override @Transactional(rollbackFor=Exception.class)
     public ModelView revise(UUID baseId,RevisionRequest request){
         if(request==null||request.elements()==null||request.relationships()==null||request.elements().size()+request.relationships().size()>2000)throw invalid();
-        var base=models.findById(baseId).orElseThrow(()->missing());owner(base.getProject());projects.findLockedById(base.getProject().getId()).orElseThrow(()->missing());
+        var base=models.findById(baseId).orElseThrow(()->missing());accessPolicy.requireProjectWriteAccess(base.getProject());projects.findLockedById(base.getProject().getId()).orElseThrow(()->missing());
         // Refresh the latest identity under the same project lock used by analysis publication.
         var latest=models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(base.getProject().getId()).orElseThrow(()->invalid());
-        if(!latest.getId().equals(baseId))throw new BusinessException(ErrorCode.BAD_REQUEST,"Revision base is stale; reload latest model before editing");
+        if(!latest.getId().equals(baseId))throw new BusinessException(ErrorCode.CONFLICT,"Revision base is stale; reload latest model before editing");
         var oldNodes=elements.findByModelVersionId(baseId);var oldEdges=relationships.findByModelVersionId(baseId);
         if(oldNodes.size()>10000||oldEdges.size()>50000)throw invalid();
         var next=models.save(ModelVersion.builder().project(base.getProject()).sourceSnapshot(base.getSourceSnapshot()).baseModelVersion(base).createdBy(base.getProject().getOwner())
@@ -165,7 +166,7 @@ public class ModelVersionServiceImpl implements ModelVersionService {
     private String key(com.fasterxml.jackson.databind.JsonNode p,String kind,UUID id){if(p!=null){if(p.hasNonNull("logicalKey"))return p.get("logicalKey").asText();if(p.hasNonNull("workerLogicalId"))return "worker:"+p.get("workerLogicalId").asText();}return kind+":"+id;}
     private Evidence editEvidence(ModelVersion next,UUID base,ModelElement node,ModelRelationship relationship){return Evidence.builder().modelVersion(next).sourceSnapshot(next.getSourceSnapshot()).element(node).relationship(relationship).sourceType("CONFIG_FILE").adapterVersion("controlled-revision/1").locator("user-revision:"+next.getId())
             .provenance(json.createObjectNode().put("origin","USER_CONFIRMED").put("baseModelVersionId",base.toString()).put("actorId",SecurityUtils.getCurrentUserId().toString())).build();}
-    private void owner(Project p){if(!p.getOwner().getId().equals(SecurityUtils.getCurrentUserId()))throw new BusinessException(ErrorCode.FORBIDDEN,"Model access denied");}
+    private void owner(Project p){accessPolicy.requireProjectReadAccess(p);}
     private ModelView view(ModelVersion m){return new ModelView(m.getId(),m.getProject().getId(),m.getSourceSnapshot().getId(),m.getBaseModelVersion()==null?null:m.getBaseModelVersion().getId(),m.getRevision(),m.getOrigin(),Boolean.TRUE.equals(m.getIsLatestValid()));}
     private static boolean ref(String s){return s!=null&&s.matches("[A-Za-z0-9_-]{1,128}");}
     private static void name(String name){if(name==null||name.isBlank()||name.length()>255)throw invalid();}

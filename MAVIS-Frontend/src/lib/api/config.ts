@@ -1,6 +1,6 @@
 import { z } from "zod";
 const configuration = z.object({
-  MAVIS_API_MODE: z.enum(["mock", "backend"]).default("mock"),
+  MAVIS_API_MODE: z.enum(["mock", "backend"]).default("backend"),
   MAVIS_MOCK_SCENARIO: z
     .enum([
       "normal",

@@ -339,55 +339,20 @@ test("backend propagates cancellation, timeout, and real multipart archives", as
   });
   assert.equal((await api.execute("importSource", upload)).id, "source-2");
 });
-test("server proxy requires configured operations, checks write origin, and strips untrusted response fields", async (t) => {
-  env(t, {
-    MAVIS_API_MODE: "backend",
-    MAVIS_BACKEND_URL: "https://backend.invalid",
-    MAVIS_API_OPERATIONS: "{}",
-    MAVIS_SESSION_COOKIES: "session",
+test("server proxy uses Java bearer auth, rejects cross-origin writes and strips session secrets", async (t) => {
+  env(t, { MAVIS_API_MODE:"backend", MAVIS_JAVA_URL:"https://backend.invalid" });
+  const context=operation=>({params:Promise.resolve({operation})});
+  const read=operation=>new NextRequest(`http://localhost:3092/api/mavis/${operation}?input=%7B%7D`);
+  assert.equal((await route.GET(read("projects"),context("projects"))).status,401);
+  assert.equal((await route.POST(new NextRequest("http://localhost:3092/api/mavis/signOut",{method:"POST",headers:{host:"localhost:3092",origin:"https://other.invalid"},body:"{}"}),context("signOut"))).status,403);
+  t.mock.method(globalThis,"fetch",async(url,options)=>{
+    assert.equal(url,"https://backend.invalid/api/v1/auth/me");assert.equal(options.headers.get("Authorization"),"Bearer opaque");assert.equal(options.headers.has("Cookie"),false);
+    return Response.json({code:200,data:{id:"11111111-1111-4111-8111-111111111111",fullName:"User",role:"STUDENT",passwordHash:"must-be-stripped",token:"must-be-stripped"}});
   });
-  const context = (operation) => ({ params: Promise.resolve({ operation }) });
-  const read = (operation) =>
-    new NextRequest(`http://localhost:3092/api/mavis/${operation}?input=%7B%7D`);
-  assert.equal((await route.GET(read("projects"), context("projects"))).status, 501);
-  assert.equal(
-    (
-      await route.POST(
-        new NextRequest("http://localhost:3092/api/mavis/signOut", {
-          method: "POST",
-          headers: { origin: "https://other.invalid" },
-          body: "{}",
-        }),
-        context("signOut"),
-      )
-    ).status,
-    403,
-  );
-  process.env.MAVIS_API_OPERATIONS = JSON.stringify({
-    session: { path: "/session", method: "GET" },
-  });
-  t.mock.method(globalThis, "fetch", async (url, options) => {
-    assert.equal(url.origin, "https://backend.invalid");
-    assert.equal(options.headers.Cookie, "session=opaque");
-    return Response.json({
-      user: { id: "u1", name: "User", role: "student", accessToken: "must-be-stripped" },
-      internal: "must-be-stripped",
-    });
-  });
-  const response = await route.GET(
-    new NextRequest("http://localhost:3092/api/mavis/session", {
-      headers: { cookie: "session=opaque; unrelated=private" },
-    }),
-    context("session"),
-  );
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { user: { id: "u1", name: "User", role: "student" } });
-  assert.equal(response.headers.get("cache-control"), "no-store");
-  process.env.MAVIS_API_OPERATIONS = JSON.stringify({
-    session: { path: "//untrusted.invalid", method: "GET" },
-  });
-  assert.equal((await route.GET(read("session"), context("session"))).status, 501);
+  const response=await route.GET(new NextRequest("http://localhost:3092/api/mavis/session",{headers:{cookie:"mavis_session=opaque; unrelated=private"}}),context("session"));
+  assert.equal(response.status,200);assert.deepEqual(await response.json(),{user:{id:"11111111-1111-4111-8111-111111111111",name:"User",role:"student"}});assert.equal(response.headers.get("cache-control"),"no-store");
 });
+
 test("theme bootstraps before paint with validated preferences and denied-storage fallback", () => {
   const layout = fs.readFileSync(path.join(root, "app/layout.tsx"), "utf8");
   const script = layout.match(/const appearanceBootstrap = `([^`]+)`/)[1];
@@ -484,7 +449,7 @@ test("live shell preserves model context without provisional session or sample U
     assert.ok(!html.includes(excluded), excluded);
 });
 
-test("analysis routes choose isolated live mainflow in backend mode and retain mock gates", () => {
+test("analysis routes share the authenticated guard in backend mode and mock mode", () => {
   const React = require("react");
   const { renderToStaticMarkup } = require("react-dom/server");
   const { ThemeProvider } = require("../src/components/theme-provider.tsx");
@@ -514,7 +479,592 @@ test("analysis routes choose isolated live mainflow in backend mode and retain m
       );
       client.clear();
       assert.ok(html.includes("Checking session"), `${screen}: ${mode} checks its session`);
-      assert.equal(html.includes("Architecture analysis"), mode === "backend", screen);
+      assert.equal(html.includes("Architecture analysis"), false, `${screen}: do not render authenticated content before session resolution`);
     }
   }
+});
+
+test("unclassified architecture forms a deterministic 2D network without overlapping nodes", () => {
+  const {
+    layoutGraph,
+    graphEdgePath,
+    NODE_WIDTH,
+    NODE_HEIGHT,
+  } = require("../src/features/architecture/graph-layout.ts");
+  const elements = Array.from({ length: 24 }, (_, i) => ({
+    id: `node-${i}`,
+    name: `Service ${i}`,
+    layer: "unclassified",
+    description: "",
+    evidence: [],
+  }));
+  const edges = elements
+    .slice(1)
+    .map((node, i) => ({
+      id: `edge-${i}`,
+      from: elements[Math.floor(i / 3)].id,
+      to: node.id,
+      protocol: "HTTP",
+      uncertain: false,
+      evidence: [],
+    }));
+  const model = { elements, edges };
+  const original = JSON.stringify(model);
+  const nodes = layoutGraph(model);
+  assert.equal(JSON.stringify(model), original, "layout must not alter analyzed data");
+  assert.deepEqual(nodes, layoutGraph(model));
+  assert.deepEqual(nodes, layoutGraph({ ...model, elements: [...elements].reverse() }));
+  assert.ok(
+    new Set(nodes.map((node) => Math.round(node.x))).size > 3,
+    "unclassified nodes must not form one column",
+  );
+  const width = Math.max(...nodes.map((node) => node.x)) + NODE_WIDTH;
+  const height = Math.max(...nodes.map((node) => node.y)) + NODE_HEIGHT;
+  assert.ok(
+    width / height > 0.5 && width / height < 3,
+    "network should fit a useful 2D aspect ratio",
+  );
+  for (let i = 0; i < nodes.length; i++)
+    for (let j = i + 1; j < nodes.length; j++) {
+      assert.ok(
+        Math.abs(nodes[i].x - nodes[j].x) >= NODE_WIDTH ||
+          Math.abs(nodes[i].y - nodes[j].y) >= NODE_HEIGHT,
+        "node rectangles overlap",
+      );
+    }
+  assert.deepEqual(layoutGraph({ elements: [], edges: [] }), []);
+  assert.equal(layoutGraph({ elements: elements.slice(0, 1), edges: [] }).length, 1);
+  for (const [from, to, self] of [
+    [nodes[0], nodes[1], false],
+    [nodes[0], nodes[0], true],
+  ]) {
+    const path = graphEdgePath(from, to, self);
+    assert.ok(!/NaN|Infinity/.test(path));
+    assert.match(path, /^M /);
+  }
+  const disconnected = layoutGraph({ elements, edges: [] });
+  assert.ok(disconnected.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y)));
+});
+
+test("diagram zoom preserves the cursor's diagram point and clamps zoom", () => {
+  const { zoomDiagramCamera } = require("../src/features/architecture/diagram-camera.ts");
+  const camera = { x: 120, y: -70, zoom: 2 };
+  const origin = { x: 150, y: 40 };
+  const anchor = { x: 530, y: 280 };
+  const point = (view) => ({ x: (anchor.x - origin.x - view.x) / view.zoom, y: (anchor.y - origin.y - view.y) / view.zoom });
+  for (const factor of [1.2, 0.5, 1000, 0.00001]) {
+    const next = zoomDiagramCamera(camera, factor, anchor, origin);
+    assert.ok(next.zoom >= 0.15 && next.zoom <= 12);
+    assert.ok(Math.abs(point(next).x - point(camera).x) < 1e-9);
+    assert.ok(Math.abs(point(next).y - point(camera).y) < 1e-9);
+  }
+  const zoomed = zoomDiagramCamera(camera, 1.5, anchor, origin);
+  const restored = zoomDiagramCamera(zoomed, 1 / 1.5, anchor, origin);
+  assert.ok(Math.abs(restored.x - camera.x) < 1e-9);
+  assert.ok(Math.abs(restored.y - camera.y) < 1e-9);
+  assert.equal(restored.zoom, camera.zoom);
+});
+test("draw.io bridge accepts only local editor messages from the current iframe", () => {
+  const { DRAWIO_ORIGIN, DRAWIO_MAX_XML_LENGTH, readDrawioEvent } = require("../src/features/architecture/drawio-protocol.ts");
+  const frame = {};
+  const message = { origin: DRAWIO_ORIGIN, source: frame, data: JSON.stringify({ event: "save", xml: "<mxfile/>" }) };
+  assert.deepEqual(readDrawioEvent(message, frame), { event: "save", xml: "<mxfile/>" });
+  assert.equal(readDrawioEvent({ ...message, origin: "https://embed.diagrams.net" }, frame), null);
+  assert.equal(readDrawioEvent({ ...message, source: {} }, frame), null);
+  assert.equal(readDrawioEvent(message, null), null);
+  assert.equal(readDrawioEvent({ ...message, data: "not JSON" }, frame), null);
+  assert.equal(readDrawioEvent({ ...message, data: JSON.stringify({ event: "save", xml: 123 }) }, frame), null);
+  assert.equal(readDrawioEvent({ ...message, data: JSON.stringify({ event: "save", xml: "x".repeat(DRAWIO_MAX_XML_LENGTH + 1) }) }, frame), null);
+  assert.equal(readDrawioEvent({ ...message, data: JSON.stringify({ event: "openLink", href: "https://example.com" }) }, frame), null);
+  assert.deepEqual(readDrawioEvent({ ...message, data: JSON.stringify({ event: "init" }) }, frame), { event: "init" });
+});
+test("draw.io fit constrains height as well as width for tall diagrams", () => {
+  const { drawioFitRequest } = require("../src/features/architecture/drawio-protocol.ts");
+  const fit = drawioFitRequest({ modelBounds: { width: 1337, height: 1190 }, containerSize: { width: 1040, height: 610 } });
+  assert.equal(fit.action, "fit");
+  assert.ok(fit.maxScale * 1190 <= 610 - 48 + 1e-9);
+  assert.ok(fit.maxScale * 1337 <= 1040 - 48 + 1e-9);
+  assert.ok(fit.maxScale < 0.5, "width-only fitting would clip the bottom of this real model");
+  assert.equal(drawioFitRequest({}), null);
+  assert.equal(drawioFitRequest({ modelBounds: { width: 0, height: Infinity }, containerSize: { width: 100, height: 200 } }), null);
+});
+test("drawio projection and rules preserve scope without fabricating technology", () => {
+ const {projectDiagram,nodeText,relationLabel}=require("../src/lib/drawio/rules.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/petclinic-component.json"),"utf8").replace(/^\uFEFF/,""));
+ const service=raw.layoutJson.nodes.find(node=>node.name==="customers-service");
+ const scope=projectDiagram(raw,service.id);
+ assert.ok(scope.layoutJson.nodes.some(node=>node.name==="OwnerRepository"));
+ assert.ok(!scope.layoutJson.nodes.some(node=>node.name==="VetRepository"));
+ assert.ok(scope.omittedNodes>0);
+ assert.throws(()=>projectDiagram(raw,"missing"));
+ assert.throws(()=>projectDiagram({...raw,layoutJson:{nodes:raw.layoutJson.nodes,edges:[{id:"bad",from:"foreign",to:service.id}]}}));
+ assert.doesNotMatch(nodeText({id:"x",name:"Tên dịch vụ",kind:"SERVICE_CONTAINER"}).join(" "),/not extracted|technology unknown/);
+ assert.doesNotMatch(relationLabel({id:"a",type:"DECLARED_COMPOSE"}),/HTTP/);
+});
+
+test("canonical drawio routes real Petclinic container and component with zero hard collisions", async () => {
+ const {projectDiagram}=require("../src/lib/drawio/rules.ts");
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ for(const level of ["container","component"]){
+  const raw=JSON.parse(fs.readFileSync(path.join(root,`tests/fixtures/petclinic-${level}.json`),"utf8").replace(/^\uFEFF/,""));
+  const scope=projectDiagram(raw,level==="component"?raw.layoutJson.nodes.find(node=>node.name==="customers-service").id:undefined);
+  const before=JSON.stringify(scope),xml=await generateDrawio(scope);
+  const quality=JSON.parse(xml.match(/mavisQuality="([^"]*)"/)[1].replaceAll("&quot;",'"'));
+  assert.equal(quality.needsReview,false,JSON.stringify(quality));
+  assert.equal(JSON.stringify(scope),before);
+  assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,scope.layoutJson.edges.length);
+  assert.equal((xml.match(/mavisRole="edge-label"/g)||[]).length,scope.layoutJson.edges.length);
+  assert.match(xml,/mavisRuleVersion="mavis-se-3"/);
+  assert.match(xml,/font-size:16px;font-weight:bold/);
+  if(level==="component")assert.match(xml,/mavisRole="boundary"/);
+  assert.equal(await generateDrawio(scope),xml,"output must be deterministic");
+ }
+});
+
+test("drawio preserves cycle, reciprocal and disconnected nodes; escapes hostile labels", async () => {
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ const {projectDiagram}=require("../src/lib/drawio/rules.ts");
+ const document={modelVersionId:"test",notation:"DEPENDENCY_GRAPH",level:"SERVICE",layoutJson:{nodes:["a","b","c","d"].map(id=>({id,name:id==="a"?'Tên dịch vụ <script>alert(1)</script> rất dài có dấu tiếng Việt':id,kind:"SERVICE_CONTAINER"})),edges:[{id:"ab",from:"a",to:"b",type:"CODE_DEPENDENCY"},{id:"ba",from:"b",to:"a",type:"CODE_DEPENDENCY"},{id:"bc",from:"b",to:"c",type:"CODE_DEPENDENCY"},{id:"ca",from:"c",to:"a",type:"CODE_DEPENDENCY"}]}};
+ const xml=await generateDrawio(projectDiagram(document));
+ assert.equal((xml.match(/mavisRole="SERVICE_CONTAINER"/g)||[]).length,4);
+ assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,4);
+ assert.ok(!xml.includes("<script>"));
+ assert.match(xml,/mavisId="ba"/);
+ const excessive={...document,layoutJson:{nodes:Array.from({length:101},(_,i)=>({id:String(i),name:String(i)})),edges:[]}};
+ await assert.rejects(generateDrawio(projectDiagram(excessive)),/smaller diagram scope/);
+});
+
+test("drawio geometry gate catches crossings through unrelated nodes and label collisions", () => {
+ const {inspectGeometry}=require("../src/lib/drawio/geometry.ts");
+ const nodes=[{id:"a",x:0,y:0,width:50,height:50},{id:"b",x:100,y:0,width:50,height:50},{id:"obstacle",x:60,y:0,width:20,height:50}];
+ const result=inspectGeometry(nodes,[{id:"label",x:1,y:1,width:20,height:20}],[{id:"ab",from:"a",to:"b",points:[{x:50,y:25},{x:100,y:25}]}]);
+ assert.equal(result.edgeThroughNodes,1);assert.equal(result.labelNodeOverlaps,1);assert.equal(result.needsReview,true);
+});
+test("drawio relation filters disclose omitted edges instead of inventing traffic", () => {
+ const {projectDiagram,selectRelationships}=require("../src/lib/drawio/rules.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/petclinic-container.json"),"utf8").replace(/^\uFEFF/,""));
+ const doc=projectDiagram(raw),source=selectRelationships(doc,"source"),declared=selectRelationships(doc,"declared"),runtime=selectRelationships(doc,"runtime");
+ assert.equal(source.layoutJson.edges.length,0);assert.equal(source.omittedEdges,13);
+ assert.equal(declared.layoutJson.edges.length,13);assert.equal(runtime.layoutJson.edges.length,0);
+ assert.equal(runtime.layoutJson.nodes.length,11,"nodes must not silently disappear when a relation class is hidden");
+ assert.equal(selectRelationships(doc,"all"),doc);
+});
+
+test("drawio themes preserve semantic distinction and readable base palette", () => {
+ const {palette,nodeStyle}=require("../src/lib/drawio/rules.ts");
+ const luminance=hex=>{const channels=hex.slice(1).match(/../g).map(value=>parseInt(value,16)/255).map(v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4);return channels[0]*0.2126+channels[1]*0.7152+channels[2]*0.0722;};
+ for(const theme of ["clean","dark","blueprint"]){const p=palette(theme);for(const fill of [p.background,p.internal,p.data,p.external]){const a=luminance(p.text),b=luminance(fill);assert.ok((Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)>=4.5);}}
+ assert.match(nodeStyle("DATABASE","clean"),/cylinder/);assert.match(nodeStyle("QUEUE_BROKER","clean"),/shape=process/);
+});
+test("drawio supports self loops and parallel relations without dropping IDs", async () => {
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");const {projectDiagram}=require("../src/lib/drawio/rules.ts");
+ const doc=projectDiagram({modelVersionId:"test",notation:"DEPENDENCY_GRAPH",level:"SERVICE",layoutJson:{nodes:[{id:"a.b",name:"A",kind:"SERVICE_CONTAINER"},{id:"a_b",name:"B",kind:"SERVICE_CONTAINER"}],edges:[{id:"self",from:"a.b",to:"a.b",type:"CODE_DEPENDENCY"},{id:"one",from:"a.b",to:"a_b",type:"CODE_DEPENDENCY"},{id:"two",from:"a.b",to:"a_b",type:"SERVICE_HTTP_CALL"}]}});
+ const xml=await generateDrawio(doc);assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,3);assert.match(xml,/mavisId="self"/);assert.match(xml,/mavisId="a.b"/);assert.match(xml,/mavisId="a_b"/);
+});
+test("planar shared-dependency routing removes Petclinic crossings without deleting edges", async () => {
+ const {generateDrawio}=require("../src/lib/drawio/server.ts"),{projectDiagram}=require("../src/lib/drawio/rules.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/petclinic-container.json"),"utf8").replace(/^\uFEFF/,""));const xml=await generateDrawio(projectDiagram(raw));
+ const metrics=JSON.parse(xml.match(/mavisQuality="([^"]*)"/)[1].replaceAll("&quot;",'"'));
+ assert.equal(metrics.crossings,0);assert.equal(metrics.needsReview,false);assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,13);assert.equal((xml.match(/mavisRole="SERVICE_CONTAINER"/g)||[]).length,11);
+});
+
+test("pinned relayout preserves multiple fixed rectangles and safely rejects conflicting locks", async () => {
+ const {generateDrawio}=require("../src/lib/drawio/server.ts"),{projectDiagram}=require("../src/lib/drawio/rules.ts");
+ const node=(id,x,y)=>({id,name:id,kind:"SERVICE_CONTAINER",languageStack:"Java",description:"Handles requests",pinned:{x,y,width:280,height:160}});
+ const doc={modelVersionId:"pins",notation:"DEPENDENCY_GRAPH",level:"SERVICE",layoutJson:{nodes:[node("a",400,400),node("b",1000,700),{id:"c",name:"Free node",kind:"SERVICE_CONTAINER",languageStack:"Java",description:"Processes requests"}],edges:[{id:"ab",from:"a",to:"b",type:"SERVICE_HTTP_CALL"},{id:"bc",from:"b",to:"c",type:"CODE_DEPENDENCY"}]}};
+ const xml=await generateDrawio(projectDiagram(doc));
+ assert.match(xml,/mavisId="a"[\s\S]*?movable=0;resizable=0;[\s\S]*?<mxGeometry x="448" y="512" width="280" height="160"/);
+ assert.match(xml,/mavisId="b"[\s\S]*?<mxGeometry x="1048" y="812" width="280" height="160"/);
+ const quality=JSON.parse(xml.match(/mavisQuality="([^"]*)"/)[1].replaceAll("&quot;",'"'));assert.equal(quality.needsReview,false);
+ const conflict=structuredClone(doc);conflict.layoutJson.nodes[1].pinned={x:400,y:400,width:280,height:160};await assert.rejects(generateDrawio(projectDiagram(conflict)),/Locked shapes overlap/);
+});
+test("FTGO component scope selects populated service and distinguishes infrastructure with no internals", async () => {
+ const {componentContainers,projectDiagram,relationLabel,nodeText}=require("../src/lib/drawio/rules.ts");
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ const doc=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));
+ const containers=componentContainers(doc);
+ assert.equal(containers[0].name,"ftgo-order-service");assert.equal(containers[0].componentCount,5);
+ assert.equal(containers.find(c=>c.name==="cdc-service").componentCount,0);
+ assert.equal(containers.reduce((count,c)=>count+c.componentCount,0),23);
+ const scope=projectDiagram(doc,containers[0].id);
+ assert.equal(scope.layoutJson.nodes.filter(n=>n.kind==="COMPONENT"&&n.parentId===containers[0].id).length,5);
+ assert.ok(!scope.layoutJson.nodes.some(n=>n.name==="cdc-service"));
+ assert.equal(relationLabel({id:"e",type:"DECLARED_COMPOSE"}),"Compose dependency");
+ assert.equal(relationLabel({id:"e",type:"CODE_DEPENDENCY"}),"Code dependency");
+ assert.doesNotMatch(nodeText({id:"n",name:"Service",kind:"SERVICE_CONTAINER"}).join(" "),/Responsibility not extracted/);
+ const xml=await generateDrawio(scope);assert.match(xml,/mavisRole="boundary"/);assert.doesNotMatch(xml,/Phụ thuộc|Trách nhiệm/);
+});
+test("architecture pack keeps Compose ordering outside application interactions and retains source IDs",()=>{
+ const {planArchitectureViews}=require("../src/lib/architecture/view-planner.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));const before=JSON.stringify(raw);const pack=planArchitectureViews(raw);
+ const app=pack.views.find(v=>v.id==="containers"),deployment=pack.views.find(v=>v.id==="deployment");
+ assert.ok(!app.document.layoutJson.edges.some(e=>e.type==="DECLARED_COMPOSE"));
+ assert.equal(deployment.document.layoutJson.edges.length,33);
+ assert.equal(pack.views.filter(v=>v.kind==="component").length,8);
+ assert.ok(app.document.layoutJson.edges.every(e=>e.underlyingEdgeIds.length>0));
+ assert.ok(app.document.layoutJson.edges.every(e=>raw.layoutJson.nodes.find(n=>n.id===e.from)?.kind!=="COMPONENT"));
+ assert.equal(JSON.stringify(raw),before);assert.equal(pack.status,"requires-review");
+ assert.equal(pack.coverage.relationships,53);assert.equal(pack.coverage.relationshipsWithoutResolutionMetadata,53);
+ assert.ok(!pack.views.some(v=>v.id==="components:3be666c8-af02-46f9-ab2d-64115802d618"));
+});
+test("grouped overview accounts for every service member without pretending a group is a C4 container",()=>{
+ const {planArchitectureViews}=require("../src/lib/architecture/view-planner.ts");const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));const pack=planArchitectureViews(raw);const view=pack.views.find(v=>v.id==="overview");
+ assert.equal(view.document.notation,"ARCHITECTURE_OVERVIEW");const group=view.document.layoutJson.nodes.find(n=>n.kind==="SERVICE_GROUP");assert.equal(group.underlyingNodeIds.length,8);assert.match(group.description,/ftgo-order-service/);
+ for(const member of group.underlyingNodeIds)assert.ok(view.document.projection.includedNodeIds.includes(member));
+ assert.ok(pack.views.some(v=>v.id==="containers"));
+});
+test("readability checks the effective font after fitting and A3 export, not XML font size alone",()=>{
+ const {assessReadability}=require("../src/lib/architecture/readability.ts");
+ const dense=assessReadability({width:1728,height:1540,minimumFontPx:12,viewportWidth:1000,viewportHeight:620});assert.equal(dense.screenReadable,false);assert.ok(dense.minimumScreenFontPx<5);
+ const readable=assessReadability({width:800,height:450,minimumFontPx:14,viewportWidth:1000,viewportHeight:620});assert.equal(readable.screenReadable,true);assert.equal(readable.printReadable,true);
+ assert.throws(()=>assessReadability({width:0,height:1,minimumFontPx:12,viewportWidth:1,viewportHeight:1}));
+});
+test("graph collapse preserves every underlying relationship and separates deployment filters",()=>{
+ const {projectGraphModel}=require("../src/features/architecture/graph-projection.ts");
+ const model={id:"m",projectId:"p",snapshotId:"s",revision:1,label:"Model",elements:[{id:"a",name:"A",elementType:"SERVICE_CONTAINER",layer:"unclassified",description:"",evidence:[]},{id:"c",name:"C",parentId:"a",elementType:"COMPONENT",layer:"unclassified",description:"",evidence:[]},{id:"b",name:"B",layer:"unclassified",description:"",evidence:[]}],edges:[{id:"one",from:"c",to:"b",protocol:"HTTP",originLayer:"STATIC",uncertain:false,evidence:[]},{id:"two",from:"a",to:"b",protocol:"HTTP",originLayer:"STATIC",uncertain:false,evidence:[]},{id:"boot",from:"a",to:"b",protocol:"DECLARED_COMPOSE",originLayer:"DEPLOYMENT",uncertain:false,evidence:[]}]};
+ const source=projectGraphModel(model,false,"source");assert.equal(source.model.elements.length,2);assert.equal(source.model.edges.length,1);assert.deepEqual(source.model.edges[0].underlyingEdgeIds,["one","two"]);assert.equal(source.filteredRelationships,1);
+ const expanded=projectGraphModel(model,true,"all");assert.equal(expanded.model.elements.length,3);assert.equal(expanded.model.edges.length,3);assert.equal(model.edges[0].from,"c");
+});
+test("compact overview routes explicit service/channel/data groups without collisions",()=>{
+ const {compactOverview}=require("../src/lib/drawio/compact-overview.ts");
+ const result=compactOverview([{id:"app",kind:"SERVICE_GROUP",width:280,height:232},{id:"channel",kind:"CHANNEL_GROUP",width:280,height:132},{id:"data",kind:"DATASTORE_GROUP",width:280,height:192}],[{id:"pub",from:"app",to:"channel",type:"MESSAGE_PUBLISH"},{id:"sub",from:"channel",to:"app",type:"MESSAGE_SUBSCRIBE"},{id:"db",from:"app",to:"data",type:"DATABASE_ACCESS"}]);
+ assert.ok(result);assert.equal(result.quality.needsReview,false);assert.equal(result.quality.crossings,0);assert.equal(result.routes.length,3);
+ assert.ok(Math.max(...result.rects.map(rect=>rect.y+rect.height))<450);
+ assert.ok(result.graph.height>350,"Layout bounds must keep the legend below the drawing");
+});
+test("simplified C4/4+1 catalog preserves element IDs and never relabels static edges as processes",()=>{
+ const {modelView}=require("../src/lib/api/java-wire.ts");const {selectDiagram,diagramKinds,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));
+ const model={id:raw.modelVersionId,projectId:"p",snapshotId:"s",revision:1,label:"Model",elements:raw.layoutJson.nodes.map(n=>({id:n.id,name:n.name,elementType:n.kind,parentId:n.parentId,technology:n.languageStack,properties:n.properties,description:n.description??"",layer:"unclassified",evidence:[]})),edges:raw.layoutJson.edges.map(e=>({id:e.id,from:e.from,to:e.to,protocol:e.type,originLayer:e.originLayer,uncertain:true,evidence:[]}))};
+ assert.deepEqual(diagramKinds.C4.map(d=>d.value),["CONTEXT","CONTAINER","COMPONENT"]);assert.equal(diagramKinds['4+1'].length,5);
+ const container=selectDiagram(model,'CONTAINER');assert.equal(container.document.notation,'C4');assert.equal(container.document.level,'CONTAINER');
+ const containerNodes=container.document.layoutJson.nodes;
+ const boundary=containerNodes.find(n=>n.id==="system:boundary");
+ assert.ok(boundary);assert.equal(boundary.kind,"SYSTEM_BOUNDARY");assert.equal(boundary.name,"Analyzed system");
+ assert.ok(containerNodes.filter(n=>n.kind==="SERVICE_CONTAINER").every(n=>n.parentId==="system:boundary"));
+ assert.ok(containerNodes.filter(n=>["DATABASE","QUEUE_BROKER"].includes(n.kind)).every(n=>!n.parentId));
+ assert.match(String(container.document.scopeWarning??""),/Ownership unresolved/);
+ assert.ok(containerNodes.every(n=>n.id==="system:boundary"||model.elements.some(e=>e.id===n.id)));
+ const service=model.elements.find(n=>n.name==='ftgo-order-service');const component=selectDiagram(model,'COMPONENT',service.id);assert.ok(component.document.layoutJson.nodes.some(n=>n.parentId===service.id));
+ const process=selectDiagram(model,'PROCESS');assert.equal(process.document.level,'PROCESS');assert.ok(!process.document.layoutJson.edges.some(e=>e.type==='DECLARED_COMPOSE'));
+ assert.equal(selectDiagram(model,'LOGICAL').document.level,'LOGICAL');assert.equal(selectDiagram(model,'CONTEXT').document.level,'CONTEXT');
+ const deployment=selectDiagram(model,'DEPLOYMENT');assert.equal(deployment.document.notation,'VIEW_4_PLUS_1');assert.ok(deployment.document.layoutJson.edges.every(e=>e.type==='DECLARED_COMPOSE'));
+ const aggregate=container.document.layoutJson.edges.find(e=>e.underlyingEdgeIds?.length);if(aggregate)assert.ok(diagramMembers(container.document,aggregate.id,model).length>0);
+});
+
+test("Development diagram groups only qualified source packages with explicit ownership",()=>{
+ const {selectDiagram,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,name,parentId,qualifiedName)=>({id,name,parentId,elementType:parentId?'COMPONENT':'SERVICE_CONTAINER',properties:{qualifiedName},description:'',layer:'unclassified',evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('service','Orders',null,null),node('c','Controller','service','orders.web.Controller'),node('r','Repository','service','orders.data.Repository')],edges:[{id:'e',from:'c',to:'r',protocol:'CODE_DEPENDENCY',uncertain:false,evidence:[]}]};
+ const result=selectDiagram(model,'DEVELOPMENT');assert.equal(result.document.layoutJson.nodes.length,2);assert.equal(result.document.layoutJson.edges.length,1);const group=result.document.layoutJson.nodes.find(n=>n.name==='orders.web');assert.deepEqual(diagramMembers(result.document,group.id,model),['c']);assert.equal(model.elements[1].id,'c');
+});
+test("System Context groups internal elements and excludes Compose startup arrows",()=>{
+ const {selectDiagram,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,name,type)=>({id,name,elementType:type,description:'',layer:'unclassified',evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('service','Orders','SERVICE_CONTAINER'),node('external','Payment provider','EXTERNAL_SYSTEM')],edges:[{id:'api',from:'service',to:'external',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]},{id:'boot',from:'service',to:'external',protocol:'DECLARED_COMPOSE',originLayer:'DEPLOYMENT',uncertain:false,evidence:[]}]};
+ const result=selectDiagram(model,'CONTEXT');assert.equal(result.document.notation,'C4');assert.equal(result.document.level,'CONTEXT');assert.equal(result.document.layoutJson.edges.length,1);assert.equal(result.document.layoutJson.edges[0].to,'external');assert.deepEqual(diagramMembers(result.document,'system:p',model),['service']);
+});
+test("context remains visible without actors and never promotes internal infrastructure to external systems",()=>{
+ const {selectDiagram,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,type,parentId,properties={})=>({id,name:id,elementType:type,parentId,properties,description:'',layer:'unclassified',evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('app','SERVICE_CONTAINER'),node('db','DATABASE'),node('queue','QUEUE_BROKER')],edges:[]};
+ const bare=selectDiagram(model,'CONTEXT');assert.equal(bare.document.layoutJson.nodes.length,1);assert.equal(bare.document.layoutJson.nodes[0].kind,'SYSTEM');assert.equal(bare.document.layoutJson.edges.length,0);
+ model.elements.push(node('controller','COMPONENT','app',{responsibility:'Exposes HTTP endpoints'}));
+ // M1 review: entrypoints chứng minh inbound interface — không tự sinh external caller.
+ const inferred=selectDiagram(model,'CONTEXT');assert.equal(inferred.document.layoutJson.nodes.length,1);assert.equal(inferred.document.layoutJson.nodes[0].kind,'SYSTEM');assert.equal(inferred.document.layoutJson.edges.length,0);assert.match(inferred.notice,/HTTP entrypoint component\(s\)/);assert.match(inferred.notice,/callers require review/);assert.ok(!inferred.document.layoutJson.nodes.some(n=>n.kind==='EXTERNAL_SYSTEM'));
+ // tên system nhận từ systemName truyền vào (C2/C1 dùng chung tên project)
+ const named=selectDiagram(model,'CONTEXT',undefined,{systemName:'Test1'});assert.equal(named.document.layoutJson.nodes[0].name,'Test1');
+});
+test("Logical keeps explicitly owned abstractions separate from deployment and other services",()=>{
+ const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,type,parentId)=>({id,name:id,elementType:type,parentId,description:'',layer:'unclassified',evidence:[]});
+ const edge=(id,from,to,protocol,originLayer='STATIC')=>({id,from,to,protocol,originLayer,uncertain:false,evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('a','SERVICE_CONTAINER'),node('b','SERVICE_CONTAINER'),node('controller','COMPONENT','a'),node('service','COMPONENT','a'),node('other','COMPONENT','b'),node('db','DATABASE')],edges:[edge('usage','controller','service','CODE_DEPENDENCY'),edge('wrong-scope','controller','other','CODE_DEPENDENCY'),edge('startup','a','b','DECLARED_COMPOSE','DEPLOYMENT'),edge('data','service','db','DATABASE_ACCESS')]};
+ const result=selectDiagram(model,'LOGICAL','a');assert.equal(result.key,'logical:a');assert.deepEqual(result.document.layoutJson.nodes.map(n=>n.id),['controller','service']);assert.deepEqual(result.document.layoutJson.edges.map(e=>e.id),['usage']);assert.equal(selectDiagram(model,'LOGICAL','b').key,'logical:b');assert.ok(!result.document.layoutJson.nodes.some(n=>n.kind==='SERVICE_CONTAINER'));
+});
+test("Process aggregates communications through component ownership without inventing IPC from code or startup dependencies",()=>{
+ const {selectDiagram,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,type,parentId)=>({id,name:id,elementType:type,parentId,description:'',layer:'unclassified',evidence:[]});
+ const edge=(id,from,to,protocol,originLayer='STATIC')=>({id,from,to,protocol,originLayer,uncertain:false,evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('a','SERVICE_CONTAINER'),node('b','SERVICE_CONTAINER'),node('x','COMPONENT','a'),node('y','COMPONENT','b'),node('queue','MESSAGE_CHANNEL')],edges:[edge('http','x','y','SERVICE_HTTP_CALL'),edge('http2','a','b','SERVICE_HTTP_CALL'),edge('pub','x','queue','MESSAGE_PUBLISH'),edge('code','x','y','CODE_DEPENDENCY'),edge('boot','a','b','DECLARED_COMPOSE','DEPLOYMENT')]};
+ const result=selectDiagram(model,'PROCESS');assert.equal(result.document.level,'PROCESS');assert.equal(result.document.layoutJson.nodes.find(n=>n.id==='a').kind,'PROCESS_UNIT');assert.equal(result.document.layoutJson.edges.length,2);assert.ok(!result.document.layoutJson.nodes.some(n=>n.kind==='COMPONENT'));const http=result.document.layoutJson.edges.find(e=>e.type==='SERVICE_HTTP_CALL');assert.deepEqual(diagramMembers(result.document,http.id,model),['http','http2']);assert.match(result.notice,/Thread scheduling/);
+});
+test("Designed scenarios preserve explicit order, repeats and canonical IDs across XML export and reload",()=>{
+ const {scenarioXml,readScenarioDesign,scenarioInteractions}=require("../src/features/architecture/scenario-design.ts");
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:['a','b'].map(id=>({id,name:id==='a'?'Orders <script>':'Payments',elementType:'SERVICE_CONTAINER',description:'',layer:'unclassified',evidence:[]})),edges:[{id:'ab',from:'a',to:'b',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]},{id:'boot',from:'a',to:'b',protocol:'DECLARED_COMPOSE',originLayer:'DEPLOYMENT',uncertain:false,evidence:[]}]};
+ const design={modelId:'m',name:'Place order & pay',edgeIds:['ab','ab']};const xml=scenarioXml(model,design);assert.deepEqual(readScenarioDesign(xml,model),design);assert.equal((xml.match(/mavisRole="participant"/g)||[]).length,2);assert.equal((xml.match(/mavisRole="edge"/g)||[]).length,2);assert.match(xml,/1\. \[\? sort=UNKNOWN\] HTTP call/);assert.match(xml,/2\. \[\? sort=UNKNOWN\] HTTP call/);assert.doesNotMatch(xml,/<script>/);assert.match(xml,/not observed execution/);assert.equal(scenarioInteractions(model).length,1);
+ assert.equal(readScenarioDesign(xml,{...model,id:'other'}),null);assert.equal(readScenarioDesign(xml,{...model,edges:[]}),null);assert.equal(readScenarioDesign('<invalid>',model),null);assert.throws(()=>scenarioXml(model,{...design,edgeIds:['boot']}),/not present/);assert.throws(()=>scenarioXml(model,{...design,modelId:'wrong'}),/another model/);
+});
+
+test("Sequence headers and message ports leave room for long wrapped participant names",()=>{
+ const {scenarioXml}=require("../src/features/architecture/scenario-design.ts");
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:['a','b'].map(id=>({id,name:id==='a'?'AccountingServiceCommandHandlerWithAnExtremelyLongQualifiedComponentName':'Eventuate command channel',elementType:'COMPONENT',description:'',layer:'unclassified',evidence:[]})),edges:[{id:'call',from:'a',to:'b',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]}]};
+ const xml=scenarioXml(model,{modelId:'m',name:'Long participant names',edgeIds:['call']});
+ const header=Number(/size=(\d+);html=0/.exec(xml)[1]);assert.ok(header>=86,"3+ lines need more than the former 64px header");
+ const height=Number(/height="([\d.]+)" as="geometry"\/><\/mxCell><mxCell id="participant-1"/.exec(xml)[1]);
+ const anchor=Number(/exitY=([\d.]+);exitPerimeter/.exec(xml)[1]);assert.ok(anchor*height>header+20,"message must start below the header");
+ assert.match(xml,/&#xa;/,"wrapped label lines must survive XML attribute parsing");
+});
+test("3E preserves configuration provenance and hides machine-local paths without inventing line numbers",()=>{
+ const {sourceLabel,shortLocator}=require('../src/features/architecture/three-e-content.ts');
+ assert.equal(sourceLabel({kind:'source',sourceType:'CONFIG_FILE'}),'Từ cấu hình');assert.equal(sourceLabel({kind:'source',sourceType:'SOURCE_CODE'}),'Từ mã nguồn');assert.equal(sourceLabel({kind:'runtime',sourceType:'RUNTIME_TRACE'}),'Quan sát khi chạy');assert.equal(sourceLabel({kind:'source'}),'Nguồn chưa phân loại');
+ assert.equal(shortLocator('C:\\Users\\machine\\uploads\\snapshot_source_extracted\\project-sha\\orders\\src\\Repo.java:5'),'orders/src/Repo.java:5');assert.ok(!shortLocator('C:\\Users\\name\\src\\Repo.java').includes('C:'));assert.equal(shortLocator('src/Repo.java'),'src/Repo.java');
+});
+test("3E treats Compose as startup declaration and physical database identity as unresolved",()=>{
+ const {selectionSummary,findingRelated}=require('../src/features/architecture/three-e-content.ts');
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[{id:'a',name:'orders',elementType:'SERVICE_CONTAINER',description:'',layer:'unclassified',evidence:[]},{id:'db',name:'mysql',elementType:'DATABASE',description:'',layer:'data',evidence:[]}],edges:[{id:'boot',from:'a',to:'db',protocol:'DECLARED_COMPOSE',uncertain:false,evidence:[]}]};
+ assert.match(selectionSummary(model,'boot').summary,/chưa chứng minh/);assert.match(selectionSummary(model,'db').type,/phạm vi cần xác minh/);assert.equal(findingRelated({elementId:'db',details:{relatedElementIds:['a']}},'a'),true);assert.equal(findingRelated({elementId:'other',message:'a'},'a'),false);
+});
+test("C4 Container draws a named system boundary around owned containers and keeps external and unresolved outside",async()=>{
+ const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ const node=(id,name,type,props)=>({id,name,elementType:type,properties:props,description:"",layer:"unclassified",evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[
+  node('svc-a','Payments & Billing <draft> "v2"','SERVICE_CONTAINER'),
+  node('svc-b','orders-api','SERVICE_CONTAINER'),
+  node('db','orders-db','DATABASE',{resourceRole:"LOGICAL_DATASTORE"}),
+  node('ext','Payment provider','EXTERNAL_SYSTEM'),
+  node('broker','kafka','QUEUE_BROKER')],
+  edges:[
+   {id:'e1',from:'svc-a',to:'svc-b',protocol:'CODE_DEPENDENCY',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'e2',from:'svc-b',to:'db',protocol:'DATABASE_ACCESS',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'e3',from:'svc-a',to:'ext',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'e4',from:'svc-b',to:'broker',protocol:'CODE_DEPENDENCY',originLayer:'STATIC',uncertain:true,evidence:[]}]};
+ const result=selectDiagram(model,'CONTAINER',undefined,{systemName:'OrderHub <test>'});
+ const doc=result.document,nodes=doc.layoutJson.nodes;
+ const boundary=nodes.find(n=>n.id==="system:boundary");
+ assert.ok(boundary);assert.equal(boundary.kind,"SYSTEM_BOUNDARY");assert.equal(boundary.name,"OrderHub <test>");
+ assert.deepEqual(nodes.filter(n=>n.parentId==="system:boundary").map(n=>n.id).sort(),["db","svc-a","svc-b"]);
+ assert.ok(!nodes.find(n=>n.id==="ext").parentId);
+ assert.ok(!nodes.find(n=>n.id==="broker").parentId);
+ assert.match(String(doc.scopeWarning),/Ownership unresolved for 1 element/);
+ assert.ok(nodes.every(n=>n.id==="system:boundary"||model.elements.some(e=>e.id===n.id)));
+ assert.equal(doc.layoutJson.edges.length,4);
+ const xml=await generateDrawio(doc);
+ assert.ok(xml.includes("OrderHub &lt;test&gt; · Software system · analyzed source scope"));
+ assert.ok(!xml.includes('value="OrderHub <test>'));
+ const idOf=(mavisId)=>{const m=xml.match(new RegExp('<mxCell id="([^"]+)"[^>]*mavisId="'+mavisId+'"'));assert.ok(m,mavisId);return m[1];};
+ const parentOf=(mavisId)=>{const m=xml.match(new RegExp('<mxCell id="[^"]+"[^>]*mavisId="'+mavisId+'"[^>]*parent="([^"]*)"'));assert.ok(m,mavisId);return m[1];};
+ const boundaryCell=idOf("system:boundary");
+ assert.equal(parentOf("svc-a"),boundaryCell);assert.equal(parentOf("svc-b"),boundaryCell);assert.equal(parentOf("db"),boundaryCell);
+ assert.equal(parentOf("ext"),"1");assert.equal(parentOf("broker"),"1");
+ const e3=xml.match(new RegExp('<mxCell [^>]*mavisId="view:e3".*'));
+ assert.ok(e3);assert.ok(e3[0].includes('source="'+idOf("svc-a")+'"'));assert.ok(e3[0].includes('target="'+idOf("ext")+'"'));
+});
+test("C4 Container projection keeps includedNodeIds as source-only IDs and traces boundary metadata",()=>{
+ const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,name,type,props)=>({id,name,elementType:type,properties:props,description:"",layer:"unclassified",evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[
+  node('svc-a','Payments & Billing <draft> "v2"','SERVICE_CONTAINER'),
+  node('svc-b','orders-api','SERVICE_CONTAINER'),
+  node('db','orders-db','DATABASE',{resourceRole:"LOGICAL_DATASTORE"}),
+  node('ext','Payment provider','EXTERNAL_SYSTEM'),
+  node('broker','kafka','QUEUE_BROKER')],
+  edges:[
+   {id:'e1',from:'svc-a',to:'svc-b',protocol:'CODE_DEPENDENCY',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'e2',from:'svc-b',to:'db',protocol:'DATABASE_ACCESS',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'e3',from:'svc-a',to:'ext',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'e4',from:'svc-b',to:'broker',protocol:'CODE_DEPENDENCY',originLayer:'STATIC',uncertain:true,evidence:[]}]};
+ const doc=selectDiagram(model,'CONTAINER',undefined,{systemName:'OrderHub <test>'}).document;
+ const sourceIds=new Set(model.elements.map(e=>e.id));
+ assert.ok(doc.projection.includedNodeIds.every(id=>sourceIds.has(id)),"includedNodeIds must be source element IDs only");
+ assert.ok(!doc.projection.includedNodeIds.includes("system:boundary"),"synthetic boundary must not be a source node");
+ assert.deepEqual(doc.syntheticNodeIds,["system:boundary"]);
+ assert.equal(doc.projection.includedNodeIds.length,5,"boundary must not inflate source-node counts");
+ assert.deepEqual([...doc.systemBoundary.memberIds].sort(),["db","svc-a","svc-b"]);
+ assert.deepEqual(doc.systemBoundary.unresolvedIds,["broker"]);
+ assert.equal(doc.systemBoundary.name,"OrderHub <test>");
+});
+test("boundary header and legend scale with long names and many unresolved elements",async()=>{
+ const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ const {wrapText}=require("../src/lib/drawio/rules.ts");
+ const longName='Hệ thống quản lý đơn hàng & thanh toán <bản nháp> "OrderHub Pro" — dịch vụ dài';
+ const elements=[
+  {id:'svc-a',name:longName,elementType:'SERVICE_CONTAINER',description:'',layer:'unclassified',evidence:[]},
+  {id:'svc-b',name:'orders-api',elementType:'SERVICE_CONTAINER',description:'',layer:'unclassified',evidence:[]},
+ ];
+ const unresolvedNames=['Khách hàng chưa rõ A — vai trò cần xác minh','Nhà cung cấp B — ownership chưa chốt','Kênh C — chưa phân giải','D — chưa phân giải','E — chưa phân giải','F — chưa phân giải','G — chưa phân giải','H — chưa phân giải'];
+ unresolvedNames.forEach((name,i)=>elements.push({id:'u'+i,name,elementType:'QUEUE_BROKER',description:'',layer:'unclassified',evidence:[]}));
+ const edges=[{id:'e0',from:'svc-a',to:'svc-b',protocol:'CODE_DEPENDENCY',originLayer:'STATIC',uncertain:false,evidence:[]},
+  ...[0,1,2,3].map(i=>({id:'x'+i,from:'svc-b',to:'u'+i,protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:true,evidence:[]}))];
+ const doc=selectDiagram({id:'m',projectId:'p',snapshotId:'s',revision:1,label:'R',elements,edges},'CONTAINER',undefined,{systemName:longName}).document;
+ assert.equal(doc.systemBoundary.unresolvedIds.length,4,"full unresolved list stays in traceable metadata");
+ assert.ok(doc.scopeWarning.includes("(+1 more; full list in view metadata)"),"legend warning is summarized, not silently truncated");
+ const modelIds=new Set(elements.map(e=>e.id));
+ assert.ok(doc.projection.includedNodeIds.every(id=>modelIds.has(id)));
+ assert.ok(!doc.projection.includedNodeIds.includes("system:boundary"));
+ assert.equal(doc.projection.includedNodeIds.length,6);
+ const xml=await generateDrawio(doc);
+ const legendCell=xml.match(/<mxCell id="mavis_legend" value="([^"]*)"/);
+ assert.ok(legendCell);
+ const legendGeom=xml.match(/<mxCell id="mavis_legend"[^>]*><mxGeometry[^>]*height="([0-9]+)"/);
+ assert.ok(legendGeom);
+ const legendLinesCount=legendCell[1].split("&#xa;").length;
+ assert.equal(Number(legendGeom[1]),legendLinesCount*17+24,"legend height must fit its wrapped content");
+ const boundaryCell=xml.match(/<mxCell id="[^"]+"[^>]*mavisId="system:boundary"[^>]*startSize=([0-9]+)/);
+ assert.ok(boundaryCell);
+ const startSize=Number(boundaryCell[1]);
+ assert.ok(startSize>44,"long boundary name must grow the header instead of being covered");
+ const child=xml.match(new RegExp('<mxCell id="[^"]+"[^>]*mavisId="svc-a"[^>]*><mxGeometry[^>]*y="([0-9.]+)"'));
+ assert.ok(child);
+ assert.ok(Number(child[1])>=startSize,"nodes must start below the boundary header");
+});
+test("C4 Container without classifiable containers warns and draws no boundary",()=>{
+ const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
+ const node=(id,name,type)=>({id,name,elementType:type,description:"",layer:"unclassified",evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[node('ext','Payment provider','EXTERNAL_SYSTEM')],edges:[]};
+ const result=selectDiagram(model,'CONTAINER');
+ assert.ok(!result.document.layoutJson.nodes.some(n=>n.id==="system:boundary"));
+ assert.match(String(result.document.scopeWarning??""),/no system boundary is drawn/);
+});
+test("C4 Container messaging labels append channel protocol only from channel properties",async()=>{
+ const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ const node=(id,name,type,props,technology)=>({id,name,elementType:type,properties:props,technology,description:"",layer:"unclassified",evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[
+  node('producer','orders-api','SERVICE_CONTAINER'),
+  node('consumer','billing-api','SERVICE_CONTAINER'),
+  node('ch-ok','order-events','MESSAGE_CHANNEL',{protocol:"kafka"}),
+  node('ch-xml','billing-events','MESSAGE_CHANNEL',{protocol:"Kafka & co <v3>"}),
+  node('ch-missing','missing-channel','MESSAGE_CHANNEL'),
+  node('ch-blank','blank-channel','MESSAGE_CHANNEL',{protocol:"   "}),
+  node('ch-nameonly','kafka-topic','MESSAGE_CHANNEL',{transportAuthority:"kafka"},'Kafka')],
+  edges:[
+   {id:'pub-ok',from:'producer',to:'ch-ok',protocol:'MESSAGE_PUBLISH',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'sub-ok',from:'ch-ok',to:'consumer',protocol:'MESSAGE_SUBSCRIBE',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'pub-xml',from:'consumer',to:'ch-xml',protocol:'MESSAGE_PUBLISH',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'pub-missing',from:'producer',to:'ch-missing',protocol:'MESSAGE_PUBLISH',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'pub-blank',from:'producer',to:'ch-blank',protocol:'MESSAGE_PUBLISH',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'pub-nameonly',from:'producer',to:'ch-nameonly',protocol:'MESSAGE_PUBLISH',originLayer:'STATIC',uncertain:false,evidence:[]}]};
+ const doc=selectDiagram(model,'CONTAINER',undefined,{systemName:'OrderHub <test>'}).document;
+ const xml=await generateDrawio(doc);
+ assert.ok(xml.includes('value="Declares publishing to&#xa;[kafka]"'),"publish label with source-backed protocol");
+ assert.ok(xml.includes('value="Delivers messages to&#xa;[kafka]"'),"subscribe label with source-backed protocol");
+ assert.ok(xml.includes("[Kafka &amp; co &lt;v3&gt;]")&&!xml.includes("[Kafka & co <v3>]"),"protocol with XML special chars must be escaped");
+ assert.equal(xml.match(/\[kafka\]/g).length,2,"exactly the two valid-protocol edges carry [kafka]");
+ assert.ok(!xml.includes("[Kafka]"),"no bare [Kafka] from any default or inference");
+ const nameOnly=xml.match(/<mxCell id="[^"]+"[^>]*mavisId="view:pub-nameonly"[\s\S]*?<mxCell id="label_[^"]*" value="([^"]*)"/);
+ assert.ok(nameOnly);assert.equal(nameOnly[1],"Declares publishing to","name/languageStack/transportAuthority must not fabricate protocol");
+ const missing=xml.match(/<mxCell id="[^"]+"[^>]*mavisId="view:pub-missing"[\s\S]*?<mxCell id="label_[^"]*" value="([^"]*)"/);
+ assert.equal(missing[1],"Declares publishing to","missing protocol must not append anything");
+ const blank=xml.match(/<mxCell id="[^"]+"[^>]*mavisId="view:pub-blank"[\s\S]*?<mxCell id="label_[^"]*" value="([^"]*)"/);
+ assert.equal(blank[1],"Declares publishing to","blank protocol must not append anything");
+ const edge=xml.match(/<mxCell [^>]*mavisId="view:pub-ok".*/);
+ assert.ok(edge);assert.ok(edge[0].includes('mavisOriginLayer="STATIC"'));assert.ok(edge[0].includes('mavisRelationType="MESSAGE_PUBLISH"'));
+});
+test("messaging protocol labels are gated to the C4 Container view",async()=>{
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ const node=(id,name,type,props)=>({id,name,elementType:type,properties:props,description:"",layer:"unclassified",evidence:[]});
+ const nodes=[node('producer','orders-api','SERVICE_CONTAINER'),node('ch','order-events','MESSAGE_CHANNEL',{protocol:"kafka"})];
+ const edges=[{id:'pub',from:'producer',to:'ch',type:'MESSAGE_PUBLISH',protocol:'MESSAGE_PUBLISH',originLayer:'STATIC',uncertain:false,evidence:[]}];
+ for(const [notation,level] of [["DEPENDENCY_GRAPH","SERVICE"],["C4","COMPONENT"]]){
+  const xml=await generateDrawio({modelVersionId:'m',notation,level,viewId:'gate',layoutJson:{nodes,edges}});
+  assert.ok(!xml.includes("[kafka]"),`${notation}/${level} must keep plain labels`);
+  assert.ok(xml.includes("Declares publishing to"),`${notation}/${level} keeps the action label`);
+ }
+});
+test("containerMessagingLabel ignores null, number, object and array protocol values (S2e coverage)",()=>{
+ const {containerMessagingLabel}=require("../src/lib/drawio/rules.ts");
+ const publish="Declares publishing to";
+ const edge={id:"e",from:"p",to:"ch",type:"MESSAGE_PUBLISH",relationType:"MESSAGE_PUBLISH"};
+ const subEdge={id:"s",from:"ch",to:"p",type:"MESSAGE_SUBSCRIBE",relationType:"MESSAGE_SUBSCRIBE"};
+ const channels=(props)=>new Map([["ch",{id:"ch",name:"events",kind:"MESSAGE_CHANNEL",properties:props}]]);
+ // Hợp đồng helper: giá trị không hợp lệ trả null (caller fallback về nhãn hành động), không bao giờ trả nhãn giả.
+ assert.equal(containerMessagingLabel(edge,channels({protocol:null})),null);
+ assert.equal(containerMessagingLabel(edge,channels({protocol:42})),null);
+ assert.equal(containerMessagingLabel(edge,channels({protocol:{k:"v"}})),null);
+ assert.equal(containerMessagingLabel(edge,channels({protocol:["a"]})),null);
+ assert.equal(containerMessagingLabel(edge,channels()),null);
+ assert.equal(containerMessagingLabel(edge,channels({protocol:"   "})),null);
+ assert.equal(containerMessagingLabel(edge,channels({protocol:"kafka"})),publish+" [kafka]");
+ assert.equal(containerMessagingLabel(subEdge,channels({protocol:"kafka"})),"Delivers messages to [kafka]");
+});
+const { DOMParser } = require("./helpers/xml-dom-shim.cjs");
+globalThis.DOMParser = DOMParser;
+test("editor round-trip preserves C4 Container boundary, membership and metadata through extract and regroup",async()=>{
+ const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ const {extractDraftDocument}=require("../src/features/architecture/drawio-document.ts");
+ const node=(id,name,type,props,parentId)=>({id,name,elementType:type,properties:props||{},parentId:parentId||null,description:"",layer:"unclassified",evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[
+  node('svc-a','orders-api','SERVICE_CONTAINER'),
+  node('svc-b','billing-api','SERVICE_CONTAINER'),
+  node('db','orders-db','DATABASE',{resourceRole:"LOGICAL_DATASTORE"}),
+  node('ch','order-events','MESSAGE_CHANNEL',{protocol:"kafka",transportAuthority:"kafka"}),
+  node('ext','Payment provider','EXTERNAL_SYSTEM'),
+  node('broker','kafka','QUEUE_BROKER')],
+  edges:[
+   {id:'e1',from:'svc-a',to:'svc-b',protocol:'CODE_DEPENDENCY',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'e2',from:'svc-b',to:'db',protocol:'DATABASE_ACCESS',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'e3',from:'svc-a',to:'ext',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:false,evidence:[]},
+   {id:'e4',from:'svc-b',to:'ch',protocol:'MESSAGE_SUBSCRIBE',originLayer:'STATIC',uncertain:false,evidence:[]}]};
+ const doc=selectDiagram(model,'CONTAINER',undefined,{systemName:'Test1'}).document;
+ const xml1=await generateDrawio(doc);
+ // extractDraftDocument với notation/level CHUẨN từ document (không parse từ title)
+ const draft=extractDraftDocument(xml1,'m','container',doc.notation,doc.level,'container');
+ assert.equal(draft.notation,'C4');assert.equal(draft.level,'CONTAINER');
+ const boundary=draft.layoutJson.nodes.find(n=>n.id==='system:boundary');
+ assert.ok(boundary);assert.equal(boundary.kind,'SYSTEM_BOUNDARY');assert.equal(boundary.name,'Test1');
+ const inside=draft.layoutJson.nodes.filter(n=>n.parentId==='system:boundary').map(n=>n.id).sort();
+ assert.deepEqual(inside,['ch','db','svc-a','svc-b']);
+ assert.ok(draft.layoutJson.nodes.find(n=>n.id==='ext'),'ext must be in the draft');assert.ok(draft.layoutJson.nodes.find(n=>n.id==='ext').parentId!=='system:boundary');
+ assert.ok(!draft.layoutJson.nodes.some(n=>n.id==='broker'),"unconnected broker is omitted from the container view per planner policy");
+ assert.deepEqual(draft.layoutJson.nodes.find(n=>n.id==='ch').properties,{protocol:"kafka",transportAuthority:"kafka"},"properties must survive the round-trip");
+ const edges1=draft.layoutJson.edges;assert.equal(edges1.length,4);
+ assert.ok(edges1.every(e=>e.relationType&&e.originLayer));
+ // regroup + generate lại từ draft
+ const xml2=await generateDrawio(draft);
+ const doc2=new DOMParser().parseFromString(xml2,'text/xml');
+ const boundaryCell=Array.from(doc2.querySelectorAll('mxCell')).find(c=>c.getAttribute('mavisId')==='system:boundary');
+ assert.ok(boundaryCell);assert.equal(boundaryCell.getAttribute('mavisRole'),'boundary');
+ const members=Array.from(doc2.querySelectorAll('mxCell')).filter(c=>c.getAttribute('parent')===boundaryCell.getAttribute('id'));
+ assert.equal(members.length,4);
+ const allCells=Array.from(doc2.querySelectorAll('mxCell'));
+ const cellIds=new Set(allCells.map(c=>c.getAttribute('id')));
+ const orphans=allCells.filter(c=>{const p=c.getAttribute('parent');return p&&p!=='1'&&p!==boundaryCell.getAttribute('id')&&!cellIds.has(p);});
+ assert.deepEqual(orphans.map(c=>({id:c.getAttribute('id'),parent:c.getAttribute('parent')})),[],'no orphan parents');
+ // không phát sinh business node từ boundary
+ assert.equal(Array.from(doc2.querySelectorAll('mxCell')).filter(c=>c.getAttribute('mavisId')==='system:boundary'&&c.getAttribute('mavisRole')!=='boundary').length,0);
+ const draft2=extractDraftDocument(xml2,'m','container',undefined,undefined,'container');
+ assert.equal(draft2.level,'CONTAINER','stored canonical metadata supports callers without display-title parsing');
+ assert.equal(draft2.layoutJson.nodes.find(n=>n.id==='system:boundary').viewLocal,true);
+ assert.deepEqual(draft2.projection,doc.projection,'source membership/provenance survives repeated relayout');
+ assert.deepEqual(draft2.systemBoundary,doc.systemBoundary);
+ assert.deepEqual(draft2.layoutJson.edges.map(e=>[e.id,e.from,e.to,e.relationType,e.originLayer,e.underlyingEdgeIds]),
+   draft.layoutJson.edges.map(e=>[e.id,e.from,e.to,e.relationType,e.originLayer,e.underlyingEdgeIds]));
+ assert.deepEqual(draft2.layoutJson.nodes.find(n=>n.id==='ch').properties,{protocol:'kafka',transportAuthority:'kafka'});
+ const editorEncoded=xml2.replace(/(<mxGraphModel)\s+mavisDocument="[^"]*"/,'$1');
+ const editorDraft=extractDraftDocument(editorEncoded,'m','container',undefined,undefined,'container');
+ assert.deepEqual(editorDraft.systemBoundary,doc.systemBoundary,'cell metadata survives editor removal of custom mxGraphModel attributes');
+ const broken=xml1.replace('mavisRole="boundary"','mavisRole="SERVICE_CONTAINER"');
+ assert.throws(()=>extractDraftDocument(broken,'m','container','C4','CONTAINER','container'),/lost its boundary metadata/);
+ const corrupt=xml1.replace('mavisProperties="{','mavisProperties="broken{');
+ assert.throws(()=>extractDraftDocument(corrupt,'m','container','C4','CONTAINER','container'),/metadata is invalid/);
+});
+test("editor round-trip preserves C4 Component container boundary as a business node",async()=>{
+ const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
+ const {generateDrawio}=require("../src/lib/drawio/server.ts");
+ const {extractDraftDocument}=require("../src/features/architecture/drawio-document.ts");
+ const node=(id,name,type,props,parentId)=>({id,name,elementType:type,properties:props||{},parentId:parentId||null,description:"",layer:"unclassified",evidence:[]});
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[
+  node('svc','ftgo-order-service','SERVICE_CONTAINER'),
+  node('ctrl','OrderController','COMPONENT',{},'svc'),
+  node('svc2','KitchenServiceProxy','COMPONENT',{},'svc')],
+  edges:[{id:'r1',from:'ctrl',to:'svc2',protocol:'CODE_DEPENDENCY',originLayer:'STATIC',uncertain:false,evidence:[]}]};
+ const doc=selectDiagram(model,'COMPONENT','svc').document;
+ const xml1=await generateDrawio(doc);
+ const draft=extractDraftDocument(xml1,'m','components:svc',doc.notation,doc.level,'svc');
+ const containerNode=draft.layoutJson.nodes.find(n=>n.id==='svc');
+ assert.equal(containerNode.kind,'SERVICE_CONTAINER',"container boundary is a real model element, not SYSTEM_BOUNDARY");
+ assert.equal(draft.scopeContainerId,'svc');
+ assert.deepEqual(draft.layoutJson.nodes.filter(n=>n.parentId==='svc').map(n=>n.id).sort(),['ctrl','svc2']);
+ const xml2=await generateDrawio(draft);
+ const doc2=new DOMParser().parseFromString(xml2,'text/xml');
+ const boundaryCell=Array.from(doc2.querySelectorAll('mxCell')).find(c=>c.getAttribute('mavisId')==='svc');
+ assert.equal(boundaryCell.getAttribute('mavisRole'),'boundary');
+ const edges=Array.from(doc2.querySelectorAll('mxCell')).filter(c=>c.getAttribute('edge')==='1');
+ assert.ok(edges.every(e=>e.getAttribute('parent')==='1'),"draw.io edges stay on the top layer by convention");
+ const boundaryMembers=Array.from(doc2.querySelectorAll('mxCell')).filter(c=>c.getAttribute('parent')===boundaryCell.getAttribute('id'));
+ assert.equal(boundaryMembers.length,2,"container boundary keeps its two components");
 });

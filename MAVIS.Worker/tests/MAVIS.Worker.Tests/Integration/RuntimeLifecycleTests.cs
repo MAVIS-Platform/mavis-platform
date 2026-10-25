@@ -74,6 +74,8 @@ public sealed class RuntimeLifecycleTests
         public List<IReadOnlyList<string>> Commands { get; } = [];
         public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string directory, int timeout, CancellationToken ct)
         {
+            if (args.Contains("up"))
+                Assert.True(timeout > int.Parse(args[args.ToList().IndexOf("--wait-timeout") + 1]), "The CLI must outlive Compose's own readiness deadline.");
             Commands.Add(args);
             if (FailHelperQuery && args.Contains("--no-trunc")) throw new IOException("helper query unavailable");
             if (args.Count > 1 && args[0] == "volume" && args[1] == "inspect")

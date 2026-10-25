@@ -91,6 +91,7 @@ public class AssignmentServiceImpl implements AssignmentService {
     @Override
     @Transactional(readOnly = true)
     public List<AssignmentResponseDTO> getAssignmentsByWorkspace(UUID workspaceId) {
+        accessPolicyService.requireWorkspaceMember(workspaceId);
         if (!workspaceRepository.existsById(workspaceId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy lớp học");
         }
@@ -120,6 +121,7 @@ public class AssignmentServiceImpl implements AssignmentService {
         Assignment assignment = assignmentRepository.findWithDetailsById(assignmentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy đề bài tập"));
 
+        accessPolicyService.requireWorkspaceMember(assignment.getWorkspace().getId());
         long submissionCount = submissionSnapshotRepository.countByAssignmentId(assignmentId);
         return toDTO(assignment, submissionCount);
     }

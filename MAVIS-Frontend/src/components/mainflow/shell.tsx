@@ -7,6 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, contextHref, type Project, type Model } from "@/lib/mainflow-api";
+import { useSession } from "@/hooks/use-api";
 import { MainflowProvider } from "./provider";
 export const panel = "rounded-xl border border-border bg-card p-5";
 export function ErrorNotice({ error }: { error: unknown }) {
@@ -35,13 +36,11 @@ function Authenticated({ children, title }: { children: React.ReactNode; title: 
   const params = useSearchParams();
   const project = params.get("project") ?? "";
   const model = params.get("model") ?? "";
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const session = useQuery({
-    queryKey: ["session"],
-    queryFn: ({ signal }) => api<{ authenticated: boolean }>("session", { signal }),
-    staleTime: 0,
-  });
+  const sharedSession = useSession();
+  const session = {
+    ...sharedSession,
+    data: sharedSession.data ? { authenticated: !!sharedSession.data.user } : undefined,
+  };
   const projects = useQuery({
     queryKey: ["projects"],
     queryFn: ({ signal }) => api<Project[]>("projects", { signal }),
@@ -52,26 +51,15 @@ function Authenticated({ children, title }: { children: React.ReactNode; title: 
     queryFn: ({ signal }) => api<Model[]>(`analyzer/projects/${project}/models`, { signal }),
     enabled: !!session.data?.authenticated && !!project,
   });
-  const login = useMutation({
-    mutationFn: () =>
-      api("auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
-    onSuccess: async () => {
-      setPassword("");
-      cache.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" });
-      cache.setQueryData(["session"], { authenticated: true });
-      router.refresh();
-    },
-  });
   async function logout() {
     await api("logout", { method: "POST" });
-    cache.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" });
-    cache.setQueryData(["session"], { authenticated: false });
-    router.replace("/import");
+    await cache.cancelQueries();
+    cache.clear();
+    router.replace("/login");
     router.refresh();
   }
   return (
     <AppShell
-      live
       contextName={projects.data?.find((p) => p.id === project)?.name ?? "Choose a project"}
       navigationQuery={`?${new URLSearchParams({ project, model })}`}
     >
@@ -86,37 +74,13 @@ function Authenticated({ children, title }: { children: React.ReactNode; title: 
       {session.isPending ? (
         <p>Checking session…</p>
       ) : !session.data?.authenticated ? (
-        <form
-          className={`${panel} mx-auto max-w-md space-y-4`}
-          onSubmit={(e) => {
-            e.preventDefault();
-            login.mutate();
-          }}
-        >
-          <h2 className="text-lg font-medium">Sign in to MAVIS</h2>
-          <label className="block">
-            Email
-            <Input
-              autoComplete="username"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <label className="block">
-            Password
-            <Input
-              autoComplete="current-password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          <ErrorNotice error={login.error || session.error} />
-          <Button disabled={login.isPending}>{login.isPending ? "Signing in…" : "Sign in"}</Button>
-        </form>
+        <div className={`${panel} space-y-4`}>
+          <p>Your session is unavailable. Sign in to continue.</p>
+          <Button asChild>
+            <Link href="/login">Sign in</Link>
+          </Button>
+          <ErrorNotice error={session.error} />
+        </div>
       ) : (
         <>
           <div className={`${panel} mb-5 flex flex-wrap items-center gap-4`}>

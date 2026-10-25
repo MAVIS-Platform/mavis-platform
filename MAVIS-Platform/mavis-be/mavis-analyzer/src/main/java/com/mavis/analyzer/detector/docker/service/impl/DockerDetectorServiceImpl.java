@@ -74,7 +74,7 @@ public class DockerDetectorServiceImpl implements DockerDetectorService {
                         String name = p.getFileName().toString();
                         return "docker-compose.yml".equalsIgnoreCase(name) || "docker-compose.yaml".equalsIgnoreCase(name);
                     })
-                    .findFirst();
+                    .sorted().findFirst();
         } catch (IOException e) {
             log.error("Lỗi khi tìm kiếm file docker-compose trong {}", rootPath, e);
             return Optional.empty();
@@ -150,6 +150,31 @@ public class DockerDetectorServiceImpl implements DockerDetectorService {
                         currentContainer.setImage(stripQuotes(imgVal));
                         currentSection = null;
                         currentSectionIndent = -1;
+                    } else if (trimmed.startsWith("build:")) {
+                        String context = stripQuotes(trimmed.substring("build:".length()).trim());
+                        currentSection = context.isEmpty() ? "BUILD" : null;
+                        currentSectionIndent = indent;
+                        if (!context.isEmpty() && !context.startsWith("{")) currentContainer.setBuildContext(context);
+                    } else if ("BUILD".equals(currentSection) && trimmed.startsWith("context:")) {
+                        currentContainer.setBuildContext(stripQuotes(trimmed.substring("context:".length()).trim()));
+                    } else if (trimmed.matches("-?\\s*SPRING_DATASOURCE_URL\\s*[:=].*")) {
+                        String value=trimmed.replaceFirst("^-?\\s*SPRING_DATASOURCE_URL\\s*[:=]\\s*", "");
+                        try {
+                            String jdbc=stripQuotes(value);
+                            if(jdbc.startsWith("jdbc:")) {
+                                var uri=java.net.URI.create(jdbc.substring(5));
+                                if(uri.getHost()!=null&&uri.getUserInfo()==null&&!uri.getHost().contains("${")) {
+                                    currentContainer.setDatasourceHost(uri.getHost());
+                                    currentContainer.setDatasourceTechnology(uri.getScheme());
+                                    String database=uri.getPath()==null?"":uri.getPath().replaceFirst("^/","");
+                                    if(!database.isBlank()&&!database.contains("${"))currentContainer.setDatasourceDatabase(database);
+                                    currentContainer.setDatasourceLineNumber(lineNum);
+                                }
+                            }
+                        }catch(IllegalArgumentException ignored) { /* An unresolved placeholder is not a database binding. */ }
+                    } else if (trimmed.matches("-?\\s*(EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS|SPRING_KAFKA_BOOTSTRAP_SERVERS)\\s*[:=].*")) {
+                        String authority=stripQuotes(trimmed.replaceFirst("^-?\\s*[A-Z_]+\\s*[:=]\\s*", "")).replace(" ","");
+                        if(authority.matches("[A-Za-z0-9_.-]+:[0-9]+(,[A-Za-z0-9_.-]+:[0-9]+)*"))currentContainer.setMessageBrokerAuthority(java.util.Arrays.stream(authority.split(",")).sorted().distinct().collect(java.util.stream.Collectors.joining(",")));
                     } else if (trimmed.startsWith("ports:")) {
                         currentSection = "PORTS";
                         currentSectionIndent = indent;
@@ -203,6 +228,9 @@ public class DockerDetectorServiceImpl implements DockerDetectorService {
         String lowerImage = (image != null ? image.toLowerCase() : "");
         String lowerName = (serviceName != null ? serviceName.toLowerCase() : "");
 
+        String basename=lowerImage.substring(lowerImage.lastIndexOf('/')+1).split(":",2)[0];
+        if(java.util.Set.of("kafka-ui","akhq","kafdrop").contains(basename)||lowerName.endsWith("-init"))return "SERVICE_CONTAINER";
+        if("dynamodb-local".equals(basename))return "DATABASE";
         // 1. Phân loại DATABASE nếu chứa postgres, mysql, mariadb, mongo, mssql, redis
         if (lowerImage.contains("postgres") || lowerImage.contains("mysql")
                 || lowerImage.contains("mariadb") || lowerImage.contains("mongo")

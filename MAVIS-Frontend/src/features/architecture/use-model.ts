@@ -1,18 +1,38 @@
 "use client";
-import { useState } from "react";
-import { useApiQuery, useSelection } from "@/hooks/use-api";
+import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useApi, useApiQuery, useSelection } from "@/hooks/use-api";
 export function useModel() {
+  const api = useApi();
   const { projectId } = useSelection();
-  const query = useApiQuery("models", { projectId }, { enabled: Boolean(projectId) });
-  const [choice, setChoice] = useState<{ projectId: string; modelId: string } | null>(null);
-  const models = query.data ?? [];
-  const model =
-    models.find((m) => choice?.projectId === projectId && m.id === choice.modelId) ?? models.at(-1);
+  const params = useSearchParams();
+  const router = useRouter();
+  const summaries = useApiQuery(
+    api.mode === "backend" ? "modelVersions" : "models",
+    { projectId },
+    { enabled: !!projectId },
+  );
+  const models = [...(summaries.data ?? [])].sort((a, b) => b.revision - a.revision);
+  const chosen = params.get("model");
+  const selected = chosen || models[0]?.id || "";
+  useEffect(() => {
+    if (api.mode === "backend" && !chosen && selected) {
+      const next = new URLSearchParams(params.toString());
+      next.set("model", selected);
+      router.replace(`?${next}`);
+    }
+  }, [api.mode, chosen, selected, params, router]);
+  const detail = useApiQuery("model", { modelId: selected, projectId }, { enabled: !!selected });
   return {
-    query,
+    query: selected ? detail : summaries,
     models,
-    model,
-    selectModel: (modelId: string) => setChoice({ projectId, modelId }),
+    model: detail.data,
     projectId,
+    selectModel: (id: string) => {
+      const next = new URLSearchParams(params.toString());
+      next.set("model", id);
+      next.delete("target");
+      router.replace(`?${next}`);
+    },
   };
 }

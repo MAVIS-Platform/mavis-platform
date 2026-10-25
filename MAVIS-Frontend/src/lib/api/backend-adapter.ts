@@ -5,7 +5,7 @@ import {
   type Request,
   type Response,
 } from "./contracts";
-import { ApiError, fromStatus, normalizeError } from "@/lib/errors/api-error";
+import { ApiError, fromStatus, normalizeError, publicErrorCode } from "@/lib/errors/api-error";
 import { validateResponse } from "./validate-response";
 
 export class BackendAdapter implements ApiAdapter {
@@ -21,10 +21,15 @@ export class BackendAdapter implements ApiAdapter {
     signal?.addEventListener("abort", cancel, { once: true });
     if (signal?.aborted) controller.abort();
     let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, 20000);
+    const timer = setTimeout(
+      () => {
+        timedOut = true;
+        controller.abort();
+      },
+      ["importSource", "importGithub", "renderArchitectureView"].includes(operation)
+        ? 120000
+        : 20000,
+    );
     try {
       const mutation = contracts[operation].mutation;
       let multipart: FormData | undefined;
@@ -55,7 +60,20 @@ export class BackendAdapter implements ApiAdapter {
             : {}),
       });
       if (operation === "session" && response.status === 401) return { user: null } as Response<K>;
-      if (!response.ok) throw fromStatus(response.status);
+      if (!response.ok) {
+        {
+          try {
+            const error: unknown = await response.json();
+            const code = publicErrorCode(
+              error && typeof error === "object" && "code" in error ? error.code : undefined,
+            );
+            if (code) throw new ApiError(fromStatus(response.status).kind, response.status, code);
+          } catch (error) {
+            if (error instanceof ApiError) throw error;
+          }
+        }
+        throw fromStatus(response.status);
+      }
       let body: unknown;
       try {
         body = await response.json();

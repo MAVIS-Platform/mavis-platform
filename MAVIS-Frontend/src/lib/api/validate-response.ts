@@ -24,6 +24,9 @@ export function validateResponse<K extends Operation>(
     model: "modelId",
     analysisJob: "jobId",
     runtimeSession: "sessionId",
+    runtimeReadSession: "sessionId",
+    runtimeStop: "sessionId",
+    runtimeApprove: "sessionId",
     stopRuntime: "sessionId",
     submission: "submissionId",
     feedback: "submissionId",
@@ -36,9 +39,23 @@ export function validateResponse<K extends Operation>(
   if (idKey && (!record(value) || value["id"] !== request[idKey])) fail();
   if (
     Array.isArray(value) &&
-    ["snapshots", "models", "analysisJobs", "scenarios", "runtimeSessions"].includes(operation) &&
+    [
+      "snapshots",
+      "models",
+      "modelVersions",
+      "analysisJobs",
+      "scenarios",
+      "runtimeSessions",
+      "runtimeReadSessions",
+    ].includes(operation) &&
     request["projectId"] !== "*" &&
     value.some((entry: unknown) => !record(entry) || entry["projectId"] !== request["projectId"])
+  )
+    fail();
+  if (
+    Array.isArray(value) &&
+    ["assignments", "referenceVersions"].includes(operation) &&
+    value.some((v) => !record(v) || v["workspaceId"] !== request["workspaceId"])
   )
     fail();
   if (record(value)) {
@@ -49,6 +66,7 @@ export function validateResponse<K extends Operation>(
       "snapshotId",
       "scenarioId",
       "modelId",
+      "viewId",
       "elementId",
       "targetId",
       "configurationRevision",
@@ -57,6 +75,17 @@ export function validateResponse<K extends Operation>(
       if (Object.hasOwn(request, key) && Object.hasOwn(value, key) && request[key] !== value[key])
         fail();
     }
+    if (
+      [
+        "saveArchitectureDocument",
+        "configureIntegration",
+        "configureProfile",
+        "saveRuntimeConfiguration",
+        "saveScenario",
+      ].includes(operation) &&
+      value["revision"] !== Number(request["expectedRevision"]) + 1
+    )
+      fail();
     if (
       operation === "saveModel" &&
       (value["id"] === request["modelId"] ||

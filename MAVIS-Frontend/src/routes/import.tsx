@@ -17,9 +17,16 @@ export default function ImportPage() {
   const api = useApi();
   if (api.mode === "backend")
     return (
-      <FlowFrame title="Import & Analyze">
-        <LiveImportFlow />
-      </FlowFrame>
+      <AppShell>
+        <PageContainer>
+          <SectionHeader
+            title="Import & Analyze"
+            description="Import source, then analyze the selected snapshot."
+          />
+          <ProjectSelector />
+          <LiveImportFlow />
+        </PageContainer>
+      </AppShell>
     );
   return (
     <AppShell>

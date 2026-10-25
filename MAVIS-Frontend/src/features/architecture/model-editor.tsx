@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { useApiMutation } from "@/hooks/use-api";
+import { useApi, useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { useModel } from "./use-model";
 import { ModelVersionSelector, ElementDetailsPanel } from "./components";
 import { ConfirmDialog, FormField, SelectField } from "@/components/shared/forms";
@@ -156,11 +156,19 @@ function ElementDraft({
   );
 }
 export function CompareModels() {
+  const api = useApi();
+  return api.mode === "backend" ? <BackendCompare /> : <MockCompare />;
+}
+function MockCompare() {
   const state = useModel();
   const [beforeId, setBefore] = useState("");
   const [afterId, setAfter] = useState("");
-  const before = state.models.find((m) => m.id === beforeId) ?? state.models[0];
-  const after = state.models.find((m) => m.id === afterId) ?? state.models.at(-1);
+  const before =
+    (state.models as ArchitecturalModel[]).find((m) => m.id === beforeId) ??
+    (state.models as ArchitecturalModel[])[0];
+  const after =
+    (state.models as ArchitecturalModel[]).find((m) => m.id === afterId) ??
+    (state.models as ArchitecturalModel[]).at(-1);
   return state.projectId ? (
     <RequestState
       query={state.query}
@@ -198,4 +206,69 @@ export function CompareModels() {
       )}
     </RequestState>
   ) : null;
+}
+
+function BackendCompare() {
+  const state = useModel();
+  const [base, setBase] = useState("");
+  const [target, setTarget] = useState("");
+  const first = base || state.models[1]?.id || "";
+  const second = target || state.models[0]?.id || "";
+  const comparison = useApiQuery(
+    "compareModels",
+    { baseModelId: first, targetModelId: second },
+    { enabled: !!first && !!second },
+  );
+  return (
+    <RequestState
+      query={state.query}
+      empty={state.models.length < 2}
+      emptyMessage="Create another model revision to compare."
+    >
+      <div className="grid gap-4 md:grid-cols-2">
+        <ModelVersionSelector models={state.models} value={first} onChange={setBase} />
+        <ModelVersionSelector models={state.models} value={second} onChange={setTarget} />
+      </div>
+      {first && second && (
+        <RequestState query={comparison}>
+          {comparison.data && <ComparisonResult result={comparison.data.result} />}
+        </RequestState>
+      )}
+    </RequestState>
+  );
+}
+function ComparisonResult({ result }: { result: Record<string, unknown> }) {
+  const summary = result["summary"];
+  return (
+    <DetailPanel title="Model comparison">
+      {summary && typeof summary === "object" ? (
+        Object.entries(summary).map(([key, value]) => (
+          <p key={key} className="text-sm">
+            {key}: {String(value)}
+          </p>
+        ))
+      ) : (
+        <p>Comparison loaded. Select a version pair to inspect changes.</p>
+      )}
+      {[
+        "addedElements",
+        "removedElements",
+        "modifiedElements",
+        "addedRelationships",
+        "removedRelationships",
+      ].map((key) => {
+        const value = result[key];
+        return Array.isArray(value) && value.length ? (
+          <section key={key}>
+            <h3 className="mt-3 font-medium">{key}</h3>
+            {value.map((item: unknown, i: number) => (
+              <pre key={i} className="overflow-auto whitespace-pre-wrap p-2 text-xs">
+                {JSON.stringify(item, null, 2)}
+              </pre>
+            ))}
+          </section>
+        ) : null;
+      })}
+    </DetailPanel>
+  );
 }

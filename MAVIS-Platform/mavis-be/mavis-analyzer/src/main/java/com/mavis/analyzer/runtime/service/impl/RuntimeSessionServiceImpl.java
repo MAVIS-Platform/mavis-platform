@@ -54,6 +54,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     private final AccessPolicyService accessPolicyService;
     private final RunnerServiceAuthGuard runnerServiceAuthGuard;
     private final ObjectMapper objectMapper;
+    private final com.mavis.common.config.PlatformRuntimeSettings settings;
 
     @Value("${mavis.runner.state-root:}")
     private String runnerStateRoot;
@@ -92,7 +93,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                         String entryName = entry.getName().toLowerCase();
                         if (entryName.endsWith("docker-compose.yml") || entryName.endsWith("docker-compose.yaml")) {
                             try (InputStream is = zipFile.getInputStream(entry)) {
-                                String yamlContent = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                                String yamlContent = new String(readBounded(is), StandardCharsets.UTF_8);
                                 return composePreflightValidator.validate(yamlContent);
                             }
                         }
@@ -124,6 +125,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         SourceSnapshot snapshot = sourceSnapshotRepository.findById(request.getSourceSnapshotId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy snapshot với ID: " + request.getSourceSnapshotId()));
+
+        settings.requireIntegration("otel-collector");
+        var executionProfile=settings.requireProfile(request.getProfileName()==null ? "SPRING_BOOT_DOTNET_COMPOSE_V1" : request.getProfileName());
 
         // [WJ-01]: Kiểm tra chặt chẽ projectId và sourceSnapshotId thuộc cùng Project
         if (snapshot.getProject() != null && !snapshot.getProject().getId().equals(project.getId())) {
@@ -200,7 +204,12 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         String resourceProject = "mavisrun-" + UUID.randomUUID().toString().replace("-", "").toLowerCase();
 
         // [BẢO MẬT & BR-41..45]: Khử secret nhưng giữ nguyên secretHeaders
-        JsonNode redactedConfig = SecretRedactor.redactJson(rawScenarioConfig);
+        ObjectNode bounded=rawScenarioConfig!=null && rawScenarioConfig.isObject()?(ObjectNode)rawScenarioConfig.deepCopy():objectMapper.createObjectNode();
+        ObjectNode profile=bounded.has("profile")&&bounded.get("profile").isObject()?(ObjectNode)bounded.get("profile"):bounded.putObject("profile");
+        profile.put("memoryMiB",executionProfile.memoryMiB());profile.put("cpus",executionProfile.cpus());profile.put("timeoutSeconds",executionProfile.timeoutSeconds());
+        profile.put("administrativeProfileId",executionProfile.id());profile.put("administrativeRevision",executionProfile.revision());
+        profileVersionId=CanonicalReceiptDigestUtils.computeDigest(profile);
+        JsonNode redactedConfig = SecretRedactor.redactJson(bounded);
 
         RuntimeSession session = RuntimeSession.builder()
                 .project(project)
@@ -247,6 +256,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         accessPolicyService.requireProjectWriteAccess(session.getProject());
 
+        validateAdministrativeLimits(session);
         // [CHẶNG 11]: Kiểm tra preflight
         PreflightCheckResponseDTO preflight = runComposePreflight(session.getSourceSnapshot().getId());
         if (!preflight.isCompatible()) {
@@ -276,7 +286,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
-        runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
+        runnerServiceAuthGuard.requireRunnerService();
 
         String resourceProject = request.getResourceProject();
         if (resourceProject == null || !RESOURCE_PROJECT_PATTERN.matcher(resourceProject).matches()
@@ -398,6 +408,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
         runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
+        validateAdministrativeLimits(session);
 
         SourceSnapshot snapshot = session.getSourceSnapshot();
         String composeYaml = "";
@@ -417,7 +428,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                             String entryName = entry.getName().toLowerCase();
                             if (entryName.endsWith("docker-compose.yml") || entryName.endsWith("docker-compose.yaml")) {
                                 try (InputStream is = zipFile.getInputStream(entry)) {
-                                    composeYaml = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                                    composeYaml = new String(readBounded(is), StandardCharsets.UTF_8);
                                     break;
                                 }
                             }
@@ -497,7 +508,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         List<RuntimeSession> sessions = runtimeSessionRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         return sessions.stream()
-                .map(RuntimeSessionResponseDTO::fromEntity)
+                .map(this::toSessionResponse)
                 .collect(Collectors.toList());
     }
 
@@ -507,7 +518,20 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         RuntimeSession session = runtimeSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
         accessPolicyService.requireProjectReadAccess(session.getProject());
-        return RuntimeSessionResponseDTO.fromEntity(session);
+        return toSessionResponse(session);
+    }
+
+    private RuntimeSessionResponseDTO toSessionResponse(RuntimeSession session) {
+        if (session == null) {
+            return null;
+        }
+        UUID enrichedId = null;
+        if (session.getId() != null && modelVersionRepository != null) {
+            enrichedId = modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(session.getId())
+                    .map(com.mavis.common.entity.ModelVersion::getId)
+                    .orElse(null);
+        }
+        return RuntimeSessionResponseDTO.fromEntity(session, null, enrichedId);
     }
 
     private Optional<Path> findComposeFileInDirectory(Path dir) {
@@ -529,5 +553,17 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             log.error("Lỗi khi tìm kiếm docker-compose trong thư mục {}", dir, e);
             return Optional.empty();
         }
+    }
+    private void validateAdministrativeLimits(RuntimeSession session) {
+        settings.requireIntegration("otel-collector");
+        var limit=settings.requireProfile(session.getProfileName()==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":session.getProfileName());
+        var pinnedProfile=session.getScenarioConfig()==null?objectMapper.createObjectNode():session.getScenarioConfig().path("profile");
+        if(pinnedProfile.path("memoryMiB").asInt(256)>limit.memoryMiB() || pinnedProfile.path("cpus").asDouble(1)>limit.cpus() || pinnedProfile.path("timeoutSeconds").asInt(120)>limit.timeoutSeconds())
+            throw new BusinessException(ErrorCode.CONFLICT,"Pinned profile exceeds current administrative limits; create a new session");
+    }
+    private static byte[] readBounded(InputStream input) throws java.io.IOException {
+        byte[] bytes=input.readNBytes(1_048_577);
+        if(bytes.length>1_048_576)throw new java.io.IOException("Compose file exceeds 1 MiB");
+        return bytes;
     }
 }

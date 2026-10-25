@@ -109,6 +109,24 @@ public class CSharpScanEndToEndTests : IClassFixture<WebApplicationFactory<Progr
         // Roslyn phải tự tìm ra OrderService -> payment-service (HTTP call)
         Assert.True(services.GetArrayLength() >= 1);
         Assert.True(dependencies.GetArrayLength() >= 1);
+
+        var dir = AppContext.BaseDirectory;
+        string? repoRoot = null;
+        for (var d = new DirectoryInfo(dir); d != null; d = d.Parent)
+        {
+            if (File.Exists(Path.Combine(d.FullName, "MAVIS.Worker.sln")) || Directory.Exists(Path.Combine(d.FullName, ".git")))
+            {
+                repoRoot = d.FullName;
+                break;
+            }
+        }
+        var outDir = repoRoot != null
+            ? Path.Combine(repoRoot, "output", "m2")
+            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../../output/m2"));
+        Directory.CreateDirectory(outDir);
+        var outputPath = Path.Combine(outDir, "source-pipeline-csharp-manifest-actual.json");
+        var prettyJson = JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(outputPath, prettyJson);
     }
 
     [Fact]
