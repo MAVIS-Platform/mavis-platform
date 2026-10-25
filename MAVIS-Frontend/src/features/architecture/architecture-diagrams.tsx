@@ -14,12 +14,18 @@ import {
   diagramKinds,
   selectDiagram,
   diagramMembers,
-  type DiagramFamily,
   type DiagramKind,
 } from "./diagram-catalog";
 import { generateDrawio } from "@/lib/drawio/generate";
 import { layoutLocally } from "./drawio-local-layout";
 import type { SequenceSelectionContext } from "./three-e-content";
+
+const diagramOptions = [...diagramKinds.C4, ...diagramKinds.UML];
+const popularKinds: DiagramKind[] = ["CONTAINER", "CONTEXT", "UML_SEQUENCE", "UML_CLASS"];
+const popularOptions = popularKinds.flatMap((value) =>
+  diagramOptions.filter((item) => item.value === value),
+);
+
 export function ArchitectureDiagrams({
   model,
   selectedId,
@@ -33,8 +39,7 @@ export function ArchitectureDiagrams({
   onSelectSequence?: ((id: string | null, seqCtx: SequenceSelectionContext | null) => void) | undefined;
   systemName?: string | undefined;
 }) {
-  const [family, setFamily] = useState<DiagramFamily>("C4"),
-    [kind, setKind] = useState<DiagramKind>("CONTAINER"),
+  const [kind, setKind] = useState<DiagramKind>("CONTAINER"),
     [service, setService] = useState(""),
     [editing, setEditing] = useState(false),
     [generated, setGenerated] = useState(""),
@@ -102,10 +107,11 @@ export function ArchitectureDiagrams({
     } else if (members.length) setGroup(id);
   }
   const members = group && document ? diagramMembers(document, group, model) : [];
+  const currentOption = diagramOptions.find((item) => item.value === kind);
   const title =
     kind === "COMPONENT"
-      ? `C4 · Component · ${container?.name ?? "Service"}`
-      : `${family} · ${diagramKinds[family].find((item) => item.value === kind)?.label ?? kind}`;
+      ? `Component · ${container?.name ?? "Service"}`
+      : (currentOption?.label ?? kind);
   function change(nextKind: DiagramKind) {
     setKind(nextKind);
     setEditing(false);
@@ -117,37 +123,28 @@ export function ArchitectureDiagrams({
   return (
     <section aria-label="Architecture diagrams" className="min-w-0 space-y-4">
       <div className="space-y-3 rounded-xl border bg-card p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SelectField
-            label="Diagram family"
-            value={family}
-            onChange={(value) => {
-              const nextFam = value as DiagramFamily;
-              setFamily(nextFam);
-              change(
-                nextFam === "C4"
-                  ? "CONTAINER"
-                  : nextFam === "UML"
-                    ? "UML_SEQUENCE"
-                    : "LOGICAL",
-              );
-            }}
-            options={[
-              { value: "C4", label: "C4" },
-              { value: "UML", label: "UML (6 Diagrams)" },
-              { value: "4+1", label: "4+1 View Model" },
-            ]}
-          />
-          <SelectField
-            label="Diagram type"
-            value={kind}
-            onChange={(value) => change(value as DiagramKind)}
-            options={diagramKinds[family]}
-          />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs font-medium text-muted-foreground">Most popular:</span>
+          {popularOptions.map((item) => (
+            <Button
+              key={item.value}
+              type="button"
+              variant={kind === item.value ? "default" : "outline"}
+              size="sm"
+              className="h-7 px-2.5 text-xs"
+              onClick={() => change(item.value)}
+            >
+              {item.label}
+            </Button>
+          ))}
         </div>
-        <p className="text-sm text-muted-foreground">
-          {diagramKinds[family].find((item) => item.value === kind)?.description}
-        </p>
+        <SelectField
+          label="Diagram type"
+          value={kind}
+          onChange={(value) => change(value as DiagramKind)}
+          options={diagramOptions}
+        />
+        <p className="text-sm text-muted-foreground">{currentOption?.description}</p>
         {["COMPONENT", "LOGICAL"].includes(kind) && (
           <SelectField
             label="Service"
