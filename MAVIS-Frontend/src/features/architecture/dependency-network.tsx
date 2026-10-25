@@ -12,16 +12,35 @@ export function DependencyNetwork({
   onSelect,
   highlightIds = [],
   onClearHighlight,
+  expanded: controlledExpanded,
+  onToggleExpanded,
+  origin: controlledOrigin,
+  onOriginChange,
+  projection: controlledProjection,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   highlightIds?: string[];
   onClearHighlight?: () => void;
+  expanded?: boolean | undefined;
+  onToggleExpanded?: (() => void) | undefined;
+  origin?: ("all" | "source" | "deployment" | "runtime") | undefined;
+  onOriginChange?: ((origin: "all" | "source" | "deployment" | "runtime") => void) | undefined;
+  projection?: ReturnType<typeof projectGraphModel> | undefined;
 }) {
-  const [expanded, setExpanded] = useState(false),
-    [query, setQuery] = useState(""),
-    [origin, setOrigin] = useState<"all" | "source" | "deployment" | "runtime">("all");
+  const [internalExpanded, setInternalExpanded] = useState(false);
+  const expanded = controlledExpanded ?? internalExpanded;
+  const toggleExpanded = onToggleExpanded ?? (() => setInternalExpanded((v) => !v));
+
+  const [internalOrigin, setInternalOrigin] = useState<"all" | "source" | "deployment" | "runtime">("all");
+  const origin = controlledOrigin ?? internalOrigin;
+  const changeOrigin = (v: typeof origin) => {
+    if (onOriginChange) onOriginChange(v);
+    else setInternalOrigin(v);
+  };
+
+  const [query, setQuery] = useState("");
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 }),
     [offsets, setOffsets] = useState<Record<string, { x: number; y: number }>>({});
   const viewport = useRef<HTMLDivElement>(null),
@@ -36,10 +55,11 @@ export function DependencyNetwork({
     } | null>(null);
   const [width, setWidth] = useState(900);
   const marker = useId().replace(/:/g, "");
-  const projection = useMemo(
+  const internalProjection = useMemo(
     () => projectGraphModel(model, expanded, origin),
     [model, expanded, origin],
   );
+  const projection = controlledProjection ?? internalProjection;
   const positions = useMemo(() => layoutGraph(projection.model), [projection.model]);
   const nodes = positions.map((node) => ({
     ...node,
@@ -197,6 +217,30 @@ export function DependencyNetwork({
           Fullscreen
         </Button>
       </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        <span>
+          <strong className="text-foreground">Source model:</strong> {model.elements.length} elements · {model.edges.length} relationships
+        </span>
+        <span>
+          <strong className="text-foreground">Displayed in view:</strong> {nodes.length} elements · {edges.length} visible connections
+        </span>
+        <span>
+          <strong className="text-foreground">Filtered by origin:</strong> {projection.filteredRelationships} relationships ({origin})
+        </span>
+        <span>
+          <strong className="text-foreground">Internal:</strong> {projection.internalRelationships} hidden within collapsed containers
+        </span>
+        {query.trim() !== "" && (
+          <span>
+            <strong className="text-foreground">Search:</strong> {nodes.filter((n) => n.name.toLowerCase().includes(query.toLowerCase())).length}/{nodes.length} elements highlighted
+          </span>
+        )}
+        {nodes.length > 300 && (
+          <span className="font-medium text-amber-600 dark:text-amber-400">
+            (Grid layout mode: &gt;300 elements active, force simulation bypassed for performance)
+          </span>
+        )}
+      </div>
       <div
         ref={viewport}
         role="region"
@@ -304,7 +348,13 @@ export function DependencyNetwork({
                     stroke={color(a.elementType)}
                     strokeWidth={selected ? 3 : 1.5}
                     strokeOpacity={active ? 0.65 : 0.12}
-                    strokeDasharray={edge.protocol === "DECLARED_COMPOSE" ? "5 4" : undefined}
+                    strokeDasharray={
+                    edge.uncertain
+                      ? "2 3"
+                      : edge.protocol === "DECLARED_COMPOSE" || edge.originLayer === "DEPLOYMENT"
+                        ? "5 4"
+                        : undefined
+                  }
                     markerEnd={`url(#${marker})`}
                   />
                   <path
@@ -372,10 +422,23 @@ export function DependencyNetwork({
                     y={r + 18}
                     textAnchor="middle"
                     fill="var(--foreground)"
-                    fontSize={12}
+                    fontSize={11}
                     fontWeight={selectedId === node.id ? 700 : 400}
                   >
-                    {node.name.length > 30 ? node.name.slice(0, 28) + "…" : node.name}
+                    <tspan fill="var(--muted-foreground)" fontFamily="monospace" fontSize={10} fontWeight="bold">
+                      {node.elementType === "SERVICE_CONTAINER"
+                        ? "[SVC] "
+                        : node.elementType === "COMPONENT"
+                          ? "[COMP] "
+                          : node.elementType === "DATABASE"
+                            ? "[DB] "
+                            : node.elementType === "MESSAGE_CHANNEL" || node.elementType === "QUEUE_BROKER"
+                              ? "[QUEUE] "
+                              : node.elementType === "EXTERNAL_SYSTEM"
+                                ? "[EXT] "
+                                : `[${(node.elementType ?? "NODE").slice(0, 4).toUpperCase()}] `}
+                    </tspan>
+                    {node.name.length > 25 ? node.name.slice(0, 23) + "…" : node.name}
                   </text>
                 </g>
               );
@@ -388,21 +451,61 @@ export function DependencyNetwork({
           </p>
         )}
       </div>
-      <div className="flex flex-wrap gap-x-5 gap-y-2 border-t px-4 py-3 text-xs text-muted-foreground">
-        {[
-          ["#397ed7", "Service"],
-          ["#16815d", "Data store"],
-          ["#9455c9", "Messaging"],
-          ["#d65370", "Component"],
-        ].map(([fill, label]) => (
-          <span key={label} className="inline-flex items-center gap-2">
-            <span style={{ background: fill }} className="inline-block size-2 rounded-full" />
-            {label}
+      <div className="space-y-2 border-t px-4 py-3 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="font-semibold text-foreground">Elements:</span>
+          <span className="inline-flex items-center gap-1">
+            <span style={{ background: "#397ed7" }} className="inline-block size-2.5 rounded-full" />
+            <span className="font-mono font-bold text-foreground">[SVC]</span> Service
           </span>
-        ))}
-        <span>
+          <span className="inline-flex items-center gap-1">
+            <span style={{ background: "#16815d" }} className="inline-block size-2.5 rounded-full" />
+            <span className="font-mono font-bold text-foreground">[DB]</span> Data store
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span style={{ background: "#9455c9" }} className="inline-block size-2.5 rounded-full" />
+            <span className="font-mono font-bold text-foreground">[QUEUE]</span> Messaging
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span style={{ background: "#d65370" }} className="inline-block size-2.5 rounded-full" />
+            <span className="font-mono font-bold text-foreground">[COMP]</span> Component
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span style={{ background: "#b7791f" }} className="inline-block size-2.5 rounded-full" />
+            <span className="font-mono font-bold text-foreground">[EXT]</span> External System
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="font-semibold text-foreground">Relationships &amp; Origins:</span>
+          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
+            <span className="font-bold">───</span> Solid (Static / Inferred call)
+          </span>
+          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
+            <span className="font-bold">- - -</span> Dashed (Deployment / Declared)
+          </span>
+          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
+            <span className="font-bold">···</span> Dotted (Uncertain mapping)
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">[STATIC]</span>
+            Source
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">[CONFIG]</span>
+            Config
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">[DEPLOY]</span>
+            Deployment
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">[RUNTIME]</span>
+            Observed
+          </span>
+        </div>
+        <div className="text-[11px]">
           Drag nodes or background · Scroll to zoom · Click for 3E · Click again to clear focus
-        </span>
+        </div>
       </div>
       <details className="border-t p-3 text-sm">
         <summary className="cursor-pointer">Graph options</summary>
@@ -411,7 +514,7 @@ export function DependencyNetwork({
             label="Relationship origin"
             value={origin}
             onChange={(v) => {
-              setOrigin(v as typeof origin);
+              changeOrigin(v as typeof origin);
               setCamera({ x: 0, y: 0, zoom: 1 });
             }}
             options={[
@@ -424,7 +527,7 @@ export function DependencyNetwork({
           <Button
             variant="outline"
             onClick={() => {
-              setExpanded(!expanded);
+              toggleExpanded();
               setOffsets({});
             }}
           >

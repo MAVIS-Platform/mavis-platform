@@ -15,6 +15,7 @@ import {
   evidenceView,
   modelView,
   userView,
+  roleView,
   object,
 } from "./java-wire";
 import { ApiError } from "@/lib/errors/api-error";
@@ -57,6 +58,43 @@ export async function signIn(input: unknown, signal?: AbortSignal, google = fals
     session: { user: userView({ id: raw.userId, fullName: raw.fullName, role: raw.role }) },
   };
 }
+export function runtimeSequence(raw: unknown, expectedSessionId?: string) {
+  const value = z
+    .object({
+      runtimeSessionId: z.string().uuid(),
+      modelVersionId: z.string().uuid(),
+      baseModelVersionId: z.string().uuid().nullish(),
+      sourceSnapshotId: z.string().uuid().nullish(),
+      modelRevision: z.number().nullish(),
+      baseModelRevision: z.number().nullish(),
+      modelOrigin: z.string().nullish(),
+      traceStatus: z.string().nullish(),
+      mappingStatus: z.string().nullish(),
+      startedAt: z.union([z.string(), z.number()]).nullish(),
+      completedAt: z.union([z.string(), z.number()]).nullish(),
+      limitations: z.array(z.string()).nullish(),
+      steps: z.array(object),
+    })
+    .parse(raw);
+  if (expectedSessionId && value.runtimeSessionId !== expectedSessionId) {
+    throw new ApiError("contract", 502);
+  }
+  return {
+    sessionId: value.runtimeSessionId,
+    modelId: value.modelVersionId,
+    baseModelId: value.baseModelVersionId ?? null,
+    snapshotId: value.sourceSnapshotId ?? null,
+    modelRevision: value.modelRevision ?? null,
+    baseModelRevision: value.baseModelRevision ?? null,
+    modelOrigin: value.modelOrigin ?? null,
+    traceStatus: value.traceStatus ?? null,
+    mappingStatus: value.mappingStatus ?? null,
+    startedAt: value.startedAt ?? null,
+    completedAt: value.completedAt ?? null,
+    limitations: value.limitations ?? [],
+    steps: value.steps,
+  };
+}
 export async function executeJava(
   operation: Operation,
   input: Record<string, unknown>,
@@ -81,6 +119,186 @@ export async function executeJava(
     ]);
     return modelView(metadata, graph, details);
   };
+  const workspace = async (raw: unknown) => {
+    const w = z
+      .object({
+        id: z.string().uuid(),
+        name: z.string(),
+        code: z.string(),
+        status: z.string(),
+        myRoleInWorkspace: z.string().nullish(),
+      })
+      .parse(raw);
+    const members = z
+      .array(z.object({ userId: z.string().uuid(), fullName: z.string(), memberRole: z.string() }))
+      .parse(await get(`workspaces/${w.id}/members`));
+    return {
+      ...w,
+      myRole: w.myRoleInWorkspace ?? null,
+      members: members.map((m) => ({
+        id: m.userId,
+        name: m.fullName,
+        role: m.memberRole.toLowerCase(),
+      })),
+    };
+  };
+  const assignment = (raw: unknown) => {
+    const a = z
+      .object({
+        id: z.string().uuid(),
+        workspaceId: z.string().uuid(),
+        title: z.string(),
+        description: z.string().nullish(),
+        dueAt: z.string().nullish(),
+        requiredDiagramTypes: z.array(z.string()).nullish(),
+        requireRuntimeTrace: z.boolean().nullish(),
+      })
+      .parse(raw);
+    return {
+      ...a,
+      instructions: a.description ?? "",
+      dueAt: a.dueAt ?? "No deadline",
+      requiredDiagramTypes: a.requiredDiagramTypes ?? [],
+      requireRuntimeTrace: a.requireRuntimeTrace ?? false,
+    };
+  };
+  const coursework = async (raw: unknown) => {
+    const sub = z
+      .object({
+        id: z.string().uuid(),
+        assignmentId: z.string().uuid(),
+        projectId: z.string().uuid(),
+        submittedById: z.string().uuid(),
+        submittedAt: z.string(),
+        sourceSnapshotId: z.string().uuid(),
+        modelVersionId: z.string().uuid(),
+        runtimeSessionId: z.string().uuid().nullish(),
+      })
+      .parse(raw);
+    const [m, source, feedback, runtime] = await Promise.all([
+      model(sub.modelVersionId),
+      get(`analyzer/snapshots/${sub.sourceSnapshotId}`),
+      get(`submissions/${sub.id}/feedbacks`),
+      sub.runtimeSessionId
+        ? get(`analyzer/runtime/sessions/${sub.runtimeSessionId}`).then(courseworkRuntime)
+        : Promise.resolve(null),
+    ]);
+    if (
+      m.id !== sub.modelVersionId ||
+      m.projectId !== sub.projectId ||
+      m.snapshotId !== sub.sourceSnapshotId ||
+      (runtime &&
+        (runtime.id !== sub.runtimeSessionId ||
+          runtime.snapshotId !== sub.sourceSnapshotId ||
+          runtime.projectId !== sub.projectId))
+    )
+      throw new ApiError("contract", 502);
+    return {
+      id: sub.id,
+      assignmentId: sub.assignmentId,
+      studentId: sub.submittedById,
+      submittedAt: sub.submittedAt,
+      model: m,
+      snapshot: snapshotView(source),
+      runtime,
+      feedback: z
+        .array(
+          z.object({
+            id: z.string().uuid(),
+            commentText: z.string(),
+            createdAt: z.string(),
+            lecturerId: z.string().uuid(),
+          }),
+        )
+        .parse(feedback)
+        .map((f) => ({
+          id: f.id,
+          text: f.commentText,
+          createdAt: f.createdAt,
+          authorId: f.lecturerId,
+        })),
+    };
+  };
+  const courseworkRuntime = async (raw: unknown) => {
+    const r = object.parse(raw);
+    const execution = String(r["executionStatus"] ?? "UNKNOWN");
+    const config = object.safeParse(r["scenarioConfig"]),
+      planning = object.safeParse(config.success ? config.data["planning"] : undefined);
+    const plan = planning.success ? planning.data : {};
+    const traces: {
+      id: string;
+      from: string;
+      to: string;
+      durationMs: number | null;
+      uncertain: boolean;
+    }[] = [];
+    if (["COMPLETE", "PARTIAL"].includes(String(r["traceStatus"]))) {
+      const sequence = z
+        .object({
+          runtimeSessionId: z.string(),
+          steps: z.array(
+            z.object({
+              traceId: z.string().nullish(),
+              spanId: z.string().nullish(),
+              callerService: z.string(),
+              calleeService: z.string(),
+              durationMs: z.number().nonnegative().nullish(),
+            }),
+          ),
+        })
+        .parse(await get(`analyzer/runtime/sessions/${r["id"]}/sequence`));
+      if (sequence.runtimeSessionId !== r["id"]) throw new ApiError("contract", 502);
+      for (const [index, t] of sequence.steps.entries())
+        traces.push({
+          id: `${t.traceId ?? "unknown"}:${t.spanId ?? index}`,
+          from: t.callerService,
+          to: t.calleeService,
+          durationMs: t.durationMs ?? null,
+          uncertain: r["traceStatus"] !== "COMPLETE" || r["mappingStatus"] !== "MAPPED",
+        });
+    }
+    const statuses: Record<string, string> = {
+      NOT_STARTED: "pending",
+      READY_FOR_DISPATCH: "pending",
+      ALLOCATED: "pending",
+      RUNNING: "running",
+      CANCELLING: "cancelling",
+      COMPLETED: "completed",
+      FAILED: "failed",
+      CANCELLED: "cancelled",
+      TERMINATED: "terminated",
+      TIMED_OUT: "timed-out",
+    };
+    return {
+      id: r["id"],
+      projectId: r["projectId"],
+      snapshotId: r["sourceSnapshotId"],
+      scenarioId: plan["scenarioId"] ?? null,
+      configurationRevision: plan["configurationRevision"] ?? null,
+      scenarioRevision: plan["scenarioRevision"] ?? null,
+      status: statuses[execution] ?? "unknown",
+      executionStatus: execution,
+      scenarioStatus: String(r["scenarioStatus"] ?? "UNKNOWN"),
+      evidenceStatus: String(r["evidenceStatus"] ?? "UNKNOWN"),
+      cleanupStatus: String(r["cleanupStatus"] ?? "UNKNOWN"),
+      outcome:
+        r["scenarioStatus"] === "PASSED"
+          ? "passed"
+          : r["scenarioStatus"] === "FAILED"
+            ? "failed"
+            : "unknown",
+      approvedAt: null,
+      events: r["createdAt"]
+        ? [
+            {
+              at: String(r["createdAt"]),
+              message: `Execution: ${execution}; scenario: ${r["scenarioStatus"]}; evidence: ${r["evidenceStatus"]}; cleanup: ${r["cleanupStatus"]}`,
+            },
+          ]
+        : [],
+      traces,
+    };
+  };
   const runtimeView = (raw: unknown) => {
     const value = z
       .object({
@@ -88,6 +306,7 @@ export async function executeJava(
         projectId: z.string().uuid(),
         sourceSnapshotId: z.string().uuid(),
         modelVersionId: z.string().uuid().nullish(),
+        enrichedModelVersionId: z.string().uuid().nullish(),
         scenarioName: z.string().nullish(),
         profileName: z.string().nullish(),
         executionStatus: z.string().nullish(),
@@ -95,6 +314,7 @@ export async function executeJava(
         evidenceStatus: z.string().nullish(),
         cleanupStatus: z.string().nullish(),
         traceQuality: z.string().nullish(),
+        traceStatus: z.string().nullish(),
         mappingStatus: z.string().nullish(),
         createdAt: z.string().nullish(),
         startedAt: z.string().nullish(),
@@ -106,6 +326,7 @@ export async function executeJava(
       projectId: value.projectId,
       snapshotId: value.sourceSnapshotId,
       modelId: value.modelVersionId ?? null,
+      enrichedModelId: value.enrichedModelVersionId ?? null,
       scenarioName: value.scenarioName ?? null,
       profileName: value.profileName ?? null,
       executionStatus: value.executionStatus ?? "UNKNOWN",
@@ -113,28 +334,263 @@ export async function executeJava(
       evidenceStatus: value.evidenceStatus ?? "UNKNOWN",
       cleanupStatus: value.cleanupStatus ?? "UNKNOWN",
       traceQuality: value.traceQuality ?? "UNKNOWN",
+      traceStatus: value.traceStatus ?? "NONE",
       mappingStatus: value.mappingStatus ?? "UNKNOWN",
       createdAt: value.createdAt ?? null,
       startedAt: value.startedAt ?? null,
       completedAt: value.completedAt ?? null,
     };
   };
+  const account = (raw: unknown) => {
+    const a = z
+      .object({
+        id: z.string().uuid(),
+        fullName: z.string(),
+        roleCode: z.string(),
+        status: z.string(),
+      })
+      .parse(raw);
+    return {
+      id: a.id,
+      name: a.fullName,
+      role: roleView(a.roleCode),
+      locked: a.status === "LOCKED",
+      status: a.status,
+    };
+  };
+  const patch = (path: string, body: unknown) =>
+    javaRequest(path, token, { method: "PATCH", body: JSON.stringify(body), signal });
   switch (operation) {
+    case "runtimeConfiguration":
+      return get(`analyzer/projects/${id(input, "projectId")}/runtime-plan`);
+    case "saveRuntimeConfiguration":
+      return javaRequest(`analyzer/projects/${id(input, "projectId")}/runtime-plan`, token, {
+        method: "PUT",
+        body: JSON.stringify(input),
+        signal,
+      });
+    case "scenarios":
+      return get(`analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios`);
+    case "createScenario":
+      return post(`analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios`, {
+        ...input,
+        expectedRevision: 0,
+      });
+    case "saveScenario":
+      return javaRequest(
+        `analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios/${id(input, "scenarioId")}`,
+        token,
+        { method: "PUT", body: JSON.stringify(input), signal },
+      );
+    case "startRuntime":
+      return courseworkRuntime(
+        await post(`analyzer/projects/${id(input, "projectId")}/runtime-plan/start`, input),
+      );
+    case "runtimeSessions":
+      return Promise.all(
+        list
+          .parse(
+            await get(
+              input["projectId"] === "*"
+                ? "admin/runtime-sessions"
+                : `analyzer/projects/${id(input, "projectId")}/runtime-sessions`,
+            ),
+          )
+          .map(courseworkRuntime),
+      );
+    case "runtimeSession":
+      return courseworkRuntime(await get(`analyzer/runtime/sessions/${id(input, "sessionId")}`));
+    case "stopRuntime":
+      return courseworkRuntime(
+        await post(`analyzer/runtime/sessions/${id(input, "sessionId")}/stop`),
+      );
+    case "accounts":
+      return list.parse(await get("admin/users")).map(account);
+    case "setAccountLock":
+      return account(
+        await patch(`admin/users/${id(input, "accountId")}/status`, {
+          newStatus: input["locked"] ? "LOCKED" : "ACTIVE",
+        }),
+      );
+    case "integrations":
+      return get("admin/integrations");
+    case "profiles":
+      return get("admin/profiles");
+    case "configureIntegration":
+      return patch(
+        `admin/integrations/${encodeURIComponent(z.string().min(1).parse(input["integrationId"]))}`,
+        input,
+      );
+    case "configureProfile":
+      return patch(
+        `admin/profiles/${encodeURIComponent(z.string().min(1).parse(input["profileId"]))}`,
+        input,
+      );
+    case "audit":
+      return z
+        .array(
+          z.object({
+            id: z.string().uuid(),
+            createdAt: z.string(),
+            action: z.string(),
+            actorId: z.string().nullish(),
+            targetId: z.string().nullish(),
+          }),
+        )
+        .parse(await get("admin/audit-logs"))
+        .map((a) => ({
+          id: a.id,
+          at: a.createdAt,
+          action: a.action,
+          actorId: a.actorId ?? "SYSTEM",
+          resourceId: a.targetId ?? "SYSTEM",
+        }));
+    case "adminJobs":
+      return list.parse(await get("admin/jobs")).map(jobView);
+    case "platformSummary": {
+      const a = z
+        .object({
+          totalProjects: z.number().int().nonnegative(),
+          totalUsers: z.number().int().nonnegative(),
+          totalJobs: z.number().int().nonnegative(),
+          runningRuntimeSessions: z.number().int().nonnegative(),
+        })
+        .parse(await get("admin/dashboard-stats"));
+      return {
+        health: "unknown",
+        message:
+          "Inventory counts are available. External services and Runner health have not been probed.",
+        projects: a.totalProjects,
+        users: a.totalUsers,
+        analysisJobs: a.totalJobs,
+        runningSessions: a.runningRuntimeSessions,
+      };
+    }
+
+    case "workspaces":
+      return Promise.all(list.parse(await get("workspaces")).map(workspace));
+    case "createWorkspace":
+      return workspace(await post("workspaces", input));
+    case "updateWorkspace": {
+      const current = object.parse(await get(`workspaces/${id(input, "workspaceId")}`));
+      return workspace(
+        await javaRequest(`workspaces/${id(input, "workspaceId")}`, token, {
+          method: "PUT",
+          body: JSON.stringify({
+            ...input,
+            description: input["description"] ?? current["description"] ?? null,
+          }),
+          signal,
+        }),
+      );
+    }
+    case "archiveWorkspace":
+      return workspace(
+        await javaRequest(`workspaces/${id(input, "workspaceId")}/archive`, token, {
+          method: "PATCH",
+          signal,
+        }),
+      );
+    case "addWorkspaceMember":
+    case "removeWorkspaceMember": {
+      const w = id(input, "workspaceId");
+      if (operation === "addWorkspaceMember")
+        await post(`workspaces/${w}/members`, {
+          email: input["email"],
+          memberRole: input["memberRole"],
+        });
+      else
+        await javaRequest(`workspaces/${w}/members/${id(input, "userId")}`, token, {
+          method: "DELETE",
+          signal,
+        });
+      return workspace(await get(`workspaces/${w}`));
+    }
+    case "assignments":
+      return list
+        .parse(await get(`workspaces/${id(input, "workspaceId")}/assignments`))
+        .map(assignment);
+    case "createAssignment":
+      return assignment(await post(`workspaces/${id(input, "workspaceId")}/assignments`, input));
+    case "referenceVersions": {
+      const workspaceId = id(input, "workspaceId");
+      return Promise.all(
+        list.parse(await get(`workspaces/${workspaceId}/reference-snapshots`)).map(async (raw) => {
+          const snap = snapshotView(raw);
+          const versions = list
+            .parse(await get(`analyzer/projects/${snap.projectId}/models`))
+            .map(modelSummary)
+            .filter((m) => m.snapshotId === snap.id)
+            .sort((a, b) => b.revision - a.revision);
+          if (!versions[0]) throw new ApiError("validation", 422, "REFERENCE_MODEL");
+          return { id: snap.id, workspaceId, snapshot: snap, model: await model(versions[0].id) };
+        }),
+      );
+    }
+    case "submissions":
+      return Promise.all(list.parse(await get("submissions/me")).map(coursework));
+    case "submission":
+      return coursework(await get(`submissions/${id(input, "submissionId")}`));
+    case "submit": {
+      const modelId = id(input, "modelId"),
+        snapshotId = id(input, "snapshotId");
+      const m = modelSummary(await get(`analyzer/models/${modelId}`));
+      if (m.snapshotId !== snapshotId || (input["projectId"] && input["projectId"] !== m.projectId))
+        throw new ApiError("validation", 422);
+      let diagram = input["diagramVersionId"];
+      if (!diagram) {
+        const diagrams = z
+          .array(z.object({ id: z.string().uuid(), modelVersionId: z.string().uuid() }))
+          .parse(await get(`analyzer/models/${modelId}/diagrams`));
+        diagram = diagrams.find((d) => d.modelVersionId === modelId)?.id;
+        if (!diagram) throw new ApiError("validation", 422, "SUBMISSION_DIAGRAM");
+      }
+      return coursework(
+        await post("submissions", {
+          assignmentId: id(input, "assignmentId"),
+          projectId: m.projectId,
+          modelVersionId: modelId,
+          diagramVersionId: diagram,
+          evaluationRunId: input["evaluationRunId"] ?? null,
+          runtimeSessionId: input["runtimeSessionId"] ?? null,
+          submissionNotes: input["submissionNotes"],
+        }),
+      );
+    }
+    case "feedback": {
+      const sub = id(input, "submissionId");
+      const pinned = object.parse(await get(`submissions/${sub}`));
+      if (pinned["modelVersionId"] !== id(input, "modelId")) throw new ApiError("validation", 422);
+      await post(`submissions/${sub}/feedbacks`, {
+        commentText: input["text"],
+        elementId: input["elementId"] ?? null,
+        relationshipId: input["relationshipId"] ?? null,
+      });
+      return coursework(await get(`submissions/${sub}`));
+    }
+    case "updateProfile":
+      return {
+        user: userView(
+          await javaRequest("auth/me", token, {
+            method: "PATCH",
+            body: JSON.stringify(input),
+            signal,
+          }),
+        ),
+      };
     case "runtimeSequence": {
       const sessionId = id(input, "sessionId");
-      const value = z
-        .object({
-          runtimeSessionId: z.string().uuid(),
-          modelVersionId: z.string().uuid(),
-          steps: z.array(object),
-        })
-        .parse(await get(`analyzer/runtime/sessions/${sessionId}/sequence`));
-      if (value.runtimeSessionId !== sessionId) throw new ApiError("contract", 502);
-      return { sessionId, modelId: value.modelVersionId, steps: value.steps };
+      return runtimeSequence(await get(`analyzer/runtime/sessions/${sessionId}/sequence`), sessionId);
     }
     case "runtimeReadSessions":
       return list
-        .parse(await get(`analyzer/projects/${id(input, "projectId")}/runtime-sessions`))
+        .parse(
+          await get(
+            input["projectId"] === "*"
+              ? "admin/runtime-sessions"
+              : `analyzer/projects/${id(input, "projectId")}/runtime-sessions`,
+          ),
+        )
         .map(runtimeView);
     case "runtimeReadSession":
       return runtimeView(await get(`analyzer/runtime/sessions/${id(input, "sessionId")}`));
@@ -336,7 +792,9 @@ export async function executeJava(
         .object({ modelVersionId: z.string().uuid(), content: z.string() })
         .parse(await get(`analyzer/diagrams/${component.id}/export?format=JSON`));
       if (exported.modelVersionId !== modelId) throw new ApiError("contract", 502);
-      const pack = planArchitectureViews(JSON.parse(exported.content));
+      const pack = planArchitectureViews(JSON.parse(exported.content), {
+        systemName: typeof input["systemName"] === "string" ? input["systemName"] : undefined,
+      });
       if (pack.modelId !== modelId) throw new ApiError("contract", 502);
       if (operation === "architectureViews") return pack;
       const view = pack.views.find((view) => view.id === input["viewId"]);

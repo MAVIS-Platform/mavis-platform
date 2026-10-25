@@ -1,0 +1,240 @@
+{
+  "matrixVersion": "m8-rule-and-language-coverage-v3-q1-q4",
+  "generatedAt": "2026-10-25T07:31:40.701Z",
+  "overallGovernanceStatus": {
+    "staticAndUnitSelfVerification": "SELF_VERIFIED",
+    "browserWorkloadVerification": "SELF_VERIFIED_WITH_2000_NODE_SVG_ZOOM_FRAME_OVER_BUDGET",
+    "liveRuntimeOtelTraceVerification": "BLOCKED_NO_LIVE_TRACE",
+    "independentReviewerAcceptance": "PENDING_INDEPENDENT_REVIEW"
+  },
+  "dynamicInvariantChecks": {
+    "honestDeploymentNoMeta": true,
+    "honestBuildContextNoFabricatedArtifact": true,
+    "honestActivityNoCfg": true,
+    "honestStateNoLifecycle": true,
+    "distinctServicePackages": true,
+    "hydrationPreservesDesigned": true,
+    "deletionConflictDetected": true,
+    "semanticCanvasEditDetected": true,
+    "foreignModelDocumentRejected": true,
+    "javaModelChecked": true,
+    "csharpModelChecked": true,
+    "browserWorkloadVerified": true,
+    "browserZoom2000ExceededTarget": true,
+    "liveOtelTraceCaptured": false
+  },
+  "systemCatalog": {
+    "interactiveGraph": {
+      "id": "GRAPH",
+      "label": "Interactive Dependency Graph",
+      "collapseExpandSupported": true,
+      "originFilters": [
+        "all",
+        "source",
+        "deployment",
+        "runtime"
+      ]
+    },
+    "canonicalDiagrams": [
+      {
+        "id": "C4_CONTEXT",
+        "family": "C4",
+        "kind": "CONTEXT",
+        "milestone": "M1",
+        "label": "C4 Level 1 · System Context"
+      },
+      {
+        "id": "C4_CONTAINER",
+        "family": "C4",
+        "kind": "CONTAINER",
+        "milestone": "M1",
+        "label": "C4 Level 2 · Container"
+      },
+      {
+        "id": "C4_COMPONENT",
+        "family": "C4",
+        "kind": "COMPONENT",
+        "milestone": "M2",
+        "label": "C4 Level 3 · Component"
+      },
+      {
+        "id": "UML_SEQUENCE",
+        "family": "UML",
+        "kind": "UML_SEQUENCE",
+        "milestone": "M3",
+        "label": "UML Sequence Diagram"
+      },
+      {
+        "id": "UML_CLASS",
+        "family": "UML",
+        "kind": "UML_CLASS",
+        "milestone": "M4",
+        "label": "UML Class Diagram"
+      },
+      {
+        "id": "UML_PACKAGE",
+        "family": "UML",
+        "kind": "UML_PACKAGE",
+        "milestone": "M4",
+        "label": "UML Package Diagram"
+      },
+      {
+        "id": "UML_DEPLOYMENT",
+        "family": "UML",
+        "kind": "UML_DEPLOYMENT",
+        "milestone": "M5",
+        "label": "UML Deployment Diagram"
+      },
+      {
+        "id": "UML_ACTIVITY",
+        "family": "UML",
+        "kind": "UML_ACTIVITY",
+        "milestone": "M6",
+        "label": "UML Activity Diagram"
+      },
+      {
+        "id": "UML_STATE",
+        "family": "UML",
+        "kind": "UML_STATE",
+        "milestone": "M7",
+        "label": "UML State Machine Diagram"
+      }
+    ]
+  },
+  "diagrams": [
+    {
+      "diagramId": "C4_CONTEXT",
+      "milestone": "M1",
+      "verificationStatus": "SELF_VERIFIED",
+      "javaSupport": "EXTRACTED",
+      "csharpSupport": "EXTRACTED",
+      "composeSupport": "EXTRACTED",
+      "runtimeOtelSupport": "NOT_APPLICABLE",
+      "designedOverlaySupport": "SUPPORTED",
+      "restraintRules": [
+        "Inbound HTTP entrypoints do not fabricate external actors/callers",
+        "Compose depends_on excluded from context interactions"
+      ]
+    },
+    {
+      "diagramId": "C4_CONTAINER",
+      "milestone": "M1",
+      "verificationStatus": "SELF_VERIFIED",
+      "javaSupport": "EXTRACTED",
+      "csharpSupport": "EXTRACTED",
+      "composeSupport": "EXTRACTED",
+      "runtimeOtelSupport": "SUPPORTED",
+      "designedOverlaySupport": "SUPPORTED",
+      "restraintRules": [
+        "Named system boundary wraps owned containers and logical datastores only",
+        "Channel protocol badge derived strictly from channel properties.protocol"
+      ]
+    },
+    {
+      "diagramId": "C4_COMPONENT",
+      "milestone": "M2",
+      "verificationStatus": "SELF_VERIFIED",
+      "javaSupport": "EXTRACTED",
+      "csharpSupport": "EXTRACTED",
+      "composeSupport": "NOT_APPLICABLE",
+      "runtimeOtelSupport": "NOT_APPLICABLE",
+      "designedOverlaySupport": "SUPPORTED",
+      "restraintRules": [
+        "Scoped to a single SERVICE_CONTAINER",
+        "CLASS_INTERFACE nodes excluded from C3 component level to keep C3/C4 separation clean"
+      ]
+    },
+    {
+      "diagramId": "UML_SEQUENCE",
+      "milestone": "M3",
+      "verificationStatus": "SELF_VERIFIED_STATIC_AND_REPLAY_ONLY__LIVE_OTEL_BLOCKED",
+      "javaSupport": "EXTRACTED",
+      "csharpSupport": "EXTRACTED",
+      "composeSupport": "EXCLUDED_STARTUP_ONLY",
+      "runtimeOtelSupport": "REPLAY_VERIFIED__LIVE_OTEL_PENDING",
+      "designedOverlaySupport": "SUPPORTED",
+      "restraintRules": [
+        "Causal parentSpanId tree DFS ordering with cyclic/self-parent guards",
+        "Ambiguous parallel candidate edges require explicit user disambiguation",
+        "EXTRACTED/OBSERVED message facts are immutable in Draw.io round-trip"
+      ]
+    },
+    {
+      "diagramId": "UML_CLASS",
+      "milestone": "M4",
+      "verificationStatus": "SELF_VERIFIED",
+      "javaSupport": "EXTRACTED",
+      "csharpSupport": "EXTRACTED",
+      "composeSupport": "NOT_APPLICABLE",
+      "runtimeOtelSupport": "NOT_APPLICABLE",
+      "designedOverlaySupport": "SUPPORTED",
+      "restraintRules": [
+        "Java package-private (~ [package-private]) kept distinct from C# internal (~ [internal])",
+        "All overloaded method signatures preserved by signatureKey",
+        "Contract interface without I-prefix and IHelper class with I-prefix classified by AST kind, never by name prefix",
+        "SHARED_AGGREGATION and COMPOSITION require DESIGNED overlay or explicit ownership evidence; static fields default to ASSOCIATION with UNKNOWN multiplicity omitted"
+      ]
+    },
+    {
+      "diagramId": "UML_PACKAGE",
+      "milestone": "M4",
+      "verificationStatus": "SELF_VERIFIED",
+      "javaSupport": "EXTRACTED",
+      "csharpSupport": "EXTRACTED",
+      "composeSupport": "NOT_APPLICABLE",
+      "runtimeOtelSupport": "NOT_APPLICABLE",
+      "designedOverlaySupport": "SUPPORTED",
+      "restraintRules": [
+        "Package identity scoped by owning service (pkg:<serviceId>:<qualifiedName>) so shared package names across services never collide",
+        "Package dependencies aggregate cross-package classifier edges with full underlyingEdgeIds",
+        "Cyclic «merge» relationships rejected by PACKAGE_MERGE_CYCLE_DETECTED validator"
+      ]
+    },
+    {
+      "diagramId": "UML_DEPLOYMENT",
+      "milestone": "M5",
+      "verificationStatus": "SELF_VERIFIED",
+      "javaSupport": "EXTRACTED",
+      "csharpSupport": "EXTRACTED",
+      "composeSupport": "EXTRACTED",
+      "runtimeOtelSupport": "SUPPORTED",
+      "designedOverlaySupport": "SUPPORTED",
+      "restraintRules": [
+        "Logical services/datastores without explicit deploymentMetadata/Compose/image/ports are never fabricated into deployment nodes",
+        "CommunicationPath derived only from evidenced communication edges or DESIGNED overlay; Compose depends_on excluded from CommunicationPath",
+        "Multi-environment deployment definitions isolated by environment filter"
+      ]
+    },
+    {
+      "diagramId": "UML_ACTIVITY",
+      "milestone": "M6",
+      "verificationStatus": "SELF_VERIFIED",
+      "javaSupport": "EXTRACTED_AND_PARTIAL",
+      "csharpSupport": "EXTRACTED_AND_PARTIAL",
+      "composeSupport": "NOT_APPLICABLE",
+      "runtimeOtelSupport": "NOT_APPLICABLE",
+      "designedOverlaySupport": "SUPPORTED",
+      "restraintRules": [
+        "Never fabricates handle() operations or INITIAL->ACTION->FINAL flows when methodsCfg is absent",
+        "Early returns terminate branch tails without wiring into post-if MergeNode; do-while executes body before bottom DecisionNode",
+        "Unsupported AST constructs (break/continue/yield/try/catch/switch fall-through/lambda) emit PARTIAL completeness marker",
+        "ObjectNode and ObjectFlow derived from AST enum state assignments, never frontend label regex"
+      ]
+    },
+    {
+      "diagramId": "UML_STATE",
+      "milestone": "M7",
+      "verificationStatus": "SELF_VERIFIED",
+      "javaSupport": "EXTRACTED_AND_PARTIAL",
+      "csharpSupport": "EXTRACTED_AND_PARTIAL",
+      "composeSupport": "NOT_APPLICABLE",
+      "runtimeOtelSupport": "NOT_APPLICABLE",
+      "designedOverlaySupport": "SUPPORTED",
+      "restraintRules": [
+        "Never fabricates ENUM_DECLARATION or PENDING->COMPLETED transitions from component names",
+        "Primitive/string fields excluded from state-carrier inference; transitions require enclosing AST guard or dominating early-exit guard",
+        "Unguarded or else-branch state assignments recorded in unresolvedAssignments (PARTIAL) rather than fabricated from initialState/ANY"
+      ]
+    }
+  ]
+}

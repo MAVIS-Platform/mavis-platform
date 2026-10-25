@@ -35,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class RunnerReceiptApiIntegrationTest {
+class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
 
     @Autowired
     private MockMvc mockMvc;
@@ -172,8 +172,8 @@ class RunnerReceiptApiIntegrationTest {
                 .scenarioVersionId("scenario/1.0")
                 .scenarioConfig(scenarioConfig)
                 .confirmedServiceMappings(Map.of("order-service", elA.getId().toString(), "payment-service", elB.getId().toString()))
-                .scenarioStatus("PENDING")
-                .executionStatus("NOT_STARTED")
+                .scenarioStatus("APPROVED")
+                .executionStatus("READY_FOR_DISPATCH")
                 .build());
 
         UUID sessionId = session.getId();
@@ -203,7 +203,7 @@ class RunnerReceiptApiIntegrationTest {
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
                         .header("X-Test-User-Email", user.getEmail())
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(allocReq)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.executionStatus").value("ALLOCATED"));
@@ -216,7 +216,7 @@ class RunnerReceiptApiIntegrationTest {
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
                         .header("X-Test-User-Email", user.getEmail())
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(runReq)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.executionStatus").value("RUNNING"))
@@ -274,7 +274,7 @@ class RunnerReceiptApiIntegrationTest {
 
         MvcResult ackResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
                         .header("X-Test-User-Email", user.getEmail())
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(receipt)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -298,7 +298,7 @@ class RunnerReceiptApiIntegrationTest {
         // =========================================================================
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
                         .header("X-Test-User-Email", user.getEmail())
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(receipt)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.persistenceStatus").value("ALREADY_COMMITTED"))
@@ -321,7 +321,7 @@ class RunnerReceiptApiIntegrationTest {
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
                         .header("X-Test-User-Email", user.getEmail())
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(conflictingReceipt)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("Conflicting RunnerReceipt digest")));
@@ -341,7 +341,7 @@ class RunnerReceiptApiIntegrationTest {
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
                         .header("X-Test-User-Email", user.getEmail())
-                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(badProfileReceipt)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("profileVersionId không khớp")));

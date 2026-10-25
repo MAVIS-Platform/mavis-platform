@@ -1,0 +1,334 @@
+{
+  "milestone": "M4-M8 — Unified Graph + 9 Diagrams Catalog E2E Acceptance + Browser Graph Workload Benchmark",
+  "timestamp": "2026-10-25T07:29:19.115Z",
+  "stack": {
+    "frontend": "http://127.0.0.1:3000",
+    "javaBackend": "http://127.0.0.1:8081",
+    "worker": "http://127.0.0.1:5082",
+    "postgres": "localhost:5432",
+    "drawioRenderer": "http://127.0.0.1:8090"
+  },
+  "project": {
+    "projectId": "e0a9ee09-2747-469c-b09d-474674db7a05",
+    "modelId": "8b5a2dbc-329d-4e9a-8d01-b94ab4b1c241",
+    "name": "Test1"
+  },
+  "pass1LiveBackendTest1": {
+    "acceptanceMode": "LIVE_BACKEND_POSTGRES_TEST1",
+    "mockedEndpoints": [],
+    "honestEmptyExtractedStates": {
+      "UML_DEPLOYMENT_TEST1_DOCKER_COMPOSE": {
+        "status": "PASS",
+        "extractedNodes": 26,
+        "extractedEdges": 10
+      },
+      "UML_ACTIVITY": {
+        "status": "PASS",
+        "extractedNodes": 0,
+        "extractedEdges": 0,
+        "diagnosticCodeVerified": "NO_ACTIVITY_CFG_EXTRACTED"
+      },
+      "UML_STATE": {
+        "status": "PASS",
+        "extractedNodes": 0,
+        "extractedEdges": 0,
+        "diagnosticCodeVerified": "NO_STATE_LIFECYCLE_EXTRACTED"
+      }
+    },
+    "structuredDesignedAuthoringAndCasPersistence": {
+      "UML_CLASS": {
+        "status": "PASS",
+        "extractedNodes": 55,
+        "hydratedAfterReload": {
+          "designedNodes": 1,
+          "designedEdges": 1
+        },
+        "postReloadSecondEditVerified": {
+          "designedNodes": 2
+        }
+      },
+      "UML_PACKAGE": {
+        "status": "PASS",
+        "designedNodes": 1,
+        "designedEdges": 1
+      },
+      "UML_DEPLOYMENT": {
+        "status": "PASS",
+        "designedNodes": 2,
+        "designedEdges": 1
+      },
+      "UML_ACTIVITY": {
+        "status": "PASS",
+        "designedNodes": 2,
+        "designedEdges": 1
+      },
+      "UML_STATE": {
+        "status": "PASS",
+        "designedNodes": 2,
+        "designedEdges": 1
+      }
+    }
+  },
+  "pass2ExtractedJavaAstModelBrowserRender": {
+    "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+    "mockedEndpoints": [
+      "/api/mavis/model?*",
+      "/api/mavis/architectureDocument?*"
+    ],
+    "sourceFixture": "output/m2/source-pipeline-java-actual.json",
+    "classificationNote": "Exercises real browser UI + live Draw.io (:8090) SVG renderer on the actual Java AST/Docker extractor output (source-pipeline-java-actual.json) injected via page.route(...fulfill), because Test1 in PostgreSQL predates M6/M7 AST CFG/lifecycle fields.",
+    "diagrams": {
+      "UML_CLASS": {
+        "status": "PASS",
+        "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+        "extractedNodes": 7,
+        "extractedEdges": 6,
+        "drawioBytes": 45694,
+        "hasMavisUmlProjection": true,
+        "hasMavisUmlDocument": true,
+        "screenshot": "output/m8/browser-uml-class.png"
+      },
+      "UML_PACKAGE": {
+        "status": "PASS",
+        "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+        "extractedNodes": 4,
+        "extractedEdges": 1,
+        "drawioBytes": 10575,
+        "hasMavisUmlProjection": true,
+        "hasMavisUmlDocument": true,
+        "screenshot": "output/m8/browser-uml-package.png",
+        "hasFolderShape": true
+      },
+      "UML_DEPLOYMENT": {
+        "status": "PASS",
+        "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+        "extractedNodes": 4,
+        "extractedEdges": 2,
+        "drawioBytes": 12818,
+        "hasMavisUmlProjection": true,
+        "hasMavisUmlDocument": true,
+        "screenshot": "output/m8/browser-uml-deployment.png",
+        "hasCubeShape": true,
+        "hasManifestArrow": true,
+        "hasNoFabricatedBuildArtifact": true
+      },
+      "UML_ACTIVITY": {
+        "status": "PASS",
+        "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+        "extractedNodes": 8,
+        "extractedEdges": 7,
+        "drawioBytes": 22367,
+        "hasMavisUmlProjection": true,
+        "hasMavisUmlDocument": true,
+        "screenshot": "output/m8/browser-uml-activity.png",
+        "hasSwimlane": true,
+        "hasDecisionRhombus": true
+      },
+      "UML_STATE": {
+        "status": "PASS",
+        "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+        "extractedNodes": 5,
+        "extractedEdges": 4,
+        "drawioBytes": 11513,
+        "hasMavisUmlProjection": true,
+        "hasMavisUmlDocument": true,
+        "screenshot": "output/m8/browser-uml-state.png"
+      }
+    }
+  },
+  "pass3BrowserGraphWorkloadSummary": [
+    {
+      "scaleNodes": 100,
+      "mountedExpandedSvgNodes": 100,
+      "expandAllMedianMs": 158.8,
+      "expandAllMaxMs": 182.2,
+      "originFilterSwitchMedianMs": 171.8,
+      "zoomFrameMedianMs": 15.3,
+      "thresholdEvaluation": {
+        "targets": {
+          "expandAllMedianTargetMs": 250,
+          "originFilterMedianTargetMs": 250,
+          "zoomInteractionMedianTargetMs": 100
+        },
+        "expandAllPassed": true,
+        "originFilterPassed": true,
+        "zoomInteractionPassed": true,
+        "overallScaleStatus": "PASS"
+      }
+    },
+    {
+      "scaleNodes": 500,
+      "mountedExpandedSvgNodes": 500,
+      "expandAllMedianMs": 133.4,
+      "expandAllMaxMs": 152.1,
+      "originFilterSwitchMedianMs": 184.7,
+      "zoomFrameMedianMs": 58.7,
+      "thresholdEvaluation": {
+        "targets": {
+          "expandAllMedianTargetMs": 600,
+          "originFilterMedianTargetMs": 350,
+          "zoomInteractionMedianTargetMs": 100
+        },
+        "expandAllPassed": true,
+        "originFilterPassed": true,
+        "zoomInteractionPassed": true,
+        "overallScaleStatus": "PASS"
+      }
+    },
+    {
+      "scaleNodes": 2000,
+      "mountedExpandedSvgNodes": 2000,
+      "expandAllMedianMs": 548.2,
+      "expandAllMaxMs": 561.5,
+      "originFilterSwitchMedianMs": 324.6,
+      "zoomFrameMedianMs": 377.3,
+      "thresholdEvaluation": {
+        "targets": {
+          "expandAllMedianTargetMs": 1500,
+          "originFilterMedianTargetMs": 600,
+          "zoomInteractionMedianTargetMs": 100
+        },
+        "expandAllPassed": true,
+        "originFilterPassed": true,
+        "zoomInteractionPassed": false,
+        "overallScaleStatus": "EXCEEDS_100MS_INTERACTIVE_FRAME_BUDGET"
+      }
+    }
+  ],
+  "viewsVerified": {
+    "GRAPH": {
+      "status": "PASS",
+      "acceptanceMode": "LIVE_BACKEND_POSTGRES_TEST1",
+      "renderedSvgNodes": 29,
+      "renderedSvgEdges": 45,
+      "screenshot": "output/m8/browser-graph.png"
+    },
+    "C4_CONTEXT": {
+      "status": "PASS",
+      "acceptanceMode": "LIVE_BACKEND_POSTGRES_TEST1",
+      "interactiveSemanticHitTargets": 1,
+      "sampleHitLabels": [
+        "Select Test1"
+      ]
+    },
+    "C4_CONTAINER": {
+      "status": "PASS",
+      "acceptanceMode": "LIVE_BACKEND_POSTGRES_TEST1",
+      "interactiveSemanticHitTargets": 18,
+      "sampleHitLabels": [
+        "Select Test1",
+        "Select accountingService [Eventuate command channel]",
+        "Select consumerService [Eventuate command channel]",
+        "Select kitchenService [Eventuate command channel]",
+        "Select orderService [Eventuate command channel]",
+        "Select ftgo_restaurant_service @ mysql"
+      ]
+    },
+    "C4_COMPONENT": {
+      "status": "PASS",
+      "acceptanceMode": "LIVE_BACKEND_POSTGRES_TEST1",
+      "interactiveSemanticHitTargets": 22,
+      "sampleHitLabels": [
+        "Select ftgo-order-service",
+        "Select consumerService [Eventuate command channel]",
+        "Select kitchenService [Eventuate command channel]",
+        "Select orderService [Eventuate command channel]",
+        "Select AccountingServiceProxy",
+        "Select CancelOrderSaga"
+      ],
+      "scopedServiceId": "e1f849c5-cb7f-4b72-b6a2-d38d65bb0337"
+    },
+    "UML_SEQUENCE": {
+      "status": "PASS",
+      "acceptanceMode": "LIVE_BACKEND_POSTGRES_TEST1",
+      "scenarioSourceTabs": [
+        "Designed scenario",
+        "Observed runtime"
+      ],
+      "interactiveSemanticHitTargets": 8
+    },
+    "UML_CLASS": {
+      "status": "PASS",
+      "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+      "extractedNodes": 7,
+      "extractedEdges": 6,
+      "drawioBytes": 45694,
+      "hasMavisUmlProjection": true,
+      "hasMavisUmlDocument": true,
+      "screenshot": "output/m8/browser-uml-class.png"
+    },
+    "UML_PACKAGE": {
+      "status": "PASS",
+      "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+      "extractedNodes": 4,
+      "extractedEdges": 1,
+      "drawioBytes": 10575,
+      "hasMavisUmlProjection": true,
+      "hasMavisUmlDocument": true,
+      "screenshot": "output/m8/browser-uml-package.png",
+      "hasFolderShape": true
+    },
+    "UML_DEPLOYMENT": {
+      "status": "PASS",
+      "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+      "extractedNodes": 4,
+      "extractedEdges": 2,
+      "drawioBytes": 12818,
+      "hasMavisUmlProjection": true,
+      "hasMavisUmlDocument": true,
+      "screenshot": "output/m8/browser-uml-deployment.png",
+      "hasCubeShape": true,
+      "hasManifestArrow": true,
+      "hasNoFabricatedBuildArtifact": true
+    },
+    "UML_ACTIVITY": {
+      "status": "PASS",
+      "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+      "extractedNodes": 8,
+      "extractedEdges": 7,
+      "drawioBytes": 22367,
+      "hasMavisUmlProjection": true,
+      "hasMavisUmlDocument": true,
+      "screenshot": "output/m8/browser-uml-activity.png",
+      "hasSwimlane": true,
+      "hasDecisionRhombus": true
+    },
+    "UML_STATE": {
+      "status": "PASS",
+      "acceptanceMode": "BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL",
+      "extractedNodes": 5,
+      "extractedEdges": 4,
+      "drawioBytes": 11513,
+      "hasMavisUmlProjection": true,
+      "hasMavisUmlDocument": true,
+      "screenshot": "output/m8/browser-uml-state.png"
+    }
+  },
+  "networkRequestsCount": 34,
+  "umlDropdownOptions": [
+    {
+      "value": "UML_SEQUENCE",
+      "label": "UML Sequence"
+    },
+    {
+      "value": "UML_CLASS",
+      "label": "UML Class"
+    },
+    {
+      "value": "UML_PACKAGE",
+      "label": "UML Package"
+    },
+    {
+      "value": "UML_DEPLOYMENT",
+      "label": "UML Deployment"
+    },
+    {
+      "value": "UML_ACTIVITY",
+      "label": "UML Activity"
+    },
+    {
+      "value": "UML_STATE",
+      "label": "UML State Machine"
+    }
+  ]
+}

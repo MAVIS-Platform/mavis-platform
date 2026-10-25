@@ -1,0 +1,83 @@
+{
+  "timestamp": "2026-10-24T16:00:00.000Z",
+  "milestone": "M2",
+  "deliverable": "D2: Evidence & Aggregation (Supplementary Round Update)",
+  "backend": {
+    "evidenceRepositoryQuery": "findRelationshipEvidenceIdsByModelVersionId",
+    "complexity": "O(1) batch query per graph load; no N+1 query loops across edges",
+    "errorHandling": "Propagates database/query exceptions cleanly; never swallows exceptions into fake empty evidence lists (F2 fix)",
+    "verifiedZero": "Returns evidenceCount = 0L and evidenceIds = [] ONLY when query completes successfully with zero rows for a relationship (F2 fix)",
+    "dtoFields": [
+      "evidenceCount (Long, nullable)",
+      "evidenceIds (List<UUID>, nullable)"
+    ]
+  },
+  "frontend": {
+    "schemaUpdated": true,
+    "aggregationLogic": "Distinct union of underlying evidenceIds via Set when all underlying edges have complete IDs",
+    "partialVsComplete": "If any underlying edge has unknown evidence or count-only without IDs, merged evidenceCount is null and evidenceIds is undefined (never publishes partial IDs as complete) (F3 fix)",
+    "singleEdgePreservation": "Single edge with count-only preserves its evidenceCount across projection without being wiped to null (F3 fix)",
+    "reprojectionIdempotency": "Re-projecting aggregate output with unknown evidence remains null and NEVER promotes to 1 (F3 fix)",
+    "doubleCountingPrevented": true
+  },
+  "testVerification": {
+    "javaSuite": "MAVIS-Platform/mavis-be/mavis-analyzer/src/test/java/com/mavis/analyzer/graph/service/impl/GraphServiceImplTest.java",
+    "javaResults": [
+      {
+        "test": "graphReadPreservesVerifiedZeroEvidenceWhenQuerySucceedsWithNoRows",
+        "status": "PASS",
+        "behavior": "Successful query with 0 rows yields evidenceCount: 0 and evidenceIds: []"
+      },
+      {
+        "test": "graphReadFailsWhenEvidenceQueryThrowsException",
+        "status": "PASS",
+        "behavior": "Database failure throws RuntimeException, does not fake zero evidence"
+      },
+      {
+        "test": "graphReadExecutesSingleBatchCallForMultipleEdges",
+        "status": "PASS",
+        "behavior": "Single batch query O(1) executed across all edges, verifying zero N+1 queries"
+      },
+      {
+        "test": "unauthorizedGraphDoesNotReadNodesOrEdges",
+        "status": "PASS",
+        "behavior": "Access denied stops graph read before touching evidence repository"
+      }
+    ],
+    "frontendSuite": "MAVIS-Frontend/tests/edge-semantics.test.cjs",
+    "frontendResults": [
+      {
+        "test": "aggregate edges combine evidence into distinct union without double-counting shared IDs",
+        "status": "PASS",
+        "inputEvidenceIds": [
+          ["11111111-0000-0000-0000-000000000001", "11111111-0000-0000-0000-000000000002"],
+          ["11111111-0000-0000-0000-000000000002", "11111111-0000-0000-0000-000000000003"]
+        ],
+        "expectedCount": 3,
+        "actualCount": 3
+      },
+      {
+        "test": "aggregate edges report null evidenceCount when any underlying edge has unknown evidence",
+        "status": "PASS",
+        "expectedEvidenceCount": null,
+        "actualEvidenceCount": null
+      },
+      {
+        "test": "re-projecting aggregate output with unknown evidence remains null and never promotes to known count (F3 repro)",
+        "status": "PASS",
+        "behavior": "Idempotent projection preserving unknown state"
+      },
+      {
+        "test": "single edge with count-only preserves evidenceCount across projection without resetting to null (F3 repro)",
+        "status": "PASS",
+        "inputCount": 5,
+        "actualCount": 5
+      },
+      {
+        "test": "multiple edges with count-only report null evidenceCount because overlap cannot be determined (F3)",
+        "status": "PASS",
+        "actualCount": null
+      }
+    ]
+  }
+}

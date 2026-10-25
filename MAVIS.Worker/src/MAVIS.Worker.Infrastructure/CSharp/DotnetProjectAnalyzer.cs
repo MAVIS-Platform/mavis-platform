@@ -178,6 +178,7 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
                         analyzed++;
         }
         SemanticProjectInspector.Inspect(root, profiles, trees, findings, warnings, token, configuration);
+        var umlMetadata = UmlCSharpInspector.Inspect(root, profiles, trees, token);
         var merged = findings.GroupBy(f => f.Id is not null && (partialIds.Contains(f.Id) || f.Kind == "Namespace")
             ? f.Id : Guid.NewGuid().ToString()).Select(group =>
         {
@@ -193,7 +194,7 @@ public sealed class DotnetProjectAnalyzer(IOptions<DotnetAnalysisOptions> option
             throw new SourceInputException("Analysis input digest does not match the expected input version.");
         token.ThrowIfCancellationRequested();
         if (request.DeadlineUtc <= DateTimeOffset.UtcNow) throw new AnalysisDeadlineException();
-        var projected = CanonicalFindingProjector.Project(request, "dotnet-static/1.9", merged, contentDigests, token);
+        var projected = CanonicalFindingProjector.Project(request, "dotnet-static/1.9", merged, contentDigests, token, umlMetadata);
         token.ThrowIfCancellationRequested();
         return new("1.0", request.JobId, request.ProjectId, request.SourceSnapshotId, "dotnet-static/1.9",
             projected.Findings, new(files.Count(f => Path.GetExtension(f).Equals(".cs", StringComparison.OrdinalIgnoreCase)), analyzed, "PartialSyntax", sources.Length - analyzed, ["StaticCompileItems", "NearestProjectConfig", "CSharpTypes", "ControllerAttributeRoutes", "MinimalApiLiteralGroups", "HttpClientLiteralAndRegistration", "RefitInterfaceDescriptors", "TypedDependencies", "EfCoreConfigReferences", "CanonicalEvidenceProjection"]), warnings, inputDigest, request.AttemptId, projects.Select(p =>

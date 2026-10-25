@@ -1,0 +1,26 @@
+{
+  "groupIncludesSecondFinding": true,
+  "groupFindingExplainPayload": {
+    "modelVersionId": "model",
+    "explanationScope": "RULE_FINDING",
+    "relationshipId": "edge-1",
+    "findingId": "finding-2",
+    "evaluationRunId": "run",
+    "forceRefresh": false
+  },
+  "expectedFindingRelationship": "edge-2",
+  "acceptsMatchingSecondFindingResponse": false,
+  "sourceToGroupLifecycle": {
+    "before": {
+      "isGroup": false,
+      "activeTargetId": "edge-1",
+      "panelKey": "model:edge-1:group"
+    },
+    "after": {
+      "isGroup": true,
+      "activeTargetId": "edge-1",
+      "panelKey": "model:edge-1:group"
+    },
+    "note": "Current key and effect dependency are unchanged despite source-to-group scope change."
+  }
+}

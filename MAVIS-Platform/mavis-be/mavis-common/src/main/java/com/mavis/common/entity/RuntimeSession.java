@@ -120,6 +120,7 @@ public class RuntimeSession {
     private String receiptDigest;
 
     @Column(name = "enriched_model_version_id")
+    /** Foreign key identity of the enriched result in model_versions(id); kept as UUID for wire compatibility. */
     private UUID enrichedModelVersionId;
 
     @Builder.Default

@@ -153,7 +153,7 @@ class SubmissionServiceImplTest {
                 .id(runtimeSessionId)
                 .project(project)
                 .sourceSnapshot(snapshot)
-                .scenarioStatus("PASSED")
+                .scenarioStatus("PASSED").executionStatus("COMPLETED").evidenceStatus("AVAILABLE").cleanupStatus("CONFIRMED").runnerReceiptJson(objectMapper.createObjectNode())
                 .traceStatus("COMPLETE")
                 .build();
     }
@@ -553,7 +553,7 @@ class SubmissionServiceImplTest {
                 .build();
 
         when(submissionSnapshotRepository.findWithDetailsById(subId)).thenReturn(Optional.of(subSnapshot));
-        when(userRepository.findById(userId)).thenReturn(Optional.of(student)); // student has no lecturer/admin role
+        doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN, "Bạn không có quyền truy cập gói bài nộp này")).when(accessPolicyService).requireProjectReadAccess(otherProject);
 
         assertThatThrownBy(() -> submissionService.exportSubmissionBundle(subId))
                 .isInstanceOf(BusinessException.class)
@@ -589,5 +589,11 @@ class SubmissionServiceImplTest {
                 .when(accessPolicyService).requireProjectReadAccess(project);
         assertThatThrownBy(() -> submissionService.exportSubmissionBundle(id)).isInstanceOf(BusinessException.class);
         verifyNoInteractions(modelVersionRepository, diagramVersionRepository, feedbackCommentRepository);
+    }
+    @Test void personalListingUsesActiveIdentityAndAdminFlag(){
+        student.setRole(Role.builder().code("STUDENT").build());when(accessPolicyService.requireCurrentActiveUser()).thenReturn(student);
+        when(submissionSnapshotRepository.findVisibleTo(userId,false)).thenReturn(List.of());assertThat(submissionService.getMySubmissions()).isEmpty();
+        student.setRole(Role.builder().code("SYSTEM_ADMIN").build());when(submissionSnapshotRepository.findVisibleTo(userId,true)).thenReturn(List.of());assertThat(submissionService.getMySubmissions()).isEmpty();
+        verify(submissionSnapshotRepository).findVisibleTo(userId,false);verify(submissionSnapshotRepository).findVisibleTo(userId,true);
     }
 }

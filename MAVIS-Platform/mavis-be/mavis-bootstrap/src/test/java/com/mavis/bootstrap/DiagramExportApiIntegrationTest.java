@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class DiagramExportApiIntegrationTest {
+class DiagramExportApiIntegrationTest extends ApiIntegrationContext {
 
     @Autowired
     private MockMvc mockMvc;
@@ -208,10 +208,10 @@ class DiagramExportApiIntegrationTest {
 
         String mermaidContent = objectMapper.readTree(mermaidResult.getResponse().getContentAsString(StandardCharsets.UTF_8))
                 .path("data").path("content").asText();
-        assertThat(mermaidContent).contains("flowchart LR");
+        assertThat(mermaidContent).contains("C4Container");
         assertThat(mermaidContent).contains("order-service");
         assertThat(mermaidContent).contains("order-db");
-        assertThat(mermaidContent).contains("call onMavisElementClick");
+        assertThat(objectMapper.readTree(mermaidResult.getResponse().getContentAsString(StandardCharsets.UTF_8)).path("data").path("nodeClickMap").size()).isEqualTo(3);
 
         // --- BƯỚC 2: GET /api/v1/analyzer/diagrams/{diagramId}/export?format=PLANTUML ---
         MvcResult plantUmlResult = mockMvc.perform(get("/api/v1/analyzer/diagrams/{diagramId}/export", diagram.getId())
@@ -225,8 +225,8 @@ class DiagramExportApiIntegrationTest {
                 .path("data").path("content").asText();
         assertThat(plantUmlContent).contains("@startuml");
         assertThat(plantUmlContent).contains("@enduml");
-        assertThat(plantUmlContent).contains("component \"order-service\"");
-        assertThat(plantUmlContent).contains("database \"order-db\"");
+        assertThat(plantUmlContent).contains("rectangle", "order-service", "<<Container>>");
+        assertThat(plantUmlContent).contains("database", "order-db");
 
         // --- BƯỚC 3: GET /api/v1/analyzer/diagrams/{diagramId}/export?format=DRAWIO_XML ---
         MvcResult drawioResult = mockMvc.perform(get("/api/v1/analyzer/diagrams/{diagramId}/export", diagram.getId())
@@ -311,7 +311,7 @@ class DiagramExportApiIntegrationTest {
                 .andReturn();
 
         JsonNode bundleNode = objectMapper.readTree(bundleResult.getResponse().getContentAsString(StandardCharsets.UTF_8)).path("data");
-        assertThat(bundleNode.path("mermaidDsl").asText()).contains("flowchart LR");
+        assertThat(bundleNode.path("mermaidDsl").asText()).contains("C4Container");
         assertThat(bundleNode.path("markdownSummaryReport").asText()).contains("BÁO CÁO TỔNG HỢP GÓI BÀI NỘP BẤT BIẾN");
         assertThat(bundleNode.path("markdownSummaryReport").asText()).contains("Kiến trúc phân tách chuẩn Clean Architecture!");
     }

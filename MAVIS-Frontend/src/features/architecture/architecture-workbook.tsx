@@ -219,6 +219,8 @@ export function ArchitectureWorkbook({ modelId }: { modelId: string }) {
               preferProvidedXml={!!saved.data?.xml}
               modelId={modelId}
               diagramId={view.id}
+              notation={view.document && typeof view.document === "object" && "notation" in view.document ? String(view.document.notation) : undefined}
+              level={view.document && typeof view.document === "object" && "level" in view.document ? String(view.document.level) : undefined}
               title={`${view.document && typeof view.document === "object" && "notation" in view.document ? String(view.document.notation) : "C4"} · ${view.kind === "component" ? "COMPONENT" : view.kind === "container" ? "CONTAINER" : view.kind === "overview" ? "SYSTEM" : "SERVICE"}`}
               scope={view.id}
               onSave={save}

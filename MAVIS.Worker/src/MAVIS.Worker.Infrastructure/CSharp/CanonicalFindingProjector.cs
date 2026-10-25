@@ -9,7 +9,8 @@ namespace MAVIS.Worker.Infrastructure.CSharp;
 internal static class CanonicalFindingProjector
 {
     public static (DotnetFinding[] Findings, DotnetCanonicalBundle Bundle) Project(DotnetAnalysisRequest request,
-        string adapter, IReadOnlyList<DotnetFinding> input, IReadOnlyDictionary<string, byte[]> hashes, CancellationToken ct)
+        string adapter, IReadOnlyList<DotnetFinding> input, IReadOnlyDictionary<string, byte[]> hashes, CancellationToken ct,
+        IReadOnlyDictionary<(string Project, string Subject), string>? umlMetadata = null)
     {
         var evidence = new Dictionary<string, DotnetCanonicalEvidence>(StringComparer.Ordinal);
         var elements = new Dictionary<string, DotnetCanonicalElement>(StringComparer.Ordinal);
@@ -34,10 +35,15 @@ internal static class CanonicalFindingProjector
                 Path.GetFileNameWithoutExtension(f.ProjectPath), f.ProjectPath, "SourceProject", f.EvidenceIds!);
             if (f.Kind is "Type" or "Interface" or "Enum" or "Delegate")
             {
-                var type = Id(f.ProjectPath, "TYPE", f.Subject ?? f.Target!);
-                types[(f.ProjectPath, f.Subject ?? f.Target!)] = type;
-                Element(type, "CLASS_INTERFACE", f.Subject ?? f.Target!, f.ProjectPath, "SourceDeclaration", f.EvidenceIds!,
-                    new Dictionary<string, string> { ["declarationKind"] = f.Kind, ["moduleId"] = module });
+                var subjectName = f.Subject ?? f.Target!;
+                var type = Id(f.ProjectPath, "TYPE", subjectName);
+                types[(f.ProjectPath, subjectName)] = type;
+                var props = new Dictionary<string, string> { ["declarationKind"] = f.Kind, ["moduleId"] = module };
+                if (umlMetadata is not null && umlMetadata.TryGetValue((f.ProjectPath, subjectName), out var umlJson))
+                {
+                    props["umlClassifierJson"] = umlJson;
+                }
+                Element(type, "CLASS_INTERFACE", subjectName, f.ProjectPath, "SourceDeclaration", f.EvidenceIds!, props);
             }
         }
         foreach (var f in findings)

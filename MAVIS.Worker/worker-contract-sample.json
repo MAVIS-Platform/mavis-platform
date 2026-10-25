@@ -1,0 +1,165 @@
+{
+  "_comment": "Sample request/response for MAVIS Worker API - used by Java analyzer for integration",
+  
+  "request": {
+    "_endpoint": "POST http://localhost:5082/api/analysis",
+    "_contentType": "application/json",
+    "body": {
+      "projectId": "550e8400-e29b-41d4-a716-446655440000",
+      "projectName": "E-Commerce Platform",
+      "sourceLocation": "C:/uploads/project_abc_extracted",
+      "rawFindings": [
+        {
+          "language": "java",
+          "serviceId": "order-service",
+          "kind": "REST_ENDPOINT",
+          "target": null,
+          "httpMethod": "POST",
+          "url": "/api/orders",
+          "filePath": "OrderService/src/main/java/com/example/OrderController.java",
+          "startLine": 25,
+          "endLine": 30,
+          "snippet": "@PostMapping(\"/api/orders\")\npublic ResponseEntity<Order> createOrder(@RequestBody OrderDto dto) { ... }"
+        },
+        {
+          "language": "java",
+          "serviceId": "order-service",
+          "kind": "FEIGN_CLIENT",
+          "target": "payment-service",
+          "httpMethod": null,
+          "url": null,
+          "filePath": "OrderService/src/main/java/com/example/client/PaymentClient.java",
+          "startLine": 15,
+          "endLine": 15,
+          "snippet": "@FeignClient(name = \"payment-service\", path = \"/api/payments\")"
+        },
+        {
+          "language": "csharp",
+          "serviceId": "payment-service",
+          "kind": "REST_ENDPOINT",
+          "target": null,
+          "httpMethod": "GET",
+          "url": "/api/payments/{id}",
+          "filePath": "PaymentService/Controllers/PaymentController.cs",
+          "startLine": 42,
+          "endLine": 47,
+          "snippet": "[HttpGet(\"{id}\")]\npublic async Task<ActionResult<Payment>> GetPayment(string id) { ... }"
+        }
+      ],
+      "computeImpact": true,
+      "impactTargetServiceId": "payment-service"
+    }
+  },
+
+  "response_success": {
+    "_status": 200,
+    "_contentType": "application/json",
+    "body": {
+      "projectId": "550e8400-e29b-41d4-a716-446655440000",
+      "manifest": {
+        "projectId": "550e8400-e29b-41d4-a716-446655440000",
+        "projectName": "E-Commerce Platform",
+        "sourceLocation": "C:/uploads/project_abc_extracted",
+        "services": [
+          {
+            "id": "order-service",
+            "name": "order-service",
+            "language": "java",
+            "framework": "spring-boot",
+            "sourceRoot": "OrderService/",
+            "exposedPorts": ["8080"],
+            "metadata": {
+              "detectedBy": "JavaAnalyzer"
+            }
+          },
+          {
+            "id": "payment-service",
+            "name": "payment-service",
+            "language": "csharp",
+            "framework": "aspnetcore",
+            "sourceRoot": "PaymentService/",
+            "exposedPorts": ["5000"],
+            "metadata": {
+              "detectedBy": "RoslynAnalyzer"
+            }
+          }
+        ],
+        "dependencies": [
+          {
+            "id": "edge-001",
+            "fromServiceId": "order-service",
+            "toServiceId": "payment-service",
+            "kind": "HttpRestCall",
+            "httpMethod": "POST",
+            "url": "/api/payments",
+            "evidences": [
+              {
+                "sourceKind": "SourceFile",
+                "filePath": "OrderService/src/main/java/com/example/client/PaymentClient.java",
+                "startLine": 15,
+                "endLine": 15,
+                "snippet": "@FeignClient(name = \"payment-service\", path = \"/api/payments\")"
+              }
+            ]
+          }
+        ]
+      },
+      "impact": {
+        "targetServiceId": "payment-service",
+        "affectedServices": [
+          {
+            "serviceId": "order-service",
+            "level": "Direct",
+            "distance": 1
+          }
+        ],
+        "paths": [
+          {
+            "fromServiceId": "order-service",
+            "toServiceId": "payment-service",
+            "hops": ["order-service", "payment-service"]
+          }
+        ]
+      },
+      "completedAt": "2026-09-18T13:02:00Z"
+    }
+  },
+
+  "response_validation_error": {
+    "_status": 400,
+    "_contentType": "application/problem+json",
+    "body": {
+      "type": "https://tools.ietf.org/html/rfc7231#section-6.5.1",
+      "title": "Invalid analysis request",
+      "status": 400,
+      "errors": {
+        "projectId": ["projectId is required"],
+        "rawFindings[0].serviceId": ["serviceId is required"]
+      },
+      "traceId": "00-abc123-def456-00"
+    }
+  },
+
+  "response_server_error": {
+    "_status": 500,
+    "_contentType": "application/problem+json",
+    "body": {
+      "type": "https://tools.ietf.org/html/rfc7231#section-6.6.1",
+      "title": "Worker analysis failed",
+      "status": 500,
+      "detail": "System.IO.DirectoryNotFoundException: Source location 'C:/uploads/missing' does not exist.",
+      "instance": "/api/analysis",
+      "traceId": "00-xyz789-uvw012-00"
+    }
+  },
+
+  "health_check": {
+    "_endpoint": "GET http://localhost:5082/api/health",
+    "_status": 200,
+    "body": {
+      "status": "OK",
+      "service": "MAVIS.Worker",
+      "timestampUtc": "2026-09-18T13:02:00.123456Z"
+    }
+  }
+}

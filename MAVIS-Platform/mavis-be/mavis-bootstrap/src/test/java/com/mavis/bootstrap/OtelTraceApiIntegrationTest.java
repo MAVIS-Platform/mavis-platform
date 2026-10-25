@@ -30,7 +30,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class OtelTraceApiIntegrationTest {
+class OtelTraceApiIntegrationTest extends ApiIntegrationContext {
 
     @Autowired
     private MockMvc mockMvc;
@@ -219,7 +219,7 @@ class OtelTraceApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.revision").value(2))
                 .andExpect(jsonPath("$.data.origin").value("RUNTIME_ENRICHED"))
-                .andExpect(jsonPath("$.data.isLatestValid").value(true))
+                .andExpect(jsonPath("$.data.isLatestValid").value(false))
                 .andReturn();
 
         String ingestJson = ingestResult.getResponse().getContentAsString();

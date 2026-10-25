@@ -28,16 +28,18 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.Optional;
-import java.util.Random;
+import java.security.SecureRandom;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class AuthServiceImpl implements AuthService {
+    private static final SecureRandom OTP_RANDOM = new SecureRandom();
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -70,12 +72,12 @@ public class AuthServiceImpl implements AuthService {
         userRepository.save(user);
 
         // Tạo mã OTP 6 số
-        String otpCode = String.format("%06d", new Random().nextInt(999999));
+        String otpCode = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
         UserOtp userOtp = UserOtp.builder()
                 .user(user)
                 .otpCode(otpCode)
                 .purpose("EMAIL_VERIFICATION")
-                .expiryTime(LocalDateTime.now().plusMinutes(5)) // Hết hạn sau 5 phút
+                .expiryTime(OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5)) // Hết hạn sau 5 phút
                 .isUsed(false)
                 .build();
         userOtpRepository.save(userOtp);
@@ -101,10 +103,18 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Tài khoản đã được xác thực trước đó");
         }
 
+        if (!"PENDING_VERIFICATION".equals(user.getStatus())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản không ở trạng thái chờ xác thực");
+        }
+
         UserOtp userOtp = userOtpRepository.findFirstByUserAndOtpCodeAndIsUsedFalseOrderByCreatedAtDesc(user, request.getOtpCode())
                 .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không hợp lệ hoặc đã được sử dụng"));
 
-        if (userOtp.getExpiryTime().isBefore(LocalDateTime.now())) {
+        if (!"EMAIL_VERIFICATION".equals(userOtp.getPurpose())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không dùng để xác thực email");
+        }
+
+        if (userOtp.getExpiryTime().isBefore(OffsetDateTime.now(ZoneOffset.UTC))) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP đã hết hạn");
         }
 
@@ -125,7 +135,7 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Vui lòng xác thực Email trước khi đăng nhập");
         }
 
-        if ("LOCKED".equals(user.getStatus())) {
+        if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa");
         }
 
@@ -171,7 +181,7 @@ public class AuthServiceImpl implements AuthService {
 
             if (optionalUser.isPresent()) {
                 user = optionalUser.get();
-                if ("LOCKED".equals(user.getStatus())) {
+                if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
                     throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa");
                 }
                 // Có thể update status thành ACTIVE nếu trước đó PENDING_VERIFICATION vì Google đã verify mail
@@ -224,12 +234,12 @@ public class AuthServiceImpl implements AuthService {
         }
 
         // Generate OTP
-        String otpCode = String.format("%06d", new Random().nextInt(999999));
+        String otpCode = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
         UserOtp userOtp = UserOtp.builder()
                 .user(user)
                 .otpCode(otpCode)
                 .purpose("PASSWORD_RESET")
-                .expiryTime(LocalDateTime.now().plusMinutes(5))
+                .expiryTime(OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5))
                 .isUsed(false)
                 .build();
         userOtpRepository.save(userOtp);
@@ -251,7 +261,7 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không dùng để reset mật khẩu");
         }
 
-        if (userOtp.getExpiryTime().isBefore(LocalDateTime.now())) {
+        if (userOtp.getExpiryTime().isBefore(OffsetDateTime.now(ZoneOffset.UTC))) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP đã hết hạn");
         }
 
@@ -272,17 +282,17 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Tài khoản đã được kích hoạt. Bạn có thể đăng nhập bình thường.");
         }
 
-        if ("LOCKED".equals(user.getStatus())) {
+        if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa.");
         }
 
         // Tạo OTP mới
-        String otpCode = String.format("%06d", new Random().nextInt(999999));
+        String otpCode = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
         UserOtp userOtp = UserOtp.builder()
                 .user(user)
                 .otpCode(otpCode)
                 .purpose("EMAIL_VERIFICATION")
-                .expiryTime(LocalDateTime.now().plusMinutes(5)) // Hết hạn sau 5 phút
+                .expiryTime(OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5)) // Hết hạn sau 5 phút
                 .isUsed(false)
                 .build();
         userOtpRepository.save(userOtp);

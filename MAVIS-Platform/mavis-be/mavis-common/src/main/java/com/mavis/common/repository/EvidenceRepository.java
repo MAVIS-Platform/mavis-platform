@@ -3,6 +3,8 @@ package com.mavis.common.repository;
 import com.mavis.common.entity.Evidence;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -29,4 +31,7 @@ public interface EvidenceRepository extends JpaRepository<Evidence, UUID> {
 
     List<Evidence> findByRelationshipIdIn(Collection<UUID> relationshipIds);
     List<Evidence> findByElementIdIn(Collection<UUID> elementIds);
+
+    @Query("SELECT e.relationship.id, e.id FROM Evidence e WHERE e.modelVersion.id = :modelVersionId AND e.relationship IS NOT NULL")
+    List<Object[]> findRelationshipEvidenceIdsByModelVersionId(@Param("modelVersionId") UUID modelVersionId);
 }

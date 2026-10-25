@@ -128,12 +128,35 @@ export function extractDraftDocument(
   xml: string,
   modelId: string,
   diagramId: string,
-  notation: string,
-  level: string,
+  notation: string | undefined,
+  level: string | undefined,
   scope: string,
 ) {
   const doc = new DOMParser().parseFromString(xml, "text/xml");
   if (doc.querySelector("parsererror")) throw new Error("Draft XML is invalid");
+  const readMetadata = (element: Element, attribute: string): Record<string, unknown> => {
+    const value = element.getAttribute(attribute);
+    if (!value) return {};
+    try {
+      const parsed: unknown = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        return parsed as Record<string, unknown>;
+    } catch { /* Refuse a lossy relayout rather than discarding provenance. */ }
+    throw new Error("Draft metadata is invalid. Restore the recovery copy or regenerate from the model.");
+  };
+  const graph = doc.querySelector("mxGraphModel");
+  if (!graph) throw new Error("Draft graph is missing");
+  // draw.io re-encodes mxGraphModel using its built-in attributes, but preserves custom cell
+  // attributes. The title carries a second copy so real editor save/export stays lossless.
+  const stored = readMetadata(doc.querySelector("[mavisDocument]") ?? graph, "mavisDocument");
+  const canonicalNotation = notation || (typeof stored["notation"] === "string" ? stored["notation"] : "");
+  const canonicalLevel = level || (typeof stored["level"] === "string" ? stored["level"] : "");
+  if (!canonicalNotation || !canonicalLevel)
+    throw new Error("This legacy draft has no view metadata. Reopen its view or regenerate before relayout.");
+  const scopeContainerId =
+    typeof stored["scopeContainerId"] === "string" ? stored["scopeContainerId"] :
+    graph.getAttribute("mavisContainerId") ||
+    (scope.startsWith("components:") ? scope.slice("components:".length) : undefined);
   const entries = [...doc.querySelectorAll("mxCell")].map((cell) => {
     const owner = cell.parentElement?.localName === "root" ? cell : cell.parentElement!;
     return {
@@ -198,22 +221,45 @@ export function extractDraftDocument(
       ? original
       : current;
   }
-  const nodes = shapes.map((entry) => ({
-    pinned: pinned(entry.id),
-    id: ids.get(entry.id)!,
-    name:
-      entry.role === "boundary"
-        ? (entry.owner.getAttribute("mavisName") ??
-          name(entry.owner.getAttribute("label") ?? entry.cell.getAttribute("value") ?? "").replace(
-            / · component scope$/,
-            "",
-          ))
-        : savedName(entry),
-    kind: entry.role === "boundary" ? "SERVICE_CONTAINER" : entry.role || "UNKNOWN",
-    parentId: ids.get(entry.cell.getAttribute("parent") ?? ""),
-    languageStack: entry.owner.getAttribute("mavisTechnology") ?? "",
-    description: entry.owner.getAttribute("mavisDescription") ?? "",
-  }));
+  const nodes = shapes.map((entry) => {
+    // S2d/M1 round-trip: a boundary cell whose mavisId is the namespaced synthetic id
+    // ("system:...") is a grouping boundary — preserve its identity as SYSTEM_BOUNDARY instead
+    // of flattening it into a business node. A container boundary in C3 is a real model element,
+    // so it keeps its own kind. Properties ride along for labels/metadata round-trips.
+    const mavisId = entry.owner.getAttribute("mavisId") ?? entry.id;
+    const isSystemBoundary = entry.role === "boundary" && mavisId.startsWith("system:");
+    const explicitKind = entry.owner.getAttribute("mavisKind");
+    const nodeMetadata = readMetadata(entry.owner, "mavisNodeMetadata");
+    const kind = entry.role === "boundary"
+      ? explicitKind || (isSystemBoundary && canonicalNotation === "C4" && canonicalLevel === "CONTAINER"
+        ? "SYSTEM_BOUNDARY" : canonicalNotation === "C4" && canonicalLevel === "COMPONENT"
+          ? "SERVICE_CONTAINER" : "UNKNOWN")
+      : entry.role || "UNKNOWN";
+    if ((entry.role === "boundary" && kind === "UNKNOWN") ||
+        (canonicalNotation === "C4" && canonicalLevel === "CONTAINER" &&
+          mavisId === "system:boundary" && entry.role !== "boundary"))
+      throw new Error("This draft has lost its boundary metadata. Restore a valid history revision or regenerate from the model.");
+    const properties = readMetadata(entry.owner, "mavisProperties");
+    return {
+      ...nodeMetadata,
+      pinned: pinned(entry.id),
+      id: ids.get(entry.id)!,
+      name:
+        entry.role === "boundary"
+          ? (entry.owner.getAttribute("mavisName") ??
+            name(entry.owner.getAttribute("label") ?? entry.cell.getAttribute("value") ?? "").replace(
+              / · component scope$/,
+              "",
+            ))
+          : savedName(entry),
+      kind,
+      ...(kind === "SYSTEM_BOUNDARY" ? { viewLocal: true } : {}),
+      parentId: ids.get(entry.cell.getAttribute("parent") ?? ""),
+      languageStack: entry.owner.getAttribute("mavisTechnology") ?? "",
+      description: entry.owner.getAttribute("mavisDescription") ?? "",
+      properties,
+    };
+  });
   const edges = entries
     .filter((entry) => entry.cell.getAttribute("edge") === "1")
     .map((entry) => {
@@ -222,6 +268,7 @@ export function extractDraftDocument(
       if (!from || !to)
         throw new Error("Every connector must attach to two shapes before relayout");
       return {
+        ...readMetadata(entry.owner, "mavisEdgeMetadata"),
         id: entry.owner.getAttribute("mavisId") ?? entry.id,
         from,
         to,
@@ -234,6 +281,7 @@ export function extractDraftDocument(
     });
   if (!nodes.length) throw new Error("There are no shapes to lay out");
   return {
+    ...stored,
     omittedNodes: Number(
       doc.querySelector("[mavisOmittedNodes]")?.getAttribute("mavisOmittedNodes") ?? 0,
     ),
@@ -242,9 +290,9 @@ export function extractDraftDocument(
     ),
     modelVersionId: modelId,
     diagramId,
-    notation,
-    level,
-    scopeContainerId: scope.split(":")[0] === "overview" ? undefined : scope.split(":")[0],
+    notation: canonicalNotation,
+    level: canonicalLevel,
+    scopeContainerId,
     layoutJson: { nodes, edges },
   };
 }

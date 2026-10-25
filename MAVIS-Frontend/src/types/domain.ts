@@ -14,6 +14,16 @@ export const projectSchema = z.object({
   status: z.enum(["ready", "processing", "failed", "partial", "unknown"]),
   services: z.number().int().nonnegative().nullable(),
   runtimeSupported: z.boolean().nullable(),
+  description: z.string().nullable().optional(),
+  defaultBranch: z.string().nullable().optional(),
+  projectType: z.string().nullable().optional(),
+  workspaceId: z.string().nullable().optional(),
+  assignmentId: z.string().nullable().optional(),
+  isReferenceTemplate: z.boolean().nullable().optional(),
+  referenceSnapshotId: z.string().nullable().optional(),
+  backendStatus: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
+  updatedAt: z.string().nullable().optional(),
 });
 export type Project = z.infer<typeof projectSchema>;
 export const snapshotSchema = z.object({
@@ -77,6 +87,9 @@ export const edgeSchema = z.object({
   originLayer: z.string().optional(),
   resolutionStatus: z.string().optional(),
   underlyingEdgeIds: z.array(z.string()).optional(),
+  evidenceCount: z.number().int().nonnegative().nullable().optional(),
+  evidenceIds: z.array(z.string()).optional(),
+  properties: z.record(z.unknown()).optional(),
 });
 export const modelSchema = z
   .object({
@@ -103,11 +116,15 @@ export const modelSchema = z
 export type ArchitecturalModel = z.infer<typeof modelSchema>;
 export const runtimeConfigurationSchema = z.object({
   projectId: z.string(),
+  snapshotId: z.string().nullable().optional(),
+  modelId: z.string().nullable().optional(),
+  profile: z.record(z.unknown()).optional(),
+  configured: z.boolean().optional(),
   profileId: z.string(),
   supported: z.boolean(),
   prerequisites: z.array(z.string()),
   ready: z.boolean(),
-  revision: z.number().int().positive(),
+  revision: z.number().int().nonnegative(),
 });
 export const scenarioSchema = z.object({
   id: z.string(),
@@ -120,19 +137,33 @@ export const runtimeSessionSchema = z.object({
   id: z.string(),
   projectId: z.string(),
   snapshotId: z.string(),
-  scenarioId: z.string(),
-  configurationRevision: z.number().int().positive(),
-  scenarioRevision: z.number().int().positive(),
-  status: z.enum(["running", "completed", "failed", "cancelled", "terminated"]),
+  scenarioId: z.string().nullable(),
+  configurationRevision: z.number().int().positive().nullable(),
+  scenarioRevision: z.number().int().positive().nullable(),
+  executionStatus: z.string().optional(),
+  scenarioStatus: z.string().optional(),
+  evidenceStatus: z.string().optional(),
+  cleanupStatus: z.string().optional(),
+  status: z.enum([
+    "pending",
+    "running",
+    "cancelling",
+    "timed-out",
+    "completed",
+    "failed",
+    "cancelled",
+    "terminated",
+    "unknown",
+  ]),
   outcome: z.enum(["pending", "passed", "failed", "unknown"]),
-  approvedAt: z.string(),
+  approvedAt: z.string().nullable(),
   events: z.array(z.object({ at: z.string(), message: z.string() })),
   traces: z.array(
     z.object({
       id: z.string(),
       from: z.string(),
       to: z.string(),
-      durationMs: z.number().nonnegative(),
+      durationMs: z.number().nonnegative().nullable(),
       uncertain: z.boolean(),
     }),
   ),
@@ -157,9 +188,14 @@ export const explanationSchema = z.object({
 export const workspaceSchema = z.object({
   id: z.string(),
   name: z.string(),
+  code: z.string().optional(),
+  myRole: z.string().nullable().optional(),
+  status: z.string().optional(),
   members: z.array(z.object({ id: z.string(), name: z.string(), role: z.string() })),
 });
 export const assignmentSchema = z.object({
+  requiredDiagramTypes: z.array(z.string()).optional(),
+  requireRuntimeTrace: z.boolean().optional(),
   id: z.string(),
   workspaceId: z.string(),
   title: z.string(),
@@ -194,18 +230,25 @@ export const submissionSchema = z
   });
 export type Submission = z.infer<typeof submissionSchema>;
 export const accountSchema = z.object({
+  status: z.string().optional(),
   id: z.string(),
   name: z.string(),
   role: roleSchema,
   locked: z.boolean(),
 });
 export const integrationSchema = z.object({
+  status: z.string().optional(),
+  persistence: z.string().optional(),
+  connectionVerified: z.boolean().optional(),
   id: z.string(),
   name: z.string(),
   enabled: z.boolean(),
   revision: z.number().int().positive(),
 });
 export const profileSchema = z.object({
+  memoryMiB: z.number().int().min(64).max(2048).optional(),
+  cpus: z.number().positive().max(4).optional(),
+  timeoutSeconds: z.number().int().positive().max(300).optional(),
   id: z.string(),
   name: z.string(),
   enabled: z.boolean(),
@@ -246,6 +289,7 @@ export const runtimeReadSchema = z.object({
   projectId: z.string(),
   snapshotId: z.string(),
   modelId: z.string().nullable(),
+  enrichedModelId: z.string().nullable().optional(),
   scenarioName: z.string().nullable(),
   profileName: z.string().nullable(),
   executionStatus: z.string(),
@@ -253,8 +297,11 @@ export const runtimeReadSchema = z.object({
   evidenceStatus: z.string(),
   cleanupStatus: z.string(),
   traceQuality: z.string(),
+  traceStatus: z.string().optional(),
   mappingStatus: z.string(),
   createdAt: z.string().nullable(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
 });
+export type RuntimeReadSession = z.infer<typeof runtimeReadSchema>;
+

@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --incremental false",
-    "test": "node --test tests/architecture.test.cjs tests/java-contract.test.cjs",
+    "test": "node --test tests/architecture.test.cjs tests/java-contract.test.cjs tests/edge-semantics.test.cjs tests/sequence-semantics.test.cjs tests/uml-m4-m8.test.cjs",
+    "test:connected": "node --test tests/connected-pipeline.test.cjs",
     "test:mainflow": "node scripts/check-mainflow.mjs",
     "format": "prettier --write ."
   },

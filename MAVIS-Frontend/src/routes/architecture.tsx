@@ -7,7 +7,7 @@ import { RequestState } from "@/components/shared/request-state";
 import { ProjectSelector } from "@/features/projects/components";
 import { ModelVersionSelector } from "@/features/architecture/components";
 import { useModel } from "@/features/architecture/use-model";
-import { useApi } from "@/hooks/use-api";
+import { useApi, useApiQuery } from "@/hooks/use-api";
 import { FlowFrame } from "@/components/mainflow/shell";
 import { ModelFlow } from "@/components/mainflow/model-flow";
 export default function ArchitecturePage() {
@@ -19,6 +19,11 @@ export default function ArchitecturePage() {
 }
 export function ArchitectureWorkspace({ title = "Architecture" }: { title?: string } = {}) {
   const state = useModel();
+  const project = useApiQuery(
+    "project",
+    { projectId: state.projectId },
+    { enabled: !!state.projectId },
+  );
   const [selected, setSelected] = useState<{ modelId: string; elementId: string } | null>(null);
   const id = selected?.modelId === state.model?.id ? (selected?.elementId ?? null) : null;
   return (
@@ -40,6 +45,7 @@ export function ArchitectureWorkspace({ title = "Architecture" }: { title?: stri
               <ArchitecturePresentation
                 model={state.model}
                 selectedId={id}
+                systemName={project.data?.name}
                 onSelect={(elementId) => {
                   if (state.model)
                     setSelected(elementId ? { modelId: state.model.id, elementId } : null);

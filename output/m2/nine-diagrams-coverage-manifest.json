@@ -1,0 +1,512 @@
+{
+  "timestamp": "2026-10-25T03:55:00.000Z",
+  "milestone": "M8",
+  "deliverable": "D6 / M8: Nine Diagrams Rule-Level & Language Coverage Manifest (C4 C1/C2/C3 + UML Sequence/Class/Package/Deployment/Activity/State)",
+  "vocabularyNotes": {
+    "persistedElementTypes": [
+      "SERVICE_CONTAINER",
+      "COMPONENT",
+      "CLASS_INTERFACE",
+      "DATABASE",
+      "QUEUE_BROKER",
+      "MESSAGE_CHANNEL",
+      "EXTERNAL_SYSTEM"
+    ],
+    "persistedRelationTypes": [
+      "SERVICE_HTTP_CALL",
+      "DATABASE_ACCESS",
+      "MESSAGE_PUBLISH",
+      "MESSAGE_SUBSCRIBE",
+      "DECLARED_COMPOSE",
+      "CODE_DEPENDENCY"
+    ],
+    "viewOnlyProjections": {
+      "SYSTEM_BOUNDARY": "View-local container grouping in C4 Container; not persisted as a business element.",
+      "PACKAGE": "View-local package aggregation in UML Package & 4+1 Development; grouped dynamically by qualifiedName.",
+      "USES_API": "View-local relationship label in C4 Context; derived from underlying SERVICE_HTTP_CALL or declared external integration.",
+      "DEPLOYMENT_TOPOLOGY": "View-local projection of executionEnvironment nodes, nested deployment artifacts, «manifest» edges, and protocol-evidenced CommunicationPath edges.",
+      "ACTIVITY_CFG": "View-local projection of AST-extracted method control-flow and object-flow graphs partitioned by service container.",
+      "STATE_LIFECYCLE": "View-local projection of AST-extracted stateful class transitions and enum state declarations."
+    }
+  },
+  "diagrams": [
+    {
+      "id": "C4_SYSTEM_CONTEXT",
+      "name": "C4 System Context",
+      "ruleId": "C4-01-SYSTEM-CONTEXT",
+      "standard": "C4 model (structurizr / c4model.com)",
+      "mavissConvention": "Groups internal services into a single system boundary; exposes external systems and integrations. Internal microservice-to-microservice calls and Compose startup arrows are excluded.",
+      "extractors": [
+        "DockerDetectorServiceImpl (external service references)",
+        "JavaSourceParser (outbound HTTP client integrations)",
+        "CSharpSourceAnalyzer (HttpClient / external service integrations)"
+      ],
+      "validators": [
+        "MAVIS-Frontend/tests/architecture.test.cjs (System Context groups internal elements and excludes Compose startup arrows; context remains visible without actors and never promotes internal infrastructure to external systems)"
+      ],
+      "persistedElementsUsed": [
+        "SERVICE_CONTAINER",
+        "EXTERNAL_SYSTEM"
+      ],
+      "viewOnlyElements": [
+        "SYSTEM"
+      ],
+      "persistedRelationsUsed": [
+        "SERVICE_HTTP_CALL",
+        "MESSAGE_PUBLISH",
+        "MESSAGE_SUBSCRIBE"
+      ],
+      "viewOnlyRelations": [
+        "USES_API"
+      ],
+      "status": "IMPLEMENTED",
+      "supportLevel": "PRODUCTION_READY",
+      "limitations": "MAVISS does not fabricate human actors; when an external boundary is extracted without an identified user actor, the diagram presents the software system boundaries truthfully without invented actor stubs."
+    },
+    {
+      "id": "C4_CONTAINER",
+      "name": "C4 Container",
+      "ruleId": "C4-02-CONTAINER-BOUNDARY",
+      "standard": "C4 model",
+      "mavissConvention": "Draws a named System Boundary containing owned internal service containers, logical datastores, and message channels. External systems stay outside. Preserves verified messaging and database protocols in labels.",
+      "extractors": [
+        "DockerDetectorServiceImpl (docker-compose services, dependencies, datasource, message broker)",
+        "SpringConfigDetectorServiceImpl (application.yml/properties datasource and broker configuration)",
+        "JavaSourceParser (Kafka/Tram messaging endpoints)",
+        "CSharpSourceAnalyzer (ASP.NET Core controllers and messaging)"
+      ],
+      "validators": [
+        "MAVIS-Frontend/tests/architecture.test.cjs (C4 Container draws a named system boundary around owned containers; boundary header and legend scale; messaging labels append channel protocol only from channel properties)",
+        "MAVIS-Frontend/tests/edge-semantics.test.cjs (real producer database protocol wire mapping to Draw.io XML label)",
+        "MAVIS-Platform/mavis-be/mavis-analyzer/src/test/java/com/mavis/analyzer/graph/service/GraphBuilderServiceTest.java (logicalDatabasesOnOneHostRemainSeparateAndRepositoryBindingsUseTheirOwnSchema)"
+      ],
+      "persistedElementsUsed": [
+        "SERVICE_CONTAINER",
+        "DATABASE",
+        "QUEUE_BROKER",
+        "MESSAGE_CHANNEL",
+        "EXTERNAL_SYSTEM"
+      ],
+      "viewOnlyElements": [
+        "SYSTEM_BOUNDARY"
+      ],
+      "persistedRelationsUsed": [
+        "SERVICE_HTTP_CALL",
+        "DATABASE_ACCESS",
+        "MESSAGE_PUBLISH",
+        "MESSAGE_SUBSCRIBE",
+        "DECLARED_COMPOSE"
+      ],
+      "viewOnlyRelations": [],
+      "status": "IMPLEMENTED",
+      "supportLevel": "PRODUCTION_READY",
+      "limitations": "M1 round-trip metadata preservation verified. Drag/undo/redo remains NEEDS MANUAL VERIFICATION per baseline constraint (D5)."
+    },
+    {
+      "id": "C4_COMPONENT",
+      "name": "C4 Component",
+      "ruleId": "C4-03-COMPONENT-HIERARCHY",
+      "standard": "C4 model",
+      "mavissConvention": "Scopes to a single selected service container. Nests internal controllers, services, repositories under the service boundary; retains connections to external queues/databases and other services while excluding fine-grained CLASS_INTERFACE nodes so C3 stays strictly component-scoped.",
+      "extractors": [
+        "JavaSourceParser (Spring stereotype annotations: @Controller, @RestController, @Service, @Repository)",
+        "CSharpSourceAnalyzer (ASP.NET ControllerBase, Service, Repository classes)"
+      ],
+      "validators": [
+        "MAVIS-Frontend/tests/architecture.test.cjs (FTGO component scope selects populated service and distinguishes infrastructure with no internals)",
+        "MAVIS-Frontend/tests/uml-m4-m8.test.cjs (C4 C3 Component view excludes CLASS_INTERFACE nodes)",
+        "MAVIS-Platform/mavis-be/mavis-analyzer/src/test/java/com/mavis/analyzer/graph/service/GraphBuilderServiceTest.java (buildRelationshipsAndEvidences with C4 COMPONENT hierarchy)"
+      ],
+      "persistedElementsUsed": [
+        "SERVICE_CONTAINER",
+        "COMPONENT",
+        "DATABASE",
+        "MESSAGE_CHANNEL"
+      ],
+      "viewOnlyElements": [],
+      "persistedRelationsUsed": [
+        "CODE_DEPENDENCY",
+        "DATABASE_ACCESS",
+        "MESSAGE_PUBLISH",
+        "MESSAGE_SUBSCRIBE"
+      ],
+      "viewOnlyRelations": [],
+      "status": "IMPLEMENTED",
+      "supportLevel": "PRODUCTION_READY",
+      "limitations": "Available for services with AST-parsed components (e.g. Spring and ASP.NET Core services)."
+    },
+    {
+      "id": "UML_CLASS",
+      "name": "UML Class Diagram",
+      "ruleId": "UML-01-CLASS-HIERARCHY",
+      "standard": "OMG UML 2.5.1 — Chapter 11 (Structured Classifiers)",
+      "mavissConvention": "Renders 3-compartment classifiers (CLASS, ABSTRACT_CLASS, INTERFACE, ENUM, RECORD, STRUCT) with AST-verified type kinds (never guessing interfaces from 'I' prefix), visibility symbols (+, -, #, ~) with explicit language-specific labels (~ [package-private] in Java vs ~ [internal] in C#), overloaded operations keyed by full parameter signature, and deduplicated structural relationships (GENERALIZATION, REALIZATION, ASSOCIATION, DEPENDENCY). Enforces whole-part restraint: static fields never fabricate SHARED_AGGREGATION or COMPOSITION (supported in DESIGNED overlay mode).",
+      "extractors": [
+        "JavaSourceParser (JavaParser AST ClassOrInterfaceDeclaration, EnumDeclaration, RecordDeclaration, fields, constructors, overloaded methods, generics)",
+        "CSharpSourceAnalyzer (Roslyn Class/Interface/Record/Struct/Enum declarations, properties, fields, overloaded methods, generics)",
+        "GraphBuilderServiceImpl & ArchitectureResolver (persists CLASS_INTERFACE elements and umlRelationKind edge properties)"
+      ],
+      "validators": [
+        "MAVIS-Frontend/tests/uml-m4-m8.test.cjs (M4-AC01, M4-AC02, M4-AC03, M4-AC05, M4-AC07)",
+        "MAVIS-Frontend/tests/connected-pipeline.test.cjs (Java and C# Class Diagram projection & 2-cycle Draw.io round-trip)",
+        "MAVIS-Platform/mavis-be/mavis-analyzer/src/test/java/com/mavis/analyzer/pipeline/JavaSourceToGraphC4PipelineTest.java",
+        "MAVIS.Worker/tests/MAVIS.Worker.Tests/CSharp/CSharpAnalyzerTests.cs"
+      ],
+      "persistedElementsUsed": [
+        "COMPONENT",
+        "CLASS_INTERFACE"
+      ],
+      "viewOnlyElements": [
+        "DESIGNED_CLASSIFIER"
+      ],
+      "persistedRelationsUsed": [
+        "CODE_DEPENDENCY"
+      ],
+      "viewOnlyRelations": [
+        "GENERALIZATION",
+        "REALIZATION",
+        "ASSOCIATION",
+        "DEPENDENCY",
+        "SHARED_AGGREGATION",
+        "COMPOSITION"
+      ],
+      "rules": [
+        {
+          "ruleId": "CLS-N01",
+          "name": "AST-Verified Classifier Kind & 3-Compartment Rendering (No 'I'-Prefix Guessing; Overloads Keyed by Signature)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "CLS-N02",
+          "name": "Visibility Symbols (+, -, #, ~) with Language-Explicit ~ [package-private] (Java) vs ~ [internal] (C#)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "CLS-N03",
+          "name": "Relationship Precedence & Whole-Part Restraint (Suppress Redundant Dependency when Association Exists; No Fabricated Aggregation/Composition from Static Fields)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "CLS-N04",
+          "name": "Honest Multiplicity (Omit UNKNOWN Static Multiplicity; Explicit 1..*, 0..1, * Supported in DESIGNED Overlay)",
+          "supportLevel": "PRODUCTION_READY"
+        }
+      ],
+      "status": "IMPLEMENTED",
+      "supportLevel": "PRODUCTION_READY_CORE_PROFILE",
+      "limitations": "Static source extraction never guesses runtime object lifetime ownership (Aggregation/Composition) or exact multiplicity bounds; architects can author Composition/Aggregation and multiplicities via DESIGNED overlay."
+    },
+    {
+      "id": "UML_SEQUENCE",
+      "name": "UML Sequence Diagram",
+      "ruleId": "UML-02-SEQUENCE-FLOW",
+      "standard": "OMG UML 2.5.1 — Chapter 17 (Interactions)",
+      "mavissConvention": "Visualizes ordered message occurrences across lifelines (services, components, channels, datastores, external systems, designed roles) using canonical mavis-interaction/v2 contract. Supports Lifelines (SEQ-N01, never underlined), MessageSorts & Provenance (SEQ-N02: SYNCH_CALL, ASYNCH_CALL, ASYNCH_SIGNAL, REPLY, CREATE, DELETE, UNKNOWN, self-call; static edges/transport fields remain UNKNOWN until confirmed), ExecutionSpecifications (SEQ-N03 including nested activations & collision-free IDs), CombinedFragments & InteractionUses (SEQ-N04: alt, opt, loop, par, ref frames, plus break/critical/strict as DESIGNED_ONLY), and Ordering/Causality/Relationship Disambiguation (SEQ-N05: Kahn causal topological sort, CLIENT/SERVER span deduplication, sorted candidateRelationshipIds).",
+      "extractors": [
+        "OtelTraceCorrelationServiceImpl (distributed trace span trees, CLIENT/SERVER span deduplication, internal CLIENT span causal stitching, clock-skew detection, candidateRelationshipIds disambiguation)",
+        "RunnerReceiptIngestServiceImpl (runtime receipt correlation with base/enriched canonical element & relationship IDs)",
+        "scenario-design.ts (mavis-interaction/v2 validator, V0 mavisScenario migration, Kahn causal observed projection, Draw.io XML generator & strict layout-only round-trip conflict detector)"
+      ],
+      "validators": [
+        "MAVIS-Frontend/tests/sequence-semantics.test.cjs (7 fixture groups + Reviewer Repros R1-R4)",
+        "MAVIS-Frontend/tests/connected-pipeline.test.cjs (live Java observed sequence artifact to frontend projection and Draw.io XML)",
+        "MAVIS-Frontend/tests/architecture.test.cjs (Designed scenarios preserve explicit order, repeats and canonical IDs across XML export and reload)",
+        "MAVIS-Platform/mavis-be/mavis-analyzer/src/test/java/com/mavis/analyzer/runtime/service/impl/OtelTraceCorrelationServiceImplTest.java"
+      ],
+      "persistedElementsUsed": [
+        "SERVICE_CONTAINER",
+        "COMPONENT",
+        "MESSAGE_CHANNEL",
+        "QUEUE_BROKER",
+        "DATABASE",
+        "EXTERNAL_SYSTEM"
+      ],
+      "viewOnlyElements": [
+        "LIFELINE",
+        "EXECUTION_SPECIFICATION",
+        "COMBINED_FRAGMENT",
+        "INTERACTION_OPERAND",
+        "INTERACTION_USE"
+      ],
+      "persistedRelationsUsed": [
+        "SERVICE_HTTP_CALL",
+        "MESSAGE_PUBLISH",
+        "MESSAGE_SUBSCRIBE",
+        "DATABASE_ACCESS",
+        "CODE_DEPENDENCY"
+      ],
+      "viewOnlyRelations": [
+        "REPLY_MESSAGE",
+        "CREATE_MESSAGE",
+        "DELETE_MESSAGE"
+      ],
+      "rules": [
+        {
+          "ruleId": "SEQ-N01",
+          "name": "Lifeline & Participant Header («stereotype» role:Name, non-underlined)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "SEQ-N02",
+          "name": "Message Sorts & Provenance Honesty (SYNCH_CALL, ASYNCH_CALL, ASYNCH_SIGNAL, REPLY, CREATE, DELETE, UNKNOWN, self-message)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "SEQ-N03",
+          "name": "ExecutionSpecification (Activation Bars & Nested Activations + Lifecycle Validation)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "SEQ-N04",
+          "name": "CombinedFragment & InteractionUse (alt, opt, loop, par, ref = PRODUCTION_READY; break, critical, strict = DESIGNED_ONLY)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "SEQ-N05",
+          "name": "Ordering, Causality & Canonical Relationship Disambiguation (Kahn topological sort, candidateRelationshipIds, Draw.io layout-only conflict detection)",
+          "supportLevel": "PRODUCTION_READY"
+        }
+      ],
+      "status": "IMPLEMENTED_DESIGNED_E2E_PASS__OBSERVED_LIVE_TRACE_BLOCKED",
+      "supportLevel": "PRODUCTION_READY_CORE_PROFILE",
+      "limitations": "1) Single observed traces do not auto-infer alt/opt/loop CombinedFragments (requires 'Create designed copy' HYBRID authoring). 2) OTel span endTime never fabricates synthetic REPLY messages. 3) Operators break/critical/strict are supported as DESIGNED_ONLY with semantic warning; found/lost border gate messages are DEFERRED. 4) M3-AC09 live observed browser trace is BLOCKED due to 0 runtime_sessions in PostgreSQL (synthetic trace correlation & projection verified in Java/FE integration tests)."
+    },
+    {
+      "id": "UML_PACKAGE",
+      "name": "UML Package Diagram",
+      "ruleId": "UML-03-PACKAGE-DEPENDENCY",
+      "standard": "OMG UML 2.5.1 — Chapter 12 (Packages)",
+      "mavissConvention": "Projects qualified Java packages and C# namespaces as tabbed UML Package folders (shape=folder), aggregates cross-package classifier dependencies while preserving all underlying canonical relationship IDs and evidence IDs, and validates cyclic «merge» relationships (PACKAGE_MERGE_CYCLE_DETECTED) and cross-service package collisions.",
+      "extractors": [
+        "JavaSourceParser (package declaration, imports, classifier ownership)",
+        "CSharpSourceAnalyzer (namespace declaration, using directives, classifier ownership)",
+        "uml-diagrams.ts (projectUmlPackageDiagram, cross-package dependency aggregation, cycle & collision validators)"
+      ],
+      "validators": [
+        "MAVIS-Frontend/tests/uml-m4-m8.test.cjs (M4-AC04, M4-AC06, M4-AC07)",
+        "MAVIS-Frontend/tests/connected-pipeline.test.cjs (Java and C# Package Diagram projection & 2-cycle Draw.io round-trip)"
+      ],
+      "persistedElementsUsed": [
+        "SERVICE_CONTAINER",
+        "COMPONENT",
+        "CLASS_INTERFACE"
+      ],
+      "viewOnlyElements": [
+        "PACKAGE"
+      ],
+      "persistedRelationsUsed": [
+        "CODE_DEPENDENCY"
+      ],
+      "viewOnlyRelations": [
+        "DEPENDENCY",
+        "IMPORT",
+        "ACCESS",
+        "MERGE"
+      ],
+      "rules": [
+        {
+          "ruleId": "PKG-N01",
+          "name": "Tabbed Package Folder Rendering & Nested Member Listing (Java package / C# namespace)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "PKG-N02",
+          "name": "Cross-Package Dependency Aggregation with Full Underlying Edge & Evidence Preservation",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "PKG-N03",
+          "name": "Package Stereotype & «merge» Cycle Validator (PACKAGE_MERGE_CYCLE_DETECTED)",
+          "supportLevel": "PRODUCTION_READY"
+        }
+      ],
+      "status": "IMPLEMENTED",
+      "supportLevel": "PRODUCTION_READY_CORE_PROFILE",
+      "limitations": "Extracted cross-package relationships default to dashed «use»/dependency arrows; «import», «access», and «merge» stereotypes are authored via DESIGNED overlay."
+    },
+    {
+      "id": "UML_DEPLOYMENT",
+      "name": "UML Deployment Diagram",
+      "ruleId": "UML-04-DEPLOYMENT-TOPOLOGY",
+      "standard": "OMG UML 2.5.1 — Chapter 19 (Deployments)",
+      "mavissConvention": "Projects 3D UML Deployment Nodes («executionEnvironment» and «device» with shape=cube), nested «artifact» nodes, dashed «manifest» arrows to manifested logical components/services, and solid «communicationPath» links derived strictly from protocol-evidenced runtime/static communication edges. Docker Compose depends_on edges are excluded from CommunicationPath (optional «depends_on (startup only)» overlay). Enforces single-environment isolation per diagram.",
+      "extractors": [
+        "DockerDetectorServiceImpl (docker-compose services, container_name, image, ports, environment, depends_on)",
+        "GraphBuilderServiceImpl & ArchitectureResolver (deploymentMetadata persistence on SERVICE_CONTAINER, DATABASE, QUEUE_BROKER)",
+        "uml-diagrams.ts (projectUmlDeploymentDiagram, CommunicationPath vs Compose depends_on separation, environment filter)"
+      ],
+      "validators": [
+        "MAVIS-Frontend/tests/uml-m4-m8.test.cjs (M5-AC01 through M5-AC06)",
+        "MAVIS-Frontend/tests/connected-pipeline.test.cjs (Deployment Diagram projection & 2-cycle Draw.io round-trip)",
+        "MAVIS-Platform/mavis-be/mavis-analyzer/src/test/java/com/mavis/analyzer/pipeline/JavaSourceToGraphC4PipelineTest.java"
+      ],
+      "persistedElementsUsed": [
+        "SERVICE_CONTAINER",
+        "DATABASE",
+        "QUEUE_BROKER",
+        "EXTERNAL_SYSTEM"
+      ],
+      "viewOnlyElements": [
+        "EXECUTION_ENVIRONMENT",
+        "DEVICE",
+        "ARTIFACT",
+        "MANIFESTED_COMPONENT"
+      ],
+      "persistedRelationsUsed": [
+        "SERVICE_HTTP_CALL",
+        "DATABASE_ACCESS",
+        "MESSAGE_PUBLISH",
+        "MESSAGE_SUBSCRIBE",
+        "DECLARED_COMPOSE"
+      ],
+      "viewOnlyRelations": [
+        "MANIFESTATION",
+        "COMMUNICATION_PATH",
+        "DEPLOYMENT_DEPENDENCY_STARTUP"
+      ],
+      "rules": [
+        {
+          "ruleId": "DEP-N01",
+          "name": "3D Deployment Nodes («executionEnvironment», «device»), Nested «artifact», and «manifest» Edges",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "DEP-N02",
+          "name": "CommunicationPath Honesty (Compose depends_on Excluded from CommunicationPath; Optional Startup Dependency Overlay)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "DEP-N03",
+          "name": "Environment Isolation (No Multi-Environment Mixing Within a Single Deployment Diagram)",
+          "supportLevel": "PRODUCTION_READY"
+        }
+      ],
+      "status": "IMPLEMENTED",
+      "supportLevel": "PRODUCTION_READY_CORE_PROFILE",
+      "limitations": "Physical bare-metal server topology outside Docker Compose / Spring configuration is not auto-discovered and can be added via DESIGNED «device» nodes."
+    },
+    {
+      "id": "UML_ACTIVITY",
+      "name": "UML Activity Diagram",
+      "ruleId": "UML-05-ACTIVITY-WORKFLOW",
+      "standard": "OMG UML 2.5.1 — Chapter 15 & 16 (Activities & Actions)",
+      "mavissConvention": "Extracts intra-method AST Control Flow Graphs (CFG) in Java (JavaParser) and C# (Roslyn) and renders them inside a service-scoped Swimlane ActivityPartition. Supports InitialNode, Action, DecisionNode, MergeNode, ForkNode, JoinNode (joinSpec=AND), ObjectNode ([state]), ActivityFinal, and FlowFinal. Enforces the Decision/Merge vs Fork/Join deadlock validator (JOIN_BRANCH_DEADLOCK) and marks methods containing lambdas/closures/exception handlers or abstract bodies as PARTIAL (ACTIVITY_CFG_PARTIAL).",
+      "extractors": [
+        "JavaSourceParser (extractMethodCfg: IfStmt -> Decision/Merge, While/For -> loop Decision/Merge, ReturnStmt -> ActivityFinal, ThrowStmt -> FlowFinal)",
+        "CSharpSourceAnalyzer (ExtractMethodCfg: IfStatementSyntax, While/For/ForEach, ReturnStatementSyntax, ThrowStatementSyntax)",
+        "uml-diagrams.ts (projectUmlActivityDiagram, validateActivityStructure including JOIN_BRANCH_DEADLOCK)"
+      ],
+      "validators": [
+        "MAVIS-Frontend/tests/uml-m4-m8.test.cjs (M6-AC01 through M6-AC06)",
+        "MAVIS-Frontend/tests/connected-pipeline.test.cjs (Java and C# Activity Diagram projection & 2-cycle Draw.io round-trip)",
+        "MAVIS-Platform/mavis-be/mavis-analyzer/src/test/java/com/mavis/analyzer/pipeline/JavaSourceToGraphC4PipelineTest.java",
+        "MAVIS.Worker/tests/MAVIS.Worker.Tests/CSharp/CSharpAnalyzerTests.cs"
+      ],
+      "persistedElementsUsed": [
+        "SERVICE_CONTAINER",
+        "COMPONENT",
+        "CLASS_INTERFACE"
+      ],
+      "viewOnlyElements": [
+        "ACTIVITY_PARTITION",
+        "INITIAL_NODE",
+        "ACTION_NODE",
+        "DECISION_NODE",
+        "MERGE_NODE",
+        "FORK_NODE",
+        "JOIN_NODE",
+        "OBJECT_NODE",
+        "ACTIVITY_FINAL",
+        "FLOW_FINAL"
+      ],
+      "persistedRelationsUsed": [],
+      "viewOnlyRelations": [
+        "CONTROL_FLOW",
+        "OBJECT_FLOW"
+      ],
+      "rules": [
+        {
+          "ruleId": "ACT-N01",
+          "name": "Method-Level AST CFG Extraction (Java & C#) with Service Swimlane Partitioning",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "ACT-N02",
+          "name": "Control Node Semantics & Fork/Join vs Decision/Merge Deadlock Validator (JOIN_BRANCH_DEADLOCK)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "ACT-N03",
+          "name": "Honest PARTIAL Completeness Marker for Lambdas, Exception Handlers, and Unexpanded Bodies (ACTIVITY_CFG_PARTIAL)",
+          "supportLevel": "PRODUCTION_READY"
+        }
+      ],
+      "status": "IMPLEMENTED",
+      "supportLevel": "PRODUCTION_READY_CORE_PROFILE",
+      "limitations": "AST extraction is scoped per method/operation; cross-service distributed workflows are modeled in UML Sequence or via DESIGNED Activity nodes."
+    },
+    {
+      "id": "UML_STATE",
+      "name": "UML State Machine Diagram",
+      "ruleId": "UML-06-STATE-MACHINE",
+      "standard": "OMG UML 2.5.1 — Chapter 14 (StateMachines)",
+      "mavissConvention": "Extracts entity/processor state lifecycles in Java and C# across two explicit modes: (1) STATEFUL_CLASS mode extracts state-carrier fields, initial state, and method guard/assignment transitions formatted as trigger [guard] / effect; (2) ENUM_DECLARATION mode extracts state literals only and strictly refuses to fabricate transitions (ENUM_ONLY_NO_TRANSITIONS) unless authored in DESIGNED mode. Enforces structural validators (single Initial per region, triggerless Initial transition, FinalState with 0 outgoing transitions, Choice branches with guards and no triggers).",
+      "extractors": [
+        "JavaSourceParser (extractStateLifecycle for stateful classes with enum state fields and enum declarations)",
+        "CSharpSourceAnalyzer (ExtractStateLifecycle for stateful classes/properties and enum declarations)",
+        "uml-diagrams.ts (projectUmlStateDiagram, validateStateStructure, formatTransitionLabel)"
+      ],
+      "validators": [
+        "MAVIS-Frontend/tests/uml-m4-m8.test.cjs (M7-AC01 through M7-AC06)",
+        "MAVIS-Frontend/tests/connected-pipeline.test.cjs (Java and C# State Machine projection & 2-cycle Draw.io round-trip)",
+        "MAVIS-Platform/mavis-be/mavis-analyzer/src/test/java/com/mavis/analyzer/pipeline/JavaSourceToGraphC4PipelineTest.java",
+        "MAVIS.Worker/tests/MAVIS.Worker.Tests/CSharp/CSharpAnalyzerTests.cs"
+      ],
+      "persistedElementsUsed": [
+        "COMPONENT",
+        "CLASS_INTERFACE"
+      ],
+      "viewOnlyElements": [
+        "INITIAL_PSEUDOSTATE",
+        "STATE",
+        "COMPOSITE_STATE",
+        "CHOICE_PSEUDOSTATE",
+        "FINAL_STATE"
+      ],
+      "persistedRelationsUsed": [],
+      "viewOnlyRelations": [
+        "STATE_TRANSITION"
+      ],
+      "rules": [
+        {
+          "ruleId": "STM-N01",
+          "name": "Stateful Class Transition Extraction with Canonical trigger [guard] / effect Formatting",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "STM-N02",
+          "name": "Enum-Only Transition Restraint (ENUM_ONLY_NO_TRANSITIONS — Never Fabricate Transitions from Enum Literals Alone)",
+          "supportLevel": "PRODUCTION_READY"
+        },
+        {
+          "ruleId": "STM-N03",
+          "name": "State Machine Structural Validators (Single Initial, Triggerless Initial/Choice, Guarded Choice, Terminal FinalState)",
+          "supportLevel": "PRODUCTION_READY"
+        }
+      ],
+      "status": "IMPLEMENTED",
+      "supportLevel": "PRODUCTION_READY_CORE_PROFILE",
+      "limitations": "Enum declarations without a stateful class mutating an enum field do not invent transitions automatically (requires DESIGNED transitions)."
+    }
+  ],
+  "openBaselineDecisions": {
+    "D5": {
+      "status": "NEEDS MANUAL VERIFICATION",
+      "description": "M1/M2 C4 Draw.io editor interactive pointer drag, undo, and redo require manual human verification due to headless pointer events hitting mxGraph connector handles."
+    },
+    "UC-01": {
+      "status": "OPEN",
+      "description": "MESSAGE_SUBSCRIBE arrow direction convention: current code uses data-flow direction channel -> consumer with label 'Delivers messages to [protocol]' rather than dependency direction consumer -> channel ('Consumes from'). Kept unchanged in M2–M8 pending product decision."
+    }
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "runId": "20261025-025500-m3-m8",
+  "startedAt": "2026-10-25T02:55:00+07:00",
+  "updatedAt": "2026-10-25T14:32:00+07:00",
+  "completedAt": "2026-10-25T14:32:00+07:00",
+  "masterPlan": "docs/GEMINI_M3_M8_OVERNIGHT_MASTER_PLAN_2026-10-25.md",
+  "independentReviewTask": "docs/M3_M8_OVERNIGHT_INDEPENDENT_REVIEW_2026-10-25.md",
+  "round2ReviewTask": "docs/M3_M8_O1_O8_ROUND2_REVIEW_2026-10-25.md",
+  "handoffReport": "docs/M3_M8_OVERNIGHT_HANDOFF_2026-10-25.md",
+  "currentMilestone": "REMEDIATED_O1_O8_AND_Q1_Q4_PLUS_DOCX_VISUAL_ALIGNMENT",
+  "overallStatus": "SELF_VERIFIED_CODE_AND_BROWSER_E2E__LIVE_OTEL_TRACE_BLOCKED__2000_NODE_ZOOM_PARTIAL__INDEPENDENT_REVIEW_PENDING",
+  "activeServices": {
+    "javaBackend8081": { "port": 8081, "pid": 4436, "keepRunning": true },
+    "dotnetWorker5082": { "port": 5082, "pid": 13652, "keepRunning": true },
+    "qaNextJs3000": { "port": 3000, "status": "CLEANED_UP_AFTER_E2E" },
+    "drawioRenderer8090": { "port": 8090, "status": "CLEANED_UP_AFTER_E2E" }
+  },
+  "reviewFindingsRemediated": {
+    "O1": "SELF_VERIFIED — Removed fabricated Deployment/Activity/State fallback elements; surfaced honest NO_DEPLOYMENT_METADATA_EXTRACTED, NO_ACTIVITY_CFG_EXTRACTED, and NO_STATE_LIFECYCLE_EXTRACTED diagnostics.",
+    "O2": "SELF_VERIFIED — Scoped UML Package identity by owning service (pkg:${serviceId}:${qualifiedName}) to prevent cross-service namespace collision.",
+    "O3": "SELF_VERIFIED — Added typed mavisUmlDocument persistence carrier, hydrateUmlWorkspaceFromXml on reload, immediate effectiveProjection/activeXml synchronization on post-reload edits, CAS Save button, and full Draw.io deletion/rewiring/hierarchy/unmapped-cell conflict detection across M4-M7.",
+    "O4": "SELF_VERIFIED — Replaced flat statement loops and fallback state guards in UmlClassifierVisitor.java and UmlCSharpInspector.cs with recursive AST CFG construction and ancestor-branch/early-exit guard resolution for State Lifecycles.",
+    "O5": "SELF_VERIFIED — Added complete structured DESIGNED authoring forms and item removal controls across UML_CLASS, UML_PACKAGE, UML_DEPLOYMENT, UML_ACTIVITY, and UML_STATE in uml-diagram-workspace.tsx.",
+    "O6": "SELF_VERIFIED — Decoupled default unit tests (npm test) from output/m2 and output/m3 by loading committed fixtures in MAVIS-Frontend/tests/fixtures/ while keeping npm run test:connected verified against live pipeline outputs.",
+    "O7": "SELF_VERIFIED — Executed real headless Chromium Playwright workload benchmark on /architecture (DependencyNetwork SVG) across 100, 500, and 2,000 nodes x 5 runs with real DOM mutation waits, small-sample statistics, and pre-declared threshold evaluation.",
+    "O8": "SELF_VERIFIED — Replaced static coverage strings with dynamic rule/check execution in buildM8CoverageMatrix and updated handoff/status reports with honest per-AC status.",
+    "Q1": "SELF_VERIFIED — Enforced canvas mxCell.value and mxCell.style semantic edit reconciliation across all 5 UML notations (EXTRACTED_FACT_IMMUTABLE / SEMANTIC_CANVAS_EDIT_UNSUPPORTED) and order-independent mxGeometry attribute parsing with default x=0, y=0 when Draw.io omits zero-origin attributes.",
+    "Q2": "SELF_VERIFIED — Enforced strict modelId, diagramKind, schemaVersion, scope (packageFilter, environment, operationId, targetId), carrier JSON, and DESIGNED overlay schema validation on both hydrateUmlWorkspaceFromXml and reconcileUmlDrawioXml.",
+    "Q3": "SELF_VERIFIED — Removed synthetic :build artifact fabrication in GraphBuilderServiceImpl.java (and removed unused commons-lang3 import) and guarded projectUmlDeploymentDiagram so «artifact» and «manifest» are emitted only when explicit image or buildArtifact/artifactName evidence exists.",
+    "Q4": "SELF_VERIFIED — Separated Pass 1 (LIVE_BACKEND_POSTGRES_TEST1) vs Pass 2 (BROWSER_EXTRACTOR_FIXTURE_VIA_ROUTE_FULFILL) acceptance modes, added real interactive semantic hit-target DOM assertions across C4_CONTEXT/CONTAINER/COMPONENT, UML_SEQUENCE, and M4-M7 UML views, and evaluated Pass 3 benchmark against pre-declared thresholds (honestly reporting PARTIAL at 2,000-node zoom ~377ms > 100ms frame budget).",
+    "DOCX_AND_VISUAL_UX": "SELF_VERIFIED — Placed Draw.io/SelectablePreview canvas above the fold in uml-diagram-workspace.tsx with collapsible authoring drawer, enabled mavisUmlRole semantic hit targets in diagram-selection.ts, aligned Package Diagram default PACKAGE_IMPORT -> DEPENDENCY + recursive nested package containers, Class Diagram 2-ended roles/multiplicities + /derived attributes, Sequence Diagram Found/Lost messages with filled black circles, and State Diagram composite parentStateId + H/H* history pseudostates."
+  },
+  "milestones": {
+    "M3": {
+      "name": "UML Sequence Diagram (R1-R6 Review Fixes + M3-AC01..AC12 + Found/Lost Messages)",
+      "status": "SELF_VERIFIED_EXCEPT_LIVE_TRACE",
+      "externalReview": "PENDING_INDEPENDENT_REVIEW",
+      "liveObservedTrace": "BLOCKED_NO_LIVE_TRACE (M3-AC09: 0 runtime_sessions in PostgreSQL; backend OTel correlation & frontend projection verified via integration tests)",
+      "evidence": [
+        "output/m3/acceptance-report.json",
+        "output/m3/observed-sequence-java-actual.json",
+        "output/m8/browser-uml-sequence.png",
+        "docs/M3_UML_SEQUENCE_REPORT_2026-10-24.md"
+      ]
+    },
+    "M4": {
+      "name": "UML Class Diagram + UML Package Diagram (M4-AC01..AC08 + .docx 2-ended role/multiplicity, /derived, nested packages, default DEPENDENCY)",
+      "status": "SELF_VERIFIED",
+      "externalReview": "PENDING_INDEPENDENT_REVIEW",
+      "evidence": [
+        "output/m2/source-pipeline-java-actual.json",
+        "output/m2/source-pipeline-csharp-graph-actual.json",
+        "output/m8/m4-uml-class.drawio",
+        "output/m8/m4-uml-package.drawio",
+        "output/m8/browser-uml-class.png",
+        "output/m8/browser-uml-package.png"
+      ]
+    },
+    "M5": {
+      "name": "UML Deployment Diagram (M5-AC01..AC06 + Q3 Authentic Artifact Discipline)",
+      "status": "SELF_VERIFIED",
+      "externalReview": "PENDING_INDEPENDENT_REVIEW",
+      "evidence": [
+        "output/m8/m5-uml-deployment.drawio",
+        "output/m8/browser-uml-deployment.png"
+      ]
+    },
+    "M6": {
+      "name": "UML Activity Diagram (M6-AC01..AC06)",
+      "status": "SELF_VERIFIED",
+      "externalReview": "PENDING_INDEPENDENT_REVIEW",
+      "evidence": [
+        "output/m8/m6-uml-activity.drawio",
+        "output/m8/browser-uml-activity.png"
+      ]
+    },
+    "M7": {
+      "name": "UML State Machine Diagram (M7-AC01..AC06 + Composite Substates & H/H* History)",
+      "status": "SELF_VERIFIED",
+      "externalReview": "PENDING_INDEPENDENT_REVIEW",
+      "evidence": [
+        "output/m8/m7-uml-state.drawio",
+        "output/m8/browser-uml-state.png"
+      ]
+    },
+    "M8": {
+      "name": "System-Wide Catalog, Dynamic Coverage Matrix, Real Browser Graph Workload Benchmark & Cross-Milestone Regression (M8-AC01..AC06)",
+      "status": "SELF_VERIFIED_WITH_PARTIAL_2000_ZOOM_AND_NO_LIVE_TRACE",
+      "externalReview": "PENDING_INDEPENDENT_REVIEW",
+      "evidence": [
+        "output/m2/nine-diagrams-coverage-manifest.json",
+        "output/m8/coverage-matrix.json",
+        "output/m8/graph-browser-workload-benchmark-2026-10-25.json",
+        "output/m8/graph-performance-benchmark.json",
+        "output/m8/browser-catalog-acceptance.json",
+        "docs/M3_M8_OVERNIGHT_HANDOFF_2026-10-25.md"
+      ]
+    }
+  },
+  "verificationSummary": {
+    "javaTests": "26/26 PASS in mavis-analyzer (ArchitectureResolverTest, GraphBuilderServiceTest, UmlClassifierVisitorTest, JavaSourceToGraphC4PipelineTest)",
+    "dotnetWorkerTests": "220/220 PASS, 0 Failed (13/13 CSharpAnalyzerTests + 10/10 HttpClientProfileTests)",
+    "frontendUnitTests": "135/135 PASS, 0 Failed (isolated from output/ artifacts via tests/fixtures/, including Q1/Q2/Q3 and .docx alignment suites)",
+    "frontendConnectedPipelineTests": "3/3 PASS, 0 Failed",
+    "frontendMainflowCheck": "PASS",
+    "frontendTypecheck": "0 errors",
+    "browserE2EAndWorkloadBenchmark": "PASS (scripts/run-m4-m8-browser-acceptance.cjs: Pass 1 Live Test1 + Pass 2 Full Extracted Java AST with above-the-fold screenshots + Pass 3 Browser Graph Workload 100/500/2000 x 5 runs)"
+  }
+}

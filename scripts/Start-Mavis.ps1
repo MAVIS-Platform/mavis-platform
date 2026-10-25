@@ -52,7 +52,7 @@ $uploads=Join-Path $dataRoot 'uploads'
 $artifacts=Join-Path $dataRoot 'worker-artifacts' 
 $null=New-Item -ItemType Directory -Force -Path $logs,$uploads,$artifacts
 $environment=@{}
-foreach($entry in $values.GetEnumerator()) { if ($entry.Key -match '^(MAVIS_|MAIL_)') { $environment[$entry.Key]=$entry.Value } }
+foreach($entry in $values.GetEnumerator()) { if ($entry.Key -match '^(MAVIS_|MAIL_)' -or $entry.Key -in @('DOTNET_CLI_HOME','NUGET_PACKAGES')) { $environment[$entry.Key]=$entry.Value } }
 $environment.SPRING_PROFILES_ACTIVE='cloud'
 if ($values.MAVIS_GOOGLE_CLIENT_ID) { $environment.APP_GOOGLE_CLIENT_ID=$values.MAVIS_GOOGLE_CLIENT_ID }
 $environment.SERVER_PORT=[string]$javaPort
@@ -72,6 +72,18 @@ $environment.ASPNETCORE_URLS="http://127.0.0.1:$workerPort"
 $environment.MAVIS_NEXT_DIST_DIR=if($values.MAVIS_NEXT_DIST_DIR){$values.MAVIS_NEXT_DIST_DIR}else{'.artifacts/next-local'}
 $environment.MAVIS_API_MODE='backend'
 $environment.MAVIS_JAVA_URL="http://127.0.0.1:$javaPort"
+$toolPaths=@()
+if ($values.MAVIS_JAVA_HOME) {
+    if (-not (Test-Path -LiteralPath (Join-Path $values.MAVIS_JAVA_HOME 'bin\java.exe'))) { throw 'MAVIS_JAVA_HOME must contain bin\java.exe (JDK 21).' }
+    $environment.JAVA_HOME=$values.MAVIS_JAVA_HOME
+    $toolPaths+=Join-Path $values.MAVIS_JAVA_HOME 'bin'
+}
+if ($values.MAVIS_DOTNET_ROOT) {
+    if (-not (Test-Path -LiteralPath (Join-Path $values.MAVIS_DOTNET_ROOT 'dotnet.exe'))) { throw 'MAVIS_DOTNET_ROOT must contain dotnet.exe (see MAVIS.Worker/global.json).' }
+    $environment.DOTNET_ROOT=$values.MAVIS_DOTNET_ROOT
+    $toolPaths+=$values.MAVIS_DOTNET_ROOT
+}
+if ($toolPaths.Count) { $environment.PATH=(@($toolPaths)+@($env:PATH)) -join [IO.Path]::PathSeparator }
 function Is-Listening([int]$Port) { return [bool](Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue) }
 function Start-Hidden([string]$Name,[string]$File,[string[]]$Arguments,[string]$Directory) {
     $process=Start-Process -FilePath $File -ArgumentList $Arguments -WorkingDirectory $Directory -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logs "$Name.log") -RedirectStandardError (Join-Path $logs "$Name-error.log")
@@ -84,7 +96,7 @@ try {
     if ($Service -in @('All','Java')) {
         if (Is-Listening $javaPort) { Write-Host "Java port $javaPort already in use; leaving the running service unchanged." }
         else {
-            $java=(Get-Command java.exe -ErrorAction Stop).Source
+            $java=if($env:JAVA_HOME -and (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'bin\java.exe'))){Join-Path $env:JAVA_HOME 'bin\java.exe'}else{(Get-Command java.exe -ErrorAction Stop).Source}
             $be=Join-Path $repo 'MAVIS-Platform\mavis-be'
             $jar=Join-Path $be 'mavis-bootstrap\target\mavis-bootstrap-0.0.1-SNAPSHOT.jar'
             if ($Build -or -not (Test-Path -LiteralPath $jar)) { Push-Location $be; try { & '.\mvnw.cmd' '-DskipTests' 'package'; if ($LASTEXITCODE -ne 0) { throw 'Java build failed.' } } finally { Pop-Location } }
@@ -131,7 +143,7 @@ if ($WaitReady) {
         Write-Host "Waiting for $($probe[0])..."
         $ready=$false
         for($attempt=0;$attempt -lt 120;$attempt++) {
-            try { $null=Invoke-WebRequest $probe[1] -UseBasicParsing -TimeoutSec 3; $ready=$true; break } catch { Start-Sleep -Seconds 1 }
+            try { $null=Invoke-WebRequest $probe[1] -UseBasicParsing -TimeoutSec 30; $ready=$true; break } catch { Start-Sleep -Seconds 1 }
         }
         if (-not $ready) { throw "$($probe[0]) failed to become ready. Inspect .artifacts/local-run/$($probe[0].ToLower())*.log." }
         Write-Host "$($probe[0]) ready."

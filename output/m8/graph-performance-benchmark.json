@@ -1,0 +1,506 @@
+{
+  "benchmarkKind": "BROWSER_GRAPH_WORKLOAD_BENCHMARK",
+  "isBrowserWorkloadBenchmark": true,
+  "timestamp": "2026-10-25T07:31:40.459Z",
+  "environment": {
+    "browser": "Headless Chromium (Playwright)",
+    "viewport": "1440x960",
+    "componentUnderTest": "DependencyNetwork (svg[aria-label=\"Service dependency network\"]) on /architecture",
+    "runsPerScale": 5,
+    "statisticalMethodNote": "For n=5 runs per scale, median (sample[2]), min, max, mean, and raw samples are reported alongside pre-declared target thresholds."
+  },
+  "preDeclaredTargets": {
+    "100": {
+      "expandAllMedianTargetMs": 250,
+      "originFilterMedianTargetMs": 250,
+      "zoomInteractionMedianTargetMs": 100
+    },
+    "500": {
+      "expandAllMedianTargetMs": 600,
+      "originFilterMedianTargetMs": 350,
+      "zoomInteractionMedianTargetMs": 100
+    },
+    "2000": {
+      "expandAllMedianTargetMs": 1500,
+      "originFilterMedianTargetMs": 600,
+      "zoomInteractionMedianTargetMs": 100
+    }
+  },
+  "overallBenchmarkStatus": "PARTIAL_2000_NODE_ZOOM_EXCEEDS_100MS_FRAME_BUDGET",
+  "scales": [
+    {
+      "scaleNodes": 100,
+      "runs": 5,
+      "totalElements": 100,
+      "totalEdges": 160,
+      "mountedCollapsedSvgNodes": 10,
+      "mountedExpandedSvgNodes": 100,
+      "mountedExpandedSvgEdges": 160,
+      "gridLayoutModeActive": false,
+      "collapsedNavigationAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          3053,
+          3070,
+          2998,
+          3030,
+          3046
+        ],
+        "median": 3046,
+        "p50": 3046,
+        "max": 3070,
+        "p95NearestRank": 3053,
+        "p95": 3053,
+        "mean": 3039.4,
+        "min": 2998,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "expandAllLayoutMountAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          182.2,
+          167.8,
+          158.8,
+          144.1,
+          142.3
+        ],
+        "median": 158.8,
+        "p50": 158.8,
+        "max": 182.2,
+        "p95NearestRank": 167.8,
+        "p95": 167.8,
+        "mean": 159.04,
+        "min": 142.3,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "originFilterSwitchAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          190.1,
+          165.5,
+          171.8,
+          146.4,
+          175.5
+        ],
+        "median": 171.8,
+        "p50": 171.8,
+        "max": 190.1,
+        "p95NearestRank": 175.5,
+        "p95": 175.5,
+        "mean": 169.86,
+        "min": 146.4,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "zoomInteractionFramePaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          14.9,
+          15.3,
+          15.2,
+          15.6,
+          55.4
+        ],
+        "median": 15.3,
+        "p50": 15.3,
+        "max": 55.4,
+        "p95NearestRank": 15.6,
+        "p95": 15.6,
+        "mean": 23.28,
+        "min": 14.9,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "collapseLayoutMountAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          28.2,
+          28,
+          45,
+          28.7,
+          44.9
+        ],
+        "median": 28.7,
+        "p50": 28.7,
+        "max": 45,
+        "p95NearestRank": 44.9,
+        "p95": 44.9,
+        "mean": 34.96,
+        "min": 28,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "browserJsHeapUsedMb": {
+        "sampleSize": 5,
+        "samples": [
+          34.34,
+          40.14,
+          41.82,
+          43.48,
+          35.62
+        ],
+        "median": 40.14,
+        "p50": 40.14,
+        "max": 43.48,
+        "p95NearestRank": 41.82,
+        "p95": 41.82,
+        "mean": 39.08,
+        "min": 34.34,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "thresholdEvaluation": {
+        "targets": {
+          "expandAllMedianTargetMs": 250,
+          "originFilterMedianTargetMs": 250,
+          "zoomInteractionMedianTargetMs": 100
+        },
+        "expandAllPassed": true,
+        "originFilterPassed": true,
+        "zoomInteractionPassed": true,
+        "overallScaleStatus": "PASS"
+      }
+    },
+    {
+      "scaleNodes": 500,
+      "runs": 5,
+      "totalElements": 500,
+      "totalEdges": 800,
+      "mountedCollapsedSvgNodes": 50,
+      "mountedExpandedSvgNodes": 500,
+      "mountedExpandedSvgEdges": 800,
+      "gridLayoutModeActive": true,
+      "collapsedNavigationAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          3316,
+          3460,
+          3348,
+          3504,
+          3511
+        ],
+        "median": 3460,
+        "p50": 3460,
+        "max": 3511,
+        "p95NearestRank": 3504,
+        "p95": 3504,
+        "mean": 3427.8,
+        "min": 3316,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "expandAllLayoutMountAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          133.4,
+          152.1,
+          135.3,
+          131.6,
+          122.8
+        ],
+        "median": 133.4,
+        "p50": 133.4,
+        "max": 152.1,
+        "p95NearestRank": 135.3,
+        "p95": 135.3,
+        "mean": 135.04,
+        "min": 122.8,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "originFilterSwitchAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          75.8,
+          184.7,
+          92,
+          189.3,
+          188.1
+        ],
+        "median": 184.7,
+        "p50": 184.7,
+        "max": 189.3,
+        "p95NearestRank": 188.1,
+        "p95": 188.1,
+        "mean": 145.98,
+        "min": 75.8,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "zoomInteractionFramePaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          52,
+          58.7,
+          61.9,
+          61.4,
+          57.7
+        ],
+        "median": 58.7,
+        "p50": 58.7,
+        "max": 61.9,
+        "p95NearestRank": 61.4,
+        "p95": 61.4,
+        "mean": 58.34,
+        "min": 52,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "collapseLayoutMountAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          95.7,
+          105.3,
+          118.2,
+          112.2,
+          96.2
+        ],
+        "median": 105.3,
+        "p50": 105.3,
+        "max": 118.2,
+        "p95NearestRank": 112.2,
+        "p95": 112.2,
+        "mean": 105.52,
+        "min": 95.7,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "browserJsHeapUsedMb": {
+        "sampleSize": 5,
+        "samples": [
+          75.87,
+          79.44,
+          72.51,
+          62.84,
+          65.89
+        ],
+        "median": 72.51,
+        "p50": 72.51,
+        "max": 79.44,
+        "p95NearestRank": 75.87,
+        "p95": 75.87,
+        "mean": 71.31,
+        "min": 62.84,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "thresholdEvaluation": {
+        "targets": {
+          "expandAllMedianTargetMs": 600,
+          "originFilterMedianTargetMs": 350,
+          "zoomInteractionMedianTargetMs": 100
+        },
+        "expandAllPassed": true,
+        "originFilterPassed": true,
+        "zoomInteractionPassed": true,
+        "overallScaleStatus": "PASS"
+      }
+    },
+    {
+      "scaleNodes": 2000,
+      "runs": 5,
+      "totalElements": 2000,
+      "totalEdges": 3200,
+      "mountedCollapsedSvgNodes": 60,
+      "mountedExpandedSvgNodes": 2000,
+      "mountedExpandedSvgEdges": 3200,
+      "gridLayoutModeActive": true,
+      "collapsedNavigationAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          3608,
+          3707,
+          3603,
+          3575,
+          3729
+        ],
+        "median": 3608,
+        "p50": 3608,
+        "max": 3729,
+        "p95NearestRank": 3707,
+        "p95": 3707,
+        "mean": 3644.4,
+        "min": 3575,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "expandAllLayoutMountAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          541.4,
+          548.2,
+          558.5,
+          561.5,
+          546.3
+        ],
+        "median": 548.2,
+        "p50": 548.2,
+        "max": 561.5,
+        "p95NearestRank": 558.5,
+        "p95": 558.5,
+        "mean": 551.18,
+        "min": 541.4,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "originFilterSwitchAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          327.8,
+          293.8,
+          324.6,
+          326.8,
+          302.6
+        ],
+        "median": 324.6,
+        "p50": 324.6,
+        "max": 327.8,
+        "p95NearestRank": 326.8,
+        "p95": 326.8,
+        "mean": 315.12,
+        "min": 293.8,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "zoomInteractionFramePaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          418.6,
+          357.7,
+          377.3,
+          369.5,
+          378.5
+        ],
+        "median": 377.3,
+        "p50": 377.3,
+        "max": 418.6,
+        "p95NearestRank": 378.5,
+        "p95": 378.5,
+        "mean": 380.32,
+        "min": 357.7,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "collapseLayoutMountAndPaintMs": {
+        "sampleSize": 5,
+        "samples": [
+          302.6,
+          304.2,
+          303.9,
+          297.1,
+          313.5
+        ],
+        "median": 303.9,
+        "p50": 303.9,
+        "max": 313.5,
+        "p95NearestRank": 304.2,
+        "p95": 304.2,
+        "mean": 304.26,
+        "min": 297.1,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "browserJsHeapUsedMb": {
+        "sampleSize": 5,
+        "samples": [
+          100.91,
+          101.15,
+          110.19,
+          105.43,
+          113.06
+        ],
+        "median": 105.43,
+        "p50": 105.43,
+        "max": 113.06,
+        "p95NearestRank": 110.19,
+        "p95": 110.19,
+        "mean": 106.15,
+        "min": 100.91,
+        "statisticalNote": "n=5 small sample: primary metrics are samples, median, and max; p95NearestRank equals max at n=5 and is not a large-sample parametric 95th percentile."
+      },
+      "thresholdEvaluation": {
+        "targets": {
+          "expandAllMedianTargetMs": 1500,
+          "originFilterMedianTargetMs": 600,
+          "zoomInteractionMedianTargetMs": 100
+        },
+        "expandAllPassed": true,
+        "originFilterPassed": true,
+        "zoomInteractionPassed": false,
+        "overallScaleStatus": "EXCEEDS_100MS_INTERACTIVE_FRAME_BUDGET"
+      }
+    }
+  ],
+  "projectionMicrobenchmarkComparison": {
+    "benchmarkVersion": "m8-seeded-graph-projection-microbenchmark-v2",
+    "benchmarkKind": "PROJECTION_MICROBENCHMARK_ONLY",
+    "isBrowserWorkloadBenchmark": false,
+    "scopeNote": "Measures pure in-memory projectGraphModel() data projection only. For browser layout, SVG/DOM render, usable time, interaction latency, and JS heap memory, see browserWorkloadBenchmark in graph-browser-workload-benchmark-2026-10-25.json.",
+    "generatedAt": "2026-10-25T07:31:40.680Z",
+    "scales": [
+      {
+        "scaleNodes": 100,
+        "seed": 20261125,
+        "runs": 5,
+        "durationsMs": [
+          3.919,
+          4.059,
+          7.337,
+          4.588,
+          2.295
+        ],
+        "medianMs": 4.059,
+        "maxMs": 7.337,
+        "serviceContainersCount": 10,
+        "componentsCount": 90,
+        "totalEdgesCount": 160,
+        "collapsedElementsCount": 10,
+        "collapsedEdgesCount": 94,
+        "expandedElementsCount": 100,
+        "expandedEdgesCount": 159,
+        "readabilityCollapsed": {
+          "screenReadable": true,
+          "printReadable": true,
+          "minimumScreenFontPx": 12
+        }
+      },
+      {
+        "scaleNodes": 500,
+        "seed": 20261525,
+        "runs": 5,
+        "durationsMs": [
+          8.788,
+          7.769,
+          7.203,
+          6.054,
+          5.782
+        ],
+        "medianMs": 7.203,
+        "maxMs": 8.788,
+        "serviceContainersCount": 50,
+        "componentsCount": 450,
+        "totalEdgesCount": 800,
+        "collapsedElementsCount": 50,
+        "collapsedEdgesCount": 610,
+        "expandedElementsCount": 500,
+        "expandedEdgesCount": 800,
+        "readabilityCollapsed": {
+          "screenReadable": false,
+          "printReadable": false,
+          "minimumScreenFontPx": 8.73
+        }
+      },
+      {
+        "scaleNodes": 2000,
+        "seed": 20263025,
+        "runs": 5,
+        "durationsMs": [
+          23.291,
+          27.451,
+          27.503,
+          19.845,
+          19.54
+        ],
+        "medianMs": 23.291,
+        "maxMs": 27.503,
+        "serviceContainersCount": 60,
+        "componentsCount": 1940,
+        "totalEdgesCount": 3200,
+        "collapsedElementsCount": 60,
+        "collapsedEdgesCount": 2285,
+        "expandedElementsCount": 2000,
+        "expandedEdgesCount": 3200,
+        "readabilityCollapsed": {
+          "screenReadable": false,
+          "printReadable": false,
+          "minimumScreenFontPx": 8.73
+        }
+      }
+    ]
+  }
+}
