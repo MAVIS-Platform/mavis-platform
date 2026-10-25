@@ -32,26 +32,28 @@ export function ArchitectureWorkspace({ title = "Architecture" }: { title?: stri
         title={title}
         description="Explore the dependency graph or a C4 / 4+1 diagram. Select an element to open 3E."
       />
-      <ProjectSelector />
+      <div className="grid items-start gap-4 md:grid-cols-2">
+        <ProjectSelector />
+        {state.projectId && state.model && (
+          <ModelVersionSelector
+            models={state.models}
+            value={state.model.id}
+            onChange={state.selectModel}
+          />
+        )}
+      </div>
       {state.projectId && (
         <RequestState query={state.query} empty={state.models.length === 0}>
           {state.model && (
-            <>
-              <ModelVersionSelector
-                models={state.models}
-                value={state.model.id}
-                onChange={state.selectModel}
-              />
-              <ArchitecturePresentation
-                model={state.model}
-                selectedId={id}
-                systemName={project.data?.name}
-                onSelect={(elementId) => {
-                  if (state.model)
-                    setSelected(elementId ? { modelId: state.model.id, elementId } : null);
-                }}
-              />
-            </>
+            <ArchitecturePresentation
+              model={state.model}
+              selectedId={id}
+              systemName={project.data?.name}
+              onSelect={(elementId) => {
+                if (state.model)
+                  setSelected(elementId ? { modelId: state.model.id, elementId } : null);
+              }}
+            />
           )}
         </RequestState>
       )}

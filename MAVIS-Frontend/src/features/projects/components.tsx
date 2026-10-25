@@ -45,15 +45,13 @@ export function ProjectSelector() {
   const selection = useSelection();
   return (
     <RequestState query={query} empty={query.data?.length === 0}>
-      <div className="max-w-sm">
-        <SelectField
-          disabled={busy}
-          label="Selected project"
-          value={selection.projectId}
-          onChange={selection.setProjectId}
-          options={(query.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
-        />
-      </div>
+      <SelectField
+        disabled={busy}
+        label="Selected project"
+        value={selection.projectId}
+        onChange={selection.setProjectId}
+        options={(query.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
+      />
     </RequestState>
   );
 }
