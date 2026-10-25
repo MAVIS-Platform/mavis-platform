@@ -28,6 +28,8 @@ export function DrawioEditor({
   modelId,
   diagramId,
   title,
+  notation,
+  level,
   scope = "overview",
   theme = "clean",
   onSave,
@@ -38,6 +40,8 @@ export function DrawioEditor({
   modelId: string;
   diagramId: string;
   title: string;
+  notation?: string | undefined;
+  level?: string | undefined;
   scope?: string;
   theme?: DrawioTheme;
   onSave?: (xml: string) => Promise<void>;
@@ -148,6 +152,10 @@ export function DrawioEditor({
           setError("The generated XML cannot be opened by draw.io.");
           return;
         }
+        const isSequence =
+          notation === "UML_SEQUENCE" ||
+          latest.current.includes("mavisInteraction=") ||
+          latest.current.includes("mavisScenario=");
         send({
           action: "load",
           xml: latest.current,
@@ -155,7 +163,9 @@ export function DrawioEditor({
           autosave: 1,
           fit: 1,
           layout:
-            !restored && !latest.current.includes(`mavisRuleVersion="${RULE_VERSION}"`)
+            !restored &&
+            !isSequence &&
+            !latest.current.includes(`mavisRuleVersion="${RULE_VERSION}"`)
               ? DRAWIO_LAYOUT
               : undefined,
           noExitBtn: 1,
@@ -165,9 +175,13 @@ export function DrawioEditor({
         window.clearTimeout(timeout);
         setReady(true);
         setError("");
+        const isSequence =
+          notation === "UML_SEQUENCE" ||
+          latest.current.includes("mavisInteraction=") ||
+          latest.current.includes("mavisScenario=");
         setStatus(
           restored
-            ? latest.current.includes(`mavisRuleVersion="${RULE_VERSION}"`)
+            ? isSequence || latest.current.includes(`mavisRuleVersion="${RULE_VERSION}"`)
               ? "Browser draft restored"
               : "Draft uses earlier drawing rules. Regenerate to apply the updated labels and layout; existing edits stay in this draft until then."
             : "Ready to edit · changes are saved as a browser draft",
@@ -193,9 +207,38 @@ export function DrawioEditor({
             localStorage.setItem(storageKey! + ":recovery", data.xml);
             setRecovery(true);
             if (command === "relayout") {
-              const [notation, level] = title.split(" · ");
+              if (
+                notation === "UML_SEQUENCE" ||
+                data.xml.includes("mavisInteraction=") ||
+                data.xml.includes("mavisScenario=")
+              ) {
+                setStatus("Re-aligning UML Sequence lifelines and timeline…");
+                const { relayoutSequenceDrawioXml } = await import("./scenario-design");
+                const content = relayoutSequenceDrawioXml(data.xml);
+                if (saveDraft(content))
+                  send({
+                    action: "load",
+                    xml: content,
+                    title: `${title}.drawio`,
+                    autosave: 1,
+                    fit: 1,
+                    noExitBtn: 1,
+                  });
+                setProcessing(false);
+                return;
+              }
+              // M1 review: notation/level must come from canonical view metadata, never from the
+              // reader-facing title ("C4 · Container" would flatten level to the wrong case and
+              // silently drop boundary grouping on relayout).
               const diagram = projectDiagram(
-                extractDraftDocument(data.xml, modelId, diagramId, notation!, level!, scope),
+                extractDraftDocument(
+                  data.xml,
+                  modelId,
+                  diagramId,
+                  notation,
+                  level,
+                  scope,
+                ),
               );
               setStatus("Applying drawing rules locally…");
               const { layoutLocally } = await import("./drawio-local-layout");
@@ -273,7 +316,7 @@ export function DrawioEditor({
       window.removeEventListener("message", receive);
       window.clearTimeout(timeout);
     };
-  }, [storageKey, attempt, title, modelId, diagramId, scope, preferProvidedXml]);
+  }, [storageKey, attempt, title, notation, level, modelId, diagramId, scope, preferProvidedXml]);
   useEffect(() => {
     if (!ready || previousTheme.current === theme) return;
     previousTheme.current = theme;

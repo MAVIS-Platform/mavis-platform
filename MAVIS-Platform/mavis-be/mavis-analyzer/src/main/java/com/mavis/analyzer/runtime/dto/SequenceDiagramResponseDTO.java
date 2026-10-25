@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -18,11 +19,25 @@ public class SequenceDiagramResponseDTO {
 
     private UUID diagramId;
     private UUID modelVersionId;
+    private UUID baseModelVersionId;
+    private UUID sourceSnapshotId;
+    private Integer modelRevision;
+    private Integer baseModelRevision;
+    private String modelOrigin;
     private UUID runtimeSessionId;
     private String notation;
     private String level;
+    private String traceStatus;
+    private String mappingStatus;
+    private OffsetDateTime startedAt;
+    private OffsetDateTime completedAt;
+
+    @Builder.Default
+    private List<String> limitations = new ArrayList<>();
+
     private JsonNode layoutJson;
 
     @Builder.Default
     private List<SequenceStepDTO> steps = new ArrayList<>();
 }
+

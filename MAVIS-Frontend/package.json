@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --incremental false",
-    "test": "node --test tests/architecture.test.cjs tests/java-contract.test.cjs",
+    "test": "node --test tests/architecture.test.cjs tests/java-contract.test.cjs tests/edge-semantics.test.cjs tests/sequence-semantics.test.cjs tests/uml-m4-m8.test.cjs",
+    "test:connected": "node --test tests/connected-pipeline.test.cjs",
     "test:mainflow": "node scripts/check-mainflow.mjs",
     "format": "prettier --write ."
   },
@@ -81,6 +82,7 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "next": "^15.5.2",
+    "playwright": "1.64.1",
     "prettier": "^3.7.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.56.1"

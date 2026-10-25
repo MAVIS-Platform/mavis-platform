@@ -16,4 +16,9 @@ public class NodeDTO {
     private String name;
     private String type;
     private String sourcePath;
+    // Additive metadata passed through from ModelElement.properties (S2a). Null when the key is
+    // missing, non-textual, or blank; never inferred from name/languageStack/kind; no defaults.
+    private String protocol;
+    private String transportAuthority;
+    private String resolutionIssue;
 }

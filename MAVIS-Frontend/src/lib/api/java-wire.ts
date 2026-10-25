@@ -6,6 +6,7 @@ import {
   evidenceSchema,
   modelSchema,
   modelSummarySchema,
+  type Project,
 } from "@/types/domain";
 import { ApiError } from "@/lib/errors/api-error";
 export const object = z.record(z.unknown());
@@ -44,6 +45,66 @@ export function projectView(raw: unknown) {
     updatedAt: p.updatedAt ?? null,
     services: null,
     runtimeSupported: null,
+  });
+}
+const javaJobLite = z.object({
+  status: z.string(),
+  analysisState: nullableText,
+});
+const processingJobStatuses = new Set([
+  "PENDING",
+  "QUEUED",
+  "DISPATCHED",
+  "RUNNING",
+  "PROCESSING",
+  "CANCELLING",
+]);
+const failedJobStatuses = new Set(["FAILED", "TIMED_OUT", "TIMEOUT"]);
+const javaModelLite = z.object({
+  id: z.string().uuid(),
+  isLatestValid: z.boolean().nullish(),
+  revision: z.number().int(),
+});
+export function projectStatusFromJobs(rows: unknown[]): Project["status"] {
+  const jobs = rows.flatMap((row) => {
+    const parsed = javaJobLite.safeParse(row);
+    return parsed.success ? [parsed.data] : [];
+  });
+  const upper = (value: string | null | undefined) => value?.toUpperCase() ?? "";
+  if (jobs.some((j) => processingJobStatuses.has(upper(j.status)))) return "processing";
+  if (jobs.some((j) => upper(j.status) === "COMPLETED" && upper(j.analysisState) !== "PARTIAL"))
+    return "ready";
+  if (jobs.some((j) => upper(j.analysisState) === "PARTIAL")) return "partial";
+  if (jobs.some((j) => failedJobStatuses.has(upper(j.status)))) return "failed";
+  return "unknown";
+}
+export function latestModelSummaryId(models: unknown[]): string | null {
+  const rows = models.flatMap((raw) => {
+    const parsed = javaModelLite.safeParse(raw);
+    return parsed.success ? [parsed.data] : [];
+  });
+  const latestValid = rows
+    .filter((m) => m.isLatestValid === true)
+    .sort((a, b) => b.revision - a.revision)[0];
+  const fallback = rows.slice().sort((a, b) => b.revision - a.revision)[0];
+  return (latestValid ?? fallback)?.id ?? null;
+}
+export function serviceCountFromGraph(graph: unknown): number | null {
+  const parsed = z.object({ nodes: z.array(z.object({ type: z.string() })) }).safeParse(graph);
+  if (!parsed.success) return null;
+  return parsed.data.nodes.filter((n) => n.type === "SERVICE_CONTAINER").length;
+}
+export function projectOverviewView(
+  raw: unknown,
+  jobs: unknown,
+  graph: unknown,
+  sessions: unknown,
+) {
+  return projectSchema.parse({
+    ...projectView(raw),
+    status: projectStatusFromJobs(Array.isArray(jobs) ? jobs : []),
+    services: graph === null ? null : serviceCountFromGraph(graph),
+    runtimeSupported: Array.isArray(sessions) ? (sessions.length > 0 ? true : null) : null,
   });
 }
 export const javaSnapshot = z.object({
@@ -146,6 +207,17 @@ export function evidenceView(raw: unknown) {
     complete: null,
   });
 }
+// Node metadata precedence (S2b): a non-blank graph value wins (already normalized server-side);
+// an explicit graph null means "unknown" and hides any stale detail value; an absent graph field
+// (legacy backend without the S2a fields) falls back to the same key in detail.properties only
+// when it is a non-blank string. Blank or non-string values never become display data.
+function resolveNodeMetadata(graphValue: unknown, detailValue: unknown): string | null {
+  if (typeof graphValue === "string") return graphValue.trim() === "" ? null : graphValue;
+  if (graphValue === null) return null;
+  if (graphValue === undefined && typeof detailValue === "string" && detailValue.trim() !== "")
+    return detailValue;
+  return null;
+}
 export function modelView(metadata: unknown, graph: unknown, details: unknown) {
   const summary = modelSummary(metadata);
   const g = z
@@ -156,6 +228,12 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
           name: z.string(),
           type: z.string(),
           sourcePath: nullableText,
+          // S2b: node metadata from the graph API (additive, nullable on the server). Parsed
+          // leniently here and normalized by resolveNodeMetadata — a wrong type or blank value
+          // becomes null instead of failing the whole graph or faking a display value.
+          protocol: z.unknown(),
+          transportAuthority: z.unknown(),
+          resolutionIssue: z.unknown(),
         }),
       ),
       edges: z.array(
@@ -166,6 +244,9 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
           kind: z.string(),
           originLayer: z.string().optional(),
           resolutionStatus: z.string().optional(),
+          evidenceCount: z.number().int().nonnegative().nullable().optional(),
+          evidenceIds: z.array(z.string().uuid()).optional(),
+          properties: object.nullish(),
         }),
       ),
     })
@@ -190,7 +271,13 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
     elements: g.nodes.map((n) => {
       const detail = byId.get(n.id);
       const props = object.safeParse(detail?.properties);
-      const properties = props.success ? props.data : {};
+      const detailProps = props.success ? props.data : {};
+      const properties: Record<string, unknown> = {
+        ...detailProps,
+        protocol: resolveNodeMetadata(n.protocol, detailProps["protocol"]),
+        transportAuthority: resolveNodeMetadata(n.transportAuthority, detailProps["transportAuthority"]),
+        resolutionIssue: resolveNodeMetadata(n.resolutionIssue, detailProps["resolutionIssue"]),
+      };
       const layer = ["edge", "domain", "platform", "data"].includes(String(properties["layer"]))
         ? properties["layer"]
         : "unclassified";
@@ -219,6 +306,9 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
       uncertain: e.resolutionStatus !== "RESOLVED",
       originLayer: e.originLayer,
       resolutionStatus: e.resolutionStatus ?? "UNKNOWN",
+      evidenceCount: e.evidenceCount ?? null,
+      evidenceIds: e.evidenceIds,
+      properties: e.properties ?? undefined,
       evidence: [],
     })),
   });

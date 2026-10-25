@@ -60,12 +60,23 @@ export function projectDiagram(raw: unknown, containerId?: string): DiagramDocum
     !nodes.some((node) => node.id === containerId && kindOf(node) === "SERVICE_CONTAINER")
   )
     throw new Error("Invalid component container scope");
+  const byId = new Map(nodes.map((node) => [node.id, node]));
   const focus = new Set(
-    nodes.filter((node) => node.parentId === containerId).map((node) => node.id),
+    nodes
+      .filter((node) => node.parentId === containerId && kindOf(node) !== "CLASS_INTERFACE")
+      .map((node) => node.id),
   );
   const visible = new Set([...focus, containerId]);
   for (const edge of edges) {
     const { from, to } = ends(edge);
+    const fromNode = byId.get(from),
+      toNode = byId.get(to);
+    if (
+      (fromNode && kindOf(fromNode) === "CLASS_INTERFACE") ||
+      (toNode && kindOf(toNode) === "CLASS_INTERFACE")
+    ) {
+      continue;
+    }
     if (focus.has(from) || focus.has(to)) {
       visible.add(from);
       visible.add(to);
@@ -113,6 +124,41 @@ const relations: Record<string, string> = {
 export function relationLabel(edge: DiagramDocument["layoutJson"]["edges"][number]) {
   const raw = edge.relationType ?? edge.type ?? "";
   return relations[raw] ?? (raw.replaceAll("_", " ") || "Unclassified relationship");
+}
+// S2e: C4 Container messaging labels may append the channel protocol in brackets. The protocol
+// comes ONLY from the MESSAGE_CHANNEL endpoint's properties.protocol (non-blank string) — never
+// from the channel name, languageStack, transportAuthority, relation kind, or a default. The
+// edge direction stays the current contract (publish: producer→channel; subscribe: channel→consumer).
+export function containerDatabaseLabel(
+  edge: DiagramDocument["layoutJson"]["edges"][number],
+  nodesById: Map<string, DiagramNode>,
+): string | null {
+  const type = edge.relationType ?? edge.type ?? "";
+  if (type !== "DATABASE_ACCESS" && type !== "DATABASE_QUERY") return null;
+  const dbId = ends(edge).to;
+  const db = nodesById.get(dbId);
+  if (!db || kindOf(db) !== "DATABASE") return null;
+  const props = (db as Record<string, unknown>)["properties"];
+  const protocol =
+    props && typeof props === "object" ? (props as Record<string, unknown>)["protocol"] : undefined;
+  if (typeof protocol !== "string" || protocol.trim() === "") return null;
+  return `${relationLabel(edge)} [${protocol.trim()}]`;
+}
+
+export function containerMessagingLabel(
+  edge: DiagramDocument["layoutJson"]["edges"][number],
+  nodesById: Map<string, DiagramNode>,
+): string | null {
+  const type = edge.relationType ?? edge.type ?? "";
+  if (type !== "MESSAGE_PUBLISH" && type !== "MESSAGE_SUBSCRIBE") return null;
+  const channelId = type === "MESSAGE_PUBLISH" ? ends(edge).to : ends(edge).from;
+  const channel = nodesById.get(channelId);
+  if (!channel || kindOf(channel) !== "MESSAGE_CHANNEL") return null;
+  const props = (channel as Record<string, unknown>)["properties"];
+  const protocol =
+    props && typeof props === "object" ? (props as Record<string, unknown>)["protocol"] : undefined;
+  if (typeof protocol !== "string" || protocol.trim() === "") return null;
+  return `${relationLabel(edge)} [${protocol}]`;
 }
 export function wrapText(text: string, max = 30) {
   const result: string[] = [];

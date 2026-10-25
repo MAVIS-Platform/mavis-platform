@@ -64,11 +64,46 @@ export function ModelVersionSelector({
 
 export function GraphLegend() {
   return (
-    <div className="flex flex-wrap gap-2 text-xs">
-      <Badge variant="source">Source-inferred</Badge>
-      <Badge variant="runtime">Runtime-observed</Badge>
-      <Badge variant="secondary">Declared configuration</Badge>
-      <Badge variant="warning">Uncertain mapping</Badge>
+    <div className="space-y-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold text-muted-foreground">Elements:</span>
+        <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground" title="Rectangle">
+          <span className="inline-block h-2.5 w-3 border border-current rounded-xs" />
+          [SVC] Service
+        </span>
+        <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground" title="Component shape">
+          <span className="inline-block h-2.5 w-3 border border-dashed border-current rounded-xs" />
+          [COMP] Component
+        </span>
+        <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground" title="Cylinder">
+          <span className="inline-block h-2.5 w-2.5 border border-current rounded-full" />
+          [DB] Database
+        </span>
+        <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground" title="Process queue">
+          <span className="inline-block h-2.5 w-3 border-x-2 border-y border-current" />
+          [QUEUE] Channel / Broker
+        </span>
+        <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-muted text-muted-foreground" title="External boundary">
+          [EXT] External System
+        </span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-semibold text-muted-foreground">Relationships &amp; Origins:</span>
+        <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
+          <span className="font-bold">───</span> Solid (Source-inferred call)
+        </span>
+        <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
+          <span className="font-bold">- - -</span> Dashed (Deployment / Declared)
+        </span>
+        <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
+          <span className="font-bold">···</span> Dotted (Uncertain mapping)
+        </span>
+        <Badge variant="source">[SOURCE] Inferred</Badge>
+        <Badge variant="secondary">[CONFIG] Declared</Badge>
+        <Badge variant="outline">[DEPLOY] Deployment</Badge>
+        <Badge variant="runtime">[RUNTIME] Observed</Badge>
+        <Badge variant="warning">[UNCERTAIN] Unresolved</Badge>
+      </div>
     </div>
   );
 }
@@ -245,6 +280,25 @@ export function ElementDetailsPanel({
             Origin: {edge.originLayer ?? "unknown"} · Resolution:{" "}
             {edge.resolutionStatus ?? "unknown"}
           </p>
+          <p className="text-xs text-muted-foreground">
+            Bằng chứng liên kết:{" "}
+            <span className="font-medium text-foreground">
+              {edge.evidenceCount === null || edge.evidenceCount === undefined
+                ? "— (chưa xác minh / chưa tải)"
+                : edge.evidenceCount === 0
+                  ? "0 (đã xác minh không có bằng chứng)"
+                  : `${edge.evidenceCount} căn cứ xác thực${
+                      edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 1
+                        ? ` (tổng hợp phân biệt từ ${edge.underlyingEdgeIds.length} quan hệ con)`
+                        : ""
+                    }`}
+            </span>
+          </p>
+          {edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 1 && (
+            <p className="text-xs text-muted-foreground">
+              Quan hệ gộp (${edge.underlyingEdgeIds.length} quan hệ thành phần)
+            </p>
+          )}
           {edge.uncertain && <Badge variant="warning">Uncertain mapping</Badge>}
           {resolved}
         </>
@@ -361,10 +415,25 @@ export function ArchitectureGraph({
         <Button variant="outline" onClick={() => setShowComponents((value) => !value)}>
           {showComponents ? "Collapse service internals" : "Expand service internals"}
         </Button>
-        <p className="text-xs text-muted-foreground">
-          {projection.filteredRelationships} relationships outside this filter ·{" "}
-          {projection.internalRelationships} internal relationships available when expanded
-        </p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            <strong className="text-foreground">Source model:</strong> {model.elements.length} elements · {model.edges.length} relationships
+          </span>
+          <span>
+            <strong className="text-foreground">Displayed in view:</strong> {filtered.length} elements · {connections.length} visible connections
+          </span>
+          <span>
+            <strong className="text-foreground">Filtered:</strong> {projection.filteredRelationships} by origin ({origin}) · {Math.max(0, displayed.edges.length - connections.length)} by layer/search
+          </span>
+          <span>
+            <strong className="text-foreground">Internal:</strong> {projection.internalRelationships} hidden within collapsed containers
+          </span>
+          {large && (
+            <span className="font-medium text-amber-600 dark:text-amber-400">
+              (Canvas layout omitted by safety limit &gt;300 elements / &gt;1000 connections; inspect via list below)
+            </span>
+          )}
+        </div>
       </div>
       <div ref={viewport}>
         {!filtered.length ? (
@@ -458,7 +527,20 @@ export function ArchitectureGraph({
                         strokeWidth={selectedId === node.id ? 2 : 1}
                       />
                       <text x={12} y={25} fill="var(--foreground)" fontSize={12}>
-                        {node.name.slice(0, 23)}
+                        <tspan fill="var(--muted-foreground)" fontFamily="monospace" fontSize={10} fontWeight="bold">
+                          {node.elementType === "SERVICE_CONTAINER"
+                            ? "[SVC] "
+                            : node.elementType === "COMPONENT"
+                              ? "[COMP] "
+                              : node.elementType === "DATABASE"
+                                ? "[DB] "
+                                : node.elementType === "MESSAGE_CHANNEL" || node.elementType === "QUEUE_BROKER"
+                                  ? "[QUEUE] "
+                                  : node.elementType === "EXTERNAL_SYSTEM"
+                                    ? "[EXT] "
+                                    : `[${(node.elementType ?? node.layer ?? "NODE").slice(0, 4).toUpperCase()}] `}
+                        </tspan>
+                        {node.name.slice(0, 19)}
                       </text>
                       <text x={12} y={45} fill="var(--muted-foreground)" fontSize={11}>
                         {Number(node.properties?.["componentCount"] ?? 0) > 0
@@ -519,7 +601,7 @@ export function ArchitectureGraph({
                 />
               )}
               <SelectField
-                label="Inspect relationship"
+                label={`Inspect relationship (${connections.length > 1000 ? "1000 / " + connections.length + " - dùng bộ lọc để xem tiếp" : connections.length})`}
                 value={connections.some((e) => e.id === selectedId) ? (selectedId ?? "") : ""}
                 onChange={onSelect}
                 options={connections.slice(0, 1000).map((e) => ({
@@ -527,6 +609,11 @@ export function ArchitectureGraph({
                   label: `${byId.get(e.from)?.name ?? e.from} → ${byId.get(e.to)?.name ?? e.to} · ${e.protocol}`,
                 }))}
               />
+              {connections.length > 1000 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  Dropdown đang hiển thị 1000 / {connections.length} quan hệ để đảm bảo hiệu năng. Hãy dùng bộ lọc Layer hoặc Origin để thu hẹp phạm vi.
+                </p>
+              )}
             </div>
           </>
         )}

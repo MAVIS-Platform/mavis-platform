@@ -6,6 +6,9 @@ import { z } from "zod";
 import { javaRequest } from "./java-client";
 import {
   projectView,
+  projectOverviewView,
+  latestModelSummaryId,
+  javaProject,
   snapshotView,
   modelSummary,
   jobView,
@@ -53,6 +56,43 @@ export async function signIn(input: unknown, signal?: AbortSignal, google = fals
   return {
     token: raw.token,
     session: { user: userView({ id: raw.userId, fullName: raw.fullName, role: raw.role }) },
+  };
+}
+export function runtimeSequence(raw: unknown, expectedSessionId?: string) {
+  const value = z
+    .object({
+      runtimeSessionId: z.string().uuid(),
+      modelVersionId: z.string().uuid(),
+      baseModelVersionId: z.string().uuid().nullish(),
+      sourceSnapshotId: z.string().uuid().nullish(),
+      modelRevision: z.number().nullish(),
+      baseModelRevision: z.number().nullish(),
+      modelOrigin: z.string().nullish(),
+      traceStatus: z.string().nullish(),
+      mappingStatus: z.string().nullish(),
+      startedAt: z.union([z.string(), z.number()]).nullish(),
+      completedAt: z.union([z.string(), z.number()]).nullish(),
+      limitations: z.array(z.string()).nullish(),
+      steps: z.array(object),
+    })
+    .parse(raw);
+  if (expectedSessionId && value.runtimeSessionId !== expectedSessionId) {
+    throw new ApiError("contract", 502);
+  }
+  return {
+    sessionId: value.runtimeSessionId,
+    modelId: value.modelVersionId,
+    baseModelId: value.baseModelVersionId ?? null,
+    snapshotId: value.sourceSnapshotId ?? null,
+    modelRevision: value.modelRevision ?? null,
+    baseModelRevision: value.baseModelRevision ?? null,
+    modelOrigin: value.modelOrigin ?? null,
+    traceStatus: value.traceStatus ?? null,
+    mappingStatus: value.mappingStatus ?? null,
+    startedAt: value.startedAt ?? null,
+    completedAt: value.completedAt ?? null,
+    limitations: value.limitations ?? [],
+    steps: value.steps,
   };
 }
 export async function executeJava(
@@ -266,6 +306,7 @@ export async function executeJava(
         projectId: z.string().uuid(),
         sourceSnapshotId: z.string().uuid(),
         modelVersionId: z.string().uuid().nullish(),
+        enrichedModelVersionId: z.string().uuid().nullish(),
         scenarioName: z.string().nullish(),
         profileName: z.string().nullish(),
         executionStatus: z.string().nullish(),
@@ -273,6 +314,7 @@ export async function executeJava(
         evidenceStatus: z.string().nullish(),
         cleanupStatus: z.string().nullish(),
         traceQuality: z.string().nullish(),
+        traceStatus: z.string().nullish(),
         mappingStatus: z.string().nullish(),
         createdAt: z.string().nullish(),
         startedAt: z.string().nullish(),
@@ -284,6 +326,7 @@ export async function executeJava(
       projectId: value.projectId,
       snapshotId: value.sourceSnapshotId,
       modelId: value.modelVersionId ?? null,
+      enrichedModelId: value.enrichedModelVersionId ?? null,
       scenarioName: value.scenarioName ?? null,
       profileName: value.profileName ?? null,
       executionStatus: value.executionStatus ?? "UNKNOWN",
@@ -291,6 +334,7 @@ export async function executeJava(
       evidenceStatus: value.evidenceStatus ?? "UNKNOWN",
       cleanupStatus: value.cleanupStatus ?? "UNKNOWN",
       traceQuality: value.traceQuality ?? "UNKNOWN",
+      traceStatus: value.traceStatus ?? "NONE",
       mappingStatus: value.mappingStatus ?? "UNKNOWN",
       createdAt: value.createdAt ?? null,
       startedAt: value.startedAt ?? null,
@@ -536,15 +580,7 @@ export async function executeJava(
       };
     case "runtimeSequence": {
       const sessionId = id(input, "sessionId");
-      const value = z
-        .object({
-          runtimeSessionId: z.string().uuid(),
-          modelVersionId: z.string().uuid(),
-          steps: z.array(object),
-        })
-        .parse(await get(`analyzer/runtime/sessions/${sessionId}/sequence`));
-      if (value.runtimeSessionId !== sessionId) throw new ApiError("contract", 502);
-      return { sessionId, modelId: value.modelVersionId, steps: value.steps };
+      return runtimeSequence(await get(`analyzer/runtime/sessions/${sessionId}/sequence`), sessionId);
     }
     case "runtimeReadSessions":
       return list
@@ -581,6 +617,24 @@ export async function executeJava(
     }
     case "projects":
       return list.parse(await get("projects")).map(projectView);
+    case "projectOverviews": {
+      const rows = list.parse(await get("projects"));
+      const enrich = async (raw: unknown) => {
+        const projectId = javaProject.parse(raw).id;
+        const jobs = await get(`analyzer/projects/${projectId}/jobs`).catch(() => null);
+        const models = await get(`analyzer/projects/${projectId}/models`).catch(() => null);
+        let graph: unknown = null;
+        if (Array.isArray(models) && models.length > 0) {
+          const modelId = latestModelSummaryId(models);
+          if (modelId) graph = await get(`analyzer/models/${modelId}/graph`).catch(() => null);
+        }
+        const sessions = await get(`analyzer/projects/${projectId}/runtime-sessions`).catch(
+          () => null,
+        );
+        return projectOverviewView(raw, jobs, graph, sessions);
+      };
+      return Promise.all(rows.map(enrich));
+    }
     case "project":
       return projectView(await get(`projects/${id(input, "projectId")}`));
     case "createProject":
@@ -738,7 +792,9 @@ export async function executeJava(
         .object({ modelVersionId: z.string().uuid(), content: z.string() })
         .parse(await get(`analyzer/diagrams/${component.id}/export?format=JSON`));
       if (exported.modelVersionId !== modelId) throw new ApiError("contract", 502);
-      const pack = planArchitectureViews(JSON.parse(exported.content));
+      const pack = planArchitectureViews(JSON.parse(exported.content), {
+        systemName: typeof input["systemName"] === "string" ? input["systemName"] : undefined,
+      });
       if (pack.modelId !== modelId) throw new ApiError("contract", 502);
       if (operation === "architectureViews") return pack;
       const view = pack.views.find((view) => view.id === input["viewId"]);

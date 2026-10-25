@@ -13,15 +13,35 @@ export type ArchitectureView = {
   kind: "overview" | "container" | "component" | "deployment" | "messaging";
   document: DiagramDocument;
 };
+// S2d system-scope classification for the C4 Container view. Membership reuses existing node
+// metadata only (elementType + properties.resourceRole) — never layout position, name patterns
+// or connections. Unresolved ownership stays outside the boundary with an explicit warning.
+// This classification is MAVISS projection policy based on the verified model contract — it is
+// NOT a universal C4 rule that every SERVICE_CONTAINER/MESSAGE_CHANNEL belongs to one system.
+const SYSTEM_BOUNDARY_ID = "system:boundary";
+const insideSystemScope = (node: DiagramDocument["layoutJson"]["nodes"][number]) => {
+  const kind = kindOf(node);
+  if (kind === "SERVICE_CONTAINER" || kind === "MESSAGE_CHANNEL") return true;
+  const role =
+    node["properties"] && typeof node["properties"] === "object"
+      ? (node["properties"] as Record<string, unknown>)["resourceRole"]
+      : undefined;
+  return kind === "DATABASE" && role === "LOGICAL_DATASTORE";
+};
+const outsideAsExternal = (node: DiagramDocument["layoutJson"]["nodes"][number]) =>
+  ["EXTERNAL_SYSTEM", "PERSON"].includes(kindOf(node));
 const deployment = (edge: DiagramDocument["layoutJson"]["edges"][number]) =>
   edge.relationType === "DECLARED_COMPOSE" ||
   edge.type === "DECLARED_COMPOSE" ||
   edge.originLayer === "DEPLOYMENT";
-export function planArchitectureViews(raw: unknown) {
+export function planArchitectureViews(
+  raw: unknown,
+  options?: { systemName?: string | undefined },
+) {
   const model = diagramDocument.parse(raw);
   const nodes = model.layoutJson.nodes;
   const byId = new Map(nodes.map((node) => [node.id, node]));
-  const roots = nodes.filter((node) => kindOf(node) !== "COMPONENT" && !node.parentId);
+  const roots = nodes.filter((node) => !node.parentId);
   const owner = (id: string): string => {
     const seen = new Set<string>();
     while (byId.get(id)?.parentId && !seen.has(id)) {
@@ -37,12 +57,16 @@ export function planArchitectureViews(raw: unknown) {
     selectedNodes: typeof nodes,
     edges: typeof model.layoutJson.edges,
   ): DiagramDocument {
+    // S2d review: includedNodeIds must contain source element IDs only. Synthetic view-local
+    // nodes (the system boundary) stay in the layout but are listed in syntheticNodeIds instead.
     const visible = new Set(
-      selectedNodes.flatMap((node) =>
-        Array.isArray(node["underlyingNodeIds"])
-          ? (node["underlyingNodeIds"] as string[])
-          : [node.id],
-      ),
+      selectedNodes
+        .filter((node) => node["viewLocal"] !== true)
+        .flatMap((node) =>
+          Array.isArray(node["underlyingNodeIds"])
+            ? (node["underlyingNodeIds"] as string[])
+            : [node.id],
+        ),
     );
     const includedEdges = new Set(
       edges.flatMap((edge) =>
@@ -108,6 +132,47 @@ export function planArchitectureViews(raw: unknown) {
   );
   for (const node of nodes) if (node.parentId) applicationIds.add(owner(node.id));
   const applicationRoots = roots.filter((node) => applicationIds.has(node.id));
+  // S2d: C4 Container system boundary. Internal containers sit inside a named system boundary;
+  // external systems/persons stay outside; ownership that the model does not establish is left
+  // outside with an explicit warning instead of a boundary that would assert fake membership.
+  const containerSelection = applicationRoots.length ? applicationRoots : roots;
+  const insideNodes = containerSelection.filter(insideSystemScope);
+  const externalNodes = containerSelection.filter(outsideAsExternal);
+  const unresolvedNodes = containerSelection.filter(
+    (node) => !insideSystemScope(node) && !outsideAsExternal(node),
+  );
+  const boundaryName = options?.systemName?.trim() || "Analyzed system";
+  const containerNodes = insideNodes.length
+    ? [
+        ...insideNodes.map((node) => ({ ...node, parentId: SYSTEM_BOUNDARY_ID })),
+        {
+          id: SYSTEM_BOUNDARY_ID,
+          name: boundaryName,
+          kind: "SYSTEM_BOUNDARY",
+          description: "Software system · analyzed source scope",
+          viewLocal: true,
+        },
+        ...externalNodes,
+        ...unresolvedNodes,
+      ]
+    : containerSelection;
+  // Legend carries a summarized list; the full name list stays traceable in
+  // systemBoundary.unresolvedIds and in the pack limitations.
+  const summarizedNames = unresolvedNodes
+    .slice(0, 3)
+    .map((node) => node.name)
+    .join(", ");
+  const remaining = unresolvedNodes.length - Math.min(3, unresolvedNodes.length);
+  const scopeWarning = !insideNodes.length
+    ? "System scope could not be determined for this model; no system boundary is drawn."
+    : unresolvedNodes.length
+      ? `Ownership unresolved for ${unresolvedNodes.length} element(s) left outside the system boundary: ${summarizedNames}${remaining > 0 ? ` (+${remaining} more; full list in view metadata)` : ""}.`
+      : undefined;
+  const scopeWarningDetail = unresolvedNodes.length
+    ? `Ownership unresolved for ${unresolvedNodes.length} element(s) left outside the system boundary: ${unresolvedNodes
+        .map((node) => node.name)
+        .join(", ")}.`
+    : undefined;
   const views: ArchitectureView[] = [
     {
       id: "containers",
@@ -115,13 +180,32 @@ export function planArchitectureViews(raw: unknown) {
       purpose:
         "Applications, data stores and their source/configuration interactions. Startup ordering is shown separately.",
       kind: "container",
-      document: document(
-        "containers",
-        "C4",
-        "CONTAINER",
-        applicationRoots.length ? applicationRoots : roots,
-        [...aggregated.values()],
-      ),
+      document: (() => {
+        const containerNodeIds = new Set(containerNodes.map((n) => n.id));
+        const validEdges = [...aggregated.values()].filter((edge) => {
+          const { from, to } = ends(edge);
+          return containerNodeIds.has(from) && containerNodeIds.has(to);
+        });
+        const doc = document(
+          "containers",
+          "C4",
+          "CONTAINER",
+          containerNodes,
+          validEdges,
+        );
+        if (scopeWarning) doc["scopeWarning"] = scopeWarning;
+        if (insideNodes.length) {
+          doc["syntheticNodeIds"] = [SYSTEM_BOUNDARY_ID];
+          doc["systemBoundary"] = {
+            id: SYSTEM_BOUNDARY_ID,
+            name: boundaryName,
+            scope: "Software system · analyzed source scope",
+            memberIds: insideNodes.map((node) => node.id),
+            unresolvedIds: unresolvedNodes.map((node) => node.id),
+          };
+        }
+        return doc;
+      })(),
     },
   ];
   const applications = applicationRoots.filter((node) => kindOf(node) === "SERVICE_CONTAINER");
@@ -351,6 +435,7 @@ export function planArchitectureViews(raw: unknown) {
     limitations: [
       "Static extraction is not proof of runtime traffic.",
       "Component grouping and messaging coverage require validation against a source-backed reference manifest.",
+      ...(scopeWarningDetail ? [scopeWarningDetail] : []),
     ],
     views,
   };

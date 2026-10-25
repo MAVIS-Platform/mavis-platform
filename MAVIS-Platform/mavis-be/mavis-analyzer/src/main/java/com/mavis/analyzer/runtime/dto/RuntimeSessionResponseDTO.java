@@ -29,6 +29,7 @@ public class RuntimeSessionResponseDTO {
     private String traceStoragePath;
     private String overrideComposeYaml;
     private UUID modelVersionId;
+    private UUID enrichedModelVersionId;
     private String profileVersionId;
     private String runConfigurationVersionId;
     private String scenarioVersionId;
@@ -46,10 +47,14 @@ public class RuntimeSessionResponseDTO {
     private OffsetDateTime createdAt;
 
     public static RuntimeSessionResponseDTO fromEntity(RuntimeSession entity) {
-        return fromEntity(entity, null);
+        return fromEntity(entity, null, null);
     }
 
     public static RuntimeSessionResponseDTO fromEntity(RuntimeSession entity, String overrideComposeYaml) {
+        return fromEntity(entity, overrideComposeYaml, null);
+    }
+
+    public static RuntimeSessionResponseDTO fromEntity(RuntimeSession entity, String overrideComposeYaml, UUID enrichedModelVersionId) {
         if (entity == null) {
             return null;
         }
@@ -58,6 +63,7 @@ public class RuntimeSessionResponseDTO {
                 .projectId(entity.getProject() != null ? entity.getProject().getId() : null)
                 .sourceSnapshotId(entity.getSourceSnapshot() != null ? entity.getSourceSnapshot().getId() : null)
                 .modelVersionId(entity.getModelVersion() != null ? entity.getModelVersion().getId() : null)
+                .enrichedModelVersionId(enrichedModelVersionId)
                 .triggeredById(entity.getTriggeredBy() != null ? entity.getTriggeredBy().getId() : null)
                 .triggeredByName(entity.getTriggeredBy() != null ? entity.getTriggeredBy().getFullName() : null)
                 .profileName(entity.getProfileName())

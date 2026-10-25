@@ -12,6 +12,7 @@ import java.util.HashSet;
 import com.mavis.analyzer.javaanalyzer.visitor.ControllerVisitor;
 import com.mavis.analyzer.javaanalyzer.visitor.DatabaseAccessVisitor;
 import com.mavis.analyzer.javaanalyzer.visitor.HttpClientVisitor;
+import com.mavis.analyzer.javaanalyzer.visitor.UmlClassifierVisitor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -66,13 +67,22 @@ public class JavaSourceParser {
                 var matches=evidence.getSymbolCandidates().stream().filter(localTypes::contains).distinct().toList();
                 if(matches.size()==1)evidence.setTargetComponent(matches.get(0));
                 evidence.setSourceComponent(evidence.getQualifiedName());
+            } else if("UML_RELATIONSHIP".equals(evidence.getElementType())) {
+                var matches=evidence.getSymbolCandidates().stream().filter(localTypes::contains).distinct().toList();
+                if(matches.size()==1) {
+                    evidence.setTargetComponent(matches.get(0));
+                    evidence.setSourceComponent(evidence.getQualifiedName());
+                } else {
+                    evidence.setTargetComponent(null);
+                }
             } else if(evidence.getElementType().startsWith("MESSAGE_")&&evidence.getIdentifier().isBlank()) {
                 var values=evidence.getSymbolCandidates().stream().filter(constants::containsKey).map(constants::get).filter(java.util.Objects::nonNull).distinct().toList();
                 if(values.size()==1)evidence.setIdentifier(values.get(0));
                 else evidence.setElementType("UNRESOLVED_MESSAGE_CHANNEL");
             }
         }
-        allEvidences.removeIf(e->"BEAN_COMPONENT".equals(e.getElementType()));
+        allEvidences.removeIf(e->"BEAN_COMPONENT".equals(e.getElementType())
+                || ("UML_RELATIONSHIP".equals(e.getElementType()) && (e.getTargetComponent() == null || e.getTargetComponent().isBlank())));
         log.info("Đã hoàn tất phân tích AST. Tổng số code evidences trích xuất được: {}", allEvidences.size());
         return allEvidences;
     }
@@ -96,19 +106,28 @@ public class JavaSourceParser {
                 String qualified=type.getFullyQualifiedName().orElse(type.getNameAsString());localTypes.add(qualified);
                 for(var field:type.getFields())if((field.isStatic()&&field.isFinal())||type.isInterface())for(var variable:field.getVariables())variable.getInitializer().filter(value->value.isStringLiteralExpr()).ifPresent(value->{String key=qualified+"."+variable.getNameAsString(),literal=value.asStringLiteralExpr().asString();if(!constants.containsKey(key))constants.put(key,literal);else if(!java.util.Objects.equals(constants.get(key),literal))constants.put(key,null);});
             }
+            for (var enumDecl : cu.findAll(com.github.javaparser.ast.body.EnumDeclaration.class)) {
+                String qualified = enumDecl.getFullyQualifiedName().orElse(enumDecl.getNameAsString());
+                localTypes.add(qualified);
+            }
             int evidenceStart = allEvidences.size();
-            // Thực thi đủ 4 AST Visitors
+            // Thực thi đủ AST Visitors (M2 + M4/M6/M7 UmlClassifierVisitor)
             new BeanMessagingVisitor(currentFilePath).visit(cu, allEvidences);
             new ControllerVisitor(currentFilePath).visit(cu, allEvidences);
             new HttpClientVisitor(currentFilePath).visit(cu, allEvidences);
             new CodeDependencyVisitor(currentFilePath).visit(cu, allEvidences);
             new DatabaseAccessVisitor(currentFilePath).visit(cu, allEvidences);
+            new UmlClassifierVisitor(currentFilePath).visit(cu, allEvidences);
             String packageName = cu.getPackageDeclaration().map(p -> p.getNameAsString() + ".").orElse("");
             for (int i = evidenceStart; i < allEvidences.size(); i++) {
                 CodeEvidenceDTO evidence = allEvidences.get(i);
-                String symbol = evidence.getSourceComponent() != null ? evidence.getSourceComponent() : evidence.getIdentifier();
-                evidence.setQualifiedName(packageName + symbol);
-                if("CODE_DEPENDENCY".equals(evidence.getElementType()))evidence.setSymbolCandidates(BeanMessagingVisitor.candidates(cu,evidence.getTargetComponent()));
+                if (evidence.getQualifiedName() == null || evidence.getQualifiedName().isBlank()) {
+                    String symbol = evidence.getSourceComponent() != null ? evidence.getSourceComponent() : evidence.getIdentifier();
+                    evidence.setQualifiedName(packageName + symbol);
+                }
+                if ("CODE_DEPENDENCY".equals(evidence.getElementType()) || "UML_RELATIONSHIP".equals(evidence.getElementType())) {
+                    evidence.setSymbolCandidates(BeanMessagingVisitor.candidates(cu, evidence.getTargetComponent()));
+                }
             }
         } catch (Exception e) {
             log.error("Lỗi khi phân tích cú pháp file Java: {}", javaFile.toAbsolutePath(), e);

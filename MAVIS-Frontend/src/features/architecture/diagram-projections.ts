@@ -48,14 +48,21 @@ function aggregate(edges: Edge[], member: (id: string) => string | undefined): E
   return [...links.values()];
 }
 
-export function contextProjection(model: ArchitecturalModel, raw: DiagramDocument) {
+// S2e/M1 review: a source-declared HTTP entrypoint proves an inbound interface, NOT that an
+// external caller exists. The context therefore shows the system alone (plus evidenced
+// externals) and reports missing caller data instead of fabricating an external system.
+export function contextProjection(
+  model: ArchitecturalModel,
+  raw: DiagramDocument,
+  options?: { systemName?: string | undefined },
+) {
   const external = raw.layoutJson.nodes.filter((node) => node.kind === "EXTERNAL_SYSTEM");
   const inside = new Set(
     raw.layoutJson.nodes.filter((node) => node.kind !== "EXTERNAL_SYSTEM").map((node) => node.id),
   );
   const system: DiagramNode = {
     id: `system:${model.projectId}`,
-    name: "System under analysis",
+    name: options?.systemName?.trim() || "System under analysis",
     kind: "SYSTEM",
     underlyingNodeIds: [...inside],
   };
@@ -64,33 +71,14 @@ export function contextProjection(model: ArchitecturalModel, raw: DiagramDocumen
     (id) => (inside.has(id) ? system.id : external.some((node) => node.id === id) ? id : undefined),
   );
   // A caller role is supported by declared inbound endpoints, but its identity is not known.
-  // Do not infer people, business actors, or external ownership from service names.
+  // Do not infer people, business actors, or external ownership from service names: the entry
+  // points only prove an inbound interface, so they stay inside the system and the missing
+  // caller data is reported instead of drawn as a fact.
   const entrypoints = model.elements.filter(
     (node) =>
       node.elementType === "COMPONENT" &&
       node.properties?.["responsibility"] === "Exposes HTTP endpoints",
   );
-  const clients: DiagramNode[] = entrypoints.length
-    ? [
-        {
-          id: `api-clients:${model.projectId}`,
-          name: "Unidentified API consumers",
-          kind: "EXTERNAL_SYSTEM",
-          description:
-            "Caller role inferred from declared HTTP endpoints; identity and system boundary require review",
-          underlyingNodeIds: entrypoints.map((node) => node.id),
-          inference: "INBOUND_ENDPOINT_CALLER_ROLE",
-        },
-      ]
-    : [];
-  if (clients[0])
-    links.push({
-      id: `inbound:${model.projectId}`,
-      from: clients[0].id,
-      to: system.id,
-      type: "USES_API",
-      underlyingNodeIds: entrypoints.map((node) => node.id),
-    });
   const connected = new Set(links.flatMap((edge) => [edge.from, edge.to]));
   return {
     document: {
@@ -100,12 +88,12 @@ export function contextProjection(model: ArchitecturalModel, raw: DiagramDocumen
       viewId: "context",
       viewTitle: "C4 · System Context",
       layoutJson: {
-        nodes: [system, ...external.filter((node) => connected.has(node.id)), ...clients],
+        nodes: [system, ...external.filter((node) => connected.has(node.id))],
         edges: links,
       },
     },
     notice: entrypoints.length
-      ? "API consumers represent an unidentified caller role supported by source HTTP endpoints. Confirm actors and external ownership in draw.io; internal services, databases and brokers stay inside the system."
+      ? `The analysis declares ${entrypoints.length} HTTP entrypoint component(s), but no external caller or actor is established by this model; the context shows the system alone and callers require review.`
       : external.length
         ? "Only known external dependencies are shown. Internal services and infrastructure stay inside the system."
         : "System boundary only: this analysis has no identified actors or external systems. Add confirmed context in draw.io; no actors have been invented.",

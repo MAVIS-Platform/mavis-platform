@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -20,4 +21,7 @@ public class EdgeDTO {
     private String originLayer;
     private String direction;
     private String resolutionStatus;
+    private Long evidenceCount;
+    private List<UUID> evidenceIds;
+    private com.fasterxml.jackson.databind.JsonNode properties;
 }
