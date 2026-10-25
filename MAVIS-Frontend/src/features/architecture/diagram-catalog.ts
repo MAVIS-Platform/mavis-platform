@@ -69,37 +69,37 @@ export const diagramKinds: Record<
   UML: [
     {
       value: "UML_SEQUENCE",
-      label: "UML Sequence",
+      label: "Sequence",
       description:
         "Lifeline interactions, activation bars, fragments (alt/opt/loop/par/break/critical), and interaction uses.",
     },
     {
       value: "UML_CLASS",
-      label: "UML Class",
+      label: "Class",
       description:
         "Classifiers, visibility, compartments, overloads, and structural/dependency relationships.",
     },
     {
       value: "UML_PACKAGE",
-      label: "UML Package",
+      label: "Package",
       description:
         "Namespace/package hierarchy, classifier ownership, and package-level dependencies.",
     },
     {
       value: "UML_DEPLOYMENT",
-      label: "UML Deployment",
+      label: "Deployment",
       description:
         "Deployment nodes, execution environments, artifacts, manifestations, and communication paths.",
     },
     {
       value: "UML_ACTIVITY",
-      label: "UML Activity",
+      label: "Activity",
       description:
         "Service-partitioned control/object workflows, actions, decisions/merges, and fork/join nodes.",
     },
     {
       value: "UML_STATE",
-      label: "UML State Machine",
+      label: "State Machine",
       description:
         "Entity lifecycle states, initial/choice/final pseudostates, and guarded transitions.",
     },
