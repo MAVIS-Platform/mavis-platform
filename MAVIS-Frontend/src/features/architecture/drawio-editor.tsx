@@ -11,7 +11,6 @@ import {
   DRAWIO_LAYOUT,
   DRAWIO_MAX_XML_LENGTH,
   readDrawioEvent,
-  drawioFitRequest,
 } from "./drawio-protocol";
 // Self-hosted only. Offline mode disables the editor's cloud storage integrations.
 const editorUrl = `${DRAWIO_ORIGIN}/?embed=1&proto=json&spin=1&ui=atlas&libraries=1&noExitBtn=1&saveAndExit=0&plugins=0&offline=1`;
@@ -139,11 +138,6 @@ export function DrawioEditor({
         setError("Draw.io could not complete this operation. Your existing draft was kept.");
         return;
       }
-      if (["load", "layout", "fit"].includes(data.event)) {
-        const fit = drawioFitRequest(data);
-        const scale = Number((data as unknown as { scale?: number }).scale);
-        if (fit && (data.event !== "fit" || scale > fit.maxScale + 0.001)) send(fit);
-      }
       if (data.event === "init") {
         if (!validXml(latest.current)) {
           setError("The generated XML cannot be opened by draw.io.");
@@ -172,6 +166,7 @@ export function DrawioEditor({
         window.clearTimeout(timeout);
         setReady(true);
         setError("");
+        send({ action: "invokeAction", actionName: "fitWindow" });
         const isSequence =
           notation === "UML_SEQUENCE" ||
           latest.current.includes("mavisInteraction=") ||
@@ -347,7 +342,9 @@ export function DrawioEditor({
   }
   useEffect(() => {
     if (!ready || !frame.current) return;
-    const observer = new ResizeObserver(() => send({ action: "fit", border: 24, maxScale: 1 }));
+    const observer = new ResizeObserver(() =>
+      send({ action: "invokeAction", actionName: "fitWindow" }),
+    );
     observer.observe(frame.current);
     return () => observer.disconnect();
   }, [ready]);
@@ -391,7 +388,7 @@ export function DrawioEditor({
             size="sm"
             variant="outline"
             disabled={!ready || processing}
-            onClick={() => send({ action: "fit", border: 24, maxScale: 1 })}
+            onClick={() => send({ action: "invokeAction", actionName: "fitWindow" })}
           >
             Fit view
           </Button>
