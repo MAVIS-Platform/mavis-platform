@@ -302,6 +302,15 @@ export async function generateDrawio(
     throw new Error("Diagram requires a smaller scope: layout has geometry collisions");
   const p = palette(theme),
     offset = doc.notation === "ARCHITECTURE_OVERVIEW" ? { x: 24, y: 84 } : { x: 48, y: 112 };
+  const contentWidth = best.graph.width ?? 0;
+  const frameWidth =
+    doc.notation === "ARCHITECTURE_OVERVIEW" ? 900 : Math.max(contentWidth, 520);
+  const hasPinned = nodes.some((node) => Boolean(node["pinned"]));
+  const contentOffsetX =
+    offset.x +
+    (!hasPinned && contentWidth > 0 && contentWidth < frameWidth
+      ? Math.round((frameWidth - contentWidth) / 2)
+      : 0);
   const quality = escape(JSON.stringify(best.quality));
   // Persist view semantics separately from geometry. Relayout reads these back instead of
   // reconstructing scope, provenance, or boundary types from labels and screen titles.
@@ -312,18 +321,17 @@ export async function generateDrawio(
   const geometry = (x: number, y: number, width: number, height: number) =>
     `<mxGeometry x="${n(x)}" y="${n(y)}" width="${n(width)}" height="${n(height)}" as="geometry"/>`;
   cells.push(
-    `<mxCell id="mavis_title" mavisDocument="${escape(JSON.stringify(documentMetadata))}" mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisOmittedNodes="${Number(doc["omittedNodes"] ?? 0)}" mavisOmittedEdges="${Number(doc["omittedEdges"] ?? 0)}" value="${escape(doc["viewTitle"] ?? doc.notation + " · " + doc.level + (doc["scopeContainerId"] ? " · " + nodes.find((node) => node.id === doc["scopeContainerId"])?.name : " · overview"))}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(offset.x, 24, doc.notation === "ARCHITECTURE_OVERVIEW" ? 900 : 1000, 36)}</mxCell>`,
+    `<mxCell id="mavis_title" mavisDocument="${escape(JSON.stringify(documentMetadata))}" mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisOmittedNodes="${Number(doc["omittedNodes"] ?? 0)}" mavisOmittedEdges="${Number(doc["omittedEdges"] ?? 0)}" value="${escape(doc["viewTitle"] ?? doc.notation + " · " + doc.level + (doc["scopeContainerId"] ? " · " + nodes.find((node) => node.id === doc["scopeContainerId"])?.name : " · overview"))}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(offset.x, 24, frameWidth, 36)}</mxCell>`,
   );
   cells.push(
-    `<mxCell id="mavis_scope" value="${escape(`${doc["policyVersion"] ? "Semantic review required" : RULE_VERSION} · ${nodes.length} shapes · ${edges.length} displayed relationships`)}" style="text;html=0;fontFamily=Arial;fontSize=12;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(offset.x, 64, doc.notation === "ARCHITECTURE_OVERVIEW" ? 900 : 1000, 28)}</mxCell>`,
+    `<mxCell id="mavis_scope" value="${escape(`${doc["policyVersion"] ? "Semantic review required" : RULE_VERSION} · ${nodes.length} shapes · ${edges.length} displayed relationships`)}" style="text;html=0;fontFamily=Arial;fontSize=12;fontColor=${p.text};align=left;" vertex="1" parent="1">${geometry(offset.x, 64, frameWidth, 28)}</mxCell>`,
   );
   for (const group of best.groups) {
     const owner = group.id.slice("boundary_".length);
     const ownerNode = nodes.find((node) => node.id === owner);
-    const systemScope = ownerNode && kindOf(ownerNode) === "SYSTEM_BOUNDARY";
     const header = boundaryHeader(ownerNode!);
     cells.push(
-      `<mxCell id="${safe(group.id)}" mavisId="${escape(owner)}" mavisName="${escape(ownerNode?.name ?? "Container")}" mavisKind="${escape(kindOf(ownerNode!))}" mavisTechnology="${escape(ownerNode?.languageStack ?? "")}" mavisDescription="${escape(ownerNode?.description ?? "")}" mavisProperties="${escape(JSON.stringify(ownerNode?.["properties"] ?? {}))}" mavisNodeMetadata="${metadata(ownerNode!, ["viewLocal", "underlyingNodeIds", "inference"])}" value="${escape(header.text)}" mavisRole="boundary" style="swimlane;horizontal=1;startSize=${header.height};rounded=1;dashed=1;fillColor=${p.background};swimlaneFillColor=${p.background};fontColor=${p.text};strokeColor=${p.border};fontFamily=Arial;fontSize=16;collapsible=0;${ownerNode?.["pinned"] ? "movable=0;resizable=0;rotatable=0;deletable=0;editable=0;locked=1;connectable=0;" : ""}" vertex="1" parent="1">${geometry(group.x + offset.x, group.y + offset.y, group.width, group.height)}</mxCell>`,
+      `<mxCell id="${safe(group.id)}" mavisId="${escape(owner)}" mavisName="${escape(ownerNode?.name ?? "Container")}" mavisKind="${escape(kindOf(ownerNode!))}" mavisTechnology="${escape(ownerNode?.languageStack ?? "")}" mavisDescription="${escape(ownerNode?.description ?? "")}" mavisProperties="${escape(JSON.stringify(ownerNode?.["properties"] ?? {}))}" mavisNodeMetadata="${metadata(ownerNode!, ["viewLocal", "underlyingNodeIds", "inference"])}" value="${escape(header.text)}" mavisRole="boundary" style="swimlane;horizontal=1;startSize=${header.height};rounded=1;dashed=1;fillColor=${p.background};swimlaneFillColor=${p.background};fontColor=${p.text};strokeColor=${p.border};fontFamily=Arial;fontSize=16;collapsible=0;${ownerNode?.["pinned"] ? "movable=0;resizable=0;rotatable=0;deletable=0;editable=0;locked=1;connectable=0;" : ""}" vertex="1" parent="1">${geometry(group.x + contentOffsetX, group.y + offset.y, group.width, group.height)}</mxCell>`,
     );
   }
   for (const node of nodes) {
@@ -332,7 +340,7 @@ export async function generateDrawio(
     const parent = groupOf.get(node.id);
     const group = parent ? best.groups.find((item) => item.id === "boundary_" + parent) : null;
     cells.push(
-      `<mxCell id="${safe(node.id)}" value="${escape(nodeHtml(node))}" mavisId="${escape(node.id)}" mavisRole="${escape(kindOf(node))}" mavisName="${escape(node.name)}" mavisTechnology="${escape(node.languageStack ?? "")}" mavisDescription="${escape(node.description ?? "")}" mavisProperties="${escape(node["properties"] && Object.keys(node["properties"]).length ? JSON.stringify(node["properties"]) : "")}" mavisNodeMetadata="${metadata(node, ["viewLocal", "underlyingNodeIds", "inference"])}" style="${nodeStyle(kindOf(node), theme).replace("html=0", "html=1")}${node["pinned"] ? "movable=0;resizable=0;rotatable=0;deletable=0;editable=0;locked=1;connectable=0;" : ""}" vertex="1" parent="${group ? safe(group.id) : "1"}">${geometry(rect.x + (group ? -group.x : offset.x), rect.y + (group ? -group.y : offset.y), rect.width, rect.height)}</mxCell>`,
+      `<mxCell id="${safe(node.id)}" value="${escape(nodeHtml(node))}" mavisId="${escape(node.id)}" mavisRole="${escape(kindOf(node))}" mavisName="${escape(node.name)}" mavisTechnology="${escape(node.languageStack ?? "")}" mavisDescription="${escape(node.description ?? "")}" mavisProperties="${escape(node["properties"] && Object.keys(node["properties"]).length ? JSON.stringify(node["properties"]) : "")}" mavisNodeMetadata="${metadata(node, ["viewLocal", "underlyingNodeIds", "inference"])}" style="${nodeStyle(kindOf(node), theme).replace("html=0", "html=1")}${node["pinned"] ? "movable=0;resizable=0;rotatable=0;deletable=0;editable=0;locked=1;connectable=0;" : ""}" vertex="1" parent="${group ? safe(group.id) : "1"}">${geometry(rect.x + (group ? -group.x : contentOffsetX), rect.y + (group ? -group.y : offset.y), rect.width, rect.height)}</mxCell>`,
     );
   }
   for (const edge of edges) {
@@ -356,14 +364,14 @@ export async function generateDrawio(
       input = port(end, to);
     const points = route.points
       .slice(1, -1)
-      .map((point) => `<mxPoint x="${n(point.x + offset.x)}" y="${n(point.y + offset.y)}"/>`)
+      .map((point) => `<mxPoint x="${n(point.x + contentOffsetX)}" y="${n(point.y + offset.y)}"/>`)
       .join("");
     cells.push(
       `<mxCell id="${safe(edge.id)}" value="" mavisId="${escape(edge.id)}" mavisRole="edge" mavisRelationType="${escape(edge.relationType ?? edge.type ?? "")}" mavisOriginLayer="${escape(edge.originLayer ?? "")}" mavisEdgeMetadata="${metadata(edge, ["underlyingEdgeIds", "resolutionStatus", "uncertain", "direction"])}" style="edgeStyle=none;orthogonal=1;rounded=0;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=${p.line};dashed=${declared ? 1 : 0};exitX=${out.x};exitY=${out.y};exitPerimeter=0;entryX=${input.x};entryY=${input.y};entryPerimeter=0;" edge="1" parent="1" source="${safe(parents.has(route.from) ? "boundary_" + route.from : route.from)}" target="${safe(parents.has(route.to) ? "boundary_" + route.to : route.to)}"><mxGeometry relative="1" as="geometry"><Array as="points">${points}</Array></mxGeometry></mxCell>`,
     );
     if (label)
       cells.push(
-        `<mxCell id="label_${safe(edge.id)}" value="${escape(labelText(edge))}" mavisRole="edge-label" mavisEdgeId="${escape(edge.id)}" style="text;html=0;fontFamily=Arial;fontSize=13;fontColor=${p.text};fillColor=${p.background};strokeColor=none;whiteSpace=wrap;spacing=4;align=center;verticalAlign=middle;" vertex="1" parent="1">${geometry(label.x + offset.x, label.y + offset.y, label.width, label.height)}</mxCell>`,
+        `<mxCell id="label_${safe(edge.id)}" value="${escape(labelText(edge))}" mavisRole="edge-label" mavisEdgeId="${escape(edge.id)}" style="text;html=0;fontFamily=Arial;fontSize=13;fontColor=${p.text};fillColor=${p.background};strokeColor=none;whiteSpace=wrap;spacing=4;align=center;verticalAlign=middle;" vertex="1" parent="1">${geometry(label.x + contentOffsetX, label.y + offset.y, label.width, label.height)}</mxCell>`,
       );
   }
   const bottom = (best.graph.height ?? 0) + offset.y + 32;
@@ -373,10 +381,14 @@ export async function generateDrawio(
       : "Legend: Container / Component / Database / Queue / External. Solid = source-inferred; dashed = declared configuration. No runtime status is implied. Missing technology or responsibility remains unknown. Crossings: " +
         best.quality.crossings +
         (typeof doc["scopeWarning"] === "string" ? ` ${doc["scopeWarning"]}` : "");
-  const legendLines = wrapText(legend, 100);
+  const legendWrapCols =
+    doc.notation === "ARCHITECTURE_OVERVIEW" || frameWidth >= 850
+      ? 100
+      : Math.max(60, Math.floor(frameWidth / 8.5));
+  const legendLines = wrapText(legend, legendWrapCols);
   const legendHeight = Math.max(64, legendLines.length * 17 + 24);
   cells.push(
-    `<mxCell id="mavis_legend" value="${escape(legendLines.join("\n"))}" mavisRole="legend" style="text;html=0;fontFamily=Arial;fontSize=13;fontColor=${p.text};fillColor=${p.background};whiteSpace=wrap;align=left;spacing=12;" vertex="1" parent="1">${geometry(offset.x, bottom, 900, legendHeight)}</mxCell>`,
+    `<mxCell id="mavis_legend" value="${escape(legendLines.join("\n"))}" mavisRole="legend" style="text;html=0;fontFamily=Arial;fontSize=13;fontColor=${p.text};fillColor=${p.background};whiteSpace=wrap;align=left;spacing=12;" vertex="1" parent="1">${geometry(offset.x, bottom, Math.min(900, frameWidth), legendHeight)}</mxCell>`,
   );
   return `<?xml version="1.0" encoding="UTF-8"?><mxfile host="MAVIS" agent="MAVIS" version="1"><diagram id="${escape(doc["diagramId"] ?? doc.modelVersionId)}" name="${escape(doc.notation + " · " + doc.level)}"><mxGraphModel mavisDocument="${escape(JSON.stringify(documentMetadata))}" mavisModelId="${escape(doc.modelVersionId)}" mavisViewId="${escape(doc["viewId"] ?? "")}" mavisSemanticStatus="${doc["policyVersion"] ? "requires-review" : "unassessed"}" mavisRuleVersion="${RULE_VERSION}" mavisTheme="${theme}" mavisQuality="${quality}" mavisContainerId="${escape(doc["scopeContainerId"] ?? "")}" grid="0" gridSize="16" page="0" background="${p.background}" connect="1" arrows="1" math="0" shadow="0"><root>${cells.join("")}</root></mxGraphModel></diagram></mxfile>`;
 }
