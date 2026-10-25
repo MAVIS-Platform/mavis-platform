@@ -10,7 +10,6 @@ import {
   Eye,
   EyeOff,
   GitBranch,
-  Hexagon,
   Layers3,
   LoaderCircle,
   Mail,
@@ -21,6 +20,7 @@ import { useApi, useApiMutation } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AppearanceSelector } from "@/components/appearance-selector";
+import { MavisLogo } from "@/components/mavis-logo";
 import { ErrorState } from "@/components/shared/request-state";
 import type { AppRole } from "@/types/domain";
 export default function LoginPage() {
@@ -67,12 +67,13 @@ export default function LoginPage() {
     <div className="flex min-h-svh flex-col bg-background text-foreground">
       <header className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6 sm:px-10">
         <div className="flex items-center gap-3">
-          <span className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-            <Hexagon size={23} strokeWidth={1.7} />
-          </span>
+          <MavisLogo />
           <div>
-            <span className="block text-base font-bold tracking-[0.18em]">MAVIS</span>
-            <span className="text-xs text-muted-foreground">Architecture workspace</span>
+            <span className="block text-base font-bold tracking-widest text-foreground">AI-Assisted Microservices 
+Architecture Visualization and 
+Change Impact Analysis
+
+</span>
           </div>
         </div>
         <AppearanceSelector />

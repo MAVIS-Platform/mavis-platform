@@ -359,10 +359,10 @@ test("theme bootstraps before paint with validated preferences and denied-storag
   for (const [stored, systemDark, expected] of [
     ["light", true, false],
     ["dark", false, true],
-    ["system", true, true],
+    ["system", true, false],
     ["invalid", false, false],
-    [null, true, true],
-    ["denied", true, true],
+    [null, true, false],
+    ["denied", true, false],
   ]) {
     let dark;
     const element = {
@@ -386,6 +386,7 @@ test("theme bootstraps before paint with validated preferences and denied-storag
     });
     assert.equal(dark, expected);
     assert.equal(element.style.colorScheme, expected ? "dark" : "light");
+    assert.equal(element.dataset.appearance, expected ? "dark" : "light");
   }
 });
 
@@ -1067,4 +1068,223 @@ test("editor round-trip preserves C4 Component container boundary as a business 
  assert.ok(edges.every(e=>e.getAttribute('parent')==='1'),"draw.io edges stay on the top layer by convention");
  const boundaryMembers=Array.from(doc2.querySelectorAll('mxCell')).filter(c=>c.getAttribute('parent')===boundaryCell.getAttribute('id'));
  assert.equal(boundaryMembers.length,2,"container boundary keeps its two components");
+});
+
+test("Cytoscape preserves source identity, parallel edges, loops and isolated nodes", () => {
+  const { networkElements } = require("../src/features/architecture/cytoscape-network.ts");
+  const cytoscape = require("cytoscape");
+  const node = (id) => ({ id, name: id, elementType: "SERVICE_CONTAINER" });
+  const edge = (id, from, to, extra = {}) => ({ id, from, to, protocol: "HTTP", ...extra });
+  const model = {
+    elements: [node("shared"), node("b"), node("isolated")],
+    edges: [
+      edge("shared", "shared", "b"),
+      edge("parallel", "shared", "b", { uncertain: true }),
+      edge("loop", "b", "b", { originLayer: "DEPLOYMENT" }),
+    ],
+  };
+  const original = JSON.stringify(model);
+  const cy = cytoscape({
+    headless: true,
+    elements: networkElements(model),
+    layout: { name: "grid" },
+  });
+  try {
+    assert.equal(cy.nodes().length, 3);
+    assert.equal(cy.edges().length, 3);
+    assert.equal(cy.getElementById("node:shared").data("sourceId"), "shared");
+    assert.equal(cy.getElementById("node:shared").data("label"), "[SVC] shared");
+    assert.equal(cy.getElementById("node:shared").data("name"), "shared");
+    assert.equal(cy.getElementById("edge:shared").source().id(), "node:shared");
+    assert.equal(cy.getElementById("edge:loop").isLoop(), true);
+    assert.equal(cy.getElementById("edge:parallel").data("lineStyle"), "dotted");
+    assert.equal(cy.getElementById("edge:loop").data("lineStyle"), "dashed");
+    assert.equal(cy.getElementById("node:isolated").degree(), 0);
+    assert.equal(JSON.stringify(model), original, "rendering must not mutate the API model");
+  } finally {
+    cy.destroy();
+  }
+});
+
+test("Network node badges match the legend and preset positions preserve label spacing", () => {
+  const { networkElements, networkBadge } = require("../src/features/architecture/cytoscape-network.ts");
+  for (const [type, badge] of Object.entries({
+    SERVICE_CONTAINER: "[SVC]", DATABASE: "[DB]", COMPONENT: "[COMP]",
+    MESSAGE_CHANNEL: "[QUEUE]", QUEUE_BROKER: "[QUEUE]", EXTERNAL_SYSTEM: "[EXT]",
+  })) assert.equal(networkBadge(type), badge);
+  assert.equal(networkBadge(), "[UNKNOWN]");
+  const model = {
+    elements: Array.from({ length: 17 }, (_, i) => ({ id: `n${i}`, name: `long-service-name-${i}`, elementType: "SERVICE_CONTAINER" })),
+    edges: Array.from({ length: 16 }, (_, i) => ({ id: `e${i}`, from: "n0", to: `n${i + 1}`, protocol: "HTTP" })),
+  };
+  const nodes = networkElements(model).filter(n => n.group === "nodes");
+  assert.deepEqual(nodes, networkElements(model).filter(n => n.group === "nodes"));
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i].position, b = nodes[j].position;
+      assert.ok(Math.abs(a.x - b.x) >= 195 || Math.abs(a.y - b.y) >= 89, "node and label footprints must remain separated");
+    }
+  }
+});
+
+test("Network layout reduces geometric obstruction, uses viewport width, and distinguishes unknown types", () => {
+  const { networkPositions, networkLayoutCost } = require("../src/features/architecture/network-layout.ts");
+  const { layoutGraph, NODE_WIDTH, NODE_HEIGHT } = require("../src/features/architecture/graph-layout.ts");
+  const { networkColor } = require("../src/features/architecture/cytoscape-network.ts");
+  assert.notEqual(networkColor(undefined), networkColor("SERVICE_CONTAINER"));
+  assert.equal(networkColor("UNRECOGNIZED_TYPE"), networkColor(undefined));
+  const model = {
+    elements: Array.from({ length: 17 }, (_, i) => ({ id: `n${i}`, name: `service-${i}`, elementType: "SERVICE_CONTAINER" })),
+    edges: Array.from({ length: 29 }, (_, i) => ({ id: `e${i}`, from: `n${i % 17}`, to: `n${(i * 7 + 3) % 17}`, protocol: "HTTP" })),
+  };
+  const original = JSON.stringify(model);
+  const base = layoutGraph(model);
+  const width = Math.max(...base.map(n=>n.x))-Math.min(...base.map(n=>n.x))+NODE_WIDTH;
+  const height = Math.max(...base.map(n=>n.y))-Math.min(...base.map(n=>n.y))+NODE_HEIGHT;
+  const initial = new Map(base.map(n=>[n.id, {x:(n.x+NODE_WIDTH/2)*Math.max(1, 2.5*height/width), y:(n.y+NODE_HEIGHT/2)*Math.max(1, width/(2.5*height))}]));
+  const optimized = networkPositions(model, 2.5);
+  assert.ok(networkLayoutCost(model, optimized) < networkLayoutCost(model, initial), "reduce crossings and unrelated-node obstructions relative to force layout");
+  assert.deepEqual(optimized, networkPositions(model, 2.5));
+  const xs = [...optimized.values()].map(p=>p.x), ys = [...optimized.values()].map(p=>p.y);
+  const ratio = (Math.max(...xs)-Math.min(...xs)+NODE_WIDTH)/(Math.max(...ys)-Math.min(...ys)+NODE_HEIGHT);
+  assert.ok(ratio > 2 && ratio < 3, "spread into the wide viewport without compressing node spacing");
+  assert.equal(JSON.stringify(model), original);
+});
+
+test("Explore presentation preserves graph identity, camera, manual positions and source selection", () => {
+  const cytoscape = require("cytoscape");
+  const { networkElements } = require("../src/features/architecture/cytoscape-network.ts");
+  const { applyNetworkMode, exploreStyles } = require("../src/features/architecture/network-presentation.ts");
+  const model = {
+    elements: ["hub", "a", "b", "isolated"].map(id => ({ id, name: id, elementType: "SERVICE_CONTAINER" })),
+    edges: [{id:"e1",from:"hub",to:"a",protocol:"HTTP"},{id:"e2",from:"hub",to:"b",protocol:"HTTP"}],
+  };
+  const cy = cytoscape({headless:true, styleEnabled:true, elements:networkElements(model), layout:{name:"preset"}, style:[
+    {selector:"node",style:{width:"data(size)",height:"data(size)",label:"data(label)"}},
+    ...exploreStyles,
+  ]});
+  try {
+    const hub = cy.getElementById("node:hub"), isolated = cy.getElementById("node:isolated");
+    hub.position({x:123,y:234}).addClass("focused");
+    cy.zoom(0.8); cy.pan({x:12,y:34});
+    const camera = {zoom:cy.zoom(),pan:{...cy.pan()}};
+    const sourceIds = cy.elements().map(e=>e.data("sourceId"));
+    applyNetworkMode(cy,"explore");
+    assert.ok(hub.hasClass("explore") && hub.hasClass("hub") && hub.hasClass("focused"));
+    assert.ok(hub.width() > isolated.width(), "connection count controls visual size");
+    assert.equal(isolated.style("text-opacity"), "0");
+    assert.equal(hub.style("text-opacity"), "1");
+    assert.ok(Number(cy.edges()[0].style("opacity")) < 0.5);
+    cy.zoom(1.2); applyNetworkMode(cy,"explore");
+    assert.equal(isolated.style("text-opacity"), "1", "zoom reveals detail labels");
+    cy.zoom(camera.zoom);
+    applyNetworkMode(cy,"analysis");
+    assert.ok(!hub.hasClass("explore") && hub.hasClass("focused"));
+    assert.equal(hub.width(),hub.data("size"));
+    assert.deepEqual(hub.position(),{x:123,y:234});
+    assert.deepEqual({zoom:cy.zoom(),pan:{...cy.pan()}},camera);
+    assert.deepEqual(cy.elements().map(e=>e.data("sourceId")),sourceIds);
+  } finally { cy.destroy(); }
+});
+
+test("Explore clusters use real connections and parent ownership and restore each presentation independently", () => {
+  const cytoscape = require("cytoscape");
+  const { exploreClusters, explorePositions, exploreAppearance } = require("../src/features/architecture/explore-layout.ts");
+  const { networkElements } = require("../src/features/architecture/cytoscape-network.ts");
+  const { createNetworkPresentation } = require("../src/features/architecture/network-presentation.ts");
+  const model = {
+    elements: [
+      {id:"a",name:"Orders",elementType:"SERVICE_CONTAINER"},
+      {id:"b",name:"Payments",elementType:"SERVICE_CONTAINER"},
+      {id:"db",name:"Orders DB",elementType:"DATABASE",parentId:"a"},
+      {id:"unknown",name:"Framework",elementType:"UNKNOWN"},
+      {id:"isolated",name:"Isolated",elementType:"COMPONENT"},
+    ],
+    edges:[{id:"e1",from:"b",to:"db",protocol:"HTTP"},{id:"e2",from:"a",to:"b",protocol:"HTTP"},{id:"e3",from:"a",to:"unknown",protocol:"HTTP"}],
+  };
+  const original=JSON.stringify(model);
+  assert.equal(exploreClusters(model).owners.get("db"),"a","explicit parent overrides nearest connected service");
+  const p=explorePositions(model),appearance=exploreAppearance(model);
+  assert.equal(p.size,model.elements.length);
+  assert.deepEqual(p,explorePositions(model));
+  assert.notEqual(appearance.get("a").color,appearance.get("b").color);
+  assert.equal(appearance.get("a").color,appearance.get("db").color);
+  assert.equal(appearance.get("unknown").color,"#94a3b8");
+  assert.ok(appearance.get("a").image.startsWith("data:image/svg+xml;utf8,"));
+  const cy=cytoscape({headless:true,elements:networkElements(model),layout:{name:"preset"}});
+  try {
+    const present=createNetworkPresentation(cy,model),node=cy.getElementById("node:a");
+    node.position({x:101,y:202});cy.zoom(0.8);cy.pan({x:12,y:34});
+    present("explore");
+    assert.notDeepEqual(node.position(),{x:101,y:202});
+    node.position({x:303,y:404});cy.zoom(1.4);cy.pan({x:45,y:67});
+    present("analysis");
+    assert.deepEqual(node.position(),{x:101,y:202});assert.equal(cy.zoom(),0.8);assert.deepEqual(cy.pan(),{x:12,y:34});
+    present("explore");
+    assert.deepEqual(node.position(),{x:303,y:404});assert.equal(cy.zoom(),1.4);assert.deepEqual(cy.pan(),{x:45,y:67});
+    assert.equal(cy.nodes().length,5);assert.equal(cy.edges().length,3);
+    assert.equal(JSON.stringify(model),original);
+  } finally {cy.destroy();}
+});
+
+test("Explore electricity follows curved paths and cancels frames for cleanup and reduced motion", () => {
+  const { pulsePoint, startNetworkPulse } = require("../src/features/architecture/network-pulse.ts");
+  assert.deepEqual(pulsePoint({x:0,y:0},{x:100,y:0},[{x:50,y:100}],0.5),{x:50,y:50});
+  assert.deepEqual(pulsePoint({x:0,y:0},{x:100,y:0},[],1),{x:100,y:0});
+  const previous={window:global.window,raf:global.requestAnimationFrame,caf:global.cancelAnimationFrame};
+  let reduced=false,serial=0,strokes=0;
+  const frames=new Map(),listeners=new Set();
+  const ctx={clearRect(){},setTransform(){},save(){},restore(){},beginPath(){},arc(){},stroke(){strokes++;},fill(){},moveTo(){},lineTo(){}};
+  const canvas={width:800,height:600,clientWidth:800,clientHeight:600,getContext:()=>ctx};
+  const edge={renderedSourceEndpoint:()=>({x:0,y:0}),renderedTargetEndpoint:()=>({x:100,y:0}),controlPoints:()=>[{x:50,y:100}],data:()=>"#a78bfa"};
+  const node={empty:()=>false,connectedEdges:()=>[edge],renderedPosition:()=>({x:0,y:0}),data:()=>"#a78bfa"};
+  const cy={nodes:()=>({filter:()=>({first:()=>node})}),destroyed:()=>false,zoom:()=>1,pan:()=>({x:0,y:0})};
+  global.window={devicePixelRatio:1,matchMedia:()=>({matches:reduced,addEventListener:(_,fn)=>listeners.add(fn),removeEventListener:(_,fn)=>listeners.delete(fn)})};
+  global.requestAnimationFrame=fn=>{frames.set(++serial,fn);return serial;};
+  global.cancelAnimationFrame=id=>frames.delete(id);
+  const tick=time=>{const batch=[...frames.values()];frames.clear();batch.forEach(fn=>fn(time));};
+  try {
+    const stop=startNetworkPulse(cy,"node",canvas);
+    tick(0);tick(500);
+    assert.ok(strokes>10,"draw the pulse trail along the rendered edge");
+    assert.equal(frames.size,1);
+    stop();assert.equal(frames.size,0);assert.equal(listeners.size,0);
+    startNetworkPulse(cy,"node",canvas);tick(0);tick(1600);
+    assert.equal(frames.size,0,"animation terminates without a perpetual frame loop");
+    reduced=true;startNetworkPulse(cy,"node",canvas);
+    assert.equal(frames.size,0);assert.equal(listeners.size,0);
+  } finally {
+    for (const [key,value] of [["window",previous.window],["requestAnimationFrame",previous.raf],["cancelAnimationFrame",previous.caf]]) {
+      if(value===undefined) delete global[key]; else global[key]=value;
+    }
+  }
+});
+
+test("Pulse handles straight edges without calling Cytoscape's unsafe renderedControlPoints", () => {
+  const { pulseControls, pulsePoint } = require("../src/features/architecture/network-pulse.ts");
+  const straight = {controlPoints:()=>undefined, renderedControlPoints:()=>{throw new TypeError("Cannot read properties of undefined (reading 'map')");}};
+  assert.deepEqual(pulseControls(straight,2,{x:10,y:20}),[]);
+  assert.deepEqual(pulsePoint({x:10,y:20},{x:110,y:20},pulseControls(straight,2,{x:10,y:20}),0.5),{x:60,y:20});
+  assert.deepEqual(pulseControls({controlPoints:()=>[{x:5,y:7}]},2,{x:10,y:20}),[{x:20,y:34}]);
+});
+
+test("Cytoscape focus follows grouped source edges and collapsed component evidence", () => {
+  const { networkFocus } = require("../src/features/architecture/cytoscape-network.ts");
+  const source = {
+    elements: [{ id: "service" }, { id: "component", parentId: "service" }, { id: "db" }],
+    edges: [],
+  };
+  const view = {
+    elements: [{ id: "service" }, { id: "db" }],
+    edges: [
+      { id: "group", from: "service", to: "db", underlyingEdgeIds: ["original-1", "original-2"] },
+    ],
+  };
+  const selected = networkFocus(source, view, "original-2", []);
+  assert.deepEqual([...selected.edges], ["group"]);
+  assert.deepEqual([...selected.nodes].sort(), ["db", "service"]);
+  const highlight = networkFocus(source, view, "original-2", ["component"]);
+  assert.deepEqual([...highlight.nodes], ["service"]);
+  assert.equal(highlight.edges.size, 0, "explicit highlights override selection focus");
+  assert.equal(networkFocus(source, view, null, []).active, false);
 });
