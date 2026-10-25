@@ -1,0 +1,193 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] worker-java-client                                                 [jar]
+[INFO] mavis-common                                                       [jar]
+[INFO] mavis-analyzer                                                     [jar]
+[INFO] 
+[INFO] --------------------< com.mavis:worker-java-client >--------------------
+[INFO] Building worker-java-client 1.0-SNAPSHOT                           [1/3]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ worker-java-client ---
+[INFO] skip non existing resourceDirectory C:\Users\nhuth\Desktop\MAVISS\MAVIS.Worker\integration\java-client\src\main\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ worker-java-client ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ worker-java-client ---
+[INFO] Copying 6 resources from ..\..\contracts\n01 to target\test-classes\fixtures
+[INFO] Copying 1 resource from ..\..\contracts\fingerprint to target\test-classes\fingerprint
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ worker-java-client ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ worker-java-client ---
+[INFO] 
+[INFO] ----------------------< vn.edu.fpt:mavis-common >-----------------------
+[INFO] Building mavis-common 0.0.1-SNAPSHOT                               [2/3]
+[INFO]   from C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-common\pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ mavis-common ---
+[INFO] skip non existing resourceDirectory C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-common\src\main\resources
+[INFO] skip non existing resourceDirectory C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-common\src\main\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ mavis-common ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ mavis-common ---
+[INFO] skip non existing resourceDirectory C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-common\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ mavis-common ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ mavis-common ---
+[INFO] 
+[INFO] ---------------------< vn.edu.fpt:mavis-analyzer >----------------------
+[INFO] Building mavis-analyzer 0.0.1-SNAPSHOT                             [3/3]
+[INFO]   from C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-analyzer\pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ mavis-analyzer ---
+[INFO] Copying 0 resource from src\main\resources to target\classes
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ mavis-analyzer ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ mavis-analyzer ---
+[INFO] skip non existing resourceDirectory C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-analyzer\src\test\resources
+[INFO] Copying 8 resources from ..\..\..\MAVIS.Worker\contracts\n01 to target\test-classes\worker-fixtures
+[INFO] Copying 15 resources from ..\mavis-bootstrap\src\main\resources\db\migration to target\test-classes\worker-migrations
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ mavis-analyzer ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ mavis-analyzer ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.mavis.analyzer.graph.service.GraphBuilderServiceTest
+Java HotSpot(TM) 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+WARNING: A Java agent has been loaded dynamically (C:\Users\nhuth\.m2\repository\net\bytebuddy\byte-buddy-agent\1.14.16\byte-buddy-agent-1.14.16.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by net.bytebuddy.dynamic.loading.ClassInjector$UsingUnsafe$Dispatcher$CreationAction (file:/C:/Users/nhuth/.m2/repository/net/bytebuddy/byte-buddy/1.14.16/byte-buddy-1.14.16.jar)
+WARNING: Please consider reporting this to the maintainers of class net.bytebuddy.dynamic.loading.ClassInjector$UsingUnsafe$Dispatcher$CreationAction
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+01:37:08.409 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 1 Level-2 model elements for model version ID: 7591ef9a-2979-47fc-b67b-33cb6058c246
+01:37:08.543 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- No containers detected. Creating fallback ModelElement: fruit-market-app
+01:37:08.543 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 1 Level-2 model elements for model version ID: 99802cab-1304-4718-8a5c-4a079db45005
+01:37:08.548 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 3 Level-2 model elements for model version ID: 9abb42f2-46f9-4eae-a881-c486d3576875
+01:37:08.574 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 5 Level-2 model elements for model version ID: 03bfcad6-22dd-448b-9d48-3cc3ce6b731b
+01:37:08.578 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 C4 COMPONENT elements (Java & C#) with parent hierarchy
+01:37:08.583 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+01:37:08.585 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 total evidences
+01:37:08.590 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 3 C4 COMPONENT elements (Java & C#) with parent hierarchy
+01:37:08.598 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+01:37:08.598 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 total evidences
+01:37:08.602 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- No containers detected. Creating fallback ModelElement: fruit-market-app
+01:37:08.603 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 1 Level-2 model elements for model version ID: 066bffc2-e0e2-4e89-bc2e-d0ceed9ef7a7
+01:37:08.609 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+01:37:08.609 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 total evidences
+01:37:08.616 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+01:37:08.616 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 total evidences
+01:37:08.621 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+01:37:08.621 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 total evidences
+01:37:08.628 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+01:37:08.628 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 total evidences
+01:37:08.633 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 total evidences
+01:37:08.636 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Elements list is empty. Skipping relationship and evidence building.
+01:37:08.642 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 C4 COMPONENT elements (Java & C#) with parent hierarchy
+01:37:08.643 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+01:37:08.643 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 total evidences
+01:37:08.649 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 C4 COMPONENT elements (Java & C#) with parent hierarchy
+01:37:08.649 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+01:37:08.649 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 total evidences
+01:37:08.653 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Elements list is empty. Skipping relationship and evidence building.
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.601 s -- in com.mavis.analyzer.graph.service.GraphBuilderServiceTest
+[INFO] Running com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImplTest
+01:37:08.996 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Tiếp nhận và đối chiếu nhân quả vết OpenTelemetry cho sessionId: 42358e74-e7d3-4462-8f6e-036319acf676, baseModelVersionId: 6ba49fda-b2e2-4e15-b85f-49d511e5d0ff
+01:37:09.017 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Hoàn tất đối chiếu nhân quả vết thực thi. Created ModelVersion ID: 800dcaaa-0cd9-4005-9e17-a4677f35ea3f, revision: 2, traceStatus: PARTIAL
+01:37:09.032 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Tiếp nhận và đối chiếu nhân quả vết OpenTelemetry cho sessionId: 33333333-3333-4333-8333-333333333333, baseModelVersionId: 44444444-4444-4444-8444-444444444444
+01:37:09.041 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Hoàn tất đối chiếu nhân quả vết thực thi. Created ModelVersion ID: 55555555-5555-4555-8555-555555555555, revision: 5, traceStatus: COMPLETE
+01:37:09.041 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Lấy biểu đồ tuần tự UML Sequence cho sessionId: 33333333-3333-4333-8333-333333333333
+01:37:09.177 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Tiếp nhận và đối chiếu nhân quả vết OpenTelemetry cho sessionId: 41c58ee6-a67b-4dfe-89e4-c07aa57d4259, baseModelVersionId: 8eb17582-af74-455f-8ae3-e444bf4f4508
+01:37:09.178 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Hoàn tất đối chiếu nhân quả vết thực thi. Created ModelVersion ID: cdbf0e3d-99b8-44cc-8653-6f7da542435f, revision: 2, traceStatus: COMPLETE
+01:37:09.189 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Tiếp nhận và đối chiếu nhân quả vết OpenTelemetry cho sessionId: 50b7cbd2-235f-403a-b6ba-1802ab9bb3d9, baseModelVersionId: 20f1b916-4406-41e5-9a25-25961b57c66e
+01:37:09.190 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Hoàn tất đối chiếu nhân quả vết thực thi. Created ModelVersion ID: 58b25c71-3c09-4845-9d76-2cfaf6e58dc1, revision: 2, traceStatus: PARTIAL
+01:37:09.197 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Lấy biểu đồ tuần tự UML Sequence cho sessionId: 8264dafb-fe2e-4666-b3a3-499567d6f399
+01:37:09.201 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Lấy biểu đồ tuần tự UML Sequence cho sessionId: a5003aff-260b-4006-b419-de3bcab1e483
+01:37:09.205 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Tiếp nhận và đối chiếu nhân quả vết OpenTelemetry cho sessionId: 5d5874d6-8305-4b86-bb7e-226dbe595273, baseModelVersionId: 2b7ec99f-66fd-4433-aef6-bb8b04073187
+01:37:09.219 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Tiếp nhận và đối chiếu nhân quả vết OpenTelemetry cho sessionId: a7119254-d61c-4e43-9d45-d32a5c9010a4, baseModelVersionId: 712c5b8e-d8a6-48e1-8a26-e4f37738d780
+01:37:09.221 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Hoàn tất đối chiếu nhân quả vết thực thi. Created ModelVersion ID: 9ed613a4-f3ab-492d-9cce-028cbccc7278, revision: 2, traceStatus: PARTIAL
+01:37:09.221 [main] INFO com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImpl -- Lấy biểu đồ tuần tự UML Sequence cho sessionId: a7119254-d61c-4e43-9d45-d32a5c9010a4
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.558 s -- in com.mavis.analyzer.runtime.service.impl.OtelTraceCorrelationServiceImplTest
+[INFO] Running com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImplTest
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+01:37:09.347 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: a4119da5-b414-48b3-839b-4d8ab95aa585, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.350 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: a4119da5-b414-48b3-839b-4d8ab95aa585, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.350 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: a4119da5-b414-48b3-839b-4d8ab95aa585, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.352 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: a4119da5-b414-48b3-839b-4d8ab95aa585, resourceProject: mavisrun-ffffffffffffffffffffffffffffffff
+01:37:09.368 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: 37803e40-2067-4098-af9f-d9c8aa0e4fad, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.400 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Xử lý RunnerReceipt hoàn tất cho sessionId: 37803e40-2067-4098-af9f-d9c8aa0e4fad, revision mới: 2, gate: PROMOTED
+01:37:09.409 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: ec86ae71-1348-40db-ae8a-48d6126a0653, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.413 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: ec86ae71-1348-40db-ae8a-48d6126a0653, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.415 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Receipt trùng incomingDigest cho session ec86ae71-1348-40db-ae8a-48d6126a0653. Trả về idempotent ALREADY_COMMITTED.
+01:37:09.422 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: cae5985e-4a18-4ce1-bd04-5a9266b66722, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.428 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Xử lý RunnerReceipt hoàn tất cho sessionId: cae5985e-4a18-4ce1-bd04-5a9266b66722, revision mới: 2, gate: HELD_NON_PROMOTED
+01:37:09.432 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: 56c8cd4a-a81c-4881-bd9b-6661b7fca6e2, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.438 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Xử lý RunnerReceipt hoàn tất cho sessionId: 56c8cd4a-a81c-4881-bd9b-6661b7fca6e2, revision mới: 2, gate: HELD_NON_PROMOTED
+01:37:09.443 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: 87ca1d12-3daa-4225-8f77-f53a7d44699f, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.451 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: 425aa181-6a00-485d-88d4-8acaf2268ac3, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.456 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: 425aa181-6a00-485d-88d4-8acaf2268ac3, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.464 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Tiếp nhận RunnerReceipt cho sessionId: 3126f4b4-cf10-4af9-ac11-1da6b09e5304, resourceProject: mavisrun-0123456789abcdef0123456789abcdef
+01:37:09.474 [main] INFO com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImpl -- Xử lý RunnerReceipt hoàn tất cho sessionId: 3126f4b4-cf10-4af9-ac11-1da6b09e5304, revision mới: 2, gate: PROMOTED
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.246 s -- in com.mavis.analyzer.runtime.service.impl.RunnerReceiptIngestServiceImplTest
+[INFO] Running com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImplTest
+01:37:09.630 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Tạo RuntimeSession mới cho projectId: dc5a1b2f-8770-4c08-bae1-a7f2e30407af, snapshotId: de0ee847-7d2f-4f7d-b243-fa0192a55294
+01:37:09.643 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Dừng phiên thực nghiệm ID: 3b439f1c-d498-4a11-a990-6ea8f0537528
+01:37:09.645 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Đã tạo file cancel.request tại: C:\Users\nhuth\AppData\Local\Temp\junit8450286315913005455\mavisrun-0123456789abcdef0123456789abcdef\cancel.request
+01:37:09.645 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Phiên thực nghiệm 3b439f1c-d498-4a11-a990-6ea8f0537528 đang dừng (Stop-while-running), trạng thái CANCELLING, chờ Receipt cleanup.
+01:37:09.653 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Tạo RuntimeSession mới cho projectId: d0a87a2f-4005-4488-9433-b753afa92581, snapshotId: 6fc9befa-9635-4011-b0e8-599bfe74d08e
+01:37:09.659 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Phê duyệt và chuẩn bị dispatch RuntimeSession ID: bbe277a0-fc2c-4902-aa2a-f898207dd18d
+01:37:09.660 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Chạy Compose Preflight Check cho snapshotId: 472cb1b0-092e-4d10-907f-e3237a222195
+01:37:09.723 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Phiên thực nghiệm ID: bbe277a0-fc2c-4902-aa2a-f898207dd18d đã chuyển sang APPROVED / READY_FOR_DISPATCH thành công
+01:37:09.733 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Tạo RuntimeSession mới cho projectId: d63281ca-c3d6-4bea-beb6-fd372a652850, snapshotId: 5039bdbf-0a4a-4405-974f-78b3468f2fd2
+01:37:09.736 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Dừng phiên thực nghiệm ID: 63c6739d-e01d-4b60-be3e-12299b03218d
+01:37:09.737 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Phiên thực nghiệm 63c6739d-e01d-4b60-be3e-12299b03218d dừng trước khi chạy (Stop-before-start). Đặt CANCELLED.
+01:37:09.739 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Dừng phiên thực nghiệm ID: 152173ec-e1e4-4d8a-a20e-363183f2608e
+01:37:09.743 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Dừng phiên thực nghiệm ID: 6f552b1a-7c32-476a-bb13-c2f7e1cfb445
+01:37:09.743 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Phiên thực nghiệm 6f552b1a-7c32-476a-bb13-c2f7e1cfb445 đã kết thúc ở trạng thái COMPLETED. Trả về idempotent.
+01:37:09.770 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Đã cập nhật lifecycle-ack cho session 5c53bcef-9984-4dc9-ac6a-c3b9c3310cce: stage=ALLOCATED, executionStatus=ALLOCATED, scenarioStatus=APPROVED
+01:37:09.773 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Đã cập nhật lifecycle-ack cho session 5c53bcef-9984-4dc9-ac6a-c3b9c3310cce: stage=ALLOCATED, executionStatus=ALLOCATED, scenarioStatus=APPROVED
+01:37:09.774 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Đã cập nhật lifecycle-ack cho session 5c53bcef-9984-4dc9-ac6a-c3b9c3310cce: stage=RUNNING, executionStatus=RUNNING, scenarioStatus=RUNNING
+01:37:09.778 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Đã cập nhật lifecycle-ack cho session 5e33f3ea-2fb7-4118-9991-28f44c7d8a7a: stage=ALLOCATED, executionStatus=ALLOCATED, scenarioStatus=APPROVED
+01:37:09.778 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Đã cập nhật lifecycle-ack cho session 5e33f3ea-2fb7-4118-9991-28f44c7d8a7a: stage=RUNNING, executionStatus=RUNNING, scenarioStatus=RUNNING
+01:37:09.781 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Tạo RuntimeSession mới cho projectId: a0168923-6a0d-40c7-9b21-538b55c58106, snapshotId: 5f8a7c33-155e-4c70-9848-00dda5974c79
+01:37:09.782 [main] INFO com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImpl -- Đã tạo RuntimeSession thành công với ID: 45c40374-63d9-43e7-b531-866ba33a860b, resourceProject: mavisrun-f255f874d5e84e029bb1542ed87e69b0, pinnedModelVersion: e16c1b2d-ba28-435d-a4af-b537c171dfc3
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.297 s -- in com.mavis.analyzer.runtime.service.impl.RuntimeSessionServiceImplTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 45, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary:
+[INFO] 
+[INFO] worker-java-client 1.0-SNAPSHOT .................... SUCCESS [  1.000 s]
+[INFO] mavis-common 0.0.1-SNAPSHOT ........................ SUCCESS [  1.088 s]
+[INFO] mavis-analyzer 0.0.1-SNAPSHOT ...................... SUCCESS [  3.999 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  6.547 s
+[INFO] Finished at: 2026-10-25T01:37:09+07:00
+[INFO] ------------------------------------------------------------------------

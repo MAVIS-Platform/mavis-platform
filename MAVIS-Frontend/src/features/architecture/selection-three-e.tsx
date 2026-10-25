@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { z } from "zod";
 import type { ArchitecturalModel, Evidence } from "@/types/domain";
@@ -10,6 +10,7 @@ import { ThreeEEvidence } from "./three-e-evidence";
 import {
   selectionSummary,
   findingRelated,
+  buildThreeESubjectContext,
   RULE_SET,
   ruleNames,
   resultNames,
@@ -47,31 +48,70 @@ const explanationSchema = z.object({
     )
     .optional(),
 });
+// S2b: node metadata resolved by the adapter lives in node.properties. transportAuthority is a
+// binding-authority label, not an endpoint address; resolutionIssue describes this node's own
+// resolution problem — node metadata, never an edge status.
+const NODE_METADATA_LABELS: Array<[string, string]> = [
+  ["protocol", "Protocol"],
+  ["transportAuthority", "Transport binding"],
+  ["resolutionIssue", "Vấn đề phân giải của node"],
+];
+function nodeMetadataRows(
+  node: ArchitecturalModel["elements"][number] | undefined,
+): Array<[string, string]> {
+  if (!node) return [];
+  return NODE_METADATA_LABELS.flatMap(([key, label]) => {
+    const value = node.properties?.[key];
+    return typeof value === "string" && value.trim() !== ""
+      ? [[label, value] as [string, string]]
+      : [];
+  });
+}
 export function SelectionThreeE({
   model,
   selectedId,
   onSelect,
   onClose,
   onHighlight,
+  projectedEdge: rawProjectedEdge,
+  drilledSourceEdgeId,
+  onDrilldown,
+  sequenceContext,
 }: {
   model: ArchitecturalModel;
   selectedId: string;
   onSelect: (id: string) => void;
   onClose: () => void;
   onHighlight?: (ids: string[]) => void;
+  projectedEdge?: ArchitecturalModel["edges"][number] | undefined;
+  drilledSourceEdgeId?: string | null | undefined;
+  onDrilldown?: ((subId: string | null) => void) | undefined;
+  sequenceContext?: Parameters<typeof buildThreeESubjectContext>[0]["sequenceContext"];
 }) {
   const api = useApi();
   const [tab, setTab] = useState<"explain" | "explore" | "evaluate">("explain"),
     [findingId, setFindingId] = useState(""),
     [limit, setLimit] = useState(6);
-  const subject = selectionSummary(model, selectedId),
-    { node, edge } = subject;
+  const ctx = buildThreeESubjectContext({
+    model,
+    selectedId,
+    projectedEdge: rawProjectedEdge,
+    drilledSourceEdgeId,
+    sequenceContext,
+  });
+  const { isGroup, canExplain, scopeKind, subject } = ctx;
+  const projectedEdge = ctx.effectiveProjectedEdge ?? rawProjectedEdge;
+  const { node, edge } = subject;
+
+  useEffect(() => {
+    setFindingId("");
+    explain.reset();
+  }, [ctx.scopeKey]);
+
   const evidence = useApiQuery(
     node ? "elementEvidence" : "relationshipEvidence",
-    node
-      ? { modelId: model.id, elementId: selectedId }
-      : { modelId: model.id, relationshipId: selectedId },
-    { enabled: api.mode === "backend" && tab === "explore" && !findingId },
+    ctx.evidenceQueryParam ?? { modelId: model.id, relationshipId: "" },
+    { enabled: api.mode === "backend" && tab === "explore" && !findingId && !isGroup && !!ctx.evidenceQueryParam },
   );
   const runs = useApiQuery(
     "evaluations",
@@ -102,28 +142,25 @@ export function SelectionThreeE({
     { enabled: api.mode === "backend" && !!runId && !!findingId && tab === "explore" },
   );
   const shownEvidence = findingId ? findingEvidence : evidence;
-  const matching = (findings.data ?? []).filter((f) => findingRelated(f, selectedId));
-  const finding = matching.find((f) => f["id"] === findingId);
+  const matching = ctx.filterFindings(findings.data ?? []);
+  const finding = matching.find((f: Record<string, unknown>) => f["id"] === findingId);
   const explain = useMutation({
     mutationFn: async (input: { finding?: Record<string, unknown>; refresh?: boolean }) => {
+      const requestScopeKey = ctx.scopeKey;
       const f = input.finding;
+      const payload = ctx.buildExplainRequest({
+        finding: f,
+        runId,
+        forceRefresh: !!input.refresh,
+      });
       const raw = await backend<unknown>("analyzer/ai/explain", {
         method: "POST",
-        body: JSON.stringify({
-          modelVersionId: model.id,
-          explanationScope: f ? "RULE_FINDING" : node ? "ELEMENT" : "RELATIONSHIP",
-          ...(node ? { elementId: selectedId } : { relationshipId: selectedId }),
-          ...(f ? { findingId: f["id"], evaluationRunId: runId } : {}),
-          forceRefresh: !!input.refresh,
-        }),
+        body: JSON.stringify(payload),
       });
       const result = explanationSchema.parse(raw);
-      if (
-        result.modelVersionId !== model.id ||
-        (node ? result.elementId : result.relationshipId) !== selectedId ||
-        (f && (result.findingId !== f["id"] || result.evaluationRunId !== runId))
-      )
+      if (!ctx.validateExplainResponse(result, f, runId, requestScopeKey)) {
         throw Error("Kết quả không khớp lựa chọn hiện tại. Vui lòng thử lại.");
+      }
       return result;
     },
   });
@@ -137,6 +174,18 @@ export function SelectionThreeE({
     complete: null,
   }));
   function chooseFinding(f: Record<string, unknown>) {
+    if (isGroup) {
+      const fRelId = typeof f["relationshipId"] === "string" ? f["relationshipId"] : null;
+      if (fRelId && projectedEdge?.underlyingEdgeIds?.includes(fRelId) && onDrilldown) {
+        onDrilldown(fRelId);
+        setFindingId(String(f["id"]));
+        setTab("explain");
+      } else {
+        setFindingId(String(f["id"]));
+        setTab("explain");
+      }
+      return;
+    }
     setFindingId(String(f["id"]));
     setTab("explain");
     explain.reset();
@@ -156,6 +205,7 @@ export function SelectionThreeE({
   return (
     <aside
       aria-label="3E details"
+      data-selection-scope-key={ctx.scopeKey}
       className="fixed inset-x-3 bottom-3 z-40 flex max-h-[85vh] min-w-0 flex-col rounded-xl border bg-card shadow-lg xl:sticky xl:inset-auto xl:top-20 xl:z-auto xl:max-h-[calc(100vh-6rem)] xl:self-start xl:shadow-none"
     >
       <header className="flex shrink-0 items-start justify-between gap-3 border-b p-4">
@@ -170,6 +220,204 @@ export function SelectionThreeE({
       </header>
       <div className="shrink-0 border-b p-4">
         <p className="text-sm leading-6">{subject.summary}</p>
+        {nodeMetadataRows(node).length > 0 && (
+          <dl className="mt-3 space-y-1 rounded-md border bg-muted/40 p-2 text-xs leading-5">
+            {nodeMetadataRows(node).map(([label, value]) => (
+              <div key={label} className="flex min-w-0 flex-wrap gap-x-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">{label}:</dt>
+                <dd className="min-w-0 break-words">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        {edge && (
+          <dl className="mt-3 space-y-2 rounded-md border bg-muted/40 p-2 text-xs leading-5">
+            <div className="flex min-w-0 flex-wrap gap-x-2">
+              <dt className="shrink-0 font-medium text-muted-foreground">Origin:</dt>
+              <dd className="min-w-0 break-words">{edge.originLayer ?? "unknown"}</dd>
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-x-2">
+              <dt className="shrink-0 font-medium text-muted-foreground">Resolution:</dt>
+              <dd className="min-w-0 break-words">{edge.resolutionStatus ?? "unknown"}</dd>
+            </div>
+
+            {/* If inspecting the grouped relationship */}
+            {isGroup && projectedEdge && (
+              <>
+                <div className="flex min-w-0 flex-wrap gap-x-2">
+                  <dt className="shrink-0 font-medium text-muted-foreground">Bằng chứng liên kết (quan hệ gộp):</dt>
+                  <dd className="min-w-0 break-words font-medium">
+                    {projectedEdge.evidenceCount === null || projectedEdge.evidenceCount === undefined
+                      ? "— (chưa xác minh / chưa tải)"
+                      : projectedEdge.evidenceCount === 0
+                        ? "0 (đã xác minh không có bằng chứng)"
+                        : `${projectedEdge.evidenceCount} căn cứ xác thực (tổng hợp phân biệt từ ${projectedEdge.underlyingEdgeIds!.length} quan hệ con)`}
+                  </dd>
+                </div>
+                <div className="pt-1">
+                  <dt className="font-medium text-muted-foreground">Các quan hệ thành phần (${projectedEdge.underlyingEdgeIds!.length}):</dt>
+                  <dd className="mt-1 space-y-1">
+                    {projectedEdge.underlyingEdgeIds!.map((subId) => {
+                      const subEdge = model.edges.find((e) => e.id === subId);
+                      return (
+                        <div key={subId} className="flex items-center justify-between rounded border bg-background p-1.5 text-xs">
+                          <span className="font-mono text-[11px]" title={subId}>
+                            {subEdge?.protocol ?? "EDGE"}: {subId.slice(0, 8)}…
+                          </span>
+                          <span className="text-muted-foreground text-[11px]">
+                            {subEdge?.evidenceCount === null || subEdge?.evidenceCount === undefined
+                              ? "— (chưa xác minh)"
+                              : `${subEdge.evidenceCount} căn cứ`}
+                          </span>
+                          <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => onDrilldown ? onDrilldown(subId) : onSelect(subId)}>
+                            Chi tiết
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </dd>
+                </div>
+              </>
+            )}
+
+            {/* If inspecting a single edge that belongs to a group */}
+            {!isGroup && projectedEdge && projectedEdge.underlyingEdgeIds && projectedEdge.underlyingEdgeIds.length > 1 && (
+              <>
+                <div className="flex min-w-0 flex-wrap gap-x-2">
+                  <dt className="shrink-0 font-medium text-muted-foreground">Bằng chứng liên kết (cạnh đơn lẻ):</dt>
+                  <dd className="min-w-0 break-words font-medium">
+                    {edge.evidenceCount === null || edge.evidenceCount === undefined
+                      ? "— (chưa xác minh / chưa tải)"
+                      : edge.evidenceCount === 0
+                        ? "0 (đã xác minh không có bằng chứng)"
+                        : `${edge.evidenceCount} căn cứ xác thực`}
+                  </dd>
+                </div>
+                <div className="rounded border bg-background p-2 text-xs">
+                  <p className="text-muted-foreground">
+                    Cạnh này thuộc quan hệ gộp (${projectedEdge.underlyingEdgeIds.length} quan hệ · tổng hợp phân biệt:{" "}
+                    <strong className="text-foreground">
+                      {projectedEdge.evidenceCount === null ? "—" : `${projectedEdge.evidenceCount} căn cứ`}
+                    </strong>
+                    )
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2 h-7 text-xs"
+                    onClick={() => onDrilldown ? onDrilldown(null) : onSelect(projectedEdge.id)}
+                  >
+                    ← Xem toàn bộ quan hệ gộp (${projectedEdge.underlyingEdgeIds.length} quan hệ con)
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* If inspecting a standalone single edge not in a multi-edge group */}
+            {!isGroup && (!projectedEdge || !projectedEdge.underlyingEdgeIds || projectedEdge.underlyingEdgeIds.length <= 1) && (
+              <div className="flex min-w-0 flex-wrap gap-x-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">Bằng chứng liên kết:</dt>
+                <dd className="min-w-0 break-words font-medium">
+                  {edge.evidenceCount === null || edge.evidenceCount === undefined
+                    ? "— (chưa xác minh / chưa tải)"
+                    : edge.evidenceCount === 0
+                      ? "0 (đã xác minh không có bằng chứng)"
+                      : `${edge.evidenceCount} căn cứ xác thực`}
+                </dd>
+              </div>
+            )}
+
+            {/* If standalone edge (not in a group with multiple edges) */}
+            {(!projectedEdge || !projectedEdge.underlyingEdgeIds || projectedEdge.underlyingEdgeIds.length <= 1) && (
+              <div className="flex min-w-0 flex-wrap gap-x-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">Bằng chứng liên kết:</dt>
+                <dd className="min-w-0 break-words font-medium">
+                  {edge.evidenceCount === null || edge.evidenceCount === undefined
+                    ? "— (chưa xác minh / chưa tải)"
+                    : edge.evidenceCount === 0
+                      ? "0 (đã xác minh không có bằng chứng)"
+                      : `${edge.evidenceCount} căn cứ xác thực`}
+                </dd>
+              </div>
+            )}
+          </dl>
+        )}
+        {sequenceContext && (
+          <dl
+            data-sequence-three-e-meta
+            className="mt-3 space-y-1.5 rounded-md border bg-muted/40 p-2 text-xs leading-5"
+          >
+            <div className="flex min-w-0 flex-wrap gap-x-2">
+              <dt className="shrink-0 font-medium text-muted-foreground">Sequence scope:</dt>
+              <dd className="min-w-0 break-words font-mono">
+                {sequenceContext.interactionId} · {sequenceContext.mode}
+                {sequenceContext.sessionId ? ` · session ${sequenceContext.sessionId.slice(0, 8)}` : ""}
+                {sequenceContext.traceId ? ` · trace ${sequenceContext.traceId.slice(0, 12)}` : ""}
+              </dd>
+            </div>
+            {sequenceContext.provenance && (
+              <div className="flex min-w-0 flex-wrap gap-x-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">Provenance:</dt>
+                <dd className="min-w-0 break-words">{sequenceContext.provenance}</dd>
+              </div>
+            )}
+            {sequenceContext.resolutionStatus && (
+              <div className="flex min-w-0 flex-wrap gap-x-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">Sequence resolution:</dt>
+                <dd className="min-w-0 break-words">{sequenceContext.resolutionStatus}</dd>
+              </div>
+            )}
+            {sequenceContext.messageSort && (
+              <div className="flex min-w-0 flex-wrap gap-x-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">Message sort:</dt>
+                <dd className="min-w-0 break-words font-mono">
+                  #{sequenceContext.occurrenceIndex ?? "?"} · {sequenceContext.messageSort}
+                  {sequenceContext.guard ? ` [${sequenceContext.guard}]` : ""}
+                </dd>
+              </div>
+            )}
+            {sequenceContext.operator && (
+              <div className="flex min-w-0 flex-wrap gap-x-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">Fragment operator:</dt>
+                <dd className="min-w-0 break-words font-mono">{sequenceContext.operator}</dd>
+              </div>
+            )}
+            {sequenceContext.coveredParticipantLabels &&
+              sequenceContext.coveredParticipantLabels.length > 0 && (
+                <div className="flex min-w-0 flex-wrap gap-x-2">
+                  <dt className="shrink-0 font-medium text-muted-foreground">Covered lifelines:</dt>
+                  <dd className="min-w-0 break-words">
+                    {sequenceContext.coveredParticipantLabels.join(", ")}
+                  </dd>
+                </div>
+              )}
+            {sequenceContext.operandSummaries && sequenceContext.operandSummaries.length > 0 && (
+              <div className="flex min-w-0 flex-wrap gap-x-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">Operands &amp; guards:</dt>
+                <dd className="min-w-0 break-words">
+                  {sequenceContext.operandSummaries.join(" · ")}
+                </dd>
+              </div>
+            )}
+            {sequenceContext.evaluationStatus && (
+              <div className="flex min-w-0 flex-wrap gap-x-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">Static evaluation:</dt>
+                <dd className="min-w-0 break-words font-mono">{sequenceContext.evaluationStatus}</dd>
+              </div>
+            )}
+            {sequenceContext.runtimeEvidence && (
+              <div className="flex min-w-0 flex-wrap gap-x-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">Runtime span:</dt>
+                <dd className="min-w-0 break-words font-mono">
+                  trace={sequenceContext.runtimeEvidence.traceId ?? "n/a"} · span=
+                  {sequenceContext.runtimeEvidence.spanId ?? "n/a"} ·{" "}
+                  {sequenceContext.runtimeEvidence.durationMs ?? "?"}ms · status=
+                  {sequenceContext.runtimeEvidence.statusCode ?? "n/a"}
+                </dd>
+              </div>
+            )}
+          </dl>
+        )}
       </div>
       <div
         role="tablist"
@@ -237,7 +485,45 @@ export function SelectionThreeE({
               Đọc căn cứ để xác minh. Một đoạn source riêng lẻ có thể chưa đủ chứng minh toàn bộ
               quan hệ.
             </p>
-            {backendMode && shownEvidence.isPending ? (
+            {isGroup && !findingId ? (
+              <div className="rounded-md border bg-muted/30 p-3 text-xs leading-5">
+                <p className="font-medium text-foreground">
+                  Lựa chọn hiện tại là quan hệ gộp ({projectedEdge?.underlyingEdgeIds?.length ?? 0} quan hệ con).
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  Để xem căn cứ xác thực của từng quan hệ cụ thể, vui lòng chọn <strong>Chi tiết</strong> ở một quan hệ thành phần trong phần thông tin phía trên.
+                </p>
+              </div>
+            ) : scopeKind === "sequence-fragment" && !findingId ? (
+              <div className="rounded-md border bg-muted/30 p-3 text-xs leading-5">
+                <p className="font-medium text-foreground">
+                  Khối điều khiển trình tự ({sequenceContext?.provenance ?? "DESIGNED_ONLY"} · {sequenceContext?.evaluationStatus ?? "NOT_EVALUATED_STATIC_RULE"})
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  CombinedFragment / InteractionUse là cấu trúc thiết kế kịch bản, không truy vấn endpoint bằng chứng phần tử/quan hệ tĩnh với ID giả.
+                </p>
+              </div>
+            ) : scopeKind === "sequence-unmapped" && !findingId ? (
+              <div className="rounded-md border bg-muted/30 p-3 text-xs leading-5 space-y-2">
+                <p className="font-medium text-foreground">
+                  Trạng thái ánh xạ: {sequenceContext?.resolutionStatus ?? "UNMAPPED"} ({sequenceContext?.provenance ?? "USER_DEFINED"})
+                </p>
+                <p className="text-muted-foreground">
+                  Mục trình tự này chưa gắn với phần tử hoặc quan hệ tĩnh canonical duy nhất trong model; không gọi endpoint bằng chứng với ID giả.
+                </p>
+                {sequenceContext?.runtimeEvidence && (
+                  <div className="rounded border bg-background p-2 font-mono text-[11px]">
+                    <p>RUNTIME_OBSERVED span: {sequenceContext.runtimeEvidence.spanId ?? "n/a"}</p>
+                    <p>Trace: {sequenceContext.runtimeEvidence.traceId ?? "n/a"}</p>
+                    <p>
+                      Operation: {sequenceContext.runtimeEvidence.operation ?? "n/a"} ·{" "}
+                      {sequenceContext.runtimeEvidence.durationMs ?? "?"}ms · status{" "}
+                      {sequenceContext.runtimeEvidence.statusCode ?? "n/a"}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : backendMode && shownEvidence.isPending ? (
               <p role="status">Đang tải bằng chứng…</p>
             ) : shownEvidence.error ? (
               <p role="alert">
@@ -275,7 +561,7 @@ export function SelectionThreeE({
                 </Button>
               </>
             )}
-            {backendMode && !finding && !result && (
+            {backendMode && !finding && !result && canExplain && (
               <Button
                 className="h-auto whitespace-normal"
                 size="sm"
@@ -284,6 +570,47 @@ export function SelectionThreeE({
               >
                 Giải thích thêm từ bằng chứng
               </Button>
+            )}
+            {backendMode && !finding && !result && !canExplain && !isGroup && (
+              <div className="rounded-md border bg-muted/30 p-2.5 text-xs leading-5">
+                <p className="font-medium text-foreground">
+                  Không gọi giải thích AI cho mục trình tự chưa ánh xạ canonical ({sequenceContext?.evaluationStatus ?? sequenceContext?.resolutionStatus ?? "UNMAPPED"}).
+                </p>
+                <p className="text-muted-foreground">
+                  Chỉ phần tử hoặc quan hệ đã phân giải canonical (RESOLVED) mới gửi yêu cầu giải thích AI.
+                </p>
+              </div>
+            )}
+            {backendMode && !finding && !result && isGroup && (
+              <div className="rounded-md border bg-muted/30 p-2.5 text-xs leading-5">
+                <p className="font-medium text-foreground">
+                  Lựa chọn hiện tại là quan hệ gộp (${projectedEdge?.underlyingEdgeIds?.length} quan hệ con).
+                </p>
+                <p className="text-muted-foreground">
+                  Để nhận giải thích AI chính xác theo căn cứ cụ thể, vui lòng chọn <strong>Chi tiết</strong> ở một quan hệ thành phần trong phần thông tin phía trên.
+                </p>
+              </div>
+            )}
+            {backendMode && finding && isGroup && (
+              <div className="rounded-md border bg-muted/30 p-2.5 text-xs leading-5">
+                <p className="font-medium text-foreground">
+                  Nhận xét thuộc quan hệ gộp.
+                </p>
+                <p className="text-muted-foreground">
+                  Mọi yêu cầu giải thích AI chỉ được thực hiện trên một quan hệ thành phần cụ thể. Vui lòng chọn <strong>Chi tiết</strong> ở một quan hệ thành phần.
+                </p>
+                {typeof finding["relationshipId"] === "string" &&
+                  projectedEdge?.underlyingEdgeIds?.includes(finding["relationshipId"]) &&
+                  onDrilldown && (
+                    <Button
+                      className="mt-2"
+                      size="sm"
+                      onClick={() => onDrilldown(String(finding["relationshipId"]))}
+                    >
+                      Chi tiết quan hệ con ({String(finding["relationshipId"])}) để giải thích
+                    </Button>
+                  )}
+              </div>
             )}
             {explain.isPending && <p role="status">Đang chuẩn bị giải thích…</p>}
             {explain.error && (
@@ -395,7 +722,7 @@ export function SelectionThreeE({
                   </p>
                 ) : matching.length ? (
                   <div className="space-y-3">
-                    {matching.slice(0, limit).map((f) => {
+                    {matching.slice(0, limit).map((f: Record<string, unknown>) => {
                       const d = f["details"] as Record<string, unknown> | null;
                       return (
                         <article key={String(f["id"])} className="space-y-3 rounded-lg border p-3">
@@ -417,15 +744,33 @@ export function SelectionThreeE({
                               ? "Căn cứ chưa đầy đủ."
                               : "Kết quả giới hạn trong mô hình đã phân tích."}
                           </p>
-                          <div className="flex flex-wrap gap-2">
-                            <Button
-                              className="h-auto whitespace-normal"
-                              size="sm"
-                              variant="outline"
-                              onClick={() => chooseFinding(f)}
-                            >
-                              Vì sao có nhận xét này?
-                            </Button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {isGroup ? (
+                              typeof f["relationshipId"] === "string" &&
+                              projectedEdge?.underlyingEdgeIds?.includes(f["relationshipId"]) ? (
+                                <Button
+                                  className="h-auto whitespace-normal"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => chooseFinding(f)}
+                                >
+                                  Chi tiết quan hệ con ({String(f["relationshipId"])})
+                                </Button>
+                              ) : (
+                                <p className="text-xs text-muted-foreground italic">
+                                  Nhận xét gắn với nhiều phần tử; chọn quan hệ thành phần cụ thể để giải thích.
+                                </p>
+                              )
+                            ) : (
+                              <Button
+                                className="h-auto whitespace-normal"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => chooseFinding(f)}
+                              >
+                                Vì sao có nhận xét này?
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               variant="outline"
@@ -499,7 +844,7 @@ export function SelectionThreeE({
             Các quan hệ liên quan ({subject.connections.length})
           </summary>
           <ul className="mt-2 space-y-2">
-            {subject.connections.slice(0, 20).map((e) => (
+            {subject.connections.slice(0, 20).map((e: ArchitecturalModel["edges"][number]) => (
               <li key={e.id}>
                 <button
                   className="break-words text-left text-sm underline"

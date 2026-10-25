@@ -12,6 +12,8 @@ import lombok.*;
 public class AdminDashboardStatsDTO {
 
     private long totalUsers;
+    private long runningRuntimeSessions;
+    private String healthStatus;
     private long totalWorkspaces;
     private long totalProjects;
     private long totalSnapshots;

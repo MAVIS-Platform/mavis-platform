@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-10-24T08:30:25.830Z",
+  "milestone": "M2",
+  "deliverable": "D1: Vocabulary & UC-01 Alignment",
+  "dbCheckConstraintsV13": {
+    "element_type": [
+      "SYSTEM",
+      "SERVICE_CONTAINER",
+      "COMPONENT",
+      "CLASS_INTERFACE",
+      "DATABASE",
+      "EXTERNAL_SYSTEM",
+      "QUEUE_BROKER",
+      "MESSAGE_CHANNEL"
+    ],
+    "relation_type": [
+      "SERVICE_HTTP_CALL",
+      "CODE_DEPENDENCY",
+      "DATABASE_ACCESS",
+      "RUNTIME_OBSERVED",
+      "DECLARED_COMPOSE",
+      "MESSAGE_PUBLISH",
+      "MESSAGE_SUBSCRIBE"
+    ],
+    "origin_layer": [
+      "STATIC",
+      "CONFIG",
+      "DEPLOYMENT",
+      "RUNTIME",
+      "STATIC_AND_RUNTIME"
+    ]
+  },
+  "alignedEnums": {
+    "ElementType": {
+      "added": [
+        "MESSAGE_CHANNEL"
+      ],
+      "file": "MAVIS-Platform/mavis-be/mavis-common/src/main/java/com/mavis/common/enums/ElementType.java"
+    },
+    "RelationType": {
+      "added": [
+        "MESSAGE_PUBLISH",
+        "MESSAGE_SUBSCRIBE"
+      ],
+      "file": "MAVIS-Platform/mavis-be/mavis-common/src/main/java/com/mavis/common/enums/RelationType.java"
+    },
+    "OriginLayer": {
+      "added": [
+        "CONFIG"
+      ],
+      "file": "MAVIS-Platform/mavis-be/mavis-common/src/main/java/com/mavis/common/enums/OriginLayer.java"
+    }
+  },
+  "uc01Status": {
+    "status": "OPEN (pending architectural decision)",
+    "currentDirection": {
+      "MESSAGE_PUBLISH": "producer -> channel (label: 'Declares publishing to')",
+      "MESSAGE_SUBSCRIBE": "channel -> consumer (label: 'Delivers messages to')"
+    },
+    "rationale": "Kept consistent with backend GraphBuilderServiceImpl and frontend renderers to avoid regressions while architect review is pending."
+  }
+}

@@ -44,6 +44,8 @@ class WorkspaceServiceImplTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock private com.mavis.common.security.AccessPolicyService accessPolicyService;
+
     @InjectMocks
     private WorkspaceServiceImpl workspaceService;
 
@@ -55,7 +57,7 @@ class WorkspaceServiceImplTest {
         currentUserId = UUID.randomUUID();
         currentUser = User.builder()
                 .id(currentUserId)
-                .email("lecturer@fpt.edu.vn")
+                .email("lecturer@fpt.edu.vn").role(Role.builder().code("LECTURER").build())
                 .fullName("Lecturer User")
                 .status("ACTIVE")
                 .build();
@@ -65,6 +67,15 @@ class WorkspaceServiceImplTest {
         );
     }
 
+    @Test void studentCannotCreateTeachingWorkspace() {
+        currentUser.setRole(Role.builder().code("STUDENT").build());when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        assertThatThrownBy(()->workspaceService.createWorkspace(WorkspaceCreateRequest.builder().code("X").name("X").build())).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(workspaceRepository);
+    }
+    @Test void outsiderCannotEnumerateMembers() {
+        UUID w=UUID.randomUUID();doThrow(new BusinessException(ErrorCode.FORBIDDEN)).when(accessPolicyService).requireWorkspaceMember(w);
+        assertThatThrownBy(()->workspaceService.getWorkspaceMembers(w)).isInstanceOf(BusinessException.class);verifyNoInteractions(workspaceRepository,workspaceMemberRepository);
+    }
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();

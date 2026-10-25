@@ -21,4 +21,6 @@ public class CodeEvidenceDTO {
     private String qualifiedName;
     @Builder.Default
     private java.util.List<String> symbolCandidates = new java.util.ArrayList<>();
+    @Builder.Default
+    private java.util.Map<String, Object> metadata = new java.util.LinkedHashMap<>();
 }

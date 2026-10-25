@@ -8,6 +8,8 @@ import { SelectField } from "@/components/shared/forms";
 import { SelectablePreview, download } from "./selectable-diagram-preview";
 import { DrawioEditor } from "./drawio-editor";
 import { ScenarioDiagram } from "./scenario-diagram";
+import { UmlDiagramWorkspace } from "./uml-diagram-workspace";
+import type { UmlDiagramKind } from "./uml-diagrams";
 import {
   diagramKinds,
   selectDiagram,
@@ -17,14 +19,19 @@ import {
 } from "./diagram-catalog";
 import { generateDrawio } from "@/lib/drawio/generate";
 import { layoutLocally } from "./drawio-local-layout";
+import type { SequenceSelectionContext } from "./three-e-content";
 export function ArchitectureDiagrams({
   model,
   selectedId,
   onSelect,
+  onSelectSequence,
+  systemName,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onSelectSequence?: ((id: string | null, seqCtx: SequenceSelectionContext | null) => void) | undefined;
+  systemName?: string | undefined;
 }) {
   const [family, setFamily] = useState<DiagramFamily>("C4"),
     [kind, setKind] = useState<DiagramKind>("CONTAINER"),
@@ -43,23 +50,30 @@ export function ArchitectureDiagrams({
     }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const container = containers.find((node) => node.id === service) ?? containers[0];
+  const isUmlWorkspaceKind = [
+    "UML_CLASS",
+    "UML_PACKAGE",
+    "UML_DEPLOYMENT",
+    "UML_ACTIVITY",
+    "UML_STATE",
+  ].includes(kind);
   const selection = useMemo(
-    () => selectDiagram(model, kind, container?.id),
-    [model, kind, container?.id],
+    () => selectDiagram(model, kind, container?.id, { systemName }),
+    [model, kind, container?.id, systemName],
   );
   const document = selection.document,
     key = selection.key;
   const saved = useApiQuery(
     "architectureDocument",
     { modelId: model.id, viewId: key },
-    { enabled: api.mode === "backend" && !!document },
+    { enabled: api.mode === "backend" && !!document && !isUmlWorkspaceKind },
   );
   useEffect(() => {
     let live = true;
     setGenerated("");
     setError("");
     setGroup(null);
-    if (!document) return;
+    if (!document || isUmlWorkspaceKind) return;
     void generateDrawio(document, "clean", layoutLocally)
       .then((xml) => {
         if (live) setGenerated(xml);
@@ -70,7 +84,7 @@ export function ArchitectureDiagrams({
     return () => {
       live = false;
     };
-  }, [document]);
+  }, [document, isUmlWorkspaceKind]);
   const xml = saved.data?.xml ?? generated;
   function pick(id: string) {
     if (
@@ -92,10 +106,13 @@ export function ArchitectureDiagrams({
     kind === "COMPONENT"
       ? `C4 · Component · ${container?.name ?? "Service"}`
       : `${family} · ${diagramKinds[family].find((item) => item.value === kind)?.label ?? kind}`;
-  function change(kind: DiagramKind) {
-    setKind(kind);
+  function change(nextKind: DiagramKind) {
+    setKind(nextKind);
     setEditing(false);
     setGroup(null);
+    if (nextKind !== "SCENARIOS" && nextKind !== "UML_SEQUENCE" && onSelectSequence) {
+      onSelectSequence(null, null);
+    }
   }
   return (
     <section aria-label="Architecture diagrams" className="min-w-0 space-y-4">
@@ -105,11 +122,19 @@ export function ArchitectureDiagrams({
             label="Diagram family"
             value={family}
             onChange={(value) => {
-              setFamily(value as DiagramFamily);
-              change(value === "C4" ? "CONTAINER" : "LOGICAL");
+              const nextFam = value as DiagramFamily;
+              setFamily(nextFam);
+              change(
+                nextFam === "C4"
+                  ? "CONTAINER"
+                  : nextFam === "UML"
+                    ? "UML_SEQUENCE"
+                    : "LOGICAL",
+              );
             }}
             options={[
               { value: "C4", label: "C4" },
+              { value: "UML", label: "UML (6 Diagrams)" },
               { value: "4+1", label: "4+1 View Model" },
             ]}
           />
@@ -137,9 +162,39 @@ export function ArchitectureDiagrams({
             }))}
           />
         )}
+        {["UML_CLASS", "UML_PACKAGE"].includes(kind) && (
+          <SelectField
+            label="Service Scope"
+            value={service}
+            onChange={(value) => {
+              setService(value);
+              setEditing(false);
+            }}
+            options={[
+              { value: "", label: "All Services (System-wide)" },
+              ...containers.map((node) => ({
+                value: node.id,
+                label: node.name,
+              })),
+            ]}
+          />
+        )}
       </div>
-      {kind === "SCENARIOS" ? (
-        <ScenarioDiagram model={model} onSelect={onSelect} />
+      {kind === "SCENARIOS" || kind === "UML_SEQUENCE" ? (
+        <ScenarioDiagram
+          model={model}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onSelectSequence={onSelectSequence}
+        />
+      ) : isUmlWorkspaceKind ? (
+        <UmlDiagramWorkspace
+          model={model}
+          kind={kind as UmlDiagramKind}
+          serviceId={service || undefined}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
       ) : !document ? (
         <p role="status" className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">
           {selection.reason}
@@ -178,6 +233,8 @@ export function ArchitectureDiagrams({
                   modelId={model.id}
                   diagramId={key}
                   title={title}
+                  notation={document.notation}
+                  level={document.level}
                   scope={key}
                   xml={xml}
                   generatedXml={generated || xml}

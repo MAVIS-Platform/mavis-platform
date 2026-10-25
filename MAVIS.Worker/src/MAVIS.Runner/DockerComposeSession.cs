@@ -225,14 +225,15 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             "--label", "com.docker.compose.project=" + ResourceProject, "--label", "com.docker.compose.service=mavis-scenario",
             "--memory", "256m", "--cpus", "1", "--pids-limit", "64", "--read-only", "--tmpfs", "/tmp:rw,noexec,nosuid,size=32m",
             "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "--env", "MAVIS_RUNNER_INTERNAL_NETWORK=1",
-            image, "stdin-scenario"], _directory!, Math.Min(300, scenario.TimeoutSeconds + 10), input, ct);
+            // Container startup is outside the HTTP deadline; the session token still bounds the whole run.
+            image, "stdin-scenario"], _directory!, Math.Min(300, scenario.TimeoutSeconds + 30), input, ct);
         if (string.IsNullOrWhiteSpace(result.StandardOutput)) throw new RuntimeStageException("SCENARIO_CONTAINER_FAILED");
         return JsonSerializer.Deserialize<HttpScenarioOutcome>(result.StandardOutput, options) ?? throw new RuntimeStageException("SCENARIO_OUTPUT_INVALID");
     }
 
     private Task<DockerCommandResult> Command(IReadOnlyList<string> arguments, CancellationToken ct) => docker.RunAsync(
         new[] { "compose", "--project-name", ResourceProject, "--file", Path.Combine(_directory!, "compose.yaml"), "--file", Path.Combine(_directory!, "override.json") }.Concat(arguments).ToArray(),
-        _directory!, 15, ct);
+        _directory!, arguments[0] == "up" ? 45 : 15, ct);
 
     private static bool PinnedRunnerImage(string? image)
     {

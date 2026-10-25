@@ -1,0 +1,69 @@
+{
+  "cases": [
+    {
+      "case": "C1",
+      "xmlUtf8Bytes": 7453,
+      "svgUtf8Bytes": 4606,
+      "svgValid": true,
+      "modelId": "8b5a2dbc-329d-4e9a-8d01-b94ab4b1c241",
+      "notation": "C4",
+      "level": "CONTEXT",
+      "nodes": 1,
+      "edges": 0,
+      "boundaries": 0,
+      "inside": 0,
+      "outside": 0,
+      "danglingEdges": 0,
+      "boundarySourceId": null
+    },
+    {
+      "case": "C2",
+      "xmlUtf8Bytes": 72808,
+      "svgUtf8Bytes": 60026,
+      "svgValid": true,
+      "modelId": "8b5a2dbc-329d-4e9a-8d01-b94ab4b1c241",
+      "notation": "C4",
+      "level": "CONTAINER",
+      "nodes": 18,
+      "edges": 12,
+      "boundaries": 1,
+      "inside": 17,
+      "outside": 0,
+      "danglingEdges": 0,
+      "boundarySourceId": "system:boundary"
+    },
+    {
+      "case": "C3-order",
+      "xmlUtf8Bytes": 57467,
+      "svgUtf8Bytes": 83004,
+      "svgValid": true,
+      "modelId": null,
+      "notation": null,
+      "level": null,
+      "nodes": 22,
+      "edges": 22,
+      "boundaries": 1,
+      "inside": 17,
+      "outside": 4,
+      "danglingEdges": 0,
+      "boundarySourceId": "e1f849c5-cb7f-4b72-b6a2-d38d65bb0337"
+    },
+    {
+      "case": "C3-kitchen",
+      "xmlUtf8Bytes": 76147,
+      "svgUtf8Bytes": 41062,
+      "svgValid": true,
+      "modelId": "8b5a2dbc-329d-4e9a-8d01-b94ab4b1c241",
+      "notation": "C4",
+      "level": "COMPONENT",
+      "nodes": 11,
+      "edges": 10,
+      "boundaries": 1,
+      "inside": 8,
+      "outside": 2,
+      "danglingEdges": 0,
+      "boundarySourceId": "899a82d3-358d-4de1-81d7-72705e29e608"
+    }
+  ],
+  "c3InternalIntersection": 0
+}

@@ -491,6 +491,8 @@ class GraphBuilderServiceTest {
         when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(call->{List<ModelRelationship> values=call.getArgument(0);values.forEach(e->e.setId(UUID.randomUUID()));return values;});
         var elements=graphBuilderService.buildAndSaveElements(sampleModelVersion,List.of(),"/repo");
         assertThat(elements).extracting(ModelElement::getName).contains("orders_data @ mysql","kitchen_data @ mysql","mysql");
+        var ordersDb = elements.stream().filter(e -> "orders_data @ mysql".equals(e.getName())).findFirst().orElseThrow();
+        assertThat(ordersDb.getProperties().path("protocol").asText()).isEqualTo("mysql");
         var facts=List.of(CodeEvidenceDTO.builder().elementType("DATABASE_REPOSITORY").identifier("OrderRepository").sourceComponent("OrderRepository").filePath("/repo/orders/OrderRepository.java").lineNumber(1).build(),CodeEvidenceDTO.builder().elementType("DATABASE_REPOSITORY").identifier("KitchenRepository").sourceComponent("KitchenRepository").filePath("/repo/kitchen/KitchenRepository.java").lineNumber(1).build());
         graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot,sampleModelVersion,elements,facts);
         @SuppressWarnings("unchecked") ArgumentCaptor<List<ModelRelationship>> captured=ArgumentCaptor.forClass(List.class);
@@ -515,4 +517,66 @@ class GraphBuilderServiceTest {
         var publishing=relations.getValue().stream().filter(r->r.getRelationType().equals("MESSAGE_PUBLISH")).findFirst().orElseThrow();
         var handling=relations.getValue().stream().filter(r->r.getRelationType().equals("MESSAGE_SUBSCRIBE")).findFirst().orElseThrow();
         assertThat(publishing.getTargetElement().getId().equals(handling.getSourceElement().getId())).isEqualTo(expectedChannels==1);
-    }}
+    }
+
+    @Test
+    @DisplayName("Q3: Should only emit artifactName when container has explicit image, never fabricating :build fallback")
+    void shouldNotFabricateBuildArtifactWhenContainerLacksExplicitImage() {
+        var explicitImageContainer = DetectedContainerDTO.builder()
+                .serviceName("orders-db")
+                .elementType("DATABASE")
+                .image("mysql:8.0")
+                .ports(List.of("3306:3306"))
+                .composeFilePath("/repo/docker-compose.yml")
+                .lineNumber(14)
+                .build();
+        var buildContextOnlyContainer = DetectedContainerDTO.builder()
+                .serviceName("orders-service")
+                .elementType("SERVICE_CONTAINER")
+                .buildContext("./orders")
+                .ports(List.of("8081:8081"))
+                .composeFilePath("/repo/docker-compose.yml")
+                .lineNumber(4)
+                .build();
+        var portsEnvOnlyContainer = DetectedContainerDTO.builder()
+                .serviceName("edge-proxy")
+                .elementType("SERVICE_CONTAINER")
+                .ports(List.of("8080:8080"))
+                .composeFilePath("/repo/docker-compose.yml")
+                .lineNumber(20)
+                .build();
+
+        when(dockerDetectorService.detectContainers(anyString()))
+                .thenReturn(List.of(explicitImageContainer, buildContextOnlyContainer, portsEnvOnlyContainer));
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(call -> {
+            List<ModelElement> values = call.getArgument(0);
+            values.forEach(e -> {
+                if (e.getId() == null) e.setId(UUID.randomUUID());
+            });
+            return values;
+        });
+
+        var elements = graphBuilderService.buildAndSaveElements(sampleModelVersion, List.of(), "/repo");
+
+        var dbElem = elements.stream().filter(e -> "orders-db".equals(e.getName())).findFirst().orElseThrow();
+        var dbMeta = dbElem.getProperties().path("deploymentMetadata");
+        assertThat(dbMeta.path("artifactName").asText()).isEqualTo("mysql:8.0");
+        assertThat(dbMeta.path("artifactKind").asText()).isEqualTo("CONTAINER_IMAGE");
+        assertThat(dbMeta.path("artifactResolution").asText()).isEqualTo("EXPLICIT_CONTAINER_IMAGE");
+
+        var buildElem = elements.stream().filter(e -> "orders-service".equals(e.getName())).findFirst().orElseThrow();
+        var buildMeta = buildElem.getProperties().path("deploymentMetadata");
+        assertThat(buildMeta.has("artifactName")).isFalse();
+        assertThat(buildMeta.has("artifactKind")).isFalse();
+        assertThat(buildMeta.path("declaredBuildContext").asText()).isEqualTo("./orders");
+        assertThat(buildMeta.path("artifactResolution").asText()).isEqualTo("BUILD_CONTEXT_ONLY_UNRESOLVED_ARTIFACT");
+
+        var portsOnlyElem = elements.stream().filter(e -> "edge-proxy".equals(e.getName())).findFirst().orElseThrow();
+        var portsOnlyMeta = portsOnlyElem.getProperties().path("deploymentMetadata");
+        assertThat(portsOnlyMeta.has("artifactName")).isFalse();
+        assertThat(portsOnlyMeta.has("artifactKind")).isFalse();
+        assertThat(portsOnlyMeta.has("declaredBuildContext")).isFalse();
+        assertThat(portsOnlyMeta.path("artifactResolution").asText()).isEqualTo("NO_ARTIFACT_DECLARED");
+    }
+}
+

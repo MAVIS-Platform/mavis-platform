@@ -1,0 +1,220 @@
+{
+  "fixture": "edge-semantics-contract",
+  "version": 1,
+  "purpose": "Kiểm chứng projection/aggregation của Graph & C4 hiện có theo contract đã xác minh ngày 24/10/2026. KHÔNG phải ground truth để đo precision/recall của analyzer; không dùng để kết luận kiến trúc FTGO hay dự án thật.",
+  "contractBasis": {
+    "direction": "MAVIS-Platform/mavis-be mavis-analyzer/.../graph/service/impl/GraphBuilderServiceImpl.java:404-414 — MESSAGE_PUBLISH: from=producer component/container, to=MESSAGE_CHANNEL; MESSAGE_SUBSCRIBE: from=MESSAGE_CHANNEL, to=consumer; originLayer='STATIC', direction='DIRECTED'. Đọc trực tiếp code tạo quan hệ, không suy từ tên enum.",
+    "protocolSource": "GraphBuilderServiceImpl.java:322 — protocol lấy từ evidence (ev.getEndpointAlias()), lưu trên MESSAGE_CHANNEL.properties.protocol kèm transportAuthority (compose binding) và resolutionIssue='UNRESOLVED_MESSAGE_TRANSPORT' khi chưa phân giải. Graph API NodeDTO {id,name,type,sourcePath} (graph/dto/NodeDTO.java:14-19) không expose properties nên protocol không đi qua graph API; đường model-detail (/elements) truyền technology=languageStack=endpointAlias.",
+    "aggregation": "MAVIS-Frontend src/features/architecture/graph-projection.ts — group key JSON.stringify([from,to,protocol(=kind),originLayer]); tích lũy underlyingEdgeIds và uncertain theo OR; trả filteredRelationships/internalRelationships.",
+    "labels": "src/lib/drawio/rules.ts relationLabel — nhãn intent-only, không có protocol/technology trên nhãn cạnh (generate.ts:107 chỉ wrap relationLabel)."
+  },
+  "unresolvedContradictions": [
+    {
+      "id": "UC-01",
+      "topic": "Chiều cạnh MESSAGE_SUBSCRIBE",
+      "docsConvention": "Graph.docx (v1 24/10/2026): CONSUMES: Service/Method → Topic; 'consumer trỏ tới topic, không phải mũi tên biểu diễn chiều chuyển message'",
+      "implementation": "channel → consumer kèm nhãn FE 'Delivers messages to' — nhất quán nội bộ theo chiều dòng message",
+      "status": "CHƯA GIẢI QUYẾT — cần nhóm chốt; fixture mã hóa contract implementation hiện hành, không chọn phía"
+    }
+  ],
+  "resolvedContracts": [
+    {
+      "id": "UC-02",
+      "topic": "Ngữ nghĩa resolutionStatus của cạnh sau aggregation",
+      "resolution": "S2c — contract projection frontend: chuẩn hóa thiếu/rỗng thành UNKNOWN; nhóm cùng trạng thái giữ trạng thái đó; nhiều trạng thái khác nhau → UNKNOWN (nghĩa là 'chưa thể biểu diễn bằng một trạng thái thống nhất', KHÔNG phải 'mọi cạnh gốc đều UNKNOWN'); uncertain giữ OR; underlyingEdgeIds giữ đủ; không sửa cạnh nguồn/dữ liệu lưu trữ; không thêm enum MIXED; không đóng UC-01",
+      "status": "ĐÃ GIẢI QUYẾT Ở PROJECTION (S2c, 24/10/2026)"
+    }
+  ],
+  "model": {
+    "id": "fixture-edge-semantics-1",
+    "projectId": "fixture-project-1",
+    "snapshotId": "fixture-snapshot-1",
+    "revision": 1,
+    "label": "Edge semantics fixture (synthetic, answer key embedded)",
+    "elements": [
+      {
+        "id": "n-producer",
+        "name": "orders-api",
+        "layer": "domain",
+        "elementType": "SERVICE_CONTAINER",
+        "parentId": null,
+        "technology": null,
+        "properties": {},
+        "description": "",
+        "evidence": []
+      },
+      {
+        "id": "n-consumer",
+        "name": "billing-api",
+        "layer": "domain",
+        "elementType": "SERVICE_CONTAINER",
+        "parentId": null,
+        "technology": null,
+        "properties": {},
+        "description": "",
+        "evidence": []
+      },
+      {
+        "id": "n-channel",
+        "name": "order-events [kafka]",
+        "layer": "domain",
+        "elementType": "MESSAGE_CHANNEL",
+        "parentId": null,
+        "technology": "kafka",
+        "properties": {
+          "channelName": "order-events",
+          "protocol": "kafka",
+          "logicalKey": "order-events@kafka",
+          "transportAuthority": "kafka"
+        },
+        "description": "Declared channel on kafka",
+        "evidence": []
+      },
+      {
+        "id": "n-db",
+        "name": "orders-db",
+        "layer": "data",
+        "elementType": "DATABASE",
+        "parentId": null,
+        "technology": null,
+        "properties": {},
+        "description": "",
+        "evidence": []
+      }
+    ],
+    "edges": [
+      {
+        "id": "e-pub-1",
+        "from": "n-producer",
+        "to": "n-channel",
+        "protocol": "MESSAGE_PUBLISH",
+        "evidence": [],
+        "uncertain": false,
+        "originLayer": "STATIC",
+        "resolutionStatus": "RESOLVED"
+      },
+      {
+        "id": "e-sub-1",
+        "from": "n-channel",
+        "to": "n-consumer",
+        "protocol": "MESSAGE_SUBSCRIBE",
+        "evidence": [],
+        "uncertain": false,
+        "originLayer": "STATIC",
+        "resolutionStatus": "RESOLVED"
+      },
+      {
+        "id": "e-db-1",
+        "from": "n-consumer",
+        "to": "n-db",
+        "protocol": "DATABASE_ACCESS",
+        "evidence": [],
+        "uncertain": true,
+        "originLayer": "STATIC",
+        "resolutionStatus": "UNRESOLVED"
+      },
+      {
+        "id": "e-code-1",
+        "from": "n-producer",
+        "to": "n-consumer",
+        "protocol": "CODE_DEPENDENCY",
+        "evidence": [],
+        "uncertain": false,
+        "originLayer": "STATIC",
+        "resolutionStatus": "RESOLVED"
+      },
+      {
+        "id": "e-code-2",
+        "from": "n-producer",
+        "to": "n-consumer",
+        "protocol": "CODE_DEPENDENCY",
+        "evidence": [],
+        "uncertain": true,
+        "originLayer": "STATIC",
+        "resolutionStatus": "UNRESOLVED"
+      },
+      {
+        "id": "e-code-3",
+        "from": "n-producer",
+        "to": "n-consumer",
+        "protocol": "CODE_DEPENDENCY",
+        "evidence": [],
+        "uncertain": false,
+        "originLayer": "STATIC_AND_RUNTIME",
+        "resolutionStatus": "RESOLVED"
+      },
+      {
+        "id": "e-comp-1",
+        "from": "n-consumer",
+        "to": "n-producer",
+        "protocol": "DECLARED_COMPOSE",
+        "evidence": [],
+        "uncertain": false,
+        "originLayer": "DEPLOYMENT",
+        "resolutionStatus": "RESOLVED"
+      },
+      {
+        "id": "e-rt-1",
+        "from": "n-consumer",
+        "to": "n-db",
+        "protocol": "RUNTIME_OBSERVED",
+        "evidence": [],
+        "uncertain": false,
+        "originLayer": "RUNTIME",
+        "resolutionStatus": "RESOLVED"
+      }
+    ]
+  },
+  "answerKey": {
+    "directions": {
+      "e-pub-1": { "from": "n-producer", "to": "n-channel" },
+      "e-sub-1": { "from": "n-channel", "to": "n-consumer" }
+    },
+    "aggregatedGroups": [
+      {
+        "kind": "CODE_DEPENDENCY",
+        "from": "n-producer",
+        "to": "n-consumer",
+        "originLayer": "STATIC",
+        "underlying": ["e-code-1", "e-code-2"],
+        "uncertain": true,
+        "resolutionStatus": "UNKNOWN"
+      },
+      {
+        "kind": "CODE_DEPENDENCY",
+        "from": "n-producer",
+        "to": "n-consumer",
+        "originLayer": "STATIC_AND_RUNTIME",
+        "underlying": ["e-code-3"],
+        "uncertain": false,
+        "resolutionStatus": "RESOLVED"
+      }
+    ],
+    "notAggregated": ["e-pub-1", "e-sub-1", "e-db-1", "e-comp-1", "e-rt-1", "e-code-3"],
+    "uncertainty": {
+      "e-db-1": { "uncertain": true, "resolutionStatus": "UNRESOLVED" },
+      "e-pub-1": { "uncertain": false, "resolutionStatus": "RESOLVED" }
+    },
+    "originFilter": {
+      "source": { "excluded": ["e-comp-1", "e-rt-1"], "filteredRelationships": 2 },
+      "all": { "excluded": [], "filteredRelationships": 0 },
+      "deployment": { "included": ["e-comp-1"] }
+    },
+    "labelExpectations": {
+      "note": "Giá trị golden đóng băng ngày 24/10/2026 sau khi review contract; KHÔNG đọc bảng mapping production lúc chạy test. Nếu production đổi nhãn, test đỏ và phải review lại answer key.",
+      "explicit": {
+        "SERVICE_HTTP_CALL": "HTTP call",
+        "CODE_DEPENDENCY": "Code dependency",
+        "DATABASE_ACCESS": "Database access",
+        "DECLARED_COMPOSE": "Compose dependency",
+        "MESSAGE_PUBLISH": "Declares publishing to",
+        "MESSAGE_SUBSCRIBE": "Delivers messages to"
+      },
+      "fallback": {
+        "RUNTIME_OBSERVED": "RUNTIME OBSERVED"
+      },
+      "emptyTypeFallback": "Unclassified relationship",
+      "unknownTypeFallback": "WEIRD KIND"
+    }
+  }
+}

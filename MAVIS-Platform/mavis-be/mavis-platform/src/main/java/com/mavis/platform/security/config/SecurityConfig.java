@@ -41,6 +41,7 @@ public class SecurityConfig {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable)
+            .exceptionHandling(errors -> errors.authenticationEntryPoint((request, response, error) -> response.sendError(401)))
             .authorizeHttpRequests(auth -> {
                 auth.requestMatchers(
                         "/api/v1/auth/**",

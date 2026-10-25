@@ -9,6 +9,7 @@ import com.mavis.common.entity.ModelRelationship;
 import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
+import com.mavis.common.repository.EvidenceRepository;
 import com.mavis.common.repository.ModelElementRepository;
 import com.mavis.common.repository.ModelRelationshipRepository;
 import com.mavis.common.repository.ModelVersionRepository;
@@ -36,6 +37,7 @@ public class GraphServiceImpl implements GraphService {
     private final ModelElementRepository modelElementRepository;
     private final ModelRelationshipRepository modelRelationshipRepository;
     private final ModelVersionRepository modelVersionRepository;
+    private final EvidenceRepository evidenceRepository;
     private final com.mavis.analyzer.impact.WorkerImpactService workerImpact;
     private final com.mavis.common.security.AccessPolicyService accessPolicy;
 
@@ -52,26 +54,46 @@ public class GraphServiceImpl implements GraphService {
         List<ModelElement> modelElements = modelElementRepository.findByModelVersionId(targetModelVersionId);
         List<ModelRelationship> relationships = modelRelationshipRepository.findByModelVersionId(targetModelVersionId);
 
+        // O(1) single batch query for all relationship evidence in this model version
+        Map<UUID, List<UUID>> evidenceMap = new HashMap<>();
+        List<Object[]> evidenceRows = evidenceRepository.findRelationshipEvidenceIdsByModelVersionId(targetModelVersionId);
+        if (evidenceRows != null) {
+            for (Object[] row : evidenceRows) {
+                if (row != null && row.length >= 2 && row[0] instanceof UUID relId && row[1] instanceof UUID evId) {
+                    evidenceMap.computeIfAbsent(relId, k -> new ArrayList<>()).add(evId);
+                }
+            }
+        }
+
         List<NodeDTO> nodeDTOs = modelElements.stream()
                 .map(el -> NodeDTO.builder()
                         .id(el.getId())
                         .name(el.getName())
                         .type(el.getElementType())
                         .sourcePath(extractSourcePath(el))
+                        .protocol(extractTextProperty(el, "protocol"))
+                        .transportAuthority(extractTextProperty(el, "transportAuthority"))
+                        .resolutionIssue(extractTextProperty(el, "resolutionIssue"))
                         .build())
                 .collect(Collectors.toList());
 
         List<EdgeDTO> edgeDTOs = relationships.stream()
-                .map(rel -> EdgeDTO.builder()
-                        .id(rel.getId())
-                        .sourceNodeId(rel.getSourceElement().getId())
-                        .targetNodeId(rel.getTargetElement().getId())
-                        .kind(rel.getRelationType())
-                        .originLayer(rel.getOriginLayer())
-                        .direction(rel.getDirection())
-                        .resolutionStatus(rel.getProperties() == null ? "UNKNOWN" : rel.getProperties().path("resolutionStatus").asText("UNKNOWN"))
-                        .description(extractDescription(rel))
-                        .build())
+                .map(rel -> {
+                    List<UUID> evIds = evidenceMap.get(rel.getId());
+                    return EdgeDTO.builder()
+                            .id(rel.getId())
+                            .sourceNodeId(rel.getSourceElement().getId())
+                            .targetNodeId(rel.getTargetElement().getId())
+                            .kind(rel.getRelationType())
+                            .originLayer(rel.getOriginLayer())
+                            .direction(rel.getDirection())
+                            .resolutionStatus(rel.getProperties() == null ? "UNKNOWN" : rel.getProperties().path("resolutionStatus").asText("UNKNOWN"))
+                            .description(extractDescription(rel))
+                            .evidenceCount(evIds != null ? (long) evIds.size() : 0L)
+                            .evidenceIds(evIds != null ? evIds : List.of())
+                            .properties(rel.getProperties())
+                            .build();
+                })
                 .collect(Collectors.toList());
 
         return GraphDataDTO.builder()
@@ -85,6 +107,19 @@ public class GraphServiceImpl implements GraphService {
             return el.getProperties().get("sourcePath").asText();
         }
         return el.getScope();
+    }
+
+    // Metadata passthrough from ModelElement.properties (S2a): only JSON text values are kept;
+    // missing key, JSON null, blank strings and non-textual values map to null — never coerced,
+    // never defaulted, so a bad value cannot corrupt the graph response.
+    private String extractTextProperty(ModelElement el, String key) {
+        if (el.getProperties() != null && el.getProperties().has(key)) {
+            var value = el.getProperties().get(key);
+            if (value != null && value.isTextual() && !value.asText().isBlank()) {
+                return value.asText();
+            }
+        }
+        return null;
     }
 
     private String extractDescription(ModelRelationship rel) {

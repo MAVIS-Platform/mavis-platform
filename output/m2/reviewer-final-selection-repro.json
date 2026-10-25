@@ -1,0 +1,23 @@
+{
+  "expandedCanvasSelection": {
+    "id": "edge-1",
+    "evidenceCount": 2,
+    "groupIds": [
+      "edge-1"
+    ]
+  },
+  "hardcodedPanelProjection": {
+    "id": "edge-1",
+    "evidenceCount": 3,
+    "groupIds": [
+      "edge-1",
+      "edge-2"
+    ]
+  },
+  "firstChildDetailClick": {
+    "beforeSelectedId": "edge-1",
+    "clickedChildId": "edge-1",
+    "afterSelectedId": "edge-1",
+    "stillRendersGroup": true
+  }
+}

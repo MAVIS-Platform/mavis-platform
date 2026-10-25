@@ -13,6 +13,15 @@ function contract<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
   return { input, output, mutation };
 }
 export const contracts = {
+  updateProfile: contract(
+    z.object({
+      fullName: z.string().trim().min(1).max(255),
+      currentPassword: z.string().max(100).optional(),
+      newPassword: z.string().min(6).max(100).optional(),
+    }),
+    d.sessionSchema,
+    true,
+  ),
   register: contract(
     z.object({
       fullName: z.string().trim().min(1).max(255),
@@ -49,16 +58,44 @@ export const contracts = {
     z.object({
       sessionId: id,
       modelId: id,
+      baseModelId: z.string().nullish(),
+      snapshotId: z.string().nullish(),
+      modelRevision: z.number().nullish(),
+      baseModelRevision: z.number().nullish(),
+      modelOrigin: z.string().nullish(),
+      traceStatus: z.string().nullish(),
+      mappingStatus: z.string().nullish(),
+      startedAt: z.union([z.string(), z.number()]).nullish(),
+      completedAt: z.union([z.string(), z.number()]).nullish(),
+      limitations: z.array(z.string()).optional(),
       steps: z.array(
         z.object({
           stepOrder: z.number().nullish(),
+          messageId: z.string().nullish(),
           callerService: z.string().nullish(),
           calleeService: z.string().nullish(),
+          callerParticipantId: z.string().nullish(),
+          calleeParticipantId: z.string().nullish(),
+          callerElementId: z.string().nullish(),
+          calleeElementId: z.string().nullish(),
+          callerBaseElementId: z.string().nullish(),
+          calleeBaseElementId: z.string().nullish(),
+          callerResolutionStatus: z.string().nullish(),
+          calleeResolutionStatus: z.string().nullish(),
           operation: z.string().nullish(),
+          messageSort: z.string().nullish(),
           httpMethod: z.string().nullish(),
           httpStatusCode: z.number().nullish(),
           durationMs: z.number().nullish(),
           traceId: z.string().nullish(),
+          spanId: z.string().nullish(),
+          parentSpanId: z.string().nullish(),
+          relationshipId: z.string().nullish(),
+          baseRelationshipId: z.string().nullish(),
+          candidateRelationshipIds: z.array(z.string()).nullish(),
+          evidenceId: z.string().nullish(),
+          provenanceType: z.string().nullish(),
+          causalParentMessageIds: z.array(z.string()).optional(),
         }),
       ),
     }),
@@ -132,7 +169,7 @@ export const contracts = {
     true,
   ),
   architectureViews: contract(
-    z.object({ modelId: id }),
+    z.object({ modelId: id, systemName: z.string().trim().min(1).max(200).optional() }),
     z.object({
       modelId: id,
       policyVersion: z.string(),
@@ -152,7 +189,12 @@ export const contracts = {
     }),
   ),
   renderArchitectureView: contract(
-    z.object({ modelId: id, viewId: id, theme: z.enum(["clean", "dark", "blueprint"]).optional() }),
+    z.object({
+      modelId: id,
+      viewId: id,
+      theme: z.enum(["clean", "dark", "blueprint"]).optional(),
+      systemName: z.string().trim().min(1).max(200).optional(),
+    }),
     z.object({ modelId: id, viewId: id, content: z.string(), format: z.literal("DRAWIO_XML") }),
   ),
   exportDiagram: contract(
@@ -216,17 +258,32 @@ export const contracts = {
   ),
   runtimeConfiguration: contract(project, d.runtimeConfigurationSchema),
   saveRuntimeConfiguration: contract(
-    project.extend({ profileId: id, expectedRevision: z.number().int().positive() }),
+    project.extend({
+      profileId: id,
+      snapshotId: id.optional(),
+      modelId: id.optional(),
+      profile: z.record(z.unknown()).optional(),
+      expectedRevision: z.number().int().nonnegative(),
+    }),
     d.runtimeConfigurationSchema,
     true,
   ),
   scenarios: contract(project, z.array(d.scenarioSchema)),
+  createScenario: contract(
+    project.extend({
+      name: z.string().trim().min(1).max(100),
+      steps: z.array(z.string().trim().min(1).max(10000)).min(1).max(30),
+    }),
+    d.scenarioSchema,
+    true,
+  ),
   saveScenario: contract(
     z.object({
       scenarioId: id,
+      projectId: id.optional(),
       expectedRevision: z.number().int().positive(),
       name: z.string().trim().min(1).max(100),
-      steps: z.array(z.string().trim().min(1).max(500)).min(1).max(30),
+      steps: z.array(z.string().trim().min(1).max(10000)).min(1).max(30),
     }),
     d.scenarioSchema,
     true,
@@ -252,6 +309,51 @@ export const contracts = {
   impact: contract(z.object({ modelId: id, targetId: id }), d.impactSchema),
   explain: contract(z.object({ modelId: id, elementId: id }), d.explanationSchema, true),
   workspaces: contract(nothing, z.array(d.workspaceSchema)),
+  createWorkspace: contract(
+    z.object({
+      code: z.string().trim().min(1).max(50),
+      name: z.string().trim().min(1).max(255),
+      description: z.string().max(5000).optional(),
+    }),
+    d.workspaceSchema,
+    true,
+  ),
+  updateWorkspace: contract(
+    z.object({
+      workspaceId: id,
+      name: z.string().trim().min(1).max(255),
+      description: z.string().max(5000).optional(),
+    }),
+    d.workspaceSchema,
+    true,
+  ),
+  archiveWorkspace: contract(z.object({ workspaceId: id }), d.workspaceSchema, true),
+  addWorkspaceMember: contract(
+    z.object({
+      workspaceId: id,
+      email: z.string().email(),
+      memberRole: z.enum(["STUDENT", "LECTURER"]),
+    }),
+    d.workspaceSchema,
+    true,
+  ),
+  removeWorkspaceMember: contract(
+    z.object({ workspaceId: id, userId: id }),
+    d.workspaceSchema,
+    true,
+  ),
+  createAssignment: contract(
+    z.object({
+      workspaceId: id,
+      title: z.string().trim().min(1).max(255),
+      description: z.string().max(10000).optional(),
+      dueAt: z.string().datetime({ offset: true }).nullable(),
+      requiredDiagramTypes: z.array(z.string()).max(10),
+      requireRuntimeTrace: z.boolean(),
+    }),
+    d.assignmentSchema,
+    true,
+  ),
   assignments: contract(z.object({ workspaceId: id }), z.array(d.assignmentSchema)),
   referenceVersions: contract(
     z.object({ workspaceId: id }),
@@ -260,12 +362,27 @@ export const contracts = {
   submissions: contract(nothing, z.array(d.submissionSchema)),
   submission: contract(z.object({ submissionId: id }), d.submissionSchema),
   submit: contract(
-    z.object({ assignmentId: id, modelId: id, snapshotId: id, runtimeSessionId: id.nullable() }),
+    z.object({
+      assignmentId: id,
+      projectId: id.optional(),
+      modelId: id,
+      snapshotId: id,
+      diagramVersionId: id.optional(),
+      evaluationRunId: id.nullable().optional(),
+      runtimeSessionId: id.nullable(),
+      submissionNotes: z.string().max(5000).optional(),
+    }),
     d.submissionSchema,
     true,
   ),
   feedback: contract(
-    z.object({ submissionId: id, modelId: id, text: z.string().trim().min(1).max(5000) }),
+    z.object({
+      submissionId: id,
+      modelId: id,
+      text: z.string().trim().min(1).max(5000),
+      elementId: id.nullable().optional(),
+      relationshipId: id.nullable().optional(),
+    }),
     d.submissionSchema,
     true,
   ),
@@ -285,6 +402,9 @@ export const contracts = {
   configureProfile: contract(
     z.object({
       profileId: id,
+      memoryMiB: z.number().int().min(64).max(2048).optional(),
+      cpus: z.number().positive().max(4).optional(),
+      timeoutSeconds: z.number().int().positive().max(300).optional(),
       enabled: z.boolean(),
       expectedRevision: z.number().int().positive(),
     }),

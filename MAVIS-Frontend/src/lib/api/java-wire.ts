@@ -15,6 +15,16 @@ export const javaProject = z.object({
   id: z.string().uuid(),
   name: z.string(),
   repositoryUrl: nullableText,
+  description: nullableText,
+  defaultBranch: nullableText,
+  projectType: nullableText,
+  workspaceId: z.string().uuid().nullish(),
+  assignmentId: z.string().uuid().nullish(),
+  isReferenceTemplate: z.boolean().nullish(),
+  referenceSnapshotId: z.string().uuid().nullish(),
+  status: nullableText,
+  createdAt: nullableText,
+  updatedAt: nullableText,
 });
 export function projectView(raw: unknown) {
   const p = javaProject.parse(raw);
@@ -22,7 +32,17 @@ export function projectView(raw: unknown) {
     id: p.id,
     name: p.name,
     repository: p.repositoryUrl ?? "",
-    status: "unknown",
+    status: p.status === "ACTIVE" ? "ready" : "unknown",
+    backendStatus: p.status ?? null,
+    description: p.description ?? null,
+    defaultBranch: p.defaultBranch ?? null,
+    projectType: p.projectType ?? null,
+    workspaceId: p.workspaceId ?? null,
+    assignmentId: p.assignmentId ?? null,
+    isReferenceTemplate: p.isReferenceTemplate ?? null,
+    referenceSnapshotId: p.referenceSnapshotId ?? null,
+    createdAt: p.createdAt ?? null,
+    updatedAt: p.updatedAt ?? null,
     services: null,
     runtimeSupported: null,
   });
@@ -80,11 +100,8 @@ export function projectOverviewView(
   graph: unknown,
   sessions: unknown,
 ) {
-  const p = javaProject.parse(raw);
   return projectSchema.parse({
-    id: p.id,
-    name: p.name,
-    repository: p.repositoryUrl ?? "",
+    ...projectView(raw),
     status: projectStatusFromJobs(Array.isArray(jobs) ? jobs : []),
     services: graph === null ? null : serviceCountFromGraph(graph),
     runtimeSupported: Array.isArray(sessions) ? (sessions.length > 0 ? true : null) : null,
@@ -190,6 +207,17 @@ export function evidenceView(raw: unknown) {
     complete: null,
   });
 }
+// Node metadata precedence (S2b): a non-blank graph value wins (already normalized server-side);
+// an explicit graph null means "unknown" and hides any stale detail value; an absent graph field
+// (legacy backend without the S2a fields) falls back to the same key in detail.properties only
+// when it is a non-blank string. Blank or non-string values never become display data.
+function resolveNodeMetadata(graphValue: unknown, detailValue: unknown): string | null {
+  if (typeof graphValue === "string") return graphValue.trim() === "" ? null : graphValue;
+  if (graphValue === null) return null;
+  if (graphValue === undefined && typeof detailValue === "string" && detailValue.trim() !== "")
+    return detailValue;
+  return null;
+}
 export function modelView(metadata: unknown, graph: unknown, details: unknown) {
   const summary = modelSummary(metadata);
   const g = z
@@ -200,6 +228,12 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
           name: z.string(),
           type: z.string(),
           sourcePath: nullableText,
+          // S2b: node metadata from the graph API (additive, nullable on the server). Parsed
+          // leniently here and normalized by resolveNodeMetadata — a wrong type or blank value
+          // becomes null instead of failing the whole graph or faking a display value.
+          protocol: z.unknown(),
+          transportAuthority: z.unknown(),
+          resolutionIssue: z.unknown(),
         }),
       ),
       edges: z.array(
@@ -210,6 +244,9 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
           kind: z.string(),
           originLayer: z.string().optional(),
           resolutionStatus: z.string().optional(),
+          evidenceCount: z.number().int().nonnegative().nullable().optional(),
+          evidenceIds: z.array(z.string().uuid()).optional(),
+          properties: object.nullish(),
         }),
       ),
     })
@@ -234,7 +271,13 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
     elements: g.nodes.map((n) => {
       const detail = byId.get(n.id);
       const props = object.safeParse(detail?.properties);
-      const properties = props.success ? props.data : {};
+      const detailProps = props.success ? props.data : {};
+      const properties: Record<string, unknown> = {
+        ...detailProps,
+        protocol: resolveNodeMetadata(n.protocol, detailProps["protocol"]),
+        transportAuthority: resolveNodeMetadata(n.transportAuthority, detailProps["transportAuthority"]),
+        resolutionIssue: resolveNodeMetadata(n.resolutionIssue, detailProps["resolutionIssue"]),
+      };
       const layer = ["edge", "domain", "platform", "data"].includes(String(properties["layer"]))
         ? properties["layer"]
         : "unclassified";
@@ -263,6 +306,9 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
       uncertain: e.resolutionStatus !== "RESOLVED",
       originLayer: e.originLayer,
       resolutionStatus: e.resolutionStatus ?? "UNKNOWN",
+      evidenceCount: e.evidenceCount ?? null,
+      evidenceIds: e.evidenceIds,
+      properties: e.properties ?? undefined,
       evidence: [],
     })),
   });

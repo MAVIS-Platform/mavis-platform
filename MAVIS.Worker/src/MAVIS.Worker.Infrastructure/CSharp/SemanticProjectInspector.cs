@@ -60,6 +60,22 @@ internal static class SemanticProjectInspector
                     var primary = type switch { ClassDeclarationSyntax c => c.ParameterList, StructDeclarationSyntax s => s.ParameterList, RecordDeclarationSyntax r => r.ParameterList, _ => null };
                     foreach (var parameter in primary?.Parameters ?? default)
                         if (parameter.Type is not null) Dependency(model.GetTypeInfo(parameter.Type, ct).Type, parameter.Type);
+                    if (symbol.ContainingNamespace is { IsGlobalNamespace: false })
+                    {
+                        foreach (var method in type.Members.OfType<MethodDeclarationSyntax>())
+                        {
+                            var retType = model.GetTypeInfo(method.ReturnType, ct).Type;
+                            if (retType is not null && retType.Locations.Any(l => l.IsInSource) && !SymbolEqualityComparer.Default.Equals(retType, symbol))
+                                Dependency(retType, method.ReturnType);
+                            foreach (var parameter in method.ParameterList.Parameters)
+                            {
+                                if (parameter.Type is null) continue;
+                                var pType = model.GetTypeInfo(parameter.Type, ct).Type;
+                                if (pType is not null && pType.Locations.Any(l => l.IsInSource) && !SymbolEqualityComparer.Default.Equals(pType, symbol))
+                                    Dependency(pType, parameter.Type);
+                            }
+                        }
+                    }
 
                     void Dependency(ITypeSymbol? dependency, SyntaxNode evidence)
                     {

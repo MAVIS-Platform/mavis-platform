@@ -18,7 +18,9 @@ import java.util.Optional;
  */
 @Component
 @Slf4j
+@lombok.RequiredArgsConstructor
 public class ApiKeyProvider {
+    private final com.mavis.common.config.PlatformRuntimeSettings settings;
 
     @Value("${mavis.ai.api-key:}")
     private String configuredApiKey;
@@ -31,7 +33,10 @@ public class ApiKeyProvider {
      *
      * @return Optional chứa API Key đã được làm sạch, hoặc empty nếu không tìm thấy.
      */
+    public boolean hasValidKey() { return resolveApiKey().isPresent(); }
+
     public Optional<String> resolveApiKey() {
+        if (!settings.enabled("gemini-ai")) return Optional.empty();
         // 1. Kiểm tra cấu hình application.properties hoặc biến môi trường
         if (configuredApiKey != null && !configuredApiKey.isBlank()) {
             String key = configuredApiKey.trim();

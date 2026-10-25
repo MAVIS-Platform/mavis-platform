@@ -1,0 +1,83 @@
+{
+  "generatedAt": "2026-10-25T04:40:55.468Z",
+  "inferredSorts": [
+    {
+      "kind": "SERVICE_HTTP_CALL",
+      "messageSort": "UNKNOWN",
+      "isCertain": false
+    },
+    {
+      "kind": "DATABASE_ACCESS",
+      "messageSort": "UNKNOWN",
+      "isCertain": false
+    },
+    {
+      "kind": "MESSAGE_PUBLISH",
+      "messageSort": "UNKNOWN",
+      "isCertain": false
+    },
+    {
+      "kind": "MESSAGE_SUBSCRIBE",
+      "messageSort": "UNKNOWN",
+      "isCertain": false
+    },
+    {
+      "kind": "CODE_DEPENDENCY",
+      "messageSort": "UNKNOWN",
+      "isCertain": false
+    }
+  ],
+  "editorDeletion": {
+    "fixturePath": "output/m3/reviewer-inputs/deleted-message.drawio",
+    "canonicalBeforeMessages": 3,
+    "semanticStatusAfterExtract": "UNVERIFIED",
+    "limitationsAfterExtract": [
+      "MIGRATED_FROM_V0_EDGE_LIST",
+      "STATIC_RELATIONSHIPS_REQUIRE_HUMAN_SORT_CONFIRMATION_FOR_CODE_DEPENDENCY",
+      "DRAWIO_STRUCTURAL_CONFLICT_DETECTED"
+    ],
+    "conflicts": [
+      "[DELETED_MESSAGE_IN_DRAWIO] Message \"msg-1\" (\"Delivers messages to\") was deleted from the Draw.io XML while remaining in the interaction metadata. Use the Scenario Editor to delete messages."
+    ]
+  },
+  "observedOrder": [
+    {
+      "id": "parent",
+      "parents": []
+    },
+    {
+      "id": "child",
+      "parents": [
+        "parent"
+      ]
+    }
+  ],
+  "sourceRelationshipSelection": {
+    "firstOrder": [
+      "rel-first",
+      "rel-second"
+    ],
+    "reversedModelOrder": [
+      "rel-first",
+      "rel-second"
+    ],
+    "orderIndependentEqual": true,
+    "limitations": [
+      "NO_SYNTHETIC_REPLY_FROM_END_TIME",
+      "NO_COMBINED_FRAGMENTS_FROM_SINGLE_TRACE",
+      "AMBIGUOUS_STATIC_RELATIONSHIP_CANDIDATES"
+    ]
+  },
+  "occurrenceAndExecutionIdLifecycle": {
+    "messageIdsAfterMiddleDeleteAndAddAndReorder": [
+      "msg-1",
+      "msg-4",
+      "msg-3",
+      "msg-5"
+    ],
+    "executionIds": [
+      "exec-1",
+      "exec-2"
+    ]
+  }
+}

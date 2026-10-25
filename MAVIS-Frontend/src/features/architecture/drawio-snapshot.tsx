@@ -11,6 +11,7 @@ export function DrawioSnapshot({
   onError: (error: string) => void;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
+  const initialized = useRef(false);
   useEffect(() => {
     const send = (value: object) =>
       frame.current?.contentWindow?.postMessage(JSON.stringify(value), DRAWIO_ORIGIN);
@@ -28,8 +29,10 @@ export function DrawioSnapshot({
         return;
       try {
         const data = JSON.parse(message.data) as { event?: string; data?: string; error?: unknown };
-        if (data.event === "init") send({ action: "load", xml, autosave: 0, fit: 0 });
-        else if (data.event === "load")
+        if (data.event === "init") {
+          initialized.current = true;
+          send({ action: "load", xml, autosave: 0, fit: 0 });
+        } else if (data.event === "load")
           send({ action: "export", format: "svg", embedImages: true, spinKey: "export" });
         else if (data.event === "export") {
           if (data.error || !data.data?.startsWith("data:image/svg+xml"))
@@ -51,6 +54,9 @@ export function DrawioSnapshot({
       }
     };
     window.addEventListener("message", receive);
+    if (initialized.current) {
+      send({ action: "load", xml, autosave: 0, fit: 0 });
+    }
     return () => {
       clearTimeout(timeout);
       window.removeEventListener("message", receive);

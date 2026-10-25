@@ -1,0 +1,174 @@
+[INFO] Scanning for projects...
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Build Order:
+[INFO] 
+[INFO] worker-java-client                                                 [jar]
+[INFO] mavis-common                                                       [jar]
+[INFO] mavis-analyzer                                                     [jar]
+[INFO] 
+[INFO] --------------------< com.mavis:worker-java-client >--------------------
+[INFO] Building worker-java-client 1.0-SNAPSHOT                           [1/3]
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.4.0:resources (default-resources) @ worker-java-client ---
+[INFO] skip non existing resourceDirectory C:\Users\nhuth\Desktop\MAVISS\MAVIS.Worker\integration\java-client\src\main\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ worker-java-client ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.4.0:testResources (default-testResources) @ worker-java-client ---
+[INFO] Copying 6 resources from ..\..\contracts\n01 to target\test-classes\fixtures
+[INFO] Copying 1 resource from ..\..\contracts\fingerprint to target\test-classes\fingerprint
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ worker-java-client ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ worker-java-client ---
+[INFO] 
+[INFO] ----------------------< vn.edu.fpt:mavis-common >-----------------------
+[INFO] Building mavis-common 0.0.1-SNAPSHOT                               [2/3]
+[INFO]   from C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-common\pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ mavis-common ---
+[INFO] skip non existing resourceDirectory C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-common\src\main\resources
+[INFO] skip non existing resourceDirectory C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-common\src\main\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ mavis-common ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ mavis-common ---
+[INFO] skip non existing resourceDirectory C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-common\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ mavis-common ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ mavis-common ---
+[INFO] 
+[INFO] ---------------------< vn.edu.fpt:mavis-analyzer >----------------------
+[INFO] Building mavis-analyzer 0.0.1-SNAPSHOT                             [3/3]
+[INFO]   from C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-analyzer\pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ mavis-analyzer ---
+[INFO] Copying 0 resource from src\main\resources to target\classes
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ mavis-analyzer ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ mavis-analyzer ---
+[INFO] skip non existing resourceDirectory C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-analyzer\src\test\resources
+[INFO] Copying 8 resources from ..\..\..\MAVIS.Worker\contracts\n01 to target\test-classes\worker-fixtures
+[INFO] Copying 15 resources from ..\mavis-bootstrap\src\main\resources\db\migration to target\test-classes\worker-migrations
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ mavis-analyzer ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ mavis-analyzer ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.mavis.analyzer.graph.service.GraphBuilderServiceTest
+Java HotSpot(TM) 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+WARNING: A Java agent has been loaded dynamically (C:\Users\nhuth\.m2\repository\net\bytebuddy\byte-buddy-agent\1.14.16\byte-buddy-agent-1.14.16.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by net.bytebuddy.dynamic.loading.ClassInjector$UsingUnsafe$Dispatcher$CreationAction (file:/C:/Users/nhuth/.m2/repository/net/bytebuddy/byte-buddy/1.14.16/byte-buddy-1.14.16.jar)
+WARNING: Please consider reporting this to the maintainers of class net.bytebuddy.dynamic.loading.ClassInjector$UsingUnsafe$Dispatcher$CreationAction
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+17:40:48.526 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 1 Level-2 model elements for model version ID: 329fe8a8-c61a-4b64-a84c-cb7c42038e34
+17:40:48.614 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- No containers detected. Creating fallback ModelElement: fruit-market-app
+17:40:48.614 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 1 Level-2 model elements for model version ID: af0a9802-6977-4808-a43b-d424024ba83e
+17:40:48.619 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 3 Level-2 model elements for model version ID: 0c6df331-b1ea-48ea-84a9-ace2b2fc13fa
+17:40:48.641 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 5 Level-2 model elements for model version ID: 494e93ed-309d-430c-8acd-5b29e4847d1e
+17:40:48.644 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 C4 COMPONENT elements (Java & C#) with parent hierarchy
+17:40:48.646 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+17:40:48.647 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 total evidences
+17:40:48.653 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 3 C4 COMPONENT elements (Java & C#) with parent hierarchy
+17:40:48.658 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+17:40:48.658 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 total evidences
+17:40:48.663 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- No containers detected. Creating fallback ModelElement: fruit-market-app
+17:40:48.663 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 1 Level-2 model elements for model version ID: f3f80350-f2a4-4622-8465-3b7457583223
+17:40:48.669 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+17:40:48.669 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 total evidences
+17:40:48.674 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+17:40:48.675 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 total evidences
+17:40:48.678 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+17:40:48.678 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 total evidences
+17:40:48.684 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+17:40:48.684 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 total evidences
+17:40:48.687 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 total evidences
+17:40:48.690 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Elements list is empty. Skipping relationship and evidence building.
+17:40:48.694 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 C4 COMPONENT elements (Java & C#) with parent hierarchy
+17:40:48.695 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+17:40:48.695 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 total evidences
+17:40:48.701 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 C4 COMPONENT elements (Java & C#) with parent hierarchy
+17:40:48.701 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+17:40:48.701 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 total evidences
+17:40:48.704 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Elements list is empty. Skipping relationship and evidence building.
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.353 s -- in com.mavis.analyzer.graph.service.GraphBuilderServiceTest
+[INFO] Running com.mavis.analyzer.graph.service.impl.GraphServiceImplTest
+17:40:48.826 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: 6586bd8e-a361-4f11-b6c9-ec290b585ad5
+17:40:48.851 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: 35c68e61-ae7f-4d85-bf20-ecb9800f8327
+17:40:48.866 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: b8a8e561-f595-45bf-be68-f7a362b1a2bf
+17:40:48.871 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: f72bc4de-ee2c-45ea-8a46-afe1594b6faf
+17:40:48.880 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: 508d00ba-a071-47db-86d4-963ebd0f9b9d
+17:40:48.886 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: 4bfad17d-218a-4bb2-a1f5-4faf75e1227e
+17:40:48.890 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: 0e0132c3-38c7-4481-90c7-d281b06781fb
+17:40:48.934 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: 0e0132c3-38c7-4481-90c7-d281b06781fb
+17:40:48.939 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: e0d4bc33-0236-4b55-bd3f-c3b55938f7de
+17:40:48.942 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: dc682c58-38f9-4e67-a089-d72eb9281806
+17:40:48.945 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: 05f4ec5d-8f66-42a5-9603-354e695132ee
+17:40:48.949 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: fe4171b8-0bae-484e-827b-82088095aa72
+17:40:48.951 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: 3f8af279-a20a-4418-9ab6-767d01c4683d
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.243 s -- in com.mavis.analyzer.graph.service.impl.GraphServiceImplTest
+[INFO] Running com.mavis.analyzer.graph.service.JavaSourceToGraphC4PipelineTest
+17:40:48.973 [main] INFO com.mavis.analyzer.detector.docker.service.impl.DockerDetectorServiceImpl -- Tìm thấy file Docker Compose tại: C:\Users\nhuth\AppData\Local\Temp\junit8853337014588921017\docker-compose.yml
+17:40:48.976 [main] INFO com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser -- Bắt đầu duyệt và phân tích các file .java trong thư mục: C:\Users\nhuth\AppData\Local\Temp\junit8853337014588921017
+17:40:49.199 [main] INFO com.mavis.analyzer.javaanalyzer.visitor.DatabaseAccessVisitor -- Detected Database Repository: OrderRepository (managed entity: null)
+17:40:49.200 [main] INFO com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser -- Đã hoàn tất phân tích AST. Tổng số code evidences trích xuất được: 1
+17:40:49.202 [main] INFO com.mavis.analyzer.detector.docker.service.impl.DockerDetectorServiceImpl -- Tìm thấy file Docker Compose tại: C:\Users\nhuth\AppData\Local\Temp\junit8853337014588921017\docker-compose.yml
+17:40:49.207 [main] INFO com.mavis.analyzer.detector.config.service.impl.SpringConfigDetectorServiceImpl -- Tìm thấy 0 file cấu hình Spring trong C:\Users\nhuth\AppData\Local\Temp\junit8853337014588921017
+17:40:49.208 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully persisted 3 Level-2 model elements for model version ID: 250772c2-714e-4f8f-83fd-30050d74404d
+17:40:49.209 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 1 C4 COMPONENT elements (Java & C#) with parent hierarchy
+17:40:49.210 [main] INFO com.mavis.analyzer.detector.docker.service.impl.DockerDetectorServiceImpl -- Tìm thấy file Docker Compose tại: C:\Users\nhuth\AppData\Local\Temp\junit8853337014588921017\docker-compose.yml
+17:40:49.211 [main] INFO com.mavis.analyzer.detector.docker.service.impl.DockerDetectorServiceImpl -- Tìm thấy file Docker Compose tại: C:\Users\nhuth\AppData\Local\Temp\junit8853337014588921017\docker-compose.yml
+17:40:49.212 [main] INFO com.mavis.analyzer.detector.config.service.impl.SpringConfigDetectorServiceImpl -- Tìm thấy 0 file cấu hình Spring trong C:\Users\nhuth\AppData\Local\Temp\junit8853337014588921017
+17:40:49.214 [main] INFO com.mavis.analyzer.detector.config.service.impl.SpringConfigDetectorServiceImpl -- Tìm thấy 0 file cấu hình Spring trong C:\Users\nhuth\AppData\Local\Temp\junit8853337014588921017
+17:40:49.214 [main] INFO com.mavis.analyzer.detector.docker.service.impl.DockerDetectorServiceImpl -- Tìm thấy file Docker Compose tại: C:\Users\nhuth\AppData\Local\Temp\junit8853337014588921017\docker-compose.yml
+17:40:49.216 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)
+17:40:49.216 [main] INFO com.mavis.analyzer.graph.service.impl.GraphBuilderServiceImpl -- Successfully batch saved 2 total evidences
+17:40:49.217 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: 250772c2-714e-4f8f-83fd-30050d74404d
+Saved actual Java pipeline output to: C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-analyzer\..\..\..\output\m2\source-pipeline-java-actual.json
+17:40:49.322 [main] INFO com.mavis.analyzer.graph.service.impl.GraphServiceImpl -- Fetching graph data for session / modelVersion ID: 9c0b9de4-ff72-4516-b9f5-ab5c1d0cb1e8
+Saved actual C# pipeline graph output to: C:\Users\nhuth\Desktop\MAVISS\MAVIS-Platform\mavis-be\mavis-analyzer\..\..\..\output\m2\source-pipeline-csharp-graph-actual.json
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.371 s -- in com.mavis.analyzer.graph.service.JavaSourceToGraphC4PipelineTest
+[INFO] Running com.mavis.analyzer.javaanalyzer.parser.BeanMessagingParserTest
+17:40:49.343 [main] INFO com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser -- Bắt đầu duyệt và phân tích các file .java trong thư mục: C:\Users\nhuth\AppData\Local\Temp\junit2532067850625285823
+17:40:49.378 [main] INFO com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser -- Đã hoàn tất phân tích AST. Tổng số code evidences trích xuất được: 5
+17:40:49.385 [main] INFO com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser -- Bắt đầu duyệt và phân tích các file .java trong thư mục: C:\Users\nhuth\AppData\Local\Temp\junit2722358910146521753
+17:40:49.393 [main] INFO com.mavis.analyzer.javaanalyzer.parser.JavaSourceParser -- Đã hoàn tất phân tích AST. Tổng số code evidences trích xuất được: 2
+[WARNING] Tests run: 3, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.066 s -- in com.mavis.analyzer.javaanalyzer.parser.BeanMessagingParserTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[WARNING] Tests run: 37, Failures: 0, Errors: 0, Skipped: 1
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] Reactor Summary:
+[INFO] 
+[INFO] worker-java-client 1.0-SNAPSHOT .................... SUCCESS [  1.261 s]
+[INFO] mavis-common 0.0.1-SNAPSHOT ........................ SUCCESS [  0.914 s]
+[INFO] mavis-analyzer 0.0.1-SNAPSHOT ...................... SUCCESS [  3.210 s]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  6.310 s
+[INFO] Finished at: 2026-10-24T17:40:49+07:00
+[INFO] ------------------------------------------------------------------------

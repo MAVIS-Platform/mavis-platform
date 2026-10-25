@@ -31,6 +31,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final AssignmentRepository assignmentRepository;
     private final UserRepository userRepository;
+    private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -39,6 +40,9 @@ public class WorkspaceServiceImpl implements WorkspaceService {
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy người dùng hiện tại"));
 
+        accessPolicyService.requireCurrentActiveUser();
+        if (currentUser.getRole()==null || !("LECTURER".equals(currentUser.getRole().getCode()) || "SYSTEM_ADMIN".equals(currentUser.getRole().getCode())))
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Only lecturers or administrators can create a workspace");
         String code = request.getCode().trim();
         if (workspaceRepository.existsByCodeIgnoreCase(code)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã lớp học đã tồn tại: " + request.getCode());
@@ -88,6 +92,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     @Override
     @Transactional(readOnly = true)
     public List<WorkspaceResponseDTO> getMyWorkspaces() {
+        accessPolicyService.requireCurrentActiveUser();
         UUID currentUserId = SecurityUtils.getCurrentUserId();
         List<Workspace> workspaces = workspaceRepository.findAllAccessibleByUserId(currentUserId);
 
@@ -146,6 +151,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     @Override
     @Transactional(readOnly = true)
     public WorkspaceResponseDTO getWorkspaceById(UUID workspaceId) {
+        accessPolicyService.requireWorkspaceMember(workspaceId);
         Workspace workspace = workspaceRepository.findWithCreatorById(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy lớp học"));
 
@@ -370,6 +376,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     @Override
     @Transactional(readOnly = true)
     public List<WorkspaceMemberResponseDTO> getWorkspaceMembers(UUID workspaceId) {
+        accessPolicyService.requireWorkspaceMember(workspaceId);
         if (!workspaceRepository.existsById(workspaceId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy lớp học");
         }
@@ -410,6 +417,8 @@ public class WorkspaceServiceImpl implements WorkspaceService {
     }
 
     private void validateLecturerOrCreatorPermission(Workspace workspace, UUID currentUserId) {
+        User actor = accessPolicyService.requireCurrentActiveUser();
+        if (actor != null && actor.getRole()!=null && "SYSTEM_ADMIN".equals(actor.getRole().getCode())) return;
         boolean isCreator = workspace.getCreatedBy() != null && currentUserId.equals(workspace.getCreatedBy().getId());
         if (isCreator) {
             return;
