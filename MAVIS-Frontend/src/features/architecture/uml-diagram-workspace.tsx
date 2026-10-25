@@ -5,7 +5,6 @@ import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/shared/forms";
-import { SelectablePreview, download } from "./selectable-diagram-preview";
 import { DrawioEditor } from "./drawio-editor";
 import {
   buildUmlDrawioXml,
@@ -54,7 +53,6 @@ export function UmlDiagramWorkspace({
   const api = useApi();
   const cache = useQueryClient();
 
-  const [editing, setEditing] = useState(false);
   const [packageFilter, setPackageFilter] = useState<string>("");
   const [environmentFilter, setEnvironmentFilter] = useState<string>("default");
   const [selectedOperationId, setSelectedOperationId] = useState<string>("");
@@ -535,23 +533,6 @@ export function UmlDiagramWorkspace({
                 ? "Saving..."
                 : `Save Diagram${saved.data?.revision ? ` (rev #${saved.data.revision})` : ""}`}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setEditing(!editing)}
-              data-testid="uml-toggle-drawio-editor"
-            >
-              {editing ? "View diagram" : "Edit in draw.io"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                download(activeXml, `${viewKey.replaceAll(":", "-")}.drawio`, "application/xml")
-              }
-            >
-              Download .drawio
-            </Button>
           </div>
         </div>
 
@@ -650,32 +631,22 @@ export function UmlDiagramWorkspace({
         </p>
       )}
 
-      {/* Draw.io Canvas / Preview (Placed Above the Fold for Immediate Visual Clarity) */}
-      {editing ? (
-        <DrawioEditor
-          key={`${model.id}:${viewKey}`}
-          modelId={model.id}
-          diagramId={viewKey}
-          title={`UML · ${kind}`}
-          notation="UML"
-          level={kind}
-          scope={viewKey}
-          xml={activeXml}
-          generatedXml={generatedXml}
-          preferProvidedXml={Boolean(drawioDraftXml || saved.data?.xml)}
-          onSave={async (content) => {
-            await persistCurrentDiagramXml(content);
-          }}
-        />
-      ) : (
-        <SelectablePreview
-          key={`${model.id}:${viewKey}:${saved.data?.revision ?? 0}:${activeXml.length}`}
-          xml={activeXml}
-          title={`UML · ${kind}`}
-          selectedId={selectedId}
-          onSelect={handleSelectItem}
-        />
-      )}
+      {/* Draw.io Canvas (Placed Above the Fold for Immediate Visual Clarity) */}
+      <DrawioEditor
+        key={`${model.id}:${viewKey}`}
+        modelId={model.id}
+        diagramId={viewKey}
+        title={`UML · ${kind}`}
+        notation="UML"
+        level={kind}
+        scope={viewKey}
+        xml={activeXml}
+        generatedXml={generatedXml}
+        preferProvidedXml={Boolean(drawioDraftXml || saved.data?.xml)}
+        onSave={async (content) => {
+          await persistCurrentDiagramXml(content);
+        }}
+      />
 
       {/* Collapsible Structured Authoring & 3E Inspector Drawer */}
       <details
