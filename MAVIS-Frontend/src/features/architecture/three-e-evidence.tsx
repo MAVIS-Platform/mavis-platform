@@ -13,7 +13,7 @@ export function ThreeEEvidence({ evidence }: { evidence: readonly Evidence[] }) 
       </p>
     );
   return (
-    <div className="space-y-3">
+    <div className="min-w-0 max-w-full space-y-3 [overflow-wrap:anywhere]">
       {evidence.slice(0, limit).map((item) => (
         <article key={item.id} className="min-w-0 rounded-lg border p-3">
           <p className="text-xs font-medium">{sourceLabel(item)}</p>
@@ -29,7 +29,7 @@ export function ThreeEEvidence({ evidence }: { evidence: readonly Evidence[] }) 
               {shortLocator(item.location)}
             </summary>
             {item.snippet.trim() ? (
-              <pre className="mt-3 max-h-72 overflow-auto rounded-md bg-muted p-3 text-xs leading-6">
+              <pre className="mt-3 max-h-72 min-w-0 max-w-full overflow-auto rounded-md bg-muted p-3 text-xs leading-6">
                 <code>{item.snippet}</code>
               </pre>
             ) : (

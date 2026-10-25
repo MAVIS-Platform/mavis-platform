@@ -206,15 +206,15 @@ export function SelectionThreeE({
     <aside
       aria-label="3E details"
       data-selection-scope-key={ctx.scopeKey}
-      className="fixed inset-x-3 bottom-3 z-40 flex max-h-[85vh] min-w-0 flex-col rounded-xl border bg-card shadow-lg xl:sticky xl:inset-auto xl:top-20 xl:z-auto xl:max-h-[calc(100vh-6rem)] xl:self-start xl:shadow-none"
+      className="fixed inset-x-3 bottom-3 z-40 flex max-h-[85vh] min-w-0 max-w-full flex-col rounded-xl border bg-card shadow-lg [overflow-wrap:anywhere] [&_dt]:max-w-full [&_button]:max-w-full [&_button]:whitespace-normal xl:sticky xl:inset-auto xl:top-20 xl:z-auto xl:w-full xl:max-h-[calc(100vh-6rem)] xl:self-start xl:shadow-none"
     >
       <header className="flex shrink-0 items-start justify-between gap-3 border-b p-4">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-xs font-medium text-muted-foreground">Hiểu kiến trúc · 3E</p>
           <h2 className="mt-1 break-words text-base font-semibold">{subject.title}</h2>
           <p className="mt-1 text-xs text-muted-foreground">{subject.type}</p>
         </div>
-        <Button size="sm" variant="ghost" aria-label="Close 3E" onClick={onClose}>
+        <Button size="sm" variant="ghost" className="shrink-0" aria-label="Close 3E" onClick={onClose}>
           ×
         </Button>
       </header>
@@ -260,7 +260,7 @@ export function SelectionThreeE({
                     {projectedEdge.underlyingEdgeIds!.map((subId) => {
                       const subEdge = model.edges.find((e) => e.id === subId);
                       return (
-                        <div key={subId} className="flex items-center justify-between rounded border bg-background p-1.5 text-xs">
+                        <div key={subId} className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded border bg-background p-1.5 text-xs">
                           <span className="font-mono text-[11px]" title={subId}>
                             {subEdge?.protocol ?? "EDGE"}: {subId.slice(0, 8)}…
                           </span>
@@ -462,7 +462,7 @@ export function SelectionThreeE({
         role="tabpanel"
         id={`three-e-panel-${tab}`}
         aria-labelledby={`three-e-tab-${tab}`}
-        className="min-h-0 space-y-4 overflow-y-auto p-4 text-sm leading-6"
+        className="min-h-0 min-w-0 max-w-full space-y-4 overflow-y-auto p-4 text-sm leading-6"
       >
         {findingId && (
           <div className="rounded-md border p-2 text-xs">
@@ -556,14 +556,14 @@ export function SelectionThreeE({
                   Lựa chọn này có {subject.connections.length} quan hệ được lưu trong mô hình. Mở
                   Bằng chứng để đối chiếu nguồn; mở Đánh giá để xem điểm cần kiểm tra.
                 </p>
-                <Button size="sm" variant="outline" onClick={() => setTab("explore")}>
+                <Button size="sm" variant="outline" className="h-auto min-h-9 w-full py-2" onClick={() => setTab("explore")}>
                   Xem căn cứ
                 </Button>
               </>
             )}
             {backendMode && !finding && !result && canExplain && (
               <Button
-                className="h-auto whitespace-normal"
+                className="h-auto min-h-9 w-full whitespace-normal py-2 leading-relaxed"
                 size="sm"
                 disabled={explain.isPending}
                 onClick={() => explain.mutate({})}
@@ -847,7 +847,7 @@ export function SelectionThreeE({
             {subject.connections.slice(0, 20).map((e: ArchitecturalModel["edges"][number]) => (
               <li key={e.id}>
                 <button
-                  className="break-words text-left text-sm underline"
+                  className="block w-full min-w-0 max-w-full whitespace-normal text-left text-sm underline [overflow-wrap:anywhere]"
                   onClick={() => onSelect(e.id)}
                 >
                   {model.elements.find((n) => n.id === e.from)?.name} →{" "}

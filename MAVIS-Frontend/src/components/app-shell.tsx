@@ -6,7 +6,6 @@ import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
   Bell,
   ChevronDown,
-  Hexagon,
   Info,
   LogOut,
   Menu,
@@ -17,6 +16,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { AppearanceSelector } from "@/components/appearance-selector";
+import { MavisLogo } from "@/components/mavis-logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -83,13 +83,13 @@ export function AppShell(props: AppShellProps) {
         : pathname.startsWith("/submissions/")
           ? "workspace:read"
           : [
-                "/workspaces",
-                "/workspace-overview",
-                "/assignments",
-                "/submissions",
-                "/members",
-                "/references",
-              ].includes(pathname)
+            "/workspaces",
+            "/workspace-overview",
+            "/assignments",
+            "/submissions",
+            "/members",
+            "/references",
+          ].includes(pathname)
             ? "workspace:read"
             : "project:read";
   if (preview || pathname === "/design-system") return <ManagedShellChrome {...props} />;
@@ -284,16 +284,13 @@ function ShellChrome({
                     : "/"
             }
             aria-label="MAVIS home"
-            className="flex items-center gap-2.5 rounded-md"
+            className="flex min-w-0 items-center gap-2.5 rounded-md"
           >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Hexagon className="size-5" aria-hidden="true" />
-            </span>
+            <MavisLogo compact={isCollapsed} className={isCollapsed ? "h-10 w-10" : "h-12 w-12"} />
             {!isCollapsed && (
-              <span>
-                <span className="block text-base font-bold tracking-[0.12em]">MAVIS</span>
-                <span className="block text-[11px] text-muted-foreground">
-                  Understand the architecture
+              <span className="min-w-0">
+                <span className="block text-base tracking-widest text-foreground">
+                  MAVIS
                 </span>
               </span>
             )}
@@ -586,7 +583,7 @@ function ShellChrome({
             onOpenAutoFocus={() => {
               detailReturnFocus.current =
                 document.activeElement instanceof HTMLElement &&
-                document.activeElement !== document.body
+                  document.activeElement !== document.body
                   ? document.activeElement
                   : document.getElementById("main-content");
             }}
