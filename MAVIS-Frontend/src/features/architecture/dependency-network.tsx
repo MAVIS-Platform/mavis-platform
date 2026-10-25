@@ -451,60 +451,33 @@ export function DependencyNetwork({
           </p>
         )}
       </div>
-      <div className="space-y-2 border-t px-4 py-3 text-xs text-muted-foreground">
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="font-semibold text-foreground">Elements:</span>
-          <span className="inline-flex items-center gap-1">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t px-4 py-2.5 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="inline-flex items-center gap-1.5">
             <span style={{ background: "#397ed7" }} className="inline-block size-2.5 rounded-full" />
-            <span className="font-mono font-bold text-foreground">[SVC]</span> Service
+            Service
           </span>
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1.5">
             <span style={{ background: "#16815d" }} className="inline-block size-2.5 rounded-full" />
-            <span className="font-mono font-bold text-foreground">[DB]</span> Data store
+            Data store
           </span>
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1.5">
             <span style={{ background: "#9455c9" }} className="inline-block size-2.5 rounded-full" />
-            <span className="font-mono font-bold text-foreground">[QUEUE]</span> Messaging
+            Messaging
           </span>
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1.5">
             <span style={{ background: "#d65370" }} className="inline-block size-2.5 rounded-full" />
-            <span className="font-mono font-bold text-foreground">[COMP]</span> Component
+            Component
           </span>
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1.5">
             <span style={{ background: "#b7791f" }} className="inline-block size-2.5 rounded-full" />
-            <span className="font-mono font-bold text-foreground">[EXT]</span> External System
+            External System
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="font-semibold text-foreground">Relationships &amp; Origins:</span>
-          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
-            <span className="font-bold">───</span> Solid (Static / Inferred call)
-          </span>
-          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
-            <span className="font-bold">- - -</span> Dashed (Deployment / Declared)
-          </span>
-          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
-            <span className="font-bold">···</span> Dotted (Uncertain mapping)
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">[STATIC]</span>
-            Source
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">[CONFIG]</span>
-            Config
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">[DEPLOY]</span>
-            Deployment
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">[RUNTIME]</span>
-            Observed
-          </span>
-        </div>
-        <div className="text-[11px]">
-          Drag nodes or background · Scroll to zoom · Click for 3E · Click again to clear focus
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]">
+          <span>─── Static</span>
+          <span>- - - Declared</span>
+          <span>··· Uncertain</span>
         </div>
       </div>
       <details className="border-t p-3 text-sm">
