@@ -3,8 +3,9 @@ const path = require('path');
 const assert = require('node:assert/strict');
 const frontendRoot = path.resolve(__dirname, '../MAVIS-Frontend');
 const ts = require(path.join(frontendRoot, 'node_modules/typescript'));
-const playwrightPath = 'C:/Users/nhuth/AppData/Local/npm-cache/_npx/e41f203b7505f1fb/node_modules/playwright';
-const { chromium } = require(playwrightPath);
+const { chromium } = require(require.resolve('playwright', {
+  paths: [path.resolve(__dirname, '../MAVIS-Frontend')],
+}));
 
 const compileTypeScript = (module, filename) => {
   const source = fs.readFileSync(filename, 'utf8');
