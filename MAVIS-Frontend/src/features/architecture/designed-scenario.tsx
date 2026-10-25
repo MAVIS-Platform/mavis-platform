@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SelectField } from "@/components/shared/forms";
 import { relationLabel } from "@/lib/drawio/rules";
-import { SelectablePreview, download } from "./selectable-diagram-preview";
+import { download } from "./selectable-diagram-preview";
 import { DrawioEditor } from "./drawio-editor";
 import {
   addCustomMessageToInteraction,
@@ -65,7 +65,6 @@ function sanitizeScenarioSlug(raw: string): string {
 
 export function DesignedScenario({
   model,
-  selectedId,
   onSelect,
   onSelectSequence,
   initialInteraction,
@@ -107,7 +106,6 @@ export function DesignedScenario({
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [editingDrawio, setEditingDrawio] = useState(false);
   const [migratedFromV0, setMigratedFromV0] = useState(false);
   const [legacyV0BackupXml, setLegacyV0BackupXml] = useState<string | null>(null);
   const [structuralConflicts, setStructuralConflicts] = useState<string[]>([]);
@@ -613,7 +611,6 @@ export function DesignedScenario({
             value={viewId}
             onChange={(nextView) => {
               setViewId(nextView);
-              setEditingDrawio(false);
               setError("");
               if (onSelectSequence) {
                 onSelectSequence(null, null);
@@ -1259,20 +1256,6 @@ export function DesignedScenario({
               >
                 {saving ? "Saving…" : "Save scenario"}
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setEditingDrawio((prev) => !prev)}
-              >
-                {editingDrawio ? "View diagram" : "Edit layout in draw.io"}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => download(xml, "mavis-scenario.drawio", "application/xml")}
-              >
-                Download .drawio
-              </Button>
               <span role="status" className="text-xs text-muted-foreground">
                 {dirty
                   ? "Unsaved changes"
@@ -1300,29 +1283,21 @@ export function DesignedScenario({
         )}
       </div>
 
-      {xml &&
-        (editingDrawio ? (
-          <DrawioEditor
-            key={`${model.id}:${viewId}:${saved.data?.revision ?? 0}`}
-            modelId={model.id}
-            diagramId={viewId}
-            title={`4+1 · Scenarios · ${doc.name}`}
-            notation="UML_SEQUENCE"
-            level="SCENARIO"
-            scope={viewId}
-            xml={xml}
-            generatedXml={xml}
-            preferProvidedXml={true}
-            onSave={saveXmlDocument}
-          />
-        ) : (
-          <SelectablePreview
-            xml={xml}
-            title={`4+1 · Scenarios · ${doc.name}`}
-            selectedId={selectedId ?? null}
-            onSelect={(hitId) => selectSequenceItem(hitId)}
-          />
-        ))}
+      {xml && (
+        <DrawioEditor
+          key={`${model.id}:${viewId}:${saved.data?.revision ?? 0}`}
+          modelId={model.id}
+          diagramId={viewId}
+          title={`4+1 · Scenarios · ${doc.name}`}
+          notation="UML_SEQUENCE"
+          level="SCENARIO"
+          scope={viewId}
+          xml={xml}
+          generatedXml={xml}
+          preferProvidedXml={true}
+          onSave={saveXmlDocument}
+        />
+      )}
     </div>
   );
 }
