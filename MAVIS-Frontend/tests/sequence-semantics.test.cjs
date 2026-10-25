@@ -1074,12 +1074,13 @@ test("Reviewer Repro R2: projectObservedSequenceToInteraction performs Kahn caus
 test("Reviewer Repro R3: extractInteractionFromDrawioXml detects deleted/edited messages, participants, labels, styles, fragments, interactionUses, executions, and unmapped added cells", () => {
   const model = createM3ReferenceModel();
 
-  // 1. Exact reviewer repro file: output/m3/reviewer-inputs/deleted-message.drawio
+  // 1. Controlled reviewer regression fixture, independent of local QA output.
   const deletedMessageXmlPath = path.resolve(
     root,
-    "../output/m3/reviewer-inputs/deleted-message.drawio",
+    "tests/fixtures/deleted-message.drawio",
   );
-  if (fs.existsSync(deletedMessageXmlPath)) {
+  assert.ok(fs.existsSync(deletedMessageXmlPath), "Deleted-message regression fixture must exist");
+  {
     const reviewerDeletedXml = fs.readFileSync(deletedMessageXmlPath, "utf8");
     const extractedDeleted = extractInteractionFromDrawioXml(reviewerDeletedXml);
     assert.ok(extractedDeleted);

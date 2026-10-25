@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const playwrightPath = 'C:/Users/nhuth/AppData/Local/npm-cache/_npx/e41f203b7505f1fb/node_modules/playwright';
-const { chromium } = require(playwrightPath);
+const { chromium } = require(require.resolve('playwright', {
+  paths: [path.resolve(__dirname, '../MAVIS-Frontend')],
+}));
 
 const outputDir = path.resolve(__dirname, '../output/m2/browser-acceptance');
 fs.mkdirSync(outputDir, { recursive: true });

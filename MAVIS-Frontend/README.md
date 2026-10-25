@@ -62,3 +62,22 @@ In mock mode `/login` offers labeled sample accounts. For actual login, use back
 
 Set `MAVIS_JAVA_URL=http://127.0.0.1:8081` server-side if running FE manually. The root launcher supplies backend mode and the paired ports/keys automatically. Restart Next.js after changing environment variables. Run `npm run typecheck`, `npm test`, `npm run test:connected`, `npm run test:mainflow` and `npm run build` for verification.
 
+
+### Reproducing local diagram QA
+
+Generated files under repository `output/` (screenshots, logs, exports, benchmark results and session checkpoints) are local artifacts, not versioned inputs or proof of a new run. Historical reports refer to the originating local run; publish selected evidence as PR/CI attachments when sharing it. Controlled regression inputs remain versioned in `MAVIS-Frontend/tests/fixtures/`.
+
+`npm ci` installs the pinned Playwright dependency. Before browser QA, run `npx playwright install chromium` from `MAVIS-Frontend`, start the application stack and draw.io, and provision the local sandbox account at `.artifacts/sandbox-account/account.json` in the repository root. Never commit that account file. Run `node scripts/run-m2-browser-acceptance.cjs`, `node scripts/run-m3-browser-acceptance.cjs` or `node scripts/run-m4-m8-browser-acceptance.cjs` from the repository root. Browser QA requires the stack; `npm test` does not.
+
+For `npm run test:connected`, generate fresh pipeline artifacts first, in this order (commands start at the repository root):
+
+```powershell
+dotnet test MAVIS.Worker/tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj -c Release --filter "FullyQualifiedName~HttpClientProfileTests"
+Push-Location MAVIS-Platform/mavis-be
+# Use the project-supported JDK. JDK 25 additionally needs the two flags below.
+.\mvnw.cmd -pl mavis-analyzer -am test "-Dtest=JavaSourceToGraphC4PipelineTest,OtelTraceCorrelationServiceImplTest" "-Dsurefire.failIfNoSpecifiedTests=false" "-Dlombok.version=1.18.42" "-Dnet.bytebuddy.experimental=true"
+Pop-Location
+npm --prefix MAVIS-Frontend run test:connected
+```
+
+The connected tests deliberately fail if their generated inputs are absent; they never substitute the committed unit fixtures. Java/Worker test output verifies the controlled extraction/correlation pipeline, not live user OTel traces. Keep machine-specific builds in an ignored directory via `MAVIS_NEXT_DIST_DIR`; do not commit generated `next-env.d.ts` rewrites or session-specific TypeScript include paths.
