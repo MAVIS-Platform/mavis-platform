@@ -167,44 +167,39 @@ export function ArchitectureDiagrams({
         <p role="status" className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">
           {selection.reason}
         </p>
+      ) : error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : !xml ? (
+        <p role="status">Preparing diagram…</p>
       ) : (
-        <>
-          {selection.notice && <p className="text-xs text-muted-foreground">{selection.notice}</p>}
-          {error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          ) : !xml ? (
-            <p role="status">Preparing diagram…</p>
-          ) : (
-            <DrawioEditor
-              key={`${model.id}:${key}`}
-              modelId={model.id}
-              diagramId={key}
-              title={title}
-              notation={document.notation}
-              level={document.level}
-              scope={key}
-              xml={xml}
-              generatedXml={generated || xml}
-              preferProvidedXml={!!saved.data?.xml}
-              onSave={async (content) => {
-                if (!saved.data || saved.error)
-                  throw Error("The saved version could not load. Retry before saving.");
-                const result = await api.execute("saveArchitectureDocument", {
-                  modelId: model.id,
-                  viewId: key,
-                  expectedRevision: saved.data.revision,
-                  xml: content,
-                });
-                cache.setQueryData(
-                  ["api", "architectureDocument", { modelId: model.id, viewId: key }],
-                  result,
-                );
-              }}
-            />
-          )}
-        </>
+        <DrawioEditor
+          key={`${model.id}:${key}`}
+          modelId={model.id}
+          diagramId={key}
+          title={title}
+          notation={document.notation}
+          level={document.level}
+          scope={key}
+          xml={xml}
+          generatedXml={generated || xml}
+          preferProvidedXml={!!saved.data?.xml}
+          onSave={async (content) => {
+            if (!saved.data || saved.error)
+              throw Error("The saved version could not load. Retry before saving.");
+            const result = await api.execute("saveArchitectureDocument", {
+              modelId: model.id,
+              viewId: key,
+              expectedRevision: saved.data.revision,
+              xml: content,
+            });
+            cache.setQueryData(
+              ["api", "architectureDocument", { modelId: model.id, viewId: key }],
+              result,
+            );
+          }}
+        />
       )}
     </section>
   );
