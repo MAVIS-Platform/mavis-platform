@@ -1,19 +1,34 @@
 import type { Operation } from "./contracts";
 
 export const mutationInvalidations: Partial<Record<Operation, readonly Operation[]>> = {
+  updateProfile: ["session"],
+  createWorkspace: ["workspaces"],
+  updateWorkspace: ["workspaces"],
+  archiveWorkspace: ["workspaces"],
+  addWorkspaceMember: ["workspaces"],
+  removeWorkspaceMember: ["workspaces"],
+  createAssignment: ["assignments"],
+  runtimeStop: ["runtimeReadSessions", "runtimeReadSession"],
+  runtimeApprove: ["runtimeReadSessions", "runtimeReadSession"],
   importSource: ["snapshots"],
+  importGithub: ["snapshots"],
+  createProject: ["projects", "projectOverviews"],
+  cancelAnalysis: ["analysisJobs", "analysisJob", "projectOverviews"],
+  evaluateModel: ["evaluations"],
   startAnalysis: [
     "analysisJobs",
     "analysisJob",
     "adminJobs",
     "projects",
+    "projectOverviews",
     "project",
     "platformSummary",
   ],
-  saveModel: ["models", "model"],
+  saveModel: ["models", "modelVersions", "model", "compareModels"],
   saveRuntimeConfiguration: ["runtimeConfiguration"],
+  createScenario: ["scenarios"],
   saveScenario: ["scenarios"],
-  startRuntime: ["runtimeSessions", "platformSummary"],
+  startRuntime: ["runtimeSessions", "runtimeReadSessions", "runtimeReadSession", "platformSummary"],
   stopRuntime: ["runtimeSessions", "runtimeSession", "platformSummary", "audit"],
   submit: ["submissions", "submission"],
   feedback: ["submissions", "submission"],
@@ -35,7 +50,9 @@ export function terminalSignature(operation: Operation, data: unknown): string {
         typeof value !== "object" ||
         !("id" in value) ||
         !("status" in value) ||
-        !["completed", "failed", "cancelled", "terminated"].includes(String(value.status))
+        !["completed", "failed", "cancelled", "terminated", "timed-out", "partial"].includes(
+          String(value.status),
+        )
       )
         return [];
       return [`${String(value.id)}:${String(value.status)}`];

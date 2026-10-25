@@ -1,26 +1,13 @@
+import { readAppConfiguration } from "@/lib/api/config";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { contracts, isOperation } from "@/lib/api/contracts";
 import { validateResponse } from "@/lib/api/validate-response";
-
+import { currentSession, signIn, executeJava } from "@/lib/api/java-operations";
+import { javaRequest } from "@/lib/api/java-client";
+import { ApiError } from "@/lib/errors/api-error";
 export const dynamic = "force-dynamic";
-const routeConfiguration = z.record(
-  z.object({
-    path: z
-      .string()
-      .startsWith("/")
-      .refine(
-        (p) =>
-          !p.startsWith("//") &&
-          !p.includes("\\") &&
-          !p.includes("..") &&
-          !p.includes("?") &&
-          !p.includes("#"),
-      ),
-    method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
-  }),
-);
-
+const cookieName = "mavis_session";
 async function handle(request: NextRequest, context: { params: Promise<{ operation: string }> }) {
   const { operation } = await context.params;
   const fail = (status: number) =>
@@ -29,126 +16,119 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
       { status, headers: { "Cache-Control": "no-store" } },
     );
   if (
-    process.env["MAVIS_API_MODE"] !== "backend" ||
+    readAppConfiguration(process.env).mode !== "backend" ||
     !isOperation(operation) ||
     operation === "mockLogin"
   )
     return fail(501);
   const contract = contracts[operation];
   if (request.method !== (contract.mutation ? "POST" : "GET")) return fail(405);
-  // Cookie-authenticated writes require an exact same-origin request. Backend
-  // authorization and CSRF protection remain mandatory on the real service.
-  if (contract.mutation && request.headers.get("origin") !== request.nextUrl.origin)
+  if (
+    contract.mutation &&
+    request.headers.get("origin") !== `${request.nextUrl.protocol}//${request.headers.get("host")}`
+  )
     return fail(403);
-  let input: unknown;
+  const token = request.cookies.get(cookieName)?.value;
+  if (
+    !token &&
+    ![
+      "session",
+      "signIn",
+      "signOut",
+      "register",
+      "verifyEmail",
+      "resendOtp",
+      "forgotPassword",
+      "resetPassword",
+      "googleSignIn",
+    ].includes(operation)
+  )
+    return fail(401);
+  if (Number(request.headers.get("content-length") ?? "0") > 101 * 1024 * 1024) return fail(413);
   try {
+    let raw: unknown;
     if (operation === "importSource") {
       const form = await request.formData();
       const metadata: unknown = JSON.parse(String(form.get("input")));
       if (!metadata || typeof metadata !== "object") return fail(400);
-      input = { ...metadata, archive: form.get("file") };
+      raw = { ...metadata, archive: form.get("file") };
     } else
-      input = contract.mutation
-        ? await request.json()
-        : JSON.parse(request.nextUrl.searchParams.get("input") ?? "{}");
-  } catch {
-    return fail(400);
-  }
-  const parsed = contract.input.safeParse(input);
-  if (!parsed.success) return fail(422);
-  let multipart: FormData | undefined;
-  if (operation === "importSource") {
-    const upload = contracts.importSource.input.parse(input);
-    if (upload.archive.size !== upload.size) return fail(422);
-    multipart = new FormData();
-    multipart.set("file", upload.archive, upload.fileName);
-    multipart.set("projectId", upload.projectId);
-    multipart.set("name", upload.name);
-  }
-  let routes: z.infer<typeof routeConfiguration>;
-  try {
-    routes = routeConfiguration.parse(JSON.parse(process.env["MAVIS_API_OPERATIONS"] ?? "{}"));
-  } catch {
-    return fail(501);
-  }
-  const route = routes[operation];
-  const base = process.env["MAVIS_BACKEND_URL"];
-  if (
-    !base ||
-    !route ||
-    (!contract.mutation && route.method !== "GET") ||
-    (contract.mutation && route.method === "GET")
-  )
-    return fail(501);
-  let target: URL;
-  try {
-    const upstream = new URL(base);
-    if (!["http:", "https:"].includes(upstream.protocol) || upstream.username || upstream.password)
-      return fail(501);
-    target = new URL(route.path, upstream);
-    if (target.origin !== upstream.origin) return fail(501);
-  } catch {
-    return fail(501);
-  }
-  if (route.method === "GET")
-    for (const [key, value] of Object.entries(parsed.data)) {
-      if (value !== null && value !== undefined) target.searchParams.set(key, String(value));
+      raw =
+        operation === "signOut"
+          ? {}
+          : contract.mutation
+            ? await request.json()
+            : JSON.parse(request.nextUrl.searchParams.get("input") ?? "{}");
+    const parsed = contract.input.safeParse(raw);
+    if (!parsed.success) return fail(422);
+    if (operation === "importSource") {
+      const upload = contracts.importSource.input.parse(parsed.data);
+      if (upload.archive.size !== upload.size) return fail(422);
     }
-  const cookieNames = (process.env["MAVIS_SESSION_COOKIES"] ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const cookie = request.cookies
-    .getAll()
-    .filter((c) => cookieNames.includes(c.name))
-    .map((c) => `${c.name}=${c.value}`)
-    .join("; ");
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 18000);
-  const cancel = () => controller.abort();
-  request.signal.addEventListener("abort", cancel, { once: true });
-  try {
-    const upstream = await fetch(target, {
-      method: route.method,
-      headers: {
-        Accept: "application/json",
-        ...(route.method === "GET" || multipart ? {} : { "Content-Type": "application/json" }),
-        ...(cookie ? { Cookie: cookie } : {}),
-      },
-      ...(route.method === "GET" ? {} : { body: multipart ?? JSON.stringify(parsed.data) }),
-      cache: "no-store",
-      redirect: "error",
-      signal: controller.signal,
-    });
-    if (!upstream.ok)
-      return fail(
-        [400, 401, 403, 404, 409, 422, 429].includes(upstream.status) ? upstream.status : 502,
+    if (operation === "session") {
+      const session = await currentSession(token, request.signal);
+      const response = NextResponse.json(session, { headers: { "Cache-Control": "no-store" } });
+      if (!session.user) response.cookies.delete(cookieName);
+      return response;
+    }
+    const authPaths: Record<string, string> = {
+      register: "register",
+      verifyEmail: "verify-email",
+      resendOtp: "resend-otp",
+      forgotPassword: "forgot-password",
+      resetPassword: "reset-password",
+    };
+    const authPath = authPaths[operation];
+    if (authPath) {
+      const result = await javaRequest(`auth/${authPath}`, undefined, {
+        method: "POST",
+        body: JSON.stringify(parsed.data),
+        signal: request.signal,
+      });
+      return NextResponse.json(
+        validateResponse(operation, parsed.data, operation === "register" ? result : { ok: true }),
+        { headers: { "Cache-Control": "no-store" } },
       );
-    let body: unknown;
-    try {
-      body = await upstream.json();
-    } catch {
-      return fail(502);
     }
-    let validated: unknown;
-    try {
-      validated = validateResponse(operation, parsed.data, body);
-    } catch {
-      return fail(502);
+    if (operation === "signIn" || operation === "googleSignIn") {
+      const auth = await signIn(parsed.data, request.signal, operation === "googleSignIn");
+      const response = NextResponse.json(auth.session, {
+        headers: { "Cache-Control": "no-store" },
+      });
+      response.cookies.set(cookieName, auth.token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: request.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge: 86400,
+      });
+      return response;
     }
-    const response = NextResponse.json(validated, {
+    if (operation === "signOut") {
+      const response = NextResponse.json({ ok: true });
+      response.cookies.delete(cookieName);
+      return response;
+    }
+    if (!token) return fail(401);
+    const result = await executeJava(
+      operation,
+      parsed.data as Record<string, unknown>,
+      token,
+      request.signal,
+    );
+    return NextResponse.json(validateResponse(operation, parsed.data, result), {
       headers: { "Cache-Control": "no-store" },
     });
-    for (const value of upstream.headers.getSetCookie()) {
-      const name = value.split("=")[0];
-      if (name && cookieNames.includes(name)) response.headers.append("Set-Cookie", value);
-    }
-    return response;
-  } catch {
-    return fail(controller.signal.aborted ? 504 : 502);
-  } finally {
-    clearTimeout(timer);
-    request.signal.removeEventListener("abort", cancel);
+  } catch (error) {
+    if (error instanceof z.ZodError) return fail(502);
+    if (error instanceof SyntaxError) return fail(400);
+    if (error instanceof ApiError && error.code)
+      return NextResponse.json(
+        { error: "Request unavailable", code: error.code },
+        { status: error.status ?? 502, headers: { "Cache-Control": "no-store" } },
+      );
+    if (error instanceof ApiError) return fail(error.status ?? 502);
+    return fail(502);
   }
 }
 export const GET = handle;

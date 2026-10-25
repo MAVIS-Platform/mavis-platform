@@ -107,7 +107,8 @@ class GraphBuilderServiceTest {
         assertThat(fallbackElement.getModelVersion()).isEqualTo(sampleModelVersion);
         assertThat(fallbackElement.getName()).isEqualTo("fruit-market-app");
         assertThat(fallbackElement.getElementType()).isEqualTo("SERVICE_CONTAINER");
-        assertThat(fallbackElement.getLanguageStack()).isEqualTo("JAVA_SPRING");
+        assertThat(fallbackElement.getLanguageStack()).isNull();
+        assertThat(fallbackElement.getStatus()).isEqualTo("UNCERTAIN_MAPPING");
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<ModelElement>> captor = ArgumentCaptor.forClass(List.class);
@@ -168,6 +169,7 @@ class GraphBuilderServiceTest {
         ModelElement element = ModelElement.builder()
                 .id(UUID.randomUUID())
                 .name("order-service")
+                .elementType("SERVICE_CONTAINER")
                 .scope("/app/order-service")
                 .modelVersion(sampleModelVersion)
                 .build();
@@ -204,6 +206,7 @@ class GraphBuilderServiceTest {
         ModelElement orderElement = ModelElement.builder()
                 .id(UUID.randomUUID())
                 .name("order-service")
+                .elementType("SERVICE_CONTAINER")
                 .scope("/app/order-service")
                 .modelVersion(sampleModelVersion)
                 .build();
@@ -211,6 +214,7 @@ class GraphBuilderServiceTest {
         ModelElement paymentElement = ModelElement.builder()
                 .id(UUID.randomUUID())
                 .name("payment-service")
+                .elementType("SERVICE_CONTAINER")
                 .scope("/app/payment-service")
                 .modelVersion(sampleModelVersion)
                 .build();
@@ -362,6 +366,8 @@ class GraphBuilderServiceTest {
     @Test
     @DisplayName("Should create DATABASE_ACCESS relationship between repository and database container")
     void shouldCreateDatabaseAccessRelationship() {
+        when(springConfigDetectorService.detectConfigs(anyString())).thenReturn(List.of(
+                DetectedSpringConfigDTO.builder().serviceName("order-service").applicationName("order-service").datasourceHost("order-db").build()));
         ModelElement serviceContainer = ModelElement.builder()
                 .id(UUID.randomUUID())
                 .name("order-service")
@@ -474,4 +480,103 @@ class GraphBuilderServiceTest {
         verify(modelRelationshipRepository, never()).saveAll(any());
         verify(evidenceRepository, never()).saveAll(any());
     }
+
+    @Test
+    void logicalDatabasesOnOneHostRemainSeparateAndRepositoryBindingsUseTheirOwnSchema() {
+        var orders=DetectedContainerDTO.builder().serviceName("orders").elementType("SERVICE_CONTAINER").datasourceHost("mysql").datasourceDatabase("orders_data").datasourceTechnology("mysql").composeFilePath("/repo/docker-compose.yml").datasourceLineNumber(8).build();
+        var kitchen=DetectedContainerDTO.builder().serviceName("kitchen").elementType("SERVICE_CONTAINER").datasourceHost("mysql").datasourceDatabase("kitchen_data").datasourceTechnology("mysql").composeFilePath("/repo/docker-compose.yml").datasourceLineNumber(16).build();
+        var mysql=DetectedContainerDTO.builder().serviceName("mysql").elementType("DATABASE").image("mysql:8").build();
+        when(dockerDetectorService.detectContainers(anyString())).thenReturn(List.of(orders,kitchen,mysql));
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(call->{List<ModelElement> values=call.getArgument(0);values.forEach(e->{if(e.getId()==null)e.setId(UUID.randomUUID());});return values;});
+        when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(call->{List<ModelRelationship> values=call.getArgument(0);values.forEach(e->e.setId(UUID.randomUUID()));return values;});
+        var elements=graphBuilderService.buildAndSaveElements(sampleModelVersion,List.of(),"/repo");
+        assertThat(elements).extracting(ModelElement::getName).contains("orders_data @ mysql","kitchen_data @ mysql","mysql");
+        var ordersDb = elements.stream().filter(e -> "orders_data @ mysql".equals(e.getName())).findFirst().orElseThrow();
+        assertThat(ordersDb.getProperties().path("protocol").asText()).isEqualTo("mysql");
+        var facts=List.of(CodeEvidenceDTO.builder().elementType("DATABASE_REPOSITORY").identifier("OrderRepository").sourceComponent("OrderRepository").filePath("/repo/orders/OrderRepository.java").lineNumber(1).build(),CodeEvidenceDTO.builder().elementType("DATABASE_REPOSITORY").identifier("KitchenRepository").sourceComponent("KitchenRepository").filePath("/repo/kitchen/KitchenRepository.java").lineNumber(1).build());
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot,sampleModelVersion,elements,facts);
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<ModelRelationship>> captured=ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository).saveAll(captured.capture());
+        assertThat(captured.getValue()).extracting(r->r.getTargetElement().getName()).containsExactlyInAnyOrder("orders_data @ mysql","kitchen_data @ mysql");
+    }
+    @Test void equalChannelNamesOnDifferentBrokersDoNotCreateFalseConnections() { checkMessageTransports("broker-a:9092","broker-b:9092",2); }
+    @Test void explicitlySharedTransportAllowsPublisherAndHandlerToUseOneChannel() { checkMessageTransports("broker:9092","broker:9092",1); }
+    @Test void missingTransportDoesNotJoinChannelsAcrossServices() { checkMessageTransports(null,null,2); }
+    private void checkMessageTransports(String first,String second,int expectedChannels) {
+        var orders=ModelElement.builder().id(UUID.randomUUID()).name("orders").elementType("SERVICE_CONTAINER").scope("/repo").modelVersion(sampleModelVersion).build();
+        var kitchen=ModelElement.builder().id(UUID.randomUUID()).name("kitchen").elementType("SERVICE_CONTAINER").scope("/repo").modelVersion(sampleModelVersion).build();
+        when(dockerDetectorService.detectContainers(anyString())).thenReturn(List.of(DetectedContainerDTO.builder().serviceName("orders").messageBrokerAuthority(first).build(),DetectedContainerDTO.builder().serviceName("kitchen").messageBrokerAuthority(second).build()));
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(call->{List<ModelElement> values=call.getArgument(0);values.forEach(e->e.setId(UUID.randomUUID()));return values;});
+        when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(call->{List<ModelRelationship> values=call.getArgument(0);values.forEach(e->e.setId(UUID.randomUUID()));return values;});
+        var facts=List.of(CodeEvidenceDTO.builder().elementType("MESSAGE_PUBLISH").identifier("commands").endpointAlias("Kafka topic").sourceComponent("Publisher").filePath("/repo/orders/Publisher.java").lineNumber(1).build(),CodeEvidenceDTO.builder().elementType("MESSAGE_SUBSCRIBE").identifier("commands").endpointAlias("Kafka topic").sourceComponent("Handler").filePath("/repo/kitchen/Handler.java").lineNumber(1).build());
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot,sampleModelVersion,List.of(orders,kitchen),facts);
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<ModelElement>> nodes=ArgumentCaptor.forClass(List.class);
+        verify(modelElementRepository).saveAll(nodes.capture());assertThat(nodes.getValue()).hasSize(expectedChannels);
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<ModelRelationship>> relations=ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository).saveAll(relations.capture());assertThat(relations.getValue()).hasSize(2);
+        var publishing=relations.getValue().stream().filter(r->r.getRelationType().equals("MESSAGE_PUBLISH")).findFirst().orElseThrow();
+        var handling=relations.getValue().stream().filter(r->r.getRelationType().equals("MESSAGE_SUBSCRIBE")).findFirst().orElseThrow();
+        assertThat(publishing.getTargetElement().getId().equals(handling.getSourceElement().getId())).isEqualTo(expectedChannels==1);
+    }
+
+    @Test
+    @DisplayName("Q3: Should only emit artifactName when container has explicit image, never fabricating :build fallback")
+    void shouldNotFabricateBuildArtifactWhenContainerLacksExplicitImage() {
+        var explicitImageContainer = DetectedContainerDTO.builder()
+                .serviceName("orders-db")
+                .elementType("DATABASE")
+                .image("mysql:8.0")
+                .ports(List.of("3306:3306"))
+                .composeFilePath("/repo/docker-compose.yml")
+                .lineNumber(14)
+                .build();
+        var buildContextOnlyContainer = DetectedContainerDTO.builder()
+                .serviceName("orders-service")
+                .elementType("SERVICE_CONTAINER")
+                .buildContext("./orders")
+                .ports(List.of("8081:8081"))
+                .composeFilePath("/repo/docker-compose.yml")
+                .lineNumber(4)
+                .build();
+        var portsEnvOnlyContainer = DetectedContainerDTO.builder()
+                .serviceName("edge-proxy")
+                .elementType("SERVICE_CONTAINER")
+                .ports(List.of("8080:8080"))
+                .composeFilePath("/repo/docker-compose.yml")
+                .lineNumber(20)
+                .build();
+
+        when(dockerDetectorService.detectContainers(anyString()))
+                .thenReturn(List.of(explicitImageContainer, buildContextOnlyContainer, portsEnvOnlyContainer));
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(call -> {
+            List<ModelElement> values = call.getArgument(0);
+            values.forEach(e -> {
+                if (e.getId() == null) e.setId(UUID.randomUUID());
+            });
+            return values;
+        });
+
+        var elements = graphBuilderService.buildAndSaveElements(sampleModelVersion, List.of(), "/repo");
+
+        var dbElem = elements.stream().filter(e -> "orders-db".equals(e.getName())).findFirst().orElseThrow();
+        var dbMeta = dbElem.getProperties().path("deploymentMetadata");
+        assertThat(dbMeta.path("artifactName").asText()).isEqualTo("mysql:8.0");
+        assertThat(dbMeta.path("artifactKind").asText()).isEqualTo("CONTAINER_IMAGE");
+        assertThat(dbMeta.path("artifactResolution").asText()).isEqualTo("EXPLICIT_CONTAINER_IMAGE");
+
+        var buildElem = elements.stream().filter(e -> "orders-service".equals(e.getName())).findFirst().orElseThrow();
+        var buildMeta = buildElem.getProperties().path("deploymentMetadata");
+        assertThat(buildMeta.has("artifactName")).isFalse();
+        assertThat(buildMeta.has("artifactKind")).isFalse();
+        assertThat(buildMeta.path("declaredBuildContext").asText()).isEqualTo("./orders");
+        assertThat(buildMeta.path("artifactResolution").asText()).isEqualTo("BUILD_CONTEXT_ONLY_UNRESOLVED_ARTIFACT");
+
+        var portsOnlyElem = elements.stream().filter(e -> "edge-proxy".equals(e.getName())).findFirst().orElseThrow();
+        var portsOnlyMeta = portsOnlyElem.getProperties().path("deploymentMetadata");
+        assertThat(portsOnlyMeta.has("artifactName")).isFalse();
+        assertThat(portsOnlyMeta.has("artifactKind")).isFalse();
+        assertThat(portsOnlyMeta.has("declaredBuildContext")).isFalse();
+        assertThat(portsOnlyMeta.path("artifactResolution").asText()).isEqualTo("NO_ARTIFACT_DECLARED");
+    }
 }
+

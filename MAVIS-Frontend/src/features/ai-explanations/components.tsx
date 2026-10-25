@@ -38,7 +38,13 @@ export function AIExplanationPanel({
       )}
       {current ? (
         <>
-          <p className="text-sm leading-6 text-muted-foreground">{current.text}</p>
+          {current.providerMode && <Badge variant="outline">{current.providerMode}</Badge>}
+          {current.epistemicBadge && (
+            <p className="text-xs text-muted-foreground">{current.epistemicBadge}</p>
+          )}
+          <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+            {current.text}
+          </p>
           {current.sample && <Badge variant="outline">Sample text · no AI service called</Badge>}
           <p className="break-all text-xs text-muted-foreground">
             Evidence: {current.evidenceIds.join(", ") || "No attached evidence"}

@@ -77,7 +77,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
         // Phân quyền kép
-        runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
+        runnerServiceAuthGuard.requireRunnerService();
         if (session.getRecoveryResultJson() != null) {
             throw new BusinessException(ErrorCode.CONFLICT, "Allocation was already recovered; late execution receipt rejected");
         }
@@ -274,7 +274,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 && Boolean.TRUE.equals(receipt.getSandboxEnforcementConfirmed())
                 && "Mapped".equalsIgnoreCase(outcome.getMappingStatus())
                 && !hasStructuralTraceWarning
-                && correspondenceOk;
+                && correspondenceOk
+                && modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(session.getProject().getId())
+                    .map(latest->latest.getId().equals(session.getModelVersion().getId())).orElse(false);
 
         // Nếu spans rỗng -> không tạo ModelVersion mới
         if (spans.isEmpty()) {
@@ -310,6 +312,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
         ModelVersion enrichedVersion = ModelVersion.builder()
                 .project(lockedProject)
+                .baseModelVersion(baseVersion)
                 .sourceSnapshot(baseVersion.getSourceSnapshot())
                 .runtimeSession(session)
                 .revision(newRevision)
@@ -473,7 +476,21 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         }
 
         // (4.4) Xử lý tương tác nhân quả ưu tiên interactions và UUID modelServiceId
+        IdentityHashMap<ModelElement, UUID> newToBaseElementIdMap = new IdentityHashMap<>();
+        for (Map.Entry<UUID, ModelElement> e : oldToNewElementMap.entrySet()) {
+            if (e.getKey() != null && e.getValue() != null) {
+                newToBaseElementIdMap.put(e.getValue(), e.getKey());
+            }
+        }
+        IdentityHashMap<ModelRelationship, UUID> newToBaseRelIdMap = new IdentityHashMap<>();
+        for (Map.Entry<UUID, ModelRelationship> e : oldToNewRelMap.entrySet()) {
+            if (e.getKey() != null && e.getValue() != null) {
+                newToBaseRelIdMap.put(e.getValue(), e.getKey());
+            }
+        }
+
         List<CausalStepRecord> sequenceSteps = new ArrayList<>();
+        Map<String, String> childSpanKeyToMessageId = new LinkedHashMap<>();
         int stepOrder = 1;
         Set<String> processedEdgeKeys = new HashSet<>();
 
@@ -501,10 +518,14 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     ModelElement callee = resolveElement(toModelServiceId, toService, oldToNewElementMap, serviceNameToElementMap);
 
                     if (caller != null && callee != null && !caller.getId().equals(callee.getId())) {
-                        long durationMs = childSpan != null ? parseDurationMs(childSpan.getDurationNanoseconds()) : 0L;
-                        processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs, trace, outcome, relByPairKey, newRelationships, newEvidences);
+                        Long durationMs = childSpan != null ? parseDurationMs(childSpan.getDurationNanoseconds()) : null;
+                        InteractionPersistenceResult persisted = processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs != null ? durationMs : 0L, trace, outcome, relByPairKey, newRelationships, newEvidences);
                         if (parentSpan != null && childSpan != null) {
-                            sequenceSteps.add(new CausalStepRecord(stepOrder++, parentSpan, childSpan, durationMs));
+                            int ord = stepOrder++;
+                            String msgId = "msg-obs-" + ord;
+                            List<String> causalParents = resolveReceiptCausalParents(parentSpan, spanMap, childSpanKeyToMessageId);
+                            sequenceSteps.add(new CausalStepRecord(ord, msgId, parentSpan, childSpan, durationMs, caller, callee, persisted.relationship, persisted.evidence, causalParents));
+                            childSpanKeyToMessageId.put((childSpan.getTraceId() + ":" + childSpan.getSpanId()).toLowerCase(), msgId);
                         }
                     }
                 }
@@ -521,9 +542,13 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                         ModelElement callee = resolveElement(childSpan.getModelServiceId(), childSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
 
                         if (caller != null && callee != null && !caller.getId().equals(callee.getId())) {
-                            long durationMs = parseDurationMs(childSpan.getDurationNanoseconds());
-                            processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs, trace, outcome, relByPairKey, newRelationships, newEvidences);
-                            sequenceSteps.add(new CausalStepRecord(stepOrder++, parentSpan, childSpan, durationMs));
+                            Long durationMs = parseDurationMs(childSpan.getDurationNanoseconds());
+                            InteractionPersistenceResult persisted = processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs != null ? durationMs : 0L, trace, outcome, relByPairKey, newRelationships, newEvidences);
+                            int ord = stepOrder++;
+                            String msgId = "msg-obs-" + ord;
+                            List<String> causalParents = resolveReceiptCausalParents(parentSpan, spanMap, childSpanKeyToMessageId);
+                            sequenceSteps.add(new CausalStepRecord(ord, msgId, parentSpan, childSpan, durationMs, caller, callee, persisted.relationship, persisted.evidence, causalParents));
+                            childSpanKeyToMessageId.put((childSpan.getTraceId() + ":" + childSpan.getSpanId()).toLowerCase(), msgId);
                         }
                     }
                 }
@@ -540,9 +565,13 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                             ModelElement callee = resolveElement(childSpan.getModelServiceId(), childSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
 
                             if (caller != null && callee != null && !caller.getId().equals(callee.getId())) {
-                                long durationMs = parseDurationMs(childSpan.getDurationNanoseconds());
-                                processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs, trace, outcome, relByPairKey, newRelationships, newEvidences);
-                                sequenceSteps.add(new CausalStepRecord(stepOrder++, parentSpan, childSpan, durationMs));
+                                Long durationMs = parseDurationMs(childSpan.getDurationNanoseconds());
+                                InteractionPersistenceResult persisted = processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs != null ? durationMs : 0L, trace, outcome, relByPairKey, newRelationships, newEvidences);
+                                int ord = stepOrder++;
+                                String msgId = "msg-obs-" + ord;
+                                List<String> causalParents = resolveReceiptCausalParents(parentSpan, spanMap, childSpanKeyToMessageId);
+                                sequenceSteps.add(new CausalStepRecord(ord, msgId, parentSpan, childSpan, durationMs, caller, callee, persisted.relationship, persisted.evidence, causalParents));
+                                childSpanKeyToMessageId.put((childSpan.getTraceId() + ":" + childSpan.getSpanId()).toLowerCase(), msgId);
                             }
                         }
                     }
@@ -557,20 +586,74 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         ObjectNode sequenceLayout = objectMapper.createObjectNode();
         sequenceLayout.put("notation", "UML_SEQUENCE");
         sequenceLayout.put("level", "RUNTIME_PROCESS");
+        sequenceLayout.put("schemaVersion", 2);
+        sequenceLayout.put("baseModelVersionId", baseVersion.getId() != null ? baseVersion.getId().toString() : null);
+        sequenceLayout.put("enrichedModelVersionId", enrichedVersion.getId() != null ? enrichedVersion.getId().toString() : null);
+        sequenceLayout.put("traceStatus", session.getTraceStatus());
         sequenceLayout.put("totalSteps", sequenceSteps.size());
+
+        ArrayNode limitationsNode = sequenceLayout.putArray("limitations");
+        limitationsNode.add("NO_SYNTHETIC_REPLY_FROM_END_TIME");
+        limitationsNode.add("NO_COMBINED_FRAGMENTS_FROM_SINGLE_TRACE");
+        if (!"COMPLETE".equalsIgnoreCase(session.getTraceStatus())) {
+            limitationsNode.add("PARTIAL_OR_AMBIGUOUS_PARTICIPANT_MAPPING");
+        }
 
         ArrayNode stepsArray = sequenceLayout.putArray("steps");
         for (CausalStepRecord step : sequenceSteps) {
             ObjectNode stepNode = objectMapper.createObjectNode();
+            UUID callerBaseId = step.caller != null ? newToBaseElementIdMap.get(step.caller) : null;
+            UUID calleeBaseId = step.callee != null ? newToBaseElementIdMap.get(step.callee) : null;
+            UUID callerElId = step.caller != null ? (step.caller.getId() != null ? step.caller.getId() : callerBaseId) : null;
+            UUID calleeElId = step.callee != null ? (step.callee.getId() != null ? step.callee.getId() : calleeBaseId) : null;
+            String callerStatus = step.caller != null && "UNCERTAIN_MAPPING".equalsIgnoreCase(step.caller.getStatus())
+                    ? "UNCERTAIN_MAPPING"
+                    : (callerElId != null ? "RESOLVED" : "UNMAPPED");
+            String calleeStatus = step.callee != null && "UNCERTAIN_MAPPING".equalsIgnoreCase(step.callee.getStatus())
+                    ? "UNCERTAIN_MAPPING"
+                    : (calleeElId != null ? "RESOLVED" : "UNMAPPED");
+            String callerParticipantId = callerBaseId != null ? "part:" + callerBaseId : (callerElId != null ? "part:" + callerElId : "part:service:" + Objects.toString(step.parentSpan.getRuntimeService(), "unknown").toLowerCase(Locale.ROOT));
+            String calleeParticipantId = calleeBaseId != null ? "part:" + calleeBaseId : (calleeElId != null ? "part:" + calleeElId : "part:service:" + Objects.toString(step.childSpan.getRuntimeService(), "unknown").toLowerCase(Locale.ROOT));
+            UUID baseRelId = step.relationship != null ? newToBaseRelIdMap.get(step.relationship) : null;
+            UUID relId = step.relationship != null ? (step.relationship.getId() != null ? step.relationship.getId() : baseRelId) : null;
+            UUID evId = step.evidence != null ? step.evidence.getId() : null;
+
             stepNode.put("stepOrder", step.order);
+            stepNode.put("messageId", step.messageId);
             stepNode.put("callerService", step.parentSpan.getRuntimeService());
             stepNode.put("calleeService", step.childSpan.getRuntimeService());
+            stepNode.put("callerParticipantId", callerParticipantId);
+            stepNode.put("calleeParticipantId", calleeParticipantId);
+            if (callerElId != null) stepNode.put("callerElementId", callerElId.toString()); else stepNode.putNull("callerElementId");
+            if (calleeElId != null) stepNode.put("calleeElementId", calleeElId.toString()); else stepNode.putNull("calleeElementId");
+            if (callerBaseId != null) stepNode.put("callerBaseElementId", callerBaseId.toString()); else stepNode.putNull("callerBaseElementId");
+            if (calleeBaseId != null) stepNode.put("calleeBaseElementId", calleeBaseId.toString()); else stepNode.putNull("calleeBaseElementId");
+            stepNode.put("callerResolutionStatus", callerStatus);
+            stepNode.put("calleeResolutionStatus", calleeStatus);
             stepNode.put("operation", "Call " + step.childSpan.getRuntimeService());
-            stepNode.put("httpStatusCode", step.childSpan.getHttpStatusCode());
-            stepNode.put("durationMs", step.durationMs);
+            stepNode.put("messageSort", "UNKNOWN");
+            stepNode.putNull("httpMethod");
+            if (step.childSpan.getHttpStatusCode() != null) {
+                stepNode.put("httpStatusCode", step.childSpan.getHttpStatusCode());
+            } else {
+                stepNode.putNull("httpStatusCode");
+            }
+            if (step.durationMs != null) {
+                stepNode.put("durationMs", step.durationMs);
+            } else {
+                stepNode.putNull("durationMs");
+            }
             stepNode.put("traceId", step.childSpan.getTraceId());
             stepNode.put("spanId", step.childSpan.getSpanId());
             stepNode.put("parentSpanId", step.childSpan.getParentSpanId());
+            if (relId != null) stepNode.put("relationshipId", relId.toString()); else stepNode.putNull("relationshipId");
+            if (baseRelId != null) stepNode.put("baseRelationshipId", baseRelId.toString()); else stepNode.putNull("baseRelationshipId");
+            if (evId != null) stepNode.put("evidenceId", evId.toString()); else stepNode.putNull("evidenceId");
+            stepNode.put("provenanceType", "OBSERVED");
+            ArrayNode parentsArr = stepNode.putArray("causalParentMessageIds");
+            for (String pId : step.causalParentMessageIds) {
+                parentsArr.add(pId);
+            }
             stepsArray.add(stepNode);
         }
 
@@ -601,6 +684,32 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         return new IngestResult(enrichedVersion, ack);
     }
 
+    private static List<String> resolveReceiptCausalParents(RunnerCorrelatedSpanDTO callerSpan,
+                                                            Map<String, RunnerCorrelatedSpanDTO> spanMap,
+                                                            Map<String, String> childSpanKeyToMessageId) {
+        List<String> result = new ArrayList<>();
+        Set<String> visited = new HashSet<>();
+        RunnerCorrelatedSpanDTO curr = callerSpan;
+        String callerService = callerSpan != null ? callerSpan.getRuntimeService() : null;
+        while (curr != null && curr.getSpanId() != null && curr.getTraceId() != null) {
+            String key = (curr.getTraceId() + ":" + curr.getSpanId()).toLowerCase();
+            if (!visited.add(key)) break;
+            String msgId = childSpanKeyToMessageId.get(key);
+            if (msgId != null && !result.contains(msgId)) {
+                result.add(msgId);
+                break;
+            }
+            if (curr.getParentSpanId() == null || curr.getParentSpanId().isBlank()) break;
+            RunnerCorrelatedSpanDTO next = spanMap.get((curr.getTraceId() + ":" + curr.getParentSpanId()).toLowerCase());
+            if (next == null || callerService == null || next.getRuntimeService() == null
+                    || !callerService.equalsIgnoreCase(next.getRuntimeService())) {
+                break;
+            }
+            curr = next;
+        }
+        return result;
+    }
+
     private ModelElement resolveElement(String modelServiceId, String serviceName,
                                         Map<UUID, ModelElement> oldToNewElementMap,
                                         Map<String, ModelElement> serviceNameToElementMap) {
@@ -617,17 +726,17 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         return null;
     }
 
-    private void processInteraction(ModelVersion enrichedVersion,
-                                    RuntimeSession session,
-                                    ModelElement caller,
-                                    ModelElement callee,
-                                    RunnerCorrelatedSpanDTO childSpan,
-                                    long durationMs,
-                                    RunnerTraceCorrelationDTO trace,
-                                    RunnerOutcomeDTO outcome,
-                                    Map<String, ModelRelationship> relByPairKey,
-                                    List<ModelRelationship> newRelationships,
-                                    List<Evidence> newEvidences) {
+    private InteractionPersistenceResult processInteraction(ModelVersion enrichedVersion,
+                                                            RuntimeSession session,
+                                                            ModelElement caller,
+                                                            ModelElement callee,
+                                                            RunnerCorrelatedSpanDTO childSpan,
+                                                            long durationMs,
+                                                            RunnerTraceCorrelationDTO trace,
+                                                            RunnerOutcomeDTO outcome,
+                                                            Map<String, ModelRelationship> relByPairKey,
+                                                            List<ModelRelationship> newRelationships,
+                                                            List<Evidence> newEvidences) {
 
         String pairKeyUuid = (caller.getId().toString() + "->" + callee.getId().toString()).toLowerCase();
         String pairKeyName = (caller.getName() + "->" + callee.getName()).toLowerCase();
@@ -668,6 +777,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     .provenance(provenance)
                     .build();
             newEvidences.add(ev);
+            return new InteractionPersistenceResult(matchedRel, ev);
         } else {
             ModelRelationship newRel = ModelRelationship.builder()
                     .modelVersion(enrichedVersion)
@@ -694,17 +804,18 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     .provenance(provenance)
                     .build();
             newEvidences.add(ev);
+            return new InteractionPersistenceResult(newRel, ev);
         }
     }
 
-    private static long parseDurationMs(String durationNanoseconds) {
+    private static Long parseDurationMs(String durationNanoseconds) {
         if (durationNanoseconds == null || durationNanoseconds.isBlank()) {
-            return 0L;
+            return null;
         }
         try {
             return Long.parseUnsignedLong(durationNanoseconds) / 1_000_000L;
         } catch (NumberFormatException e) {
-            return 0L;
+            return null;
         }
     }
 
@@ -714,7 +825,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         RuntimeSession session = runtimeSessionRepository.findLockedById(sessionId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên thực nghiệm với ID: " + sessionId));
 
-        runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
+        runnerServiceAuthGuard.requireRunnerService();
 
         String resProj = resourceProject != null && !resourceProject.isBlank()
                 ? resourceProject
@@ -766,7 +877,20 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         }
     }
 
-    private record CausalStepRecord(int order, RunnerCorrelatedSpanDTO parentSpan, RunnerCorrelatedSpanDTO childSpan, long durationMs) {}
+    private record InteractionPersistenceResult(ModelRelationship relationship, Evidence evidence) {}
+
+    private record CausalStepRecord(
+            int order,
+            String messageId,
+            RunnerCorrelatedSpanDTO parentSpan,
+            RunnerCorrelatedSpanDTO childSpan,
+            Long durationMs,
+            ModelElement caller,
+            ModelElement callee,
+            ModelRelationship relationship,
+            Evidence evidence,
+            List<String> causalParentMessageIds) {}
 
     private record IngestResult(ModelVersion enrichedVersion, ReceiptIngestAckDTO ack) {}
 }
+

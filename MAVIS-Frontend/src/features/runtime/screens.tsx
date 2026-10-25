@@ -1,4 +1,6 @@
 "use client";
+import { useApi } from "@/hooks/use-api";
+import { BackendRuntime } from "./backend";
 import { useState } from "react";
 import { useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { RequestState, ErrorState, EmptyState } from "@/components/shared/request-state";
@@ -10,7 +12,12 @@ import { Button } from "@/components/ui/button";
 import { RuntimeSessionTimeline, RuntimeStatusBadge, TraceViewer } from "./components";
 import type { Response } from "@/lib/api/contracts";
 
+import { RuntimePlanEditor } from "./planning";
 export function RuntimeConfiguration() {
+  const api = useApi();
+  return api.mode === "backend" ? <RuntimePlanEditor /> : <MockRuntimeConfiguration />;
+}
+function MockRuntimeConfiguration() {
   const { projectId } = useSelection();
   const query = useApiQuery("runtimeConfiguration", { projectId }, { enabled: Boolean(projectId) });
   return projectId ? (
@@ -77,6 +84,10 @@ function ConfigurationForm({ config }: { config: Response<"runtimeConfiguration"
   );
 }
 export function RuntimeScenarios() {
+  const api = useApi();
+  return api.mode === "backend" ? <RuntimePlanEditor /> : <MockRuntimeScenarios />;
+}
+function MockRuntimeScenarios() {
   const { projectId } = useSelection();
   const query = useApiQuery("scenarios", { projectId }, { enabled: Boolean(projectId) });
   return projectId ? (
@@ -137,6 +148,17 @@ function ScenarioForm({ scenario }: { scenario: Response<"scenarios">[number] })
   );
 }
 export function RuntimeSessions({ administrative = false }: { administrative?: boolean }) {
+  const api = useApi();
+  return api.mode === "backend" ? (
+    <>
+      {!administrative && <RuntimePlanEditor />}
+      <BackendRuntime administrative={administrative} />
+    </>
+  ) : (
+    <MockRuntimeSessions administrative={administrative} />
+  );
+}
+function MockRuntimeSessions({ administrative = false }: { administrative?: boolean }) {
   const { projectId } = useSelection();
   const query = useApiQuery(
     "runtimeSessions",

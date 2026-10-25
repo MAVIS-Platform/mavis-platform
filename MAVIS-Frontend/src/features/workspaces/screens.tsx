@@ -3,31 +3,36 @@ import Link from "next/link";
 import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { RequestState } from "@/components/shared/request-state";
 import { DataTable, DetailPanel } from "@/components/shared/data";
+import { CreateWorkspace, WorkspaceControls } from "./manage";
 export function Workspaces() {
   const query = useApiQuery("workspaces", {});
   const selection = useSelection();
   return (
-    <RequestState query={query} empty={!query.data?.length}>
-      {query.data?.map((workspace) => (
-        <DetailPanel key={workspace.id} title={workspace.name}>
-          <p className="text-sm text-muted-foreground">{workspace.members.length} members</p>
-          <Link
-            className="text-sm text-primary underline"
-            href="/workspace-overview"
-            onClick={() => selection.setWorkspaceId(workspace.id)}
-          >
-            Open teaching workspace
-          </Link>
-          <Link
-            className="ml-4 text-sm text-primary underline"
-            href="/assignments"
-            onClick={() => selection.setWorkspaceId(workspace.id)}
-          >
-            View assignments
-          </Link>
-        </DetailPanel>
-      ))}
-    </RequestState>
+    <>
+      <CreateWorkspace />
+      <RequestState query={query} empty={!query.data?.length}>
+        {query.data?.map((workspace) => (
+          <DetailPanel key={workspace.id} title={workspace.name}>
+            <p className="text-sm text-muted-foreground">{workspace.members.length} members</p>
+            <WorkspaceControls workspace={workspace} />
+            <Link
+              className="text-sm text-primary underline"
+              href="/workspace-overview"
+              onClick={() => selection.setWorkspaceId(workspace.id)}
+            >
+              Open teaching workspace
+            </Link>
+            <Link
+              className="ml-4 text-sm text-primary underline"
+              href="/assignments"
+              onClick={() => selection.setWorkspaceId(workspace.id)}
+            >
+              View assignments
+            </Link>
+          </DetailPanel>
+        ))}
+      </RequestState>
+    </>
   );
 }
 export function WorkspaceMembers() {

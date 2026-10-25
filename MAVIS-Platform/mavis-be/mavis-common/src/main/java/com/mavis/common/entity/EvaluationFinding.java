@@ -42,4 +42,7 @@ public class EvaluationFinding {
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String message;
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
+    @Column(name = "details", columnDefinition = "jsonb")
+    private com.fasterxml.jackson.databind.JsonNode details;
 }

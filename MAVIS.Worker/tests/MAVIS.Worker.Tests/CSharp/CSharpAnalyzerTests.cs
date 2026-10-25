@@ -315,6 +315,149 @@ public class Test {
         }
     }
 
+    [Fact]
+    public void UmlCSharpInspector_O4_EarlyReturnDoesNotFlowIntoMerge()
+    {
+        var csCode = @"
+namespace Acme.Orders
+{
+    public class EarlyReturnService
+    {
+        public int Compute(bool stop)
+        {
+            if (stop)
+            {
+                return 1;
+            }
+            return 2;
+        }
+    }
+}";
+        var inspected = UmlCSharpInspector.InspectSingleSource(csCode, "EarlyReturnService.cs");
+        Assert.True(inspected.TryGetValue("Acme.Orders.EarlyReturnService", out var json));
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var cfg = doc.RootElement.GetProperty("methodsCfg")[0];
+        Assert.Equal("COMPLETE", cfg.GetProperty("extractionCompleteness").GetString());
+
+        var nodes = cfg.GetProperty("nodes").EnumerateArray().ToList();
+        var edges = cfg.GetProperty("edges").EnumerateArray().ToList();
+
+        // No MERGE node should exist when then-branch returns early
+        Assert.DoesNotContain(nodes, n => n.GetProperty("kind").GetString() == "MERGE");
+
+        var decId = nodes.First(n => n.GetProperty("kind").GetString() == "DECISION").GetProperty("id").GetString();
+        var ret1Id = nodes.First(n => n.GetProperty("kind").GetString() == "ACTION" && n.GetProperty("label").GetString() == "return 1").GetProperty("id").GetString();
+        var ret2Id = nodes.First(n => n.GetProperty("kind").GetString() == "ACTION" && n.GetProperty("label").GetString() == "return 2").GetProperty("id").GetString();
+
+        Assert.Contains(edges, e =>
+            e.GetProperty("sourceId").GetString() == decId
+            && e.GetProperty("targetId").GetString() == ret1Id
+            && e.GetProperty("guard").GetString() == "[stop]");
+
+        Assert.Contains(edges, e =>
+            e.GetProperty("sourceId").GetString() == decId
+            && e.GetProperty("targetId").GetString() == ret2Id
+            && e.GetProperty("guard").GetString() == "[else]");
+    }
+
+    [Fact]
+    public void UmlCSharpInspector_O4_DoWhileExecutesBodyBeforeDecisionAndEmitsObjectFlow()
+    {
+        var csCode = @"
+namespace Acme.Orders
+{
+    public enum OrderStatus { Created, Validated, Paid }
+    public class RetryProcessor
+    {
+        public OrderStatus Status { get; set; } = OrderStatus.Created;
+        public void RetryUntilPaid(int maxAttempts)
+        {
+            int attempts = 0;
+            do
+            {
+                attempts++;
+                Status = OrderStatus.Paid;
+            } while (attempts < maxAttempts);
+        }
+    }
+}";
+        var inspected = UmlCSharpInspector.InspectSingleSource(csCode, "RetryProcessor.cs");
+        Assert.True(inspected.TryGetValue("Acme.Orders.RetryProcessor", out var json));
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var cfg = doc.RootElement.GetProperty("methodsCfg")[0];
+        var nodes = cfg.GetProperty("nodes").EnumerateArray().ToList();
+        var edges = cfg.GetProperty("edges").EnumerateArray().ToList();
+
+        var doHeadId = nodes.First(n => n.GetProperty("kind").GetString() == "MERGE" && n.GetProperty("label").GetString() == "do-loop-head").GetProperty("id").GetString();
+        var doDecId = nodes.First(n => n.GetProperty("kind").GetString() == "DECISION" && n.GetProperty("label").GetString() == "attempts < maxAttempts").GetProperty("id").GetString();
+
+        Assert.Contains(edges, e =>
+            e.GetProperty("sourceId").GetString() == doDecId
+            && e.GetProperty("targetId").GetString() == doHeadId
+            && e.GetProperty("guard").GetString() == "[attempts < maxAttempts]");
+
+        var objNode = nodes.First(n => n.GetProperty("kind").GetString() == "OBJECT_NODE");
+        Assert.Equal("OrderStatus [PAID]", objNode.GetProperty("label").GetString());
+        var objNodeId = objNode.GetProperty("id").GetString();
+        Assert.Contains(edges, e =>
+            e.GetProperty("flowKind").GetString() == "OBJECT_FLOW"
+            && e.GetProperty("targetId").GetString() == objNodeId);
+    }
+
+    [Fact]
+    public void UmlCSharpInspector_O4_StateLifecycleDoesNotFabricateFromElseOrUnguardedAssignments()
+    {
+        var csCode = @"
+namespace Acme.Orders
+{
+    public enum OrderStatus { Created, Validated, Paid, Cancelled, Archived }
+    public class OrderStateEngine
+    {
+        public OrderStatus Status { get; set; }
+
+        public OrderStateEngine()
+        {
+            Status = OrderStatus.Created;
+        }
+
+        public void SettleOrCancel()
+        {
+            if (Status == OrderStatus.Validated)
+            {
+                Status = OrderStatus.Paid;
+            }
+            else
+            {
+                Status = OrderStatus.Cancelled;
+            }
+        }
+
+        public void ForceArchive()
+        {
+            Status = OrderStatus.Archived;
+        }
+    }
+}";
+        var inspected = UmlCSharpInspector.InspectSingleSource(csCode, "OrderStateEngine.cs");
+        Assert.True(inspected.TryGetValue("Acme.Orders.OrderStateEngine", out var json));
+
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        var lifecycle = doc.RootElement.GetProperty("stateLifecycle");
+        var transitions = lifecycle.GetProperty("transitions").EnumerateArray().ToList();
+        var unresolved = lifecycle.GetProperty("unresolvedAssignments").EnumerateArray().Select(x => x.GetString()!).ToList();
+
+        Assert.Single(transitions);
+        Assert.Equal("Validated", transitions[0].GetProperty("fromState").GetString());
+        Assert.Equal("Paid", transitions[0].GetProperty("toState").GetString());
+
+        Assert.Equal(2, unresolved.Count);
+        Assert.Contains(unresolved, u => u.Contains("SettleOrCancel->Cancelled"));
+        Assert.Contains(unresolved, u => u.Contains("ForceArchive->Archived"));
+        Assert.Equal("PARTIAL", lifecycle.GetProperty("extractionCompleteness").GetString());
+    }
+
     private static string CreateTempProject()
     {
         var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
@@ -323,3 +466,4 @@ public class Test {
         return tempDir;
     }
 }
+

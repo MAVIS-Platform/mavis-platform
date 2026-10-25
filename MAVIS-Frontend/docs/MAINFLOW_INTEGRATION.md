@@ -1,3 +1,5 @@
+> Current integration update: production FE #29 now uses the shared /api/mavis operation adapter, active-user /auth/me, URL context and component screens. See [API integration](architecture/api-integration.md) and root docs/FE_API_IMPLEMENTATION_STATUS_2026-10-22.md for current verification. The evidence below records the earlier mainflow baseline and is retained as historical context.
+
 # FE mainflow integration
 
 ## Run

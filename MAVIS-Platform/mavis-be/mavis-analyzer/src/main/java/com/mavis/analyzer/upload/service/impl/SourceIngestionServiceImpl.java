@@ -36,6 +36,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class SourceIngestionServiceImpl implements SourceIngestionService {
+    private final com.mavis.common.config.PlatformRuntimeSettings settings;
 
     private final StorageService storageService;
     private final ApplicationEventPublisher eventPublisher;
@@ -95,6 +96,7 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public IngestionResponseDTO ingestFromGitHub(GitHubImportRequest request) {
+        settings.requireIntegration("github");
         if (request == null || request.getProjectId() == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Thông tin import không hợp lệ: Project ID không được để trống");
         }

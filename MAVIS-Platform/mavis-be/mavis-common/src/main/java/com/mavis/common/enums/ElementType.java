@@ -7,5 +7,6 @@ public enum ElementType {
     CLASS_INTERFACE,
     DATABASE,
     EXTERNAL_SYSTEM,
-    QUEUE_BROKER
+    QUEUE_BROKER,
+    MESSAGE_CHANNEL
 }

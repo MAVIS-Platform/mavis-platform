@@ -1,6 +1,8 @@
 package com.mavis.analyzer.runtime.security;
 
 import com.mavis.common.entity.Project;
+import com.mavis.common.exception.BusinessException;
+import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.security.AccessPolicyService;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -13,9 +15,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
 /**
- * Thành phần bảo mật phân quyền kép cho các API Runner/Adapter.
- * Cho phép thực thi nếu request mang header X-Mavis-Runner-Key khớp constant-time với mavis.runner.service-key,
- * HOẶC nếu người dùng hiện tại có quyền truy cập đồ án tương ứng qua AccessPolicyService.
+ * Execution callbacks require the dedicated Runner key. Read/export operations may also
+ * authorize the project user through AccessPolicyService.
  */
 @Component
 @RequiredArgsConstructor
@@ -47,6 +48,13 @@ public class RunnerServiceAuthGuard {
             return MessageDigest.isEqual(expectedBytes, providedBytes);
         } catch (Exception ignored) {
             return false;
+        }
+    }
+
+    public void requireRunnerService() {
+        if (!isRunnerServiceKeyValid()) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    "A dedicated Runner credential is required for execution acknowledgements");
         }
     }
 

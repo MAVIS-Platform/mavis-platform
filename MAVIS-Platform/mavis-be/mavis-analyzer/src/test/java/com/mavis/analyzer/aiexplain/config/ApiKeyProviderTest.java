@@ -20,7 +20,7 @@ class ApiKeyProviderTest {
 
     @BeforeEach
     void setUp() {
-        apiKeyProvider = new ApiKeyProvider();
+        apiKeyProvider = new ApiKeyProvider(new com.mavis.common.config.PlatformRuntimeSettings());
     }
 
     @Test
@@ -88,4 +88,5 @@ class ApiKeyProviderTest {
 
         assertThat(resolved).isEmpty();
     }
+    @Test void disabledAiDoesNotResolveConfiguredSecret(){var settings=new com.mavis.common.config.PlatformRuntimeSettings();var keys=new ApiKeyProvider(settings);ReflectionTestUtils.setField(keys,"configuredApiKey","test-secret");settings.updateIntegration("gemini-ai",false,1,n->{});assertThat(keys.resolveApiKey()).isEmpty();}
 }

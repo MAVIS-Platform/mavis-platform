@@ -1,3 +1,4 @@
+import { currentSession } from "@/lib/api/java-operations";
 import { NextRequest, NextResponse } from "next/server";
 import { githubImportRequest } from "@/lib/mainflow-api";
 import { cookies } from "next/headers";
@@ -20,26 +21,16 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
     return response;
   }
   if (path === "session" && request.method === "GET") {
-    const token = jar.get(cookieName)?.value;
-    if (!token) return NextResponse.json({ data: { authenticated: false } });
     try {
-      const base = process.env["MAVIS_JAVA_URL"] ?? "http://127.0.0.1:8081";
-      const check = await fetch(`${base.replace(/\/$/, "")}/api/v1/projects`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
-        redirect: "error",
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!check.ok && check.status !== 401 && check.status !== 403)
-        return NextResponse.json({ message: "Unable to check your session" }, { status: 503 });
+      const value = await currentSession(jar.get(cookieName)?.value, request.signal);
       const response = NextResponse.json(
-        { data: { authenticated: check.ok } },
+        { data: { authenticated: !!value.user } },
         { headers: { "Cache-Control": "no-store" } },
       );
-      if (!check.ok) response.cookies.delete(cookieName);
+      if (!value.user) response.cookies.delete(cookieName);
       return response;
     } catch {
-      return NextResponse.json({ message: "Java API unavailable" }, { status: 503 });
+      return NextResponse.json({ message: "Session service unavailable" }, { status: 503 });
     }
   }
   if (!allowed.test(path))

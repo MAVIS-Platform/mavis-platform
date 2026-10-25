@@ -59,6 +59,11 @@ public class AiExplanation {
 
     @Column(name = "ai_model_name", length = 100)
     private String aiModelName;
+    @Column(name = "context_key", length = 64)
+    private String contextKey;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "grounding_context", columnDefinition = "jsonb")
+    private JsonNode groundingContext;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

@@ -20,7 +20,8 @@ class ModelVersionServiceImplTest {
  final EvidenceRepository evidence=mock(EvidenceRepository.class);
  final DiagramProjectionService diagrams=mock(DiagramProjectionService.class);
  final ObjectMapper json=new ObjectMapper();
- final ModelVersionServiceImpl service=new ModelVersionServiceImpl(projects,models,elements,relationships,evidence,diagrams,json);
+ final com.mavis.common.security.AccessPolicyService policy=mock(com.mavis.common.security.AccessPolicyService.class);
+ final ModelVersionServiceImpl service=new ModelVersionServiceImpl(policy,projects,models,elements,relationships,evidence,diagrams,json);
  Project project;ModelVersion base;ModelElement node;
  @BeforeEach void setup(){
   var owner=User.builder().id(UUID.randomUUID()).build();project=Project.builder().id(UUID.randomUUID()).owner(owner).build();
@@ -35,7 +36,7 @@ class ModelVersionServiceImplTest {
   when(relationships.saveAll(any())).thenAnswer(call->{Collection<ModelRelationship> values=call.getArgument(0);for(var value:values)if(value.getId()==null)value.setId(UUID.randomUUID());return new ArrayList<>(values);});
  }
  @AfterEach void cleanup(){SecurityContextHolder.clearContext();}
- @Test void listsRevisionsWithOwnerGuard(){assertEquals(1,service.getModelVersionsByProject(project.getId()).size());SecurityContextHolder.clearContext();assertThrows(RuntimeException.class,()->service.getModelVersionsByProject(project.getId()));}
+ @Test void listsRevisionsWithOwnerGuard(){assertEquals(1,service.getModelVersionsByProject(project.getId()).size());doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN)).when(policy).requireProjectReadAccess(project);assertThrows(BusinessException.class,()->service.getModelVersionsByProject(project.getId()));}
  @Test void javaRequestCreatesControlledRevisionWithMetadataAndEvidence(){
   var request=ModelRevisionRequestDTO.builder().modifiedElements(List.of(ModelRevisionRequestDTO.ElementModificationDTO.builder().id(node.getId()).newName("Renamed").status("STUDENT_CONFIRMED").build())).addedElements(List.of(ModelRevisionRequestDTO.ElementCreateDTO.builder().name("Gateway").languageStack("JAVA").properties(json.createObjectNode().put("displayTag","manual")).build())).addedRelationships(List.of(ModelRevisionRequestDTO.RelationshipCreateDTO.builder().sourceElementName("Gateway").targetElementId(node.getId()).build())).build();
   var response=service.createControlledRevision(base.getId(),request);assertEquals(2,response.getRevision());assertEquals("USER_CONFIRMED",response.getOrigin());assertTrue(response.getIsLatestValid());
@@ -44,4 +45,14 @@ class ModelVersionServiceImplTest {
  @Test void removingNodeRemovesIncidentRelationships(){var edge=ModelRelationship.builder().id(UUID.randomUUID()).modelVersion(base).sourceElement(node).targetElement(node).relationType("SERVICE_HTTP_CALL").build();when(relationships.findByModelVersionId(base.getId())).thenReturn(List.of(edge));service.createControlledRevision(base.getId(),ModelRevisionRequestDTO.builder().removedElementIds(List.of(node.getId())).build());verify(relationships).saveAll(argThat(values -> !values.iterator().hasNext()));}
  @Test void logicalDiffClassifiesRenameAsModified(){var next=ModelVersion.builder().id(UUID.randomUUID()).project(project).revision(2).build();when(models.findById(next.getId())).thenReturn(Optional.of(next));var renamed=ModelElement.builder().id(UUID.randomUUID()).modelVersion(next).name("Renamed").elementType(node.getElementType()).status(node.getStatus()).properties(node.getProperties()).build();when(elements.findByModelVersionId(next.getId())).thenReturn(List.of(renamed));when(relationships.findByModelVersionId(next.getId())).thenReturn(List.of());var diff=service.compareModelVersions(base.getId(),next.getId());assertEquals(1,diff.getModifiedElements().size());assertTrue(diff.getAddedElements().isEmpty());assertEquals(1,diff.getSummary().getTotalModified());}
  @Test void rejectsMissingStaleOrForgedIdentity(){assertThrows(BusinessException.class,()->service.createControlledRevision(UUID.randomUUID(),ModelRevisionRequestDTO.builder().build()));when(models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(project.getId())).thenReturn(Optional.empty());assertThrows(BusinessException.class,()->service.createControlledRevision(base.getId(),ModelRevisionRequestDTO.builder().build()));verify(models,never()).save(any());}
+
+ @Test void staleBaseReturnsConflictBeforeWriting() {
+  var other=ModelVersion.builder().id(UUID.randomUUID()).project(project).revision(2).build();when(models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(project.getId())).thenReturn(Optional.of(other));
+  var error=assertThrows(BusinessException.class,()->service.createControlledRevision(base.getId(),ModelRevisionRequestDTO.builder().build()));assertEquals(com.mavis.common.exception.ErrorCode.CONFLICT,error.getErrorCode());verify(models,never()).save(any());
+ }
+ @Test void readUsesSharedProjectPolicyAndWriteUsesWritePolicy() {
+  service.getModelVersionById(base.getId());verify(policy).requireProjectReadAccess(project);
+  doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN)).when(policy).requireProjectWriteAccess(project);
+  assertThrows(BusinessException.class,()->service.createControlledRevision(base.getId(),ModelRevisionRequestDTO.builder().build()));verify(models,never()).save(any());
+ }
 }

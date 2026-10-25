@@ -109,20 +109,26 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
 
     @Override
     public void requireProjectReadAccess(Project project) {
+        if (project == null) throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy đồ án");
+        if (!canReadProject(project)) throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền truy cập đồ án này");
+    }
+
+    @Override
+    public boolean canReadProject(Project project) {
         if (project == null) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy đồ án");
+            return false;
         }
 
         User user = requireCurrentActiveUser();
 
         // 1. SYSTEM_ADMIN có toàn quyền xem
         if (user.getRole() != null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode())) {
-            return;
+            return true;
         }
 
         // 2. Chủ sở hữu đồ án
         if (project.getOwner() != null && project.getOwner().getId().equals(user.getId())) {
-            return;
+            return true;
         }
 
         // 3. Nếu đồ án thuộc Workspace
@@ -137,24 +143,24 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
                     && "LECTURER".equalsIgnoreCase(user.getRole().getCode());
 
             if (isCreatorLecturer) {
-                return;
+                return true;
             }
 
             Optional<WorkspaceMember> memberOpt = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, user.getId());
             if (memberOpt.isPresent()) {
                 if ("LECTURER".equalsIgnoreCase(memberOpt.get().getMemberRole())) {
-                    return;
+                    return true;
                 }
 
                 // Nếu là Sinh viên thành viên trong Workspace, chỉ được xem nếu đồ án là Reference Template!
                 if (Boolean.TRUE.equals(project.getIsReferenceTemplate())) {
-                    return;
+                    return true;
                 }
             }
         }
 
         log.warn("Truy cập bị từ chối: Người dùng {} không có quyền đọc Project {}", user.getId(), project.getId());
-        throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền truy cập đồ án này");
+        return false;
     }
 
     @Override

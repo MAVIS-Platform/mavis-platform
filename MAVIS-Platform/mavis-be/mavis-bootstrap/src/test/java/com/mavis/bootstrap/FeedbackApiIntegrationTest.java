@@ -27,7 +27,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
-class FeedbackApiIntegrationTest {
+class FeedbackApiIntegrationTest extends ApiIntegrationContext {
 
     @Autowired
     private MockMvc mockMvc;
@@ -231,7 +231,7 @@ class FeedbackApiIntegrationTest {
         System.out.println("================================================================================");
 
         // --- BƯỚC 3: GET Feedbacks by Submission ---
-        MvcResult listResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}/feedbacks", submission.getId())
+        MvcResult listResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}/feedbacks", submission.getId()).header("X-Test-User-Email",student.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -282,7 +282,7 @@ class FeedbackApiIntegrationTest {
                 .andExpect(jsonPath("$.code").value(200));
 
         // Xác minh chỉ còn 1 nhận xét
-        MvcResult remainingResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}/feedbacks", submission.getId())
+        MvcResult remainingResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}/feedbacks", submission.getId()).header("X-Test-User-Email",student.getEmail())
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isArray())
