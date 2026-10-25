@@ -37,6 +37,15 @@
   * Nhận diện đầy đủ các tác nhân con người và các hệ thống phụ thuộc bên ngoài (cả chiều gọi vào inbound lẫn chiều hệ thống gọi ra outbound).
 * **Phạm vi & Giới hạn (Non-goals):**
   * **Không** mở danh sách microservice nội bộ, database/schema nội bộ, message broker/topic nội bộ, class/controller hay cổng mạng (TCP port).
+* **Phân biệt C4 System Context Diagram (C1) và Context Diagram truyền thống (DFD Level 0 / SRS):**
+
+| Tiêu chí so sánh | Context Diagram truyền thống (DFD Level 0 / Wiegers SRS) | C4 System Context Diagram (Level 1 — C1) |
+| :--- | :--- | :--- |
+| **Nguồn gốc & Mục đích** | Phân tích có cấu trúc (*DeMarco/Yourdon DFD Level 0*, *Karl Wiegers SRS*): đặc tả **luồng dữ liệu vào/ra (Input/Output Data Flows)** ở mức yêu cầu phần mềm. | Mô hình kiến trúc C4 (*Simon Brown*): đặc tả **ngữ cảnh kiến trúc phần mềm** và đóng vai trò cấp độ 1 để **zoom-in** trực tiếp xuống Container (C2) và Component (C3). |
+| **Ký hiệu Hệ thống đích (Ở giữa)** | **Hình tròn (Circle / Bubble)** duy nhất ở trung tâm đại diện cho toàn bộ hệ thống (Process `0`). | **Hộp chữ nhật (Box)** ở trung tâm có nhãn loại `[Software System]` kèm câu mô tả trách nhiệm/giá trị nghiệp vụ. |
+| **Ký hiệu Tác nhân bên ngoài** | Mọi tác nhân bên ngoài (người dùng, phòng ban, cảm biến, hệ thống khác) đều vẽ chung bằng **hình chữ nhật đơn giản (`External Entity / Terminator`)**, không phân biệt người hay máy bằng ký pháp riêng. | Tách bạch rõ 2 loại phần tử chuẩn có nhãn `[type]` và mô tả vai trò:<br>1. **`[Person]`**: người dùng/vai trò con người.<br>2. **`[Software System]`**: hệ thống phần mềm bên ngoài. |
+| **Bản chất Mũi tên & Nhãn cạnh** | **Luồng dữ liệu (Data Flow):** Tách riêng mũi tên dữ liệu đi vào và mũi tên dữ liệu đi ra; nhãn cạnh là **cụm danh từ chỉ gói thông tin/dữ liệu** (VD: `Menu choices`, `Order confirmation`, `Sales tax data`). | **Quan hệ tương tác / Phụ thuộc (Relationship):** Vẽ **1 mũi tên một chiều** từ chủ thể khởi tạo sang đích; nhãn cạnh là **cụm động từ hành động** (VD: `Gửi đơn hàng`, `Yêu cầu cấp phép thanh toán`), ngầm hiểu đã bao gồm chiều phản hồi (response). |
+| **Liên kết với các sơ đồ cấp dưới** | Phóng to xuống **DFD Level 1, Level 2** (các tiến trình xử lý dữ liệu và kho dữ liệu). | Phóng to trực tiếp chiếc hộp trung tâm ở **C1** thành khung `System Boundary` ở **C2 (Container Diagram)** và giữ nguyên các tác nhân xung quanh để bảo toàn tính nhất quán xuyên cấp. |
 
 ### 1.2. Các phần tử cốt lõi & Ký pháp chuẩn
 
@@ -680,31 +689,33 @@ flowchart LR
 | **Decision & Merge Node** | **Decision**: chọn **một** cạnh ra thỏa `[guard]`.<br>**Merge**: gom các nhánh thay thế lại mà không chờ đồng bộ (§15.3.3.5–6). | Hình thoi (diamond).<br>**Decision**: 1 cạnh vào, $\ge 2$ cạnh ra kèm `[guard]`.<br>**Merge**: $\ge 2$ cạnh vào, 1 cạnh ra. | Decision **không** nhân bản token ra nhiều nhánh. Không phân loại Decision hay Merge chỉ bằng hình thoi mà phải nhìn số cạnh vào/ra. |
 | **Fork & Join Node** | **Fork**: tách 1 token thành nhiều token đồng thời trên mọi cạnh ra.<br>**Join**: đồng bộ chờ đủ token trên tất cả cạnh vào (mặc định `joinSpec = AND`) (§15.3.3.3–4). | Thanh đậm (bar) ngang hoặc dọc.<br>**Fork**: 1 cạnh vào, $\ge 2$ cạnh ra.<br>**Join**: $\ge 2$ cạnh vào, 1 cạnh ra. | Nếu sau `Fork` có một nhánh rẽ `Decision` mà một đường của Decision không đi về `Join` (hoặc chưa qua `Merge`), `Join` mặc định sẽ **bị kẹt vĩnh viễn (deadlock)**. |
 | **Control Flow & Object Flow / Pin** | **Control Flow**: truyền quyền điều khiển.<br>**Object Flow**: truyền dữ liệu qua `Object Node` hoặc `Pin` gắn trên biên Action (§15.2.4, §15.4). | Cả hai đều dùng đường **nét liền, đầu mũi tên hở** trong chuẩn UML 2.5.1. `Pin` là ô vuông nhỏ gắn trên cạnh của Action. | Không dùng đường nét đứt làm ký hiệu mặc định cho `Object Flow` (một số hướng dẫn công cụ vẽ sai chuẩn OMG). |
-| **Activity Partition (Swimlane)** | Phân nhóm các Action theo chủ thể/dịch vụ chịu trách nhiệm thực hiện (§15.6). | Các cột hoặc hàng phân làn mang tên Service/Module. | Mũi tên đi qua vách ngăn giữa hai Swimlane chỉ mô tả chuyển bước công việc, chưa tự xác định giao thức là HTTP, gRPC hay Kafka. |
+| **Activity Partition (Swimlane)** | Phân nhóm các Action theo chủ thể/dịch vụ chịu trách nhiệm thực hiện (§15.6). | **Khung chia làn liền mạch (Contiguous Swimlanes):** Tất cả các làn là các cột (hoặc hàng) **đồng cấp, có chiều cao bằng nhau nằm chung trong một khung chữ nhật duy nhất**, ngăn cách bởi các đường vách ngăn thẳng đứng; các mũi tên đi xuyên qua lại giữa các vách ngăn. | **Tuyệt đối không** vẽ các Swimlane thành các hộp rời rạc đứng tách biệt hoặc xếp chồng lệch nhau (như hạn chế của Mermaid `subgraph`). Mũi tên qua vách ngăn chỉ mô tả chuyển giao bước xử lý, chưa tự xác định giao thức là HTTP, gRPC hay Kafka. |
 
 ### 8.3. Quy trình dựng sơ đồ chuẩn
-1. **Chốt phạm vi hành vi & tạo Swimlane:** Chọn 1 workflow hoặc API use case cụ thể; chia làn (Swimlane) theo từng Service chịu trách nhiệm (theo quy ước MAVIS, ngay cả workflow 1 service cũng đặt trong 1 lane mang tên service đó).
-2. **Đặt Initial Node và liệt kê các Actions:** Viết tên Action dạng `Động từ + Đối tượng` và đặt vào đúng làn sở hữu.
-3. **Nối Control Flow / Object Flow tuần tự:** Chỉ thêm cạnh khi có quan hệ thứ tự hoặc truyền dữ liệu thực sự.
+1. **Chốt phạm vi hành vi & kẻ khung Swimlane liền mạch:** Chọn 1 workflow hoặc API use case cụ thể; kẻ **một khung lớn duy nhất** chia thành các cột đồng cấp (chiều cao bằng nhau) theo từng Service chịu trách nhiệm (theo quy ước MAVIS, ngay cả workflow 1 service cũng đặt trong 1 lane mang tên service đó).
+2. **Đặt Initial Node và liệt kê các Actions:** Viết tên Action dạng `Động từ + Đối tượng` và đặt vào đúng cột làn sở hữu.
+3. **Nối Control Flow / Object Flow xuyên làn:** Khi bước xử lý chuyển từ Service A sang Service B, vẽ mũi tên đi ngang/vuông góc **xuyên qua vách ngăn giữa 2 cột** sang Action thuộc làn B (và đi ngược lại nếu trả kết quả đồng bộ).
 4. **Mô hình hóa rẽ nhánh bằng `Decision` / `Merge`:** Đặt `[guard]` không chồng lấn trên các cạnh ra của Decision (tối đa một nhánh `[else]`); hợp các nhánh thay thế qua `Merge` trước khi vào bước chung tiếp theo.
 5. **Mô hình hóa xử lý đồng thời bằng `Fork` / `Join`:** Chỉ dùng `Fork` khi các nhánh thực sự độc lập/đồng thời; kiểm tra bảo toàn token tại mọi `Join` (tránh deadlock).
-6. **Chọn đúng loại Node kết thúc:** Dùng `Flow Final` cho nhánh phụ kết thúc riêng lẻ và `Activity Final` cho điểm kết thúc toàn bộ Activity.
+6. **Chọn đúng loại Node kết thúc:** Dùng `Flow Final` ($\otimes$) cho nhánh phụ/bất đồng bộ kết thúc riêng lẻ và `Activity Final` ($\odot$) cho điểm kết thúc toàn bộ Activity.
 
 ### 8.4. Bộ quy tắc sử dụng & Kiểm chứng
 * **Quy tắc bắt buộc:**
   * **[N-ACT-01]** Tuyệt đối không dùng `Fork` để biểu diễn câu lệnh `if/else` và không dùng `Join` để gộp hai nhánh loại trừ nhau của `Decision` (phải dùng `Merge`).
   * **[N-ACT-02]** Các `[guard]` đi ra từ một `Decision` không được chồng lấn điều kiện ngoài ý muốn; mỗi `Decision` có tối đa một `[else]`.
   * **[N-ACT-03]** Nếu một nhánh sau `Fork` rẽ qua `Decision`, các đường thay thế muốn quay lại đồng bộ ở `Join` phải được gom qua `Merge` trước khi nối vào `Join`.
-  * **[M-ACT-04] (Quy ước MAVIS):** Mặc định trình bày Activity Diagram có **Swimlane** theo service chịu trách nhiệm; khi chưa rõ service sở hữu thì ghi rõ `"Chưa xác định"`, không tự bịa tên service.
+  * **[M-ACT-04] (Quy ước MAVIS — Khung Swimlane đồng cấp):** Mặc định trình bày Activity Diagram dưới dạng **bảng phân làn liền mạch (Contiguous Swimlanes)** có các cột cao bằng nhau trong cùng một khung viền; khi chưa rõ service sở hữu thì ghi rõ `"Chưa xác định"`, không tự bịa tên service.
 * **Các lỗi thường gặp (Anti-patterns):**
 
 | Lỗi phổ biến (Sai) | Cách hiểu & xử lý đúng (Chuẩn) |
 | :--- | :--- |
+| Vẽ mỗi Swimlane thành một hộp `subgraph` tách rời nhau, xếp lệch trên–dưới. | Sai ký pháp UML Swimlane. Các Swimlane bắt buộc phải đứng cạnh nhau, **chung đường viền trên/dưới và chung vách ngăn dọc** để thấy rõ luồng đi qua đi lại giữa các làn. |
 | Đưa 2 nhánh `[valid]` và `[invalid]` của một `Decision` đi thẳng vào một thanh `Join` (AND). | Thanh `Join` chờ cả 2 nhánh cùng có token nên sẽ deadlock mãi mãi. Phải dùng hình thoi `Merge` nếu muốn gộp 2 nhánh thay thế. |
 | Dùng `Activity Final` (bullseye) ở cuối một nhánh ghi log phụ chạy song song sau `Fork`. | Token chạm `Activity Final` sẽ hủy luôn cả các nhánh chính đang chạy! Nhánh phụ kết thúc độc lập phải dùng `Flow Final` (vòng tròn chữ X). |
 | Thấy từ khóa `async` trong code liền vẽ `Fork` chạy song song. | `async/await` tuần tự không phải là concurrency hai nhánh độc lập; chỉ vẽ `Fork` khi thực sự khởi chạy các tác vụ đồng thời (`Task.WhenAll`, `CompletableFuture.allOf`, hoặc nhánh bất đồng bộ độc lập). |
 
 * **Checklist nghiệm thu:**
+  - [ ] Tất cả các Swimlane nằm chung trong một khung liền mạch, chiều cao bằng nhau, tên cột ghi đúng tên Service.
   - [ ] Mọi Action đều nằm trong Swimlane tương ứng và đặt tên theo chuẩn `Động từ + Đối tượng`.
   - [ ] Phân biệt đúng `Decision`/`Merge` (hình thoi) với `Fork`/`Join` (thanh ngang/dọc).
   - [ ] Không có lỗi deadlock tại `Join` hoặc kết thúc sớm ngoài ý muốn tại `Activity Final`.
@@ -715,40 +726,159 @@ flowchart LR
   * *Explicit Workflow / Use Case Spec & Bounded Control-Flow Analysis:* Trích xuất các bước hành động chính, nhánh điều kiện và lời gọi sang service khác.
   * *Giới hạn:* Control-Flow Graph (CFG) mức câu lệnh trong source code thường quá chi tiết; MAVIS yêu cầu nâng mức trừu tượng lên các bước nghiệp vụ có ý nghĩa và giữ trạng thái `Assisted / Needs Review` cho người học duyệt.
 
-### 8.6. Ví dụ minh họa chuẩn (Bài toán OrderHub — Workflow Xử lý Đơn hàng)
+### 8.6. Ví dụ minh họa chuẩn (Swimlane liền mạch chuẩn UML 2.5.1)
+
+> [!TIP]
+> **Nguyên tắc hiển thị Swimlane chuẩn UML 2.5.1:** Tất cả các làn (`Order API`, `Inventory Service`, `Billing Worker`) phải là **các cột đồng cấp, có chiều cao bằng nhau nằm chung trong một khung liền mạch duy nhất (`act Place Order`)**, và các mũi tên đi xuyên qua lại giữa vách ngăn của các làn. Dưới đây là cả **hình vẽ chuẩn UML 2.5.1** và **sơ đồ Mermaid đã căn chỉnh đồng cấp chiều cao 3 làn trong cùng 1 khung**:
+
+#### Minh họa 1: Sơ đồ Swimlane 3 làn đồng cấp liền mạch — Bài toán OrderHub (`Order API | Inventory Service | Billing Worker`)
+
+![Sơ đồ Swimlane 3 làn liền mạch — act Place Order (OrderHub)](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_orderhub_3lanes.png)
+
 ```mermaid
 flowchart TB
-    subgraph OrderAPILane["Swimlane: Order API"]
-        start((●))
-        validate["Validate order request"]
-        decValid{" "}
-        ret400["Return 400 Bad Request"]
-        end400(((●)))
-        saveOrder["Save order as PENDING_PAYMENT"]
-        forkBar["=== FORK ==="]
-        pubEvent["Publish OrderCreated event"]
-        auditLog["Record order audit log"]
-        joinBar["=== JOIN ==="]
-        ret201["Return 201 Created"]
-        end201(((●)))
-    end
+    classDef spacer fill:none,stroke:none,color:transparent,width:1px,height:28px;
+    classDef actionBox rx:12,ry:12,stroke-width:1.5px;
+    classDef syncBar fill:#222,stroke:#fff,stroke-width:1px,color:#fff,height:12px;
 
-    subgraph BillingLane["Swimlane: Billing Worker"]
-        consumeEvt["Consume OrderCreated event"]
-        callPay["Request payment authorization"]
-        flowEnd((⊗))
+    subgraph ActivityFrame["<b>act Place Order — OrderHub (3-Lane Contiguous Swimlane)</b>"]
+        direction TB
+
+        subgraph OrderAPILane["<b>Order API</b>"]
+            direction TB
+            start((●))
+            validate["Validate request"]:::actionBox
+            decValid{" "}
+            ret400["Return 400"]:::actionBox
+            end400(((●)))
+            decStock{" "}
+            ret409["Return 409"]:::actionBox
+            end409(((●)))
+            saveOrder["Persist order"]:::actionBox
+            forkBar["=== FORK ==="]:::syncBar
+            auditLog["Record audit"]:::actionBox
+            pubEvent["Publish OrderCreated"]:::actionBox
+            joinBar["=== JOIN ==="]:::syncBar
+            ret201["Return 201 Created"]:::actionBox
+            end201(((●)))
+        end
+
+        subgraph InventoryLane["<b>Inventory Service</b>"]
+            direction TB
+            i0[" "]:::spacer
+            i1[" "]:::spacer
+            i2[" "]:::spacer
+            resStock["Reserve stock"]:::actionBox
+            i4[" "]:::spacer
+            i5[" "]:::spacer
+            i6[" "]:::spacer
+            i7[" "]:::spacer
+            i8[" "]:::spacer
+            i9[" "]:::spacer
+            i10[" "]:::spacer
+            i0 ~~~ i1 ~~~ i2 ~~~ resStock ~~~ i4 ~~~ i5 ~~~ i6 ~~~ i7 ~~~ i8 ~~~ i9 ~~~ i10
+        end
+
+        subgraph BillingLane["<b>Billing Worker</b>"]
+            direction TB
+            b0[" "]:::spacer
+            b1[" "]:::spacer
+            b2[" "]:::spacer
+            b3[" "]:::spacer
+            b4[" "]:::spacer
+            b5[" "]:::spacer
+            b6[" "]:::spacer
+            consumeEvt["Consume OrderCreated"]:::actionBox
+            authPay["Authorize payment"]:::actionBox
+            recBill["Record billing status"]:::actionBox
+            flowEnd((⊗))
+            b0 ~~~ b1 ~~~ b2 ~~~ b3 ~~~ b4 ~~~ b5 ~~~ b6 ~~~ consumeEvt
+        end
     end
 
     start --> validate --> decValid
     decValid -->|"[invalid]"| ret400 --> end400
-    decValid -->|"[valid]"| saveOrder --> forkBar
-    forkBar --> pubEvent
-    forkBar --> auditLog
-    pubEvent --> joinBar
-    auditLog --> joinBar
+    decValid -->|"[valid]"| resStock
+    resStock --> decStock
+    decStock -->|"[not available]"| ret409 --> end409
+    decStock -->|"[available]"| saveOrder --> forkBar
+    forkBar --> auditLog --> joinBar
+    forkBar --> pubEvent --> joinBar
     joinBar --> ret201 --> end201
-    pubEvent --> consumeEvt --> callPay --> flowEnd
+    forkBar --> consumeEvt --> authPay --> recBill --> flowEnd
 ```
+
+#### Minh họa 2: Sơ đồ Swimlane 2 làn đồng cấp liền mạch (`Order Service | Inventory Service` — `act Create order`)
+
+![Ví dụ Swimlane 2 làn liền mạch — act Create order](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig6_swimlane_example.png)
+
+```mermaid
+flowchart TB
+    classDef spacer fill:none,stroke:none,color:transparent,width:1px,height:28px;
+    classDef actionBox rx:12,ry:12,stroke-width:1.5px;
+    classDef syncBar fill:#222,stroke:#fff,stroke-width:1px,color:#fff,height:12px;
+
+    subgraph CreateOrderFrame["<b>act Create order (2-Lane Contiguous Swimlane)</b>"]
+        direction TB
+
+        subgraph OrderServiceLane["<b>Order Service</b>"]
+            direction TB
+            s0((●))
+            valReq["Validate request"]:::actionBox
+            dValid{" "}
+            r400["Return 400"]:::actionBox
+            e400(((●)))
+            dAvail{" "}
+            r409["Return 409"]:::actionBox
+            e409(((●)))
+            persist["Persist order"]:::actionBox
+            fBar["=== FORK ==="]:::syncBar
+            buildResp["Build response"]:::actionBox
+            recAudit["Record audit"]:::actionBox
+            jBar["=== JOIN ==="]:::syncBar
+            r201["Return 201"]:::actionBox
+            e201(((●)))
+        end
+
+        subgraph InventoryServiceLane["<b>Inventory Service</b>"]
+            direction TB
+            inv0[" "]:::spacer
+            inv1[" "]:::spacer
+            inv2[" "]:::spacer
+            reserve["Reserve stock"]:::actionBox
+            inv4[" "]:::spacer
+            inv5[" "]:::spacer
+            inv6[" "]:::spacer
+            inv7[" "]:::spacer
+            inv8[" "]:::spacer
+            inv9[" "]:::spacer
+            inv10[" "]:::spacer
+            inv0 ~~~ inv1 ~~~ inv2 ~~~ reserve ~~~ inv4 ~~~ inv5 ~~~ inv6 ~~~ inv7 ~~~ inv8 ~~~ inv9 ~~~ inv10
+        end
+    end
+
+    s0 --> valReq --> dValid
+    dValid -->|"[invalid]"| r400 --> e400
+    dValid -->|"[valid]"| reserve
+    reserve --> dAvail
+    dAvail -->|"[not available]"| r409 --> e409
+    dAvail -->|"[available]"| persist --> fBar
+    fBar --> buildResp --> jBar
+    fBar --> recAudit --> jBar
+    jBar --> r201 --> e201
+```
+
+#### Minh họa 3: Quy ước Ký hiệu Cốt lõi & Cấu trúc Vách ngăn Swimlane (OMG UML 2.5.1)
+
+![Cấu trúc Activity Partition / Swimlane liền mạch](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig5_partition.png)
+
+![Bộ ký hiệu cốt lõi của UML Activity Diagram](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig1_notation.png)
+
+![Đối chiếu Decision/Merge với Fork/Join](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig2_decision_fork.png)
+
+![Đối chiếu Flow Final và Activity Final](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig3_finals.png)
+
+![Object Flow và Pin theo chuẩn UML 2.5.1](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig4_object_pin.png)
 
 ### 8.7. Trích dẫn & Tài liệu tham khảo
 * **[S1]** OMG, *UML 2.5.1 Specification* — Chương 15 (Activities: §15.2 Actions & Edges, §15.3 Control Nodes, §15.4 Object Nodes & Pins, §15.6 Activity Partitions; Hình 15.5, 15.27–15.33, 15.67 trang 380–409), `https://www.omg.org/spec/UML/2.5.1/`
