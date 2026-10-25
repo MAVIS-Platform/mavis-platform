@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { RULE_VERSION, type DrawioTheme } from "@/lib/drawio/rules";
 import { generateDrawio } from "@/lib/drawio/generate";
 import { projectDiagram } from "@/lib/drawio/rules";
-import { drawioSummary, themeDrawioXml, extractDraftDocument } from "./drawio-document";
+import { themeDrawioXml, extractDraftDocument } from "./drawio-document";
 import { Button } from "@/components/ui/button";
 import { useSession } from "@/hooks/use-api";
 import {
@@ -62,7 +62,6 @@ export function DrawioEditor({
   const currentTheme = useRef(theme);
   currentTheme.current = theme;
   const previousTheme = useRef(theme);
-  const [summary, setSummary] = useState<ReturnType<typeof drawioSummary> | null>(null);
   const [recovery, setRecovery] = useState(false);
   const edited = useRef(false);
   const latest = useRef(xml);
@@ -99,7 +98,6 @@ export function DrawioEditor({
       setError("Browser draft storage is unavailable. Download your edits before leaving.");
     }
     setRecovery(!!localStorage.getItem(storageKey + ":recovery"));
-    setSummary(drawioSummary(latest.current));
     const storedTheme = new DOMParser()
       .parseFromString(latest.current, "text/xml")
       .querySelector("[mavisTheme]")
@@ -120,7 +118,6 @@ export function DrawioEditor({
         return false;
       }
       latest.current = value;
-      setSummary(drawioSummary(value));
       try {
         localStorage.setItem(
           storageKey!,
@@ -346,7 +343,6 @@ export function DrawioEditor({
     );
     latest.current = backup;
     send({ action: "load", xml: backup, title: `${title}.drawio`, autosave: 1, fit: 1 });
-    setSummary(drawioSummary(backup));
     setStatus("Recovery copy restored");
   }
   useEffect(() => {
@@ -459,20 +455,6 @@ export function DrawioEditor({
           </Button>
         </div>
       </div>
-      <p className="border-b px-4 py-2 text-xs text-muted-foreground">
-        Self-hosted draw.io at localhost:8090. Edits are a draft for this account, model and diagram
-        in this browser; they do not update the analyzed model or cloud database.
-      </p>
-      {summary && (
-        <p className="border-b px-4 py-2 text-xs" role="status">
-          {summary.version === "legacy"
-            ? "Legacy draft preserved. Regenerate to apply MAVIS drawing rules."
-            : `Rules ${summary.version} · ${summary.quality ? `Crossings ${summary.quality.crossings} · node overlaps ${summary.quality.nodeOverlaps} · label collisions ${summary.quality.labelNodeOverlaps + summary.quality.labelOverlaps} · edges through nodes ${summary.quality.edgeThroughNodes}` : "Edited layout: regenerate to run geometry validation."}`}{" "}
-          · Select shapes in the editor and use Lock/unlock selected to keep their positions during
-          Relayout. Geometry metrics are checked against the current XML. Crossings may require a
-          narrower view.
-        </p>
-      )}
       {error && (
         <div className="flex items-center gap-3 border-b p-3">
           <p role="alert" className="text-sm text-destructive">
