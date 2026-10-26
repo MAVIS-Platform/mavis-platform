@@ -7,6 +7,10 @@ import com.mavis.common.repository.UserRepository;
 import com.mavis.common.repository.WorkspaceMemberRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.utils.SecurityUtils;
+import com.mavis.common.security.AuthorizationRequestCache;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -82,6 +86,7 @@ class AccessPolicyServiceImplTest {
 
     @AfterEach
     void tearDown() {
+        RequestContextHolder.resetRequestAttributes();
         SecurityContextHolder.clearContext();
         SecurityUtils.setDevBypassEnabled(true);
     }
@@ -90,7 +95,7 @@ class AccessPolicyServiceImplTest {
     @DisplayName("Kịch bản 1: User bị LOCKED hoặc INACTIVE bị chặn 403 Forbidden")
     void testRequireCurrentActiveUser_LockedUser_ThrowsForbidden() {
         currentUser.setStatus("LOCKED");
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
 
         assertThatThrownBy(() -> accessPolicyService.requireCurrentActiveUser())
                 .isInstanceOf(BusinessException.class)
@@ -104,7 +109,7 @@ class AccessPolicyServiceImplTest {
     @Test
     @DisplayName("Kịch bản 2: Sinh viên cố tình gọi API Admin bị chặn 403 Forbidden")
     void testRequireSystemAdmin_StudentRole_ThrowsForbidden() {
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
 
         assertThatThrownBy(() -> accessPolicyService.requireSystemAdmin())
                 .isInstanceOf(BusinessException.class)
@@ -119,7 +124,7 @@ class AccessPolicyServiceImplTest {
     @DisplayName("Kịch bản 3: Quản trị viên SYSTEM_ADMIN gọi requireSystemAdmin thành công")
     void testRequireSystemAdmin_AdminRole_Success() {
         currentUser.setRole(adminRole);
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
 
         accessPolicyService.requireSystemAdmin();
     }
@@ -128,7 +133,7 @@ class AccessPolicyServiceImplTest {
     @DisplayName("Kịch bản 4: Người dùng không thuộc Workspace bị chặn 403 Forbidden")
     void testRequireWorkspaceMember_NonMember_ThrowsForbidden() {
         UUID workspaceId = UUID.randomUUID();
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
 
         User creator = User.builder().id(UUID.randomUUID()).build();
         Workspace workspace = Workspace.builder().id(workspaceId).createdBy(creator).build();
@@ -148,7 +153,7 @@ class AccessPolicyServiceImplTest {
     @DisplayName("Kịch bản 5: Sinh viên cố tình gọi API của Giảng viên bị chặn 403 Forbidden")
     void testRequireWorkspaceLecturer_StudentRole_ThrowsForbidden() {
         UUID workspaceId = UUID.randomUUID();
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
 
         User creator = User.builder().id(UUID.randomUUID()).role(lecturerRole).build();
         Workspace workspace = Workspace.builder().id(workspaceId).createdBy(creator).build();
@@ -176,7 +181,7 @@ class AccessPolicyServiceImplTest {
     void testRequireWorkspaceLecturer_LecturerRole_Success() {
         UUID workspaceId = UUID.randomUUID();
         currentUser.setRole(lecturerRole);
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
 
         User creator = User.builder().id(UUID.randomUUID()).build();
         Workspace workspace = Workspace.builder().id(workspaceId).createdBy(creator).build();
@@ -196,7 +201,7 @@ class AccessPolicyServiceImplTest {
     @Test
     @DisplayName("Kịch bản 7: Sinh viên A cố tình truy cập xem Project của Sinh viên B qua UUID bị chặn 403 Forbidden")
     void testRequireProjectReadAccess_DifferentStudent_ThrowsForbidden() {
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
 
         User studentB = User.builder().id(UUID.randomUUID()).fullName("Student B").build();
         Workspace workspace = Workspace.builder().id(UUID.randomUUID()).build();
@@ -224,7 +229,7 @@ class AccessPolicyServiceImplTest {
     @Test
     @DisplayName("Kịch bản 8: Sinh viên A được phép xem Project mẫu (isReferenceTemplate=true) của Workspace")
     void testRequireProjectReadAccess_ReferenceTemplate_Allowed() {
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
 
         User teacher = User.builder().id(UUID.randomUUID()).fullName("Teacher").build();
         Workspace workspace = Workspace.builder().id(UUID.randomUUID()).build();
@@ -246,7 +251,7 @@ class AccessPolicyServiceImplTest {
     @Test
     @DisplayName("Kịch bản 9: Sinh viên khác cố tình sửa/xóa Project của chủ sở hữu bị chặn 403 Forbidden")
     void testRequireProjectWriteAccess_NonOwner_ThrowsForbidden() {
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
 
         User otherOwner = User.builder().id(UUID.randomUUID()).fullName("Other Owner").build();
         Project otherProject = Project.builder()
@@ -266,7 +271,7 @@ class AccessPolicyServiceImplTest {
     @Test
     @DisplayName("Kịch bản 10: Chủ sở hữu có toàn quyền sửa/xóa Project của chính mình")
     void testRequireProjectWriteAccess_Owner_Success() {
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
 
         Project ownProject = Project.builder()
                 .id(UUID.randomUUID())
@@ -293,5 +298,60 @@ class AccessPolicyServiceImplTest {
         } finally {
             SecurityUtils.setDevBypassEnabled(true);
         }
+    }
+
+    private void newRequest() {
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+    }
+
+    @Test
+    void userAndRoleAreLoadedOncePerRequestButReloadedForTheNextRequest() {
+        newRequest();
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
+        accessPolicyService.requireCurrentActiveUser();
+        accessPolicyService.requireCurrentActiveUser();
+        verify(userRepository).findWithRoleById(currentUserId);
+        verify(userRepository, never()).findById(any());
+        newRequest();
+        currentUser.setStatus("LOCKED");
+        assertThatThrownBy(accessPolicyService::requireCurrentActiveUser).isInstanceOf(BusinessException.class);
+        verify(userRepository, times(2)).findWithRoleById(currentUserId);
+    }
+
+    @Test
+    void outsideHttpRequestsAuthorizationDoesNotReuseCachedEntities() {
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
+        accessPolicyService.requireCurrentActiveUser();
+        accessPolicyService.requireCurrentActiveUser();
+        verify(userRepository, times(2)).findWithRoleById(currentUserId);
+    }
+
+    @Test
+    void membershipCacheIncludesMissesAndEvictionRestoresFreshPermissionChecks() {
+        newRequest();
+        UUID workspaceId = UUID.randomUUID();
+        var workspace = Workspace.builder().id(workspaceId).build();
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, currentUserId))
+                .thenReturn(Optional.empty(), Optional.of(WorkspaceMember.builder().memberRole("LECTURER").build()));
+        assertThatThrownBy(() -> accessPolicyService.requireWorkspaceMember(workspaceId)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> accessPolicyService.requireWorkspaceLecturer(workspaceId)).isInstanceOf(BusinessException.class);
+        verify(workspaceMemberRepository).findByWorkspaceIdAndUserId(workspaceId, currentUserId);
+        AuthorizationRequestCache.evictMembership(workspaceId, currentUserId);
+        accessPolicyService.requireWorkspaceLecturer(workspaceId);
+        verify(workspaceMemberRepository, times(2)).findByWorkspaceIdAndUserId(workspaceId, currentUserId);
+        verify(userRepository).findWithRoleById(currentUserId);
+    }
+
+    @Test
+    void evictingUserReloadsRolesAndBlockedStatusWithinTheSameRequest() {
+        newRequest();
+        var locked = User.builder().id(currentUserId).role(adminRole).status("LOCKED").build();
+        when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser), Optional.of(locked));
+        accessPolicyService.requireCurrentActiveUser();
+        AuthorizationRequestCache.evictUser(currentUserId);
+        assertThatThrownBy(accessPolicyService::requireCurrentActiveUser).isInstanceOf(BusinessException.class);
+        verify(userRepository, times(2)).findWithRoleById(currentUserId);
     }
 }

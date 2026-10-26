@@ -126,7 +126,12 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         boolean hasCustomQuestion = request.getUserQuestion() != null && !request.getUserQuestion().isBlank();
         if (!Boolean.TRUE.equals(request.getForceRefresh()) && !hasCustomQuestion) {
             Optional<AiExplanation> cached = findCachedExplanation(modelVersion.getId(), scope, request);
-            if (cached.isPresent()) {
+            final ModelElement cachedTargetElement = targetElement;
+            boolean missingNewContext = cached.isPresent() && targetElement != null && "ELEMENT".equals(scope) &&
+                (cached.get().getCitedEvidenceIds() == null || cached.get().getCitedEvidenceIds().isEmpty()) &&
+                evidenceRepository.findElementContext(modelVersion.getId(), targetElement.getId()).stream()
+                    .anyMatch(e -> com.mavis.analyzer.diagram.service.ElementEvidenceScope.includes(e, cachedTargetElement));
+            if (cached.isPresent() && !missingNewContext) {
                 log.info("Trả về kết quả giải thích AI từ cache cho modelVersionId={}, scope={}", modelVersion.getId(), scope);
                 return mapToResponseDTO(cached.get(), true, "CACHE");
             }
@@ -142,6 +147,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
 
         // Lọc evidences liên quan trực tiếp đến ngữ cảnh được yêu cầu
         List<Evidence> relevantEvidences = filterRelevantEvidences(scope, targetElement, targetRelationship, targetSession, versionEvidences);
+        allowedEvidenceIds.retainAll(relevantEvidences.stream().map(Evidence::getId).collect(Collectors.toSet()));
 
         allowedEvidenceIds = relevantEvidences.stream().map(Evidence::getId).collect(Collectors.toSet());
         // 6. Khử sạch bí mật mã nguồn (SecretRedactor) trên các đoạn trích & câu hỏi người dùng
@@ -149,6 +155,8 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         List<EvidenceSummaryDTO> sanitizedEvidenceSummaries = relevantEvidences.stream()
                 .map(e -> EvidenceSummaryDTO.builder()
                         .id(e.getId())
+                        .elementId(e.getElement() == null ? null : e.getElement().getId())
+                        .relationshipId(e.getRelationship() == null ? null : e.getRelationship().getId())
                         .sourceType(e.getSourceType())
                         .locator(SecretRedactor.redactString(e.getLocator()))
                         .excerpt(SecretRedactor.redactString(e.getExcerpt()))
@@ -258,7 +266,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         if ("ELEMENT".equals(scope) || "CHANGE_IMPACT".equals(scope)) {
             if (element != null) {
                 return allEvidences.stream()
-                        .filter(e -> e.getElement() != null && e.getElement().getId().equals(element.getId()))
+                        .filter(e -> com.mavis.analyzer.diagram.service.ElementEvidenceScope.includes(e, element))
                         .toList();
             }
         } else if ("RELATIONSHIP".equals(scope)) {
@@ -281,15 +289,11 @@ public class AiExplanationServiceImpl implements AiExplanationService {
                                                     ModelRelationship relationship, RuntimeSession session,
                                                     List<EvidenceSummaryDTO> evidences, String userQuestion) throws Exception {
 
-        String targetUrl = (customEndpointUrl != null && !customEndpointUrl.isBlank())
-                ? customEndpointUrl
-                : DEFAULT_GEMINI_URL + apiKey;
-
-        String systemPrompt = "Bạn là Chuyên gia Kiến trúc Phần mềm MAVIS AI. "
-                + "Nhiệm vụ của bạn là giải thích cấu trúc kiến trúc phần mềm, vai trò của các dịch vụ, quan hệ phụ thuộc hoặc vết thực nghiệm runtime. "
-                + "QUY TẮC CỐT LÕI: Bạn BẮT BUỘC chỉ được đưa ra nhận định dựa trên danh sách bằng chứng được cung cấp. "
-                + "Bắt buộc trả về kết quả dưới định dạng JSON duy nhất gồm 2 trường: "
-                + "{\"explanationText\": \"...nội dung giải thích chi tiết bằng tiếng Việt...\", \"citedEvidenceIds\": [\"uuid-1\", \"uuid-2\"]}";
+        String systemPrompt = "You are the MAVIS AI Software Architecture Expert. "
+                + "Your responsibility is to explain software architecture structure, service responsibilities, dependency relationships, or runtime telemetry traces. "
+                + "CORE RULE: You MUST base all claims strictly on the provided evidence list. Relationship evidence establishes only the identified incoming/outgoing connection, not the element's internal behavior. Keep direct element facts separate from related relationship context. "
+                + "Return ONLY a valid JSON object with two fields: "
+                + "{\"explanationText\": \"...detailed explanation in clear Software Engineering English...\", \"citedEvidenceIds\": [\"uuid-1\", \"uuid-2\"]}";
 
         ObjectNode promptJson = objectMapper.createObjectNode();
         promptJson.put("scope", scope);
@@ -320,46 +324,86 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         for (EvidenceSummaryDTO ev : evidences) {
             evArray.addObject()
                     .put("id", ev.getId().toString())
+                    .put("elementId", ev.getElementId() == null ? null : ev.getElementId().toString())
+                    .put("relationshipId", ev.getRelationshipId() == null ? null : ev.getRelationshipId().toString())
                     .put("sourceType", ev.getSourceType())
                     .put("locator", ev.getLocator())
                     .put("excerpt", ev.getExcerpt());
         }
 
-        String fullUserPrompt = systemPrompt + "\n\nNgữ cảnh xác thực kiến trúc:\n" + promptJson.toPrettyString();
+        boolean hasCustomUrl = customEndpointUrl != null && !customEndpointUrl.isBlank();
+        boolean useOpenAi = !hasCustomUrl && apiKey != null && apiKey.startsWith("sk-");
 
-        ObjectNode geminiRequest = objectMapper.createObjectNode();
-        ArrayNode contents = geminiRequest.putArray("contents");
-        ObjectNode contentPart = contents.addObject();
-        ArrayNode parts = contentPart.putArray("parts");
-        parts.addObject().put("text", fullUserPrompt);
+        String jsonText;
+        String modelLabel;
 
-        ObjectNode genConfig = geminiRequest.putObject("generationConfig");
-        genConfig.put("temperature", 0.2);
-        genConfig.put("responseMimeType", "application/json");
+        if (useOpenAi) {
+            ObjectNode openAiReq = objectMapper.createObjectNode();
+            openAiReq.put("model", "gpt-5-mini");
+            openAiReq.put("reasoning_effort", "minimal");
+            openAiReq.putObject("response_format").put("type", "json_object");
+            ArrayNode messages = openAiReq.putArray("messages");
+            messages.addObject().put("role", "system").put("content", systemPrompt);
+            messages.addObject().put("role", "user").put("content", "Architectural Grounding Context:\n" + promptJson.toPrettyString());
 
-        HttpRequest httpRequest = HttpRequest.newBuilder()
-                .uri(URI.create(targetUrl))
-                .header("Content-Type", "application/json")
-                .timeout(Duration.ofSeconds(12))
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(geminiRequest)))
-                .build();
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.openai.com/v1/chat/completions"))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .timeout(Duration.ofSeconds(18))
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(openAiReq)))
+                    .build();
 
-        HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new RuntimeException("OpenAI HTTP error status: " + response.statusCode());
+            }
+            JsonNode responseNode = objectMapper.readTree(response.body());
+            JsonNode contentNode = responseNode.path("choices").path(0).path("message").path("content");
+            if (contentNode.isMissingNode() || contentNode.asText().isBlank()) {
+                throw new RuntimeException("OpenAI response missing message content");
+            }
+            jsonText = contentNode.asText().trim();
+            modelLabel = "gpt-5-mini";
+        } else {
+            String targetUrl = hasCustomUrl ? customEndpointUrl : DEFAULT_GEMINI_URL + apiKey;
+            String fullUserPrompt = systemPrompt + "\n\nArchitectural Grounding Context:\n" + promptJson.toPrettyString();
 
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new RuntimeException("Gemini HTTP error status: " + response.statusCode());
+            ObjectNode geminiRequest = objectMapper.createObjectNode();
+            ArrayNode contents = geminiRequest.putArray("contents");
+            ObjectNode contentPart = contents.addObject();
+            ArrayNode parts = contentPart.putArray("parts");
+            parts.addObject().put("text", fullUserPrompt);
+
+            ObjectNode genConfig = geminiRequest.putObject("generationConfig");
+            genConfig.put("temperature", 0.2);
+            genConfig.put("responseMimeType", "application/json");
+
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(targetUrl))
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(12))
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(geminiRequest)))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new RuntimeException("Gemini HTTP error status: " + response.statusCode());
+            }
+
+            JsonNode responseNode = objectMapper.readTree(response.body());
+            JsonNode textCandidate = responseNode.path("candidates").path(0).path("content").path("parts").path(0).path("text");
+            if (textCandidate.isMissingNode() || textCandidate.asText().isBlank()) {
+                throw new RuntimeException("Gemini response missing text candidate");
+            }
+            jsonText = textCandidate.asText().trim();
+            modelLabel = "gemini-2.5-flash";
         }
 
-        JsonNode responseNode = objectMapper.readTree(response.body());
-        JsonNode textCandidate = responseNode.path("candidates").path(0).path("content").path("parts").path(0).path("text");
-        if (textCandidate.isMissingNode() || textCandidate.asText().isBlank()) {
-            throw new RuntimeException("Gemini response missing text candidate");
-        }
-
-        String jsonText = textCandidate.asText().trim();
         JsonNode parsedPayload = objectMapper.readTree(jsonText);
 
-        String explanationText = parsedPayload.path("explanationText").asText("Đã phân tích kiến trúc thành công.");
+        String explanationText = parsedPayload.path("explanationText").asText("Architectural analysis completed.");
         List<UUID> citedIds = new ArrayList<>();
         JsonNode idsNode = parsedPayload.path("citedEvidenceIds");
         if (idsNode.isArray()) {
@@ -370,7 +414,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
             }
         }
 
-        return new ExplanationGenerationResult(explanationText, citedIds, "gemini-2.5-flash", "LIVE_LLM_PROVIDER");
+        return new ExplanationGenerationResult(explanationText, citedIds, modelLabel, "LIVE_LLM_PROVIDER");
     }
 
     private ExplanationGenerationResult synthesizeDeterministicExplanation(String scope, ModelElement element,
@@ -383,56 +427,58 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         StringBuilder sb = new StringBuilder();
         List<UUID> citedIds = new ArrayList<>();
 
-        sb.append("### Giải Thích Kiến Trúc Bằng Chứng Thực Nghiệm (Grounded Synthesis)\n\n");
+        sb.append("### Evidence-Grounded Architectural Explanation (Grounded Synthesis)\n\n");
 
         if ("ELEMENT".equals(scope) && element != null) {
-            sb.append("Phần tử **").append(element.getName()).append("** là một thành phần cốt lõi thuộc phân loại `")
+            sb.append("Element **").append(element.getName()).append("** is an architectural component classified as `")
                     .append(element.getElementType()).append("`");
             if (element.getLanguageStack() != null) {
-                sb.append(" trên nền tảng công nghệ `").append(element.getLanguageStack()).append("`");
+                sb.append(" built on `").append(element.getLanguageStack()).append("`");
             }
             sb.append(".\n\n");
-            sb.append("- **Trạng thái mô hình**: Phần tử đã được lập chỉ mục ở trạng thái `").append(element.getStatus()).append("`.\n");
-            sb.append("- **Cơ sở xác thực**: Cấu trúc thành phần được nhận diện trực tiếp qua các bằng chứng phân tích mã nguồn và cấu hình container.\n");
+            sb.append("- **Model Status**: Indexed with verification state `").append(element.getStatus()).append("`.\n");
+            sb.append(relevantEvidences.isEmpty()
+                ? "- **Grounding Basis**: No saved evidence is available for this element or its incident relationships; the following is model context only.\n"
+                : "- **Grounding Basis**: Saved element and/or incident relationship evidence is cited below. Relationship evidence supports connectivity, not unobserved internal behavior.\n");
         } else if ("RELATIONSHIP".equals(scope) && relationship != null) {
-            sb.append("Quan hệ phụ thuộc giữa **").append(relationship.getSourceElement().getName())
-                    .append("** và **").append(relationship.getTargetElement().getName())
-                    .append("** được xác nhận là `").append(relationship.getRelationType()).append("`");
-            sb.append(" thuộc tầng quan sát `").append(relationship.getOriginLayer()).append("`.\n\n");
-            sb.append("- **Chiều tương tác**: ").append(relationship.getDirection() != null ? relationship.getDirection() : "DIRECTED").append(".\n");
-            sb.append("- **Ý nghĩa kiến trúc**: Dịch vụ nguồn thực hiện kết nối phụ thuộc tới đích, đảm bảo luồng nghiệp vụ phân tán trong hệ thống.\n");
+            sb.append("Dependency relationship between **").append(relationship.getSourceElement().getName())
+                    .append("** and **").append(relationship.getTargetElement().getName())
+                    .append("** is classified as `").append(relationship.getRelationType()).append("`");
+            sb.append(" observed at layer `").append(relationship.getOriginLayer()).append("`.\n\n");
+            sb.append("- **Interaction Direction**: ").append(relationship.getDirection() != null ? relationship.getDirection() : "DIRECTED").append(".\n");
+            sb.append("- **Architectural Significance**: The source component establishes a directed dependency on the target to fulfill distributed workflow interactions.\n");
         } else if ("RUNTIME_TRACE".equals(scope)) {
-            sb.append("Phiên thực nghiệm kiểm thử động trong môi trường Docker Sandbox Sandbox");
+            sb.append("Dynamic verification session in the Docker Sandbox environment");
             if (session != null) {
-                sb.append(" (Kịch bản: `").append(session.getScenarioName() != null ? session.getScenarioName() : "Mặc định").append("`)");
-                sb.append(" ghi nhận kết quả: **").append(session.getScenarioStatus() != null ? session.getScenarioStatus() : "HOÀN TẤT").append("**.\n\n");
-                sb.append("- **Trạng thái Trace**: `").append(session.getTraceStatus() != null ? session.getTraceStatus() : "AVAILABLE").append("`.\n");
-                sb.append("- **Chất lượng quan sát**: Dữ liệu dấu vết OpenTelemetry chứng minh các luồng gọi HTTP/gRPC thực tế giữa các container đang chạy.\n");
+                sb.append(" (Scenario: `").append(session.getScenarioName() != null ? session.getScenarioName() : "Default").append("`)");
+                sb.append(" recorded status: **").append(session.getScenarioStatus() != null ? session.getScenarioStatus() : "COMPLETED").append("**.\n\n");
+                sb.append("- **Trace Status**: `").append(session.getTraceStatus() != null ? session.getTraceStatus() : "AVAILABLE").append("`.\n");
+                sb.append("- **Observability Fidelity**: OpenTelemetry trace spans corroborate runtime HTTP/gRPC invocations across running containers.\n");
             } else {
-                sb.append(" đã ghi nhận các luồng tương tác thời gian thực giữa các vi dịch vụ.\n\n");
+                sb.append(" recorded runtime interaction traces across microservices.\n\n");
             }
         } else if ("CHANGE_IMPACT".equals(scope) && element != null) {
-            sb.append("Phân tích tác động biến đổi cho phần tử **").append(element.getName()).append("**:\n\n");
-            sb.append("- Nếu thay đổi interface hoặc logic của `").append(element.getName()).append("`, các dịch vụ phụ thuộc trực tiếp sẽ chịu tác động lan truyền.\n");
-            sb.append("- Cần thực hiện kiểm thử hồi quy trên các cạnh kết nối liên quan để tránh gãy vỡ hợp đồng giao tiếp.\n");
+            sb.append("Change impact analysis for element **").append(element.getName()).append("**:\n\n");
+            sb.append("- Modifying interfaces or contracts of `").append(element.getName()).append("` propagates impact to directly dependent upstream callers.\n");
+            sb.append("- Regression testing should cover adjacent communication edges to prevent contract breakage.\n");
         } else {
-            sb.append("Toàn bộ phiên bản mô hình kiến trúc (Revision ").append(modelVersion.getRevision()).append(") ");
-            sb.append("được ánh xạ đầy đủ giữa sơ đồ tĩnh và vết thực nghiệm động, bảo toàn tính toàn vẹn của hệ thống.\n\n");
+            sb.append("Architectural model version (Revision ").append(modelVersion.getRevision()).append(") ");
+            sb.append("maps static structural dependencies and runtime telemetry traces to preserve system traceability.\n\n");
         }
 
         if (userQuestion != null && !userQuestion.isBlank()) {
-            sb.append("\n**Trả lời câu hỏi người dùng**: Đối với vấn đề \"_").append(userQuestion).append("_\", ");
-            sb.append("hệ thống xác nhận căn cứ trên các bằng chứng mã nguồn đã kiểm chứng dưới đây.\n");
+            sb.append("\n**Response to User Inquiry**: Regarding \"_").append(userQuestion).append("_\", ");
+            sb.append("the assessment is grounded in the verified source evidence cited below.\n");
         }
 
         if (!relevantEvidences.isEmpty()) {
-            sb.append("\n**Bằng chứng xác thực kiến trúc trích dẫn:**\n");
+            sb.append("\n**Cited Architectural Evidence:**\n");
             for (int i = 0; i < Math.min(relevantEvidences.size(), 5); i++) {
                 Evidence ev = relevantEvidences.get(i);
                 citedIds.add(ev.getId());
                 sb.append("- [`").append(ev.getSourceType()).append("`]: ");
                 if (ev.getLocator() != null && !ev.getLocator().isBlank()) {
-                    sb.append("Tại `").append(SecretRedactor.redactString(ev.getLocator())).append("`");
+                    sb.append("At `").append(SecretRedactor.redactString(ev.getLocator())).append("`");
                 }
                 if (ev.getExcerpt() != null && !ev.getExcerpt().isBlank()) {
                     sb.append(" — _\"").append(SecretRedactor.redactString(ev.getExcerpt())).append("\"_");
@@ -488,7 +534,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
                 .aiModelName(entity.getAiModelName())
                 .cached(cached)
                 .providerMode(providerMode)
-                .epistemicBadge("AI-Assisted Explanation (Grounded in Saved Model Evidence)")
+                .epistemicBadge(citedIds.isEmpty() ? "AI-Assisted Interpretation (Model Context Only — No Saved Evidence Cited)" : "AI-Assisted Explanation (Grounded in Saved Model Evidence)")
                 .createdAt(entity.getCreatedAt())
                 .build();
     }

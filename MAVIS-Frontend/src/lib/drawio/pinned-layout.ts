@@ -1,4 +1,10 @@
-import { inspectGeometry, type Rect, type Route } from "./geometry";
+import {
+  inspectGeometry,
+  segmentRectClearanceWithin,
+  slidingLabelCandidates,
+  type Rect,
+  type Route,
+} from "./geometry";
 import type { ElkNode } from "elkjs/lib/elk-api";
 import type { DiagramDocument } from "./rules";
 type Layout = {
@@ -134,6 +140,22 @@ function routeGrid(start: Point, end: Point, obstacles: Rect[], placed: Route[])
             c.y < Math.max(a.y, b.y)
           )
             penalty += 600;
+          if (
+            a.y === b.y &&
+            c.y === d.y &&
+            Math.abs(a.y - c.y) <= 2 &&
+            Math.min(Math.max(a.x, b.x), Math.max(c.x, d.x)) >
+              Math.max(Math.min(a.x, b.x), Math.min(c.x, d.x)) + 4
+          )
+            penalty += 900;
+          if (
+            a.x === b.x &&
+            c.x === d.x &&
+            Math.abs(a.x - c.x) <= 2 &&
+            Math.min(Math.max(a.y, b.y), Math.max(c.y, d.y)) >
+              Math.max(Math.min(a.y, b.y), Math.min(c.y, d.y)) + 4
+          )
+            penalty += 900;
         }
       const parent = prev.get(index),
         p = parent === undefined ? null : point(parent);
@@ -261,7 +283,16 @@ export function respectPins(candidate: Layout, doc: DiagramDocument): Layout {
       },
     };
   };
-  for (const original of candidate.routes) {
+  const sortedOriginals = [...candidate.routes].sort((a, b) => {
+    const fa = lookup(a.from),
+      ta = lookup(a.to),
+      fb = lookup(b.from),
+      tb = lookup(b.to);
+    const da = Math.abs(fa.x + fa.width / 2 - (ta.x + ta.width / 2)) + Math.abs(fa.y + fa.height / 2 - (ta.y + ta.height / 2));
+    const db = Math.abs(fb.x + fb.width / 2 - (tb.x + tb.width / 2)) + Math.abs(fb.y + fb.height / 2 - (tb.y + tb.height / 2));
+    return da - db || a.id.localeCompare(b.id);
+  });
+  for (const original of sortedOriginals) {
     const oldFrom =
         candidate.rects.find((r) => r.id === original.from) ??
         candidate.groups.find((r) => r.id === "boundary_" + original.from)!,
@@ -279,6 +310,31 @@ export function respectPins(candidate: Layout, doc: DiagramDocument): Layout {
     const oldLabel = candidate.labels.find((label) => label.id === original.id);
     if (!oldLabel) continue;
     let label: Rect | undefined;
+    const otherPts = routes.filter((r) => r.id !== original.id).map((r) => r.points);
+    for (let i = 1; i < points.length && !label; i++) {
+      const cands = slidingLabelCandidates(
+        points[i - 1]!,
+        points[i]!,
+        oldLabel.width,
+        oldLabel.height,
+        otherPts,
+        8,
+      );
+      for (const c of cands) {
+        const r: Rect = { ...oldLabel, x: c.x, y: c.y };
+        const masksOther = otherPts.some((pts) =>
+          pts.slice(1).some((pt, idx) => segmentRectClearanceWithin(pts[idx]!, pt, r, 4)),
+        );
+        if (
+          !masksOther &&
+          !obstacles.some((node) => overlap(r, node, 4)) &&
+          !labels.some((other) => overlap(r, other, 8))
+        ) {
+          label = r;
+          break;
+        }
+      }
+    }
     for (let distance = 8; distance <= 120 && !label; distance += 16)
       for (let i = 1; i < points.length && !label; i++) {
         const a = points[i - 1]!,

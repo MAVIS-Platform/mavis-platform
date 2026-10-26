@@ -50,7 +50,21 @@ public final class ArchitectureResolver {
     public static ModelElement target(List<ModelElement> elements, String name) {
         if (name == null || name.isBlank() || name.contains("${")) return null;
         var matches = elements.stream().filter(e -> name.equalsIgnoreCase(e.getName())).toList();
-        return matches.size() == 1 ? matches.get(0) : null;
+        if (matches.size() == 1) return matches.get(0);
+        String lower = name.trim().toLowerCase(Locale.ROOT);
+        String stem = lower.replaceAll("-service$", "");
+        var suffixMatches = elements.stream()
+                .filter(e -> ("SERVICE_CONTAINER".equals(e.getElementType()) || "EXTERNAL_SYSTEM".equals(e.getElementType()))
+                        && e.getName() != null)
+                .filter(e -> {
+                    String elLower = e.getName().toLowerCase(Locale.ROOT);
+                    return elLower.endsWith("-" + lower)
+                            || lower.endsWith("-" + elLower)
+                            || elLower.replaceAll("-service$", "").equals(stem)
+                            || elLower.endsWith("-" + stem + "-service");
+                })
+                .toList();
+        return suffixMatches.size() == 1 ? suffixMatches.get(0) : null;
     }
     public static String technology(String image) {
         if (image == null || image.isBlank()) return null;

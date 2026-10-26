@@ -28,6 +28,45 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class SubmissionServiceImplTest {
+    @Test void c4ContainerDoesNotSatisfyAComponentRequirement() {
+        assignment.setRequiredDiagramTypes(objectMapper.createArrayNode().add("C4_COMPONENT"));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        diagramVersion.setNotation("C4");diagramVersion.setLevel("CONTAINER");
+        var request=SubmissionCreateRequest.builder().assignmentId(assignmentId).projectId(projectId).modelVersionId(modelVersionId).diagramVersionId(diagramVersionId).build();
+        assertThatThrownBy(()->submissionService.submitAssignment(request)).isInstanceOf(BusinessException.class).hasMessageContaining("C4_COMPONENT");
+        diagramVersion.setNotation("BUNDLE");diagramVersion.setLevel("COURSEWORK_ARTIFACTS");
+        var layout=objectMapper.createObjectNode();var artifact=layout.putArray("artifacts").addObject().put("notation","C4").put("level","COMPONENT");artifact.putObject("layoutJson").put("viewId","component:service");diagramVersion.setLayoutJson(layout);
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call->{SubmissionSnapshot value=call.getArgument(0);value.setId(UUID.randomUUID());return value;});
+        assertThat(submissionService.submitAssignment(request).getDiagramVersionId()).isEqualTo(diagramVersionId);
+    }
+    @Test void submissionResponseIncludesCreationTimeOnlyAvailableAfterDatabaseFlush() {
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        var saved=new java.util.concurrent.atomic.AtomicReference<SubmissionSnapshot>();
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call->{SubmissionSnapshot value=call.getArgument(0);value.setId(UUID.randomUUID());saved.set(value);return value;});
+        doAnswer(call->{saved.get().setSubmittedAt(OffsetDateTime.now());return null;}).when(submissionSnapshotRepository).flush();
+        var result=submissionService.submitAssignment(SubmissionCreateRequest.builder().assignmentId(assignmentId).projectId(projectId).modelVersionId(modelVersionId).diagramVersionId(diagramVersionId).build());
+        assertThat(result.getSubmittedAt()).isNotNull();
+        verify(submissionSnapshotRepository).flush();
+    }
+    @Test void rejectsMissingRequiredDiagramAndAcceptsCompleteFrozenBundle() {
+        assignment.setRequiredDiagramTypes(objectMapper.createArrayNode().add("UML_CLASS").add("UML_PACKAGE"));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        var request=SubmissionCreateRequest.builder().assignmentId(assignmentId).projectId(projectId).modelVersionId(modelVersionId).diagramVersionId(diagramVersionId).build();
+        assertThatThrownBy(()->submissionService.submitAssignment(request)).isInstanceOf(BusinessException.class).hasMessageContaining("Missing required diagram");
+        verify(submissionSnapshotRepository,never()).save(any());
+        diagramVersion.setNotation("BUNDLE");var layout=objectMapper.createObjectNode();layout.putArray("artifacts").addObject().put("notation","UML_CLASS");layout.withArray("artifacts").addObject().put("notation","UML_PACKAGE");diagramVersion.setLayoutJson(layout);
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call->{SubmissionSnapshot value=call.getArgument(0);value.setId(UUID.randomUUID());return value;});
+        assertThat(submissionService.submitAssignment(request).getDiagramVersionId()).isEqualTo(diagramVersionId);
+    }
 
     @Mock
     private SubmissionSnapshotRepository submissionSnapshotRepository;
@@ -61,6 +100,7 @@ class SubmissionServiceImplTest {
 
     @Mock
     private JobRepository jobRepository;
+    @Mock private SubmissionReviewRepository submissionReviewRepository;
 
     @Mock
     private com.mavis.common.security.AccessPolicyService accessPolicyService;
@@ -524,6 +564,14 @@ class SubmissionServiceImplTest {
         assertThat(bundle.getLecturerFeedbacks()).hasSize(1);
         assertThat(bundle.getMarkdownSummaryReport()).contains("BÁO CÁO TỔNG HỢP GÓI BÀI NỘP BẤT BIẾN");
         assertThat(bundle.getMarkdownSummaryReport()).contains("95.5");
+        var review=new SubmissionReview();review.setStatus("DRAFT");review.setScore(new java.math.BigDecimal("88.5"));review.setSummary("Private grading notes");review.setLecturer(student);review.setUpdatedAt(OffsetDateTime.now());
+        when(submissionReviewRepository.findBySubmissionId(subId)).thenReturn(Optional.of(review));
+        var privateExport=submissionService.exportSubmissionBundle(subId);
+        assertThat(privateExport.getReviewSummary()).isEmpty();assertThat(privateExport.getLecturerScore()).isNull();
+        review.setStatus("GRADED");review.setSummary("Published marking summary");
+        var publicExport=submissionService.exportSubmissionBundle(subId);
+        assertThat(publicExport.getLecturerScore()).isEqualByComparingTo("88.5");assertThat(publicExport.getReviewStatus()).isEqualTo("GRADED");
+        assertThat(publicExport.getMarkdownSummaryReport()).contains("Published marking summary").doesNotContain("Private grading notes");
     }
 
     @Test

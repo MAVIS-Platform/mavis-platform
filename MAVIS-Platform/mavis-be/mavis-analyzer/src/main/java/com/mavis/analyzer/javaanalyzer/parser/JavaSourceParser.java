@@ -4,6 +4,7 @@ import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.analyzer.javaanalyzer.visitor.CodeDependencyVisitor;
+import com.mavis.analyzer.javaanalyzer.visitor.ProjectTypeDependencyVisitor;
 import com.mavis.analyzer.javaanalyzer.visitor.BeanMessagingVisitor;
 import java.util.Map;
 import java.util.Set;
@@ -34,6 +35,7 @@ public class JavaSourceParser {
         List<CodeEvidenceDTO> allEvidences = new ArrayList<>();
         Map<String,String> constants = new HashMap<>();
         Set<String> localTypes = new HashSet<>();
+        Map<String, JavaTypeScope> typeScopes = new HashMap<>();
 
         if (extractedPath == null || extractedPath.isBlank()) {
             log.warn("Đường dẫn trích xuất mã nguồn trống hoặc không hợp lệ: {}", extractedPath);
@@ -54,7 +56,7 @@ public class JavaSourceParser {
                     .filter(path -> !isIgnoredPath(path))
                     .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".java"))
                     .sorted()
-                    .forEach(file -> parseJavaFile(file, allEvidences, constants, localTypes));
+                    .forEach(file -> parseJavaFile(file, allEvidences, constants, localTypes, typeScopes));
         } catch (IOException e) {
             log.error("Lỗi khi duyệt thư mục dự án: {}", extractedPath, e);
         }
@@ -63,31 +65,47 @@ public class JavaSourceParser {
             if("BEAN_COMPONENT".equals(evidence.getElementType())) {
                 var matches=evidence.getSymbolCandidates().stream().filter(localTypes::contains).distinct().toList();
                 if(matches.size()==1) {evidence.setElementType("GENERAL_COMPONENT");evidence.setQualifiedName(matches.get(0));}
-            } else if("CODE_DEPENDENCY".equals(evidence.getElementType())) {
-                var matches=evidence.getSymbolCandidates().stream().filter(localTypes::contains).distinct().toList();
-                if(matches.size()==1)evidence.setTargetComponent(matches.get(0));
+            } else if("CODE_DEPENDENCY".equals(evidence.getElementType()) || "UML_RELATIONSHIP".equals(evidence.getElementType())) {
+                var scope = typeScopes.get(evidence.getFilePath());
+                evidence.setTargetComponent(scope == null ? null : scope.resolve(evidence.getTargetComponent(), localTypes));
                 evidence.setSourceComponent(evidence.getQualifiedName());
-            } else if("UML_RELATIONSHIP".equals(evidence.getElementType())) {
-                var matches=evidence.getSymbolCandidates().stream().filter(localTypes::contains).distinct().toList();
-                if(matches.size()==1) {
-                    evidence.setTargetComponent(matches.get(0));
-                    evidence.setSourceComponent(evidence.getQualifiedName());
-                } else {
-                    evidence.setTargetComponent(null);
-                }
             } else if(evidence.getElementType().startsWith("MESSAGE_")&&evidence.getIdentifier().isBlank()) {
                 var values=evidence.getSymbolCandidates().stream().filter(constants::containsKey).map(constants::get).filter(java.util.Objects::nonNull).distinct().toList();
                 if(values.size()==1)evidence.setIdentifier(values.get(0));
                 else evidence.setElementType("UNRESOLVED_MESSAGE_CHANNEL");
             }
         }
+        Map<String, List<CodeEvidenceDTO>> classifiers = allEvidences.stream()
+                .filter(e -> "CLASS_INTERFACE".equals(e.getElementType()))
+                .collect(java.util.stream.Collectors.groupingBy(CodeEvidenceDTO::getQualifiedName));
+        for (var relation : allEvidences) {
+            var meta = relation.getMetadata();
+            if (!"UML_RELATIONSHIP".equals(relation.getElementType()) || meta == null ||
+                !"ASSOCIATION".equals(meta.get("umlRelationKind")) || !Boolean.TRUE.equals(meta.get("isCollectionType")) || Boolean.TRUE.equals(meta.get("injectedReference"))) continue;
+            var sources = classifiers.getOrDefault(relation.getSourceComponent(), List.of());
+            var targets = classifiers.getOrDefault(relation.getTargetComponent(), List.of());
+            if (sources.size() == 1 && targets.size() == 1 &&
+                hasDomainMarker(sources.get(0), Set.of("Entity", "Table", "Document", "Aggregate", "AggregateRoot")) &&
+                !hasDomainMarker(sources.get(0), Set.of("Service", "Component", "Controller", "Repository", "Configuration")) &&
+                hasDomainMarker(targets.get(0), Set.of("Embeddable", "ValueObject"))) {
+                meta.put("umlRelationKind", "COMPOSITION");
+                meta.put("astVerifiedWholePart", true);
+                meta.put("ownershipEvidence", "OWNED_VALUE_COLLECTION");
+            }
+        }
         allEvidences.removeIf(e->"BEAN_COMPONENT".equals(e.getElementType())
-                || ("UML_RELATIONSHIP".equals(e.getElementType()) && (e.getTargetComponent() == null || e.getTargetComponent().isBlank())));
+                || (("UML_RELATIONSHIP".equals(e.getElementType()) || "CODE_DEPENDENCY".equals(e.getElementType())) && (e.getTargetComponent() == null || e.getTargetComponent().isBlank())));
         log.info("Đã hoàn tất phân tích AST. Tổng số code evidences trích xuất được: {}", allEvidences.size());
         return allEvidences;
     }
 
-    private void parseJavaFile(Path javaFile, List<CodeEvidenceDTO> allEvidences, Map<String,String> constants, Set<String> localTypes) {
+    private static boolean hasDomainMarker(CodeEvidenceDTO evidence, Set<String> markers) {
+        Object classifier = evidence.getMetadata() == null ? null : evidence.getMetadata().get("umlClassifier");
+        if (!(classifier instanceof Map<?, ?> facts) || !(facts.get("annotations") instanceof List<?> annotations)) return false;
+        return annotations.stream().map(String::valueOf).anyMatch(a -> markers.contains(a.substring(a.lastIndexOf('.') + 1)));
+    }
+
+    private void parseJavaFile(Path javaFile, List<CodeEvidenceDTO> allEvidences, Map<String,String> constants, Set<String> localTypes, Map<String, JavaTypeScope> typeScopes) {
         try {
             StringBuilder codeBuilder = new StringBuilder();
             try (BufferedReader reader = Files.newBufferedReader(javaFile, StandardCharsets.UTF_8)) {
@@ -100,7 +118,14 @@ public class JavaSourceParser {
 
             String sourceCode = codeBuilder.toString();
             CompilationUnit cu = StaticJavaParser.parse(sourceCode);
+            String normalizedFile = javaFile.toString().replace('\\', '/').toLowerCase(java.util.Locale.ROOT);
+            if (!normalizedFile.contains("/src/main/") && cu.getImports().stream().anyMatch(i ->
+                    i.getNameAsString().startsWith("org.junit.") || i.getNameAsString().startsWith("org.testng.") ||
+                    i.getNameAsString().startsWith("spock.lang."))) return;
             String currentFilePath = javaFile.toAbsolutePath().toString();
+            JavaTypeScope scope = JavaTypeScope.from(cu);
+            typeScopes.put(currentFilePath, scope);
+            localTypes.addAll(scope.declaredTypes());
 
             for (var type:cu.findAll(com.github.javaparser.ast.body.ClassOrInterfaceDeclaration.class)) {
                 String qualified=type.getFullyQualifiedName().orElse(type.getNameAsString());localTypes.add(qualified);
@@ -118,6 +143,7 @@ public class JavaSourceParser {
             new CodeDependencyVisitor(currentFilePath).visit(cu, allEvidences);
             new DatabaseAccessVisitor(currentFilePath).visit(cu, allEvidences);
             new UmlClassifierVisitor(currentFilePath).visit(cu, allEvidences);
+            new ProjectTypeDependencyVisitor(currentFilePath).visit(cu, allEvidences);
             String packageName = cu.getPackageDeclaration().map(p -> p.getNameAsString() + ".").orElse("");
             for (int i = evidenceStart; i < allEvidences.size(); i++) {
                 CodeEvidenceDTO evidence = allEvidences.get(i);
@@ -137,6 +163,7 @@ public class JavaSourceParser {
     public static boolean isIgnoredPath(Path path) {
         String normalized = path.toString().replace('\\', '/').toLowerCase();
         return normalized.contains("/test/")
+                || normalized.matches(".*(?:^|/)src/(?:integration[-_]?tests?|component[-_]?tests?|functional[-_]?tests?|acceptance[-_]?tests?|contract[-_]?tests?|smoke[-_]?tests?|e2e[-_]?tests?|test[-_]?fixtures|inttest|androidtest)(?:/.*|$)")
                 || normalized.contains("/target/")
                 || normalized.contains("/build/")
                 || normalized.contains("/.git/")

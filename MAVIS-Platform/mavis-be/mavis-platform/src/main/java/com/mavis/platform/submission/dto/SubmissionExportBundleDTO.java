@@ -32,6 +32,11 @@ public class SubmissionExportBundleDTO {
     private JsonNode layoutJson;
     private String mermaidDsl;
     private Double complianceScore;
+    private String reviewStatus;
+    private java.math.BigDecimal lecturerScore;
+    private String reviewSummary;
+    private String reviewerName;
+    private OffsetDateTime reviewedAt;
     private UUID runtimeSessionId;
     private String scenarioStatus;
 

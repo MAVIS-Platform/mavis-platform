@@ -36,11 +36,13 @@ import { MoreHorizontal } from "lucide-react";
 
 export function FormField({
   label,
+  sublabel,
   error,
   hint,
   children,
 }: {
   label: string;
+  sublabel?: string | undefined;
   error?: string | undefined;
   hint?: string;
   children: (props: {
@@ -52,8 +54,9 @@ export function FormField({
   const id = useId();
   return (
     <div className="space-y-2">
-      <label htmlFor={id} className="block text-xs font-medium">
-        {label}
+      <label htmlFor={id} className="flex items-center gap-1.5 text-xs font-medium">
+        <span>{label}</span>
+        {sublabel && <span className="font-normal text-muted-foreground/70">{sublabel}</span>}
       </label>
       {children({
         id,
@@ -97,19 +100,21 @@ export function SearchInput({
 }
 export function SelectField({
   label,
+  sublabel,
   value,
   onChange,
   options,
   disabled = false,
 }: {
   label: string;
+  sublabel?: string | undefined;
   value: string;
   onChange: (value: string) => void;
   options: readonly { value: string; label: string }[];
   disabled?: boolean;
 }) {
   return (
-    <FormField label={label}>
+    <FormField label={label} sublabel={sublabel}>
       {(props) => (
         <select
           {...props}
@@ -118,7 +123,7 @@ export function SelectField({
           disabled={disabled}
           className="h-9 w-full min-w-0 rounded-md border bg-card px-3 text-sm disabled:opacity-50"
         >
-          {!value && (
+          {!value && !options.some((option) => option.value === "") && (
             <option value="" disabled>
               Select {label.toLowerCase()}
             </option>

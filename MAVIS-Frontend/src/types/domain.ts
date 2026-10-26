@@ -65,6 +65,7 @@ export const analysisJobSchema = z.object({
 export type AnalysisJob = z.infer<typeof analysisJobSchema>;
 export const evidenceSchema = z.object({
   id: z.string(),
+  origin: z.enum(["persisted", "preview"]).optional(),
   kind: z.enum(["source", "runtime"]),
   sourceType: z.string().optional(),
   location: z.string(),
@@ -186,13 +187,40 @@ export const explanationSchema = z.object({
   id: z.string(),
   modelId: z.string(),
   elementId: z.string(),
+  relationshipId: z.string().nullable().optional(),
+  explanationScope: z.string().optional(),
+  userQuestion: z.string().nullable().optional(),
   text: z.string(),
   evidenceIds: z.array(z.string()),
+  citedEvidences: z
+    .array(
+      z.object({
+        id: z.string(),
+        sourceType: z.string(),
+        locator: z.string().nullable().optional(),
+        excerpt: z.string().nullable().optional(),
+      }),
+    )
+    .optional(),
+  structuredContent: z
+    .object({
+      summary: z.string(),
+      whyItMatters: z.string(),
+      unknowns: z.array(z.string()),
+      nextSteps: z.array(z.string()),
+      evidenceSufficiency: z.string(),
+      evidenceRefs: z.array(z.string()),
+    })
+    .nullable()
+    .optional(),
   sample: z.boolean(),
   providerMode: z.string().optional(),
+  aiModelName: z.string().nullable().optional(),
   epistemicBadge: z.string().optional(),
+  cached: z.boolean().optional(),
 });
 export const workspaceSchema = z.object({
+  createdById:z.string().optional(),description:z.string().optional(),
   id: z.string(),
   name: z.string(),
   code: z.string().optional(),
@@ -200,7 +228,14 @@ export const workspaceSchema = z.object({
   status: z.string().optional(),
   members: z.array(z.object({ id: z.string(), name: z.string(), role: z.string() })),
 });
+export const assignmentReferenceSchema = z.object({
+  projectId: z.string(), projectName: z.string(), snapshotId: z.string(), modelId: z.string(),
+  revision: z.number().int().positive(), sourceType: z.string(),
+  repositoryUrl: z.string().nullish(), branch: z.string().nullish(),
+  commitSha: z.string().nullish(), artifactHash: z.string().nullish(),
+});
 export const assignmentSchema = z.object({
+  referenceSource: assignmentReferenceSchema.nullish(),
   requiredDiagramTypes: z.array(z.string()).optional(),
   requireRuntimeTrace: z.boolean().optional(),
   id: z.string(),
@@ -211,6 +246,15 @@ export const assignmentSchema = z.object({
 });
 export const submissionSchema = z
   .object({
+    assignmentTitle: z.string().optional(),
+    studentName: z.string().optional(),
+    studentEmail: z.string().optional(),
+    diagramVersionId: z.string().optional(),
+    diagramNotation: z.string().optional(),
+    submissionNotes: z.string().optional(),
+    diagramLayout: z.record(z.unknown()).optional(),
+    evaluationRunId: z.string().nullable().optional(),
+    complianceScore: z.number().nullable().optional(),
     id: z.string(),
     assignmentId: z.string(),
     studentId: z.string(),
@@ -219,7 +263,7 @@ export const submissionSchema = z
     snapshot: snapshotSchema,
     runtime: runtimeSessionSchema.nullable(),
     feedback: z.array(
-      z.object({ id: z.string(), text: z.string(), createdAt: z.string(), authorId: z.string() }),
+      z.object({ id: z.string(), text: z.string(), createdAt: z.string(), authorId: z.string(), authorName:z.string().optional(), elementId:z.string().nullable().optional(), relationshipId:z.string().nullable().optional() }),
     ),
   })
   .superRefine((submission, ctx) => {
@@ -237,6 +281,7 @@ export const submissionSchema = z
   });
 export type Submission = z.infer<typeof submissionSchema>;
 export const accountSchema = z.object({
+  email: z.string().optional(),
   status: z.string().optional(),
   id: z.string(),
   name: z.string(),

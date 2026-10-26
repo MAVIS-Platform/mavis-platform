@@ -8,6 +8,12 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
   addWorkspaceMember: ["workspaces"],
   removeWorkspaceMember: ["workspaces"],
   createAssignment: ["assignments"],
+  gradeSubmission: ["submissionReview"],
+  createReferenceProject:["workspaceProjects","projects"],
+  updateAssignment:["assignments"],deleteAssignment:["assignments","assignmentSubmissions"],
+  batchWorkspaceMembers:["workspaces"],publishReference:["referenceVersions","snapshots","workspaceProjects"],
+  freezeArtifacts:["diagrams"],saveArchitectureDocument:["architectureDocument","documentRevisions"],
+  updateFeedback:["submission","submissions","assignmentSubmissions"],deleteFeedback:["submission","submissions","assignmentSubmissions"],
   runtimeStop: ["runtimeReadSessions", "runtimeReadSession"],
   runtimeApprove: ["runtimeReadSessions", "runtimeReadSession"],
   importSource: ["snapshots"],
@@ -30,12 +36,70 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
   saveScenario: ["scenarios"],
   startRuntime: ["runtimeSessions", "runtimeReadSessions", "runtimeReadSession", "platformSummary"],
   stopRuntime: ["runtimeSessions", "runtimeSession", "platformSummary", "audit"],
-  submit: ["submissions", "submission"],
-  feedback: ["submissions", "submission"],
+  submit: ["submissions", "submission", "assignmentSubmissions"],
+  feedback: ["submissions", "submission", "assignmentSubmissions"],
+  setAccountRole: ["accounts", "audit", "workspaces"],
   setAccountLock: ["accounts", "audit"],
   configureIntegration: ["integrations", "audit"],
   configureProfile: ["profiles", "runtimeConfiguration", "audit"],
 };
+const record = (value: unknown): Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+
+// Unfiltered collections remain eligible; scoped queries only refresh the
+// affected project, assignment, submission, model or session when known.
+export function mutationScope(operation: Operation, input: unknown, result: unknown) {
+  const variables = record(input);
+  const data = record(result);
+  const scope: Record<string, unknown> = { ...record(data["model"]), ...data, ...variables };
+  const resultIds: Partial<Record<Operation, string>> = {
+    createProject: "projectId",
+    createReferenceProject: "projectId",
+    createWorkspace: "workspaceId",
+    updateWorkspace: "workspaceId",
+    archiveWorkspace: "workspaceId",
+    createAssignment: "assignmentId",
+    updateAssignment: "assignmentId",
+    submit: "submissionId",
+    feedback: "submissionId",
+    updateFeedback: "submissionId",
+    deleteFeedback: "submissionId",
+    startAnalysis: "jobId",
+    cancelAnalysis: "jobId",
+    startRuntime: "sessionId",
+    stopRuntime: "sessionId",
+    runtimeStop: "sessionId",
+    runtimeApprove: "sessionId",
+  };
+  const idKey = resultIds[operation];
+  if (idKey && typeof data["id"] === "string") scope[idKey] = data["id"];
+  return scope;
+}
+
+export function queryMatchesScope(queryKey: readonly unknown[], scope: Record<string, unknown>) {
+  if (queryKey[0] !== "api") return false;
+  const filters = record(queryKey[2]);
+  return [
+    "projectId",
+    "workspaceId",
+    "assignmentId",
+    "submissionId",
+    "modelId",
+    "sessionId",
+    "jobId",
+    "viewId",
+    "scenarioId",
+  ].every(
+    (key) =>
+      typeof scope[key] !== "string" ||
+      typeof filters[key] !== "string" ||
+      filters[key] === "*" ||
+      filters[key] === scope[key],
+  );
+}
+
 export function terminalSignature(operation: Operation, data: unknown): string {
   if (
     !["analysisJob", "analysisJobs", "adminJobs", "runtimeSession", "runtimeSessions"].includes(

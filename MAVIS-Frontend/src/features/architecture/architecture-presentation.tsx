@@ -1,6 +1,5 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
 import type { ArchitecturalModel } from "@/types/domain";
 import { DependencyNetwork } from "./dependency-network";
 import { ArchitectureDiagrams } from "./architecture-diagrams";
@@ -13,11 +12,17 @@ type Props = {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   systemName?: string | undefined;
+  mode?: "graph" | "diagram" | undefined;
 };
 
-export function ArchitecturePresentation({ model, selectedId, onSelect, systemName }: Props) {
+export function ArchitecturePresentation({
+  model,
+  selectedId,
+  onSelect,
+  systemName,
+  mode = "graph",
+}: Props) {
   const [highlight, setHighlight] = useState<{ modelId: string; ids: string[] } | null>(null);
-  const [mode, setMode] = useState<"graph" | "diagram">("graph");
   const [expanded, setExpanded] = useState(false);
   const [origin, setOrigin] = useState<"all" | "source" | "deployment" | "runtime">("all");
   const [drilledSourceEdgeId, setDrilledSourceEdgeId] = useState<string | null>(null);
@@ -51,33 +56,8 @@ export function ArchitecturePresentation({ model, selectedId, onSelect, systemNa
   return (
     <div
       data-architecture-workspace
-      className="mt-5 space-y-4 [&:fullscreen]:m-0 [&:fullscreen]:overflow-y-auto [&:fullscreen]:bg-background [&:fullscreen]:p-4"
+      className="space-y-2.5 [&:fullscreen]:m-0 [&:fullscreen]:overflow-y-auto [&:fullscreen]:bg-background [&:fullscreen]:p-4"
     >
-      <div role="tablist" aria-label="Architecture mode" className="flex gap-2">
-        <Button
-          role="tab"
-          aria-selected={mode === "graph"}
-          variant={mode === "graph" ? "default" : "outline"}
-          onClick={() => {
-            setMode("graph");
-            setDrilledSourceEdgeId(null);
-            setSequenceContext(null);
-          }}
-        >
-          Graph
-        </Button>
-        <Button
-          role="tab"
-          aria-selected={mode === "diagram"}
-          variant={mode === "diagram" ? "default" : "outline"}
-          onClick={() => {
-            setMode("diagram");
-            setDrilledSourceEdgeId(null);
-          }}
-        >
-          Diagram
-        </Button>
-      </div>
       <div
         className={
           selectedId

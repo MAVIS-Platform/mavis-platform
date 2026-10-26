@@ -39,13 +39,11 @@ export default function LoginPage() {
     client.clear();
     client.setQueryData(["api", "session", {}], session);
     router.replace(
-      api.mode === "backend"
-        ? "/"
-        : session.user?.role === "admin"
-          ? "/administration/users"
-          : session.user?.role === "lecturer"
-            ? "/workspaces"
-            : "/",
+      session.user?.role === "admin"
+        ? "/administration/users"
+        : session.user?.role === "lecturer"
+          ? "/workspaces"
+          : "/",
     );
   };
   async function sample(role: AppRole) {

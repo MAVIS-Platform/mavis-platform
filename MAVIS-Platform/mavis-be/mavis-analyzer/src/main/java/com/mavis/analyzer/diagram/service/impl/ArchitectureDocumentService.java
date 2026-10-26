@@ -20,8 +20,95 @@ public class ArchitectureDocumentService {
     private final ArchitectureDocumentRepository documents;
     private final AccessPolicyService access;
     private final EntityManager entityManager;
+    private final DiagramVersionRepository diagrams;
     public record Document(UUID modelId,String viewId,long revision,String xml) {}
     public record Save(long expectedRevision,String xml) {}
+    public record Revision(UUID modelId, String viewId, long revision, OffsetDateTime savedAt) {}
+    public record SelectedDocument(String viewId, long revision) {}
+    public record ArtifactSelection(java.util.List<SelectedDocument> documents, java.util.List<UUID> diagramVersionIds) {}
+    @Transactional
+    public UUID freezeArtifacts(UUID modelId, ArtifactSelection selection) {
+        var model = model(modelId);
+        access.requireProjectWriteAccess(model.getProject());
+        if (selection == null) throw invalid();
+        var docs = selection.documents() == null ? java.util.List.<SelectedDocument>of() : selection.documents();
+        var versions = selection.diagramVersionIds() == null ? java.util.List.<UUID>of() : selection.diagramVersionIds();
+        if (docs.size() + versions.size() < 1 || docs.size() + versions.size() > 20) throw invalid();
+
+        var viewKeys = new java.util.LinkedHashSet<String>();
+        var revisions = new java.util.HashSet<Long>();
+        for (var doc : docs) {
+            if (doc == null) throw invalid();
+            validateKey(doc.viewId());
+            if (!viewKeys.add(doc.viewId())) throw new BusinessException(ErrorCode.BAD_REQUEST, "Select one revision per diagram view");
+            revisions.add(doc.revision());
+        }
+        if (versions.stream().anyMatch(java.util.Objects::isNull)) throw invalid();
+        var diagramIds = new java.util.LinkedHashSet<>(versions);
+
+        // At most 20 selections: load candidates once, then match the exact
+        // (view, revision) pair. Separate IN sets must never substitute a revision.
+        var documentsBySelection = new java.util.HashMap<SelectedDocument, ArchitectureDocument>();
+        if (!docs.isEmpty()) {
+            for (var doc : documents.findByModelVersionIdAndViewKeyInAndRevisionIn(modelId, viewKeys, revisions)) {
+                documentsBySelection.put(new SelectedDocument(doc.getViewKey(), doc.getRevision()), doc);
+            }
+        }
+        var diagramsById = new java.util.HashMap<UUID, DiagramVersion>();
+        if (!diagramIds.isEmpty()) {
+            for (var diagram : diagrams.findAllById(diagramIds)) diagramsById.put(diagram.getId(), diagram);
+        }
+
+        var layout = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("frozenDocument", true);
+        var artifacts = layout.putArray("artifacts");
+        var pending = new java.util.ArrayList<DiagramVersion>();
+        for (var selected : docs) {
+            var document = documentsBySelection.get(selected);
+            if (document == null) throw new BusinessException(ErrorCode.NOT_FOUND, "Saved diagram revision not found");
+            var frozen = frozenDocument(model, document);
+            pending.add(frozen);
+            artifacts.addObject().put("notation", frozen.getNotation()).put("level", frozen.getLevel())
+                    .set("layoutJson", frozen.getLayoutJson().deepCopy());
+        }
+        for (var id : diagramIds) {
+            var diagram = diagramsById.get(id);
+            if (diagram == null) throw new BusinessException(ErrorCode.NOT_FOUND);
+            if (!diagram.getModelVersion().getId().equals(modelId)) throw new BusinessException(ErrorCode.BAD_REQUEST, "Diagram belongs to another model");
+            artifacts.addObject().put("diagramVersionId", id.toString()).put("notation", diagram.getNotation())
+                    .put("level", diagram.getLevel()).set("layoutJson", diagram.getLayoutJson().deepCopy());
+        }
+        // Validate every selection before persisting anything. Hibernate's
+        // configured JDBC batch_size/order_inserts can batch these UUID inserts.
+        pending.add(DiagramVersion.builder().modelVersion(model).notation("BUNDLE")
+                .level("COURSEWORK_ARTIFACTS").layoutJson(layout).build());
+        return diagrams.saveAll(pending).get(pending.size() - 1).getId();
+    }
+    @Transactional(readOnly=true)
+    public java.util.List<Revision> revisions(UUID modelId) {
+        var model = model(modelId); access.requireProjectReadAccess(model.getProject());
+        return documents.findByModelVersionIdOrderByViewKeyAscRevisionDesc(modelId).stream()
+            .map(d -> new Revision(modelId, d.getViewKey(), d.getRevision(), d.getUpdatedAt())).toList();
+    }
+    @Transactional
+    public UUID freeze(UUID modelId, String viewKey, long revision) {
+        validateKey(viewKey);
+        var model = model(modelId); access.requireProjectWriteAccess(model.getProject());
+        var document = documents.findByModelVersionIdAndViewKeyAndRevision(modelId, viewKey, revision)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Saved diagram revision not found"));
+        return diagrams.save(frozenDocument(model, document)).getId();
+    }
+
+    private static DiagramVersion frozenDocument(ModelVersion model, ArchitectureDocument document) {
+        String viewKey = document.getViewKey();
+        String type = com.mavis.common.utils.CourseworkDiagramTypes.fromView(viewKey);
+        if ("UNKNOWN".equals(type)) throw new BusinessException(ErrorCode.BAD_REQUEST, "Unknown diagram view type");
+        String notation = type.startsWith("C4_") ? "C4" : type;
+        String level = type.startsWith("C4_") ? type.substring(3) : "SAVED_DOCUMENT";
+        var layout = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode()
+            .put("diagramType", type).put("frozenDocument", true).put("documentId", document.getId().toString())
+            .put("viewId", viewKey).put("documentRevision", document.getRevision()).put("drawioXml", document.getXml());
+        return DiagramVersion.builder().modelVersion(model).notation(notation).level(level).layoutJson(layout).build();
+    }
     @Transactional(readOnly=true)
     public Document get(UUID modelId,String viewKey,Long revision) {
         validateKey(viewKey);

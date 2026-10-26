@@ -1,5 +1,7 @@
 # Machine-local environment and diagnostics
 .env.backend.local
+API_KEY
+API_KEY.txt
 .artifacts/
 
 # Generated review, document and browser QA artifacts (keep locally)

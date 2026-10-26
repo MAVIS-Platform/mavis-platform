@@ -14,6 +14,7 @@ import java.util.UUID;
 
 @Repository
 public interface SubmissionSnapshotRepository extends JpaRepository<SubmissionSnapshot, UUID> {
+    boolean existsByDiagramVersionId(UUID diagramVersionId);
     List<SubmissionSnapshot> findByAssignmentId(UUID assignmentId);
     List<SubmissionSnapshot> findByProjectId(UUID projectId);
     List<SubmissionSnapshot> findBySubmittedById(UUID submittedById);
@@ -37,6 +38,7 @@ public interface SubmissionSnapshotRepository extends JpaRepository<SubmissionSn
     @Query("SELECT s FROM SubmissionSnapshot s WHERE s.id = :id")
     Optional<SubmissionSnapshot> findWithDetailsById(@Param("id") UUID id);
 
+    // All eight paths are to-one associations: keep one row per submission; no collection fetch joins.
     @EntityGraph(attributePaths = {"assignment", "project", "submittedBy", "sourceSnapshot", "modelVersion", "diagramVersion", "evaluationRun", "runtimeSession"})
     @Query("SELECT s FROM SubmissionSnapshot s WHERE :admin = true OR s.submittedBy.id = :userId OR EXISTS (SELECT wm.id FROM WorkspaceMember wm WHERE wm.workspace = s.assignment.workspace AND wm.user.id = :userId AND wm.memberRole = 'LECTURER') ORDER BY s.submittedAt DESC")
     List<SubmissionSnapshot> findVisibleTo(@Param("userId") UUID userId, @Param("admin") boolean admin);

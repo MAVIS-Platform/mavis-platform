@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
 export const runtime = "nodejs";
 const cookieName = "mavis_session";
 const allowed =
-  /^(auth\/login|projects(?:\/[a-f0-9-]+)?|analyzer\/(?:upload|import\/github|snapshots\/[a-f0-9-]+\/analyze|jobs\/[a-f0-9-]+(?:\/cancel)?|projects\/[a-f0-9-]+\/models|models\/[a-f0-9-]+(?:\/(?:graph|impact|diagrams))?|evidences\/(?:element|relationship)\/[a-f0-9-]+|ai\/explain|diagrams\/[a-f0-9-]+\/export))$/;
+  /^(assignments\/[a-f0-9-]+\/reference-source|auth\/login|projects(?:\/[a-f0-9-]+)?|analyzer\/(?:upload|import\/github|snapshots\/[a-f0-9-]+\/analyze|jobs\/[a-f0-9-]+(?:\/cancel)?|projects\/[a-f0-9-]+\/models|models\/[a-f0-9-]+(?:\/(?:graph|impact|diagrams))?|evidences\/(?:element|relationship)\/[a-f0-9-]+|ai\/explain|diagrams\/[a-f0-9-]+\/export))$/;
 async function handler(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const path = (await context.params).path.join("/");
   const jar = await cookies();
@@ -109,6 +109,7 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
       headers: {
         "Content-Type": upstream.headers.get("content-type") ?? "application/json",
         "Cache-Control": "no-store",
+        ...(upstream.headers.get("content-disposition") ? { "Content-Disposition": upstream.headers.get("content-disposition")! } : {}),
       },
     });
     if (upstream.status === 401) response.cookies.delete(cookieName);

@@ -40,6 +40,8 @@ const {
   createDesignedCopyFromObserved,
   readScenarioDesign,
   scenarioXml,
+  detectSequenceFlows,
+  buildAutoSequenceInteraction,
 } = require("../src/features/architecture/scenario-design.ts");
 
 const {
@@ -49,6 +51,50 @@ const {
 } = require("../src/features/architecture/three-e-content.ts");
 
 const { runtimeSequence } = require("../src/lib/api/java-operations.ts");
+
+test("Auto sequence nests repository calls before parent returns and groups independent entrypoints", () => {
+  const element = (id, name, type = "COMPONENT", parentId = "svc") => ({ id, name, elementType: type, parentId, evidence: [], properties: {} });
+  const model = { id: "nested", snapshotId: "snapshot", elements: [element("svc", "order-service", "SERVICE_CONTAINER", null), element("controller", "OrderController"), element("application", "OrderService"), element("repo", "OrderRepository")], edges: [] };
+  const steps = [{ fromElementId: "controller", toElementId: "application", label: "createOrder()", messageSort: "SYNCH_CALL", sourceRelationshipIds: ["call"], evidenceIds: [] },
+    { fromElementId: "application", toElementId: "repo", label: "save(order)", messageSort: "SYNCH_CALL", sourceRelationshipIds: ["save"], evidenceIds: [] }];
+  const flow = { flowId: "micro:one", viewId: "micro:one", title: "Create", description: "", level: "MICRO", serviceId: "svc", serviceName: "order-service", steps, participantElementIds: ["controller", "application", "repo"] };
+  const doc = buildAutoSequenceInteraction(model, flow, { hasAlt: false, hasLoop: false, hasOpt: false });
+  const call = doc.messages.find(m => m.sourceRelationshipIds.includes("call"));
+  const save = doc.messages.find(m => m.sourceRelationshipIds.includes("save"));
+  const reply = doc.messages.find(m => m.replyToMessageId === call.messageId);
+  assert.ok(doc.messages.indexOf(save) < doc.messages.indexOf(reply), "Repository work must precede OrderService return");
+  const activation = doc.executions.find(e => e.participantId === "part:application" && e.startMessageId === call.messageId);
+  assert.ok(activation);
+  assert.equal(activation.endMessageId, reply.messageId);
+  const grouped = buildAutoSequenceInteraction(model, { ...flow, flowId: "micro:all", viewId: "micro:all", entryFlows: [flow, { ...flow, title: "Cancel" }] });
+  assert.equal(grouped.fragments.length, 2);
+  assert.equal(grouped.messages.filter(m => m.endpointKind === "FOUND").length, 2);
+  assert.equal(new Set(grouped.messages.map(m => m.messageId)).size, grouped.messages.length);
+  for (const fragment of grouped.fragments) {
+    const ids = new Set(fragment.operands[0].messageIds);
+    const first = grouped.messages.find(m => ids.has(m.messageId));
+    assert.equal(first.endpointKind, "FOUND");
+  }
+});
+
+test("Macro sequence completes explicit service-to-channel subscription delivery without synchronous returns", () => {
+  const element = (id, type) => ({ id, name: id, elementType: type, parentId: null, properties: {}, evidence: [] });
+  const edge = (id, from, to, protocol) => ({ id, from, to, protocol, uncertain: false, originLayer: "STATIC", evidence: [] });
+  const model = { id: "messaging", snapshotId: "s", elements: [element("order", "SERVICE_CONTAINER"), element("consumer", "SERVICE_CONTAINER"), element("commands", "MESSAGE_CHANNEL"), element("db", "DATABASE")],
+    edges: [edge("publish", "order", "commands", "MESSAGE_PUBLISH"), edge("subscribe", "consumer", "commands", "MESSAGE_SUBSCRIBE"), edge("persist", "consumer", "db", "DATABASE_ACCESS")] };
+  const flows = detectSequenceFlows(model, { level: "MACRO", serviceId: "order" });
+  const flow = flows.find(f => f.serviceId === "order");
+  assert.ok(flow.steps.some(s => s.fromElementId === "commands" && s.toElementId === "consumer"));
+  assert.ok(flow.steps.some(s => s.fromElementId === "consumer" && s.toElementId === "db"));
+  const doc = buildAutoSequenceInteraction(model, flow);
+  for (const msg of doc.messages.filter(m => m.fromParticipantId === "part:commands" || m.toParticipantId === "part:commands")) {
+    assert.equal(msg.messageSort, "ASYNCH_SIGNAL", JSON.stringify({ msg, participants: doc.participants.map(p => ({ id: p.participantId, type: p.elementType })) }));
+    assert.ok(!doc.messages.some(r => r.replyToMessageId === msg.messageId));
+  }
+  const ids = doc.participants.map(p => p.modelElementId);
+  assert.ok(ids.indexOf("commands") < ids.indexOf("consumer"));
+  assert.ok(ids.indexOf("consumer") < ids.indexOf("db"));
+});
 
 function createM3ReferenceModel() {
   return {
@@ -761,7 +807,7 @@ test("Fixture 7 (3E Scope Isolation): canonical element/relationship resolution,
   assert.equal(group3E.isGroup, true);
   assert.equal(group3E.canExplain, false);
   assert.equal(group3E.evidenceQueryParam, null);
-  assert.throws(() => group3E.buildExplainRequest(), /quan hệ gộp/);
+  assert.throws(() => group3E.buildExplainRequest(), /aggregated relationship mode/);
 
   // Drill down into edges[1].id -> unlocks evidence & AI explain for edges[1].id
   const drilled3E = buildThreeESubjectContext({
@@ -1295,4 +1341,262 @@ test("Reviewer Repro R4: Collision-free occurrence & execution ID allocation acr
   assert.ok(extractedDeletedFixture);
   assert.ok(extractedDeletedFixture.roundTripConflicts.length >= 1);
 });
+
+test("detectSequenceFlows and buildAutoSequenceInteraction generate complete MACRO and MICRO sequence diagrams", () => {
+  const baseModel = createM3ReferenceModel();
+  const richModel = {
+    ...baseModel,
+    elements: [
+      ...baseModel.elements,
+      {
+        id: "comp-ctrl-1",
+        name: "OrderController",
+        parentId: "aaaa0002-0000-4000-8000-000000000002",
+        layer: "domain",
+        elementType: "COMPONENT",
+        description: "Controller",
+        evidence: [],
+      },
+      {
+        id: "comp-svc-1",
+        name: "OrderApplicationService",
+        parentId: "aaaa0002-0000-4000-8000-000000000002",
+        layer: "domain",
+        elementType: "COMPONENT",
+        description: "Service",
+        evidence: [],
+      },
+      {
+        id: "comp-repo-1",
+        name: "OrderRepository",
+        parentId: "aaaa0002-0000-4000-8000-000000000002",
+        layer: "domain",
+        elementType: "COMPONENT",
+        description: "Repo",
+        evidence: [],
+      },
+    ],
+    edges: [
+      ...baseModel.edges,
+      {
+        id: "edge-micro-1",
+        from: "comp-ctrl-1",
+        to: "comp-svc-1",
+        protocol: "CODE_DEPENDENCY",
+        originLayer: "STATIC",
+        uncertain: false,
+        evidence: [],
+      },
+      {
+        id: "edge-micro-2",
+        from: "comp-svc-1",
+        to: "comp-repo-1",
+        protocol: "CODE_DEPENDENCY",
+        originLayer: "STATIC",
+        uncertain: false,
+        evidence: [],
+      },
+    ],
+  };
+
+  const macroFlows = detectSequenceFlows(richModel, { level: "MACRO" });
+  assert.ok(macroFlows.length >= 2);
+  const topMacroDoc = buildAutoSequenceInteraction(richModel, macroFlows[0]);
+  assert.equal(topMacroDoc.semanticStatus, "COMPLETE");
+  assert.ok(topMacroDoc.messages.length >= 4);
+  assert.equal(topMacroDoc.messages[0].fromParticipantId, "__FOUND__");
+  assert.ok(topMacroDoc.messages.some((m) => m.messageSort === "REPLY"));
+  assert.ok(topMacroDoc.executions.length >= 2);
+  assert.ok(topMacroDoc.fragments.some((f) => f.operator === "alt"));
+  assert.ok(!topMacroDoc.fragments.some((f) => f.operator === "loop"), "Normal flows without loop evidence in src must not hardcode loop");
+  const macroVal = validateInteractionDocument(topMacroDoc, richModel);
+  assert.equal(macroVal.valid, true);
+  assert.equal(macroVal.semanticStatus, "COMPLETE");
+  const macroXml = interactionToDrawioXml(topMacroDoc, richModel);
+  assert.ok(macroXml.includes("mavisInteraction="));
+  assert.ok(macroXml.includes('mavisAutoSeqVersion="5"'));
+  assert.ok(macroXml.includes('mavisRole="sd-frame"'));
+  assert.ok(macroXml.includes("labelBackgroundColor=none;"));
+  assert.ok(!macroXml.includes("labelBackgroundColor=#ffffff"));
+  assert.ok(macroXml.includes('mavisRole="found-message-origin"'));
+  assert.ok(macroXml.includes('mavisOperator="alt"'));
+  const roundTripMacro = extractInteractionFromDrawioXml(macroXml, richModel);
+  assert.ok(roundTripMacro);
+  assert.equal(roundTripMacro.roundTripConflicts.length, 0);
+
+  const microFlows = detectSequenceFlows(richModel, {
+    level: "MICRO",
+    serviceId: "aaaa0002-0000-4000-8000-000000000002",
+  });
+  assert.ok(microFlows.length >= 1);
+  const topMicroDoc = buildAutoSequenceInteraction(richModel, microFlows[0]);
+  assert.equal(topMicroDoc.semanticStatus, "COMPLETE");
+  assert.equal(topMicroDoc.messages[0].fromParticipantId, "__FOUND__");
+  assert.ok(topMicroDoc.messages.some((m) => m.label.includes("OrderApplicationService")));
+  assert.ok(topMicroDoc.messages.some((m) => m.label.includes("OrderRepository")));
+  assert.ok(topMicroDoc.fragments.some((f) => f.operator === "alt"));
+
+  // Verify no two ExecutionSpecifications on the same participant & nestingLevel overlap
+  const msgOrdById = new Map(topMicroDoc.messages.map((m, idx) => [m.messageId, idx]));
+  for (let i = 0; i < topMicroDoc.executions.length; i++) {
+    for (let j = i + 1; j < topMicroDoc.executions.length; j++) {
+      const a = topMicroDoc.executions[i];
+      const b = topMicroDoc.executions[j];
+      if (a.participantId === b.participantId && a.nestingLevel === b.nestingLevel) {
+        const aStart = msgOrdById.get(a.startMessageId);
+        const aEnd = msgOrdById.get(a.endMessageId);
+        const bStart = msgOrdById.get(b.startMessageId);
+        const bEnd = msgOrdById.get(b.endMessageId);
+        assert.ok(aEnd < bStart || bEnd < aStart, "Execution bars on the same lifeline and nestingLevel must never overlap");
+      }
+    }
+  }
+});
+
+test("buildContextDiagramDrawioXml generates standard C4 Level 1 System Context diagram (N-C1-01, N-C1-02, M-C1-03)", () => {
+  const { buildContextDiagramDrawioXml } = require("../src/features/architecture/diagram-projections.ts");
+  const baseModel = createM3ReferenceModel();
+  const modelWithDbAndExt = {
+    ...baseModel,
+    elements: [
+      ...baseModel.elements,
+      {
+        id: "db-internal-1",
+        name: "mysql",
+        layer: "data",
+        elementType: "DATABASE",
+        description: "Internal MySQL",
+        evidence: [],
+      },
+      {
+        id: "ext-stripe-1",
+        name: "Stripe Payment Gateway",
+        layer: "external",
+        elementType: "EXTERNAL_SYSTEM",
+        description: "External payment processor",
+        evidence: [],
+      },
+    ],
+    edges: [
+      ...baseModel.edges,
+      {
+        id: "edge-ext-1",
+        from: "aaaa0003-0000-4000-8000-000000000003",
+        to: "ext-stripe-1",
+        protocol: "SERVICE_HTTP_CALL",
+        originLayer: "SOURCE",
+        resolutionStatus: "RESOLVED",
+        evidenceCount: 1,
+        evidence: [],
+      },
+    ],
+  };
+
+  const xml = buildContextDiagramDrawioXml(modelWithDbAndExt, "Test1");
+
+  assert.match(xml, /mavisC4Context="4"/);
+  assert.match(xml, /System Context diagram for Test1/);
+  assert.match(xml, /mavisRole="SYSTEM"[^>]*style="rounded=1;/);
+  assert.match(xml, /\[Software System\]/);
+  assert.match(xml, /mavisRole="PERSON"[^>]*style="rounded=1;/);
+  assert.match(xml, /\[Person\]/);
+  assert.match(xml, /mavisRole="EXTERNAL_SYSTEM"[^>]*mavisName="Stripe Payment Gateway"/);
+  assert.match(xml, /id="person_edge_0"/);
+  assert.match(xml, /id="external_edge_0"/);
+  assert.match(xml, /mavisRole="legend"/);
+  // N-C1-02: Internal database (mysql) and message channels must NOT leak onto C1
+  assert.doesNotMatch(xml, /mavisName="mysql"/);
+  assert.doesNotMatch(xml, /Apache Kafka Broker/);
+});
+
+test("compressCodeToAstSkeleton strips comments/imports/boilerplate and buildAutoSequenceInteraction applies AI stepLabels/stepReturns", () => {
+  const {
+    compressCodeToAstSkeleton,
+    buildFlowCompactContext,
+    detectSequenceFlows,
+    buildAutoSequenceInteraction,
+  } = require("../src/features/architecture/scenario-design.ts");
+
+  const rawJava = `
+    package io.eventuate.examples.tram.sagas.ordersandcustomers.orders;
+    import org.springframework.web.bind.annotation.*;
+    import java.util.List;
+    /**
+     * Verbose Javadoc comment that wastes tokens
+     */
+    @RestController
+    public class OrderController {
+      // Single line comment
+      public String getUnusedBoilerplate() {
+        return "unused";
+      }
+      @PostMapping("/orders")
+      public CreateOrderResponse createOrder(OrderDetails details) {
+        if (details.getOrderTotal().isGreaterThan(0)) {
+          Order order = this.orderService.createOrder(details);
+          return new CreateOrderResponse(order.getId());
+        } else {
+          throw new IllegalArgumentException("invalid total");
+        }
+      }
+    }
+  `;
+
+  const skeleton = compressCodeToAstSkeleton(rawJava);
+  assert.doesNotMatch(skeleton, /import\s+org\.springframework/);
+  assert.doesNotMatch(skeleton, /Verbose Javadoc/);
+  assert.match(skeleton, /@RestController/);
+  assert.match(skeleton, /if \(details\.getOrderTotal\(\)\.isGreaterThan\(0\)\)/);
+  assert.match(skeleton, /this\.orderService\.createOrder\(details\)/);
+  assert.ok(skeleton.length < rawJava.length * 0.65, "AST skeleton should significantly reduce token size");
+
+  const model = createM3ReferenceModel();
+  const flows = detectSequenceFlows(model, { level: "MACRO" });
+  assert.match(flows[0].title, /Main Flow · Order Placement/);
+  const compact = buildFlowCompactContext(model, flows[0]);
+  assert.match(compact.contextHash, /^mavis-seq-[0-9a-f]+$/);
+  assert.ok(compact.steps.length >= 2);
+
+  const enrichedDoc = buildAutoSequenceInteraction(model, flows[0], {
+    flowTitle: "Main Flow · Order Placement & Payment (AI Named)",
+    altGuard: "creditLimit >= orderTotal",
+    altElseLabel: "rejectOrder(INSUFFICIENT_CREDIT)",
+    stepLabels: { 0: "createOrder(orderDetails)" },
+    stepReturns: { 0: "return orderPending" },
+  });
+  assert.equal(enrichedDoc.name, "Main Flow · Order Placement & Payment (AI Named)");
+  assert.ok(enrichedDoc.messages.some((m) => m.label === "createOrder(orderDetails)"));
+  assert.ok(
+    enrichedDoc.fragments.some(
+      (f) => f.operator === "alt" && f.operands[0]?.guard === "creditLimit >= orderTotal",
+    ),
+  );
+
+  const {
+    buildC4CompactContext,
+    applyC4AiEnrichmentToDocument,
+    buildContextDiagramDrawioXml,
+  } = require("../src/features/architecture/diagram-projections.ts");
+  const { selectDiagram } = require("../src/features/architecture/diagram-catalog.ts");
+
+  const c4Ctx = buildC4CompactContext(model, "CONTAINER", undefined, "OrderSystem");
+  assert.match(c4Ctx.contextHash, /^mavis-c4-container-[0-9a-f]+$/);
+
+  const baseContainerSel = selectDiagram(model, "CONTAINER");
+  const firstNodeId = baseContainerSel.document.layoutJson.nodes[0].id;
+  const enrichedContainerDoc = applyC4AiEnrichmentToDocument(baseContainerSel.document, {
+    nodeDescriptions: { [firstNodeId]: "API gateway routing client HTTP requests" },
+  });
+  assert.equal(
+    enrichedContainerDoc.layoutJson.nodes.find((n) => n.id === firstNodeId).description,
+    "API gateway routing client HTTP requests",
+  );
+
+  const enrichedContextXml = buildContextDiagramDrawioXml(model, "OrderSystem", "clean", {
+    systemDescription: "Distributed order and payment processing platform.",
+  });
+  assert.match(enrichedContextXml, /Distributed order and payment processing platform\./);
+});
+
+
 
