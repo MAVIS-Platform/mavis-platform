@@ -38,6 +38,14 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AssignmentServiceImplTest {
+    @Test void acceptsTheNineCurrentDiagramViewsAndGraphAsSeparateRequirements() {
+        var types=List.of("C4_CONTEXT","C4_CONTAINER","C4_COMPONENT","UML_CLASS","UML_SEQUENCE","UML_PACKAGE","UML_DEPLOYMENT","UML_ACTIVITY","UML_STATE","DEPENDENCY_GRAPH");
+        when(workspaceRepository.findWithCreatorById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(assignmentRepository.save(any(Assignment.class))).thenAnswer(call->{Assignment a=call.getArgument(0);a.setId(UUID.randomUUID());return a;});
+        var result=assignmentService.createAssignment(workspaceId,AssignmentCreateRequest.builder().title("Exact diagram catalog").requiredDiagramTypes(types).build());
+        assertThat(result.getRequiredDiagramTypes()).containsExactlyElementsOf(types);
+    }
 
     @Mock
     private AssignmentRepository assignmentRepository;
@@ -56,6 +64,9 @@ class AssignmentServiceImplTest {
 
     @Mock
     private com.mavis.common.security.AccessPolicyService accessPolicyService;
+
+    @Mock private com.mavis.common.repository.ModelVersionRepository modelVersionRepository;
+    @Mock private com.mavis.common.repository.SourceSnapshotRepository sourceSnapshotRepository;
 
     @Spy
     private ObjectMapper objectMapper = new ObjectMapper();
@@ -301,5 +312,48 @@ class AssignmentServiceImplTest {
                 .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.BAD_REQUEST);
 
         verify(assignmentRepository, never()).delete(any());
+    }
+
+    @Test void pinsExactSourceVersionAndPublishesItWithTheAssignment() {
+        var project = com.mavis.common.entity.Project.builder().id(UUID.randomUUID()).name("Teaching source")
+                .workspace(workspace).isReferenceTemplate(true).build();
+        var snapshot = com.mavis.common.entity.SourceSnapshot.builder().id(UUID.randomUUID()).project(project)
+                .sourceType("ZIP_UPLOAD").artifactHash("archive-digest").build();
+        var model = com.mavis.common.entity.ModelVersion.builder().id(UUID.randomUUID()).project(project)
+                .sourceSnapshot(snapshot).revision(7).isLatestValid(false).build();
+        when(modelVersionRepository.findById(model.getId())).thenReturn(Optional.of(model));
+        when(workspaceRepository.findWithCreatorById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(assignmentRepository.save(any(Assignment.class))).thenAnswer(call -> call.getArgument(0));
+        var result = assignmentService.createAssignment(workspaceId, AssignmentCreateRequest.builder()
+                .title("Versioned assignment").referenceModelId(model.getId()).build());
+        assertThat(result.getReferenceSource()).containsEntry("modelId", model.getId())
+                .containsEntry("snapshotId", snapshot.getId()).containsEntry("revision", 7);
+        assertThat(snapshot.getIsPublished()).isTrue();
+        verify(sourceSnapshotRepository).save(snapshot);
+    }
+
+    @Test void rejectsReferenceFromAnotherWorkspace() {
+        var assignment = Assignment.builder().id(UUID.randomUUID()).workspace(workspace).title("Task").build();
+        var project = com.mavis.common.entity.Project.builder().id(UUID.randomUUID()).name("Other source")
+                .workspace(Workspace.builder().id(UUID.randomUUID()).build()).isReferenceTemplate(true).build();
+        var model = com.mavis.common.entity.ModelVersion.builder().id(UUID.randomUUID()).project(project)
+                .sourceSnapshot(com.mavis.common.entity.SourceSnapshot.builder().project(project).build()).build();
+        when(assignmentRepository.findWithDetailsById(assignment.getId())).thenReturn(Optional.of(assignment));
+        when(modelVersionRepository.findById(model.getId())).thenReturn(Optional.of(model));
+        assertThatThrownBy(() -> assignmentService.updateAssignment(assignment.getId(), AssignmentUpdateRequest.builder()
+                .title("Task").referenceModelId(model.getId()).build())).isInstanceOf(BusinessException.class);
+        verify(assignmentRepository, never()).save(any());
+        verify(sourceSnapshotRepository, never()).save(any());
+    }
+
+    @Test void clearingReferenceIsExplicitAndOldClientsPreserveThePinnedVersion() {
+        var model = com.mavis.common.entity.ModelVersion.builder().id(UUID.randomUUID()).build();
+        var assignment = Assignment.builder().id(UUID.randomUUID()).workspace(workspace).title("Task").referenceModel(model).build();
+        when(assignmentRepository.findWithDetailsById(assignment.getId())).thenReturn(Optional.of(assignment));
+        when(assignmentRepository.save(any(Assignment.class))).thenAnswer(call -> call.getArgument(0));
+        assignmentService.updateAssignment(assignment.getId(), AssignmentUpdateRequest.builder().title("Task").clearReferenceSource(true).build());
+        assertThat(assignment.getReferenceModel()).isNull();
+        verifyNoInteractions(modelVersionRepository);
     }
 }

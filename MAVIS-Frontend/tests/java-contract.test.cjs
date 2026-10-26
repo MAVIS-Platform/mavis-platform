@@ -373,3 +373,13 @@ test("elementEvidenceContext fallback hydrates incident relationship evidence wh
  assert.equal(explained.aiModelName,"gemini-2.5-flash");
 });
 
+
+
+test("assignment source pins survive the Java adapter without replacing exact model versions", async t => {
+ environment(t); const referenceSource={projectId:project,projectName:"Generic teaching source",snapshotId:snapshot,modelId:model,revision:4,sourceType:"ZIP_UPLOAD",artifactHash:"sha256-archive",branch:null,commitSha:null,repositoryUrl:null};
+ let posted;
+ t.mock.method(globalThis,"fetch",async(url,options={})=>{posted=JSON.parse(options.body);return Response.json({code:200,data:{id:node,workspaceId:job,title:"Pinned source",description:"Task",dueAt:null,referenceSource}});});
+ const result=await executeJava("createAssignment",{workspaceId:job,title:"Pinned source",description:"Task",dueAt:null,requiredDiagramTypes:["UML_CLASS"],requireRuntimeTrace:false,referenceModelId:model},"jwt",new AbortController().signal);
+ assert.equal(posted.referenceModelId,model);
+ assert.deepEqual(validateResponse("createAssignment",{workspaceId:job,title:"Pinned source",dueAt:null,requiredDiagramTypes:["UML_CLASS"],requireRuntimeTrace:false,referenceModelId:model},result).referenceSource,referenceSource);
+});

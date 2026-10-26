@@ -72,6 +72,20 @@ function activityWorkflowFixture() {
     edges: [{ id: "call", from: "order-service", to: "consumer-service", protocol: "HTTP", uncertain: false, evidence: [] }] };
 }
 
+test("Assignment requirements expose exactly the nine sidebar diagrams plus Graph and distinguish C4 levels", () => {
+  const {COURSEWORK_DIAGRAM_TYPES,normalizeDiagramRequirements,diagramTypeLabel}=require("../src/lib/architecture/coursework-diagram-types.ts");
+  const {artifactNotation,missingDiagramRequirements}=require("../src/features/submissions/submission-readiness.ts");
+  assert.equal(COURSEWORK_DIAGRAM_TYPES.length,10);
+  assert.deepEqual(new Set(COURSEWORK_DIAGRAM_TYPES.map(t=>t.id)),new Set([...canonicalNineDiagramCatalog.map(t=>t.id),"DEPENDENCY_GRAPH"]));
+  assert.ok(!COURSEWORK_DIAGRAM_TYPES.some(t=>["C4","VIEW_4_PLUS_1","BUNDLE"].includes(t.id)));
+  for(const [view,type] of [["context","C4_CONTEXT"],["container","C4_CONTAINER"],["containers","C4_CONTAINER"],["component:service-id","C4_COMPONENT"],["c4-context","C4_CONTEXT"],["uml-class:service","UML_CLASS"],["scenarios:auto:macro:service","UML_SEQUENCE"],["graph","DEPENDENCY_GRAPH"]])assert.equal(artifactNotation(view),type);
+  assert.deepEqual(missingDiagramRequirements(["C4_CONTEXT","C4_CONTAINER","C4_COMPONENT"],{documents:[{viewId:"container",revision:1}],diagramVersionIds:[]},[]),["C4_CONTEXT","C4_COMPONENT"]);
+  assert.deepEqual(missingDiagramRequirements(["C4_COMPONENT"],{documents:[],diagramVersionIds:["container"]},[{id:"container",notation:"C4",level:"CONTAINER"}]),["C4_COMPONENT"]);
+  assert.deepEqual(missingDiagramRequirements(["C4_COMPONENT"],{documents:[],diagramVersionIds:["component"]},[{id:"component",notation:"C4",level:"COMPONENT"}]),[]);
+  assert.deepEqual(new Set(normalizeDiagramRequirements(["C4","VIEW_4_PLUS_1","UML_CLASS"])),new Set(["C4_CONTEXT","C4_CONTAINER","C4_COMPONENT","UML_CLASS"]));
+  assert.equal(diagramTypeLabel("DEPENDENCY_GRAPH"),"Graph");
+});
+
 test("Class semantics use lifecycle evidence for diamonds and keep domain models while hiding only isolated plumbing", () => {
   const cls = (id, extra = {}, members = []) => ({ id, name: id, parentId: "svc", elementType: "CLASS_INTERFACE", evidence: [], properties: { umlClassifier: {
     name: id, qualifiedName: "sample.fulfillment." + id, packageName: "sample.fulfillment", typeKind: "CLASS", members, extractionCompleteness: "COMPLETE", ...extra,

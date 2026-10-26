@@ -49,9 +49,9 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
       {create.data && (
         <Link
           className="text-sm text-primary underline"
-          href={`/import?project=${encodeURIComponent(create.data.id)}&workspace=${encodeURIComponent(workspaceId)}`}
+          href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}
         >
-          Import and analyze reference source
+          Set up assignment source (GitHub, ZIP & versions)
         </Link>
       )}
       <SelectField

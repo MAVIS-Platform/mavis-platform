@@ -22,10 +22,10 @@ public interface AssignmentRepository extends JpaRepository<Assignment, UUID> {
     @Query("SELECT a.workspace.id, COUNT(a.id) FROM Assignment a WHERE a.workspace.id IN :workspaceIds GROUP BY a.workspace.id")
     List<Object[]> countAssignmentsByWorkspaceIds(@Param("workspaceIds") Collection<UUID> workspaceIds);
 
-    @EntityGraph(attributePaths = {"workspace", "createdBy"})
+    @EntityGraph(attributePaths = {"workspace", "createdBy", "referenceModel.sourceSnapshot.project"})
     List<Assignment> findByWorkspaceIdOrderByCreatedAtDesc(UUID workspaceId);
 
-    @EntityGraph(attributePaths = {"workspace", "createdBy"})
+    @EntityGraph(attributePaths = {"workspace", "createdBy", "referenceModel.sourceSnapshot.project"})
     Optional<Assignment> findWithDetailsById(UUID id);
 }
 

@@ -1,6 +1,11 @@
 "use client";
 import { useState } from "react";
 import { useApiQuery } from "@/hooks/use-api";
+import {
+  COURSEWORK_DIAGRAM_TYPES,
+  diagramTypeLabel,
+  projectionDiagramType,
+} from "@/lib/architecture/coursework-diagram-types";
 import { RequestState } from "@/components/shared/request-state";
 export type ArtifactSelection = {
   documents: Array<{ viewId: string; revision: number }>;
@@ -86,7 +91,11 @@ export function ArtifactSelector({
         <RequestState query={generated}>
           <div className="mt-3 space-y-2">
             {generated.data
-              ?.filter((d) => d.notation !== "BUNDLE")
+              ?.filter((d) =>
+                COURSEWORK_DIAGRAM_TYPES.some(
+                  (type) => type.id === projectionDiagramType(d.notation, d.level),
+                ),
+              )
               .map((d) => (
                 <label key={d.id} className="flex items-start gap-2 text-sm">
                   <input
@@ -102,7 +111,7 @@ export function ArtifactSelector({
                     }
                   />
                   <span>
-                    {d.notation} · {d.level}
+                    {diagramTypeLabel(projectionDiagramType(d.notation, d.level))}
                     <span className="block break-all text-xs text-muted-foreground">{d.id}</span>
                   </span>
                 </label>

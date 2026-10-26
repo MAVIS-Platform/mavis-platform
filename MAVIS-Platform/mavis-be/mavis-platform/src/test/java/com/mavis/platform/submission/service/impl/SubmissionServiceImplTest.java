@@ -28,6 +28,18 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class SubmissionServiceImplTest {
+    @Test void c4ContainerDoesNotSatisfyAComponentRequirement() {
+        assignment.setRequiredDiagramTypes(objectMapper.createArrayNode().add("C4_COMPONENT"));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        diagramVersion.setNotation("C4");diagramVersion.setLevel("CONTAINER");
+        var request=SubmissionCreateRequest.builder().assignmentId(assignmentId).projectId(projectId).modelVersionId(modelVersionId).diagramVersionId(diagramVersionId).build();
+        assertThatThrownBy(()->submissionService.submitAssignment(request)).isInstanceOf(BusinessException.class).hasMessageContaining("C4_COMPONENT");
+        diagramVersion.setNotation("BUNDLE");diagramVersion.setLevel("COURSEWORK_ARTIFACTS");
+        var layout=objectMapper.createObjectNode();var artifact=layout.putArray("artifacts").addObject().put("notation","C4").put("level","COMPONENT");artifact.putObject("layoutJson").put("viewId","component:service");diagramVersion.setLayoutJson(layout);
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call->{SubmissionSnapshot value=call.getArgument(0);value.setId(UUID.randomUUID());return value;});
+        assertThat(submissionService.submitAssignment(request).getDiagramVersionId()).isEqualTo(diagramVersionId);
+    }
     @Test void submissionResponseIncludesCreationTimeOnlyAvailableAfterDatabaseFlush() {
         when(userRepository.findById(userId)).thenReturn(Optional.of(student));
         when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));

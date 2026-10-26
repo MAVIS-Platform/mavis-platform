@@ -1,4 +1,7 @@
 "use client";
+import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
+import { useSearchParams } from "next/navigation";
+import { AssignmentSourceDetails } from "./source-picker";
 import { useState } from "react";
 import { useApiQuery, useApiMutation, usePermission, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
@@ -12,7 +15,8 @@ import Link from "next/link";
 export function Assignments() {
   const { workspaceId } = useSelection();
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
-  const [assignmentId, setAssignmentId] = useState("");
+  const params = useSearchParams();
+  const [assignmentId, setAssignmentId] = useState(params.get("assignment") ?? "");
   const assignment = query.data?.find((a) => a.id === assignmentId) ?? query.data?.[0];
   const canSubmit = usePermission("submission:create");
   const canManage = usePermission("workspace:manage");
@@ -45,6 +49,10 @@ export function Assignments() {
             <DetailPanel title={assignment.title}>
               <p className="text-sm text-muted-foreground">{assignment.instructions}</p>
               <p className="text-xs text-muted-foreground">Due {assignment.dueAt}</p>
+              <AssignmentSourceDetails
+                source={assignment.referenceSource}
+                assignmentId={assignment.id}
+              />
               {canManage && (
                 <Link
                   className="text-sm text-primary underline"
@@ -57,7 +65,7 @@ export function Assignments() {
                 <>
                   <details>
                     <summary className="cursor-pointer text-sm text-primary">
-                      Edit assignment requirements
+                      Edit assignment & reference source
                     </summary>
                     <CreateAssignment
                       key={assignment.id}
@@ -84,8 +92,9 @@ export function Assignments() {
               )}
               <p className="text-xs text-muted-foreground">
                 Required diagrams:{" "}
-                {assignment.requiredDiagramTypes?.join(", ") || "Any saved diagram"} · Runtime
-                trace: {assignment.requireRuntimeTrace ? "Required" : "Optional"}
+                {assignment.requiredDiagramTypes?.map(diagramTypeLabel).join(", ") ||
+                  "Any saved diagram"}{" "}
+                · Runtime trace: {assignment.requireRuntimeTrace ? "Required" : "Optional"}
               </p>
             </DetailPanel>
             {canSubmit && (

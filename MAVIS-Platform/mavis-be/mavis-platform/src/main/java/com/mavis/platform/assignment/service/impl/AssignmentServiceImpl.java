@@ -32,11 +32,16 @@ import java.util.*;
 @Transactional(rollbackFor = Exception.class)
 public class AssignmentServiceImpl implements AssignmentService {
 
+    @org.springframework.beans.factory.annotation.Value("${mavis.storage.upload-dir:C:/mavis/uploads/}")
+    private String uploadDir;
+
     private final AssignmentRepository assignmentRepository;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final SubmissionSnapshotRepository submissionSnapshotRepository;
     private final UserRepository userRepository;
+    private final com.mavis.common.repository.ModelVersionRepository modelVersionRepository;
+    private final com.mavis.common.repository.SourceSnapshotRepository sourceSnapshotRepository;
     private final ObjectMapper objectMapper;
     private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
@@ -82,6 +87,7 @@ public class AssignmentServiceImpl implements AssignmentService {
                 .updatedAt(now)
                 .build();
 
+        setReference(assignment, request.getReferenceModelId(), request.getClearReferenceSource());
         assignment = assignmentRepository.save(assignment);
         log.info("Assignment created: id={}, title={}, workspaceId={}", assignment.getId(), assignment.getTitle(), workspaceId);
 
@@ -159,6 +165,7 @@ public class AssignmentServiceImpl implements AssignmentService {
         }
 
         assignment.setUpdatedAt(OffsetDateTime.now());
+        setReference(assignment, request.getReferenceModelId(), request.getClearReferenceSource());
         assignment = assignmentRepository.save(assignment);
         log.info("Assignment updated: id={}", assignmentId);
 
@@ -182,6 +189,62 @@ public class AssignmentServiceImpl implements AssignmentService {
         log.info("Deleted assignment {} from workspace {}", assignmentId, assignment.getWorkspace().getId());
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public org.springframework.core.io.Resource downloadReferenceSource(UUID assignmentId) {
+        var assignment = assignmentRepository.findWithDetailsById(assignmentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Assignment not found"));
+        accessPolicyService.requireWorkspaceMember(assignment.getWorkspace().getId());
+        if (assignment.getReferenceModel() == null) throw new BusinessException(ErrorCode.NOT_FOUND, "No reference source attached");
+        var snapshot = assignment.getReferenceModel().getSourceSnapshot();
+        try {
+            var root = java.nio.file.Path.of(uploadDir).toRealPath();
+            var path = java.nio.file.Path.of(snapshot.getStoragePath()).toRealPath();
+            if (!path.startsWith(root) || !java.nio.file.Files.isRegularFile(path)) throw new java.io.IOException();
+            return new org.springframework.core.io.FileSystemResource(path);
+        } catch (java.io.IOException | IllegalArgumentException | NullPointerException error) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "Reference archive is unavailable");
+        }
+    }
+
+    private void setReference(Assignment assignment, UUID modelId, Boolean clear) {
+        if (Boolean.TRUE.equals(clear)) {
+            if (modelId != null) throw new BusinessException(ErrorCode.BAD_REQUEST, "Cannot clear and select source together");
+            assignment.setReferenceModel(null);
+            return;
+        }
+        if (modelId == null) return;
+        var model = modelVersionRepository.findById(modelId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Reference version not found"));
+        var snapshot = model.getSourceSnapshot();
+        var project = snapshot.getProject();
+        if (project.getWorkspace() == null || !assignment.getWorkspace().getId().equals(project.getWorkspace().getId())
+                || !Boolean.TRUE.equals(project.getIsReferenceTemplate()) || !project.getId().equals(model.getProject().getId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Choose a teaching reference from this workspace");
+        }
+        snapshot.setIsPublished(true);
+        sourceSnapshotRepository.save(snapshot);
+        assignment.setReferenceModel(model);
+    }
+
+    private Map<String, Object> referenceDetails(Assignment assignment) {
+        var model = assignment.getReferenceModel();
+        if (model == null) return null;
+        var snapshot = model.getSourceSnapshot();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("projectId", snapshot.getProject().getId());
+        result.put("projectName", snapshot.getProject().getName());
+        result.put("snapshotId", snapshot.getId());
+        result.put("modelId", model.getId());
+        result.put("revision", model.getRevision());
+        result.put("sourceType", snapshot.getSourceType());
+        result.put("repositoryUrl", snapshot.getProject().getRepositoryUrl());
+        result.put("branch", snapshot.getBranchName());
+        result.put("commitSha", snapshot.getCommitSha());
+        result.put("artifactHash", snapshot.getArtifactHash());
+        return result;
+    }
+
     private void validateDiagramTypes(List<String> diagramTypes) {
         if (diagramTypes == null) {
             return;
@@ -190,10 +253,8 @@ public class AssignmentServiceImpl implements AssignmentService {
             if (notationStr == null || notationStr.isBlank()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Loại sơ đồ yêu cầu không được để trống");
             }
-            try {
-                DiagramNotation.valueOf(notationStr.trim().toUpperCase());
-            } catch (IllegalArgumentException e) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Loại sơ đồ không hợp lệ: " + notationStr + ". Các loại hợp lệ: " + Arrays.toString(DiagramNotation.values()));
+            if (!com.mavis.common.utils.CourseworkDiagramTypes.supportedRequirement(notationStr.trim().toUpperCase())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Loại sơ đồ không hợp lệ: " + notationStr);
             }
         }
     }
@@ -243,6 +304,7 @@ public class AssignmentServiceImpl implements AssignmentService {
                 .ruleSetVersion(assignment.getRuleSetVersion())
                 .requireRuntimeTrace(assignment.getRequireRuntimeTrace())
                 .aiPolicy(assignment.getAiPolicy())
+                .referenceSource(referenceDetails(assignment))
                 .dueAt(assignment.getDueAt())
                 .submissionCount(submissionCount)
                 .createdAt(createdAt)

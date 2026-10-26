@@ -64,11 +64,7 @@ function Projects() {
             </Button>
           }
         />
-        <RequestState
-          query={projects}
-          empty={projects.data?.length === 0}
-          emptyMessage="No projects are available. Contact your workspace administrator to create a project."
-        >
+        <RequestState query={projects}>
           <div className="grid grid-cols-2 gap-3 [&>article>div]:text-xl sm:gap-4 sm:[&>article>div]:text-2xl xl:grid-cols-4">
             <SummaryCard label="Projects" value={projects.data?.length ?? 0} />
             <SummaryCard label="Services indexed" value={servicesSummary(projects.data)} />
@@ -99,71 +95,79 @@ function Projects() {
                     }))}
                   />
                 </div>
-                <DataTable
-                  caption="Your architecture projects"
-                  rows={filtered.slice((currentPage - 1) * 10, currentPage * 10)}
-                  rowKey={(p) => p.id}
-                  columns={[
-                    {
-                      key: "project",
-                      label: "Project",
-                      render: (p) => (
-                        <Link
-                          href={`/project-overview?project=${p.id}`}
-                          onClick={() => selection.setProjectId(p.id)}
-                          className="font-medium text-primary hover:underline"
-                        >
-                          {p.name}
-                          {p.repository && (
-                            <span className="mt-1 block font-mono text-xs text-muted-foreground">
-                              {p.repository}
-                            </span>
-                          )}
-                        </Link>
-                      ),
-                    },
-                    { key: "services", label: "Services", render: (p) => p.services ?? "Unknown" },
-                    {
-                      key: "status",
-                      label: "Status",
-                      render: (p) => <ProjectStatusBadge status={p.status} />,
-                    },
-                    {
-                      key: "runtime",
-                      label: "Runtime",
-                      render: (p) =>
-                        p.runtimeSupported === null
-                          ? "Not checked"
-                          : p.runtimeSupported
-                            ? "Supported"
-                            : "Unavailable",
-                    },
-                    {
-                      key: "actions",
-                      label: "Workspace",
-                      render: (p) => (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Button
-                            asChild
-                            size="sm"
-                            variant="outline"
+                {filtered.length === 0 ? (
+                  <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                    {(projects.data?.length ?? 0) === 0
+                      ? "No projects yet. Click “Import project source” to create and import your first project."
+                      : "No projects match the current filter."}
+                  </div>
+                ) : (
+                  <DataTable
+                    caption="Your architecture projects"
+                    rows={filtered.slice((currentPage - 1) * 10, currentPage * 10)}
+                    rowKey={(p) => p.id}
+                    columns={[
+                      {
+                        key: "project",
+                        label: "Project",
+                        render: (p) => (
+                          <Link
+                            href={`/project-overview?project=${p.id}`}
                             onClick={() => selection.setProjectId(p.id)}
+                            className="font-medium text-primary hover:underline"
                           >
-                            <Link href={`/diagrams?project=${p.id}`}>Diagrams</Link>
-                          </Button>
-                          <Button
-                            asChild
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => selection.setProjectId(p.id)}
-                          >
-                            <Link href={`/architecture?project=${p.id}`}>Graph</Link>
-                          </Button>
-                        </div>
-                      ),
-                    },
-                  ]}
-                />
+                            {p.name}
+                            {p.repository && (
+                              <span className="mt-1 block font-mono text-xs text-muted-foreground">
+                                {p.repository}
+                              </span>
+                            )}
+                          </Link>
+                        ),
+                      },
+                      { key: "services", label: "Services", render: (p) => p.services ?? "Unknown" },
+                      {
+                        key: "status",
+                        label: "Status",
+                        render: (p) => <ProjectStatusBadge status={p.status} />,
+                      },
+                      {
+                        key: "runtime",
+                        label: "Runtime",
+                        render: (p) =>
+                          p.runtimeSupported === null
+                            ? "Not checked"
+                            : p.runtimeSupported
+                              ? "Supported"
+                              : "Unavailable",
+                      },
+                      {
+                        key: "actions",
+                        label: "Workspace",
+                        render: (p) => (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              asChild
+                              size="sm"
+                              variant="outline"
+                              onClick={() => selection.setProjectId(p.id)}
+                            >
+                              <Link href={`/diagrams?project=${p.id}`}>Diagrams</Link>
+                            </Button>
+                            <Button
+                              asChild
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => selection.setProjectId(p.id)}
+                            >
+                              <Link href={`/architecture?project=${p.id}`}>Graph</Link>
+                            </Button>
+                          </div>
+                        ),
+                      },
+                    ]}
+                  />
+                )}
                 {Math.ceil(filtered.length / 10) > 1 && (
                   <Pagination
                     page={currentPage}

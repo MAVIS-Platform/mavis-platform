@@ -1,4 +1,5 @@
 "use client";
+import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
 import { useState } from "react";
 import Link from "next/link";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
@@ -156,7 +157,8 @@ export function SubmissionComposer({
               />
               <p className="text-xs text-muted-foreground">
                 Required types:{" "}
-                {requirements?.requiredDiagramTypes?.join(", ") || "Any saved diagram"}
+                {requirements?.requiredDiagramTypes?.map(diagramTypeLabel).join(", ") ||
+                  "Any saved diagram"}
               </p>
               <FormField label="Submission notes">
                 {(props) => (
@@ -218,12 +220,12 @@ export function SubmissionComposer({
               </Button>
               {missing.length > 0 && (
                 <p role="status" className="text-sm text-muted-foreground">
-                  Select the required saved diagrams: {missing.join(", ")}.
+                  Select the required saved diagrams: {missing.map(diagramTypeLabel).join(", ")}.
                 </p>
               )}
               {freeze.error && <ErrorState error={freeze.error} />}
               <ConfirmDialog
-                open={Boolean(review && review.modelId===state.model?.id && compatibleProject)}
+                open={Boolean(review && review.modelId === state.model?.id && compatibleProject)}
                 onOpenChange={(open) => {
                   if (!open) setReview(null);
                 }}
