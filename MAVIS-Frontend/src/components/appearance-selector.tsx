@@ -1,6 +1,6 @@
 "use client";
 
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -15,12 +15,11 @@ import { useAppearance, type Appearance } from "@/components/theme-provider";
 const options = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
 ] as const;
 
 export function AppearanceSelector() {
   const { appearance, setAppearance } = useAppearance();
-  const Icon = options.find((option) => option.value === appearance)?.icon ?? Monitor;
+  const Icon = options.find((option) => option.value === appearance)?.icon ?? Sun;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

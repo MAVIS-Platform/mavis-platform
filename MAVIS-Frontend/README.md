@@ -1,24 +1,16 @@
 # MAVIS Dashboard
 
-Next.js / React / strict TypeScript frontend for architecture learning, source analysis, runtime evidence and versioned coursework. Stage 2 reuses the Stage 1 shell, role navigation and Light/Dark/System semantic styles.
+Next.js / React / strict TypeScript frontend for architecture learning, source analysis, runtime evidence and versioned coursework. Stage 2 reuses the Stage 1 shell, role navigation and Light/Dark semantic styles. Appearance is selected explicitly; the default is Light, including for previously saved System preferences.
 
 The default is **backend mode**. The shared `/api/mavis` boundary connects the component screens and source analysis to Java. Mock previews require the explicit setting `MAVIS_API_MODE=mock`.
 
+The Architecture dependency graph offers **Analysis** (default) and **Explore** presentations. Explore uses a compact service-centered layout, multiring halos, connection-count sizing, and colors for connected service clusters (a visual grouping, not inferred ownership). Labels appear for highly connected nodes, on hover/selection/search, and when zooming in. Hover or select to reveal direction arrows and inspect evidence. Both presentations share the same model, origin filters, collapsed scope, source IDs and keyboard navigation. Each presentation remembers its own dragged positions and camera when switching modes. Analysis retains the element-type color legend. Explore includes a cluster legend; element types remain available through hover and the inspector.
+
 For a new Windows clone, start with [the clean-clone runbook](../docs/CLEAN_CLONE_SETUP.md) and repository-root `Start-Mavis.ps1`. Database credentials and verified-account passwords are intentionally absent from Git. Java and FE must come from the same revision; the integrated FE requires Java `/api/v1/auth/me`.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/0baf637b-d700-4068-b6ba-1780cbb74ebe).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Develop locally with Node.js 20.9+ and npm. Source changes are managed directly in this Git repository.
 
 ```sh
 git clone <this-repository-url>

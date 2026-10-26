@@ -1,15 +1,20 @@
 # Bộ Tài Liệu Chuẩn Hóa 9 Loại Sơ Đồ Kiến Trúc & Thiết Kế (MAVIS Standard Diagram Guide)
 
-**Phiên bản:** 2.0 (Refactored Unified Format) • **Ngày cập nhật:** 25/10/2026  
+**Phiên bản:** 2.1 (Hiệu chỉnh ngữ nghĩa, provenance và ví dụ) • **Ngày cập nhật:** 25/10/2026
+
 **Phạm vi áp dụng:** Hệ thống **MAVIS** (*AI-Assisted Microservices Architecture Visualization and Change Impact Analysis*)  
 **Chuẩn đối chiếu gốc:** C4 Model (`c4model.com`) & OMG UML 2.5.1 (`formal/2017-12-05`)
 
 > [!IMPORTANT]
 > **Nguyên tắc cốt lõi dùng chung cho cả 9 loại sơ đồ trong MAVIS:**
 > 1. **Tách biệt Mô hình và Hình vẽ:** `Source / Config / Runtime Trace` $\rightarrow$ `Facts có Evidence` $\rightarrow$ `Canonical Architecture Model (ID ổn định)` $\rightarrow$ `Diagram Projection theo Scope` $\rightarrow$ `Layout & Render`. Việc parser/renderer vẽ ra được hình **không** tự chứng minh mô hình đúng kiến trúc hay đúng mã nguồn.
-> 2. **Ba lớp xuất xứ dữ kiện (Provenance Layers):** `STATIC` (mã nguồn/AST), `DECLARED` (Docker Compose, OpenAPI, manifest), `OBSERVED` (OpenTelemetry trace/span trong một kịch bản và khung thời gian), và `USER_CONFIRMED` (người học/giảng viên xác nhận). Tuyệt đối không ghi đè mất dữ kiện tĩnh bằng trace runtime.
+> 2. **Tách nguồn dữ kiện, thiết kế và xác nhận:** Ba nhóm nguồn được diễn giải trong tài liệu là **Static** (mã nguồn/AST), **Declared** (Docker Compose, OpenAPI, manifest) và **Observed** (trace/span trong kịch bản và khung thời gian cụ thể). **Designed** là nội dung do người dùng chủ động thiết kế, không mạo danh dữ kiện trích xuất. **User-confirmed** là thông tin xác nhận/review riêng, có thể áp dụng cho dữ kiện từ nhiều nguồn; xác nhận không biến dữ kiện thiết kế thành dữ kiện trích xuất hay quan sát runtime. Tuyệt đối không ghi đè mất dữ kiện tĩnh bằng trace runtime.
 > 3. **Chính sách Fail-Closed khi thiếu dữ kiện:** Không tự bịa Actor mặc định, không đoán công nghệ/version, không tự thêm Database cho service stateless, không đảo chiều cạnh để làm đẹp bố cục. Phần tử/quan hệ chưa phân giải được phải gắn trạng thái `UNRESOLVED` / `NEEDS_REVIEW` hoặc hiển thị rõ `"Chưa xác định từ source"`.
 > 4. **Hệ thống ví dụ xuyên suốt:** Cả 9 tài liệu dưới đây dùng chung bài toán microservice giả định **OrderHub** (gồm `Merchant System`, `Support Operator`, `OrderHub` với `Order API`, `Orders DB`, topic `order-events`, `Billing Worker`, `Billing DB`, và hệ thống ngoài `Payment Provider`) để bảo đảm tính liên kết 100% giữa các góc nhìn.
+
+**Cách đọc chuẩn và quy ước:** Ngữ nghĩa C4/UML, khuyến nghị dễ đọc và chính sách MAVIS là ba phạm vi khác nhau. Những yêu cầu gắn nhãn **Quy ước MAVIS** là lựa chọn của sản phẩm, không phải ràng buộc phổ quát của OMG hoặc C4. Cách liên hệ từng sơ đồ với 4+1 trong tài liệu là cách tổ chức góc nhìn của MAVIS, không phải ánh xạ bắt buộc một-một giữa các chuẩn. Ví dụ OrderHub là **thiết kế minh họa giả định**, không phải bằng chứng rằng mọi chức năng đã được triển khai hoặc nghiệm thu trong phần mềm.
+
+**Ánh xạ provenance khi triển khai:** Các tên nhóm nguồn ở trên không phải một enum dùng chung. Graph API hiện dùng `originLayer` với `STATIC`, `CONFIG`, `DEPLOYMENT`, `RUNTIME`, `STATIC_AND_RUNTIME`; workspace UML dùng `provenance` với `EXTRACTED`, `DESIGNED`, `HYBRID`. Declared config/deployment phải được ánh xạ theo contract producer tương ứng; Observed cần giữ lineage tới runtime evidence. Dữ kiện `EXTRACTED` vẫn cần nguồn/evidence cụ thể, còn `HYBRID` phải phân biệt được phần trích xuất và phần thiết kế. Không gửi nhãn diễn giải `DECLARED`, `OBSERVED` hoặc `USER_CONFIRMED` vào field enum không hỗ trợ chúng, và không tự thêm enum chỉ để khớp câu chữ trong tài liệu.
 
 ---
 
@@ -44,17 +49,19 @@
 | **Nguồn gốc & Mục đích** | Phân tích có cấu trúc (*DeMarco/Yourdon DFD Level 0*, *Karl Wiegers SRS*): đặc tả **luồng dữ liệu vào/ra (Input/Output Data Flows)** ở mức yêu cầu phần mềm. | Mô hình kiến trúc C4 (*Simon Brown*): đặc tả **ngữ cảnh kiến trúc phần mềm** và đóng vai trò cấp độ 1 để **zoom-in** trực tiếp xuống Container (C2) và Component (C3). |
 | **Ký hiệu Hệ thống đích (Ở giữa)** | **Hình tròn (Circle / Bubble)** duy nhất ở trung tâm đại diện cho toàn bộ hệ thống (Process `0`). | **Hộp chữ nhật (Box)** ở trung tâm có nhãn loại `[Software System]` kèm câu mô tả trách nhiệm/giá trị nghiệp vụ. |
 | **Ký hiệu Tác nhân bên ngoài** | Mọi tác nhân bên ngoài (người dùng, phòng ban, cảm biến, hệ thống khác) đều vẽ chung bằng **hình chữ nhật đơn giản (`External Entity / Terminator`)**, không phân biệt người hay máy bằng ký pháp riêng. | Tách bạch rõ 2 loại phần tử chuẩn có nhãn `[type]` và mô tả vai trò:<br>1. **`[Person]`**: người dùng/vai trò con người.<br>2. **`[Software System]`**: hệ thống phần mềm bên ngoài. |
-| **Bản chất Mũi tên & Nhãn cạnh** | **Luồng dữ liệu (Data Flow):** Tách riêng mũi tên dữ liệu đi vào và mũi tên dữ liệu đi ra; nhãn cạnh là **cụm danh từ chỉ gói thông tin/dữ liệu** (VD: `Menu choices`, `Order confirmation`, `Sales tax data`). | **Quan hệ tương tác / Phụ thuộc (Relationship):** Vẽ **1 mũi tên một chiều** từ chủ thể khởi tạo sang đích; nhãn cạnh là **cụm động từ hành động** (VD: `Gửi đơn hàng`, `Yêu cầu cấp phép thanh toán`), ngầm hiểu đã bao gồm chiều phản hồi (response). |
+| **Bản chất Mũi tên & Nhãn cạnh** | **Luồng dữ liệu (Data Flow):** Tách riêng mũi tên dữ liệu đi vào và mũi tên dữ liệu đi ra; nhãn cạnh là **cụm danh từ chỉ gói thông tin/dữ liệu** (VD: `Menu choices`, `Order confirmation`, `Sales tax data`). | **Quan hệ tương tác / Phụ thuộc (Relationship):** Mỗi cạnh biểu diễn một quan hệ có hướng; chiều và nhãn phải cùng diễn đạt phụ thuộc, tương tác hoặc luồng dữ liệu đã chọn. Với request/response, thường vẽ từ bên gọi tới bên nhận và lược bỏ phản hồi khi đã rõ. Nhãn ưu tiên **cụm động từ cụ thể** (VD: `Gửi đơn hàng`, `Yêu cầu cấp phép thanh toán`). |
 | **Liên kết với các sơ đồ cấp dưới** | Phóng to xuống **DFD Level 1, Level 2** (các tiến trình xử lý dữ liệu và kho dữ liệu). | Phóng to trực tiếp chiếc hộp trung tâm ở **C1** thành khung `System Boundary` ở **C2 (Container Diagram)** và giữ nguyên các tác nhân xung quanh để bảo toàn tính nhất quán xuyên cấp. |
 
 ### 1.2. Các phần tử cốt lõi & Ký pháp chuẩn
+
+C4 độc lập với ký pháp: hộp, màu, hình trụ, biểu tượng Person và nét khung trong các ví dụ là lựa chọn trình bày của MAVIS. Điều cần giữ là mức trừu tượng, scope, loại phần tử, trách nhiệm và ý nghĩa quan hệ; Legend phải giải thích các ký hiệu được chọn.
 
 | Phần tử / Quan hệ | Ý nghĩa mô hình (Semantics) | Ký pháp trình bày chuẩn | Điều KHÔNG được suy diễn sai |
 | :--- | :--- | :--- | :--- |
 | **Person** | Vai trò con người sử dụng hệ thống. | Hộp/biểu tượng người: **Tên vai trò**, nhãn `[Person]`, mô tả trách nhiệm ngắn. | Client máy, cronjob hoặc API bên ngoài gọi vào **không** phải là `Person`. |
 | **Target Software System** | Hệ thống phần mềm đang xét; đơn vị cung cấp giá trị nghiệp vụ thuộc quyền sở hữu của nhóm/tổ chức. | Hộp trung tâm: **Tên hệ thống**, nhãn `[Software System]`, câu mô tả giá trị nghiệp vụ. | Một Software System không đồng nhất 1-1 với một Git repository hay một microservice đơn lẻ. |
 | **External Software System** | Hệ thống phần mềm nằm ngoài ranh giới hệ thống đang xét nhưng có tương tác trực tiếp. | Hộp phụ trợ (thường phân biệt tông màu/nhãn): **Tên**, `[Software System]`, vai trò tương tác. | "External" là ngoài ranh giới của system đang xét, không nhất thiết phải thuộc công ty khác. |
-| **Relationship** | Tương tác nghiệp vụ/dữ liệu trực tiếp giữa Person/External System với Target System. | Mũi tên một chiều kèm **cụm động từ cụ thể** (VD: *"Gửi đơn hàng"*, *"Yêu cầu cấp phép thanh toán"*). | Chiều mũi tên là chiều khởi tạo hành động; không có nghĩa dữ liệu chỉ chảy một chiều (response được ngầm hiểu). |
+| **Relationship** | Tương tác nghiệp vụ/dữ liệu trực tiếp giữa Person/External System với Target System. | Mũi tên một chiều kèm **cụm động từ cụ thể** (VD: *"Gửi đơn hàng"*, *"Yêu cầu cấp phép thanh toán"*). | Chiều mũi tên phải khớp ý nghĩa nhãn: phụ thuộc/khởi tạo lời gọi hoặc luồng dữ liệu đã chọn. Với lời gọi request/response, phản hồi có thể được ngầm hiểu; không áp đặt quy tắc khởi tạo cho mọi cạnh dữ liệu/messaging. |
 
 ### 1.3. Quy trình dựng sơ đồ chuẩn
 1. **Chốt System đích:** Chọn đúng 1 `Software System` và viết 1 câu mô tả giá trị nghiệp vụ; đại diện bằng 1 hộp duy nhất, ẩn toàn bộ cấu trúc nội bộ.
@@ -128,7 +135,7 @@ flowchart LR
 
 | Phần tử / Quan hệ | Ý nghĩa mô hình (Semantics) | Ký pháp trình bày chuẩn | Điều KHÔNG được suy diễn sai |
 | :--- | :--- | :--- | :--- |
-| **System Boundary** | Khung ranh giới bao quanh các Container thuộc quyền sở hữu của Software System đang xét. | Khung nét đứt ghi **Tên System** và nhãn `[Software System]`. | Không phải là firewall hay network security zone (VPC/Subnet). |
+| **System Boundary** | Khung ranh giới bao quanh các Container thuộc quyền sở hữu của Software System đang xét. | Khung ghi **Tên System** và nhãn `[Software System]`; MAVIS chọn nét đứt và giải thích trong Legend. | Không phải là firewall hay network security zone (VPC/Subnet). |
 | **Application Container** | Đơn vị ứng dụng có ranh giới thực thi riêng (API service, background worker, web app, CLI). | Hộp: **Tên**, `[Container: Công nghệ]`, mô tả trách nhiệm ngắn. | Một module/package thư viện dùng chung (`common-utils`) không phải là một Container độc lập. |
 | **Data Store / Message Channel Container** | Kho lưu trữ dữ liệu logic (DB schema, cache, bucket) hoặc kênh truyền thông điệp (queue/topic). | Hộp hoặc hình trụ/ống: **Tên**, `[Container: Công nghệ]`, mô tả dữ liệu/sự kiện lưu trữ. | Hai service dùng chung một PostgreSQL server nhưng khác schema/ownership vẫn là hai Data Store logic riêng. |
 | **IPC / Data Access Relationship** | Giao tiếp liên tiến trình, đọc/ghi dữ liệu, hoặc publish/consume sự kiện giữa các Container. | Mũi tên một chiều kèm **Động từ + `[Công nghệ / Giao thức]`** (khi có bằng chứng). | `Order API -> Orders DB: Reads/writes [JDBC]` không có nghĩa dữ liệu chỉ đi 1 chiều; `depends_on` trong Compose không tự chứng minh có lời gọi HTTP runtime. |
@@ -216,7 +223,7 @@ flowchart TB
 
 | Phần tử / Quan hệ | Ý nghĩa mô hình (Semantics) | Ký pháp trình bày chuẩn | Điều KHÔNG được suy diễn sai |
 | :--- | :--- | :--- | :--- |
-| **Container Boundary** | Khung ranh giới của đúng **1 Container** đang được mở từ C2. | Khung nét đứt ghi **Tên Container** và nhãn `[Container]`. | Không đặt các Data Store hay Container khác vào bên trong khung này. |
+| **Container Boundary** | Khung ranh giới của đúng **1 Container** đang được mở từ C2. | Khung ghi **Tên Container** và nhãn `[Container]`; nét đứt là quy ước trình bày của MAVIS. | Không đặt các Data Store hay Container khác vào bên trong khung này. |
 | **Component** | Nhóm chức năng liên quan nằm trong cùng tiến trình Container, thường được cài đặt bởi một hoặc nhiều class/interface. | Hộp: **Tên Component**, `[Component: Công nghệ / Kiểu cài đặt]`, mô tả trách nhiệm. | Không phải mọi class hay mọi annotation `@Component`/`@Service` đều tự động là một hộp C4 Component riêng lẻ. |
 | **Supporting Container / External System** | Các Container khác (DB, Topic, Service khác) hoặc Person/External System có tương tác **trực tiếp** với các Component đang xét. | Đặt **bên ngoài** `Container Boundary`, giữ nguyên mức trừu tượng Container/System (không mở ruột). | Các Container trong cùng hệ thống nhưng **không** có kết nối trực tiếp với Container đang mở thì được lược bỏ khỏi C3 này. |
 | **In-process & Out-of-process Relationship** | Lời gọi hàm nội bộ giữa các Component hoặc lời gọi IPC từ Component ra Container ngoài. | Mũi tên một chiều kèm động từ. Chỉ gắn `[Giao thức mạng/DB]` cho cạnh đi ra ngoài Container. | Cạnh nối giữa 2 Component trong cùng 1 Container là lời gọi trong bộ nhớ (method call), không gán `[HTTP]` cho nó. |
@@ -315,7 +322,7 @@ flowchart TB
 
 | Phần tử / Quan hệ | Ý nghĩa mô hình (Semantics) | Ký pháp trình bày chuẩn (OMG UML 2.5.1) | Điều KHÔNG được suy diễn sai |
 | :--- | :--- | :--- | :--- |
-| **Class** | Classifier mô tả tập đối tượng chia sẻ thuộc tính, operation và quan hệ. | Hình chữ nhật chia tối đa 3 ngăn: **Tên Class** (in nghiêng nếu `abstract`), **Attributes**, **Operations**. Có thể ẩn ngăn chưa cần thiết. | Không bắt buộc liệt kê mọi getter/setter tầm thường. Tên gạch chân (`order1:Order`) là Instance thuộc Object Diagram, không phải Class. |
+| **Class** | Classifier mô tả tập đối tượng chia sẻ thuộc tính, operation và quan hệ. | Hình chữ nhật thường có 3 ngăn chính: **Tên Class** (in nghiêng nếu `abstract`), **Attributes**, **Operations**. Có thể ẩn ngăn chưa cần thiết. | Không bắt buộc liệt kê mọi getter/setter tầm thường. Tên gạch chân (`order1:Order`) là Instance thuộc Object Diagram, không phải Class. |
 | **Interface & Enumeration** | Hợp đồng hành vi (`«interface»`) và tập giá trị hữu hạn (`«enumeration»`). | Hộp có từ khóa `«interface»` hoặc `«enumeration»` phía trên tên. | Không trộn lẫn kế thừa lớp (`Generalization`) với hiện thực hóa interface (`Realization`). |
 | **Attribute & Operation** | Thuộc tính: `visibility name: Type [mult] = default {prop}`.<br>Hành vi: `visibility name(param: Type): ReturnType`. | Visibility: `+` public, `-` private, `#` protected, `~` package. Thành viên `static` được **gạch chân**. Thuộc tính dẫn xuất có dấu `/total`. | `~` (package) cần ánh xạ cẩn thận theo ngôn ngữ (`internal` trong C# khác package-private trong Java). |
 | **Association** | Quan hệ cấu trúc tĩnh giữa các instance của hai Classifier. | Đường **nét liền**; có thể gắn **Role name** và **Multiplicity** (`1`, `0..1`, `0..*`, `1..*`) ở mỗi đầu. Mũi tên hở thể hiện *navigability*. | Mũi tên navigability là khả năng truy cập tham chiếu hiệu quả, **không** phải chiều gọi hàm runtime. Không có mũi tên chưa chứng minh là truy cập 2 chiều. |
@@ -429,7 +436,7 @@ classDiagram
 | **Lifeline** | Đại diện cho một cá thể tham gia (Participant) trong tương tác (§17.3). | Đầu hình chữ nhật ghi `role:Type` hoặc `:Type` (không bắt buộc gạch chân như UML 1.x), nối với đường dọc nét đứt bên dưới. | Hai lifeline độc lập không có message nối với nhau thì không tự suy ra thứ tự thời gian tuyệt đối từ vị trí cao/thấp bằng mắt. |
 | **Execution Specification (Activation)** | Khoảng thời gian một lifeline đang thực thi hành vi hoặc chờ lời gọi con hoàn tất. | Thanh hình chữ nhật mảnh đè lên đường nét đứt của Lifeline; có thể lồng nhau khi gọi `self-message`. | Độ dài hình học của thanh activation trên giấy vẽ **không** đo chính xác số mili-giây CPU hay latency thực tế. |
 | **Synchronous Call & Reply Message** | Bên gửi gọi và **chờ** bên nhận hoàn tất xử lý trước khi tiếp tục (§17.4). | Call: Đường **nét liền, đầu mũi tên đặc (filled arrowhead)**.<br>Reply: Đường **nét đứt, đầu mũi tên hở** quay về bên gọi. | Không vẽ đường Reply không có nghĩa là hàm bị treo vĩnh viễn (Reply có thể được lược bỏ khi ngữ cảnh đã rõ). |
-| **Asynchronous Message** | Bên gửi phát thông điệp đi và tiếp tục luồng của mình mà không chờ bên nhận xử lý xong theo cơ chế gọi đồng bộ. | Đường **nét liền, đầu mũi tên hở (open arrowhead)**. | Từ khóa `async/await` trong C#/JS nếu bên gọi vẫn `await` kết quả trả về ngay tại chỗ thì về ngữ nghĩa tương tác liên dịch vụ vẫn là chờ phản hồi đồng bộ; ngược lại, gửi message vào Broker mới là bất đồng bộ thực sự. |
+| **Asynchronous Message** | Bên gửi phát thông điệp đi và tiếp tục luồng của mình mà không chờ bên nhận xử lý xong theo cơ chế gọi đồng bộ. | Đường **nét liền, đầu mũi tên hở (open arrowhead)**. | Không suy loại message UML chỉ từ `async/await`, HTTP hay tên thư viện. `await` có thể tạm dừng phương thức để chờ kết quả mà không chặn thread; điều này khác với việc xác định `synchCall`, `asynchCall` hay `asynchSignal` của tương tác đang mô hình hóa. Callback, signal và cơ chế bất đồng bộ khác không bắt buộc có broker. Khi thiếu căn cứ về message sort, giữ `UNKNOWN`/cảnh báo và yêu cầu xác nhận theo contract của MAVIS. |
 | **Create / Destroy & Found / Lost** | Tạo mới đối tượng (`create`), hủy lifeline (`destroy`), hoặc message không rõ nguồn/đích trong scope (`found`/`lost`). | `create`: nét đứt đầu hở trỏ vào hộp đầu lifeline mới.<br>`destroy`: dấu **X** lớn cuối lifeline.<br>`found`/`lost`: chấm tròn đen ở đầu ngoài phạm vi. | Dấu `X` (destroy lifeline trong bộ nhớ) **không** đồng nghĩa với lệnh `DELETE` xóa một bản ghi trong Database. `Lost message` không mặc định là rớt gói tin mạng. |
 | **Combined Fragments (`alt`, `opt`, `loop`, `par`, `ref`)** | Các khung toán tử điều khiển luồng tương tác (§17.6). | Khung chữ nhật có nhãn toán tử ở góc trái trên (`alt`, `opt`, `loop`, `par`), các nhánh ngăn cách bởi đường ngang nét đứt và guard `[condition]`. `ref` là `InteractionUse` tham chiếu sơ đồ khác. | `par` cho phép xen kẽ (interleaving) các sự kiện giữa các operand, không khẳng định chạy song song cùng một xung nhịp CPU vật lý. `critical` không tự động là DB transaction. |
 
@@ -442,15 +449,15 @@ classDiagram
 
 ### 5.4. Bộ quy tắc sử dụng & Kiểm chứng
 * **Quy tắc bắt buộc:**
-  * **[N-SEQ-01]** Tuyệt đối không dùng thuật toán layout đồ thị tổng quát (như force-directed layout) để sắp xếp Sequence Diagram; trục ngang là các Lifelines, trục dọc là thứ tự sự kiện.
+  * **[N-SEQ-01]** Bố cục phải bảo toàn các thứ tự sự kiện mà Interaction quy định: gửi trước nhận và các ràng buộc trên từng lifeline/fragment; vị trí hai sự kiện trên các lifeline độc lập không tự tạo thứ tự toàn cục. MAVIS dùng layout chuyên cho Sequence; bất kỳ thuật toán bố cục nào cũng không được phá các ràng buộc này.
   * **[N-SEQ-02]** Phân biệt rạch ròi đầu mũi tên **đặc** (`Synchronous`) và đầu mũi tên **hở** (`Asynchronous`); đường `Reply` phải là nét đứt và khớp đúng lifeline đã gọi.
-  * **[N-SEQ-03]** Các `[guard]` trong cùng một khung `alt` cần được thiết kế loại trừ nhau để tránh mơ hồ; không tạo nhánh `else` rỗng cho khung `opt`.
-  * **[M-SEQ-04] (Quy ước MAVIS):** Phải gắn nhãn phân biệt rõ **Designed/Static Sequence** (suy từ kịch bản thiết kế hoặc phân tích tĩnh) với **Observed Runtime Sequence** (dựng từ OpenTelemetry spans thực tế trong một `timeWindow`).
+  * **[N-SEQ-03]** `alt` chọn một operand có guard đúng; nếu nhiều guard cùng đúng, việc chọn có thể bất định. MAVIS khuyến nghị guard loại trừ nhau khi muốn kịch bản xác định. `opt` có một operand tùy chọn, không thêm operand `else` thứ hai.
+  * **[M-SEQ-04] (Quy ước MAVIS):** Phân biệt **Designed Sequence** (người dùng thiết kế), **Static-derived draft** (suy từ phân tích tĩnh, nêu rõ giới hạn) và **Observed Runtime Sequence** (span có lineage trong kịch bản/khung thời gian xác định). Nhãn mode và provenance của mỗi phần tử phải theo contract thực tế; bản thiết kế không được mang danh quan sát runtime.
 * **Các lỗi thường gặp (Anti-patterns):**
 
 | Lỗi phổ biến (Sai) | Cách hiểu & xử lý đúng (Chuẩn) |
 | :--- | :--- |
-| Vẽ mũi tên nét liền đầu đặc khi publish sự kiện vào Kafka Topic rồi kết luận Consumer đã xử lý xong. | Publish sự kiện bất đồng bộ dùng đầu mũi tên hở; việc Broker nhận event chưa chứng minh Consumer đã xử lý thành công trừ khi có span/message tiếp theo. |
+| Vẽ mũi tên nét liền đầu đặc khi publish sự kiện vào Kafka Topic rồi kết luận Consumer đã xử lý xong. | Phân biệt lời gọi producer → broker có chờ xác nhận với việc phát signal và xử lý ở consumer. Chọn message sort theo hợp đồng đang mô hình hóa; broker xác nhận nhận/lưu event không chứng minh consumer đã xử lý xong. |
 | Dùng mũi tên chéo quay ngược lên trên để biểu diễn vòng lặp retry. | Phải bọc đoạn thông điệp lặp vào trong khung Combined Fragment `loop [min..max, guard]`. |
 | Lấy một trace chạy thành công (Happy Path) rồi tuyên bố hệ thống không có nhánh lỗi. | Một runtime trace chỉ chứng minh kịch bản đã quan sát trong lần chạy đó; các nhánh chưa chạy không được xóa khỏi mô hình tĩnh. |
 
@@ -465,7 +472,9 @@ classDiagram
   * *Runtime OpenTelemetry Traces (Ưu tiên cao nhất cho kịch bản thực thi):* `traceId`, `spanId`, `parentSpanId`, `service.name`, `http.method`, `http.status_code`, `duration` $\rightarrow$ dựng `Observed Sequence Diagram`. Nếu thiếu server span hoặc đứt chuỗi `parentSpanId`, MAVIS hiển thị rõ cảnh báo **Missing Span / Gap**.
   * *Static Call Graph + Scenario Definition:* Hỗ trợ dựng bản nháp `Designed/Static Sequence` cho một entrypoint được chọn.
 
-### 5.6. Ví dụ minh họa chuẩn (Bài toán OrderHub — Kịch bản Tạo đơn hàng)
+### 5.6. Ví dụ minh họa (OrderHub — kịch bản thiết kế tạo đơn)
+Các message sort trong ví dụ là **giả định thiết kế được khai báo**, không suy tự động từ HTTP, JDBC hoặc tên Kafka. Nhánh invalid được kiểm tra trước khi lưu đơn. Nhánh thành công minh họa một thứ tự thực thi hợp lệ: trả 201 trước khi worker nhận sự kiện; hệ thống thực tế có thể giao sự kiện sớm hơn mà không cần đợi phản hồi HTTP.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -476,26 +485,28 @@ sequenceDiagram
     participant BW as billing:BillingWorker
     participant PP as payment:PaymentProvider
 
-    M->>+API: POST /orders (PlaceOrderRequest)
-    API->>+DB: saveOrder(PENDING_PAYMENT)
-    DB-->>-API: orderId
-    alt [Lưu đơn thành công]
+    M->>API: POST /orders (PlaceOrderRequest)
+    alt Dữ liệu đơn không hợp lệ
+        API-->>M: 400 Bad Request
+    else Dữ liệu đơn hợp lệ
+        API->>+DB: saveOrder(PENDING_PAYMENT)
+        DB-->>-API: orderId
         API-)K: publish OrderCreated(orderId, amount)
-        API-->>-M: 201 Created (orderId)
+        API-->>M: 201 Created (orderId)
         K-)BW: deliver OrderCreated
         activate BW
         BW->>+PP: authorizePayment(orderId, amount)
         PP-->>-BW: AuthorizationResult
         deactivate BW
-    else [Dữ liệu đơn không hợp lệ]
-        API-->>M: 400 Bad Request
     end
 ```
+Việc trả 201 xác nhận yêu cầu tạo đơn theo hợp đồng API, không khẳng định thanh toán đã hoàn tất. Retry, lỗi lưu DB, lỗi publish và compensation được lược bỏ trong ví dụ này.
 
 ### 5.7. Trích dẫn & Tài liệu tham khảo
 * **[S1]** OMG, *UML 2.5.1 Specification* — Chương 17 (Interactions: §17.3 Lifelines, §17.4 Messages, §17.6 CombinedFragments), `https://www.omg.org/spec/UML/2.5.1/`
 * **[S2]** OpenTelemetry Specification — *Traces, Spans & Context Propagation*, `https://opentelemetry.io/docs/concepts/signals/traces/`
 * **[A1]** Hassan Gomaa, *Software Modeling and Design* — Giáo trình SWD392 Ch09–11 Dynamic Modeling (slides 6–8, 24–25).
+* **[S3]** Microsoft Learn, [await operator — asynchronously await a task](https://learn.microsoft.com/en-us/dotnet/csharp/language-reference/operators/await) (để phân biệt chờ kết quả với chặn thread; không thay thế đặc tả message UML).
 * **[T1]** PlantUML & Visual Paradigm Sequence Diagram Guide, `https://www.visual-paradigm.com/guide/uml-unified-modeling-language/what-is-sequence-diagram/`
 
 ---
@@ -685,14 +696,14 @@ flowchart LR
 | :--- | :--- | :--- | :--- |
 | **Action** | Một bước xử lý cơ sở trong Activity. | Hình chữ nhật bo góc, tên theo cấu trúc **Động từ + Tân ngữ** (ví dụ: `Validate request`, `Reserve stock`). | Không ghi tên trạng thái tĩnh (như `Paid`, `Cancelled`) vào hộp Action (đó là State Machine). |
 | **Initial Node** | Điểm khởi phát token điều khiển khi Activity được gọi (§15.3.3.1). | Hình tròn đặc màu đen; **không có cạnh đi vào**, chỉ có cạnh `Control Flow` đi ra. | Quy ước dùng 1 Initial Node cho dễ đọc là lựa chọn của MAVIS, không phải giới hạn cấm của chuẩn UML. |
-| **Activity Final vs Flow Final** | **Activity Final** (§15.3.3.2): kết thúc toàn bộ Activity chứa nó.<br>**Flow Final**: chỉ tiêu thụ token của nhánh đi vào nó, các nhánh đồng thời khác vẫn chạy tiếp. | **Activity Final**: chấm tròn đặc nằm trong vòng tròn ngoài (bullseye).<br>**Flow Final**: vòng tròn có dấu **X** bên trong. Cả hai đều không có cạnh đi ra. | `Activity Final` trong một service không tự động hủy một tác vụ từ xa đã được gọi bất đồng bộ trước đó. `Flow Final` không đồng nghĩa với lỗi hệ thống. |
+| **Activity Final vs Flow Final** | **Activity Final** (§15.3.3.2): kết thúc toàn bộ Activity chứa nó.<br>**Flow Final**: chỉ tiêu thụ token của nhánh đi vào nó, các nhánh đồng thời khác vẫn chạy tiếp. | **Activity Final**: chấm tròn đặc nằm trong vòng tròn ngoài (bullseye).<br>**Flow Final**: vòng tròn có dấu **X** bên trong. Cả hai đều không có cạnh đi ra. | `Activity Final` kết thúc toàn bộ execution của **Activity chứa nó**, kể cả các nhánh trong những lane khác của cùng Activity. Nó không tự gửi lệnh hủy một Activity/tác vụ từ xa độc lập. `Flow Final` chỉ kết thúc token đi vào, không đồng nghĩa với lỗi hệ thống. |
 | **Decision & Merge Node** | **Decision**: chọn **một** cạnh ra thỏa `[guard]`.<br>**Merge**: gom các nhánh thay thế lại mà không chờ đồng bộ (§15.3.3.5–6). | Hình thoi (diamond).<br>**Decision**: 1 cạnh vào, $\ge 2$ cạnh ra kèm `[guard]`.<br>**Merge**: $\ge 2$ cạnh vào, 1 cạnh ra. | Decision **không** nhân bản token ra nhiều nhánh. Không phân loại Decision hay Merge chỉ bằng hình thoi mà phải nhìn số cạnh vào/ra. |
-| **Fork & Join Node** | **Fork**: tách 1 token thành nhiều token đồng thời trên mọi cạnh ra.<br>**Join**: đồng bộ chờ đủ token trên tất cả cạnh vào (mặc định `joinSpec = AND`) (§15.3.3.3–4). | Thanh đậm (bar) ngang hoặc dọc.<br>**Fork**: 1 cạnh vào, $\ge 2$ cạnh ra.<br>**Join**: $\ge 2$ cạnh vào, 1 cạnh ra. | Nếu sau `Fork` có một nhánh rẽ `Decision` mà một đường của Decision không đi về `Join` (hoặc chưa qua `Merge`), `Join` mặc định sẽ **bị kẹt vĩnh viễn (deadlock)**. |
+| **Fork & Join Node** | **Fork**: tách 1 token thành nhiều token đồng thời trên mọi cạnh ra.<br>**Join**: đồng bộ chờ đủ token trên tất cả cạnh vào (mặc định `joinSpec = AND`) (§15.3.3.3–4). | Thanh đậm (bar) ngang hoặc dọc.<br>**Fork**: 1 cạnh vào, $\ge 2$ cạnh ra.<br>**Join**: $\ge 2$ cạnh vào, 1 cạnh ra. | Nếu một đầu vào bắt buộc của Join không bao giờ nhận token, Join mặc định sẽ chờ và có thể gây deadlock. Đánh giá theo đường đi token, `joinSpec` và phạm vi kết thúc; không kết luận deadlock chỉ vì trên đường có Decision. Hai đường thay thế muốn dùng cùng một đầu vào Join nên hợp qua Merge trước. |
 | **Control Flow & Object Flow / Pin** | **Control Flow**: truyền quyền điều khiển.<br>**Object Flow**: truyền dữ liệu qua `Object Node` hoặc `Pin` gắn trên biên Action (§15.2.4, §15.4). | Cả hai đều dùng đường **nét liền, đầu mũi tên hở** trong chuẩn UML 2.5.1. `Pin` là ô vuông nhỏ gắn trên cạnh của Action. | Không dùng đường nét đứt làm ký hiệu mặc định cho `Object Flow` (một số hướng dẫn công cụ vẽ sai chuẩn OMG). |
-| **Activity Partition (Swimlane)** | Phân nhóm các Action theo chủ thể/dịch vụ chịu trách nhiệm thực hiện (§15.6). | **Khung chia làn liền mạch (Contiguous Swimlanes):** Tất cả các làn là các cột (hoặc hàng) **đồng cấp, có chiều cao bằng nhau nằm chung trong một khung chữ nhật duy nhất**, ngăn cách bởi các đường vách ngăn thẳng đứng; các mũi tên đi xuyên qua lại giữa các vách ngăn. | **Tuyệt đối không** vẽ các Swimlane thành các hộp rời rạc đứng tách biệt hoặc xếp chồng lệch nhau (như hạn chế của Mermaid `subgraph`). Mũi tên qua vách ngăn chỉ mô tả chuyển giao bước xử lý, chưa tự xác định giao thức là HTTP, gRPC hay Kafka. |
+| **Activity Partition (Swimlane)** | Phân nhóm ActivityNodes/Edges theo đặc điểm hoặc trách nhiệm chung (§15.6); partition không thay đổi quy tắc token flow. | Thường dùng các đường song song ngang/dọc với tên làn ở một đầu. UML cũng hỗ trợ phân cấp, nhiều chiều và cách ghi tên partition khi swimlane không phù hợp. **MAVIS mặc định** dùng các lane đồng cấp trong một khung, căn chiều cao để dễ đọc. | Cùng chiều cao, cùng khung và ánh xạ lane theo service là quy ước trình bày của MAVIS, không phải giới hạn phổ quát của UML. Cạnh đi qua lane chưa tự xác định HTTP/gRPC/Kafka; lane không tạo một execution Activity độc lập. |
 
 ### 8.3. Quy trình dựng sơ đồ chuẩn
-1. **Chốt phạm vi hành vi & kẻ khung Swimlane liền mạch:** Chọn 1 workflow hoặc API use case cụ thể; kẻ **một khung lớn duy nhất** chia thành các cột đồng cấp (chiều cao bằng nhau) theo từng Service chịu trách nhiệm (theo quy ước MAVIS, ngay cả workflow 1 service cũng đặt trong 1 lane mang tên service đó).
+1. **Chốt phạm vi Activity và trách nhiệm:** Chọn một workflow/API use case, nêu rõ một execution chứa những nhánh nào. Theo mặc định MAVIS, trình bày lane theo service trong một khung căn đều; workflow một service có thể dùng một lane. Worker bất đồng bộ có vòng đời độc lập nên được mô hình hóa bằng Activity riêng với điểm gửi/nhận sự kiện rõ ràng.
 2. **Đặt Initial Node và liệt kê các Actions:** Viết tên Action dạng `Động từ + Đối tượng` và đặt vào đúng cột làn sở hữu.
 3. **Nối Control Flow / Object Flow xuyên làn:** Khi bước xử lý chuyển từ Service A sang Service B, vẽ mũi tên đi ngang/vuông góc **xuyên qua vách ngăn giữa 2 cột** sang Action thuộc làn B (và đi ngược lại nếu trả kết quả đồng bộ).
 4. **Mô hình hóa rẽ nhánh bằng `Decision` / `Merge`:** Đặt `[guard]` không chồng lấn trên các cạnh ra của Decision (tối đa một nhánh `[else]`); hợp các nhánh thay thế qua `Merge` trước khi vào bước chung tiếp theo.
@@ -704,18 +715,18 @@ flowchart LR
   * **[N-ACT-01]** Tuyệt đối không dùng `Fork` để biểu diễn câu lệnh `if/else` và không dùng `Join` để gộp hai nhánh loại trừ nhau của `Decision` (phải dùng `Merge`).
   * **[N-ACT-02]** Các `[guard]` đi ra từ một `Decision` không được chồng lấn điều kiện ngoài ý muốn; mỗi `Decision` có tối đa một `[else]`.
   * **[N-ACT-03]** Nếu một nhánh sau `Fork` rẽ qua `Decision`, các đường thay thế muốn quay lại đồng bộ ở `Join` phải được gom qua `Merge` trước khi nối vào `Join`.
-  * **[M-ACT-04] (Quy ước MAVIS — Khung Swimlane đồng cấp):** Mặc định trình bày Activity Diagram dưới dạng **bảng phân làn liền mạch (Contiguous Swimlanes)** có các cột cao bằng nhau trong cùng một khung viền; khi chưa rõ service sở hữu thì ghi rõ `"Chưa xác định"`, không tự bịa tên service.
+  * **[M-ACT-04] (Quy ước MAVIS — trình bày mặc định):** Ưu tiên các lane đồng cấp, cùng chiều cao trong một khung khi mô tả **một Activity** để dễ đọc; không coi cách vẽ UML hợp lệ khác là sai chỉ vì khác bố cục. Khi chưa rõ trách nhiệm thì ghi `"Chưa xác định"`. Không gộp các execution độc lập vào một Activity chỉ để đủ số lane.
 * **Các lỗi thường gặp (Anti-patterns):**
 
 | Lỗi phổ biến (Sai) | Cách hiểu & xử lý đúng (Chuẩn) |
 | :--- | :--- |
-| Vẽ mỗi Swimlane thành một hộp `subgraph` tách rời nhau, xếp lệch trên–dưới. | Sai ký pháp UML Swimlane. Các Swimlane bắt buộc phải đứng cạnh nhau, **chung đường viền trên/dưới và chung vách ngăn dọc** để thấy rõ luồng đi qua đi lại giữa các làn. |
+| Coi mọi `subgraph` Mermaid là ActivityPartition chuẩn, hoặc gọi bố cục khác mặc định MAVIS là sai UML. | Ghi rõ Mermaid flowchart là bản diễn giải luồng. Khi cần ký pháp ActivityPartition chính xác, dùng renderer hỗ trợ UML; việc căn đều/chung vách là lựa chọn của MAVIS. Các Activity độc lập có thể dùng các khung riêng. |
 | Đưa 2 nhánh `[valid]` và `[invalid]` của một `Decision` đi thẳng vào một thanh `Join` (AND). | Thanh `Join` chờ cả 2 nhánh cùng có token nên sẽ deadlock mãi mãi. Phải dùng hình thoi `Merge` nếu muốn gộp 2 nhánh thay thế. |
 | Dùng `Activity Final` (bullseye) ở cuối một nhánh ghi log phụ chạy song song sau `Fork`. | Token chạm `Activity Final` sẽ hủy luôn cả các nhánh chính đang chạy! Nhánh phụ kết thúc độc lập phải dùng `Flow Final` (vòng tròn chữ X). |
 | Thấy từ khóa `async` trong code liền vẽ `Fork` chạy song song. | `async/await` tuần tự không phải là concurrency hai nhánh độc lập; chỉ vẽ `Fork` khi thực sự khởi chạy các tác vụ đồng thời (`Task.WhenAll`, `CompletableFuture.allOf`, hoặc nhánh bất đồng bộ độc lập). |
 
 * **Checklist nghiệm thu:**
-  - [ ] Tất cả các Swimlane nằm chung trong một khung liền mạch, chiều cao bằng nhau, tên cột ghi đúng tên Service.
+  - [ ] Scope Activity và trách nhiệm của mỗi lane rõ ràng; nếu dùng bố cục mặc định MAVIS, các lane trong cùng Activity được căn đều. Không nhầm lane với một execution độc lập.
   - [ ] Mọi Action đều nằm trong Swimlane tương ứng và đặt tên theo chuẩn `Động từ + Đối tượng`.
   - [ ] Phân biệt đúng `Decision`/`Merge` (hình thoi) với `Fork`/`Join` (thanh ngang/dọc).
   - [ ] Không có lỗi deadlock tại `Join` hoặc kết thúc sớm ngoài ý muốn tại `Activity Final`.
@@ -726,91 +737,68 @@ flowchart LR
   * *Explicit Workflow / Use Case Spec & Bounded Control-Flow Analysis:* Trích xuất các bước hành động chính, nhánh điều kiện và lời gọi sang service khác.
   * *Giới hạn:* Control-Flow Graph (CFG) mức câu lệnh trong source code thường quá chi tiết; MAVIS yêu cầu nâng mức trừu tượng lên các bước nghiệp vụ có ý nghĩa và giữ trạng thái `Assisted / Needs Review` cho người học duyệt.
 
-### 8.6. Ví dụ minh họa chuẩn (Swimlane liền mạch chuẩn UML 2.5.1)
+### 8.6. Ví dụ minh họa (phân làn và hai Activity bất đồng bộ độc lập)
 
-> [!TIP]
-> **Nguyên tắc hiển thị Swimlane chuẩn UML 2.5.1:** Tất cả các làn (`Order API`, `Inventory Service`, `Billing Worker`) phải là **các cột đồng cấp, có chiều cao bằng nhau nằm chung trong một khung liền mạch duy nhất (`act Place Order`)**, và các mũi tên đi xuyên qua lại giữa vách ngăn của các làn. Dưới đây là cả **hình vẽ chuẩn UML 2.5.1** và **sơ đồ Mermaid đã căn chỉnh đồng cấp chiều cao 3 làn trong cùng 1 khung**:
+> [!NOTE]
+> Hình UML dưới đây dùng swimlane liền mạch theo **quy ước MAVIS**, không áp đặt cùng chiều cao/chung khung cho mọi mô hình UML. Các khối Mermaid là bản diễn giải luồng; nhãn bước có thể ghi trách nhiệm thay cho hình học lane. Mermaid flowchart không bảo đảm hình học và ký pháp đầy đủ của UML Activity.
 
-#### Minh họa 1: Sơ đồ Swimlane 3 làn đồng cấp liền mạch — Bài toán OrderHub (`Order API | Inventory Service | Billing Worker`)
+#### Minh họa 1: Tạo đơn và xử lý Billing là hai Activity độc lập
 
-![Sơ đồ Swimlane 3 làn liền mạch — act Place Order (OrderHub)](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_orderhub_3lanes.png)
+![OrderHub: Activity tạo đơn có hai lane, Activity Billing độc lập chờ OrderCreated](diagram-standards/assets/orderhub-asynchronous-activities.svg)
+
+**Scope A — `act Place order`:** Order API và Inventory Service tham gia cùng một workflow tạo đơn. Sau khi lưu đơn, workflow này ghi audit và gửi signal `OrderCreated` qua hai nhánh Fork/Join. Giả định gửi signal ở đây hoàn tất khi chuyển giao sự kiện theo hợp đồng thiết kế, không đợi worker thanh toán. Activity Final sau HTTP 201 chỉ kết thúc Activity A.
 
 ```mermaid
 flowchart TB
-    classDef spacer fill:none,stroke:none,color:transparent,width:1px,height:28px;
-    classDef actionBox rx:12,ry:12,stroke-width:1.5px;
-    classDef syncBar fill:#222,stroke:#fff,stroke-width:1px,color:#fff,height:12px;
-
-    subgraph ActivityFrame["<b>act Place Order — OrderHub (3-Lane Contiguous Swimlane)</b>"]
+    subgraph CreateOrder["act Place order — Activity A"]
         direction TB
-
-        subgraph OrderAPILane["<b>Order API</b>"]
-            direction TB
-            start((●))
-            validate["Validate request"]:::actionBox
-            decValid{" "}
-            ret400["Return 400"]:::actionBox
-            end400(((●)))
-            decStock{" "}
-            ret409["Return 409"]:::actionBox
-            end409(((●)))
-            saveOrder["Persist order"]:::actionBox
-            forkBar["=== FORK ==="]:::syncBar
-            auditLog["Record audit"]:::actionBox
-            pubEvent["Publish OrderCreated"]:::actionBox
-            joinBar["=== JOIN ==="]:::syncBar
-            ret201["Return 201 Created"]:::actionBox
-            end201(((●)))
-        end
-
-        subgraph InventoryLane["<b>Inventory Service</b>"]
-            direction TB
-            i0[" "]:::spacer
-            i1[" "]:::spacer
-            i2[" "]:::spacer
-            resStock["Reserve stock"]:::actionBox
-            i4[" "]:::spacer
-            i5[" "]:::spacer
-            i6[" "]:::spacer
-            i7[" "]:::spacer
-            i8[" "]:::spacer
-            i9[" "]:::spacer
-            i10[" "]:::spacer
-            i0 ~~~ i1 ~~~ i2 ~~~ resStock ~~~ i4 ~~~ i5 ~~~ i6 ~~~ i7 ~~~ i8 ~~~ i9 ~~~ i10
-        end
-
-        subgraph BillingLane["<b>Billing Worker</b>"]
-            direction TB
-            b0[" "]:::spacer
-            b1[" "]:::spacer
-            b2[" "]:::spacer
-            b3[" "]:::spacer
-            b4[" "]:::spacer
-            b5[" "]:::spacer
-            b6[" "]:::spacer
-            consumeEvt["Consume OrderCreated"]:::actionBox
-            authPay["Authorize payment"]:::actionBox
-            recBill["Record billing status"]:::actionBox
-            flowEnd((⊗))
-            b0 ~~~ b1 ~~~ b2 ~~~ b3 ~~~ b4 ~~~ b5 ~~~ b6 ~~~ consumeEvt
-        end
+        start((●))
+        validate["Order API: Validate request"]
+        decValid{"Request valid?"}
+        ret400["Return 400"]
+        end400(((●)))
+        decStock{"Stock available?"}
+        ret409["Return 409"]
+        end409(((●)))
+        saveOrder["Order API: Persist order"]
+        forkBar["FORK"]
+        auditLog["Record audit"]
+        pubEvent["SendSignalAction: OrderCreated"]
+        joinBar["JOIN"]
+        ret201["Return 201 Created"]
+        end201(((●)))
+        resStock["Inventory Service: Reserve stock"]
+        start --> validate --> decValid
+        decValid -->|"[invalid]"| ret400 --> end400
+        decValid -->|"[valid]"| resStock
+        resStock --> decStock
+        decStock -->|"[not available]"| ret409 --> end409
+        decStock -->|"[available]"| saveOrder --> forkBar
+        forkBar --> auditLog --> joinBar
+        forkBar --> pubEvent --> joinBar
+        joinBar --> ret201 --> end201
     end
-
-    start --> validate --> decValid
-    decValid -->|"[invalid]"| ret400 --> end400
-    decValid -->|"[valid]"| resStock
-    resStock --> decStock
-    decStock -->|"[not available]"| ret409 --> end409
-    decStock -->|"[available]"| saveOrder --> forkBar
-    forkBar --> auditLog --> joinBar
-    forkBar --> pubEvent --> joinBar
-    joinBar --> ret201 --> end201
-    forkBar --> consumeEvt --> authPay --> recBill --> flowEnd
 ```
 
-#### Minh họa 2: Sơ đồ Swimlane 2 làn đồng cấp liền mạch (`Order Service | Inventory Service` — `act Create order`)
+**Scope B — `act Handle OrderCreated`:** Đây là execution riêng của Billing Worker. `AcceptEventAction` chờ signal `OrderCreated` tương ứng trước khi cấp phép thanh toán; không có cạnh ControlFlow từ Fork của Activity A sang worker. Cơ chế truyền/giao lại sự kiện thuộc hợp đồng messaging và không được suy ra từ đường nối qua lane.
 
-![Ví dụ Swimlane 2 làn liền mạch — act Create order](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig6_swimlane_example.png)
+```mermaid
+flowchart TB
+    subgraph BillingActivity["act Handle OrderCreated — Activity B độc lập"]
+        workerStart((●))
+        accept["AcceptEventAction: wait for OrderCreated"]
+        authorize["Authorize payment"]
+        record["Record billing status"]
+        workerEnd(((●)))
+        workerStart --> accept --> authorize --> record --> workerEnd
+    end
+```
+
+Activity A và B có thể chạy xen kẽ sau khi signal được gửi. HTTP 201 không xác nhận Billing đã xong và Activity Final của A không hủy B. Ví dụ giả định nhánh thanh toán thành công; lỗi gửi/giao sự kiện, retry, chống xử lý trùng và compensation cần được thiết kế riêng. Không vẽ ObjectFlow trực tiếp qua hai khung Activity để thay thế ngữ nghĩa truyền signal.
+
+#### Minh họa 2: Bố cục MAVIS hai lane trong cùng Activity (`Order Service | Inventory Service` — `act Create order`)
+
+![Ví dụ Swimlane 2 làn liền mạch — act Create order](diagram-standards/assets/uml_activity_fig6_swimlane_example.png)
 
 ```mermaid
 flowchart TB
@@ -868,19 +856,20 @@ flowchart TB
     jBar --> r201 --> e201
 ```
 
-#### Minh họa 3: Quy ước Ký hiệu Cốt lõi & Cấu trúc Vách ngăn Swimlane (OMG UML 2.5.1)
+#### Minh họa 3: Ký hiệu cốt lõi và ví dụ bố cục partition
 
-![Cấu trúc Activity Partition / Swimlane liền mạch](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig5_partition.png)
+![Cấu trúc Activity Partition / Swimlane liền mạch](diagram-standards/assets/uml_activity_fig5_partition.png)
 
-![Bộ ký hiệu cốt lõi của UML Activity Diagram](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig1_notation.png)
+![Bộ ký hiệu cốt lõi của UML Activity Diagram](diagram-standards/assets/uml_activity_fig1_symbols.png)
 
-![Đối chiếu Decision/Merge với Fork/Join](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig2_decision_fork.png)
+![Đối chiếu Decision/Merge với Fork/Join](diagram-standards/assets/uml_activity_fig2_branch_concurrency.png)
 
-![Đối chiếu Flow Final và Activity Final](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig3_finals.png)
+![Đối chiếu Flow Final và Activity Final](diagram-standards/assets/uml_activity_fig3_finals.png)
 
-![Object Flow và Pin theo chuẩn UML 2.5.1](/C:/Users/nhuth/.gemini/antigravity/brain/3ccf8ba9-d3a5-496f-91c5-e74c1c905443/uml_activity_fig4_object_pin.png)
+![Object Flow và Pin theo chuẩn UML 2.5.1](diagram-standards/assets/uml_activity_fig4_object_pin.png)
 
 ### 8.7. Trích dẫn & Tài liệu tham khảo
+* **[S2]** Sparx Systems, [Activity Partition — trích OMG UML 2.5.1 trang 408](https://sparxsystems.com/enterprise_architect_user_guide/17.1/modeling_languages/activitypartition.html) và [Partition](https://sparxsystems.com/enterprise_architect_user_guide/17.1/modeling_languages/partition.html). Căn đều các lane là chính sách MAVIS; partition không tự thay đổi token flow.
 * **[S1]** OMG, *UML 2.5.1 Specification* — Chương 15 (Activities: §15.2 Actions & Edges, §15.3 Control Nodes, §15.4 Object Nodes & Pins, §15.6 Activity Partitions; Hình 15.5, 15.27–15.33, 15.67 trang 380–409), `https://www.omg.org/spec/UML/2.5.1/`
 * **[A1]** Giáo trình SWD392 — RDS Activity Diagrams với Swimlane (trang 23–24, Hình I-12 & I-13).
 * **[T1]** Sparx Systems & Visual Paradigm Activity Diagram Guides, `https://sparxsystems.com/resources/tutorials/uml2/activity-diagram.html`
@@ -941,9 +930,11 @@ flowchart TB
   * *Runtime Event/State Trace:* Bổ sung bằng chứng các phép chuyển trạng thái đã quan sát được trong kịch bản chạy, nhưng việc không thấy một transition trong trace không chứng minh phép chuyển đó bị cấm trong code.
 
 ### 9.6. Ví dụ minh họa chuẩn (Bài toán OrderHub — Vòng đời đối tượng `Order`)
+Thao tác `createOrder()` tạo/khởi tạo đối tượng nằm trong ngữ cảnh bên ngoài State Machine này. Khi Region được vào qua khởi tạo mặc định, cạnh từ Initial chỉ có effect `/ emit OrderCreated`, không có trigger hay guard. Các nhãn trigger ở những cạnh tiếp theo là các sự kiện/operation theo giả định thiết kế của ví dụ.
+
 ```mermaid
 stateDiagram-v2
-    [*] --> PendingPayment : createOrder() / emit OrderCreated
+    [*] --> PendingPayment : / emit OrderCreated
 
     PendingPayment --> Paid : PaymentSucceeded [amountMatched] / recordPayment()
     PendingPayment --> Cancelled : PaymentFailed / notifyCustomer()
@@ -955,6 +946,7 @@ stateDiagram-v2
 ```
 
 ### 9.7. Trích dẫn & Tài liệu tham khảo
+* **[S2]** Sparx Systems, [Initial — trích OMG UML 2.5.1 trang 312](https://sparxsystems.com/enterprise_architect_user_guide/17.1/modeling_languages/initial.html): tối đa một Initial trong Region; cạnh khởi tạo có thể có effect nhưng không có trigger/guard.
 * **[S1]** OMG, *UML 2.5.1 Specification* — Chương 14 (StateMachines: §14.2 Behavior StateMachines, Transitions, Pseudostates), `https://www.omg.org/spec/UML/2.5.1/`
 * **[A1]** Hassan Gomaa, *Software Modeling and Design* — Giáo trình SWD392 Ch09–11 Dynamic Modeling (slides 17–21: State, Event, Guard, Transition Action, Entry/Exit).
 * **[T1]** Visual Paradigm & Mermaid State Diagram Guide, `https://www.visual-paradigm.com/guide/uml-unified-modeling-language/what-is-state-machine-diagram/`

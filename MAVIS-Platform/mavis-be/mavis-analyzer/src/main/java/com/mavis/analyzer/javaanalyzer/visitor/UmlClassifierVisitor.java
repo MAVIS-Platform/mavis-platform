@@ -123,11 +123,17 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
                 // Emit structural ASSOCIATION for non-static member fields referencing another domain/project type
                 if (!fStatic && refTarget != null && !refTarget.equals(simpleName)) {
                     associatedTargetTypes.add(refTarget);
-                    emitUmlRelationship(
+                    String ownership = verifiedFieldOwnership(n, field);
+                    CodeEvidenceDTO relation = emitUmlRelationship(
                             arg, cu, simpleName, qualifiedName, refTarget,
-                            "ASSOCIATION", fieldName, fieldName, signature,
+                            ownership == null ? "ASSOCIATION" : "COMPOSITION", fieldName, fieldName, signature,
                             rawType, isCollection, fLine, field.toString()
                     );
+                    relation.getMetadata().put("injectedReference", hasAnnotation(field, Set.of("Autowired", "Inject", "Resource")) || isIocType(n));
+                    if (ownership != null) {
+                        relation.getMetadata().put("astVerifiedWholePart", true);
+                        relation.getMetadata().put("ownershipEvidence", ownership);
+                    }
                 }
             }
         }
@@ -294,6 +300,12 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
         umlClassifier.put("qualifiedName", qualifiedName);
         umlClassifier.put("packageName", packageName);
         umlClassifier.put("typeKind", typeKind);
+        umlClassifier.put("annotations", n.getAnnotations().stream().map(a -> a.getNameAsString()).toList());
+        umlClassifier.put("baseTypes", n.getExtendedTypes().stream().map(t -> t.getNameWithScope()).toList());
+        umlClassifier.put("interfaceTypes", n.getImplementedTypes().stream().map(t -> t.getNameWithScope()).toList());
+        umlClassifier.put("imports", cu == null ? List.of() : cu.getImports().stream().filter(i -> !i.isStatic()).map(i -> i.getNameAsString() + (i.isAsterisk() ? ".*" : "")).toList());
+        umlClassifier.put("extractionCompleteness", "COMPLETE");
+        umlClassifier.put("metadataSource", "JAVA_AST");
         umlClassifier.put("isAbstract", isAbstract);
         umlClassifier.put("isStatic", isStatic);
         umlClassifier.put("visibility", visibility);
@@ -430,7 +442,32 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
         super.visit(n, arg);
     }
 
-    private void emitUmlRelationship(
+    private static boolean hasAnnotation(com.github.javaparser.ast.nodeTypes.NodeWithAnnotations<?> node, Set<String> names) {
+        return node.getAnnotations().stream().anyMatch(a -> names.contains(a.getName().getIdentifier()));
+    }
+
+    private static boolean isIocType(ClassOrInterfaceDeclaration owner) {
+        return hasAnnotation(owner, Set.of("Service", "Component", "Controller", "RestController", "Repository", "Configuration"));
+    }
+
+    private static String verifiedFieldOwnership(ClassOrInterfaceDeclaration owner, FieldDeclaration field) {
+        if (!hasAnnotation(owner, Set.of("Entity", "Table", "Document", "Embeddable", "Aggregate", "AggregateRoot", "ValueObject")) || isIocType(owner) ||
+            hasAnnotation(field, Set.of("Autowired", "Inject", "Resource"))) return null;
+        if (hasAnnotation(field, Set.of("Embedded", "EmbeddedId"))) return "EMBEDDED_VALUE";
+        if (hasAnnotation(field, Set.of("ElementCollection"))) return "ELEMENT_COLLECTION";
+        for (var annotation : field.getAnnotations()) {
+            if (!Set.of("OneToMany", "OneToOne").contains(annotation.getName().getIdentifier()) || !annotation.isNormalAnnotationExpr()) continue;
+            boolean orphanRemoval = false, cascadeRemoval = false;
+            for (var pair : annotation.asNormalAnnotationExpr().getPairs()) {
+                if (pair.getNameAsString().equals("orphanRemoval") && pair.getValue().isBooleanLiteralExpr()) orphanRemoval = pair.getValue().asBooleanLiteralExpr().getValue();
+                if (pair.getNameAsString().equals("cascade")) cascadeRemoval = pair.getValue().findAll(NameExpr.class).stream().anyMatch(n -> Set.of("ALL", "REMOVE").contains(n.getNameAsString())) ||
+                    pair.getValue().findAll(FieldAccessExpr.class).stream().anyMatch(n -> Set.of("ALL", "REMOVE").contains(n.getNameAsString()));
+            }
+            if (orphanRemoval && cascadeRemoval) return "CASCADE_ORPHAN_REMOVAL";
+        }
+        return null;
+    }
+    private CodeEvidenceDTO emitUmlRelationship(
             List<CodeEvidenceDTO> arg,
             CompilationUnit cu,
             String sourceSimpleName,
@@ -466,7 +503,7 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
         List<String> candidates = cu != null ? BeanMessagingVisitor.candidates(cu, targetSimpleName) : List.of(targetSimpleName);
         String cleanSnippet = snippet != null && snippet.length() > 300 ? snippet.substring(0, 300) : snippet;
 
-        arg.add(CodeEvidenceDTO.builder()
+        CodeEvidenceDTO evidence = CodeEvidenceDTO.builder()
                 .elementType("UML_RELATIONSHIP")
                 .identifier(sourceSimpleName + " -[" + umlRelationKind + "]-> " + targetSimpleName)
                 .sourceComponent(sourceSimpleName)
@@ -477,7 +514,9 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
                 .codeSnippet(cleanSnippet)
                 .symbolCandidates(candidates)
                 .metadata(meta)
-                .build());
+                .build();
+        arg.add(evidence);
+        return evidence;
     }
 
     private Map<String, Object> extractMethodCfg(MethodDeclaration method, String className, String qualifiedClassName, String signature) {
@@ -1104,7 +1143,8 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
         int genericStart = trimmed.indexOf('<');
         if (genericStart > 0) {
             String outer = trimmed.substring(0, genericStart).trim();
-            return COLLECTION_WRAPPERS.contains(outer);
+            String shortOuter = outer.substring(outer.lastIndexOf('.') + 1);
+            return COLLECTION_WRAPPERS.contains(shortOuter) || Set.of("Map", "HashMap", "LinkedHashMap", "SortedMap", "TreeMap").contains(shortOuter);
         }
         return false;
     }
@@ -1119,18 +1159,26 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
         if (genericStart != -1) {
             int genericEnd = trimmed.lastIndexOf('>');
             String outer = trimmed.substring(0, genericStart).trim();
-            if (genericEnd > genericStart && (COLLECTION_WRAPPERS.contains(outer) || "Optional".equals(outer) || "CompletableFuture".equals(outer) || "ResponseEntity".equals(outer))) {
+            String shortOuter = outer.substring(outer.lastIndexOf('.') + 1);
+            boolean map = Set.of("Map", "HashMap", "LinkedHashMap", "SortedMap", "TreeMap").contains(shortOuter);
+            if (genericEnd > genericStart && (map || COLLECTION_WRAPPERS.contains(shortOuter) || Set.of("Optional", "CompletableFuture", "ResponseEntity").contains(shortOuter))) {
                 String inner = trimmed.substring(genericStart + 1, genericEnd).trim();
+                if (map) {
+                    int depth = 0, comma = -1;
+                    for (int i = 0; i < inner.length(); i++) {
+                        if (inner.charAt(i) == '<') depth++; else if (inner.charAt(i) == '>') depth--;
+                        else if (inner.charAt(i) == ',' && depth == 0) comma = i;
+                    }
+                    if (comma >= 0) inner = inner.substring(comma + 1).trim();
+                }
                 return extractReferencedDomainType(inner, typeParameters);
             }
             trimmed = outer;
         }
-        if (trimmed.contains(".")) {
-            trimmed = trimmed.substring(trimmed.lastIndexOf('.') + 1);
-        }
-        if (trimmed.isEmpty() || PRIMITIVE_OR_BUILT_IN.contains(trimmed) || typeParameters.contains(trimmed)) {
+        String simple = trimmed.substring(trimmed.lastIndexOf('.') + 1);
+        if (simple.isEmpty() || PRIMITIVE_OR_BUILT_IN.contains(simple) || typeParameters.contains(simple)) {
             return null;
         }
-        return Character.isUpperCase(trimmed.charAt(0)) ? trimmed : null;
+        return Character.isUpperCase(simple.charAt(0)) ? trimmed : null;
     }
 }

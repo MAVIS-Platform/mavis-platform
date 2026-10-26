@@ -2,31 +2,26 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
-export type Appearance = "light" | "dark" | "system";
-type ResolvedAppearance = Exclude<Appearance, "system">;
+export type Appearance = "light" | "dark";
+type ResolvedAppearance = Appearance;
 
 const STORAGE_KEY = "mavis.appearance";
 
 function isAppearance(value: string | null): value is Appearance {
-  return value === "light" || value === "dark" || value === "system";
+  return value === "light" || value === "dark";
 }
 
 function readAppearance(): Appearance {
   try {
     const value = localStorage.getItem(STORAGE_KEY);
-    return isAppearance(value) ? value : "system";
+    return isAppearance(value) ? value : "light";
   } catch {
-    return "system";
+    return "light";
   }
 }
 
 function applyAppearance(appearance: Appearance): ResolvedAppearance {
-  const resolved =
-    appearance === "system"
-      ? window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light"
-      : appearance;
+  const resolved = appearance;
   document.documentElement.classList.toggle("dark", resolved === "dark");
   document.documentElement.dataset["appearance"] = appearance;
   document.documentElement.style.colorScheme = resolved;
@@ -40,19 +35,13 @@ const AppearanceContext = createContext<{
 } | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [appearance, setPreference] = useState<Appearance>("system");
+  const [appearance, setPreference] = useState<Appearance>("light");
   const [resolvedAppearance, setResolved] = useState<ResolvedAppearance>("light");
 
   useEffect(() => {
     const initial = readAppearance();
     setPreference(initial);
     setResolved(applyAppearance(initial));
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const onSystemChange = () => {
-      if (document.documentElement.dataset["appearance"] === "system") {
-        setResolved(applyAppearance("system"));
-      }
-    };
     const onStorage = (event: StorageEvent) => {
       if (event.key === STORAGE_KEY || event.key === null) {
         const next = readAppearance();
@@ -60,10 +49,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         setResolved(applyAppearance(next));
       }
     };
-    media.addEventListener("change", onSystemChange);
     window.addEventListener("storage", onStorage);
     return () => {
-      media.removeEventListener("change", onSystemChange);
       window.removeEventListener("storage", onStorage);
     };
   }, []);

@@ -39,12 +39,49 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class DiagramProjectionServiceImplTest {
+    @Test void submittedDiagramLayoutCannotBeOverwritten() {
+        var id=UUID.randomUUID();var layout=objectMapper.createObjectNode();layout.putArray("nodes").addObject().put("id","node").put("x",0).put("y",0);
+        var diagram=DiagramVersion.builder().id(id).modelVersion(sampleModelVersion).notation("C4").level("CONTAINER").layoutJson(layout).build();
+        when(diagramVersionRepository.findById(id)).thenReturn(Optional.of(diagram));when(submissions.existsByDiagramVersionId(id)).thenReturn(true);
+        var update=objectMapper.createObjectNode();update.putArray("nodes").addObject().put("id","node").put("x",50).put("y",60);
+        assertThatThrownBy(()->diagramProjectionService.updateDiagramLayout(id,update)).isInstanceOf(com.mavis.common.exception.BusinessException.class);
+        org.mockito.Mockito.verify(diagramVersionRepository,org.mockito.Mockito.never()).save(any());
+        assertThat(diagram.getLayoutJson().path("nodes").get(0).path("x").asInt()).isZero();
+    }
+    @Test void elementContextSeparatesDirectAndIncidentEvidenceAndRejectsOtherScopes() {
+        var selected = com.mavis.common.entity.ModelElement.builder().id(UUID.randomUUID()).name("handler").modelVersion(sampleModelVersion).build();
+        var peer = com.mavis.common.entity.ModelElement.builder().id(UUID.randomUUID()).name("channel").modelVersion(sampleModelVersion).build();
+        var incoming = com.mavis.common.entity.ModelRelationship.builder().id(UUID.randomUUID()).modelVersion(sampleModelVersion).sourceElement(peer).targetElement(selected).build();
+        var direct = Evidence.builder().id(UUID.randomUUID()).modelVersion(sampleModelVersion).element(selected).sourceType("STATIC_CODE").locator("Handler.java:4").excerpt("class Handler").build();
+        var related = Evidence.builder().id(UUID.randomUUID()).modelVersion(sampleModelVersion).relationship(incoming).sourceType("STATIC_CODE").locator("Handler.java:12").excerpt("subscribe(channel)").build();
+        var unrelated = Evidence.builder().id(UUID.randomUUID()).modelVersion(sampleModelVersion).element(peer).build();
+        var foreign = Evidence.builder().id(UUID.randomUUID()).modelVersion(ModelVersion.builder().id(UUID.randomUUID()).build()).element(selected).build();
+        when(elements.findById(selected.getId())).thenReturn(Optional.of(selected));
+        when(evidenceRepository.findElementContext(sampleModelVersion.getId(), selected.getId())).thenReturn(List.of(direct, related, related, unrelated, foreign));
+        var result = diagramProjectionService.getElementEvidenceContext(selected.getId());
+        assertThat(result.modelVersionId()).isEqualTo(sampleModelVersion.getId());
+        assertThat(result.elementId()).isEqualTo(selected.getId());
+        assertThat(result.directEvidence()).extracting(e -> e.getId()).containsExactly(direct.getId());
+        assertThat(result.relationshipEvidence()).extracting(e -> e.getId()).containsExactly(related.getId());
+        assertThat(result.relationshipEvidence().get(0).getRelationshipId()).isEqualTo(incoming.getId());
+        verify(accessPolicy).requireProjectReadAccess(sampleModelVersion.getProject());
+    }
+
+    @Test void elementContextChecksProjectAccessBeforeReadingEvidence() {
+        var selected = com.mavis.common.entity.ModelElement.builder().id(UUID.randomUUID()).modelVersion(sampleModelVersion).build();
+        when(elements.findById(selected.getId())).thenReturn(Optional.of(selected));
+        org.mockito.Mockito.doThrow(new com.mavis.common.exception.BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN))
+                .when(accessPolicy).requireProjectReadAccess(sampleModelVersion.getProject());
+        assertThatThrownBy(() -> diagramProjectionService.getElementEvidenceContext(selected.getId())).isInstanceOf(com.mavis.common.exception.BusinessException.class);
+        org.mockito.Mockito.verifyNoInteractions(evidenceRepository);
+    }
 
     @Mock
     private DiagramVersionRepository diagramVersionRepository;
 
     @Mock
     private EvidenceRepository evidenceRepository;
+    @Mock private com.mavis.common.repository.SubmissionSnapshotRepository submissions;
 
     @org.mockito.Mock private com.mavis.common.repository.ModelVersionRepository models;
     @org.mockito.Mock private com.mavis.common.repository.ModelElementRepository elements;

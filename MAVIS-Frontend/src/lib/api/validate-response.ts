@@ -32,10 +32,12 @@ export function validateResponse<K extends Operation>(
     feedback: "submissionId",
     saveScenario: "scenarioId",
     setAccountLock: "accountId",
+    setAccountRole: "accountId",
     configureIntegration: "integrationId",
     configureProfile: "profileId",
   };
   const idKey = ids[operation];
+  if (operation === "assignmentSubmissions" && Array.isArray(value) && value.some(v => !record(v) || v["assignmentId"] !== request["assignmentId"])) fail();
   if (idKey && (!record(value) || value["id"] !== request[idKey])) fail();
   if (
     Array.isArray(value) &&

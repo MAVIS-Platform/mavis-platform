@@ -2,7 +2,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Hexagon, ArrowLeft, LoaderCircle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, LoaderCircle, CheckCircle2 } from "lucide-react";
+import { MavisLogo } from "@/components/mavis-logo";
 import { useApiMutation } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,10 +74,7 @@ export function AuthFlow({
     <div className="min-h-svh bg-background px-6 py-6">
       <header className="mx-auto flex max-w-6xl items-center justify-between">
         <Link href="/login" className="flex items-center gap-3 font-bold tracking-widest">
-          <span className="rounded-xl bg-primary p-2 text-primary-foreground">
-            <Hexagon />
-          </span>
-          MAVIS
+          <MavisLogo />
         </Link>
         <AppearanceSelector />
       </header>

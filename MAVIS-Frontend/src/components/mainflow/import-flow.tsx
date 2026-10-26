@@ -249,7 +249,7 @@ export function ImportFlow() {
               >
                 {!branchesCurrent && (
                   <option value="">
-                    {branches.isFetching ? "Đang tải các nhánh…" : "Nhập URL GitHub để chọn nhánh"}
+                    {branches.isFetching ? "Loading branches…" : "Enter a GitHub URL to select a branch"}
                   </option>
                 )}
                 {branchOptions.map((value) => (
@@ -261,7 +261,7 @@ export function ImportFlow() {
               </select>
               {branches.data?.truncated && (
                 <p className="mt-1 text-xs">
-                  Đã tải 1.000 nhánh đầu. Dùng Commit SHA cho nhánh ngoài danh sách.
+                  Loaded the first 1,000 branches. Use Commit SHA for branches not listed here.
                 </p>
               )}
               <ErrorNotice error={branches.error} />
@@ -277,7 +277,7 @@ export function ImportFlow() {
                     if (branchRepository === repository.trim()) void branches.refetch();
                   }}
                 >
-                  Tải lại nhánh
+                  Reload branches
                 </Button>
               )}
             </label>

@@ -118,7 +118,7 @@ Thực hiện kiểm thử ngay trong P0…P6, không đợi nối xong mọi m�
 - Browser student: login → tạo/chọn project → ZIP/GitHub → poll/refresh/cancel → graph/evidence → impact → AI fallback → export. Cả Java và C#; người ngoài bị chặn. Các lát revision/runtime/education/admin chỉ gán pass sau khi thực hiện test của lát đó.
 - DB cloud test: namespace project/account riêng, không thay seed/chạy reset. Source/artifact/state root vẫn phải mount đúng; DB cloud không thay Docker host/source storage.
 - Build/typecheck/lint phù hợp file thay đổi, test backend cho endpoint mới và test ảnh hưởng. Không chạy fault/load suite đại trà trên cloud chung.
-- Mỗi PR có nguồn commit, phạm vi API bật thật, test pass/fail/skipped và giới hạn. Không force-push/squash lịch sử đã push của Lovable. Dọn generated files khỏi commit, không commit .next/logs/cookies/DB backup.
+- Mỗi PR có nguồn commit, phạm vi API bật thật, test pass/fail/skipped và giới hạn. Giữ lịch sử Git đã chia sẻ; không force-push/squash commit đã push. Dọn generated files khỏi commit, không commit .next/logs/cookies/DB backup.
 
 ## Chia commit/PR dự kiến
 

@@ -6,7 +6,6 @@ import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
   Bell,
   ChevronDown,
-  Hexagon,
   Info,
   LogOut,
   Menu,
@@ -17,6 +16,7 @@ import {
   UserRound,
 } from "lucide-react";
 import { AppearanceSelector } from "@/components/appearance-selector";
+import { MavisLogo } from "@/components/mavis-logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -284,16 +284,13 @@ function ShellChrome({
                     : "/"
             }
             aria-label="MAVIS home"
-            className="flex items-center gap-2.5 rounded-md"
+            className="flex min-w-0 items-center gap-2.5 rounded-md"
           >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Hexagon className="size-5" aria-hidden="true" />
-            </span>
+            <MavisLogo compact={isCollapsed} className={isCollapsed ? "h-10 w-10" : "h-12 w-12"} />
             {!isCollapsed && (
-              <span>
-                <span className="block text-base font-bold tracking-[0.12em]">MAVIS</span>
-                <span className="block text-[11px] text-muted-foreground">
-                  Understand the architecture
+              <span className="min-w-0">
+                <span className="block text-base tracking-widest text-foreground">
+                  MAVIS
                 </span>
               </span>
             )}
@@ -522,16 +519,12 @@ function ShellChrome({
               )}
             </div>
           </Header>
-          {!live && (
+          {!live && (Boolean(onPreviewNavigate) || pathname === "/design-system") && (
             <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-info-subtle px-(--page-gutter) py-2 text-xs text-info">
               <span className="flex items-center gap-2">
                 <Info className="size-3.5 shrink-0" aria-hidden="true" />
                 <span>
-                  {onPreviewNavigate || pathname === "/design-system"
-                    ? "Design preview · All content is illustrative. No live system data."
-                    : apiMode === "mock"
-                      ? "Mock mode · Explicit sample data. No live system connection. Changes reset on reload."
-                      : "Backend mode · Configured service requests. Unavailable operations report an error."}
+                  Design preview · All content is illustrative. No live system data.
                 </span>
               </span>
               <button
