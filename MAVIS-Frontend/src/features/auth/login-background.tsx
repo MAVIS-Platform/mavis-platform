@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useId, useRef, type CSSProperties } from "react";
-import styles from "./login-background.module.css";
 
 // Illustrative topology only. Positions are deterministic for hydration and
 // generated once, not recalculated on animation frames.
@@ -73,13 +72,13 @@ export function LoginBackground() {
     <div
       ref={layer}
       aria-hidden="true"
-      className={`${styles["background"]} pointer-events-none fixed inset-0 overflow-hidden text-primary`}
+      className="mavis-auth-background pointer-events-none fixed inset-0 overflow-hidden text-primary"
     >
       <svg
         viewBox="0 0 1440 1000"
         preserveAspectRatio="xMinYMid slice"
         focusable="false"
-        className={styles["network"]}
+        className="mavis-auth-network"
       >
         <defs>
           <radialGradient id={gradient}>
@@ -92,7 +91,7 @@ export function LoginBackground() {
         {clusters.map(({ center, nodes }, cluster) => (
           <g
             key={cluster}
-            className={`${styles["cluster"]} ${cluster > 1 ? styles["extra"] : ""}`}
+            className={`mavis-auth-cluster ${cluster > 1 ? "mavis-auth-extra" : ""}`}
             style={{ "--delay": `${-cluster * 5}s` } as CSSProperties}
           >
             {nodes.map((point, i) => {
@@ -100,12 +99,12 @@ export function LoginBackground() {
               const path = `M ${center.x} ${center.y} L ${point.x} ${point.y} L ${next.x} ${next.y}`;
               return (
                 <g key={i}>
-                  <path d={path} className={styles["edge"]} />
+                  <path d={path} className="mavis-auth-edge" />
                   {i % 2 === 0 && (
                     <path
                       d={path}
                       pathLength="100"
-                      className={styles["signal"]}
+                      className="mavis-auth-signal"
                       style={{ animationDelay: `${-i * 1.3 - cluster}s` }}
                     />
                   )}
@@ -113,26 +112,26 @@ export function LoginBackground() {
                     cx={point.x}
                     cy={point.y}
                     r={i % 3 === 0 ? 3 : 1.7}
-                    className={styles["node"]}
+                    className="mavis-auth-node"
                   />
                 </g>
               );
             })}
-            <circle cx={center.x} cy={center.y} r="23" className={styles["halo"]} />
-            <circle cx={center.x} cy={center.y} r="13" className={styles["halo"]} />
+            <circle cx={center.x} cy={center.y} r="23" className="mavis-auth-halo" />
+            <circle cx={center.x} cy={center.y} r="13" className="mavis-auth-halo" />
             <rect
               x={center.x - 5}
               y={center.y - 5}
               width="10"
               height="10"
               rx="3"
-              className={styles["hub"]}
+              className="mavis-auth-hub"
             />
           </g>
         ))}
         <path
           d="M180 200 C140 420 560 390 490 640 M490 640 C760 840 1000 740 1260 860"
-          className={`${styles["edge"]} ${styles["extra"]}`}
+          className="mavis-auth-edge mavis-auth-extra"
         />
       </svg>
     </div>
