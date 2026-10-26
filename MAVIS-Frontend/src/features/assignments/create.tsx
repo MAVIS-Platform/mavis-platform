@@ -13,9 +13,11 @@ import { DIAGRAM_REQUIREMENTS } from "./requirements";
 export function CreateAssignment({
   workspaceId,
   assignment,
+  onSuccess,
 }: {
   workspaceId: string;
   assignment?: Assignment;
+  onSuccess?: () => void;
 }) {
   const create = useApiMutation(assignment ? "updateAssignment" : "createAssignment"),
     session = useSession(),
@@ -69,6 +71,7 @@ export function CreateAssignment({
             },
             {
               onSuccess: () => {
+                onSuccess?.();
                 if (assignment) return;
                 setSourceModelId("");
                 setSourceKey((key) => key + 1);

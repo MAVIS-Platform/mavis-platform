@@ -81,7 +81,7 @@ export function AssignmentSourcePicker({
         });
         createdProject.current = project.id;
         target = project.id;
-        await cache.invalidateQueries({ queryKey: ["api", "workspaceProjects"] });
+        void cache.invalidateQueries({ queryKey: ["api", "workspaceProjects"] });
       }
       setProjectId(target);
       const snapshot =

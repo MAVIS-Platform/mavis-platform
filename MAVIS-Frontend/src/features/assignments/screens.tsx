@@ -1,13 +1,10 @@
 "use client";
 import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
-import { useSearchParams } from "next/navigation";
 import { AssignmentSourceDetails } from "./source-picker";
 import { useState } from "react";
 import { useApiQuery, useApiMutation, usePermission, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
-import { ErrorState } from "@/components/shared/request-state";
-import { RequestState } from "@/components/shared/request-state";
-import { SelectField } from "@/components/shared/forms";
+import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { DetailPanel } from "@/components/shared/data";
 import { SubmissionComposer } from "@/features/submissions/composer";
 import { CreateAssignment } from "./create";
@@ -15,19 +12,30 @@ import Link from "next/link";
 export function Assignments() {
   const { workspaceId } = useSelection();
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
-  const params = useSearchParams();
-  const [assignmentId, setAssignmentId] = useState(params.get("assignment") ?? "");
-  const assignment = query.data?.find((a) => a.id === assignmentId) ?? query.data?.[0];
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const canSubmit = usePermission("submission:create");
   const canManage = usePermission("workspace:manage");
   const remove = useApiMutation("deleteAssignment");
   return workspaceId ? (
-    <>
+    <div className="space-y-5">
       {canManage && (
-        <details className="rounded-xl border bg-card p-4" open={!query.data?.length}>
-          <summary className="cursor-pointer text-sm font-semibold">Create assignment</summary>
-          <CreateAssignment key={workspaceId} workspaceId={workspaceId} />
-        </details>
+        <div className="flex items-center justify-end">
+          <Button
+            type="button"
+            variant={showCreate ? "outline" : "default"}
+            onClick={() => setShowCreate((open) => !open)}
+          >
+            {showCreate ? "Close create form" : "Create assignment"}
+          </Button>
+        </div>
+      )}
+      {canManage && showCreate && (
+        <CreateAssignment
+          key={workspaceId}
+          workspaceId={workspaceId}
+          onSuccess={() => setShowCreate(false)}
+        />
       )}
       <RequestState
         query={query}
@@ -35,18 +43,12 @@ export function Assignments() {
         emptyMessage={
           canSubmit
             ? "Your lecturer has not published an assignment in this class yet."
-            : "No assignments in this class yet. Create one above to receive student submissions."
+            : "No assignments in this class yet. Click Create assignment above to publish one."
         }
       >
-        {assignment && (
-          <div className="space-y-5">
-            <SelectField
-              label="Assignment"
-              value={assignment.id}
-              onChange={setAssignmentId}
-              options={(query.data ?? []).map((a) => ({ value: a.id, label: a.title }))}
-            />
-            <DetailPanel title={assignment.title}>
+        <div className="space-y-4">
+          {query.data?.map((assignment) => (
+            <DetailPanel key={assignment.id} title={assignment.title}>
               <p className="text-sm text-muted-foreground">{assignment.instructions}</p>
               <p className="text-xs text-muted-foreground">Due {assignment.dueAt}</p>
               <AssignmentSourceDetails
@@ -54,26 +56,27 @@ export function Assignments() {
                 assignmentId={assignment.id}
               />
               {canManage && (
-                <Link
-                  className="text-sm text-primary underline"
-                  href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}`}
-                >
-                  Review submissions for this assignment
-                </Link>
-              )}
-              {canManage && (
-                <>
-                  <details>
-                    <summary className="cursor-pointer text-sm text-primary">
-                      Edit assignment & reference source
-                    </summary>
-                    <CreateAssignment
-                      key={assignment.id}
-                      workspaceId={workspaceId}
-                      assignment={assignment}
-                    />
-                  </details>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Link
+                    className="text-sm text-primary underline"
+                    href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}`}
+                  >
+                    Review submissions for this assignment
+                  </Link>
                   <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setEditingId((current) => (current === assignment.id ? null : assignment.id))
+                    }
+                  >
+                    {editingId === assignment.id
+                      ? "Close edit"
+                      : "Edit assignment & reference source"}
+                  </Button>
+                  <Button
+                    size="sm"
                     variant="outline"
                     disabled={remove.isPending}
                     onClick={() => {
@@ -88,7 +91,15 @@ export function Assignments() {
                     Delete assignment
                   </Button>
                   {remove.error && <ErrorState error={remove.error} />}
-                </>
+                </div>
+              )}
+              {canManage && editingId === assignment.id && (
+                <CreateAssignment
+                  key={assignment.id}
+                  workspaceId={workspaceId}
+                  assignment={assignment}
+                  onSuccess={() => setEditingId(null)}
+                />
               )}
               <p className="text-xs text-muted-foreground">
                 Required diagrams:{" "}
@@ -96,18 +107,18 @@ export function Assignments() {
                   "Any saved diagram"}{" "}
                 · Runtime trace: {assignment.requireRuntimeTrace ? "Required" : "Optional"}
               </p>
+              {canSubmit && (
+                <SubmissionComposer
+                  key={assignment.id}
+                  assignmentId={assignment.id}
+                  requirements={assignment}
+                  workspaceId={workspaceId}
+                />
+              )}
             </DetailPanel>
-            {canSubmit && (
-              <SubmissionComposer
-                key={assignment.id}
-                assignmentId={assignment.id}
-                requirements={assignment}
-                workspaceId={workspaceId}
-              />
-            )}
-          </div>
-        )}
+          ))}
+        </div>
       </RequestState>
-    </>
+    </div>
   ) : null;
 }

@@ -49,9 +49,10 @@ class ArchitectureDocumentServiceTest {
     }
     @Test void bundleRejectsAnotherModelsDiagram() {
         when(models.findById(id)).thenReturn(Optional.of(model));var diagramId=UUID.randomUUID();
-        when(diagrams.findById(diagramId)).thenReturn(Optional.of(DiagramVersion.builder().id(diagramId).modelVersion(ModelVersion.builder().id(UUID.randomUUID()).build()).build()));
+        when(diagrams.findAllById(any())).thenReturn(List.of(DiagramVersion.builder().id(diagramId).modelVersion(ModelVersion.builder().id(UUID.randomUUID()).build()).build()));
         assertThatThrownBy(()->service.freezeArtifacts(id,new ArchitectureDocumentService.ArtifactSelection(List.of(),List.of(diagramId)))).isInstanceOf(BusinessException.class);
         verify(diagrams,never()).save(any());
+        verify(diagrams,never()).saveAll(any());
     }
     @Test void saveCreatesNewImmutableRevisionAndRejectsStaleWrites() {
         when(models.findById(id)).thenReturn(Optional.of(model));
@@ -82,5 +83,79 @@ class ArchitectureDocumentServiceTest {
         doThrow(new BusinessException(ErrorCode.FORBIDDEN,"Denied")).when(access).requireProjectWriteAccess(model.getProject());
         assertThatThrownBy(()->service.save(id,"containers",new ArchitectureDocumentService.Save(0,xml))).isInstanceOf(BusinessException.class);
         verifyNoInteractions(documents,entityManager);
+    }
+
+    private ArchitectureDocument document(String view, long revision) {
+        var document = new ArchitectureDocument();
+        document.setId(UUID.randomUUID());document.setModelVersion(model);
+        document.setViewKey(view);document.setRevision(revision);document.setXml(xml);
+        return document;
+    }
+
+    @Test void bundleBatchLoadsExactRevisionsAndSavesAllArtifactsAfterOnePermissionCheck() {
+        when(models.findById(id)).thenReturn(Optional.of(model));
+        var context = document("context", 2);
+        var container = document("container", 3);
+        // Independent IN predicates may return this unselected pair too.
+        var unselected = document("context", 3);unselected.setXml("must not be frozen");
+        when(documents.findByModelVersionIdAndViewKeyInAndRevisionIn(eq(id), any(), any()))
+                .thenReturn(List.of(unselected, container, context));
+        UUID diagramId = UUID.randomUUID();
+        var existing = DiagramVersion.builder().id(diagramId).modelVersion(model).notation("UML_CLASS")
+                .level("SAVED_DOCUMENT").layoutJson(new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("original", true)).build();
+        when(diagrams.findAllById(any())).thenReturn(List.of(existing));
+        when(diagrams.saveAll(any())).thenAnswer(call -> {
+            List<DiagramVersion> values = call.getArgument(0);
+            values.forEach(value -> value.setId(UUID.randomUUID()));
+            return values;
+        });
+        var result = service.freezeArtifacts(id, new ArchitectureDocumentService.ArtifactSelection(
+                List.of(new ArchitectureDocumentService.SelectedDocument("context", 2), new ArchitectureDocumentService.SelectedDocument("container", 3)),
+                List.of(diagramId, diagramId)));
+        ArgumentCaptor<List<DiagramVersion>> capture = ArgumentCaptor.forClass(List.class);
+        verify(diagrams).saveAll(capture.capture());
+        var saved = capture.getValue();assertThat(saved).hasSize(3);
+        assertThat(result).isEqualTo(saved.get(2).getId());
+        var artifacts = saved.get(2).getLayoutJson().path("artifacts");assertThat(artifacts.size()).isEqualTo(3);
+        assertThat(artifacts.get(0).path("layoutJson").path("documentRevision").asLong()).isEqualTo(2);
+        assertThat(artifacts.get(0).path("layoutJson").path("drawioXml").asText()).isEqualTo(xml);
+        assertThat(artifacts.get(1).path("level").asText()).isEqualTo("CONTAINER");
+        assertThat(artifacts.get(2).path("diagramVersionId").asText()).isEqualTo(diagramId.toString());
+        existing.getLayoutJson().withObject("/changed");assertThat(artifacts.get(2).path("layoutJson").has("changed")).isFalse();
+        verify(models).findById(id);verify(access).requireProjectWriteAccess(model.getProject());
+        verify(documents).findByModelVersionIdAndViewKeyInAndRevisionIn(eq(id), eq(new LinkedHashSet<>(List.of("context", "container"))), eq(Set.of(2L, 3L)));
+        verify(diagrams, never()).findById(any());verify(diagrams, never()).save(any());
+        verify(documents, never()).findByModelVersionIdAndViewKeyAndRevision(any(), any(), anyLong());
+    }
+
+    @Test void missingExactRevisionCannotBeReplacedByAnotherCandidateOrPartiallySaved() {
+        when(models.findById(id)).thenReturn(Optional.of(model));
+        when(documents.findByModelVersionIdAndViewKeyInAndRevisionIn(eq(id), any(), any()))
+                .thenReturn(List.of(document("context", 3), document("container", 3)));
+        assertThatThrownBy(() -> service.freezeArtifacts(id, new ArchitectureDocumentService.ArtifactSelection(
+                List.of(new ArchitectureDocumentService.SelectedDocument("context", 2), new ArchitectureDocumentService.SelectedDocument("container", 3)), List.of())))
+                .isInstanceOf(BusinessException.class);
+        verify(diagrams, never()).saveAll(any());verify(diagrams, never()).save(any());
+    }
+
+    @Test void duplicateViewsAndMissingDiagramsNeverWriteArtifacts() {
+        when(models.findById(id)).thenReturn(Optional.of(model));
+        var selected = new ArchitectureDocumentService.SelectedDocument("context", 1);
+        assertThatThrownBy(() -> service.freezeArtifacts(id, new ArchitectureDocumentService.ArtifactSelection(List.of(selected, selected), List.of())))
+                .isInstanceOf(BusinessException.class);
+        verifyNoInteractions(documents, diagrams);
+        when(diagrams.findAllById(any())).thenReturn(List.of());
+        assertThatThrownBy(() -> service.freezeArtifacts(id, new ArchitectureDocumentService.ArtifactSelection(List.of(), List.of(UUID.randomUUID()))))
+                .isInstanceOf(BusinessException.class);
+        verify(diagrams, never()).saveAll(any());
+    }
+
+    @Test void deniedBundleWriterCannotReadSelectedDocumentsOrWriteArtifacts() {
+        when(models.findById(id)).thenReturn(Optional.of(model));
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN, "Denied")).when(access).requireProjectWriteAccess(model.getProject());
+        assertThatThrownBy(() -> service.freezeArtifacts(id, new ArchitectureDocumentService.ArtifactSelection(
+                List.of(new ArchitectureDocumentService.SelectedDocument("context", 1)), List.of())))
+                .isInstanceOf(BusinessException.class);
+        verifyNoInteractions(documents, diagrams);
     }
 }

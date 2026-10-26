@@ -2,7 +2,15 @@ import { compactOverview } from "./compact-overview";
 import { respectPins } from "./pinned-layout";
 import { twoHubLayout } from "./two-hub-layout";
 import type { ElkNode, ElkExtendedEdge } from "elkjs/lib/elk-api";
-import { inspectGeometry, type Rect, type Route } from "./geometry";
+import {
+  applyPortRhythmBridge,
+  inspectGeometry,
+  segmentRectClearanceWithin,
+  slidingLabelCandidates,
+  snap4,
+  type Rect,
+  type Route,
+} from "./geometry";
 import {
   RULE_VERSION,
   kindOf,
@@ -357,7 +365,7 @@ export async function generateDrawio(
       const [topBox, botBox] = boxA.y <= boxB.y ? [boxA, boxB] : [boxB, boxA];
       const gapYTop = topBox.y + topBox.height;
       const gapYBot = botBox.y;
-      if (gapYTop + 16 <= gapYBot && pairRoutes.length === 1) {
+      if (gapYTop + 16 <= gapYBot) {
         const overlapLeft = Math.max(topBox.x + 18, botBox.x + 18);
         const overlapRight = Math.min(
           topBox.x + topBox.width - 18,
@@ -367,23 +375,64 @@ export async function generateDrawio(
           const curQuality = inspectGeometry(rects, labels, routes);
           const nextRoutes = routes.map((r) => ({ ...r, points: [...r.points] }));
           const nextLabels = labels.map((l) => ({ ...l }));
-          const single = pairRoutes[0]!;
-          const xm = Math.round((overlapLeft + overlapRight) / 2);
-          const target = nextRoutes.find((r) => r.id === single.id)!;
-          target.points =
-            single.from === botBox.id
-              ? [
-                  { x: xm, y: gapYBot },
-                  { x: xm, y: gapYTop },
-                ]
-              : [
-                  { x: xm, y: gapYTop },
-                  { x: xm, y: gapYBot },
-                ];
-          const lbl = nextLabels.find((l) => l.id === single.id);
-          if (lbl) {
-            lbl.x = Math.round(xm + 8);
-            lbl.y = Math.round((gapYTop + gapYBot - lbl.height) / 2);
+          if (pairRoutes.length === 2) {
+            const bt =
+              pairRoutes.find((r) => r.from === botBox.id && r.to === topBox.id) ??
+              pairRoutes[0]!;
+            const tb = pairRoutes.find((r) => r.id !== bt.id) ?? pairRoutes[1]!;
+            const x1 = snap4(overlapLeft + (overlapRight - overlapLeft) * 0.35);
+            const x2 = snap4(overlapLeft + (overlapRight - overlapLeft) * 0.65);
+            const btTarget = nextRoutes.find((r) => r.id === bt.id)!;
+            btTarget.points =
+              bt.from === botBox.id
+                ? [
+                    { x: x1, y: gapYBot },
+                    { x: x1, y: gapYTop },
+                  ]
+                : [
+                    { x: x1, y: gapYTop },
+                    { x: x1, y: gapYBot },
+                  ];
+            const tbTarget = nextRoutes.find((r) => r.id === tb.id)!;
+            tbTarget.points =
+              tb.from === topBox.id
+                ? [
+                    { x: x2, y: gapYTop },
+                    { x: x2, y: gapYBot },
+                  ]
+                : [
+                    { x: x2, y: gapYBot },
+                    { x: x2, y: gapYTop },
+                  ];
+            const btLbl = nextLabels.find((l) => l.id === bt.id);
+            if (btLbl) {
+              btLbl.x = snap4(x1 - btLbl.width - 8);
+              btLbl.y = snap4((gapYTop + gapYBot - btLbl.height) / 2);
+            }
+            const tbLbl = nextLabels.find((l) => l.id === tb.id);
+            if (tbLbl) {
+              tbLbl.x = snap4(x2 + 8);
+              tbLbl.y = snap4((gapYTop + gapYBot - tbLbl.height) / 2);
+            }
+          } else if (pairRoutes.length === 1) {
+            const single = pairRoutes[0]!;
+            const xm = Math.round((overlapLeft + overlapRight) / 2);
+            const target = nextRoutes.find((r) => r.id === single.id)!;
+            target.points =
+              single.from === botBox.id
+                ? [
+                    { x: xm, y: gapYBot },
+                    { x: xm, y: gapYTop },
+                  ]
+                : [
+                    { x: xm, y: gapYTop },
+                    { x: xm, y: gapYBot },
+                  ];
+            const lbl = nextLabels.find((l) => l.id === single.id);
+            if (lbl) {
+              lbl.x = Math.round(xm + 8);
+              lbl.y = Math.round((gapYTop + gapYBot - lbl.height) / 2);
+            }
           }
           const nextQuality = inspectGeometry(rects, nextLabels, nextRoutes);
           if (!nextQuality.needsReview && nextQuality.crossings <= curQuality.crossings) {
@@ -439,6 +488,72 @@ export async function generateDrawio(
         const nextQ = inspectGeometry(rects, labels, testRoutes);
         if (!nextQ.needsReview && nextQ.crossings <= curQ.crossings) {
           r.points = candidatePts;
+        }
+      }
+    }
+
+    // Archify Phase 4 & 5: One-bend L-route probe, Port Rhythm Bridge, and Sliding Label Clearance
+    for (const r of routes) {
+      if (r.points.length >= 4) {
+        const bridged = applyPortRhythmBridge(r.points, 16);
+        if (bridged.length !== r.points.length || bridged.some((p, i) => p.x !== r.points[i]?.x || p.y !== r.points[i]?.y)) {
+          const testRoutes = routes.map((item) => (item.id === r.id ? { ...item, points: bridged } : item));
+          const curQ = inspectGeometry(rects, labels, routes);
+          const nextQ = inspectGeometry(rects, labels, testRoutes);
+          if (!nextQ.needsReview && nextQ.crossings <= curQ.crossings && nextQ.borderRides <= curQ.borderRides) {
+            r.points = bridged;
+          }
+        }
+      }
+      // Sliding label repair when a label overlaps a box, another label, or masks an unrelated route segment
+      const lbl = labels.find((l) => l.id === r.id);
+      if (!lbl) continue;
+      const otherRoutes = routes.filter((other) => other.id !== r.id);
+      const masksOtherRoute = (box: Rect) =>
+        otherRoutes.some((other) =>
+          other.points.slice(1).some((pt, i) => segmentRectClearanceWithin(other.points[i]!, pt, box, 4)),
+        );
+      const overlapsBoxOrLabel = (box: Rect) =>
+        rects.some(
+          (n) =>
+            box.x < n.x + n.width + 2 &&
+            box.x + box.width > n.x - 2 &&
+            box.y < n.y + n.height + 2 &&
+            box.y + box.height > n.y - 2,
+        ) ||
+        labels.some(
+          (o) =>
+            o.id !== box.id &&
+            box.x < o.x + o.width + 4 &&
+            box.x + box.width > o.x - 4 &&
+            box.y < o.y + o.height + 4 &&
+            box.y + box.height > o.y - 4,
+        );
+      if (overlapsBoxOrLabel(lbl) || masksOtherRoute(lbl)) {
+        const segIndices = r.points
+          .slice(1)
+          .map((pt, i) => ({ i, len: Math.hypot(pt.x - r.points[i]!.x, pt.y - r.points[i]!.y) }))
+          .sort((a, b) => b.len - a.len);
+        let repaired = false;
+        for (const { i } of segIndices) {
+          const cands = slidingLabelCandidates(
+            r.points[i]!,
+            r.points[i + 1]!,
+            lbl.width,
+            lbl.height,
+            otherRoutes.map((o) => o.points),
+            8,
+          );
+          for (const c of cands) {
+            const testBox: Rect = { id: lbl.id, x: c.x, y: c.y, width: lbl.width, height: lbl.height };
+            if (!overlapsBoxOrLabel(testBox) && !masksOtherRoute(testBox)) {
+              lbl.x = c.x;
+              lbl.y = c.y;
+              repaired = true;
+              break;
+            }
+          }
+          if (repaired) break;
         }
       }
     }
@@ -728,8 +843,9 @@ export async function generateDrawio(
       .slice(1, -1)
       .map((point) => `<mxPoint x="${n(point.x + contentOffsetX)}" y="${n(point.y + offset.y)}"/>`)
       .join("");
+    const jumpStyle = best.quality.crossings > 0 ? "jumpStyle=arc;jumpSize=6;" : "";
     cells.push(
-      `<mxCell id="${safe(edge.id)}" value="" mavisId="${escape(edge.id)}" mavisRole="edge" mavisRelationType="${escape(edge.relationType ?? edge.type ?? "")}" mavisOriginLayer="${escape(edge.originLayer ?? "")}" mavisEdgeMetadata="${metadata(edge, ["underlyingEdgeIds", "resolutionStatus", "uncertain", "direction"])}" style="edgeStyle=none;orthogonal=1;rounded=0;endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=${p.line};dashed=${declared ? 1 : 0};exitX=${out.x};exitY=${out.y};exitPerimeter=0;entryX=${input.x};entryY=${input.y};entryPerimeter=0;" edge="1" parent="1" source="${safe(parents.has(route.from) ? "boundary_" + route.from : route.from)}" target="${safe(parents.has(route.to) ? "boundary_" + route.to : route.to)}"><mxGeometry relative="1" as="geometry"><Array as="points">${points}</Array></mxGeometry></mxCell>`,
+      `<mxCell id="${safe(edge.id)}" value="" mavisId="${escape(edge.id)}" mavisRole="edge" mavisRelationType="${escape(edge.relationType ?? edge.type ?? "")}" mavisOriginLayer="${escape(edge.originLayer ?? "")}" mavisEdgeMetadata="${metadata(edge, ["underlyingEdgeIds", "resolutionStatus", "uncertain", "direction"])}" style="edgeStyle=none;orthogonal=1;rounded=0;${jumpStyle}endArrow=block;endFill=1;strokeWidth=1.5;strokeColor=${p.line};dashed=${declared ? 1 : 0};exitX=${out.x};exitY=${out.y};exitPerimeter=0;entryX=${input.x};entryY=${input.y};entryPerimeter=0;" edge="1" parent="1" source="${safe(parents.has(route.from) ? "boundary_" + route.from : route.from)}" target="${safe(parents.has(route.to) ? "boundary_" + route.to : route.to)}"><mxGeometry relative="1" as="geometry"><Array as="points">${points}</Array></mxGeometry></mxCell>`,
     );
     if (label)
       cells.push(
