@@ -38,13 +38,11 @@ export default function LoginPage() {
     client.clear();
     client.setQueryData(["api", "session", {}], session);
     router.replace(
-      api.mode === "backend"
-        ? "/"
-        : session.user?.role === "admin"
-          ? "/administration/users"
-          : session.user?.role === "lecturer"
-            ? "/workspaces"
-            : "/",
+      session.user?.role === "admin"
+        ? "/administration/users"
+        : session.user?.role === "lecturer"
+          ? "/workspaces"
+          : "/",
     );
   };
   async function sample(role: AppRole) {
@@ -69,11 +67,9 @@ export default function LoginPage() {
         <div className="flex items-center gap-3">
           <MavisLogo />
           <div>
-            <span className="block text-base font-bold tracking-widest text-foreground">AI-Assisted Microservices 
-Architecture Visualization and 
-Change Impact Analysis
-
-</span>
+            <span className="block text-base font-bold tracking-widest text-foreground">
+              AI-Assisted Microservices Architecture Visualization and Change Impact Analysis
+            </span>
           </div>
         </div>
         <AppearanceSelector />

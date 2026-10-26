@@ -28,7 +28,9 @@ export class BackendAdapter implements ApiAdapter {
       },
       ["importSource", "importGithub", "renderArchitectureView"].includes(operation)
         ? 120000
-        : 20000,
+        : ["explain", "elementEvidenceContext", "model"].includes(operation)
+          ? 60000
+          : 20000,
     );
     try {
       const mutation = contracts[operation].mutation;

@@ -588,14 +588,14 @@ test("Architecture presentation selection and projection lifecycle: collapsed gr
   // In group mode, AI explain request without finding is rejected
   assert.throws(
     () => ctx.buildExplainRequest(),
-    /Không thể yêu cầu giải thích AI ở chế độ quan hệ gộp/,
+    /Cannot request AI explanation in aggregated relationship mode/,
     "Group explain without finding must be rejected",
   );
 
   // In group mode, AI explain request WITH finding is ALSO rejected (G1 fix)
   assert.throws(
     () => ctx.buildExplainRequest({ finding: sampleFindings[1], runId: "run-test" }),
-    /Không thể yêu cầu giải thích AI ở chế độ quan hệ gộp/,
+    /Cannot request AI explanation in aggregated relationship mode/,
     "Group explain with member finding must be rejected to prevent wrong representative payload (G1)",
   );
 

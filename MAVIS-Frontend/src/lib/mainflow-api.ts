@@ -106,6 +106,10 @@ export function impactWarning(warning: string): string {
           "Impact includes only confirmed service HTTP dependencies.",
         UNRECONCILED_LEGACY_AND_CODE_RELATIONS_EXCLUDED:
           "Unconfirmed code and legacy relationships are excluded from this result.",
+        ONE_SHORTEST_PATH_PER_SERVICE:
+          "Displays one shortest dependency path per affected service.",
+        EMPTY_RESULT_DOES_NOT_PROVE_ABSENCE_OUTSIDE_COVERAGE:
+          "Only relationships within the selected policy scope are evaluated.",
       } as Record<string, string>
     )[warning] ?? warning
   );

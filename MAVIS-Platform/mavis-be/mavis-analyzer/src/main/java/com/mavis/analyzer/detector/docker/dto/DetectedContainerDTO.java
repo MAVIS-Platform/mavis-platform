@@ -17,6 +17,10 @@ public class DetectedContainerDTO {
     private String serviceName;
     private String image;
     private String buildContext;
+    private String artifactName;
+    private String artifactLocator;
+    @Builder.Default
+    private List<DetectedConnectionDTO> connections = new ArrayList<>();
     private String messageBrokerAuthority;
     private String datasourceHost;
     private String datasourceDatabase;

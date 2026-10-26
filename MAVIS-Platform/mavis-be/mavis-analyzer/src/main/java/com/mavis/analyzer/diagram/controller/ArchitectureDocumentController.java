@@ -8,6 +8,15 @@ import java.util.UUID;
 @RequestMapping("/api/v1/analyzer/models/{modelId}/documents")
 public class ArchitectureDocumentController {
     private final ArchitectureDocumentService service;
+    @GetMapping public ApiResponse<java.util.List<ArchitectureDocumentService.Revision>> list(@PathVariable UUID modelId) {
+        return ApiResponse.success(service.revisions(modelId));
+    }
+    @PostMapping("/freeze") public ApiResponse<UUID> freezeArtifacts(@PathVariable UUID modelId, @RequestBody ArchitectureDocumentService.ArtifactSelection selection) {
+        return ApiResponse.success(service.freezeArtifacts(modelId, selection));
+    }
+    @PostMapping("/{viewId}/revisions/{revision}/freeze") public ApiResponse<UUID> freeze(@PathVariable UUID modelId, @PathVariable String viewId, @PathVariable long revision) {
+        return ApiResponse.success(service.freeze(modelId, viewId, revision));
+    }
     @GetMapping("/{viewId}") public ApiResponse<ArchitectureDocumentService.Document> get(@PathVariable UUID modelId,@PathVariable String viewId,@RequestParam(required=false) Long revision) {
         return ApiResponse.success("Document loaded",service.get(modelId,viewId,revision));
     }

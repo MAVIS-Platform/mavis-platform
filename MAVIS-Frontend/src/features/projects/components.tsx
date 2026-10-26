@@ -39,21 +39,32 @@ export function ProjectCard({ project, onSelect }: { project: Project; onSelect:
     </article>
   );
 }
-export function ProjectSelector() {
+export function ProjectSelector({
+  workspaceId,
+  assignmentId,
+}: { workspaceId?: string; assignmentId?: string } = {}) {
   const busy = useIsMutating() > 0;
   const query = useApiQuery("projects", {});
   const selection = useSelection();
   return (
     <RequestState query={query} empty={query.data?.length === 0}>
-      <div className="max-w-sm">
-        <SelectField
-          disabled={busy}
-          label="Selected project"
-          value={selection.projectId}
-          onChange={selection.setProjectId}
-          options={(query.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
-        />
-      </div>
+      <SelectField
+        disabled={busy}
+        label="Selected project"
+        value={selection.projectId}
+        onChange={selection.setProjectId}
+        options={[
+          { value: "", label: "Choose a project…" },
+          ...(query.data ?? [])
+            .filter(
+              (p) =>
+                !workspaceId ||
+                (p.workspaceId === workspaceId &&
+                  (!p.assignmentId || p.assignmentId === assignmentId)),
+            )
+            .map((p) => ({ value: p.id, label: p.name })),
+        ]}
+      />
     </RequestState>
   );
 }

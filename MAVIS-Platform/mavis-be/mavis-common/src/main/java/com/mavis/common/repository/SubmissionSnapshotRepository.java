@@ -14,6 +14,7 @@ import java.util.UUID;
 
 @Repository
 public interface SubmissionSnapshotRepository extends JpaRepository<SubmissionSnapshot, UUID> {
+    boolean existsByDiagramVersionId(UUID diagramVersionId);
     List<SubmissionSnapshot> findByAssignmentId(UUID assignmentId);
     List<SubmissionSnapshot> findByProjectId(UUID projectId);
     List<SubmissionSnapshot> findBySubmittedById(UUID submittedById);

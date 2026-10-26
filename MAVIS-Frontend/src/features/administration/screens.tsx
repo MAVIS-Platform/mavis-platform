@@ -21,8 +21,17 @@ export function Accounts() {
         rowKey={(a) => a.id}
         caption="User accounts"
         columns={[
-          { key: "name", label: "Account", render: (a) => a.name },
-          { key: "role", label: "Role", render: (a) => a.role },
+          {
+            key: "name",
+            label: "Account",
+            render: (a) => (
+              <div>
+                {a.name}
+                {a.email && <p className="text-xs text-muted-foreground">{a.email}</p>}
+              </div>
+            ),
+          },
+          { key: "role", label: "Role", render: (a) => <TeachingRoleControl account={a} /> },
           {
             key: "status",
             label: "Status",
@@ -69,6 +78,36 @@ export function Accounts() {
         }}
       />
     </RequestState>
+  );
+}
+function TeachingRoleControl({ account }: { account: Response<"accounts">[number] }) {
+  const update = useApiMutation("setAccountRole");
+  if (account.role === "admin") return <span>Administrator</span>;
+  return (
+    <div className="space-y-2">
+      <span className="block text-xs capitalize">{account.role}</span>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={update.isPending}
+        onClick={() => {
+          const role = account.role === "lecturer" ? "student" : "lecturer";
+          if (
+            window.confirm(
+              `Change ${account.name} to ${role}? This changes their teaching permissions. They should sign in again to refresh their session.`,
+            )
+          )
+            update.mutate({ accountId: account.id, role });
+        }}
+      >
+        {update.isPending
+          ? "Updating…"
+          : account.role === "lecturer"
+            ? "Set as student"
+            : "Set as lecturer"}
+      </Button>
+      {update.error && <ErrorState error={update.error} />}
+    </div>
   );
 }
 export function Integrations() {
