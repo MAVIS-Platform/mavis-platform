@@ -200,6 +200,7 @@ export function evidenceView(raw: unknown) {
     .parse(raw);
   return evidenceSchema.parse({
     id: e.id,
+    origin: "persisted",
     kind: e.sourceType.startsWith("RUNTIME") ? "runtime" : "source",
     sourceType: e.sourceType,
     location: e.locator ?? "",

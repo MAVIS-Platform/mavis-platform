@@ -23,6 +23,10 @@ public interface EvidenceRepository extends JpaRepository<Evidence, UUID> {
     @EntityGraph(attributePaths = {"element", "relationship"})
     List<Evidence> findByElementIdOrderByCreatedAtAsc(UUID elementId);
 
+    @EntityGraph(attributePaths = {"element", "relationship", "relationship.sourceElement", "relationship.targetElement"})
+    @Query("select e from Evidence e left join e.element a left join e.relationship r where e.modelVersion.id = :modelVersionId and (a.id = :elementId or r.sourceElement.id = :elementId or r.targetElement.id = :elementId) order by e.createdAt asc")
+    List<Evidence> findElementContext(@Param("modelVersionId") UUID modelVersionId, @Param("elementId") UUID elementId);
+
     @EntityGraph(attributePaths = {"element", "relationship"})
     List<Evidence> findByRelationshipId(UUID relationshipId);
 

@@ -1,3 +1,4 @@
+import {documentDiagramType} from "@/lib/architecture/coursework-diagram-types";
 import {
   contracts,
   type ApiAdapter,
@@ -139,9 +140,14 @@ export class MockAdapter implements ApiAdapter {
     },
   ];
   private submissions: Submission[] = [];
+  private savedDocuments:Array<{modelId:string;viewId:string;revision:number;xml:string;savedAt:string}> = [];
+  private grading=new Map<string,Response<"submissionReview">>();
+  private frozenBundles=new Map<string,{modelId:string;layout:Record<string,unknown>}>();
+  private classrooms: Array<{id:string; code:string; name:string; status:string; ownerId:string; members:Array<{id:string;name:string;role:string}>}> = [];
+  private courseworkAssignments: Array<Response<"assignments">[number]> = [{ id:"assignment-1", workspaceId:"workspace-1", title:"Analyze checkout architecture", instructions:"Submit a source snapshot and an immutable model revision. Runtime evidence is optional.", dueAt:"2026-11-01T16:59:00Z" }];
   private accounts: Account[] = [
-    { id: "sample-student", name: "Sample learner", role: "student", locked: false },
-    { id: "sample-lecturer", name: "Sample lecturer", role: "lecturer", locked: false },
+    { id: "sample-student", name: "Sample learner", email:"student@example.com", role: "student", locked: false },
+    { id: "sample-lecturer", name: "Sample lecturer", email:"lecturer@example.com", role: "lecturer", locked: false },
   ];
   private integrations: Integration[] = [
     { id: "integration-1", name: "Source analyzer (sample)", enabled: false, revision: 1 },
@@ -155,6 +161,7 @@ export class MockAdapter implements ApiAdapter {
     private readonly scenario: MockScenario = "normal",
     private readonly latency = 350,
   ) {
+    if (scenario !== "empty") this.classrooms.push({ id:"workspace-1", code:"SE1701", name:"Software Architecture · SE1701", status:"ACTIVE", ownerId:"sample-lecturer", members:this.accounts.map(a => ({id:a.id,name:a.name,role:a.role})) });
     const model = this.models[0];
     const snapshot = this.snapshots[0];
     if (model && snapshot)
@@ -186,9 +193,6 @@ export class MockAdapter implements ApiAdapter {
       if (signal?.aborted) abort();
       else signal?.addEventListener("abort", abort, { once: true });
     });
-    if (!contracts[operation].input.safeParse(input).success) throw new ApiError("validation", 422);
-    if (this.scenario === "error" && !["session", "mockLogin", "signOut"].includes(operation))
-      throw new ApiError("server", 503);
     if (!["session", "mockLogin"].includes(operation)) {
       if (!this.user) throw new ApiError("unauthorized", 401);
       const permission = operationPermission(operation);
@@ -200,6 +204,9 @@ export class MockAdapter implements ApiAdapter {
       )
         throw new ApiError("forbidden", 403);
     }
+    if (!contracts[operation].input.safeParse(input).success) throw new ApiError("validation", 422);
+    if (this.scenario === "error" && !["session", "mockLogin", "signOut"].includes(operation))
+      throw new ApiError("server", 503);
     const result = this.perform(operation, input);
     return structuredClone(validateResponse(operation, input, result));
   }
@@ -207,6 +214,23 @@ export class MockAdapter implements ApiAdapter {
     const item = items.find(match);
     if (!item) throw new ApiError("not-found", 404);
     return item;
+  }
+  private classroom(id: string, manage = false) {
+    const room = this.find(this.classrooms, w => w.id === id);
+    const member = room.members.find(m => m.id === this.user?.id);
+    if (this.user?.role !== "admin" && (!member || (manage && member.role !== "lecturer"))) throw new ApiError("forbidden",403);
+    return room;
+  }
+  private assignmentReference(workspaceId: string, modelId?: string) {
+    if (!modelId) return null;
+    const model = this.find(this.models, m => m.id === modelId);
+    const project = this.find(this.projects, p => p.id === model.projectId && p.workspaceId === workspaceId && !!p.isReferenceTemplate);
+    const snapshot = this.find(this.snapshots, s => s.id === model.snapshotId && s.projectId === project.id);
+    return { projectId: project.id, projectName: project.name, snapshotId: snapshot.id, modelId: model.id,
+      revision: model.revision, sourceType: "ZIP_UPLOAD", repositoryUrl: project.repository || null };
+  }
+  private classroomView(room: MockAdapter["classrooms"][number]) {
+    return { id:room.id,code:room.code,name:room.name,status:room.status,createdById:room.ownerId,myRole:room.members.find(m => m.id === this.user?.id)?.role.toUpperCase() ?? null,members:room.members };
   }
   private record(operation: string, resourceId: string) {
     this.audit.push({
@@ -234,6 +258,13 @@ export class MockAdapter implements ApiAdapter {
         return { ok: true };
       case "projects":
         return this.scenario === "empty" ? [] : this.projects;
+      case "createProject": {
+        const p=contracts.createProject.input.parse(raw);
+        if(p.workspaceId) this.classroom(p.workspaceId);
+        if(p.assignmentId) this.find(this.courseworkAssignments,a=>a.id===p.assignmentId&&a.workspaceId===p.workspaceId);
+        const project: Project={id:crypto.randomUUID(),name:p.name,repository:"",status:"unknown",services:null,runtimeSupported:null,workspaceId:p.workspaceId??null,assignmentId:p.assignmentId??null,projectType:p.workspaceId?"STUDENT_WORKING":"PERSONAL"};
+        this.projects.push(project);return project;
+      }
       case "projectOverviews":
         return this.scenario === "empty" ? [] : this.projects;
       case "project":
@@ -313,7 +344,42 @@ export class MockAdapter implements ApiAdapter {
         next.id = crypto.randomUUID();
         next.revision++;
         next.label = `Edited model · revision ${next.revision}`;
-        this.find(next.elements, (e) => e.id === p.elementId).description = p.description;
+        if (p.addedElement) {
+          next.elements.push({
+            id: crypto.randomUUID(),
+            name: p.addedElement.name,
+            elementType: p.addedElement.elementType,
+            parentId: p.addedElement.parentElementId ?? null,
+            technology: p.addedElement.technology ?? null,
+            layer: "unclassified",
+            description: p.addedElement.description ?? "",
+            evidence: [],
+          });
+        } else if (p.removedElementId) {
+          next.elements = next.elements.filter((e) => e.id !== p.removedElementId);
+          next.edges = next.edges.filter(
+            (e) => e.from !== p.removedElementId && e.to !== p.removedElementId,
+          );
+        } else if (p.addedRelationship) {
+          next.edges.push({
+            id: crypto.randomUUID(),
+            from: p.addedRelationship.sourceElementId,
+            to: p.addedRelationship.targetElementId,
+            protocol: p.addedRelationship.relationType,
+            uncertain: false,
+            originLayer: "STATIC",
+            resolutionStatus: "RESOLVED",
+            evidence: [],
+          });
+        } else if (p.removedRelationshipId) {
+          next.edges = next.edges.filter((e) => e.id !== p.removedRelationshipId);
+        } else if (p.elementId) {
+          const el = this.find(next.elements, (e) => e.id === p.elementId);
+          if (p.description !== undefined) el.description = p.description;
+          if (p.newName) el.name = p.newName;
+          if (p.technology !== undefined) el.technology = p.technology || null;
+          if (p.layer) el.layer = p.layer;
+        }
         this.models.push(next);
         return next;
       }
@@ -441,35 +507,113 @@ export class MockAdapter implements ApiAdapter {
             "Sample source-inferred dependencies; maximum 100 paths and 12 hops. This does not predict actual runtime failures.",
         };
       }
+      case "elementEvidenceContext": {
+        const p = contracts.elementEvidenceContext.input.parse(raw);
+        const model = this.find(this.models, m => m.id === p.modelId);
+        const element = this.find(model.elements, e => e.id === p.elementId);
+        return { modelId: model.id, elementId: element.id, directEvidence: element.evidence,
+          relationshipEvidence: model.edges.filter(e => e.from === element.id || e.to === element.id)
+            .flatMap(e => e.evidence.map(evidence => ({ relationshipId: e.id, evidence }))),
+        };
+      }
       case "explain": {
         const p = contracts.explain.input.parse(raw);
         const m = this.find(this.models, (m) => m.id === p.modelId);
+        if (p.explanationScope === "RELATIONSHIP") {
+          const relId = p.relationshipId ?? p.elementId;
+          const edge = this.find(m.edges, (r) => r.id === relId);
+          const fromName = m.elements.find((el) => el.id === edge.from)?.name ?? edge.from;
+          const toName = m.elements.find((el) => el.id === edge.to)?.name ?? edge.to;
+          return {
+            id: crypto.randomUUID(),
+            ...p,
+            text: `Sample explanation: Relationship ${fromName} → ${toName} (${edge.protocol}) connects two architectural elements in the selected snapshot.${p.userQuestion ? ` Question answered: ${p.userQuestion}` : ""} Verify all claims against the listed evidence. No AI service was called.`,
+            evidenceIds: edge.evidence.map((v) => v.id),
+            citedEvidences: edge.evidence.map((v) => ({
+              id: v.id,
+              sourceType: v.sourceType ?? "STATIC_CODE",
+              locator: v.location,
+              excerpt: v.snippet,
+            })),
+            sample: true,
+          };
+        }
         const e = this.find(m.elements, (e) => e.id === p.elementId);
         return {
           id: crypto.randomUUID(),
           ...p,
-          text: `Sample explanation: ${e.name} is inferred from the selected source snapshot. ${e.description} Verify all claims against the listed evidence. No AI service was called.`,
+          text: `Sample explanation: ${e.name} is inferred from the selected source snapshot. ${e.description}${p.userQuestion ? ` Question answered: ${p.userQuestion}` : ""} Verify all claims against the listed evidence. No AI service was called.`,
           evidenceIds: e.evidence.map((v) => v.id),
+          citedEvidences: e.evidence.map((v) => ({
+            id: v.id,
+            sourceType: v.sourceType ?? "STATIC_CODE",
+            locator: v.location,
+            excerpt: v.snippet,
+          })),
           sample: true,
         };
       }
+      case "submissionReview": {const p=contracts.submissionReview.input.parse(raw),submission=this.find(this.submissions,s=>s.id===p.submissionId);const value=this.grading.get(p.submissionId);if(this.user?.id!==submission.studentId&&!["lecturer","admin"].includes(this.user?.role??""))throw new ApiError("forbidden",403);return value&&!(this.user?.id===submission.studentId&&value.status==="DRAFT")?value:{submissionId:p.submissionId,revision:0,status:"PENDING",score:null,summary:"",lecturerId:null,lecturerName:null,updatedAt:null};}
+      case "gradeSubmission": {const p=contracts.gradeSubmission.input.parse(raw),submission=this.find(this.submissions,s=>s.id===p.submissionId);if(this.user?.id===submission.studentId)throw new ApiError("forbidden",403);const current=this.grading.get(p.submissionId);if((current?.revision??0)!==p.expectedRevision)throw new ApiError("conflict",409);if((p.status==="GRADED"&&p.score===null)||(p.status==="RETURNED"&&!p.summary.trim()))throw new ApiError("validation",422);const value={submissionId:p.submissionId,revision:p.expectedRevision+1,status:p.status,score:p.score,summary:p.summary,lecturerId:this.user!.id,lecturerName:this.user!.name,updatedAt:new Date().toISOString()};this.grading.set(p.submissionId,value);return value;}
+      case "diagrams": {const p=contracts.diagrams.input.parse(raw);this.find(this.models,m=>m.id===p.modelId);return [{id:`generated-${p.modelId}`,modelId:p.modelId,notation:"C4",level:"CONTAINER"}];}
+      case "evaluations": return [];
+      case "documentRevisions": {const p=contracts.documentRevisions.input.parse(raw);return this.savedDocuments.filter(d=>d.modelId===p.modelId).map(d=>({modelId:d.modelId,viewId:d.viewId,revision:d.revision,savedAt:d.savedAt}));}
+      case "architectureDocument": {const p=contracts.architectureDocument.input.parse(raw), d=this.savedDocuments.filter(d=>d.modelId===p.modelId&&d.viewId===p.viewId&&(!p.revision||d.revision===p.revision)).sort((a,b)=>b.revision-a.revision)[0];return d??{modelId:p.modelId,viewId:p.viewId,revision:0,xml:null};}
+      case "saveArchitectureDocument": {const p=contracts.saveArchitectureDocument.input.parse(raw), latest=this.savedDocuments.filter(d=>d.modelId===p.modelId&&d.viewId===p.viewId).sort((a,b)=>b.revision-a.revision)[0];if((latest?.revision??0)!==p.expectedRevision)throw new ApiError("conflict",409);const doc={modelId:p.modelId,viewId:p.viewId,revision:p.expectedRevision+1,xml:p.xml,savedAt:new Date().toISOString()};this.savedDocuments.push(doc);return doc;}
+      case "freezeArtifacts": {const p=contracts.freezeArtifacts.input.parse(raw);this.find(this.models,m=>m.id===p.modelId);if(!p.documents.length&&!p.diagramVersionIds.length)throw new ApiError("validation",422);const artifacts:Array<Record<string,unknown>>=[];for(const selected of p.documents){const doc=this.find(this.savedDocuments,d=>d.modelId===p.modelId&&d.viewId===selected.viewId&&d.revision===selected.revision);const diagramType=documentDiagramType(doc.viewId);const notation=diagramType.startsWith("C4_")?"C4":diagramType;artifacts.push({notation,layoutJson:{diagramType,drawioXml:doc.xml,viewId:doc.viewId,documentRevision:doc.revision}});}for(const id of p.diagramVersionIds){if(id!==`generated-${p.modelId}`)throw new ApiError("validation",422);artifacts.push({notation:"C4",layoutJson:{nodes:[],edges:[]}});}const diagramVersionId=crypto.randomUUID();this.frozenBundles.set(diagramVersionId,{modelId:p.modelId,layout:{frozenDocument:true,artifacts}});return {modelId:p.modelId,diagramVersionId};}
+      case "workspaceProjects": {const p=contracts.workspaceProjects.input.parse(raw);this.classroom(p.workspaceId);return this.projects.filter(project=>project.workspaceId===p.workspaceId);}
+      case "createReferenceProject": {const p=contracts.createReferenceProject.input.parse(raw);this.classroom(p.workspaceId,true);const project:Project={id:crypto.randomUUID(),name:p.name,workspaceId:p.workspaceId,isReferenceTemplate:true,projectType:"TEACHER_REFERENCE",repository:"",status:"unknown",services:null,runtimeSupported:null};this.projects.push(project);return project;}
+      case "publishReference": {const p=contracts.publishReference.input.parse(raw);this.classroom(p.workspaceId,true);this.find(this.projects,project=>project.id===p.projectId&&project.workspaceId===p.workspaceId);return this.find(this.snapshots,snapshot=>snapshot.id===p.snapshotId&&snapshot.projectId===p.projectId);}
+      case "batchWorkspaceMembers": {const p=contracts.batchWorkspaceMembers.input.parse(raw),room=this.classroom(p.workspaceId,true);const addedEmails:string[]=[],alreadyMemberEmails:string[]=[],notFoundEmails:string[]=[];for(const email of p.emails){const account=this.accounts.find(a=>a.email===email);if(!account)notFoundEmails.push(email);else if(room.members.some(m=>m.id===account.id))alreadyMemberEmails.push(email);else{room.members.push({id:account.id,name:account.name,role:"student"});addedEmails.push(email);}}return {addedCount:addedEmails.length,addedEmails,alreadyMemberEmails,notFoundEmails};}
+      case "updateAssignment": {const p=contracts.updateAssignment.input.parse(raw);this.classroom(p.workspaceId,true);const a=this.find(this.courseworkAssignments,a=>a.id===p.assignmentId&&a.workspaceId===p.workspaceId);if(p.clearReferenceSource && p.referenceModelId)throw new ApiError("validation",422);if(p.clearReferenceSource)a.referenceSource=null;else if(p.referenceModelId)a.referenceSource=this.assignmentReference(p.workspaceId,p.referenceModelId);Object.assign(a,{title:p.title,instructions:p.description,dueAt:p.dueAt??"No deadline",requiredDiagramTypes:p.requiredDiagramTypes,requireRuntimeTrace:p.requireRuntimeTrace});return a;}
+      case "deleteAssignment": {const p=contracts.deleteAssignment.input.parse(raw);this.classroom(p.workspaceId,true);this.find(this.courseworkAssignments,a=>a.id===p.assignmentId&&a.workspaceId===p.workspaceId);if(this.submissions.some(s=>s.assignmentId===p.assignmentId))throw new ApiError("validation",422);this.courseworkAssignments=this.courseworkAssignments.filter(a=>a.id!==p.assignmentId);return {ok:true};}
+      case "submissionExport": {const p=contracts.submissionExport.input.parse(raw);return this.find(this.submissions,s=>s.id===p.submissionId);}
+      case "updateFeedback": {const p=contracts.updateFeedback.input.parse(raw),s=this.find(this.submissions,s=>s.id===p.submissionId),feedback=this.find(s.feedback,f=>f.id===p.feedbackId);if(feedback.authorId!==this.user?.id)throw new ApiError("forbidden",403);feedback.text=p.text;return s;}
+      case "deleteFeedback": {const p=contracts.deleteFeedback.input.parse(raw),s=this.find(this.submissions,s=>s.id===p.submissionId),feedback=this.find(s.feedback,f=>f.id===p.feedbackId);if(feedback.authorId!==this.user?.id)throw new ApiError("forbidden",403);s.feedback=s.feedback.filter(f=>f.id!==p.feedbackId);return s;}
       case "workspaces":
-        return this.scenario === "empty"
-          ? []
-          : [{ id: "workspace-1", name: "Software Architecture · SE1701", members: this.accounts }];
-      case "assignments":
-        return contracts.assignments.input.parse(raw).workspaceId === "workspace-1"
-          ? [
-              {
-                id: "assignment-1",
-                workspaceId: "workspace-1",
-                title: "Analyze checkout architecture",
-                instructions:
-                  "Submit a source snapshot and an immutable model revision. Runtime evidence is optional.",
-                dueAt: "2026-11-01T16:59:00Z",
-              },
-            ]
-          : [];
+        return this.classrooms.filter(w => this.user?.role === "admin" || w.members.some(m => m.id === this.user?.id)).map(w => this.classroomView(w));
+      case "createWorkspace": {
+        const p = contracts.createWorkspace.input.parse(raw);
+        if (this.classrooms.some(w => w.code === p.code)) throw new ApiError("conflict",409);
+        const room = {id:crypto.randomUUID(),code:p.code,name:p.name,status:"ACTIVE",ownerId:this.user!.id,members:[{id:this.user!.id,name:this.user!.name,role:"lecturer"}]};
+        this.classrooms.push(room); return this.classroomView(room);
+      }
+      case "updateWorkspace": {
+        const p=contracts.updateWorkspace.input.parse(raw), room=this.classroom(p.workspaceId,true);
+        room.name=p.name;if(p.status)room.status=p.status; return this.classroomView(room);
+      }
+      case "archiveWorkspace": {
+        const p=contracts.archiveWorkspace.input.parse(raw), room=this.classroom(p.workspaceId,true);
+        room.status="ARCHIVED"; return this.classroomView(room);
+      }
+      case "addWorkspaceMember": {
+        const p=contracts.addWorkspaceMember.input.parse(raw), room=this.classroom(p.workspaceId,true);
+        if(room.status === "ARCHIVED") throw new ApiError("validation",422);
+        const account=this.find(this.accounts,a=>a.email?.toLowerCase()===p.email.toLowerCase());
+        if(room.members.some(m=>m.id===account.id)) throw new ApiError("conflict",409);
+        room.members.push({id:account.id,name:account.name,role:p.memberRole.toLowerCase()}); return this.classroomView(room);
+      }
+      case "removeWorkspaceMember": {
+        const p=contracts.removeWorkspaceMember.input.parse(raw), room=this.classroom(p.workspaceId,true);
+        if(p.userId===room.ownerId) throw new ApiError("forbidden",403);
+        room.members=room.members.filter(m=>m.id!==p.userId); return this.classroomView(room);
+      }
+      case "assignments": {
+        const p=contracts.assignments.input.parse(raw); this.classroom(p.workspaceId);
+        return this.courseworkAssignments.filter(a=>a.workspaceId===p.workspaceId);
+      }
+      case "createAssignment": {
+        const p=contracts.createAssignment.input.parse(raw),room=this.classroom(p.workspaceId,true);
+        if(room.status === "ARCHIVED") throw new ApiError("validation",422);
+        if(p.clearReferenceSource && p.referenceModelId)throw new ApiError("validation",422);
+        const assignment={referenceSource:this.assignmentReference(p.workspaceId,p.referenceModelId),id:crypto.randomUUID(),workspaceId:p.workspaceId,title:p.title,instructions:p.description??"",dueAt:p.dueAt??"No deadline",requiredDiagramTypes:p.requiredDiagramTypes,requireRuntimeTrace:p.requireRuntimeTrace};
+        this.courseworkAssignments.push(assignment); return assignment;
+      }
+      case "assignmentSubmissions": {
+        const p=contracts.assignmentSubmissions.input.parse(raw); this.classroom(p.workspaceId,true);
+        this.find(this.courseworkAssignments,a=>a.id===p.assignmentId&&a.workspaceId===p.workspaceId);
+        return this.submissions.filter(s=>s.assignmentId===p.assignmentId);
+      }
       case "referenceVersions":
         return contracts.referenceVersions.input.parse(raw).workspaceId === "workspace-1" &&
           this.scenario !== "empty"
@@ -497,7 +641,8 @@ export class MockAdapter implements ApiAdapter {
         );
       case "submit": {
         const p = contracts.submit.input.parse(raw);
-        if (p.assignmentId !== "assignment-1") throw new ApiError("not-found", 404);
+        const assignment=this.find(this.courseworkAssignments,a=>a.id===p.assignmentId);
+        this.classroom(assignment.workspaceId);
         const m = this.find(this.models, (m) => m.id === p.modelId);
         const s = this.find(this.snapshots, (s) => s.id === p.snapshotId && s.id === m.snapshotId);
         const runtime = p.runtimeSessionId
@@ -507,9 +652,12 @@ export class MockAdapter implements ApiAdapter {
                 r.id === p.runtimeSessionId && r.snapshotId === s.id && r.status === "completed",
             )
           : null;
+        const bundle=p.diagramVersionId?this.frozenBundles.get(p.diagramVersionId):undefined;
         const submission: Submission = {
           id: crypto.randomUUID(),
           assignmentId: p.assignmentId,
+          ...(p.diagramVersionId?{diagramVersionId:p.diagramVersionId}:{}),
+          ...(bundle?{diagramLayout:structuredClone(bundle.layout),diagramNotation:"BUNDLE"}:{}),submissionNotes:p.submissionNotes??"",
           studentId: this.user?.id ?? "",
           submittedAt: new Date().toISOString(),
           model: structuredClone(m),
@@ -525,6 +673,7 @@ export class MockAdapter implements ApiAdapter {
         const s = this.find(this.submissions, (s) => s.id === p.submissionId);
         if (s.model.id !== p.modelId) throw new ApiError("conflict", 409);
         s.feedback.push({
+          elementId:p.elementId??null,relationshipId:p.relationshipId??null,
           id: crypto.randomUUID(),
           text: p.text,
           createdAt: new Date().toISOString(),
@@ -534,6 +683,10 @@ export class MockAdapter implements ApiAdapter {
       }
       case "accounts":
         return this.accounts;
+      case "setAccountRole": {
+        const p=contracts.setAccountRole.input.parse(raw), account=this.find(this.accounts,a=>a.id===p.accountId);
+        account.role=p.role; this.record("setAccountRole",account.id); return account;
+      }
       case "setAccountLock": {
         const p = contracts.setAccountLock.input.parse(raw);
         const a = this.find(this.accounts, (a) => a.id === p.accountId);

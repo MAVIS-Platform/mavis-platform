@@ -1,19 +1,115 @@
 "use client";
+import { FrozenArtifacts } from "./frozen-artifacts";
 import { useState } from "react";
 import Link from "next/link";
-import { useApiQuery } from "@/hooks/use-api";
+import { useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
+import { useSearchParams } from "next/navigation";
+import { SelectField, SearchInput, Pagination } from "@/components/shared/forms";
+import { WorkspaceSelector } from "@/features/workspaces/components";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
 import { DataTable } from "@/components/shared/data";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { TraceViewer, RuntimeSessionTimeline } from "@/features/runtime/components";
 import { SubmissionVersionHeader, FeedbackPanel } from "./components";
+import { GradingPanel } from "./grading";
 export function Submissions() {
+  const canReview = usePermission("submission:review");
+  return canReview ? <TeachingSubmissions /> : <MySubmissions />;
+}
+function MySubmissions() {
   const query = useApiQuery("submissions", {});
   return (
-    <RequestState query={query} empty={!query.data?.length}>
+    <RequestState
+      query={query}
+      empty={!query.data?.length}
+      emptyMessage="No submitted work yet. Open an assignment in your workspace to submit a model version."
+    >
+      <SubmissionList rows={query.data ?? []} />
+    </RequestState>
+  );
+}
+function TeachingSubmissions() {
+  const { workspaceId } = useSelection();
+  const params = useSearchParams();
+  const [selected, setSelected] = useState("");
+  const assignments = useApiQuery("assignments", { workspaceId }, { enabled: !!workspaceId });
+  const requested = selected || params.get("assignment") || "";
+  const assignment = assignments.data?.find((a) => a.id === requested) ?? assignments.data?.[0];
+  return (
+    <div className="space-y-4">
+      <WorkspaceSelector />
+      {workspaceId ? (
+        <RequestState
+          query={assignments}
+          empty={!assignments.data?.length}
+          emptyMessage="No assignments in this workspace. Create an assignment before reviewing submissions."
+        >
+          {assignment && (
+            <div className="space-y-4">
+              <SelectField
+                label="Assignment to review"
+                value={assignment.id}
+                onChange={setSelected}
+                options={(assignments.data ?? []).map((a) => ({ value: a.id, label: a.title }))}
+              />
+              <AssignmentSubmissionList
+                key={`${workspaceId}:${assignment.id}`}
+                workspaceId={workspaceId}
+                assignmentId={assignment.id}
+              />
+            </div>
+          )}
+        </RequestState>
+      ) : (
+        <EmptyState
+          title="Choose a workspace"
+          description="Select a class to review its assignments and student submissions."
+        />
+      )}
+    </div>
+  );
+}
+function AssignmentSubmissionList({
+  workspaceId,
+  assignmentId,
+}: {
+  workspaceId: string;
+  assignmentId: string;
+}) {
+  const query = useApiQuery("assignmentSubmissions", { workspaceId, assignmentId });
+  return (
+    <RequestState
+      query={query}
+      empty={!query.data?.length}
+      emptyMessage="No students have submitted work for this assignment yet."
+    >
+      <SubmissionList rows={query.data ?? []} />
+    </RequestState>
+  );
+}
+function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] }) {
+  const [search, setSearch] = useState(""),
+    [page, setPage] = useState(1);
+  const filtered = rows.filter((s) =>
+    [s.studentName, s.studentEmail, s.studentId, s.assignmentTitle, s.assignmentId, s.id].some(
+      (value) => value?.toLowerCase().includes(search.trim().toLowerCase()),
+    ),
+  );
+  const count = Math.max(1, Math.ceil(filtered.length / 10)),
+    current = Math.min(page, count);
+  return (
+    <div className="min-w-0 space-y-4">
+      <SearchInput
+        label="Search submissions"
+        value={search}
+        onChange={(value) => {
+          setSearch(value);
+          setPage(1);
+        }}
+      />
       <DataTable
         caption="Submitted result versions"
-        rows={query.data ?? []}
+        rows={filtered.slice((current - 1) * 10, current * 10)}
         rowKey={(s) => s.id}
         columns={[
           {
@@ -28,34 +124,67 @@ export function Submissions() {
               </Link>
             ),
           },
-          { key: "assignment", label: "Assignment", render: (s) => s.assignmentId },
+          {
+            key: "assignment",
+            label: "Assignment",
+            render: (s) => s.assignmentTitle || s.assignmentId,
+          },
+          { key: "student", label: "Student", render: (s) => s.studentName || s.studentId },
           { key: "model", label: "Frozen model", render: (s) => `Revision ${s.model.revision}` },
+          {
+            key: "review",
+            label: "Review result",
+            render: (s) => <SubmissionResult submissionId={s.id} />,
+          },
+          { key: "feedback", label: "Feedback", render: (s) => s.feedback.length },
           { key: "date", label: "Submitted", render: (s) => s.submittedAt },
         ]}
       />
-    </RequestState>
+      {count > 1 && <Pagination page={current} pageCount={count} onPageChange={setPage} />}
+    </div>
+  );
+}
+function SubmissionResult({ submissionId }: { submissionId: string }) {
+  const query = useApiQuery("submissionReview", { submissionId });
+  return (
+    <span className="text-xs">
+      {query.isError
+        ? "Review unavailable"
+        : query.data
+          ? `${query.data.status}${query.data.score !== null ? ` · ${query.data.score}/100` : ""}`
+          : "Loading…"}
+    </span>
   );
 }
 export function SubmissionReview({ submissionId }: { submissionId: string }) {
-  const query = useApiQuery("submission", { submissionId });
+  const canReview = usePermission("submission:review");
+  const query = useApiQuery(
+    "submission",
+    { submissionId },
+    { refreshMs: canReview ? 60000 : 15000 },
+  );
   const [selected, setSelected] = useState<string | null>(null);
   return (
     <RequestState query={query}>
       {query.data && (
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
+          <GradingPanel key={query.data.id} submissionId={query.data.id} />
           <section id="review" className="scroll-mt-24">
             <SubmissionVersionHeader submission={query.data} />
+            <FrozenArtifacts submission={query.data} />
           </section>
           <div
             id="submitted-graph"
-            className="grid scroll-mt-24 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]"
+            className="grid min-w-0 scroll-mt-24 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]"
           >
-            <ArchitectureGraph
-              model={query.data.model}
-              selectedId={selected}
-              onSelect={setSelected}
-            />
-            <section id="submitted-analysis" className="scroll-mt-24">
+            <div className="min-w-0 overflow-x-auto">
+              <ArchitectureGraph
+                model={query.data.model}
+                selectedId={selected}
+                onSelect={setSelected}
+              />
+            </div>
+            <section id="submitted-analysis" className="min-w-0 scroll-mt-24">
               <ElementDetailsPanel model={query.data.model} selectedId={selected} />
             </section>
           </div>
@@ -72,7 +201,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
               />
             </section>
           )}
-          <FeedbackPanel key={query.data.id} submission={query.data} />
+          <FeedbackPanel key={query.data.id} submission={query.data} selectedId={selected} />
         </div>
       )}
     </RequestState>

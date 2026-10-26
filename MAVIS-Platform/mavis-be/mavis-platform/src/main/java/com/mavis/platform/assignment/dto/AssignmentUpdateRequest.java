@@ -33,5 +33,8 @@ public class AssignmentUpdateRequest {
 
     private Map<String, Object> aiPolicy;
 
+    private java.util.UUID referenceModelId;
+    private Boolean clearReferenceSource;
+
     private OffsetDateTime dueAt;
 }

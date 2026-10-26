@@ -12,6 +12,7 @@ public interface DiagramProjectionService {
     com.mavis.analyzer.diagram.dto.DiagramResponseDTO getDiagramById(UUID diagram);
     com.mavis.analyzer.diagram.dto.DiagramResponseDTO updateDiagramLayout(UUID diagram,JsonNode positions);
     List<com.mavis.analyzer.diagram.dto.EvidenceResponseDTO> getEvidencesByElement(UUID element);
+    com.mavis.analyzer.diagram.dto.ElementEvidenceContextDTO getElementEvidenceContext(UUID element);
     List<com.mavis.analyzer.diagram.dto.EvidenceResponseDTO> getEvidencesByRelationship(UUID relationship);
     List<DiagramView> list(UUID model);
     DiagramView get(UUID diagram);

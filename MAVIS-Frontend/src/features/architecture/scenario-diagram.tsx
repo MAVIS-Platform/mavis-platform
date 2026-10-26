@@ -8,6 +8,7 @@ import { RequestState } from "@/components/shared/request-state";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SelectablePreview, download } from "./selectable-diagram-preview";
+import { SearchableThreeESelect } from "./three-e-searchable-select";
 import {
   createDesignedCopyFromObserved,
   interactionToDrawioXml,
@@ -223,63 +224,48 @@ function ObservedScenarioDiagram({
                       <code>loop</code> fragments.
                     </p>
 
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        Observed Lifelines ({interaction.participants.length}):
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {interaction.participants.map((p) => (
-                          <Button
-                            key={p.participantId}
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs"
-                            onClick={() => handleSelectObservedItem(p.participantId)}
-                          >
-                            {p.name} [{p.resolutionStatus}]
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground">
-                        Observed Steps ({interaction.messages.length}):
-                      </p>
-                      <ol aria-label="Observed sequence steps" className="space-y-1.5">
-                        {interaction.messages.map((m) => {
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <SearchableThreeESelect
+                        label="Element to explore"
+                        placeholder="Select or search elements…"
+                        selectedValue={selectedId}
+                        onSelect={handleSelectObservedItem}
+                        options={interaction.participants.map((p, idx) => ({
+                          value: p.participantId,
+                          badge: p.resolutionStatus,
+                          label: `${idx + 1}. :${p.name}`,
+                        }))}
+                      />
+                      <SearchableThreeESelect
+                        label="Connection to explore"
+                        placeholder="Select or search connections…"
+                        selectedValue={selectedId}
+                        onSelect={handleSelectObservedItem}
+                        options={interaction.messages.map((m) => {
                           const fromP = interaction.participants.find(
                             (p) => p.participantId === m.fromParticipantId,
                           );
                           const toP = interaction.participants.find(
                             (p) => p.participantId === m.toParticipantId,
                           );
-                          return (
-                            <li
-                              key={m.messageId}
-                              className="flex flex-wrap items-center justify-between gap-2 rounded border bg-background p-2 text-xs"
-                            >
-                              <button
-                                type="button"
-                                className="text-left font-medium underline-offset-4 hover:underline"
-                                onClick={() => handleSelectObservedItem(m.messageId)}
-                              >
-                                #{m.sequenceIndex} {fromP?.name ?? m.fromParticipantId} →{" "}
-                                {toP?.name ?? m.toParticipantId} · {m.label}
-                              </button>
-                              <span className="font-mono text-[11px] text-muted-foreground">
-                                {m.messageSort}
-                                {m.durationMs !== null && m.durationMs !== undefined
-                                  ? ` · ${m.durationMs}ms`
-                                  : ""}
-                                {m.httpStatusCode !== null && m.httpStatusCode !== undefined
-                                  ? ` · HTTP ${m.httpStatusCode}`
-                                  : ""}
-                              </span>
-                            </li>
-                          );
+                          const timing = [
+                            m.durationMs !== null && m.durationMs !== undefined
+                              ? `${m.durationMs}ms`
+                              : "",
+                            m.httpStatusCode !== null && m.httpStatusCode !== undefined
+                              ? `HTTP ${m.httpStatusCode}`
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" · ");
+                          return {
+                            value: m.messageId,
+                            badge: m.messageSort,
+                            label: `#${m.sequenceIndex} ${fromP?.name ?? m.fromParticipantId} → ${toP?.name ?? m.toParticipantId}`,
+                            sublabel: [m.label, timing].filter(Boolean).join(" · "),
+                          };
                         })}
-                      </ol>
+                      />
                     </div>
 
                     {(projection?.totalSteps ?? 0) > 30 && (
@@ -335,6 +321,8 @@ export function ScenarioDiagram(props: {
   onSelectSequence?:
     | ((id: string | null, seqCtx: SequenceSelectionContext | null) => void)
     | undefined;
+  theme?: import("@/lib/drawio/rules").DrawioTheme | undefined;
+  onThemeChange?: ((theme: import("@/lib/drawio/rules").DrawioTheme) => void) | undefined;
 }) {
   const [mode, setMode] = useState<"designed" | "observed">("designed");
   const [copiedInteraction, setCopiedInteraction] = useState<InteractionDocument | null>(null);
@@ -345,18 +333,20 @@ export function ScenarioDiagram(props: {
   }
 
   return (
-    <div className="space-y-4">
-      <div role="tablist" aria-label="Scenario source" className="flex gap-2">
+    <div className="space-y-2.5">
+      <div role="tablist" aria-label="Scenario source" className="flex gap-1.5">
         <Button
           role="tab"
+          size="sm"
           aria-selected={mode === "designed"}
           variant={mode === "designed" ? "default" : "outline"}
           onClick={() => switchMode("designed")}
         >
-          Designed scenario
+          Auto-detected scenario
         </Button>
         <Button
           role="tab"
+          size="sm"
           aria-selected={mode === "observed"}
           variant={mode === "observed" ? "default" : "outline"}
           onClick={() => switchMode("observed")}

@@ -12,5 +12,6 @@ public interface AssignmentService {
     List<AssignmentResponseDTO> getAssignmentsByWorkspace(UUID workspaceId);
     AssignmentResponseDTO getAssignmentById(UUID assignmentId);
     AssignmentResponseDTO updateAssignment(UUID assignmentId, AssignmentUpdateRequest request);
+    org.springframework.core.io.Resource downloadReferenceSource(UUID assignmentId);
     void deleteAssignment(UUID assignmentId);
 }

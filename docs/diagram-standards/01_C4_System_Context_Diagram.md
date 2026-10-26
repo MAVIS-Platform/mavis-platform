@@ -8,6 +8,15 @@
   * Nhận diện đầy đủ các tác nhân con người và các hệ thống phụ thuộc bên ngoài (cả chiều gọi vào inbound lẫn chiều hệ thống gọi ra outbound).
 * **Phạm vi & Giới hạn (Non-goals):**
   * **Không** mở danh sách microservice nội bộ, database/schema nội bộ, message broker/topic nội bộ, class/controller hay cổng mạng (TCP port).
+* **Phân biệt C4 System Context Diagram (C1) và Context Diagram truyền thống (DFD Level 0 / SRS):**
+
+| Tiêu chí so sánh | Context Diagram truyền thống (DFD Level 0 / Wiegers SRS) | C4 System Context Diagram (Level 1 — C1) |
+| :--- | :--- | :--- |
+| **Nguồn gốc & Mục đích** | Phân tích có cấu trúc (*DeMarco/Yourdon DFD Level 0*, *Karl Wiegers SRS*): đặc tả **luồng dữ liệu vào/ra (Input/Output Data Flows)** ở mức yêu cầu phần mềm. | Mô hình kiến trúc C4 (*Simon Brown*): đặc tả **ngữ cảnh kiến trúc phần mềm** và đóng vai trò cấp độ 1 để **zoom-in** trực tiếp xuống Container (C2) và Component (C3). |
+| **Ký hiệu Hệ thống đích (Ở giữa)** | **Hình tròn (Circle / Bubble)** duy nhất ở trung tâm đại diện cho toàn bộ hệ thống (Process `0`). | **Hộp chữ nhật (Box)** ở trung tâm có nhãn loại `[Software System]` kèm câu mô tả trách nhiệm/giá trị nghiệp vụ. |
+| **Ký hiệu Tác nhân bên ngoài** | Mọi tác nhân bên ngoài (người dùng, phòng ban, cảm biến, hệ thống khác) đều vẽ chung bằng **hình chữ nhật đơn giản (`External Entity / Terminator`)**, không phân biệt người hay máy bằng ký pháp riêng. | Tách bạch rõ 2 loại phần tử chuẩn có nhãn `[type]` và mô tả vai trò:<br>1. **`[Person]`**: người dùng/vai trò con người.<br>2. **`[Software System]`**: hệ thống phần mềm bên ngoài. |
+| **Bản chất Mũi tên & Nhãn cạnh** | **Luồng dữ liệu (Data Flow):** Tách riêng mũi tên dữ liệu đi vào và mũi tên dữ liệu đi ra; nhãn cạnh là **cụm danh từ chỉ gói thông tin/dữ liệu** (VD: `Menu choices`, `Order confirmation`, `Sales tax data`). | **Quan hệ tương tác / Phụ thuộc (Relationship):** Vẽ **1 mũi tên một chiều** từ chủ thể khởi tạo sang đích; nhãn cạnh là **cụm động từ hành động** (VD: `Gửi đơn hàng`, `Yêu cầu cấp phép thanh toán`), ngầm hiểu đã bao gồm chiều phản hồi (response). |
+| **Liên kết với các sơ đồ cấp dưới** | Phóng to xuống **DFD Level 1, Level 2** (các tiến trình xử lý dữ liệu và kho dữ liệu). | Phóng to trực tiếp chiếc hộp trung tâm ở **C1** thành khung `System Boundary` ở **C2 (Container Diagram)** và giữ nguyên các tác nhân xung quanh để bảo toàn tính nhất quán xuyên cấp. |
 
 ### 1.2. Các phần tử cốt lõi & Ký pháp chuẩn
 

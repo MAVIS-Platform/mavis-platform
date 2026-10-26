@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
+<title>Frozen submitted diagram</title>
+<style>html,body{margin:0;width:100%;height:100%;font:13px Arial,sans-serif;background:#fff;color:#172033}#tools{height:40px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #dbe3ec;box-sizing:border-box}button{border:1px solid #cbd5e1;border-radius:5px;background:#fff;padding:4px 10px;cursor:pointer}#graph{height:calc(100% - 40px);width:100%;overflow:auto;position:relative}#status{margin-left:auto}</style>
+<script>window.urlParams={};window.mxLoadResources=false;window.mxLoadStylesheets=false;window.PROXY_URL='';window.STYLE_PATH='';window.SHAPES_PATH='';window.STENCIL_PATH='';window.DRAW_MATH_URL='';window.GRAPH_IMAGE_PATH='';</script>
+<script src="/vendor/drawio/viewer-static.min.js"></script>
+</head><body><div id="tools"><button id="fit" type="button">Fit</button><button id="in" type="button" aria-label="Zoom in">+</button><button id="out" type="button" aria-label="Zoom out">−</button><span id="status">Read-only</span></div><div id="graph"></div>
+<script>
+(function(){
+ var graph=null,container=document.getElementById('graph'),status=document.getElementById('status');
+ function reply(type,extra){parent.postMessage(Object.assign({type:type},extra||{}),'*');}
+ function fit(){if(graph)graph.fit(28,null,null,false,false,null,1);}
+ document.getElementById('fit').onclick=fit;
+ document.getElementById('in').onclick=function(){if(graph)graph.zoomIn();};
+ document.getElementById('out').onclick=function(){if(graph)graph.zoomOut();};
+ document.addEventListener('click',function(e){if(e.target.closest&&e.target.closest('a'))e.preventDefault();},true);
+ window.addEventListener('message',function(event){
+  if(event.source!==parent||event.data?.type!=='mavis-submission-load')return;
+  var xml=event.data.xml;
+  if(typeof xml!=='string'||xml.length>2000000||/<!DOCTYPE|<!ENTITY/i.test(xml))return reply('mavis-submission-error');
+  try{
+   var doc=mxUtils.parseXml(xml),root=doc.getElementsByTagName('mxGraphModel')[0];
+   if(!root||doc.getElementsByTagName('parsererror').length)throw Error('Invalid submitted diagram');
+   for(var cell of Array.from(doc.getElementsByTagName('mxCell'))){
+    var value=cell.getAttribute('value');
+    if(value&&typeof Graph.sanitizeHtml==='function')cell.setAttribute('value',Graph.sanitizeHtml(value));
+    cell.removeAttribute('link');
+   }
+   if(graph)graph.destroy();container.textContent='';graph=new Graph(container);graph.setEnabled(false);graph.setPanning(true);graph.view.allowEval=false;
+   graph.getLinkForCell=function(){return null;};
+   new mxCodec(doc).decode(root,graph.model);graph.view.validate();fit();
+   status.textContent='Frozen revision · read-only';reply('mavis-submission-rendered',{cells:Object.keys(graph.model.cells).length});
+  }catch(error){container.textContent='This diagram could not be previewed. Download its original XML below.';reply('mavis-submission-error');}
+ });
+ window.addEventListener('resize',fit);reply('mavis-submission-ready');
+})();
+</script></body></html>

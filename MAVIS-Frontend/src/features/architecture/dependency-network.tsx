@@ -68,7 +68,15 @@ export function DependencyNetwork({
   const presentMode = useRef<(mode: NetworkMode) => void>(() => {});
   const selection = useRef({ selectedId, onSelect });
   selection.current = { selectedId, onSelect };
-  const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 });
+  const rightDrag = useRef<{
+    id: number;
+    button: number;
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    moved: boolean;
+  } | null>(null);
   const internalProjection = useMemo(
     () => projectGraphModel(model, expanded, origin),
     [model, expanded, origin],
@@ -120,7 +128,7 @@ export function DependencyNetwork({
       ),
       minZoom: 0.05,
       maxZoom: 5,
-      wheelSensitivity: 0.25,
+      userZoomingEnabled: false,
       selectionType: "single",
       autounselectify: true,
       boxSelectionEnabled: false,
@@ -206,12 +214,36 @@ export function DependencyNetwork({
     cy.on("tap", (event) => {
       if (event.target === cy) selection.current.onSelect(null);
     });
+    let detailShown: boolean | null = null;
     const updateCamera = () => {
-      setCamera({ ...cy.pan(), zoom: cy.zoom() });
-      cy.nodes().toggleClass("detail", cy.zoom() >= 1.1);
+      const pan = cy.pan();
+      const z = cy.zoom();
+      container.dataset["zoom"] = String(z);
+      container.dataset["panX"] = String(pan.x);
+      container.dataset["panY"] = String(pan.y);
+      const nextDetail = z >= 1.1;
+      if (nextDetail !== detailShown) {
+        detailShown = nextDetail;
+        cy.nodes().toggleClass("detail", nextDetail);
+      }
     };
     cy.on("zoom pan", updateCamera);
     updateCamera();
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 620 : 1;
+      const delta = Math.max(-240, Math.min(240, event.deltaY * unit));
+      const factor = Math.exp(-delta * 0.0025);
+      cy.zoom({
+        level: Math.min(cy.maxZoom(), Math.max(cy.minZoom(), cy.zoom() * factor)),
+        renderedPosition: {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+        },
+      });
+    };
+    container.addEventListener("wheel", onWheel, { passive: false });
     const resize = new ResizeObserver(() => cy.resize());
     resize.observe(container);
     const updateTheme = () => {
@@ -246,6 +278,7 @@ export function DependencyNetwork({
       attributeFilter: ["class", "data-theme", "style"],
     });
     return () => {
+      container.removeEventListener("wheel", onWheel);
       resize.disconnect();
       theme.disconnect();
       cy.destroy();
@@ -345,7 +378,7 @@ export function DependencyNetwork({
           </label>
           {highlightIds.length > 0 && (
             <Button variant="outline" size="sm" onClick={onClearHighlight}>
-              Trở lại lựa chọn
+              Return to selection
             </Button>
           )}
           <Tooltip.Root>
@@ -473,8 +506,9 @@ export function DependencyNetwork({
                 <div>
                   <dt className="font-medium">Move &amp; zoom</dt>
                   <dd className="text-muted-foreground">
-                    Drag a node to move it or drag the background to pan. Scroll or use + / − to
-                    zoom. Fit graph restores the overview.
+                    Drag a node to move it, or drag the background (or right-click drag) to pan.
+                    Scroll, right-click (Shift+right-click to zoom out), or use + / − to zoom. Fit
+                    graph restores the overview.
                   </dd>
                 </div>
                 <div>
@@ -488,7 +522,7 @@ export function DependencyNetwork({
                   <dt className="font-medium">Keyboard</dt>
                   <dd className="text-muted-foreground">
                     Focus the canvas: arrow keys pan, + / − zoom, Home or 0 fits, and Escape clears
-                    selection. Use Graph elements below for keyboard selection.
+                    selection. Use Graph elements above for keyboard selection.
                   </dd>
                 </div>
               </dl>
@@ -554,19 +588,137 @@ export function DependencyNetwork({
           </span>
         )}
       </div>
+      <details className="border-b p-3 text-sm">
+        <summary className="cursor-pointer">Graph elements (keyboard navigation)</summary>
+        <div className="mt-3 max-h-64 space-y-2 overflow-auto">
+          {matchingNodes.slice((page - 1) * 30, page * 30).map((node) => (
+            <button
+              key={node.id}
+              type="button"
+              className="block rounded px-2 py-1 text-left hover:bg-muted focus-visible:outline"
+              aria-label={`Select ${node.name}`}
+              aria-pressed={selectedId === node.id}
+              onClick={() => onSelect(selectedId === node.id ? null : node.id)}
+            >
+              {node.name} · {node.elementType}
+            </button>
+          ))}
+          {edges.slice((page - 1) * 50, page * 50).map((edge) => (
+            <button
+              key={edge.id}
+              type="button"
+              className="block rounded px-2 py-1 text-left hover:bg-muted focus-visible:outline"
+              aria-label={`Inspect ${byId.get(edge.from)?.name} to ${byId.get(edge.to)?.name}: ${edge.protocol}`}
+              aria-pressed={
+                selectedId === edge.id || edge.underlyingEdgeIds?.includes(selectedId ?? "")
+              }
+              onClick={() => onSelect(selectedId === edge.id ? null : edge.id)}
+            >
+              {byId.get(edge.from)?.name} → {byId.get(edge.to)?.name} · {edge.protocol}
+            </button>
+          ))}
+        </div>
+        {pageCount > 1 && (
+          <Pagination page={page} pageCount={pageCount} onPageChange={setElementPage} />
+        )}
+      </details>
+      <details className="border-b p-3 text-sm">
+        <summary className="cursor-pointer">Graph options</summary>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <SelectField
+            label="Relationship origin"
+            value={origin}
+            onChange={(v) => {
+              changeOrigin(v as typeof origin);
+            }}
+            options={[
+              { value: "all", label: "All relationships" },
+              { value: "source", label: "Source and configuration" },
+              { value: "deployment", label: "Deployment dependencies" },
+              { value: "runtime", label: "Runtime observations" },
+            ]}
+          />
+          <Button
+            variant="outline"
+            onClick={() => {
+              toggleExpanded();
+            }}
+          >
+            {expanded ? "Collapse service internals" : "Expand service internals"}
+          </Button>
+        </div>
+      </details>
       <div className="relative">
         <div
           ref={viewport}
           role="region"
           aria-label="Service dependency network"
-          aria-description="Drag nodes or background. Scroll to zoom. Use Graph elements below to inspect nodes and relationships with the keyboard."
+          aria-description="Drag nodes or background (or right-click drag to pan). Scroll or right-click to zoom. Use Graph elements above to inspect nodes and relationships with the keyboard."
           tabIndex={0}
           className={`relative h-[620px] touch-none select-none overflow-hidden ${mode === "explore" ? "bg-[#080b16] text-slate-200" : "bg-background text-foreground"}`}
           data-renderer="cytoscape"
           data-mode={mode}
-          data-zoom={camera.zoom}
-          data-pan-x={camera.x}
-          data-pan-y={camera.y}
+          data-zoom="1"
+          data-pan-x="0"
+          data-pan-y="0"
+          onContextMenu={(event) => {
+            event.preventDefault();
+          }}
+          onPointerDown={(event) => {
+            if (event.button !== 1 && event.button !== 2) return;
+            event.preventDefault();
+            rightDrag.current = {
+              id: event.pointerId,
+              button: event.button,
+              startX: event.clientX,
+              startY: event.clientY,
+              x: event.clientX,
+              y: event.clientY,
+              moved: false,
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const drag = rightDrag.current;
+            if (!drag || drag.id !== event.pointerId) return;
+            const dx = event.clientX - drag.x;
+            const dy = event.clientY - drag.y;
+            if (
+              !drag.moved &&
+              Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4
+            ) {
+              return;
+            }
+            drag.moved = true;
+            drag.x = event.clientX;
+            drag.y = event.clientY;
+            graph.current?.panBy({ x: dx, y: dy });
+          }}
+          onPointerUp={(event) => {
+            const drag = rightDrag.current;
+            if (!drag || drag.id !== event.pointerId) return;
+            rightDrag.current = null;
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+            if (!drag.moved && drag.button === 2 && graph.current) {
+              const cy = graph.current;
+              const rect = event.currentTarget.getBoundingClientRect();
+              const factor = event.shiftKey ? 1 / 1.25 : 1.25;
+              cy.zoom({
+                level: Math.min(cy.maxZoom(), Math.max(cy.minZoom(), cy.zoom() * factor)),
+                renderedPosition: {
+                  x: event.clientX - rect.left,
+                  y: event.clientY - rect.top,
+                },
+              });
+            }
+          }}
+          onPointerCancel={(event) => {
+            if (rightDrag.current?.id === event.pointerId) {
+              rightDrag.current = null;
+            }
+          }}
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget) return;
             const deltas: Record<string, { x: number; y: number }> = {
@@ -616,15 +768,14 @@ export function DependencyNetwork({
           </p>
         )}
       </div>
-      <div className="space-y-2 border-t px-4 py-3 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t px-4 py-2.5 text-xs text-muted-foreground">
         {mode === "explore" ? (
           <div
-            className="flex flex-wrap items-center gap-x-4 gap-y-1"
+            className="flex flex-wrap items-center gap-x-3 gap-y-1"
             aria-label="Explore cluster legend"
           >
-            <span className="font-semibold text-foreground">Service clusters:</span>
             {clusterLegend.map((cluster) => (
-              <span key={cluster.id} className="inline-flex items-center gap-1">
+              <span key={cluster.id} className="inline-flex items-center gap-1.5">
                 <span
                   className="inline-block size-2.5 rounded-full"
                   style={{ background: cluster.color }}
@@ -632,158 +783,52 @@ export function DependencyNetwork({
                 {cluster.name}
               </span>
             ))}
-            <span>
-              Gray: unclassified or unconnected. Groups show connectivity, not inferred ownership.
-              Hover for element type.
-            </span>
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            <span className="font-semibold text-foreground">Elements:</span>
-            <span className="inline-flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="inline-flex items-center gap-1.5">
               <span
                 style={{ background: "#397ed7" }}
                 className="inline-block size-2.5 rounded-full"
               />
-              <span className="font-mono font-bold text-foreground">[SVC]</span> Service
+              Service
             </span>
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1.5">
               <span
                 style={{ background: "#16815d" }}
                 className="inline-block size-2.5 rounded-full"
               />
-              <span className="font-mono font-bold text-foreground">[DB]</span> Data store
+              Data store
             </span>
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1.5">
               <span
                 style={{ background: "#9455c9" }}
                 className="inline-block size-2.5 rounded-full"
               />
-              <span className="font-mono font-bold text-foreground">[QUEUE]</span> Messaging
+              Messaging
             </span>
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1.5">
               <span
                 style={{ background: "#d65370" }}
                 className="inline-block size-2.5 rounded-full"
               />
-              <span className="font-mono font-bold text-foreground">[COMP]</span> Component
+              Component
             </span>
-            <span className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1.5">
               <span
                 style={{ background: "#b7791f" }}
                 className="inline-block size-2.5 rounded-full"
               />
-              <span className="font-mono font-bold text-foreground">[EXT]</span> External System
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span
-                style={{ background: "#94a3b8" }}
-                className="inline-block size-2.5 rounded-full"
-              />
-              <span className="font-mono font-bold text-foreground">[UNKNOWN]</span> Unclassified
+              External System
             </span>
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="font-semibold text-foreground">Relationships:</span>
-          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
-            <span className="font-bold">───</span> Solid (Static / Inferred call)
-          </span>
-          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
-            <span className="font-bold">- - -</span> Dashed (Deployment / Declared)
-          </span>
-          <span className="inline-flex items-center gap-1 font-mono text-[11px] text-foreground">
-            <span className="font-bold">···</span> Dotted (Uncertain mapping)
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="font-semibold text-foreground">Origins:</span>
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">
-              [STATIC]
-            </span>
-            Source
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">
-              [CONFIG]
-            </span>
-            Config
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">
-              [DEPLOY]
-            </span>
-            Deployment
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <span className="rounded bg-muted px-1 font-mono text-[10px] font-semibold text-foreground">
-              [RUNTIME]
-            </span>
-            Observed
-          </span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]">
+          <span>─── Static</span>
+          <span>- - - Declared</span>
+          <span>··· Uncertain</span>
         </div>
       </div>
-      <details className="border-t p-3 text-sm">
-        <summary className="cursor-pointer">Graph elements (keyboard navigation)</summary>
-        <div className="mt-3 max-h-64 space-y-2 overflow-auto">
-          {matchingNodes.slice((page - 1) * 30, page * 30).map((node) => (
-            <button
-              key={node.id}
-              type="button"
-              className="block rounded px-2 py-1 text-left hover:bg-muted focus-visible:outline"
-              aria-label={`Select ${node.name}`}
-              aria-pressed={selectedId === node.id}
-              onClick={() => onSelect(selectedId === node.id ? null : node.id)}
-            >
-              {node.name} · {node.elementType}
-            </button>
-          ))}
-          {edges.slice((page - 1) * 50, page * 50).map((edge) => (
-            <button
-              key={edge.id}
-              type="button"
-              className="block rounded px-2 py-1 text-left hover:bg-muted focus-visible:outline"
-              aria-label={`Inspect ${byId.get(edge.from)?.name} to ${byId.get(edge.to)?.name}: ${edge.protocol}`}
-              aria-pressed={
-                selectedId === edge.id || edge.underlyingEdgeIds?.includes(selectedId ?? "")
-              }
-              onClick={() => onSelect(selectedId === edge.id ? null : edge.id)}
-            >
-              {byId.get(edge.from)?.name} → {byId.get(edge.to)?.name} · {edge.protocol}
-            </button>
-          ))}
-        </div>
-        {pageCount > 1 && (
-          <Pagination page={page} pageCount={pageCount} onPageChange={setElementPage} />
-        )}
-      </details>
-      <details className="border-t p-3 text-sm">
-        <summary className="cursor-pointer">Graph options</summary>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <SelectField
-            label="Relationship origin"
-            value={origin}
-            onChange={(v) => {
-              changeOrigin(v as typeof origin);
-            }}
-            options={[
-              { value: "all", label: "All relationships" },
-              { value: "source", label: "Source and configuration" },
-              { value: "deployment", label: "Deployment dependencies" },
-              { value: "runtime", label: "Runtime observations" },
-            ]}
-          />
-          <Button
-            variant="outline"
-            onClick={() => {
-              toggleExpanded();
-            }}
-          >
-            {expanded ? "Collapse service internals" : "Expand service internals"}
-          </Button>
-        </div>
-      </details>
     </section>
   );
 }

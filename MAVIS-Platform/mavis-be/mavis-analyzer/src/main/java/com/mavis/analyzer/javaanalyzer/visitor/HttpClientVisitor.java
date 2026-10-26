@@ -38,16 +38,34 @@ public class HttpClientVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>>
         this.currentFilePath = currentFilePath;
     }
 
+    private static final List<String> DECLARATIVE_CLIENT_ANNOTATIONS = List.of(
+            "FeignClient", "HttpExchange", "GrpcClient", "WebServiceClient", "RegisterRestClient"
+    );
+
     @Override
     public void visit(ClassOrInterfaceDeclaration n, List<CodeEvidenceDTO> arg) {
-        // 1. Phân tích @FeignClient
+        // 1. Phân tích Declarative HTTP/RPC Client (@FeignClient, @HttpExchange, @GrpcClient, ...)
         if (n.isInterface()) {
-            Optional<AnnotationExpr> feignClientOpt = n.getAnnotationByName("FeignClient");
-            if (feignClientOpt.isPresent()) {
-                AnnotationExpr annotation = feignClientOpt.get();
-                String targetServiceName = extractFeignTarget(annotation);
+            Optional<AnnotationExpr> clientAnnOpt = DECLARATIVE_CLIENT_ANNOTATIONS.stream()
+                    .map(n::getAnnotationByName)
+                    .filter(Optional::isPresent)
+                    .map(Optional::get)
+                    .findFirst();
+            boolean hasExchangeMethod = clientAnnOpt.isEmpty() && n.getMethods().stream().anyMatch(m ->
+                    m.getAnnotationByName("HttpExchange").isPresent()
+                            || m.getAnnotationByName("GetExchange").isPresent()
+                            || m.getAnnotationByName("PostExchange").isPresent()
+                            || m.getAnnotationByName("PutExchange").isPresent()
+                            || m.getAnnotationByName("DeleteExchange").isPresent()
+                            || m.getAnnotationByName("PatchExchange").isPresent());
 
-                log.info("Detected FeignClient target service: {} in {}", targetServiceName, n.getNameAsString());
+            if (clientAnnOpt.isPresent() || hasExchangeMethod) {
+                String targetServiceName = clientAnnOpt.map(this::extractFeignTarget).orElse("");
+                if (targetServiceName == null || targetServiceName.isBlank() || targetServiceName.contains("${")) {
+                    targetServiceName = deriveTargetFromClientName(n.getNameAsString());
+                }
+
+                log.info("Detected declarative client target service: {} in {}", targetServiceName, n.getNameAsString());
 
                 if (arg != null && targetServiceName != null && !targetServiceName.isBlank()) {
                     Integer lineNumber = n.getBegin().map(p -> p.line).orElse(null);
@@ -69,6 +87,14 @@ public class HttpClientVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>>
         }
 
         super.visit(n, arg);
+    }
+
+    private String deriveTargetFromClientName(String className) {
+        if (className == null || className.isBlank()) return "";
+        String stem = className.replaceAll("(?i)(FeignClient|HttpClient|GrpcClient|RestClient|ServiceClient|ApiClient|Client)$", "");
+        if (stem.isBlank()) return "";
+        String kebab = stem.replaceAll("([a-z0-9])([A-Z])", "$1-$2").toLowerCase().replaceAll("-service$", "");
+        return kebab.isBlank() ? "" : kebab + "-service";
     }
 
     @Override

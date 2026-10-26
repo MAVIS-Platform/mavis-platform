@@ -17,10 +17,10 @@ spring:
     # Khng cho php JPA t? ??ng t?o b?ng v chng ta s? dng Flyway
     hibernate:
       ddl-auto: validate
-    show-sql: true
+    show-sql: ${MAVIS_SHOW_SQL:false}
     properties:
       hibernate:
-        format_sql: true
+        format_sql: ${MAVIS_SHOW_SQL:false}
         dialect: org.hibernate.dialect.PostgreSQLDialect
         jdbc:
           batch_size: 50
@@ -30,6 +30,9 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: true
+    # Session-level advisory locks allow CREATE INDEX CONCURRENTLY migrations.
+    postgresql:
+      transactional-lock: false
 
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}

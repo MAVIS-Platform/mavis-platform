@@ -296,9 +296,23 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     if (owningContainer == null && serviceContainers.size() == 1) {
                         owningContainer = serviceContainers.get(0);
                     }
+                    CodeEvidenceDTO feignEv = evidences.stream()
+                            .filter(e -> "FEIGN_CLIENT".equalsIgnoreCase(e.getElementType())
+                                    && Objects.equals(e.getSourceComponent(), umlEv.getIdentifier())
+                                    && (e.getFilePath() == null || Objects.equals(e.getFilePath(), umlEv.getFilePath())))
+                            .findFirst()
+                            .orElse(null);
+                    boolean isDeclarativeClient = feignEv != null
+                            || (umlEv.getCodeSnippet() != null && umlEv.getCodeSnippet().matches("(?s).*@(FeignClient|HttpExchange|GrpcClient|WebServiceClient|RegisterRestClient)\\b.*"));
                     ObjectNode props = createPropertiesNode(umlEv.getFilePath());
-                    props.put("componentBasis", "UML_CLASSIFIER");
+                    props.put("componentBasis", isDeclarativeClient ? "FEIGN_CLIENT" : "UML_CLASSIFIER");
                     props.put("qualifiedName", umlEv.getQualifiedName());
+                    if (isDeclarativeClient) {
+                        props.put("responsibility", "Declarative outbound HTTP/REST client proxy");
+                        if (feignEv != null && feignEv.getIdentifier() != null) {
+                            props.put("targetService", feignEv.getIdentifier());
+                        }
+                    }
                     attachUmlClassifierMetadata(props, umlEv);
                     if (owningContainer == null) {
                         props.put("resolutionIssue", "UNRESOLVED_COMPONENT_OWNER");
@@ -307,8 +321,8 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                             .modelVersion(modelVersion)
                             .parentElement(owningContainer)
                             .name(umlEv.getIdentifier())
-                            .elementType("CLASS_INTERFACE")
-                            .languageStack("JAVA_SPRING")
+                            .elementType(isDeclarativeClient ? "COMPONENT" : "CLASS_INTERFACE")
+                            .languageStack(isDeclarativeClient ? "Java / Spring Cloud Feign" : "JAVA_SPRING")
                             .scope(umlEv.getFilePath())
                             .properties(props)
                             .status(owningContainer == null ? "UNCERTAIN_MAPPING" : "VALIDATED")
@@ -397,6 +411,17 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         ambiguousNames.forEach(elementByNameMap::remove);
         List<Evidence> allEvidencesToSave = new ArrayList<>();
 
+        // Keep declaration evidence on every canonical Java classifier, not
+        // only REST endpoints. Relation evidence remains attached to relations.
+        if (evidences != null) for (CodeEvidenceDTO fact : evidences) {
+            if (!"CLASS_INTERFACE".equals(fact.getElementType())) continue;
+            var target = findClassifierElement(allElements, fact.getQualifiedName(), fact.getFilePath());
+            if (target == null || fact.getFilePath() == null) continue;
+            allEvidencesToSave.add(Evidence.builder().sourceSnapshot(sourceSnapshot).modelVersion(modelVersion)
+                    .element(target).sourceType("STATIC_CODE").adapterVersion("JAVAPARSER_3.25")
+                    .locator(fact.getFilePath() + ":" + fact.getLineNumber()).excerpt(fact.getCodeSnippet()).build());
+        }
+
         if (evidences != null) {
             for (CodeEvidenceDTO ev : evidences) {
                 if ("REST_API".equalsIgnoreCase(ev.getElementType())) {
@@ -468,6 +493,12 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     ModelElement sourceContainer = elementByNameMap.get(c.getServiceName().toLowerCase().trim());
                     if (sourceContainer == null) sourceContainer = matchTargetElement(elements, c.getServiceName());
 
+                    if (sourceContainer != null && c.getComposeFilePath() != null) {
+                        allEvidencesToSave.add(Evidence.builder().sourceSnapshot(sourceSnapshot).modelVersion(modelVersion)
+                                .element(sourceContainer).sourceType("DOCKER_COMPOSE").adapterVersion("DOCKER_COMPOSE")
+                                .locator(c.getComposeFilePath() + ":" + c.getLineNumber()).excerpt(c.getServiceName() + ":").build());
+                    }
+
                     for (DockerDependencyDTO dep : c.getDependsOn()) {
                         ModelElement targetContainer = elementByNameMap.get(dep.getTargetService().toLowerCase().trim());
                         if (targetContainer == null) targetContainer = matchTargetElement(elements, dep.getTargetService());
@@ -506,6 +537,22 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     ModelElement targetElement = elementByNameMap.get(targetServiceName.toLowerCase().trim());
                     if (targetElement == null) {
                         targetElement = matchTargetElement(elements, targetServiceName);
+                    }
+                    if (targetElement == null && "FEIGN_CLIENT".equalsIgnoreCase(type) && !targetServiceName.contains("${")) {
+                        ObjectNode extProps = createPropertiesNode(ev.getFilePath());
+                        extProps.put("sourceType", "FEIGN_CLIENT_TARGET");
+                        targetElement = modelElementRepository.save(ModelElement.builder()
+                                .modelVersion(modelVersion)
+                                .name(targetServiceName.trim())
+                                .elementType("SERVICE_CONTAINER")
+                                .languageStack("HTTP / REST API")
+                                .scope(ev.getFilePath())
+                                .properties(extProps)
+                                .status("VALIDATED")
+                                .build());
+                        elements.add(targetElement);
+                        allElements.add(targetElement);
+                        elementByNameMap.put(targetServiceName.toLowerCase().trim(), targetElement);
                     }
 
                     if (targetElement != null && findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath()) != null) {
@@ -832,6 +879,12 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             deploymentMeta.put("artifactName", c.getImage().trim());
             deploymentMeta.put("artifactKind", "CONTAINER_IMAGE");
             deploymentMeta.put("artifactResolution", "EXPLICIT_CONTAINER_IMAGE");
+        } else if (hasBuildContext && c.getArtifactName() != null) {
+            deploymentMeta.put("artifactName", c.getArtifactName());
+            deploymentMeta.put("artifactKind", "JAR");
+            deploymentMeta.put("artifactResolution", "DOCKERFILE_DECLARED_ARTIFACT");
+            deploymentMeta.put("artifactLocator", c.getArtifactLocator());
+            deploymentMeta.put("declaredBuildContext", c.getBuildContext().trim());
         } else if (hasBuildContext) {
             deploymentMeta.put("declaredBuildContext", c.getBuildContext().trim());
             deploymentMeta.put("artifactResolution", "BUILD_CONTEXT_ONLY_UNRESOLVED_ARTIFACT");
@@ -847,6 +900,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         if (c.getLineNumber() != null) {
             deploymentMeta.put("lineNumber", c.getLineNumber());
         }
+        deploymentMeta.set("connections", objectMapper.valueToTree(c.getConnections()));
         node.set("deploymentMetadata", deploymentMeta);
         return node;
     }

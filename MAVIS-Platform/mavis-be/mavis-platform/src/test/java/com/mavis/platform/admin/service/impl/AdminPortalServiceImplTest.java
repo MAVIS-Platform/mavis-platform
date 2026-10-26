@@ -206,4 +206,26 @@ class AdminPortalServiceImplTest {
         assertThat(logs).hasSize(1);
         assertThat(logs.get(0).getAction()).isEqualTo("CHANGE_USER_STATUS");
     }
+
+    @Test
+    void lockingOrChangingRoleEvictsTheRequestAuthorizationEntry() {
+        var request = new org.springframework.web.context.request.ServletRequestAttributes(new org.springframework.mock.web.MockHttpServletRequest());
+        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(request);
+        try {
+            when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(roleRepository.findByCode("LECTURER")).thenReturn(Optional.of(lecturerRole));
+            var stale = User.builder().id(userId).status("ACTIVE").role(studentRole).build();
+            com.mavis.common.security.AuthorizationRequestCache.user(userId, () -> Optional.of(stale));
+            adminPortalService.changeUserStatus(userId, "LOCKED");
+            assertThat(com.mavis.common.security.AuthorizationRequestCache.user(userId, () -> Optional.of(user))).containsSame(user);
+            com.mavis.common.security.AuthorizationRequestCache.evictUser(userId);
+            com.mavis.common.security.AuthorizationRequestCache.user(userId, () -> Optional.of(stale));
+            adminPortalService.changeUserRole(userId, "LECTURER");
+            assertThat(com.mavis.common.security.AuthorizationRequestCache.user(userId, () -> Optional.of(user))).containsSame(user);
+        } finally {
+            request.requestCompleted();
+            org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes();
+        }
+    }
 }

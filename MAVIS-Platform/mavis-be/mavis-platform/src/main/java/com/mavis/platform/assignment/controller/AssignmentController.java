@@ -41,6 +41,14 @@ public class AssignmentController {
         return ApiResponse.success(assignmentService.getAssignmentById(assignmentId));
     }
 
+    @GetMapping("/api/v1/assignments/{assignmentId}/reference-source")
+    public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource> downloadReferenceSource(@PathVariable UUID assignmentId) {
+        return org.springframework.http.ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.parseMediaType("application/zip"))
+                .header("Content-Disposition", "attachment; filename=assignment-" + assignmentId + "-source.zip")
+                .body(assignmentService.downloadReferenceSource(assignmentId));
+    }
+
     @PutMapping("/api/v1/assignments/{assignmentId}")
     @Operation(summary = "Cập nhật đề bài tập", description = "Chỉnh sửa thông tin đề bài tập")
     public ApiResponse<AssignmentResponseDTO> updateAssignment(

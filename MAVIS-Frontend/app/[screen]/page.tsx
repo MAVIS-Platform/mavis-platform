@@ -10,7 +10,12 @@ import {
   RuntimeScenarios,
   RuntimeSessions,
 } from "@/features/runtime/screens";
-import { Workspaces, WorkspaceMembers, ReferenceVersions } from "@/features/workspaces/screens";
+import {
+  Workspaces,
+  WorkspaceOverview,
+  WorkspaceMembers,
+  ReferenceVersions,
+} from "@/features/workspaces/screens";
 import { WorkspaceSelector } from "@/features/workspaces/components";
 import { Assignments } from "@/features/assignments/screens";
 import { Submissions } from "@/features/submissions/screens";
@@ -77,7 +82,7 @@ const screens: Record<
   "workspace-overview": {
     title: "Workspace Overview",
     scope: "workspace",
-    component: WorkspaceMembers,
+    component: WorkspaceOverview,
     selector: "workspace",
   },
   members: {
@@ -112,7 +117,7 @@ export default async function FeaturePage({ params }: { params: Promise<{ screen
   if (screen === "diagrams")
     return (
       <AppShell scope="project" activeId="diagrams" pageTitle={config.title}>
-        <ArchitectureWorkspace title={config.title} />
+        <ArchitectureWorkspace title={config.title} mode="diagram" />
       </AppShell>
     );
   return (

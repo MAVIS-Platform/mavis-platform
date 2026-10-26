@@ -33,6 +33,36 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class AiExplanationServiceImplTest {
+    @Test void elementExplanationUsesIncomingRelationshipEvidenceWithCorrectAttribution() {
+        var peer = ModelElement.builder().id(UUID.randomUUID()).modelVersion(modelVersion).name("commands").build();
+        var relation = ModelRelationship.builder().id(UUID.randomUUID()).modelVersion(modelVersion).sourceElement(peer).targetElement(element).build();
+        genuineEvidence.setElement(null); genuineEvidence.setRelationship(relation);
+        genuineEvidence.setExcerpt("subscribe(commands)");
+        var request = AiExplainRequestDTO.builder().modelVersionId(modelVersionId).explanationScope("ELEMENT").elementId(elementId).forceRefresh(true).build();
+        var response = aiExplanationService.generateOrGetExplanation(request);
+        assertThat(response.getCitedEvidenceIds()).contains(genuineEvidenceId);
+        assertThat(response.getCitedEvidences().get(0).getElementId()).isNull();
+        assertThat(response.getCitedEvidences().get(0).getRelationshipId()).isEqualTo(relation.getId());
+        assertThat(response.getExplanationText()).contains("Relationship evidence supports connectivity");
+    }
+
+    @Test void uncitedLegacyCacheIsRefreshedWhenSavedContextEvidenceExists() {
+        var cached = AiExplanation.builder().id(UUID.randomUUID()).modelVersion(modelVersion).element(element).explanationScope("ELEMENT")
+                .explanationText("Old response with no grounding").citedEvidenceIds(objectMapper.createArrayNode()).secretRedacted(true).build();
+        when(aiExplanationRepository.findFirstByModelVersionIdAndExplanationScopeAndElementIdOrderByCreatedAtDesc(modelVersionId, "ELEMENT", elementId)).thenReturn(Optional.of(cached));
+        when(evidenceRepository.findElementContext(modelVersionId, elementId)).thenReturn(List.of(genuineEvidence));
+        var response = aiExplanationService.generateOrGetExplanation(AiExplainRequestDTO.builder().modelVersionId(modelVersionId).explanationScope("ELEMENT").elementId(elementId).build());
+        assertThat(response.getCached()).isFalse();
+        assertThat(response.getCitedEvidenceIds()).contains(genuineEvidenceId);
+    }
+
+    @Test void noSavedEvidenceIsReportedAsModelContextRatherThanVerifiedGrounding() {
+        when(evidenceRepository.findByModelVersionId(modelVersionId)).thenReturn(List.of());
+        var response = aiExplanationService.generateOrGetExplanation(AiExplainRequestDTO.builder().modelVersionId(modelVersionId).explanationScope("ELEMENT").elementId(elementId).forceRefresh(true).build());
+        assertThat(response.getCitedEvidenceIds()).isEmpty();
+        assertThat(response.getEpistemicBadge()).contains("No Saved Evidence Cited");
+        assertThat(response.getExplanationText()).contains("No saved evidence is available");
+    }
 
     @Mock
     private AiExplanationRepository aiExplanationRepository;
