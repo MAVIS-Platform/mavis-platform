@@ -1,3 +1,4 @@
+import { assignmentReferenceSchema } from "@/types/domain";
 import { planArchitectureViews } from "../architecture/view-planner";
 import { githubBranches, githubRevision } from "../github/branches";
 import { generateDrawio } from "../drawio/server";
@@ -154,6 +155,7 @@ export async function executeJava(
         dueAt: z.string().nullish(),
         requiredDiagramTypes: z.array(z.string()).nullish(),
         requireRuntimeTrace: z.boolean().nullish(),
+        referenceSource: assignmentReferenceSchema.nullish(),
       })
       .parse(raw);
     return {

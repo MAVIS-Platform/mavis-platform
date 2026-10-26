@@ -18,6 +18,18 @@ class ArchitectureDocumentServiceTest {
     @Mock AccessPolicyService access;
     @Mock EntityManager entityManager;
     @Mock DiagramVersionRepository diagrams;
+    @Test void savedC4DocumentsPreserveExactLevelsInsteadOfBecomingGraph() {
+        when(models.findById(id)).thenReturn(Optional.of(model));
+        when(diagrams.save(any())).thenAnswer(call->{DiagramVersion value=call.getArgument(0);value.setId(UUID.randomUUID());return value;});
+        for(var entry:Map.of("context","CONTEXT","container","CONTAINER","component:service","COMPONENT").entrySet()) {
+            var document=new ArchitectureDocument();document.setId(UUID.randomUUID());document.setViewKey(entry.getKey());document.setRevision(1);document.setXml(xml);document.setModelVersion(model);
+            when(documents.findByModelVersionIdAndViewKeyAndRevision(id,entry.getKey(),1)).thenReturn(Optional.of(document));service.freeze(id,entry.getKey(),1);
+        }
+        var captured=org.mockito.ArgumentCaptor.forClass(DiagramVersion.class);verify(diagrams,times(3)).save(captured.capture());
+        assertThat(captured.getAllValues()).allMatch(d->"C4".equals(d.getNotation()));
+        assertThat(captured.getAllValues()).extracting(DiagramVersion::getLevel).containsExactlyInAnyOrder("CONTEXT","CONTAINER","COMPONENT");
+        assertThat(captured.getAllValues()).allMatch(d->d.getLayoutJson().path("diagramType").asText().equals("C4_"+d.getLevel()));
+    }
     @InjectMocks ArchitectureDocumentService service;
     private final UUID id=UUID.randomUUID();
     private final ModelVersion model=ModelVersion.builder().id(id).project(Project.builder().id(UUID.randomUUID()).build()).build();

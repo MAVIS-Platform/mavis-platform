@@ -108,8 +108,7 @@ public class SubmissionServiceImpl implements SubmissionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Bản vẽ sơ đồ không thuộc về phiên bản mô hình đã chọn");
         }
         if (assignment.getRequiredDiagramTypes() != null && assignment.getRequiredDiagramTypes().isArray()) {
-            var supplied = new HashSet<String>(); supplied.add(diagramVersion.getNotation());
-            if (diagramVersion.getLayoutJson() != null) for (var artifact : diagramVersion.getLayoutJson().path("artifacts")) supplied.add(artifact.path("notation").asText());
+            var supplied = com.mavis.common.utils.CourseworkDiagramTypes.supplied(diagramVersion.getNotation(), diagramVersion.getLevel(), diagramVersion.getLayoutJson());
             for (var required : assignment.getRequiredDiagramTypes()) if (!supplied.contains(required.asText().trim().toUpperCase())) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Missing required diagram type: " + required.asText());
             }

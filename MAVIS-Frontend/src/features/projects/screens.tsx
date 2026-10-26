@@ -1,6 +1,10 @@
 "use client";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useApiQuery, useSelection } from "@/hooks/use-api";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
+import { useApi, useApiQuery, useSelection } from "@/hooks/use-api";
 import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
 import { RequestState } from "@/components/shared/request-state";
 import { Badge } from "@/components/ui/badge";
@@ -189,13 +193,13 @@ export function ProjectOverview() {
                         </div>
                         {job.modelId ? (
                           <Button asChild size="sm" variant="ghost">
-                            <Link href={`/diagrams?project=${projectId}&model=${job.modelId}`}>
+                            <Link href={`/architecture?project=${projectId}&model=${job.modelId}`}>
                               Open →
                             </Link>
                           </Button>
                         ) : (
                           <Button asChild size="sm" variant="ghost">
-                            <Link href={`/import?project=${projectId}&snapshot=${job.snapshotId}`}>
+                            <Link href={`/snapshots?project=${projectId}&snapshot=${job.snapshotId}`}>
                               Retry
                             </Link>
                           </Button>
@@ -219,9 +223,117 @@ export function ProjectOverview() {
 
 export function SourceSnapshots() {
   const { projectId } = useSelection();
+  const adapter = useApi();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
+  const highlightedSnapshotId = searchParams.get("snapshot") ?? "";
+
+  const [analyzingSnapshotId, setAnalyzingSnapshotId] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string>("");
+  const [progressPct, setProgressPct] = useState<number>(0);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const navigatingRef = useRef(false);
+
   const query = useApiQuery("snapshots", { projectId }, { enabled: Boolean(projectId) });
-  const jobs = useApiQuery("analysisJobs", { projectId }, { enabled: Boolean(projectId) });
+  const jobs = useApiQuery(
+    "analysisJobs",
+    { projectId },
+    { enabled: Boolean(projectId), poll: Boolean(analyzingSnapshotId) },
+  );
+  const activeJobQuery = useApiQuery(
+    "analysisJob",
+    { jobId: activeJobId },
+    { enabled: Boolean(activeJobId), poll: Boolean(activeJobId) },
+  );
   const { models } = useModel();
+
+  // Smooth progress counter while analysis is in flight
+  useEffect(() => {
+    if (!analyzingSnapshotId) return;
+    const interval = setInterval(() => {
+      setProgressPct((prev) => {
+        if (prev >= 94) return prev;
+        const step = prev < 40 ? 7 : prev < 75 ? 4 : 2;
+        return Math.min(94, prev + step);
+      });
+    }, 350);
+    return () => clearInterval(interval);
+  }, [analyzingSnapshotId]);
+
+  // Sync with backend reported progress & auto-navigate to Architecture Graph Explorer on completion
+  useEffect(() => {
+    const job = activeJobQuery.data;
+    if (!job || !analyzingSnapshotId || !projectId) return;
+
+    if (typeof job.progress === "number" && job.progress > 0) {
+      setProgressPct((prev) => Math.max(prev, Math.min(99, job.progress!)));
+    }
+
+    const isCompleted = job.status === "completed" || job.status === "partial";
+    const isFailed =
+      job.status === "failed" || job.status === "cancelled" || job.status === "timed-out";
+
+    if (isCompleted && !navigatingRef.current) {
+      navigatingRef.current = true;
+      setProgressPct(100);
+      void (async () => {
+        await queryClient.invalidateQueries({ queryKey: ["api", "models"] });
+        await queryClient.invalidateQueries({ queryKey: ["api", "modelVersions"] });
+        await queryClient.invalidateQueries({ queryKey: ["api", "analysisJobs"] });
+        await queryClient.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
+
+        let resolvedModelId = job.modelId ?? "";
+        if (!resolvedModelId) {
+          try {
+            const refreshedModels =
+              adapter.mode === "backend"
+                ? await adapter.execute("modelVersions", { projectId })
+                : await adapter.execute("models", { projectId });
+            const sorted = [...refreshedModels].sort((a, b) => b.revision - a.revision);
+            const matched =
+              sorted.find((m) => m.snapshotId === analyzingSnapshotId) ?? sorted[0];
+            if (matched) resolvedModelId = matched.id;
+          } catch {
+            // fallback to project-level graph navigation
+          }
+        }
+        const targetHref = resolvedModelId
+          ? `/architecture?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(resolvedModelId)}`
+          : `/architecture?project=${encodeURIComponent(projectId)}`;
+        router.push(targetHref);
+      })();
+    } else if (isFailed) {
+      setAnalysisError(formatAnalysisJobMessage(job));
+      setAnalyzingSnapshotId(null);
+      setActiveJobId("");
+      setProgressPct(0);
+    }
+  }, [activeJobQuery.data, analyzingSnapshotId, projectId, adapter, queryClient, router]);
+
+  async function handleStartAnalysis(snapshotId: string) {
+    if (!projectId || analyzingSnapshotId) return;
+    navigatingRef.current = false;
+    setAnalysisError(null);
+    setAnalyzingSnapshotId(snapshotId);
+    setProgressPct(12);
+    try {
+      const idempotencyKey = crypto.randomUUID();
+      const startedJob = await adapter.execute("startAnalysis", {
+        projectId,
+        snapshotId,
+        idempotencyKey,
+      });
+      setActiveJobId(startedJob.id);
+      setProgressPct((prev) => Math.max(prev, 24));
+      void queryClient.invalidateQueries({ queryKey: ["api", "analysisJobs"] });
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Failed to start snapshot analysis.");
+      setAnalyzingSnapshotId(null);
+      setActiveJobId("");
+      setProgressPct(0);
+    }
+  }
 
   if (!projectId) return null;
 
@@ -231,7 +343,14 @@ export function SourceSnapshots() {
   return (
     <RequestState query={query} empty={!snapshotList.length}>
       <div className="space-y-4">
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {analysisError ? (
+            <p role="alert" className="text-xs font-medium text-destructive">
+              {analysisError}
+            </p>
+          ) : (
+            <span />
+          )}
           <Button asChild size="sm">
             <Link href={`/import?project=${projectId}`}>Import new snapshot</Link>
           </Button>
@@ -248,6 +367,7 @@ export function SourceSnapshots() {
               render: (s) => {
                 const idx = snapshotList.findIndex((item) => item.id === s.id);
                 const number = snapshotList.length - idx;
+                const isNew = highlightedSnapshotId === s.id;
                 return (
                   <div className="space-y-0.5">
                     <div className="flex items-center gap-2">
@@ -255,6 +375,7 @@ export function SourceSnapshots() {
                       <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
                         {s.id.slice(0, 8)}
                       </span>
+                      {isNew && <Badge variant="secondary">Just imported</Badge>}
                     </div>
                     {s.createdAt && (
                       <p className="text-xs text-muted-foreground">
@@ -274,6 +395,25 @@ export function SourceSnapshots() {
               key: "status",
               label: "Analysis status",
               render: (s) => {
+                if (analyzingSnapshotId === s.id) {
+                  return (
+                    <div className="min-w-36 space-y-1.5" role="status" aria-live="polite">
+                      <div className="flex items-center justify-between gap-2 text-xs font-medium text-primary">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                          Analyzing…
+                        </span>
+                        <span className="font-mono font-semibold">{progressPct}%</span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all duration-300"
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                }
                 const snapJobs = jobList.filter((j) => j.snapshotId === s.id);
                 const latestJob =
                   snapJobs.find((j) => j.status === "completed") ?? snapJobs[0] ?? null;
@@ -307,7 +447,7 @@ export function SourceSnapshots() {
                     {matchingModels.map((m) => (
                       <Link
                         key={m.id}
-                        href={`/diagrams?project=${projectId}&model=${m.id}`}
+                        href={`/architecture?project=${projectId}&model=${m.id}`}
                         className="inline-flex items-center gap-1 rounded-md border bg-muted/50 px-2 py-0.5 text-xs font-medium text-primary hover:underline"
                       >
                         Revision {m.revision}
@@ -323,19 +463,42 @@ export function SourceSnapshots() {
               label: "Actions",
               render: (s) => {
                 const latestModel = models.find((m) => m.snapshotId === s.id);
+                const isAnalyzingThis = analyzingSnapshotId === s.id;
+                const isAnalyzingAny = Boolean(analyzingSnapshotId);
                 return (
                   <div className="flex flex-wrap items-center gap-2">
-                    {latestModel && (
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={`/diagrams?project=${projectId}&model=${latestModel.id}`}>
-                          Open Diagrams
-                        </Link>
-                      </Button>
+                    {latestModel && !isAnalyzingThis && (
+                      <>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/architecture?project=${projectId}&model=${latestModel.id}`}>
+                            Open Graph
+                          </Link>
+                        </Button>
+                        <Button asChild size="sm" variant="ghost">
+                          <Link href={`/diagrams?project=${projectId}&model=${latestModel.id}`}>
+                            Open Diagrams
+                          </Link>
+                        </Button>
+                      </>
                     )}
-                    <Button asChild size="sm" variant="ghost">
-                      <Link href={`/import?project=${projectId}&snapshot=${s.id}`}>
-                        Analyze snapshot
-                      </Link>
+                    <Button
+                      size="sm"
+                      variant={latestModel && !isAnalyzingThis ? "ghost" : "default"}
+                      disabled={isAnalyzingAny}
+                      onClick={() => {
+                        void handleStartAnalysis(s.id);
+                      }}
+                    >
+                      {isAnalyzingThis ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                          {progressPct >= 100
+                            ? "Completed 100% · Opening Graph…"
+                            : `Analyzing... ${progressPct}%`}
+                        </span>
+                      ) : (
+                        "Analyze snapshot"
+                      )}
                     </Button>
                   </div>
                 );
@@ -357,6 +520,7 @@ export function AnalysisHistory() {
   );
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: Boolean(projectId) });
   const { models } = useModel();
+
 
   if (!projectId) return null;
 
@@ -464,7 +628,7 @@ export function AnalysisHistory() {
                   </div>
                 ) : (
                   <Button asChild size="sm" variant="ghost">
-                    <Link href={`/import?project=${projectId}&snapshot=${job.snapshotId}`}>
+                    <Link href={`/snapshots?project=${projectId}&snapshot=${job.snapshotId}`}>
                       Re-run analysis
                     </Link>
                   </Button>

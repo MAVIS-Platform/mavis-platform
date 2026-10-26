@@ -1,24 +1,19 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { contextHref } from "@/lib/mainflow-api";
 import { useApi } from "@/hooks/use-api";
-import { ApiError } from "@/lib/errors/api-error";
 import { ErrorNotice, panel } from "./shell";
+
 export function ImportFlow() {
   const adapter = useApi();
-  const terminalJob = (job: { status: string }) =>
-    ["completed", "failed", "cancelled", "timed-out", "partial"].includes(job.status);
   const params = useSearchParams();
   const router = useRouter();
   const cache = useQueryClient();
   const project = params.get("project") ?? "";
-  const jobId = params.get("job") ?? "";
-  const snapshot = params.get("snapshot") ?? "";
   const [source, setSource] = useState<"zip" | "github">("zip");
   const [repository, setRepository] = useState("");
   const [branch, setBranch] = useState("");
@@ -26,23 +21,18 @@ export function ImportFlow() {
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [validation, setValidation] = useState("");
-  const [key, setKey] = useState("");
   const inFlight = useRef(false);
-  useEffect(() => {
-    if (snapshot) {
-      const stored = sessionStorage.getItem(`analysis:${snapshot}`) ?? crypto.randomUUID();
-      sessionStorage.setItem(`analysis:${snapshot}`, stored);
-      setKey(stored);
-    }
-  }, [snapshot]);
+
   const create = useMutation({
     mutationFn: () => adapter.execute("createProject", { name }),
     onSuccess: (p) => {
       setName("");
       cache.invalidateQueries({ queryKey: ["api", "projects"] });
+      cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
       router.push(contextHref("/import", p.id));
     },
   });
+
   const upload = useMutation({
     mutationFn: async () => {
       if (!file || !project) throw new Error("Choose project and ZIP first");
@@ -55,10 +45,12 @@ export function ImportFlow() {
       });
     },
     onSuccess: (s) => {
-      router.push(contextHref("/import", project, "", { snapshot: s.id }));
       setFile(null);
+      cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
+      router.push(contextHref("/snapshots", project, "", { snapshot: s.id }));
     },
   });
+
   const [branchRepository, setBranchRepository] = useState("");
   const branches = useQuery({
     queryKey: ["api", "githubBranches", branchRepository],
@@ -68,17 +60,20 @@ export function ImportFlow() {
     retry: false,
     staleTime: 60000,
   });
+
   useEffect(() => {
     const timer = setTimeout(() => {
       setBranchRepository(repository.trim());
     }, 500);
     return () => clearTimeout(timer);
   }, [repository]);
+
   const branchOptions = branches.data?.branches ?? [];
   const selectedBranch = branchOptions.includes(branch)
     ? branch
     : (branches.data?.defaultBranch ?? "");
   const branchesCurrent = repository.trim() === branchRepository && branches.isSuccess;
+
   const github = useMutation({
     mutationFn: () =>
       adapter.execute("importGithub", {
@@ -87,50 +82,12 @@ export function ImportFlow() {
         branchName: selectedBranch,
         commitSha: commit,
       }),
-    onSuccess: (s) => router.push(contextHref("/import", project, "", { snapshot: s.id })),
-  });
-  const analyze = useMutation({
-    mutationFn: () =>
-      adapter.execute("startAnalysis", {
-        projectId: project,
-        snapshotId: snapshot,
-        idempotencyKey: key,
-      }),
-    onSuccess: (j) => router.push(contextHref("/import", project, "", { snapshot, job: j.id })),
-  });
-  const job = useQuery({
-    queryKey: ["api", "analysisJob", { jobId, project, snapshot }],
-    queryFn: async ({ signal }) => {
-      const j = await adapter.execute("analysisJob", { jobId }, signal);
-      if (j.projectId !== project || (snapshot && j.snapshotId !== snapshot))
-        throw new ApiError("contract", 502);
-      return j;
+    onSuccess: (s) => {
+      cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
+      router.push(contextHref("/snapshots", project, "", { snapshot: s.id }));
     },
-    enabled: !!jobId,
-    refetchInterval: (query) =>
-      query.state.error || (query.state.data && terminalJob(query.state.data)) ? false : 1500,
-  });
-  const cancel = useMutation({
-    mutationFn: () => adapter.execute("cancelAnalysis", { jobId }),
-    onSuccess: () =>
-      cache.invalidateQueries({ queryKey: ["api", "analysisJob", { jobId, project, snapshot }] }),
   });
 
-  function newAnalysis() {
-    const next = crypto.randomUUID();
-    sessionStorage.setItem(`analysis:${snapshot}`, next);
-    setKey(next);
-    analyze.reset();
-    router.push(contextHref("/import", project, "", { snapshot }));
-  }
-  const model = job.data?.modelId;
-  useEffect(() => {
-    if (model)
-      cache.invalidateQueries({
-        predicate: (q) =>
-          q.queryKey[0] === "api" && ["modelVersions", "model"].includes(String(q.queryKey[1])),
-      });
-  }, [model, project, cache]);
   async function submitUpload() {
     if (inFlight.current) return;
     inFlight.current = true;
@@ -142,13 +99,17 @@ export function ImportFlow() {
       inFlight.current = false;
     }
   }
+
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className="max-w-3xl">
       <section className={`${panel} space-y-4`}>
-        <h2 className="font-semibold">Import & Analyze</h2>
-        <p className="text-sm text-muted-foreground">
-          Import Java or C# from a ZIP or GitHub repository, then analyze the snapshot.
-        </p>
+        <div>
+          <h2 className="font-semibold">Import Project Source</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Import Java or C# source code from a ZIP archive or GitHub repository to create a new
+            snapshot.
+          </p>
+        </div>
         <form
           className="flex gap-2"
           onSubmit={(e) => {
@@ -249,7 +210,9 @@ export function ImportFlow() {
               >
                 {!branchesCurrent && (
                   <option value="">
-                    {branches.isFetching ? "Loading branches…" : "Enter a GitHub URL to select a branch"}
+                    {branches.isFetching
+                      ? "Loading branches…"
+                      : "Enter a GitHub URL to select a branch"}
                   </option>
                 )}
                 {branchOptions.map((value) => (
@@ -308,60 +271,8 @@ export function ImportFlow() {
           </form>
         )}
         <ErrorNotice error={create.error || (source === "zip" ? upload.error : github.error)} />
-        {snapshot && (
-          <div className="space-y-3 border-t pt-4">
-            <p className="break-all text-sm">Snapshot: {snapshot}</p>
-            <Button
-              disabled={!key || analyze.isPending || !!jobId}
-              onClick={() => analyze.mutate()}
-            >
-              {analyze.isPending ? "Requesting analysis…" : "Analyze snapshot"}
-            </Button>
-            <ErrorNotice error={analyze.error} />
-            <p className="text-xs text-muted-foreground">
-              A retry of this request reuses the same idempotency key.
-            </p>
-          </div>
-        )}
-      </section>
-      <section className={`${panel} space-y-4`} aria-live="polite">
-        <h2 className="font-semibold">Analysis status</h2>
-        {!jobId ? (
-          <p>No analysis requested.</p>
-        ) : (
-          <>
-            <p className="break-all text-xs">Job: {jobId}</p>
-            <p className="text-lg font-semibold">{job.data?.status ?? "Loading…"}</p>
-            {job.data?.analysisState && <p>Analysis: {job.data.analysisState}</p>}
-            {job.data?.workerStatus && <p>C# Worker: {job.data.workerStatus}</p>}
-            {job.data?.message && <p className="whitespace-pre-wrap text-sm">{job.data.message}</p>}
-            <ErrorNotice error={job.error || cancel.error} />
-            {job.error && (
-              <Button variant="outline" onClick={() => job.refetch()}>
-                Retry status
-              </Button>
-            )}
-            {job.data && !terminalJob(job.data) && (
-              <Button variant="outline" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
-                Cancel analysis
-              </Button>
-            )}
-            {job.data && terminalJob(job.data) && snapshot && (
-              <Button variant="outline" onClick={newAnalysis}>
-                Prepare a new analysis
-              </Button>
-            )}
-            {model && (
-              <Button asChild>
-                <Link href={contextHref("/architecture", project, model)}>Open architecture</Link>
-              </Button>
-            )}
-            {job.data && terminalJob(job.data) && !model && (
-              <p>No published model is available for this job.</p>
-            )}
-          </>
-        )}
       </section>
     </div>
   );
 }
+

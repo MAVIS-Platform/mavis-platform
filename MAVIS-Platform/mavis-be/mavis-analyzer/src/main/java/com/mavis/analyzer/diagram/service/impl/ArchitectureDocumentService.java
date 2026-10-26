@@ -62,15 +62,14 @@ public class ArchitectureDocumentService {
         var model = model(modelId); access.requireProjectWriteAccess(model.getProject());
         var document = documents.findByModelVersionIdAndViewKeyAndRevision(modelId, viewKey, revision)
             .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Saved diagram revision not found"));
-        String key = viewKey.toLowerCase(java.util.Locale.ROOT);
-        String notation = key.startsWith("uml-class") ? "UML_CLASS" : key.startsWith("uml-package") ? "UML_PACKAGE" :
-            key.startsWith("uml-deployment") ? "UML_DEPLOYMENT" : key.startsWith("uml-activity") ? "UML_ACTIVITY" :
-            key.startsWith("uml-state") ? "UML_STATE" : key.contains("scenario") || key.contains("sequence") ? "UML_SEQUENCE" :
-            key.contains("c4") ? "C4" : "DEPENDENCY_GRAPH";
+        String type = com.mavis.common.utils.CourseworkDiagramTypes.fromView(viewKey);
+        if ("UNKNOWN".equals(type)) throw new BusinessException(ErrorCode.BAD_REQUEST, "Unknown diagram view type");
+        String notation = type.startsWith("C4_") ? "C4" : type;
+        String level = type.startsWith("C4_") ? type.substring(3) : "SAVED_DOCUMENT";
         var layout = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode()
-            .put("frozenDocument", true).put("documentId", document.getId().toString())
+            .put("diagramType", type).put("frozenDocument", true).put("documentId", document.getId().toString())
             .put("viewId", viewKey).put("documentRevision", revision).put("drawioXml", document.getXml());
-        return diagrams.save(DiagramVersion.builder().modelVersion(model).notation(notation).level("SAVED_DOCUMENT").layoutJson(layout).build()).getId();
+        return diagrams.save(DiagramVersion.builder().modelVersion(model).notation(notation).level(level).layoutJson(layout).build()).getId();
     }
     @Transactional(readOnly=true)
     public Document get(UUID modelId,String viewKey,Long revision) {

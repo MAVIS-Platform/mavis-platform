@@ -53,6 +53,10 @@ public class Assignment {
     @Column(name = "ai_policy")
     private JsonNode aiPolicy;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "reference_model_id")
+    private ModelVersion referenceModel;
+
     @Column(name = "due_at")
     private OffsetDateTime dueAt;
 

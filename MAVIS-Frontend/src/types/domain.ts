@@ -221,7 +221,14 @@ export const workspaceSchema = z.object({
   status: z.string().optional(),
   members: z.array(z.object({ id: z.string(), name: z.string(), role: z.string() })),
 });
+export const assignmentReferenceSchema = z.object({
+  projectId: z.string(), projectName: z.string(), snapshotId: z.string(), modelId: z.string(),
+  revision: z.number().int().positive(), sourceType: z.string(),
+  repositoryUrl: z.string().nullish(), branch: z.string().nullish(),
+  commitSha: z.string().nullish(), artifactHash: z.string().nullish(),
+});
 export const assignmentSchema = z.object({
+  referenceSource: assignmentReferenceSchema.nullish(),
   requiredDiagramTypes: z.array(z.string()).optional(),
   requireRuntimeTrace: z.boolean().optional(),
   id: z.string(),
