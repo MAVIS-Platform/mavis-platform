@@ -392,7 +392,7 @@ test("theme bootstraps before paint with validated preferences and denied-storag
 
 // Supply Next's routing context while rendering the real components on the
 // server. No browser, upstream service, or sample session is needed here.
-function loadRoutedComponent(relative, overrides = {}) {
+function loadRoutedComponent(relative, overrides = {}, browserGlobals = {}) {
   const filename = path.join(root, relative);
   const compiled = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
     compilerOptions: {
@@ -404,6 +404,7 @@ function loadRoutedComponent(relative, overrides = {}) {
   }).outputText;
   const exports = {};
   vm.runInNewContext(compiled, {
+    ...browserGlobals,
     exports,
     URLSearchParams,
     require: (name) => {
@@ -425,6 +426,83 @@ function loadRoutedComponent(relative, overrides = {}) {
   });
   return exports;
 }
+
+test("login background is decorative, throttles pointers and releases observers and frames", () => {
+  const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+  const listeners=new Map(),frames=new Map(),mediaListeners=new Set(),properties=new Map();
+  let effect,serial=0,reduced=false;
+  const eventTarget=()=>({addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:(name,fn)=>{if(listeners.get(name)===fn)listeners.delete(name);}});
+  const motion={get matches(){return reduced;},addEventListener:(_,fn)=>mediaListeners.add(fn),removeEventListener:(_,fn)=>mediaListeners.delete(fn)};
+  const fine={matches:true,addEventListener:(_,fn)=>mediaListeners.add(fn),removeEventListener:(_,fn)=>mediaListeners.delete(fn)};
+  const rootElement={style:{setProperty:(name,value)=>properties.set(name,value)},dataset:{}};
+  const document={hidden:false,...eventTarget(),documentElement:eventTarget()};
+  const window={...eventTarget(),innerWidth:1000,innerHeight:800,matchMedia:q=>q.includes("reduced")?motion:fine};
+  const react={...React,useRef:()=>({current:rootElement}),useId:()=>"login-gradient",useEffect:fn=>{effect=fn;}};
+  const {LoginBackground}=loadRoutedComponent("src/features/auth/login-background.tsx",{react,"./login-background.module.css":{background:"background",network:"network",cluster:"cluster",extra:"extra"}},{window,document,requestAnimationFrame:fn=>{frames.set(++serial,fn);return serial;},cancelAnimationFrame:id=>frames.delete(id)});
+  const html=renderToStaticMarkup(React.createElement(LoginBackground));
+  assert.ok(html.includes('aria-hidden="true"'));assert.ok(html.includes("pointer-events-none"));assert.ok(!html.includes("NaN"));
+  const cleanup=effect();const move=listeners.get("pointermove");
+  move({clientX:900,clientY:700});move({clientX:800,clientY:600});assert.equal(frames.size,1,"at most one pending pointer frame");
+  for(const fn of frames.values())fn();frames.clear();assert.notEqual(properties.get("--pointer-x"),"0px");
+  reduced=true;for(const fn of mediaListeners)fn();move({clientX:500,clientY:300});assert.equal(frames.size,0);assert.equal(properties.get("--pointer-x"),"0px");
+  reduced=false;document.hidden=true;listeners.get("visibilitychange")();assert.equal(rootElement.dataset.paused,"true");
+  document.hidden=false;move({clientX:900,clientY:700});assert.equal(frames.size,1);cleanup();assert.equal(frames.size,0);assert.equal(listeners.size,0);assert.equal(mediaListeners.size,0);
+});
+
+test("profile renders real long account values and a separate password action without invented email", () => {
+  const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+  const hooks={useApi:()=>({mode:"backend"}),useApiMutation:()=>({isPending:false,error:null})};
+  const {ProfileDetails}=loadRoutedComponent("src/features/profile/profile.tsx",{"@/hooks/use-api":hooks});
+  const user={id:"user",name:"A long actual name ".repeat(10),email:"a.long.actual.email.address@example.org",role:"lecturer"};
+  const html=renderToStaticMarkup(React.createElement(ProfileDetails,{user}));
+  for(const text of [user.email,"Lecturer","Full Name","Email","Role","Change Password"]) assert.ok(html.includes(text),text);
+  assert.ok(html.includes("overflow-wrap:anywhere"));
+  assert.ok(!html.includes('id="current-password"'),"password fields are not part of the profile information form");
+  assert.ok(renderToStaticMarkup(React.createElement(ProfileDetails,{user:{...user,email:null}})).includes("Email not available"));
+});
+
+test("password form validates, blocks duplicate submissions, preserves errors, clears on success and cancels without mutation", async () => {
+  const React=require("react");
+  let cursor=0,calls=0,successes=0,cancelled=0,resolveRequest;
+  const slots=[],busy=[];
+  const mutation={isPending:false,error:null,reset(){this.error=null;},async mutateAsync(input){calls++;mutation.lastInput=input;return new Promise(resolve=>{resolveRequest=resolve;});}};
+  const react={...React,useState(initial){const i=cursor++;if(!(i in slots))slots[i]=initial;return [slots[i],value=>{slots[i]=typeof value==="function"?value(slots[i]):value;}];},useRef(initial){const i=cursor++;return slots[i]??(slots[i]={current:initial});}};
+  const {ChangePasswordForm}=loadRoutedComponent("src/features/profile/profile.tsx",{react,"@/hooks/use-api":{useApiMutation:()=>mutation}});
+  const render=()=>{cursor=0;return ChangePasswordForm({fullName:"Real Name",onBusyChange:value=>busy.push(value),onCancel:()=>cancelled++,onSuccess:()=>successes++});};
+  const find=(tree,predicate)=>{if(!tree || typeof tree!=="object")return; if(predicate(tree))return tree;for(const child of React.Children.toArray(tree.props?.children)){const result=find(child,predicate);if(result)return result;}};
+  const field=id=>find(render(),e=>e.props?.id===id);
+  const submit=()=>render().props.onSubmit({preventDefault(){}});
+  const currentField=field("current-password"),nextField=field("new-password");
+  cursor=10;let fieldTree=currentField.type(currentField.props);
+  assert.equal(find(fieldTree,e=>e.props?.id==="current-password").props.type,"password");
+  find(fieldTree,e=>e.props?.["aria-label"]==="Show current password").props.onClick();
+  cursor=10;fieldTree=currentField.type(currentField.props);
+  assert.equal(find(fieldTree,e=>e.props?.id==="current-password").props.type,"text");
+  cursor=11;const otherField=nextField.type(nextField.props);
+  assert.equal(find(otherField,e=>e.props?.id==="new-password").props.type,"password");
+  mutation.isPending=true;
+  assert.equal(find(render(),e=>e.type==="fieldset").props.disabled,true);
+  mutation.isPending=false;
+  await submit();assert.equal(calls,0);assert.match(field("current-password").props.error,/required/);assert.match(field("new-password").props.error,/required/);
+  field("current-password").props.onChange("old-password");field("new-password").props.onChange("short");await submit();assert.equal(calls,0);assert.match(field("new-password").props.error,/6–100/);
+  field("new-password").props.onChange("valid-new-password");
+  const request=submit();await submit();assert.equal(calls,1,"same-tick double submit is blocked");
+  assert.equal(mutation.lastInput.fullName,"Real Name");resolveRequest({user:{name:"Real Name"}});await request;
+  assert.equal(successes,1);assert.equal(field("current-password").props.value,"");assert.equal(field("new-password").props.value,"");assert.deepEqual(busy,[true,false]);
+  const {ApiError}=require("../src/lib/errors/api-error.ts");
+  mutation.mutateAsync=async()=>{calls++;throw new ApiError("invalid",400,"PROFILE_CURRENT_PASSWORD");};
+  field("current-password").props.onChange("wrong-password");field("new-password").props.onChange("retained-new-password");await submit();
+  assert.match(field("current-password").props.error,/incorrect/);assert.equal(field("new-password").props.value,"retained-new-password");
+  const before=calls;find(render(),e=>e.props?.children==="Cancel").props.onClick();assert.equal(cancelled,1);assert.equal(calls,before);
+});
+
+test("password fields render masked inputs, visibility controls and backend length limits", () => {
+  const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+  const {ChangePasswordForm}=loadRoutedComponent("src/features/profile/profile.tsx",{"@/hooks/use-api":{useApiMutation:()=>({isPending:false,error:null})}});
+  const html=renderToStaticMarkup(React.createElement(ChangePasswordForm,{fullName:"Name",onBusyChange(){},onCancel(){},onSuccess(){}}));
+  assert.equal((html.match(/type="password"/g)||[]).length,2);
+  assert.ok(html.includes("Show current password"));assert.ok(html.includes("Show new password"));assert.ok(html.includes('minLength="6"'));
+});
 
 test("live shell preserves model context without provisional session or sample UI", () => {
   const React = require("react");

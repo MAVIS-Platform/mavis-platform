@@ -45,6 +45,7 @@ export async function signIn(input: unknown, signal?: AbortSignal, google = fals
       userId: z.string().uuid(),
       fullName: z.string(),
       role: z.string(),
+      email: z.string().email().nullish(),
     })
     .parse(
       await javaRequest(google ? "auth/google" : "auth/login", undefined, {
@@ -55,7 +56,14 @@ export async function signIn(input: unknown, signal?: AbortSignal, google = fals
     );
   return {
     token: raw.token,
-    session: { user: userView({ id: raw.userId, fullName: raw.fullName, role: raw.role }) },
+    session: {
+      user: userView({
+        id: raw.userId,
+        fullName: raw.fullName,
+        role: raw.role,
+        ...(raw.email ? { email: raw.email } : {}),
+      }),
+    },
   };
 }
 export function runtimeSequence(raw: unknown, expectedSessionId?: string) {
@@ -580,7 +588,10 @@ export async function executeJava(
       };
     case "runtimeSequence": {
       const sessionId = id(input, "sessionId");
-      return runtimeSequence(await get(`analyzer/runtime/sessions/${sessionId}/sequence`), sessionId);
+      return runtimeSequence(
+        await get(`analyzer/runtime/sessions/${sessionId}/sequence`),
+        sessionId,
+      );
     }
     case "runtimeReadSessions":
       return list

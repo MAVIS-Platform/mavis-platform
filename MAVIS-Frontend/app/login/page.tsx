@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { GoogleSignIn } from "@/features/auth/google-sign-in";
+import { LoginBackground } from "@/features/auth/login-background";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -64,21 +65,20 @@ export default function LoginPage() {
     }
   }
   return (
-    <div className="flex min-h-svh flex-col bg-background text-foreground">
-      <header className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6 sm:px-10">
-        <div className="flex items-center gap-3">
-          <MavisLogo />
-          <div>
-            <span className="block text-base font-bold tracking-widest text-foreground">AI-Assisted Microservices 
-Architecture Visualization and 
-Change Impact Analysis
-
-</span>
+    <div className="relative isolate flex min-h-svh flex-col bg-background text-foreground">
+      <LoginBackground />
+      <header className="mx-auto flex w-full max-w-7xl shrink-0 items-center justify-between gap-4 px-4 py-3 sm:px-8">
+        <div className="flex min-w-0 items-center gap-3">
+          <MavisLogo className="h-12 w-12" />
+          <div className="min-w-0 max-w-sm">
+            <span className="block text-xs font-semibold leading-5 text-foreground sm:text-sm">
+              AI-Assisted Microservices Architecture Visualization and Change Impact Analysis
+            </span>
           </div>
         </div>
         <AppearanceSelector />
       </header>
-      <main className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-12 px-6 py-8 sm:px-10 lg:grid-cols-[1.1fr_1fr] lg:gap-20 lg:py-14">
+      <main className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-6 px-4 py-3 sm:px-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-12">
         <section className="hidden self-center lg:block">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs text-muted-foreground">
             <Network size={14} className="text-primary" />
@@ -109,17 +109,17 @@ Change Impact Analysis
           </div>
         </section>
         <section
-          className="mx-auto w-full max-w-md rounded-2xl border bg-card p-7 sm:p-10"
+          className="mx-auto w-full min-w-0 max-w-md rounded-2xl border bg-card p-5 sm:p-6"
           aria-labelledby="login-title"
         >
-          <div className="mb-8">
-            <p className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-primary">
+          <div className="mb-5">
+            <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-primary">
               Your workspace awaits
             </p>
-            <h2 id="login-title" className="text-3xl font-semibold tracking-tight">
+            <h2 id="login-title" className="text-2xl font-semibold tracking-tight">
               Welcome back
             </h2>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Sign in to continue exploring your architecture.
             </p>
           </div>
@@ -160,7 +160,7 @@ Change Impact Analysis
             </div>
           ) : (
             <form
-              className="space-y-5"
+              className="space-y-4"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!real.isPending) void signIn();
@@ -180,7 +180,7 @@ Change Impact Analysis
                     autoComplete="username"
                     required
                     placeholder="you@example.com"
-                    className="h-12 pl-10"
+                    className="h-11 pl-10"
                     value={email}
                     disabled={real.isPending}
                     onChange={(e) => setEmail(e.target.value)}
@@ -199,7 +199,7 @@ Change Impact Analysis
                     autoComplete="current-password"
                     required
                     placeholder="Enter your password"
-                    className="h-12 pr-12"
+                    className="h-11 pr-12"
                     value={password}
                     disabled={real.isPending}
                     onChange={(e) => setPassword(e.target.value)}
@@ -226,7 +226,7 @@ Change Impact Analysis
               </div>
               {real.isError && <ErrorState error={real.error} />}
               <Button
-                className="h-12 w-full text-sm font-medium"
+                className="h-11 w-full text-sm font-medium"
                 disabled={real.isPending}
                 type="submit"
               >
@@ -250,7 +250,7 @@ Change Impact Analysis
           {api.mode === "backend" && (
             <>
               <GoogleSignIn onSignedIn={finish} />
-              <p className="mt-6 text-center text-sm text-muted-foreground">
+              <p className="mt-4 text-center text-sm text-muted-foreground">
                 New to MAVIS?{" "}
                 <Link href="/auth/register" className="font-medium text-primary hover:underline">
                   Create an account
@@ -264,13 +264,13 @@ Change Impact Analysis
               </p>
             </>
           )}
-          <div className="mt-8 flex items-center justify-center gap-2 border-t pt-5 text-xs text-muted-foreground">
+          <div className="mt-5 flex items-center justify-center gap-2 border-t pt-3 text-xs text-muted-foreground">
             <ShieldCheck size={14} />
             <span>Source. Architecture. Evidence.</span>
           </div>
         </section>
       </main>
-      <footer className="px-6 py-6 text-center text-xs text-muted-foreground">
+      <footer className="shrink-0 px-4 py-3 text-center text-xs text-muted-foreground">
         MAVIS · Microservices Architecture Visualization
       </footer>
     </div>
