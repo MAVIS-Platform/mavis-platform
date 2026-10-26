@@ -8,7 +8,7 @@ import { DataTable, DetailPanel, SummaryCard } from "@/components/shared/data";
 import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
 import { Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { Button } from "@/components/ui/button";
-import { useApiQuery } from "@/hooks/use-api";
+import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { ProjectStatusBadge } from "@/features/projects/components";
 import type { Project } from "@/types/domain";
 export default function Index() {
@@ -43,6 +43,7 @@ function runtimeSummary(projects: Project[] | undefined): string | number {
 }
 function Projects() {
   const projects = useApiQuery("projectOverviews", {});
+  const selection = useSelection();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
@@ -124,7 +125,11 @@ function Projects() {
                           </Link>
                         ),
                       },
-                      { key: "services", label: "Services", render: (p) => p.services ?? "Unknown" },
+                      {
+                        key: "services",
+                        label: "Services",
+                        render: (p) => p.services ?? "Unknown",
+                      },
                       {
                         key: "status",
                         label: "Status",

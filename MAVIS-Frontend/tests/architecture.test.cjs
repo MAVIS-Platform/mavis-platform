@@ -538,7 +538,7 @@ test("login background is decorative, throttles pointers and releases observers 
   const document={hidden:false,...eventTarget(),documentElement:eventTarget()};
   const window={...eventTarget(),innerWidth:1000,innerHeight:800,matchMedia:q=>q.includes("reduced")?motion:fine};
   const react={...React,useRef:()=>({current:rootElement}),useId:()=>"login-gradient",useEffect:fn=>{effect=fn;}};
-  const {LoginBackground}=loadRoutedComponent("src/features/auth/login-background.tsx",{react,"./login-background.module.css":{background:"background",network:"network",cluster:"cluster",extra:"extra"}},{window,document,requestAnimationFrame:fn=>{frames.set(++serial,fn);return serial;},cancelAnimationFrame:id=>frames.delete(id)});
+  const {LoginBackground}=loadRoutedComponent("src/features/auth/login-background.tsx",{react},{window,document,requestAnimationFrame:fn=>{frames.set(++serial,fn);return serial;},cancelAnimationFrame:id=>frames.delete(id)});
   const html=renderToStaticMarkup(React.createElement(LoginBackground));
   assert.ok(html.includes('aria-hidden="true"'));assert.ok(html.includes("pointer-events-none"));assert.ok(!html.includes("NaN"));
   const cleanup=effect();const move=listeners.get("pointermove");
@@ -547,6 +547,22 @@ test("login background is decorative, throttles pointers and releases observers 
   reduced=true;for(const fn of mediaListeners)fn();move({clientX:500,clientY:300});assert.equal(frames.size,0);assert.equal(properties.get("--pointer-x"),"0px");
   reduced=false;document.hidden=true;listeners.get("visibilitychange")();assert.equal(rootElement.dataset.paused,"true");
   document.hidden=false;move({clientX:900,clientY:700});assert.equal(frames.size,1);cleanup();assert.equal(frames.size,0);assert.equal(listeners.size,0);assert.equal(mediaListeners.size,0);
+});
+
+test("all auth flows reuse one login background while retaining their forms and navigation", () => {
+  const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+  const {ThemeProvider}=require("../src/components/theme-provider.tsx");
+  const {LoginBackground}=loadRoutedComponent("src/features/auth/login-background.tsx");
+  const {AuthFlow}=loadRoutedComponent("src/features/auth/auth-flow.tsx",{"./login-background":{LoginBackground},"@/hooks/use-api":{useApiMutation:()=>({isPending:false,isError:false})}});
+  for(const [flow,action] of [["register","Create account"],["forgot-password","Send reset code"],["verify","Verify email"],["reset-password","Reset password"]]) {
+    const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AuthFlow,{flow})));
+    assert.equal((html.match(/mavis-auth-background/g)||[]).length,1,flow);
+    assert.ok(html.includes("relative isolate min-h-svh"));
+    assert.ok(html.includes("pointer-events-none fixed inset-0"));
+    assert.ok(html.includes('type="email"'));assert.ok(html.includes(action));assert.ok(html.includes('href="/login"'));
+    assert.equal(html.includes("Verification code"),["verify","reset-password"].includes(flow));
+    assert.equal(html.includes("Resend verification code"),flow==="verify");
+  }
 });
 
 test("profile renders real long account values and a separate password action without invented email", () => {

@@ -3,6 +3,9 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { AppProvider } from "@/providers/app-provider";
 import { readAppConfiguration } from "@/lib/api/config";
 import "../src/styles.css";
+// Keep the shared auth stylesheet mounted across route transitions. Loading it
+// per page races Webpack CSS HMR callbacks with removal of the old route link.
+import "../src/features/auth/login-background.css";
 
 // Runs before paint; keep the storage key and validation aligned with ThemeProvider.
 const appearanceBootstrap = `(function(){var a="light";try{var s=localStorage.getItem("mavis.appearance");if(s==="light"||s==="dark")a=s;}catch(e){}var d=a==="dark";document.documentElement.classList.toggle("dark",d);document.documentElement.dataset.appearance=a;document.documentElement.style.colorScheme=d?"dark":"light";})();`;

@@ -1,48 +1,48 @@
-.background {
+.mavis-auth-background {
   z-index: -1;
 }
-.network {
+.mavis-auth-network {
   width: 100%;
   height: 100%;
   transform: translate(var(--pointer-x, 0px), var(--pointer-y, 0px)) scale(1.035);
   transition: transform 700ms ease-out;
 }
-.cluster {
-  animation: drift 19s ease-in-out infinite alternate;
+.mavis-auth-cluster {
+  animation: mavis-auth-drift 19s ease-in-out infinite alternate;
   animation-delay: var(--delay);
 }
-.edge {
+.mavis-auth-edge {
   fill: none;
   stroke: currentColor;
   stroke-width: 0.9;
   opacity: 0.12;
 }
-.signal {
+.mavis-auth-signal {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
   stroke-linecap: round;
   stroke-dasharray: 1.4 98.6;
   opacity: 0.4;
-  animation: transmit 9s linear infinite;
+  animation: mavis-auth-transmit 9s linear infinite;
 }
-.node {
+.mavis-auth-node {
   fill: currentColor;
   opacity: 0.32;
 }
-.hub {
+.mavis-auth-hub {
   fill: currentColor;
   opacity: 0.5;
 }
-.halo {
+.mavis-auth-halo {
   fill: currentColor;
   opacity: 0.045;
 }
-.background[data-paused="true"] .cluster,
-.background[data-paused="true"] .signal {
+.mavis-auth-background[data-paused="true"] .mavis-auth-cluster,
+.mavis-auth-background[data-paused="true"] .mavis-auth-signal {
   animation-play-state: paused;
 }
-@keyframes drift {
+@keyframes mavis-auth-drift {
   from {
     transform: translate(-4px, -6px);
   }
@@ -50,7 +50,7 @@
     transform: translate(6px, 8px);
   }
 }
-@keyframes transmit {
+@keyframes mavis-auth-transmit {
   from {
     stroke-dashoffset: 100;
   }
@@ -59,25 +59,25 @@
   }
 }
 @media (max-width: 767px) {
-  .extra {
+  .mavis-auth-extra {
     display: none;
   }
-  .edge {
+  .mavis-auth-edge {
     opacity: 0.08;
   }
-  .signal {
+  .mavis-auth-signal {
     opacity: 0.22;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .network {
+  .mavis-auth-network {
     transform: none;
     transition: none;
   }
-  .cluster {
+  .mavis-auth-cluster {
     animation: none;
   }
-  .signal {
+  .mavis-auth-signal {
     display: none;
     animation: none;
   }
