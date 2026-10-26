@@ -5,6 +5,7 @@ import com.mavis.common.entity.Workspace;
 import com.mavis.common.entity.WorkspaceMember;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
+import com.mavis.common.security.AuthorizationRequestCache;
 import com.mavis.common.repository.AssignmentRepository;
 import com.mavis.common.repository.UserRepository;
 import com.mavis.common.repository.WorkspaceMemberRepository;
@@ -67,6 +68,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .joinedAt(now)
                 .build();
         workspaceMemberRepository.save(member);
+        AuthorizationRequestCache.evictMembership(workspace.getId(), currentUserId);
 
         log.info("Workspace created: id={}, code={}, createdBy={}", workspace.getId(), workspace.getCode(), currentUser.getEmail());
 
@@ -84,6 +86,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .memberCount(1L)
                 .assignmentCount(0L)
                 .myRoleInWorkspace("LECTURER")
+                .members(List.of(toMemberDto(workspace.getId(), member)))
                 .createdAt(createdAt)
                 .updatedAt(updatedAt)
                 .build();
@@ -126,6 +129,15 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             }
         }
 
+        Map<UUID, List<WorkspaceMemberResponseDTO>> membersByWorkspace = new HashMap<>();
+        for (WorkspaceMember wm : workspaceMemberRepository.findByWorkspaceIdInOrderByJoinedAtAsc(workspaceIds)) {
+            if (wm.getWorkspace() != null && wm.getWorkspace().getId() != null) {
+                membersByWorkspace
+                        .computeIfAbsent(wm.getWorkspace().getId(), k -> new ArrayList<>())
+                        .add(toMemberDto(wm.getWorkspace().getId(), wm));
+            }
+        }
+
         return workspaces.stream().map(w -> {
             String myRole = roleMap.get(w.getId());
             if (myRole == null && w.getCreatedBy() != null && currentUserId.equals(w.getCreatedBy().getId())) {
@@ -142,6 +154,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                     .memberCount(memberCountMap.getOrDefault(w.getId(), 0L))
                     .assignmentCount(assignmentCountMap.getOrDefault(w.getId(), 0L))
                     .myRoleInWorkspace(myRole)
+                    .members(membersByWorkspace.getOrDefault(w.getId(), Collections.emptyList()))
                     .createdAt(w.getCreatedAt())
                     .updatedAt(w.getUpdatedAt())
                     .build();
@@ -177,6 +190,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .memberCount(memberCount)
                 .assignmentCount(assignmentCount)
                 .myRoleInWorkspace(myRole)
+                .members(loadMemberDtos(workspaceId))
                 .createdAt(workspace.getCreatedAt())
                 .updatedAt(workspace.getUpdatedAt())
                 .build();
@@ -217,6 +231,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .memberCount(memberCount)
                 .assignmentCount(assignmentCount)
                 .myRoleInWorkspace("LECTURER")
+                .members(loadMemberDtos(workspaceId))
                 .createdAt(createdAt)
                 .updatedAt(updatedAt)
                 .build();
@@ -252,6 +267,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .memberCount(memberCount)
                 .assignmentCount(assignmentCount)
                 .myRoleInWorkspace("LECTURER")
+                .members(loadMemberDtos(workspaceId))
                 .createdAt(createdAt)
                 .updatedAt(updatedAt)
                 .build();
@@ -289,6 +305,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .joinedAt(now)
                 .build();
         member = workspaceMemberRepository.save(member);
+        AuthorizationRequestCache.evictMembership(workspaceId, user.getId());
 
         log.info("Added member {} ({}) to workspace {}", user.getEmail(), role, workspaceId);
 
@@ -361,6 +378,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
 
         if (!newMembers.isEmpty()) {
             workspaceMemberRepository.saveAll(newMembers);
+            newMembers.forEach(member -> AuthorizationRequestCache.evictMembership(workspaceId, member.getUser().getId()));
         }
 
         log.info("Batch added {} students to workspace {}", newMembers.size(), workspaceId);
@@ -381,9 +399,17 @@ public class WorkspaceServiceImpl implements WorkspaceService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy lớp học");
         }
 
-        List<WorkspaceMember> members = workspaceMemberRepository.findByWorkspaceIdOrderByJoinedAtAsc(workspaceId);
+        return loadMemberDtos(workspaceId);
+    }
 
-        return members.stream().map(m -> WorkspaceMemberResponseDTO.builder()
+    private List<WorkspaceMemberResponseDTO> loadMemberDtos(UUID workspaceId) {
+        return workspaceMemberRepository.findByWorkspaceIdOrderByJoinedAtAsc(workspaceId).stream()
+                .map(m -> toMemberDto(workspaceId, m))
+                .toList();
+    }
+
+    private WorkspaceMemberResponseDTO toMemberDto(UUID workspaceId, WorkspaceMember m) {
+        return WorkspaceMemberResponseDTO.builder()
                 .id(m.getId())
                 .workspaceId(workspaceId)
                 .userId(m.getUser() != null ? m.getUser().getId() : null)
@@ -392,8 +418,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .globalRole(m.getUser() != null && m.getUser().getRole() != null ? m.getUser().getRole().getCode() : null)
                 .memberRole(m.getMemberRole())
                 .joinedAt(m.getJoinedAt())
-                .build()
-        ).toList();
+                .build();
     }
 
     @Override
@@ -413,6 +438,7 @@ public class WorkspaceServiceImpl implements WorkspaceService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Thành viên không tồn tại trong lớp học"));
 
         workspaceMemberRepository.delete(member);
+        AuthorizationRequestCache.evictMembership(workspaceId, userId);
         log.info("Removed member {} from workspace {}", userId, workspaceId);
     }
 

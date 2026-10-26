@@ -10,6 +10,7 @@ import com.mavis.common.repository.UserRepository;
 import com.mavis.common.repository.WorkspaceMemberRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
+import com.mavis.common.security.AuthorizationRequestCache;
 import com.mavis.common.utils.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,7 +33,7 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
     @Override
     public User requireCurrentActiveUser() {
         UUID currentUserId = SecurityUtils.getCurrentUserId();
-        User user = userRepository.findById(currentUserId)
+        User user = AuthorizationRequestCache.user(currentUserId, () -> userRepository.findWithRoleById(currentUserId))
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "Người dùng không tồn tại"));
 
         if (!"ACTIVE".equalsIgnoreCase(user.getStatus())) {
@@ -62,7 +63,7 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
             return;
         }
 
-        Workspace workspace = workspaceRepository.findById(workspaceId)
+        Workspace workspace = workspace(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy không gian làm việc"));
 
         // 2. Người tạo workspace
@@ -71,7 +72,7 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
         }
 
         // 3. Thành viên trong workspace_members
-        boolean isMember = workspaceMemberRepository.existsByWorkspaceIdAndUserId(workspaceId, user.getId());
+        boolean isMember = membership(workspaceId, user.getId()).isPresent();
         if (!isMember) {
             log.warn("Truy cập bị từ chối: Người dùng {} không phải là thành viên của Workspace {}", user.getId(), workspaceId);
             throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không phải là thành viên của không gian làm việc này");
@@ -87,7 +88,7 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
             return;
         }
 
-        Workspace workspace = workspaceRepository.findById(workspaceId)
+        Workspace workspace = workspace(workspaceId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy không gian làm việc"));
 
         // 2. Người tạo workspace nếu có role là LECTURER
@@ -98,7 +99,7 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
         }
 
         // 3. Kiểm tra thành viên có memberRole == LECTURER
-        Optional<WorkspaceMember> memberOpt = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, user.getId());
+        Optional<WorkspaceMember> memberOpt = membership(workspaceId, user.getId());
         if (memberOpt.isPresent() && "LECTURER".equalsIgnoreCase(memberOpt.get().getMemberRole())) {
             return;
         }
@@ -135,18 +136,7 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
         if (project.getWorkspace() != null) {
             UUID workspaceId = project.getWorkspace().getId();
 
-            // Nếu user là Giảng viên của Workspace -> được xem
-            Workspace workspace = project.getWorkspace();
-            boolean isCreatorLecturer = workspace.getCreatedBy() != null
-                    && workspace.getCreatedBy().getId().equals(user.getId())
-                    && user.getRole() != null
-                    && "LECTURER".equalsIgnoreCase(user.getRole().getCode());
-
-            if (isCreatorLecturer) {
-                return true;
-            }
-
-            Optional<WorkspaceMember> memberOpt = workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, user.getId());
+            Optional<WorkspaceMember> memberOpt = membership(workspaceId, user.getId());
             if (memberOpt.isPresent()) {
                 if ("LECTURER".equalsIgnoreCase(memberOpt.get().getMemberRole())) {
                     return true;
@@ -157,10 +147,30 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
                     return true;
                 }
             }
+
+            // Nếu user là Giảng viên tạo Workspace -> được xem
+            Workspace workspace = project.getWorkspace();
+            boolean isCreatorLecturer = workspace.getCreatedBy() != null
+                    && workspace.getCreatedBy().getId().equals(user.getId())
+                    && user.getRole() != null
+                    && "LECTURER".equalsIgnoreCase(user.getRole().getCode());
+
+            if (isCreatorLecturer) {
+                return true;
+            }
         }
 
         log.warn("Truy cập bị từ chối: Người dùng {} không có quyền đọc Project {}", user.getId(), project.getId());
         return false;
+    }
+
+    private Optional<Workspace> workspace(UUID workspaceId) {
+        return AuthorizationRequestCache.workspace(workspaceId, () -> workspaceRepository.findById(workspaceId));
+    }
+
+    private Optional<WorkspaceMember> membership(UUID workspaceId, UUID userId) {
+        return AuthorizationRequestCache.membership(workspaceId, userId,
+                () -> workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, userId));
     }
 
     @Override

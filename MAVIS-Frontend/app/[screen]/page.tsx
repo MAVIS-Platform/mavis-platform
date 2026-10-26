@@ -10,7 +10,12 @@ import {
   RuntimeScenarios,
   RuntimeSessions,
 } from "@/features/runtime/screens";
-import { Workspaces, WorkspaceMembers, ReferenceVersions } from "@/features/workspaces/screens";
+import {
+  Workspaces,
+  WorkspaceOverview,
+  WorkspaceMembers,
+  ReferenceVersions,
+} from "@/features/workspaces/screens";
 import { WorkspaceSelector } from "@/features/workspaces/components";
 import { Assignments } from "@/features/assignments/screens";
 import { Submissions } from "@/features/submissions/screens";
@@ -77,7 +82,7 @@ const screens: Record<
   "workspace-overview": {
     title: "Workspace Overview",
     scope: "workspace",
-    component: WorkspaceMembers,
+    component: WorkspaceOverview,
     selector: "workspace",
   },
   members: {

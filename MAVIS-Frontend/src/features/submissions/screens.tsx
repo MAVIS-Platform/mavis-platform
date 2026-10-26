@@ -17,7 +17,7 @@ export function Submissions() {
   return canReview ? <TeachingSubmissions /> : <MySubmissions />;
 }
 function MySubmissions() {
-  const query = useApiQuery("submissions", {}, { refreshMs: 30000 });
+  const query = useApiQuery("submissions", {});
   return (
     <RequestState
       query={query}
@@ -76,11 +76,7 @@ function AssignmentSubmissionList({
   workspaceId: string;
   assignmentId: string;
 }) {
-  const query = useApiQuery(
-    "assignmentSubmissions",
-    { workspaceId, assignmentId },
-    { refreshMs: 30000 },
-  );
+  const query = useApiQuery("assignmentSubmissions", { workspaceId, assignmentId });
   return (
     <RequestState
       query={query}
@@ -149,7 +145,7 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
   );
 }
 function SubmissionResult({ submissionId }: { submissionId: string }) {
-  const query = useApiQuery("submissionReview", { submissionId }, { refreshMs: 30000 });
+  const query = useApiQuery("submissionReview", { submissionId });
   return (
     <span className="text-xs">
       {query.isError

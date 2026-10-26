@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ArchitecturalModel } from "@/types/domain";
 import { relationLabel, wrapText } from "@/lib/drawio/rules";
+import { snap4 } from "@/lib/drawio/geometry";
 
 export const MESSAGE_SORTS = [
   "SYNCH_CALL",
@@ -1179,10 +1180,35 @@ export function interactionToDrawioXml(
   const LEFT_MARGIN = 50;
   const ROW_STEP = 96;
 
+  const colGaps = new Array<number>(Math.max(0, effectiveDoc.participants.length - 1)).fill(COL_STEP);
+  effectiveDoc.messages.forEach((msg, idx) => {
+    const fIdx = participantIndex.get(msg.fromParticipantId);
+    const tIdx = participantIndex.get(msg.toParticipantId);
+    if (fIdx === undefined || tIdx === undefined || fIdx === tIdx) return;
+    const minCol = Math.min(fIdx, tIdx);
+    const maxCol = Math.max(fIdx, tIdx);
+    const spanCols = maxCol - minCol;
+    const labelText = formatMessageLabel(msg, idx);
+    const neededSpan = labelText.length > 96 ? snap4(COL_STEP + Math.ceil((labelText.length - 96) * 6.2)) : COL_STEP;
+    const neededPerCol = snap4(Math.ceil(neededSpan / spanCols));
+    for (let c = minCol; c < maxCol; c += 1) {
+      if (neededPerCol > (colGaps[c] ?? COL_STEP)) {
+        colGaps[c] = neededPerCol;
+      }
+    }
+  });
+
+  const defaultParticipantX: number[] = [];
+  for (let idx = 0; idx < effectiveDoc.participants.length; idx += 1) {
+    defaultParticipantX.push(
+      idx === 0 ? LEFT_MARGIN : (defaultParticipantX[idx - 1] ?? LEFT_MARGIN) + (colGaps[idx - 1] ?? COL_STEP),
+    );
+  }
+
   const participantX = effectiveDoc.participants.map((p, idx) =>
     typeof p.layoutX === "number" && Number.isFinite(p.layoutX) && p.layoutX >= 20
       ? Math.round(p.layoutX)
-      : LEFT_MARGIN + idx * COL_STEP,
+      : (defaultParticipantX[idx] ?? LEFT_MARGIN + idx * COL_STEP),
   );
   const participantCenterX = participantX.map((x) => x + COL_WIDTH / 2);
 

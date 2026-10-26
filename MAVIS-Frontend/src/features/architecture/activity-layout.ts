@@ -1,3 +1,4 @@
+import { snap4, wrapEdgeLabelLines } from "@/lib/drawio/geometry";
 import type { DeploymentBox, DeploymentPoint } from "./deployment-routing";
 
 // Derive layout from the control-flow graph rather than serialization order.
@@ -34,7 +35,10 @@ export function planActivityRows(
       else parents.get(child)!.add(id);
     }
   const pending = new Map([...parents].map(([id, list]) => [id, list.size]));
-  const queue = ordered.filter((n) => pending.get(n.nodeId) === 0).map((n) => n.nodeId);
+  const queue = ordered.filter((n) => pending.get(nodeIdOf(n)) === 0).map((n) => n.nodeId);
+  function nodeIdOf(n: { nodeId: string }) {
+    return n.nodeId;
+  }
   const rows = new Map<string, number>(),
     occupied = new Map<string, Set<number>>();
   while (queue.length) {
@@ -75,7 +79,10 @@ export function activityNodeSize(kind: string, label: string): { w: number; h: n
   const lines = label
     .split(/\n|<br\s*\/?\s*>/i)
     .reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / chars)), 0);
-  return { w, h: diamond ? Math.max(96, lines * 32 + 32) : Math.max(68, lines * 17 + 30) };
+  return {
+    w,
+    h: snap4(diamond ? Math.max(96, lines * 32 + 32) : Math.max(68, lines * 17 + 30)),
+  };
 }
 
 export function placeActivityGuard(
@@ -101,55 +108,72 @@ export function placeActivityGuard(
     .slice(1)
     .map((p, i) => Math.abs(p.x - path[i]!.x) + Math.abs(p.y - path[i]!.y));
   const total = lengths.reduce((a, b) => a + b, 0);
-  const w = Math.max(56, text.length * 6.5 + 20),
-    h = 24;
-  const candidates: Array<{
-    position: number;
-    dx: number;
-    dy: number;
-    box: DeploymentBox;
-    score: number;
-  }> = [];
-  let walked = 0;
-  for (let i = 0; i < lengths.length; i++) {
-    const a = path[i]!,
-      b = path[i + 1]!,
-      horizontal = a.y === b.y;
-    if (lengths[i]! < (horizontal ? w + 16 : h + 16)) {
-      walked += lengths[i]!;
-      continue;
-    }
-    for (const fraction of [0.5, 0.25, 0.75]) {
-      for (const side of [-1, 1]) {
-        const dx = horizontal ? 0 : side * (w / 2 + 14),
-          dy = horizontal ? side * 20 : 0;
-        const box = {
-          x: a.x + (b.x - a.x) * fraction + dx - w / 2,
-          y: a.y + (b.y - a.y) * fraction + dy - h / 2,
-          w,
-          h,
-        };
-        if (
-          obstacles.some(
-            (o) =>
-              box.x < o.x + o.w + 6 &&
-              box.x + w > o.x - 6 &&
-              box.y < o.y + o.h + 6 &&
-              box.y + h > o.y - 6,
-          )
-        )
-          continue;
-        candidates.push({
-          position: total ? (2 * (walked + lengths[i]! * fraction)) / total - 1 : 0,
-          dx,
-          dy,
-          box,
-          score: (horizontal ? 0 : 10000) + walked + Math.abs(fraction - 0.5) * 100,
-        });
+  const fullW = Math.max(56, text.length * 6.5 + 20),
+    fullH = 24;
+  const wrappedLines = wrapEdgeLabelLines(text, 20);
+  const wrappedW =
+    wrappedLines.length > 1
+      ? Math.max(52, Math.max(...wrappedLines.map((l) => l.length)) * 6.5 + 18)
+      : fullW;
+  const wrappedH = wrappedLines.length > 1 ? 34 : fullH;
+
+  const tryPlace = (w: number, h: number, relaxSegmentMin: boolean) => {
+    const candidates: Array<{
+      position: number;
+      dx: number;
+      dy: number;
+      box: DeploymentBox;
+      score: number;
+    }> = [];
+    let walked = 0;
+    for (let i = 0; i < lengths.length; i++) {
+      const a = path[i]!,
+        b = path[i + 1]!,
+        horizontal = a.y === b.y;
+      const minLen = relaxSegmentMin ? 28 : horizontal ? w + 16 : h + 16;
+      if (lengths[i]! < minLen) {
+        walked += lengths[i]!;
+        continue;
       }
+      for (const fraction of [0.5, 0.35, 0.65, 0.25, 0.75, 0.18, 0.82]) {
+        for (const side of [-1, 1]) {
+          const dx = horizontal ? 0 : Math.round(side * (w / 2 + 14)),
+            dy = horizontal ? side * 20 : 0;
+          const box = {
+            x: a.x + (b.x - a.x) * fraction + dx - w / 2,
+            y: a.y + (b.y - a.y) * fraction + dy - h / 2,
+            w,
+            h,
+          };
+          if (
+            obstacles.some(
+              (o) =>
+                box.x < o.x + o.w + 6 &&
+                box.x + w > o.x - 6 &&
+                box.y < o.y + o.h + 6 &&
+                box.y + h > o.y - 6,
+            )
+          )
+            continue;
+          candidates.push({
+            position: total ? (2 * (walked + lengths[i]! * fraction)) / total - 1 : 0,
+            dx,
+            dy,
+            box,
+            score: (horizontal ? 0 : 10000) + walked + Math.abs(fraction - 0.5) * 100,
+          });
+        }
+      }
+      walked += lengths[i]!;
     }
-    walked += lengths[i]!;
-  }
-  candidates.sort((a, b) => a.score - b.score);
-  return candidates[0] ?? null;
+    candidates.sort((a, b) => a.score - b.score);
+    return candidates[0] ?? null;
+  };
+
+  return (
+    tryPlace(fullW, fullH, false) ??
+    (wrappedLines.length > 1 ? tryPlace(wrappedW, wrappedH, true) : null) ??
+    tryPlace(fullW, fullH, true)
+  );
 }
+

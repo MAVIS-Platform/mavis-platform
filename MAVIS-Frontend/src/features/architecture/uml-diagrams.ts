@@ -1,9 +1,15 @@
 import { isClientClassifier, isDeclarativeClientElement, isDomainClassifier, isInfrastructureClassifier, normalizeExtractedClassRelation } from "./classifier-semantics";
 import type { ArchitecturalModel } from "@/types/domain";
 import { compressCodeToAstSkeleton } from "./scenario-design";
-import { deploymentSegmentHitsBox, routeDeploymentPath } from "./deployment-routing";
+import {
+  deploymentSegmentHitsBox,
+  placeDeploymentEdgeLabel,
+  routeDeploymentPath,
+  type DeploymentBox,
+  type DeploymentPoint,
+} from "./deployment-routing";
 import { activityNodeSize, placeActivityGuard, planActivityRows } from "./activity-layout";
-import type { DeploymentPoint } from "./deployment-routing";
+import { assignArcTrackLevels } from "@/lib/drawio/geometry";
 
 export type UmlDiagramKind =
   | "UML_CLASS"
@@ -5222,7 +5228,21 @@ export function buildUmlDrawioXml(
       return fallbackX;
     };
 
-    for (const plan of edgePlans) {
+    const classPaths: DeploymentPoint[][] = [];
+    const classLabels: DeploymentBox[] = [];
+    const classMarkerBoxes: DeploymentBox[] = [];
+    const sortedEdgePlans = [...edgePlans].sort((a, b) => {
+      const sa = boxById.get(a.rel.fromClassifierId)!,
+        ta = boxById.get(a.rel.toClassifierId)!,
+        sb = boxById.get(b.rel.fromClassifierId)!,
+        tb = boxById.get(b.rel.toClassifierId)!;
+      const da = Math.abs(sa.x + sa.w / 2 - (ta.x + ta.w / 2)) + Math.abs(sa.y + sa.h / 2 - (ta.y + ta.h / 2));
+      const db = Math.abs(sb.x + sb.w / 2 - (tb.x + tb.w / 2)) + Math.abs(sb.y + sb.h / 2 - (tb.y + tb.h / 2));
+      return da - db || a.rel.relationId.localeCompare(b.rel.relationId);
+    });
+
+    for (let planIdx = 0; planIdx < sortedEdgePlans.length; planIdx++) {
+      const plan = sortedEdgePlans[planIdx]!;
       const { rel, srcSide, tgtSide } = plan;
       const srcBox = boxById.get(rel.fromClassifierId)!;
       const tgtBox = boxById.get(rel.toClassifierId)!;
@@ -5306,8 +5326,28 @@ export function buildUmlDrawioXml(
       if (rel.fromClassifierId !== rel.toClassifierId) {
         const start = { x: exitAbsX + (srcSide === "right" ? 24 : srcSide === "left" ? -24 : 0), y: exitAbsY + (srcSide === "bottom" ? 24 : srcSide === "top" ? -24 : 0) };
         const finish = { x: entryAbsX + (tgtSide === "right" ? 24 : tgtSide === "left" ? -24 : 0), y: entryAbsY + (tgtSide === "bottom" ? 24 : tgtSide === "top" ? -24 : 0) };
-        const safeRoute = routeDeploymentPath(start, finish, [...boxById.values()].map(b => ({ x: b.x, y: b.y, w: b.w, h: b.h })), [], edgePlans.indexOf(plan));
-        if (safeRoute) { waypoints.splice(0, waypoints.length, ...safeRoute); style += "edgeStyle=none;noEdgeStyle=1;exitPerimeter=0;entryPerimeter=0;jumpStyle=arc;"; }
+        const classifierBoxes = [...boxById.values()].map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
+        const safeRoute = routeDeploymentPath(start, finish, classifierBoxes, classPaths, planIdx);
+        if (safeRoute) {
+          waypoints.splice(0, waypoints.length, ...safeRoute);
+          style += "edgeStyle=none;noEdgeStyle=1;exitPerimeter=0;entryPerimeter=0;jumpStyle=arc;jumpSize=6;";
+        }
+        const fullPath = [{ x: exitAbsX, y: exitAbsY }, ...waypoints, { x: entryAbsX, y: entryAbsY }];
+        classPaths.push(fullPath);
+        // Reserve 18x18 marker boxes at UML diamond/arrowhead ports (archify markerBox)
+        classMarkerBoxes.push(
+          { x: exitAbsX - 9, y: exitAbsY - 9, w: 18, h: 18 },
+          { x: entryAbsX - 9, y: entryAbsY - 9, w: 18, h: 18 },
+        );
+        if (label) {
+          const placedLbl = placeDeploymentEdgeLabel(
+            fullPath,
+            label,
+            [...classifierBoxes, ...classMarkerBoxes, ...classLabels],
+            classPaths.slice(0, -1),
+          );
+          if (placedLbl) classLabels.push(placedLbl.box);
+        }
       }
       const geomInner =
         waypoints.length > 0
@@ -6676,60 +6716,20 @@ export function buildUmlDrawioXml(
         waypoints.length > 0
           ? `<Array as="points">${waypoints.map((p) => `<mxPoint x="${p.x}" y="${p.y}"/>`).join("")}</Array>`
           : "";
-      // Anchor each label along a clear segment away from boxes and previous labels
-      const lengths = fullPath
-        .slice(1)
-        .map((p, i) => Math.abs(p.x - fullPath[i]!.x) + Math.abs(p.y - fullPath[i]!.y));
-      const totalLength = lengths.reduce((sum, n) => sum + n, 0);
-      let walked = 0;
-      const labelWidth = Math.max(50, edge.label.length * 6 + 16);
-      const candidates: Array<{
-        distance: number;
-        x: number;
-        y: number;
-        dx: number;
-        dy: number;
-        length: number;
-      }> = [];
-      for (let i = 0; i < lengths.length; i++) {
-        const a = fullPath[i]!,
-          b = fullPath[i + 1]!;
-        for (const fraction of [0.5, 0.3, 0.7]) {
-          const x = a.x + (b.x - a.x) * fraction,
-            y = a.y + (b.y - a.y) * fraction;
-          const horizontal = a.y === b.y;
-          for (const side of [-1, 1])
-            candidates.push({
-              distance: walked + lengths[i]! * fraction,
-              x,
-              y,
-              dx: horizontal ? 0 : side * (labelWidth / 2 + 12),
-              dy: horizontal ? side * 16 : 0,
-              length: lengths[i]!,
-            });
-        }
-        walked += lengths[i]!;
-      }
-      candidates.sort((a, b) => b.length - a.length);
-      const label = candidates.find((c) => {
-        const x = c.x + c.dx - labelWidth / 2,
-          y = c.y + c.dy - 10;
-        return ![...allDeployObstacleBoxes, ...deploymentLabels].some(
-          (b) =>
-            x < b.x + b.w + 4 && x + labelWidth > b.x - 4 && y < b.y + b.h + 4 && y + 20 > b.y - 4,
-        );
-      });
-      const labelPosition = totalLength && label ? (2 * label.distance) / totalLength - 1 : 0;
-      const offsetXml = label
-        ? `<mxPoint x="${label.dx}" y="${label.dy}" as="offset"/>`
+      // Anchor each label along a clear segment away from boxes, previous labels, and unrelated wires
+      const placedLbl = edge.label
+        ? placeDeploymentEdgeLabel(
+            fullPath,
+            edge.label,
+            [...allDeployObstacleBoxes, ...deploymentLabels],
+            routedPaths,
+          )
+        : null;
+      const labelPosition = placedLbl?.position ?? 0;
+      const offsetXml = placedLbl
+        ? `<mxPoint x="${placedLbl.dx}" y="${placedLbl.dy}" as="offset"/>`
         : '<mxPoint y="-16" as="offset"/>';
-      if (label && edge.label)
-        deploymentLabels.push({
-          x: label.x + label.dx - labelWidth / 2,
-          y: label.y + label.dy - 10,
-          w: labelWidth,
-          h: 20,
-        });
+      if (placedLbl && edge.label) deploymentLabels.push(placedLbl.box);
       cells.push(
         `<mxCell id="${escapeXmlAttr(edge.edgeId)}" value="${escapeXmlAttr(edge.label)}" style="${styleWithPorts}" edge="1" parent="1" source="${escapeXmlAttr(edge.fromNodeId)}" target="${escapeXmlAttr(edge.toNodeId)}" mavisId="${escapeXmlAttr(edge.edgeId)}" mavisUmlRole="deployment-edge" mavisEdgeKind="${edge.edgeKind}" mavisProvenance="${edge.provenance}" mavisMeta="${encodeMeta(edge)}"><mxGeometry x="${labelPosition}" relative="1" as="geometry">${ptsXml}${offsetXml}</mxGeometry></mxCell>`,
       );
@@ -7348,8 +7348,15 @@ export function buildUmlDrawioXml(
       downInByTgt.set(tid, list);
     }
 
-    let leftCorridorCounter = 0;
-    let rightCorridorCounter = 0;
+    const leftCorridorSpans: Array<{ id: string; start: number; end: number }> = [];
+    const rightCorridorSpans: Array<{ id: string; start: number; end: number }> = [];
+    const previewTrack = (
+      spans: Array<{ id: string; start: number; end: number }>,
+      id: string,
+      y1: number,
+      y2: number,
+    ) =>
+      assignArcTrackLevels([...spans, { id, start: y1, end: y2 }], 16).get(id) ?? 0;
 
     projection.transitions.forEach((tr) => {
       const label = formatStateTransitionCellValue(tr);
@@ -7451,28 +7458,30 @@ export function buildUmlDrawioXml(
           // Use distinct lower exitY (0.72) and upper entryY (0.35) so incoming and outgoing side ports never collide
           const useRight = sCx >= 600;
           if (useRight) {
-            rightCorridorCounter += 1;
-            const corridorX = maxStateRight + 74 + (rightCorridorCounter - 1) * 48;
             exitX = 1;
             exitY = 0.72;
             entryX = 1;
             entryY = t.w <= 40 ? 0.5 : 0.35;
             const spSide = { x: s.x + s.w, y: Math.round(s.y + s.h * exitY) };
             const tpSide = { x: t.x + t.w, y: Math.round(t.y + t.h * entryY) };
+            const rTrack = previewTrack(rightCorridorSpans, tr.transitionId, spSide.y, tpSide.y);
+            rightCorridorSpans.push({ id: tr.transitionId, start: spSide.y, end: tpSide.y });
+            const corridorX = maxStateRight + 74 + rTrack * 48;
             waypoints = [
               { x: corridorX, y: spSide.y },
               { x: corridorX, y: tpSide.y },
             ];
             labelOffsetX = 16;
           } else {
-            leftCorridorCounter += 1;
-            const corridorX = Math.max(24, minStateLeft - 88 - (leftCorridorCounter - 1) * 48);
             exitX = 0;
             exitY = 0.72;
             entryX = 0;
             entryY = t.w <= 40 ? 0.5 : 0.35;
             const spSide = { x: s.x, y: Math.round(s.y + s.h * exitY) };
             const tpSide = { x: t.x, y: Math.round(t.y + t.h * entryY) };
+            const lTrack = previewTrack(leftCorridorSpans, tr.transitionId, spSide.y, tpSide.y);
+            leftCorridorSpans.push({ id: tr.transitionId, start: spSide.y, end: tpSide.y });
+            const corridorX = Math.max(24, minStateLeft - 88 - lTrack * 48);
             waypoints = [
               { x: corridorX, y: spSide.y },
               { x: corridorX, y: tpSide.y },
@@ -7556,17 +7565,19 @@ export function buildUmlDrawioXml(
         if (waypoints.length === 0) {
           // Try outer-left corridor first if source or target is on the left half
           const preferLeft = sCx <= 620 || tCx <= 620;
-          const leftX = Math.max(24, minStateLeft - 98 - leftCorridorCounter * 54);
-          const rightX = maxStateRight + 98 + rightCorridorCounter * 54;
           const spL = { x: s.x, y: Math.round(s.y + s.h * 0.35) };
           const tpL = { x: t.x, y: Math.round(t.y + t.h * 0.35) };
+          const lTrack = previewTrack(leftCorridorSpans, tr.transitionId, spL.y, tpL.y);
+          const leftX = Math.max(24, minStateLeft - 98 - lTrack * 54);
           const pathL = [spL, { x: leftX, y: spL.y }, { x: leftX, y: tpL.y }, tpL];
           const spR = { x: s.x + s.w, y: Math.round(s.y + s.h * 0.35) };
           const tpR = { x: t.x + t.w, y: Math.round(t.y + t.h * 0.35) };
+          const rTrack = previewTrack(rightCorridorSpans, tr.transitionId, spR.y, tpR.y);
+          const rightX = maxStateRight + 98 + rTrack * 54;
           const pathR = [spR, { x: rightX, y: spR.y }, { x: rightX, y: tpR.y }, tpR];
 
           if (preferLeft && statePathClear(pathL, tr.fromStateId, tr.toStateId)) {
-            leftCorridorCounter += 1;
+            leftCorridorSpans.push({ id: tr.transitionId, start: spL.y, end: tpL.y });
             exitX = 0;
             exitY = 0.35;
             entryX = 0;
@@ -7577,7 +7588,7 @@ export function buildUmlDrawioXml(
             ];
             labelOffsetX = -18;
           } else if (statePathClear(pathR, tr.fromStateId, tr.toStateId)) {
-            rightCorridorCounter += 1;
+            rightCorridorSpans.push({ id: tr.transitionId, start: spR.y, end: tpR.y });
             exitX = 1;
             exitY = 0.35;
             entryX = 1;
@@ -7588,7 +7599,7 @@ export function buildUmlDrawioXml(
             ];
             labelOffsetX = 18;
           } else {
-            leftCorridorCounter += 1;
+            leftCorridorSpans.push({ id: tr.transitionId, start: spL.y, end: tpL.y });
             exitX = 0;
             exitY = 0.35;
             entryX = 0;

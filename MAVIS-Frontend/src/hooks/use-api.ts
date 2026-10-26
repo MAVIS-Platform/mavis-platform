@@ -6,7 +6,12 @@ import { ApiContext, SelectionContext } from "@/providers/app-context";
 import type { Operation, Request, Response } from "@/lib/api/contracts";
 import { normalizeError } from "@/lib/errors/api-error";
 import { hasPermission, type Permission } from "@/lib/auth/permissions";
-import { mutationInvalidations, terminalSignature } from "@/lib/api/cache-policy";
+import {
+  mutationInvalidations,
+  mutationScope,
+  queryMatchesScope,
+  terminalSignature,
+} from "@/lib/api/cache-policy";
 export function useApi() {
   const api = useContext(ApiContext);
   if (!api) throw new Error("AppProvider is required");
@@ -64,8 +69,10 @@ export function useApiQuery<K extends Operation>(
         : false,
   });
   const terminal = terminalSignature(operation, query.data);
+  const terminalScope = JSON.stringify(input);
   useEffect(() => {
     if (!terminal) return;
+    const scope = JSON.parse(terminalScope) as Record<string, unknown>;
     const related = operation.startsWith("runtime")
       ? ["platformSummary"]
       : [
@@ -78,9 +85,10 @@ export function useApiQuery<K extends Operation>(
           "platformSummary",
         ];
     void client.invalidateQueries({
-      predicate: (entry) => related.includes(String(entry.queryKey[1])),
+      predicate: (entry) =>
+        related.includes(String(entry.queryKey[1])) && queryMatchesScope(entry.queryKey, scope),
     });
-  }, [terminal, operation, client]);
+  }, [terminal, terminalScope, operation, client]);
   return query;
 }
 export function useApiMutation<K extends Operation>(operation: K) {
@@ -88,9 +96,131 @@ export function useApiMutation<K extends Operation>(operation: K) {
   const client = useQueryClient();
   return useMutation<Response<K>, Error, Request<K>>({
     mutationFn: (input) => api.execute(operation, input),
-    onSuccess: async () => {
+    onSuccess: (data, input) => {
       const related: readonly string[] = mutationInvalidations[operation] ?? [];
-      await client.invalidateQueries({ predicate: (q) => related.includes(String(q.queryKey[1])) });
+      const scope = mutationScope(operation, input, data);
+      const upsertRow = (rows: unknown[] | undefined, next: unknown) => {
+        if (!rows || !next || typeof next !== "object" || !("id" in next)) return rows;
+        const exists = rows.some((r) => r && typeof r === "object" && "id" in r && r.id === next.id);
+        return exists
+          ? rows.map((r) => (r && typeof r === "object" && "id" in r && r.id === next.id ? next : r))
+          : [...rows, next];
+      };
+      const submissionUpdated = ["submit", "feedback", "updateFeedback", "deleteFeedback"].includes(
+        operation,
+      );
+      if (submissionUpdated && typeof scope["submissionId"] === "string") {
+        const mergeSubmission = (prev: unknown) =>
+          operation !== "submit" &&
+          prev &&
+          typeof prev === "object" &&
+          "model" in prev &&
+          data &&
+          typeof data === "object" &&
+          "feedback" in data
+            ? { ...prev, feedback: data.feedback }
+            : data;
+        client.setQueryData(
+          ["api", "submission", { submissionId: scope["submissionId"] }],
+          mergeSubmission,
+        );
+        // The response already contains the updated submission. Patch cached rows
+        // without re-enriching the entire list after every feedback edit.
+        client.setQueriesData<unknown[]>(
+          {
+            predicate: (q) =>
+              ["submissions", "assignmentSubmissions"].includes(String(q.queryKey[1])) &&
+              queryMatchesScope(q.queryKey, scope),
+          },
+          (rows) =>
+            rows?.map((row) =>
+              row && typeof row === "object" && "id" in row && row.id === scope["submissionId"]
+                ? mergeSubmission(row)
+                : row,
+            ),
+        );
+      }
+      if (operation === "gradeSubmission") {
+        client.setQueryData(
+          ["api", "submissionReview", { submissionId: scope["submissionId"] }],
+          data,
+        );
+      }
+      if (
+        [
+          "createWorkspace",
+          "updateWorkspace",
+          "archiveWorkspace",
+          "addWorkspaceMember",
+          "removeWorkspaceMember",
+        ].includes(operation)
+      ) {
+        client.setQueryData<unknown[]>(["api", "workspaces", {}], (rows) => upsertRow(rows, data));
+      }
+      if (["createAssignment", "updateAssignment"].includes(operation) && scope["workspaceId"]) {
+        client.setQueryData<unknown[]>(
+          ["api", "assignments", { workspaceId: scope["workspaceId"] }],
+          (rows) => upsertRow(rows, data),
+        );
+      }
+      if (operation === "deleteAssignment" && scope["workspaceId"] && scope["assignmentId"]) {
+        client.setQueryData<unknown[]>(
+          ["api", "assignments", { workspaceId: scope["workspaceId"] }],
+          (rows) =>
+            rows?.filter(
+              (r) => !(r && typeof r === "object" && "id" in r && r.id === scope["assignmentId"]),
+            ),
+        );
+      }
+      if (["createProject", "createReferenceProject"].includes(operation)) {
+        client.setQueryData<unknown[]>(["api", "projects", {}], (rows) => upsertRow(rows, data));
+        if (scope["workspaceId"]) {
+          client.setQueryData<unknown[]>(
+            ["api", "workspaceProjects", { workspaceId: scope["workspaceId"] }],
+            (rows) => upsertRow(rows, data),
+          );
+        }
+      }
+      if (["setAccountRole", "setAccountLock"].includes(operation)) {
+        client.setQueryData<unknown[]>(["api", "accounts", {}], (rows) => upsertRow(rows, data));
+      }
+      if (operation === "updateProfile") {
+        client.setQueryData(["api", "session", {}], data);
+      }
+      if (operation === "saveRuntimeConfiguration" && scope["projectId"]) {
+        client.setQueryData(
+          ["api", "runtimeConfiguration", { projectId: scope["projectId"] }],
+          data,
+        );
+      }
+      if (["createScenario", "saveScenario"].includes(operation) && scope["projectId"]) {
+        client.setQueryData<unknown[]>(
+          ["api", "scenarios", { projectId: scope["projectId"] }],
+          (rows) => upsertRow(rows, data),
+        );
+      }
+      if (operation === "saveArchitectureDocument" && scope["modelId"] && scope["viewId"]) {
+        client.setQueryData(
+          ["api", "architectureDocument", { modelId: scope["modelId"], viewId: scope["viewId"] }],
+          data,
+        );
+      }
+      // Release the button after mutation success; refresh active queries in the background.
+      void client.invalidateQueries({
+        predicate: (q) => {
+          const queryOperation = String(q.queryKey[1]);
+          if (!related.includes(queryOperation) || !queryMatchesScope(q.queryKey, scope))
+            return false;
+          if (submissionUpdated && queryOperation === "submission") return false;
+          if (
+            submissionUpdated &&
+            operation !== "submit" &&
+            ["submissions", "assignmentSubmissions"].includes(queryOperation)
+          )
+            return false;
+          return operation !== "gradeSubmission" || queryOperation !== "submissionReview";
+        },
+      });
       toast.success(
         operation === "signOut"
           ? "Signed out"

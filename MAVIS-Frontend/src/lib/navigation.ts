@@ -5,7 +5,6 @@ import {
   ClipboardCheck,
   Code2,
   FileClock,
-  FileCode2,
   FileSearch,
   Files,
   FolderGit2,
@@ -188,12 +187,6 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
       },
       { id: "members", label: "Workspace Members", icon: Users, href: "/members" },
       { id: "assignments", label: "Assignments", icon: BookOpen, href: "/assignments" },
-      {
-        id: "references",
-        label: "Reference Source Versions",
-        icon: FileCode2,
-        href: "/references",
-      },
       {
         id: "assignment-submissions",
         label: "Assignment Submissions",

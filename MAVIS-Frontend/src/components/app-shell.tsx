@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
   Bell,
+  BookOpen,
   ChevronDown,
   Info,
   LogOut,
@@ -111,15 +112,29 @@ function ManagedShellChrome(props: AppShellProps) {
     ? (previewRole ?? "student")
     : (session.data?.user?.role ?? "student");
   const selection = useSelection();
+  const pathname = usePathname();
+  const route = existingRouteContext(pathname);
+  const scope =
+    (pathname === "/submissions" && role === "lecturer") ||
+    (pathname === "/workspaces" && Boolean(selection.workspaceId) && !onPreviewNavigate)
+      ? "workspace"
+      : (props.scope ?? route.scope);
   const projectQuery = useApiQuery(
     "projects",
     {},
-    { enabled: (api.mode === "backend" || role === "student") && !onPreviewNavigate },
+    {
+      enabled:
+        scope === "project" &&
+        Boolean(selection.projectId) &&
+        !props.contextName &&
+        (api.mode === "backend" || role === "student") &&
+        !onPreviewNavigate,
+    },
   );
   const workspaceQuery = useApiQuery(
     "workspaces",
     {},
-    { enabled: role !== "admin" && !onPreviewNavigate && !!selection.workspaceId },
+    { enabled: role !== "admin" && !onPreviewNavigate },
   );
   const router = useRouter();
   async function logout() {
@@ -133,10 +148,6 @@ function ManagedShellChrome(props: AppShellProps) {
       /* Mutation feedback is shown by the provider. */
     }
   }
-  const pathname = usePathname();
-  const route = existingRouteContext(pathname);
-  const scope =
-    pathname === "/submissions" && role === "lecturer" ? "workspace" : (props.scope ?? route.scope);
   const contextName =
     props.contextName ??
     (scope === "project"
@@ -148,6 +159,8 @@ function ManagedShellChrome(props: AppShellProps) {
       {...props}
       role={role}
       contextName={contextName}
+      workspaces={workspaceQuery.data ?? []}
+      selectedWorkspaceId={selection.workspaceId}
       navigationQuery={props.navigationQuery ?? (params.toString() ? `?${params}` : "")}
       displayName={session.data?.user?.name ?? "Design preview"}
       apiMode={api.mode}
@@ -165,6 +178,8 @@ function ShellChrome({
   scope: scopeOverride,
   activeId: activeOverride,
   contextName,
+  workspaces = [],
+  selectedWorkspaceId = "",
   pageTitle,
   detailPanel,
   onDetailClose,
@@ -175,6 +190,8 @@ function ShellChrome({
   signOutPending = false,
   onSignOut,
 }: AppShellProps & {
+  workspaces?: ReadonlyArray<{ id: string; name: string; code?: string | undefined }>;
+  selectedWorkspaceId?: string;
   displayName?: string;
   apiMode?: "mock" | "backend";
   signOutPending?: boolean;
@@ -183,13 +200,16 @@ function ShellChrome({
   const pathname = usePathname();
   const route = existingRouteContext(pathname);
   const scope =
-    pathname === "/submissions" && role === "lecturer"
+    (pathname === "/submissions" && role === "lecturer") ||
+    (pathname === "/workspaces" && Boolean(selectedWorkspaceId) && !onPreviewNavigate)
       ? "workspace"
       : (scopeOverride ?? route.scope);
   const activeId =
     pathname === "/submissions" && role === "lecturer"
       ? "assignment-submissions"
-      : (activeOverride ?? route.activeId);
+      : pathname === "/workspaces" && Boolean(selectedWorkspaceId) && !onPreviewNavigate
+        ? "workspace-overview"
+        : (activeOverride ?? route.activeId);
   const context = contextName ?? (scope === "project" ? "Select a project" : "Select a workspace");
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -216,15 +236,46 @@ function ShellChrome({
           const href = liveRoutes[item.id];
           return href ? { ...entry, href: `${href}${navigationQuery}` } : entry;
         }
-        if (item.href && navigationQuery && !["/design-system", "/login"].includes(item.href))
+        if (
+          item.href &&
+          navigationQuery &&
+          item.id !== "workspaces" &&
+          !item.href.includes("?") &&
+          !["/design-system", "/login"].includes(item.href)
+        )
           return { ...item, href: `${item.href}${navigationQuery}` };
         return scope === "review" && contextName
           ? { ...item, href: `/submissions/${encodeURIComponent(contextName)}#${item.id}` }
           : item;
       }),
     }));
+  const globalGroups = decorateGroups(
+    globalNavigation[role].map((group) => ({
+      ...group,
+      items: group.items.flatMap((item) =>
+        item.id === "workspaces" && !live && !onPreviewNavigate && workspaces.length > 0
+          ? [
+              item,
+              ...workspaces.map((w) => ({
+                id: `workspace:${w.id}`,
+                label:
+                  w.code && !w.name.toLowerCase().includes(w.code.toLowerCase())
+                    ? `${w.code} · ${w.name}`
+                    : w.name,
+                icon: BookOpen,
+                href: `/workspaces?workspace=${encodeURIComponent(w.id)}`,
+              })),
+            ]
+          : [item],
+      ),
+    })),
+  );
   const groups = decorateGroups(contextualNavigation(role, scope));
-  const activeItem = [...globalNavigation[role], ...groups]
+  const activeWorkspaceNavId =
+    selectedWorkspaceId && workspaces.some((w) => w.id === selectedWorkspaceId)
+      ? `workspace:${selectedWorkspaceId}`
+      : "workspaces";
+  const activeItem = [...globalGroups, ...groups]
     .flatMap((group) => group.items)
     .find((item) => item.id === activeId);
   const title = pageTitle ?? activeItem?.label ?? route.title;
@@ -314,11 +365,17 @@ function ShellChrome({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
           <NavigationGroups
-            groups={decorateGroups(globalNavigation[role])}
+            groups={globalGroups}
             collapsed={isCollapsed}
             currentKind={scope === "global" ? "page" : "location"}
             activeId={
-              scope === "global" ? activeId : role === "student" ? "projects" : "workspaces"
+              scope === "global"
+                ? activeId === "workspaces"
+                  ? activeWorkspaceNavId
+                  : activeId
+                : role === "student"
+                  ? "projects"
+                  : activeWorkspaceNavId
             }
             preview={Boolean(onPreviewNavigate)}
             onNavigate={navigatePreview}
@@ -684,6 +741,7 @@ function NavigationEntry({
   const className = cn(
     "flex min-h-9 w-full items-center gap-2.5 rounded-md px-2 text-left text-xs leading-5 transition-colors",
     collapsed && "justify-center px-0",
+    !collapsed && item.id.startsWith("workspace:") && "ml-2 w-[calc(100%-0.5rem)] border-l border-border/60 pl-4",
     active
       ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground ring-1 ring-inset ring-primary/20"
       : "text-muted-foreground hover:bg-accent hover:text-foreground",

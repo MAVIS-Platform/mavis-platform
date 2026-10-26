@@ -1522,3 +1522,160 @@ test("reconcileModelDiff pairs identical elements across revisions with new UUID
 
 
 
+test("My Workspaces lists classes in sidebar and expands class details only for the selected class card", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { QueryClient, QueryClientProvider } = require("@tanstack/react-query");
+  const { ApiContext, SelectionContext } = require("../src/providers/app-context.ts");
+  const { Workspaces, WorkspaceOverview, WorkspaceMembers } = require("../src/features/workspaces/screens.tsx");
+  const classes = [
+    { id: "ws-swd", code: "SWD392", name: "Lớp SWD392", myRole: "LECTURER", status: "ACTIVE", members: [{ id: "u1", name: "Lecturer", role: "LECTURER" }, { id: "u2", name: "Student A", role: "STUDENT" }] },
+    { id: "ws-prm", code: "PRM392", name: "Mobile Programming", myRole: "LECTURER", status: "ACTIVE", members: [] },
+  ];
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  client.setQueryData(["api", "session", {}], { user: { id: "u1", name: "Lecturer", email: "lec@example.com", role: "lecturer" } });
+  client.setQueryData(["api", "workspaces", {}], classes);
+  const api = { mode: "backend", execute: () => { throw Error("Unexpected request"); } };
+  const renderComp = (Comp, workspaceId) =>
+    renderToStaticMarkup(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(
+          ApiContext.Provider,
+          { value: api },
+          React.createElement(
+            SelectionContext.Provider,
+            { value: { projectId: "", workspaceId, setProjectId() {}, setWorkspaceId() {} } },
+            React.createElement(Comp),
+          ),
+        ),
+      ),
+    );
+  client.setQueryData(["api", "assignments", { workspaceId: "ws-swd" }], [
+    { id: "a1", workspaceId: "ws-swd", title: "Lab 1 Architecture", instructions: "Analyze C4", dueAt: "No deadline", requiredDiagramTypes: [] },
+    { id: "a2", workspaceId: "ws-swd", title: "Lab 2 Sequence", instructions: "Trace flow", dueAt: "No deadline", requiredDiagramTypes: [] },
+  ]);
+  const rootHtml = renderComp(Workspaces, "");
+  assert.match(rootHtml, /Create a teaching workspace/);
+  assert.doesNotMatch(rootHtml, /Lớp SWD392/);
+  const overviewHtml = renderComp(WorkspaceOverview, "ws-swd");
+  assert.match(overviewHtml, /Students enrolled/);
+  assert.match(overviewHtml, /Published assignments/);
+  assert.match(overviewHtml, /Lab 1 Architecture/);
+  assert.match(overviewHtml, /Rename/);
+  assert.match(overviewHtml, /Archive workspace/);
+  assert.doesNotMatch(overviewHtml, /Add students in bulk/, "Overview must not include member management");
+  const membersHtml = renderComp(WorkspaceMembers, "ws-swd");
+  assert.match(membersHtml, /Add students in bulk/);
+  assert.match(membersHtml, /Student A/);
+  assert.doesNotMatch(membersHtml, /Rename/, "Members screen must not include class rename/archive controls");
+  const { WorkspaceSelector } = require("../src/features/workspaces/components.tsx");
+  assert.equal(renderComp(WorkspaceSelector, "ws-swd"), "", "WorkspaceSelector hides when class is already selected");
+  const { Assignments } = require("../src/features/assignments/screens.tsx");
+  const assignmentsHtml = renderComp(Assignments, "ws-swd");
+  assert.match(assignmentsHtml, /Lab 1 Architecture/);
+  assert.match(assignmentsHtml, /Lab 2 Sequence/);
+  assert.match(assignmentsHtml, /Create assignment/);
+  assert.doesNotMatch(assignmentsHtml, /Assignment title/, "Create assignment form stays closed until button is clicked");
+  client.clear();
+});
+
+test("archify + diagram-design geometry upgrades: snap4, port rhythm, sliding label candidates, arc tracks, and verification gate", () => {
+  const {
+    snap4,
+    estimateLabelBox,
+    wrapEdgeLabelLines,
+    segmentRidesRectBorder,
+    applyPortRhythmBridge,
+    spreadSidePorts,
+    slidingLabelCandidates,
+    assignArcTrackLevels,
+    inspectGeometry,
+  } = require("../src/lib/drawio/geometry.ts");
+
+  assert.equal(snap4(13), 12);
+  assert.equal(snap4(14), 16);
+
+  const boxEst = estimateLabelBox("HTTPS · JSON payload", 11);
+  assert.equal(boxEst.width % 4, 0);
+  assert.equal(boxEst.height % 4, 0);
+
+  const wrapped = wrapEdgeLabelLines("1..* long_association_role_label_for_edge", 18);
+  assert.ok(wrapped.length >= 2);
+  assert.ok(wrapped.length <= 3);
+
+  assert.equal(
+    segmentRidesRectBorder({ x: 100, y: 94 }, { x: 220, y: 94 }, { id: "r", x: 80, y: 100, width: 200, height: 80 }, 12),
+    true,
+  );
+
+  const bridged = applyPortRhythmBridge(
+    [
+      { x: 100, y: 180 },
+      { x: 100, y: 200 },
+      { x: 260, y: 200 },
+      { x: 260, y: 300 },
+    ],
+    "bottom",
+    "top",
+    20,
+  );
+  assert.ok(bridged[1].y >= 200);
+
+  const ports = spreadSidePorts(
+    [
+      { id: "e1", refCoord: 100 },
+      { id: "e2", refCoord: 200 },
+      { id: "e3", refCoord: 300 },
+    ],
+    180,
+  );
+  assert.equal(ports.size, 3);
+  assert.ok(ports.get("e1") >= 0.14 && ports.get("e3") <= 0.86);
+
+  const cands = slidingLabelCandidates(
+    { x: 100, y: 100 },
+    { x: 340, y: 100 },
+    64,
+    20,
+  );
+  assert.ok(cands.length >= 10);
+
+  const tracks = assignArcTrackLevels([
+    { id: "a", start: 100, end: 300 },
+    { id: "b", start: 150, end: 250 },
+    { id: "c", start: 340, end: 460 },
+  ]);
+  assert.notEqual(tracks.get("a"), tracks.get("b"), "Overlapping spans get separate tracks");
+  assert.equal(tracks.get("c"), 0, "Non-overlapping span reuses track 0");
+
+  const report = inspectGeometry(
+    [
+      { id: "n1", x: 100, y: 100, width: 160, height: 80 },
+      { id: "n2", x: 400, y: 100, width: 160, height: 80 },
+      { id: "n3", x: 220, y: 220, width: 160, height: 80 },
+    ],
+    [],
+    [
+      {
+        id: "r1",
+        from: "n1",
+        to: "n2",
+        points: [
+          { x: 260, y: 104 },
+          { x: 320, y: 104 },
+          { x: 320, y: 220 },
+          { x: 400, y: 220 },
+          { x: 400, y: 140 },
+        ],
+      },
+    ],
+  );
+  assert.equal(typeof report.borderRides, "number");
+  assert.equal(typeof report.sharedRuns, "number");
+  assert.equal(typeof report.nearCornerPorts, "number");
+  assert.ok(report.nearCornerPorts >= 1);
+  assert.ok(report.borderRides >= 1);
+});
+

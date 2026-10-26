@@ -39,7 +39,7 @@ export function AppProvider({
           gcTime: 300000,
           retry: (count, error) =>
             count < 2 && ["network", "server", "timeout"].includes(normalizeError(error).kind),
-          refetchOnWindowFocus: true,
+          refetchOnWindowFocus: false,
         },
         mutations: { retry: false },
       },
@@ -64,7 +64,8 @@ function UrlSelection({ mode, children }: { mode: "mock" | "backend"; children: 
   const router = useRouter();
   const pathname = usePathname();
   const projectId = params.get("project") ?? (mode === "mock" ? "sample-checkout" : "");
-  const workspaceId = params.get("workspace") ?? (mode === "mock" ? "workspace-1" : "");
+  const workspaceId =
+    params.get("workspace") ?? (mode === "mock" && pathname !== "/workspaces" ? "workspace-1" : "");
   function select(kind: "project" | "workspace", value: string) {
     const next = new URLSearchParams(params.toString());
     for (const key of ["model", "snapshot", "job", "target", "kind"]) next.delete(key);

@@ -383,3 +383,138 @@ test("assignment source pins survive the Java adapter without replacing exact mo
  assert.equal(posted.referenceModelId,model);
  assert.deepEqual(validateResponse("createAssignment",{workspaceId:job,title:"Pinned source",dueAt:null,requiredDiagramTypes:["UML_CLASS"],requireRuntimeTrace:false,referenceModelId:model},result).referenceSource,referenceSource);
 });
+
+
+test("submission lists deduplicate metadata and defer heavy assets until detail opens", async t => {
+ environment(t);const paths=[];
+ const submission={id:job,assignmentId:node,projectId:project,submittedById:node,submittedAt:"2026-10-26T00:00:00Z",sourceSnapshotId:snapshot,modelVersionId:model,diagramVersionId:node,runtimeSessionId:node};
+ const rows=[submission,{...submission,id:project}];
+ t.mock.method(globalThis,"fetch",async url=>{
+  const path=new URL(url).pathname.replace("/api/v1/","");paths.push(path);let data;
+  if(path==="submissions/me")data=rows;
+  else if(path===`assignments/${node}`)data={id:node,workspaceId:job,title:"Assignment"};
+  else if(path===`assignments/${node}/submissions`)data=rows;
+  else if(path===`submissions/${job}`)data=submission;
+  else if(path===`analyzer/models/${model}`)data=metadata;
+  else if(path===`analyzer/models/${model}/graph`)data={nodes:[{id:node,name:"Service",type:"SERVICE_CONTAINER"}],edges:[]};
+  else if(path===`analyzer/models/${model}/elements`)data=[{id:node,modelVersionId:model,name:"Service",elementType:"SERVICE_CONTAINER"}];
+  else if(path===`analyzer/snapshots/${snapshot}`)data={id:snapshot,projectId:project};
+  else if(path.endsWith("/feedbacks"))data=[];
+  else if(path===`analyzer/diagrams/${node}`)data={id:node,modelVersionId:model,layoutJson:{frozenDocument:true}};
+  else if(path===`analyzer/runtime/sessions/${node}`)data={id:node,projectId:project,sourceSnapshotId:snapshot,executionStatus:"COMPLETED"};
+  else throw Error("Unexpected request "+path);
+  return Response.json({code:200,data});
+ });
+ for(const [operation,input] of [["submissions",{}],["assignmentSubmissions",{workspaceId:job,assignmentId:node}]]) {
+  paths.length=0;
+  const result=validateResponse(operation,input,await executeJava(operation,input,"jwt",new AbortController().signal));
+  assert.equal(result.length,2);assert.equal(result[0].model.revision,1);
+  assert.equal(paths.filter(p=>p===`analyzer/models/${model}`).length,1);
+  assert.ok(!paths.some(p=>/\/(graph|elements)$/.test(p)||p.startsWith("analyzer/diagrams/")||p.startsWith("analyzer/runtime/")));
+ }
+ paths.length=0;
+ const detail=validateResponse("submission",{submissionId:job},await executeJava("submission",{submissionId:job},"jwt",new AbortController().signal));
+ assert.equal(detail.model.elements[0].name,"Service");assert.equal(detail.diagramLayout.frozenDocument,true);assert.equal(detail.runtime.id,node);
+ assert.ok(paths.includes(`analyzer/models/${model}/graph`));assert.ok(paths.includes(`analyzer/models/${model}/elements`));
+ paths.length=0;
+ await executeJava("submissions",{},"another-jwt",new AbortController().signal);
+ assert.equal(paths.filter(p=>p===`analyzer/models/${model}`).length,1);
+});
+
+test("overview starts independent APIs together and graph waits only for models", async t => {
+ environment(t);const paths=[];let releaseJobs,releaseModels,releaseSessions;
+ const jobsGate=new Promise(resolve=>{releaseJobs=resolve;});
+ const modelsGate=new Promise(resolve=>{releaseModels=resolve;});
+ const sessionsGate=new Promise(resolve=>{releaseSessions=resolve;});
+ t.mock.method(globalThis,"fetch",async url=>{
+  const path=new URL(url).pathname.replace("/api/v1/","");paths.push(path);let data;
+  if(path==="projects")data=[{id:project,name:"Project"}];
+  else if(path.endsWith("/jobs")){await jobsGate;data=[];}
+  else if(path.endsWith("/models")){await modelsGate;data=[metadata];}
+  else if(path.endsWith("/runtime-sessions")){await sessionsGate;data=[];}
+  else if(path.endsWith("/graph"))data={nodes:[],edges:[]};
+  else throw Error("Unexpected request "+path);
+  return Response.json({code:200,data});
+ });
+ const pending=executeJava("projectOverviews",{},"jwt",new AbortController().signal);
+ try {
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(paths.includes(`analyzer/projects/${project}/jobs`));assert.ok(paths.includes(`analyzer/projects/${project}/models`));assert.ok(paths.includes(`analyzer/projects/${project}/runtime-sessions`));
+  assert.ok(!paths.includes(`analyzer/models/${model}/graph`));
+  releaseModels();await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(paths.includes(`analyzer/models/${model}/graph`));
+ } finally {releaseJobs();releaseModels();releaseSessions();await pending;}
+});
+
+test("mutation invalidation excludes unrelated IDs and uses submission response scope", () => {
+ const {mutationScope,queryMatchesScope,mutationInvalidations}=require("../src/lib/api/cache-policy.ts");
+ const scope=mutationScope("feedback",{submissionId:job,modelId:model},{id:job,assignmentId:node,model:{projectId:project}});
+ assert.equal(queryMatchesScope(["api","submission",{submissionId:job}],scope),true);
+ assert.equal(queryMatchesScope(["api","submission",{submissionId:node}],scope),false);
+ assert.equal(queryMatchesScope(["api","assignmentSubmissions",{assignmentId:node}],scope),true);
+ assert.equal(queryMatchesScope(["api","assignmentSubmissions",{assignmentId:job}],scope),false);
+ assert.equal(queryMatchesScope(["api","models",{projectId:job}],scope),false);
+ assert.equal(queryMatchesScope(["api","models",{projectId:project}],scope),true);
+ assert.equal(queryMatchesScope(["api","submissions",{}],scope),true);
+ assert.equal(queryMatchesScope(["other","submissions",{}],scope),false);
+ assert.deepEqual(mutationInvalidations.gradeSubmission,["submissionReview"]);
+});
+
+
+test("mutation releases pending state before background refresh and patches feedback cache", async t => {
+ const {QueryClient,QueryObserver}=require("@tanstack/react-query");
+ const Module=require("node:module");const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false,gcTime:0}}});
+ let operationResult={id:project,name:"Created"};let refreshes=0,release;
+ const gate=new Promise(resolve=>{release=resolve;});
+ const observer=new QueryObserver(client,{queryKey:["api","projects",{}],initialData:[],staleTime:Infinity,queryFn:async()=>{refreshes++;await gate;return [operationResult];}});
+ const unsubscribe=observer.subscribe(()=>{});
+ const filename=path.join(root,"src/hooks/use-api.ts");const hook=new Module(filename,module);hook.filename=filename;hook.paths=module.paths;
+ hook.require=name=>{
+  if(name==="react")return {useContext:()=>({execute:async()=>operationResult,mode:"backend"})};
+  if(name==="@tanstack/react-query")return {useQueryClient:()=>client,useMutation:options=>client.getMutationCache().build(client,options)};
+  if(name==="sonner")return {toast:{success:()=>{},error:()=>{}}};
+  if(name==="@/providers/app-context")return {ApiContext:{},SelectionContext:{}};
+  return require(name.startsWith("@/")?path.join(root,"src",name.slice(2)):name);
+ };
+ hook._compile(ts.transpileModule(fs.readFileSync(filename,"utf8"),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,filename);
+ const mutation=hook.exports.useApiMutation("createProject");
+ let finished=false;const pending=mutation.execute({name:"Created"}).then(()=>{finished=true;});
+ try {
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(refreshes,1);assert.equal(finished,true);assert.equal(mutation.state.status,"success");
+  const old={id:job,assignmentId:node,model:{projectId:project,elements:[{id:node}]},feedback:[]};
+  const unrelated={id:node,feedback:[]};
+  client.setQueryData(["api","submissions",{}],[old,unrelated]);
+  client.setQueryData(["api","submission",{submissionId:job}],old);
+  client.setQueryData(["api","submission",{submissionId:node}],unrelated);
+  operationResult={id:job,assignmentId:node,model:{projectId:project,elements:[]},feedback:[{id:node,text:"Updated"}]};
+  const feedback=hook.exports.useApiMutation("feedback");
+  await feedback.execute({submissionId:job,modelId:model,text:"Updated"});
+  const expectedMerged={...old,feedback:[{id:node,text:"Updated"}]};
+  assert.deepEqual(client.getQueryData(["api","submission",{submissionId:job}]),expectedMerged);
+  assert.deepEqual(client.getQueryData(["api","submissions",{}]),[expectedMerged,unrelated]);
+  assert.deepEqual(client.getQueryData(["api","submission",{submissionId:node}]),unrelated);
+  assert.equal(client.getQueryState(["api","submissions",{}]).isInvalidated,false);
+ } finally {release();await pending;unsubscribe();client.clear();}
+});
+
+test("workspaces with embedded members and feedback mutations skip redundant round-trips", async t => {
+ environment(t);const paths=[];
+ const submission={id:job,assignmentId:node,projectId:project,submittedById:node,submittedAt:"2026-10-26T00:00:00Z",sourceSnapshotId:snapshot,modelVersionId:model,diagramVersionId:node,runtimeSessionId:node};
+ t.mock.method(globalThis,"fetch",async(url,options={})=>{
+  const path=new URL(url).pathname.replace("/api/v1/","");paths.push(`${options.method??"GET"} ${path}`);
+  if(path==="workspaces")return Response.json({code:200,data:[{id:job,code:"SE1",name:"Embedded class",status:"ACTIVE",myRoleInWorkspace:"LECTURER",members:[{userId:node,fullName:"Lecturer",memberRole:"LECTURER"}]}]});
+  if(path===`submissions/${job}`)return Response.json({code:200,data:submission});
+  if(path===`submissions/${job}/feedbacks`)return Response.json({code:200,data:options.method==="POST"?{id:node}:[{id:node,commentText:"Fast",createdAt:"2026-10-26T00:00:00Z",lecturerId:node}]});
+  if(path===`analyzer/models/${model}`)return Response.json({code:200,data:metadata});
+  if(path===`analyzer/snapshots/${snapshot}`)return Response.json({code:200,data:{id:snapshot,projectId:project}});
+  throw Error("Unexpected request "+path);
+ });
+ const ws=await executeJava("workspaces",{},"jwt",new AbortController().signal);
+ assert.equal(ws[0].members[0].id,node);
+ assert.ok(!paths.some(p=>p.endsWith("/members")));
+ paths.length=0;
+ const fb=await executeJava("feedback",{submissionId:job,modelId:model,text:"Fast"},"jwt",new AbortController().signal);
+ assert.equal(fb.feedback[0].text,"Fast");
+ assert.equal(paths.filter(p=>p===`GET submissions/${job}`).length,1);
+});

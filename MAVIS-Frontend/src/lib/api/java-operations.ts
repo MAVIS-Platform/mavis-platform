@@ -112,32 +112,65 @@ export async function executeJava(
       ...(headers ? { headers } : {}),
       signal,
     });
-  const model = async (modelId: string) => {
-    const [metadata, graph, details] = await Promise.all([
-      get(`analyzer/models/${modelId}`),
-      get(`analyzer/models/${modelId}/graph`),
-      get(`analyzer/models/${modelId}/elements`),
-    ]);
-    return enrichModelWithSourceUmlMetadata(modelView(metadata, graph, details));
+  // Request-scoped promise cache: concurrent rows share a model request, while
+  // authorization, cancellation and model data stay isolated between requests.
+  const modelRequests = new Map<string, Promise<ReturnType<typeof modelView>>>();
+  const model = (modelId: string, includeDetails = true) => {
+    const key = modelId + (includeDetails ? ":detail" : ":summary");
+    const cached = modelRequests.get(key);
+    if (cached) return cached;
+    const pending = (async () => {
+      if (!includeDetails) {
+        const metadata = await get(`analyzer/models/${modelId}`);
+        return modelView(metadata, { nodes: [], edges: [] }, []);
+      }
+      const [metadata, graph, details] = await Promise.all([
+        get(`analyzer/models/${modelId}`),
+        get(`analyzer/models/${modelId}/graph`),
+        get(`analyzer/models/${modelId}/elements`),
+      ]);
+      return enrichModelWithSourceUmlMetadata(modelView(metadata, graph, details));
+    })().catch((error: unknown) => {
+      modelRequests.delete(key);
+      throw error;
+    });
+    modelRequests.set(key, pending);
+    return pending;
+  };
+  const snapshotRequests = new Map<string, Promise<unknown>>();
+  const snapshot = (snapshotId: string) => {
+    const cached = snapshotRequests.get(snapshotId);
+    if (cached) return cached;
+    const pending = get(`analyzer/snapshots/${snapshotId}`).catch((error: unknown) => {
+      snapshotRequests.delete(snapshotId);
+      throw error;
+    });
+    snapshotRequests.set(snapshotId, pending);
+    return pending;
   };
   const workspace = async (raw: unknown) => {
-    const w = z
+    const memberSchema = z.object({
+      userId: z.string().uuid(),
+      fullName: z.string(),
+      memberRole: z.string(),
+    });
+    const { members: embedded, ...w } = z
       .object({
         id: z.string().uuid(),
         name: z.string(),
         code: z.string(),
         status: z.string(),
         myRoleInWorkspace: z.string().nullish(),
-        createdById:z.string().uuid().optional(),description:z.string().nullish(),
+        createdById: z.string().uuid().optional(),
+        description: z.string().nullish(),
+        members: z.array(memberSchema).optional(),
       })
       .parse(raw);
-    const members = z
-      .array(z.object({ userId: z.string().uuid(), fullName: z.string(), memberRole: z.string() }))
-      .parse(await get(`workspaces/${w.id}/members`));
+    const members = embedded ?? z.array(memberSchema).parse(await get(`workspaces/${w.id}/members`));
     return {
       ...w,
       myRole: w.myRoleInWorkspace ?? null,
-      description:w.description??"",
+      description: w.description ?? "",
       members: members.map((m) => ({
         id: m.userId,
         name: m.fullName,
@@ -166,7 +199,7 @@ export async function executeJava(
       requireRuntimeTrace: a.requireRuntimeTrace ?? false,
     };
   };
-  const coursework = async (raw: unknown) => {
+  const coursework = async (raw: unknown, includeDetails = true) => {
     const sub = z
       .object({
         id: z.string().uuid(),
@@ -182,10 +215,10 @@ export async function executeJava(
       })
       .parse(raw);
     const [m, source, feedback, runtime] = await Promise.all([
-      model(sub.modelVersionId),
-      get(`analyzer/snapshots/${sub.sourceSnapshotId}`),
+      model(sub.modelVersionId, includeDetails),
+      snapshot(sub.sourceSnapshotId),
       get(`submissions/${sub.id}/feedbacks`),
-      sub.runtimeSessionId
+      includeDetails && sub.runtimeSessionId
         ? get(`analyzer/runtime/sessions/${sub.runtimeSessionId}`).then(courseworkRuntime)
         : Promise.resolve(null),
     ]);
@@ -200,7 +233,7 @@ export async function executeJava(
     )
       throw new ApiError("contract", 502);
     let diagramLayout: Record<string, unknown> | undefined;
-    if(sub.diagramVersionId) {
+    if (includeDetails && sub.diagramVersionId) {
       const diagram=z.object({id:z.string().uuid(),modelVersionId:z.string().uuid(),layoutJson:z.record(z.unknown())}).parse(await get(`analyzer/diagrams/${sub.diagramVersionId}`));
       if(diagram.id!==sub.diagramVersionId||diagram.modelVersionId!==sub.modelVersionId)throw new ApiError("contract",502);
       diagramLayout=diagram.layoutJson;
@@ -514,20 +547,23 @@ export async function executeJava(
     case "updateFeedback":
     case "deleteFeedback": {
       const submissionId=id(input,"submissionId"),feedbackId=id(input,"feedbackId");const existing=list.parse(await get(`submissions/${submissionId}/feedbacks`));if(!existing.some(f=>object.parse(f)["id"]===feedbackId))throw new ApiError("not-found",404);
-      await javaRequest(`feedbacks/${feedbackId}`,token,{method:operation==="deleteFeedback"?"DELETE":"PUT",...(operation==="updateFeedback"?{body:JSON.stringify({commentText:input["text"]})}:{}),signal});return coursework(await get(`submissions/${submissionId}`));
+      await javaRequest(`feedbacks/${feedbackId}`,token,{method:operation==="deleteFeedback"?"DELETE":"PUT",...(operation==="updateFeedback"?{body:JSON.stringify({commentText:input["text"]})}:{}),signal});return coursework(await get(`submissions/${submissionId}`),false);
     }
     case "workspaces":
       return Promise.all(list.parse(await get("workspaces")).map(workspace));
     case "createWorkspace":
       return workspace(await post("workspaces", input));
     case "updateWorkspace": {
-      const current = object.parse(await get(`workspaces/${id(input, "workspaceId")}`));
+      const current =
+        input["description"] === undefined
+          ? object.parse(await get(`workspaces/${id(input, "workspaceId")}`))
+          : null;
       return workspace(
         await javaRequest(`workspaces/${id(input, "workspaceId")}`, token, {
           method: "PUT",
           body: JSON.stringify({
             ...input,
-            description: input["description"] ?? current["description"] ?? null,
+            description: input["description"] ?? current?.["description"] ?? null,
             ...(input["status"] ? {status:input["status"]} : {}),
           }),
           signal,
@@ -578,14 +614,16 @@ export async function executeJava(
       );
     }
     case "submissions":
-      return Promise.all(list.parse(await get("submissions/me")).map(coursework));
+      return Promise.all(
+        list.parse(await get("submissions/me")).map((row) => coursework(row, false)),
+      );
     case "assignmentSubmissions": {
       const workspaceId = id(input, "workspaceId"), assignmentId = id(input, "assignmentId");
       const current = assignment(await get(`assignments/${assignmentId}`));
       if (current.workspaceId !== workspaceId) throw new ApiError("not-found", 404);
       const rows = list.parse(await get(`assignments/${assignmentId}/submissions`));
       if (rows.some(row => object.parse(row)["assignmentId"] !== assignmentId)) throw new ApiError("contract", 502);
-      return Promise.all(rows.map(coursework));
+      return Promise.all(rows.map((row) => coursework(row, false)));
     }
     case "submission":
       return coursework(await get(`submissions/${id(input, "submissionId")}`));
@@ -624,7 +662,7 @@ export async function executeJava(
         elementId: input["elementId"] ?? null,
         relationshipId: input["relationshipId"] ?? null,
       });
-      return coursework(await get(`submissions/${sub}`));
+      return coursework(pinned, false);
     }
     case "updateProfile":
       return {
@@ -679,16 +717,22 @@ export async function executeJava(
       const rows = list.parse(await get("projects"));
       const enrich = async (raw: unknown) => {
         const projectId = javaProject.parse(raw).id;
-        const jobs = await get(`analyzer/projects/${projectId}/jobs`).catch(() => null);
-        const models = await get(`analyzer/projects/${projectId}/models`).catch(() => null);
-        let graph: unknown = null;
-        if (Array.isArray(models) && models.length > 0) {
-          const modelId = latestModelSummaryId(models);
-          if (modelId) graph = await get(`analyzer/models/${modelId}/graph`).catch(() => null);
-        }
-        const sessions = await get(`analyzer/projects/${projectId}/runtime-sessions`).catch(
+        const jobsRequest = get(`analyzer/projects/${projectId}/jobs`).catch(() => null);
+        const modelsRequest = get(`analyzer/projects/${projectId}/models`).catch(() => null);
+        const sessionsRequest = get(`analyzer/projects/${projectId}/runtime-sessions`).catch(
           () => null,
         );
+        // Graph depends only on models, not on jobs or runtime sessions.
+        const graphRequest = modelsRequest.then((models) => {
+          const modelId = Array.isArray(models) ? latestModelSummaryId(models) : null;
+          return modelId ? get(`analyzer/models/${modelId}/graph`).catch(() => null) : null;
+        });
+        const [jobs, , sessions, graph] = await Promise.all([
+          jobsRequest,
+          modelsRequest,
+          sessionsRequest,
+          graphRequest,
+        ]);
         return projectOverviewView(raw, jobs, graph, sessions);
       };
       return Promise.all(rows.map(enrich));

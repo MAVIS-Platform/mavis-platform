@@ -5,6 +5,7 @@ import { useApiQuery, useSelection } from "@/hooks/use-api";
 export function WorkspaceSelector() {
   const query = useApiQuery("workspaces", {});
   const selection = useSelection();
+  if (selection.workspaceId) return null;
   return (
     <RequestState
       query={query}

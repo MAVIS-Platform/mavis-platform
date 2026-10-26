@@ -36,7 +36,8 @@ public class FeedbackCommentServiceImpl implements FeedbackCommentService {
         log.info("Thêm nhận xét chấm bài cho submissionId: {}, elementId: {}, relationshipId: {}",
                 submissionId, request.getElementId(), request.getRelationshipId());
 
-        SubmissionSnapshot submission = submissionSnapshotRepository.findById(submissionId)
+        SubmissionSnapshot submission = submissionSnapshotRepository.findWithDetailsById(submissionId)
+                .or(() -> submissionSnapshotRepository.findById(submissionId))
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy bài nộp với ID: " + submissionId));
 
         if (submission.getAssignment() != null && submission.getAssignment().getWorkspace() != null) {

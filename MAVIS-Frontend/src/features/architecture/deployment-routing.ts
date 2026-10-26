@@ -1,3 +1,11 @@
+import {
+  estimateLabelBox,
+  segmentRectClearanceWithin,
+  simplifyOrthogonalPoints,
+  slidingLabelCandidates,
+  snap4,
+} from "@/lib/drawio/geometry";
+
 export interface DeploymentPoint {
   x: number;
   y: number;
@@ -31,16 +39,16 @@ export function routeDeploymentPath(
   previousPaths: DeploymentPoint[][],
   lane: number,
 ): DeploymentPoint[] | null {
-  const clearance = 22 + (lane % 7) * 12;
-  const altClearance = 22 + ((lane + 3) % 7) * 12;
-  const xs = new Set([start.x, end.x]);
-  const ys = new Set([start.y, end.y]);
+  const clearance = 24 + (lane % 7) * 12;
+  const altClearance = 24 + ((lane + 3) % 7) * 12;
+  const xs = new Set([start.x, end.x, snap4((start.x + end.x) / 2)]);
+  const ys = new Set([start.y, end.y, snap4((start.y + end.y) / 2)]);
   for (const b of boxes) {
     for (const c of [clearance, altClearance]) {
-      xs.add(b.x - c);
-      xs.add(b.x + b.w + c);
-      ys.add(b.y - c);
-      ys.add(b.y + b.h + c);
+      xs.add(snap4(b.x - c));
+      xs.add(snap4(b.x + b.w + c));
+      ys.add(snap4(b.y - c));
+      ys.add(snap4(b.y + b.h + c));
     }
   }
   const xx = [...xs].sort((a, b) => a - b),
@@ -119,6 +127,18 @@ export function routeDeploymentPath(
       if (boxes.some((box) => deploymentSegmentHitsBox(a, b, box))) continue;
       const dir = a.y === b.y ? 0 : 1;
       let penalty = direction === dir ? 0 : 32;
+      // Penalize riding within 14px of a box border (diagram-design rides_border guard)
+      for (const box of boxes) {
+        if (dir === 0) {
+          const nearH = Math.abs(a.y - box.y) < 14 || Math.abs(a.y - (box.y + box.h)) < 14;
+          if (nearH && Math.min(Math.max(a.x, b.x), box.x + box.w) - Math.max(Math.min(a.x, b.x), box.x) > 4)
+            penalty += 220;
+        } else {
+          const nearV = Math.abs(a.x - box.x) < 14 || Math.abs(a.x - (box.x + box.w)) < 14;
+          if (nearV && Math.min(Math.max(a.y, b.y), box.y + box.h) - Math.max(Math.min(a.y, b.y), box.y) > 4)
+            penalty += 220;
+        }
+      }
       for (const track of tracks) {
         const horizontal = track.a.y === track.b.y;
         if (horizontal === (dir === 0)) {
@@ -156,10 +176,73 @@ export function routeDeploymentPath(
   const path: DeploymentPoint[] = [];
   for (let s = final; s >= 0; s = parent[s]!) path.push(point(Math.floor(s / 2)));
   path.reverse();
-  return path.filter((p, i) => {
-    if (i === 0 || i === path.length - 1) return true;
-    const a = path[i - 1]!,
-      b = path[i + 1]!;
-    return !((a.x === p.x && p.x === b.x) || (a.y === p.y && p.y === b.y));
-  });
+  return simplifyOrthogonalPoints(path);
 }
+
+export function placeDeploymentEdgeLabel(
+  fullPath: DeploymentPoint[],
+  text: string,
+  obstacles: DeploymentBox[],
+  existingPaths: DeploymentPoint[][] = [],
+): { position: number; dx: number; dy: number; box: DeploymentBox } | null {
+  if (!text || fullPath.length < 2) return null;
+  const lengths = fullPath
+    .slice(1)
+    .map((p, i) => Math.abs(p.x - fullPath[i]!.x) + Math.abs(p.y - fullPath[i]!.y));
+  const totalLength = lengths.reduce((sum, n) => sum + n, 0);
+  if (totalLength <= 0) return null;
+
+  const est = estimateLabelBox(text, 11, false);
+  const labelWidth = Math.max(50, est.width);
+  const labelHeight = Math.max(20, est.height);
+
+  interface LabelCand {
+    distance: number;
+    dx: number;
+    dy: number;
+    box: DeploymentBox;
+    segLen: number;
+    masksWire: boolean;
+  }
+  const candidates: LabelCand[] = [];
+  let walked = 0;
+  for (let i = 0; i < lengths.length; i++) {
+    const a = fullPath[i]!;
+    const b = fullPath[i + 1]!;
+    const segLen = lengths[i]!;
+    const slideCands = slidingLabelCandidates(a, b, labelWidth, labelHeight, existingPaths, 8);
+    for (const sc of slideCands) {
+      const anchorX = a.x + (b.x - a.x) * sc.fraction;
+      const anchorY = a.y + (b.y - a.y) * sc.fraction;
+      const dx = Math.round(sc.cx - anchorX);
+      const dy = Math.round(sc.cy - anchorY);
+      const box: DeploymentBox = { x: sc.x, y: sc.y, w: labelWidth, h: labelHeight };
+      const hitsObstacle = obstacles.some(
+        (ob) =>
+          box.x < ob.x + ob.w + 4 &&
+          box.x + box.w > ob.x - 4 &&
+          box.y < ob.y + ob.h + 4 &&
+          box.y + box.h > ob.y - 4,
+      );
+      if (hitsObstacle) continue;
+      const masksWire = existingPaths.some((p) =>
+        p.slice(1).some((pt, idx) => segmentRectClearanceWithin(p[idx]!, pt, { x: box.x, y: box.y, width: box.w, height: box.h }, 4)),
+      );
+      candidates.push({
+        distance: walked + segLen * sc.fraction,
+        dx,
+        dy,
+        box,
+        segLen,
+        masksWire,
+      });
+    }
+    walked += segLen;
+  }
+  candidates.sort((a, b) => Number(a.masksWire) - Number(b.masksWire) || b.segLen - a.segLen);
+  const picked = candidates[0];
+  if (!picked) return null;
+  const position = Number(((2 * picked.distance) / totalLength - 1).toFixed(3));
+  return { position, dx: picked.dx, dy: picked.dy, box: picked.box };
+}
+

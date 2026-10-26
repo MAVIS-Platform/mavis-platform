@@ -5,6 +5,7 @@ import com.mavis.common.entity.User;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.*;
+import com.mavis.common.security.AuthorizationRequestCache;
 import com.mavis.platform.admin.dto.AdminDashboardStatsDTO;
 import com.mavis.platform.admin.dto.AdminUserResponseDTO;
 import com.mavis.platform.admin.dto.AuditLogResponseDTO;
@@ -70,6 +71,7 @@ public class AdminPortalServiceImpl implements AdminPortalService {
         String oldStatus = user.getStatus();
         user.setStatus(normalizedStatus);
         user = userRepository.save(user);
+        AuthorizationRequestCache.evictUser(userId);
 
         // Ghi AuditLog theo BR-65
         auditLogService.recordAuditLog(
@@ -103,6 +105,7 @@ public class AdminPortalServiceImpl implements AdminPortalService {
         String oldRole = user.getRole() != null ? user.getRole().getCode() : "NONE";
         user.setRole(role);
         user = userRepository.save(user);
+        AuthorizationRequestCache.evictUser(userId);
 
         // Ghi AuditLog theo BR-65
         auditLogService.recordAuditLog(
