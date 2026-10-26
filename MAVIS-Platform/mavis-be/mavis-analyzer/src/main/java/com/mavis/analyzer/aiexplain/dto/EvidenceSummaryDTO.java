@@ -14,6 +14,8 @@ import java.util.UUID;
 public class EvidenceSummaryDTO {
 
     private UUID id;
+    private UUID elementId;
+    private UUID relationshipId;
     private String sourceType;
     private String locator;
     private String excerpt;
@@ -23,6 +25,8 @@ public class EvidenceSummaryDTO {
         if (e == null) return null;
         return EvidenceSummaryDTO.builder()
                 .id(e.getId())
+                .elementId(e.getElement() == null ? null : e.getElement().getId())
+                .relationshipId(e.getRelationship() == null ? null : e.getRelationship().getId())
                 .sourceType(e.getSourceType())
                 .locator(e.getLocator())
                 .excerpt(e.getExcerpt())

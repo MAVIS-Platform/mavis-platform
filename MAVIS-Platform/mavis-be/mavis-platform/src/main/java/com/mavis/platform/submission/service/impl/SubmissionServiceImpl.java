@@ -33,6 +33,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final SourceSnapshotRepository sourceSnapshotRepository;
     private final FeedbackCommentRepository feedbackCommentRepository;
     private final JobRepository jobRepository;
+    private final SubmissionReviewRepository submissionReviewRepository;
     private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     @Override
@@ -106,6 +107,13 @@ public class SubmissionServiceImpl implements SubmissionService {
         if (!diagramVersion.getModelVersion().getId().equals(modelVersion.getId())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Bản vẽ sơ đồ không thuộc về phiên bản mô hình đã chọn");
         }
+        if (assignment.getRequiredDiagramTypes() != null && assignment.getRequiredDiagramTypes().isArray()) {
+            var supplied = new HashSet<String>(); supplied.add(diagramVersion.getNotation());
+            if (diagramVersion.getLayoutJson() != null) for (var artifact : diagramVersion.getLayoutJson().path("artifacts")) supplied.add(artifact.path("notation").asText());
+            for (var required : assignment.getRequiredDiagramTypes()) if (!supplied.contains(required.asText().trim().toUpperCase())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Missing required diagram type: " + required.asText());
+            }
+        }
 
         // 7. Kiểm tra EvaluationRun (nếu có đính kèm)
         EvaluationRun evaluationRun = null;
@@ -162,6 +170,10 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .build();
 
         submission = submissionSnapshotRepository.save(submission);
+        // @CreationTimestamp is populated at flush. Build the response only
+        // after persistence, otherwise clients receive submittedAt=null even
+        // though the transaction succeeds and may retry an already saved work.
+        submissionSnapshotRepository.flush();
         log.info("Nộp bài tập thành công! Submission ID: {}, SubmittedAt: {}", submission.getId(), submission.getSubmittedAt());
 
         return SubmissionResponseDTO.fromEntity(submission, 0L);
@@ -239,6 +251,11 @@ public class SubmissionServiceImpl implements SubmissionService {
         }
 
         String markdownReport = buildMarkdownReport(submission, complianceScore, mermaidDsl, feedbacks);
+        var releasedReview = submissionReviewRepository.findBySubmissionId(submissionId).filter(r -> !"DRAFT".equals(r.getStatus()));
+        if (releasedReview.isPresent()) {
+            var review = releasedReview.get();
+            markdownReport += "\n## Lecturer review\n- Status: " + review.getStatus() + "\n- Lecturer score /100: " + review.getScore() + "\n\n" + review.getSummary() + "\n";
+        }
 
         return com.mavis.platform.submission.dto.SubmissionExportBundleDTO.builder()
                 .submissionId(submission.getId())
@@ -256,6 +273,11 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .layoutJson(dv != null ? dv.getLayoutJson() : null)
                 .mermaidDsl(mermaidDsl)
                 .complianceScore(complianceScore)
+                .reviewStatus(releasedReview.map(SubmissionReview::getStatus).orElse("PENDING"))
+                .lecturerScore(releasedReview.map(SubmissionReview::getScore).orElse(null))
+                .reviewSummary(releasedReview.map(SubmissionReview::getSummary).orElse(""))
+                .reviewerName(releasedReview.map(r -> r.getLecturer().getFullName()).orElse(null))
+                .reviewedAt(releasedReview.map(SubmissionReview::getUpdatedAt).orElse(null))
                 .runtimeSessionId(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getId() : null)
                 .scenarioStatus(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getScenarioStatus() : null)
                 .lecturerFeedbacks(feedbacks)

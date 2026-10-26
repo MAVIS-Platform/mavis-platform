@@ -397,6 +397,17 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         ambiguousNames.forEach(elementByNameMap::remove);
         List<Evidence> allEvidencesToSave = new ArrayList<>();
 
+        // Keep declaration evidence on every canonical Java classifier, not
+        // only REST endpoints. Relation evidence remains attached to relations.
+        if (evidences != null) for (CodeEvidenceDTO fact : evidences) {
+            if (!"CLASS_INTERFACE".equals(fact.getElementType())) continue;
+            var target = findClassifierElement(allElements, fact.getQualifiedName(), fact.getFilePath());
+            if (target == null || fact.getFilePath() == null) continue;
+            allEvidencesToSave.add(Evidence.builder().sourceSnapshot(sourceSnapshot).modelVersion(modelVersion)
+                    .element(target).sourceType("STATIC_CODE").adapterVersion("JAVAPARSER_3.25")
+                    .locator(fact.getFilePath() + ":" + fact.getLineNumber()).excerpt(fact.getCodeSnippet()).build());
+        }
+
         if (evidences != null) {
             for (CodeEvidenceDTO ev : evidences) {
                 if ("REST_API".equalsIgnoreCase(ev.getElementType())) {
@@ -467,6 +478,12 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                 for (DetectedContainerDTO c : composeContainers) {
                     ModelElement sourceContainer = elementByNameMap.get(c.getServiceName().toLowerCase().trim());
                     if (sourceContainer == null) sourceContainer = matchTargetElement(elements, c.getServiceName());
+
+                    if (sourceContainer != null && c.getComposeFilePath() != null) {
+                        allEvidencesToSave.add(Evidence.builder().sourceSnapshot(sourceSnapshot).modelVersion(modelVersion)
+                                .element(sourceContainer).sourceType("DOCKER_COMPOSE").adapterVersion("DOCKER_COMPOSE")
+                                .locator(c.getComposeFilePath() + ":" + c.getLineNumber()).excerpt(c.getServiceName() + ":").build());
+                    }
 
                     for (DockerDependencyDTO dep : c.getDependsOn()) {
                         ModelElement targetContainer = elementByNameMap.get(dep.getTargetService().toLowerCase().trim());
@@ -832,6 +849,12 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             deploymentMeta.put("artifactName", c.getImage().trim());
             deploymentMeta.put("artifactKind", "CONTAINER_IMAGE");
             deploymentMeta.put("artifactResolution", "EXPLICIT_CONTAINER_IMAGE");
+        } else if (hasBuildContext && c.getArtifactName() != null) {
+            deploymentMeta.put("artifactName", c.getArtifactName());
+            deploymentMeta.put("artifactKind", "JAR");
+            deploymentMeta.put("artifactResolution", "DOCKERFILE_DECLARED_ARTIFACT");
+            deploymentMeta.put("artifactLocator", c.getArtifactLocator());
+            deploymentMeta.put("declaredBuildContext", c.getBuildContext().trim());
         } else if (hasBuildContext) {
             deploymentMeta.put("declaredBuildContext", c.getBuildContext().trim());
             deploymentMeta.put("artifactResolution", "BUILD_CONTEXT_ONLY_UNRESOLVED_ARTIFACT");
@@ -847,6 +870,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         if (c.getLineNumber() != null) {
             deploymentMeta.put("lineNumber", c.getLineNumber());
         }
+        deploymentMeta.set("connections", objectMapper.valueToTree(c.getConnections()));
         node.set("deploymentMetadata", deploymentMeta);
         return node;
     }

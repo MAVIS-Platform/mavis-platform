@@ -1,6 +1,13 @@
 import { z } from "zod";
 export const RULE_VERSION = "mavis-se-3";
-export type DrawioTheme = "clean" | "dark" | "blueprint";
+export type DrawioTheme = "clean" | "vibrant" | "dark" | "blueprint" | "monochrome";
+export const DRAWIO_THEME_OPTIONS: { value: DrawioTheme; label: string }[] = [
+  { value: "clean", label: "Light Pastel" },
+  { value: "vibrant", label: "Vibrant C4" },
+  { value: "dark", label: "Dark Mode" },
+  { value: "blueprint", label: "Blueprint" },
+  { value: "monochrome", label: "Monochrome" },
+];
 const nodeSchema = z
   .object({
     id: z.string().min(1),
@@ -163,7 +170,28 @@ export function containerMessagingLabel(
 export function wrapText(text: string, max = 30) {
   const result: string[] = [];
   let line = "";
-  for (const word of text.replace(/\s+/g, " ").trim().split(" ")) {
+  const words = text
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .flatMap((word) => {
+      if (Array.from(word).length <= max) return [word];
+      const camelParts = word.split(/(?<=[a-z0-9])(?=[A-Z])/);
+      if (camelParts.length <= 1) return [word];
+      const grouped: string[] = [];
+      let acc = "";
+      for (const part of camelParts) {
+        if (acc && Array.from(acc + part).length > max) {
+          grouped.push(acc);
+          acc = part;
+        } else {
+          acc += part;
+        }
+      }
+      if (acc) grouped.push(acc);
+      return grouped;
+    });
+  for (const word of words) {
     for (let offset = 0; offset < Array.from(word).length; offset += max) {
       const part = Array.from(word)
         .slice(offset, offset + max)
@@ -222,33 +250,68 @@ export function nodeText(node: DiagramNode) {
   ];
 }
 export function palette(theme: DrawioTheme) {
+  if (theme === "vibrant")
+    return {
+      background: "#FFFFFF",
+      text: "#0F172A",
+      nodeText: "#FFFFFF",
+      line: "#1E293B",
+      internal: "#1168BD",
+      data: "#0F766E",
+      external: "#475569",
+      person: "#08427B",
+      system: "#0B4884",
+      border: "#0B4884",
+    };
+  if (theme === "monochrome")
+    return {
+      background: "#FFFFFF",
+      text: "#000000",
+      nodeText: "#000000",
+      line: "#000000",
+      internal: "#FFFFFF",
+      data: "#FFFFFF",
+      external: "#FFFFFF",
+      person: "#FFFFFF",
+      system: "#FFFFFF",
+      border: "#000000",
+    };
   if (theme === "dark")
     return {
       background: "#161B22",
       text: "#E6EDF3",
+      nodeText: "#E6EDF3",
       line: "#94A3B8",
       internal: "#233C59",
       data: "#203E35",
       external: "#30363D",
+      person: "#1E3A5F",
+      system: "#1F4E79",
       border: "#91B8E2",
     };
   if (theme === "blueprint")
     return {
       background: "#082032",
       text: "#E0F2FE",
+      nodeText: "#E0F2FE",
       line: "#7DD3FC",
       internal: "#0B3658",
       data: "#13443E",
       external: "#243747",
+      person: "#0D47A1",
+      system: "#1565C0",
       border: "#7DD3FC",
     };
   return {
     background: "#FFFFFF",
     text: "#172B4D",
+    nodeText: "#172B4D",
     line: "#475569",
     internal: "#EAF2FF",
     data: "#E7F2EC",
     external: "#F1F3F5",
+    person: "#DCEBFF",
+    system: "#D8E8FF",
     border: "#64748B",
   };
 }
@@ -256,10 +319,12 @@ export function nodeStyle(kind: string, theme: DrawioTheme) {
   const p = palette(theme);
   const shape =
     kind === "DATABASE"
-      ? "shape=cylinder3;size=16;"
+      ? "shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=12;spacingTop=18;"
       : ["QUEUE_BROKER", "MESSAGE_CHANNEL"].includes(kind)
         ? "shape=process;"
-        : "rounded=1;arcSize=8;";
+        : kind === "PERSON"
+          ? "rounded=1;arcSize=10;"
+          : "rounded=1;arcSize=8;";
   const fill = [
     "DATABASE",
     "QUEUE_BROKER",
@@ -268,10 +333,14 @@ export function nodeStyle(kind: string, theme: DrawioTheme) {
     "CHANNEL_GROUP",
   ].includes(kind)
     ? p.data
-    : kind === "EXTERNAL_SYSTEM" || kind === "UNKNOWN"
-      ? p.external
-      : p.internal;
-  return `${shape}whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=14;fontColor=${p.text};fillColor=${fill};strokeColor=${p.border};strokeWidth=1.5;spacing=14;align=center;verticalAlign=middle;`;
+    : kind === "PERSON"
+      ? p.person
+      : kind === "SYSTEM"
+        ? p.system
+        : kind === "EXTERNAL_SYSTEM" || kind === "UNKNOWN"
+          ? p.external
+          : p.internal;
+  return `${shape}whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=14;fontColor=${p.nodeText};fillColor=${fill};strokeColor=${p.border};strokeWidth=1.5;spacing=14;align=center;verticalAlign=middle;`;
 }
 
 export function nodeHtml(node: DiagramNode) {

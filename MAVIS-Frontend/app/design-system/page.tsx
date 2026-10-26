@@ -260,7 +260,7 @@ export default function DesignSystemPage() {
               <SectionIntro
                 number="03"
                 title="Readable by design"
-            description="Self-hosted Inter supports readable English and Vietnamese. Technical identifiers retain a dedicated monospace stack."
+            description="Self-hosted Inter supports readable technical documentation. Technical identifiers retain a dedicated monospace stack."
                 id="typography"
               />
               <div className="mt-5 space-y-5 border-l-2 border-primary pl-5">
@@ -277,7 +277,7 @@ export default function DesignSystemPage() {
                     Trace a relationship from its source to its supporting evidence.
                   </p>
                   <p className="mavis-caption mt-1">Body · 16 / 24 · regular; data and navigation · 14 / 20</p>
-                  <p lang="vi" className="mt-3 text-base leading-6">Kiến trúc rõ ràng. Bằng chứng có nguồn.</p>
+                  <p className="mt-3 text-base leading-6">Clear architecture. Traceable evidence.</p>
                 </div>
                 <div>
                   <code className="mavis-code inline-block px-2 py-1">

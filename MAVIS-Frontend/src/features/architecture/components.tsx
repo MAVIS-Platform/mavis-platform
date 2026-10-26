@@ -1,20 +1,15 @@
 "use client";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import { RequestState } from "@/components/shared/request-state";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DetailPanel } from "@/components/shared/data";
 import { EmptyState } from "@/components/shared/request-state";
-import { FilterControls, Pagination, SearchInput, SelectField } from "@/components/shared/forms";
-import type {
-  ArchitecturalModel,
-  ArchitectureElement,
-  Evidence,
-  ModelSummary,
-} from "@/types/domain";
+import { FilterControls, SearchInput, SelectField } from "@/components/shared/forms";
+import type { ArchitecturalModel, Evidence, ModelSummary } from "@/types/domain";
 import { projectGraphModel } from "./graph-projection";
-import { graphEdgePath, layoutGraph, NODE_WIDTH, NODE_HEIGHT } from "./graph-layout";
+import { DependencyNetwork } from "./dependency-network";
 
 export function ModelVersionSelector({
   models,
@@ -26,39 +21,33 @@ export function ModelVersionSelector({
   onChange: (id: string) => void;
 }) {
   const newest = Math.max(0, ...models.map((model) => model.revision));
-  const dateFormat = new Intl.DateTimeFormat("vi-VN", {
+  const dateFormat = new Intl.DateTimeFormat("en-US", {
     dateStyle: "short",
     timeStyle: "short",
   });
   return (
-    <div className="space-y-2">
-      <SelectField
-        label="Bản kiến trúc"
-        value={value}
-        onChange={onChange}
-        options={models.map((model) => {
-          const date = model.createdAt ? new Date(model.createdAt) : null;
-          const created = date && !Number.isNaN(date.getTime()) ? dateFormat.format(date) : "";
-          const customLabel =
-            model.label && !/^Revision \d+$/i.test(model.label) ? model.label : "";
-          return {
-            value: model.id,
-            label: [
-              `Bản ${model.revision}`,
-              model.revision === newest ? "Mới nhất" : "",
-              customLabel,
-              created,
-            ]
-              .filter(Boolean)
-              .join(" · "),
-          };
-        })}
-      />
-      <p className="text-xs text-muted-foreground">
-        Mỗi bản lưu một kết quả phân tích hoặc chỉnh sửa kiến trúc. Chọn bản cũ để xem lại kết quả
-        trước đó.
-      </p>
-    </div>
+    <SelectField
+      label="Architecture revision"
+      value={value}
+      onChange={onChange}
+      options={models.map((model) => {
+        const date = model.createdAt ? new Date(model.createdAt) : null;
+        const created = date && !Number.isNaN(date.getTime()) ? dateFormat.format(date) : "";
+        const customLabel =
+          model.label && !/^Revision \d+$/i.test(model.label) ? model.label : "";
+        return {
+          value: model.id,
+          label: [
+            `Revision ${model.revision}`,
+            model.revision === newest ? "Latest" : "",
+            customLabel,
+            created,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        };
+      })}
+    />
   );
 }
 
@@ -67,23 +56,38 @@ export function GraphLegend() {
     <div className="space-y-2 text-xs">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold text-muted-foreground">Elements:</span>
-        <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground" title="Rectangle">
+        <span
+          className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground"
+          title="Rectangle"
+        >
           <span className="inline-block h-2.5 w-3 border border-current rounded-xs" />
           [SVC] Service
         </span>
-        <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground" title="Component shape">
+        <span
+          className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground"
+          title="Component shape"
+        >
           <span className="inline-block h-2.5 w-3 border border-dashed border-current rounded-xs" />
           [COMP] Component
         </span>
-        <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground" title="Cylinder">
+        <span
+          className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground"
+          title="Cylinder"
+        >
           <span className="inline-block h-2.5 w-2.5 border border-current rounded-full" />
           [DB] Database
         </span>
-        <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground" title="Process queue">
+        <span
+          className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-card text-foreground"
+          title="Process queue"
+        >
           <span className="inline-block h-2.5 w-3 border-x-2 border-y border-current" />
           [QUEUE] Channel / Broker
         </span>
-        <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-muted text-muted-foreground" title="External boundary">
+        <span
+          className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[11px] bg-muted text-muted-foreground"
+          title="External boundary"
+        >
           [EXT] External System
         </span>
       </div>
@@ -186,6 +190,75 @@ export function EvidenceViewer({
     </div>
   );
 }
+
+function ElementEvidenceContext({
+  model,
+  elementId,
+  onSelect,
+}: {
+  model: ArchitecturalModel;
+  elementId: string;
+  onSelect?: (id: string) => void;
+}) {
+  const context = useApiQuery("elementEvidenceContext", { modelId: model.id, elementId });
+  const related = context.data?.relationshipEvidence ?? [];
+  const grouped = new Map<string, Evidence[]>();
+  for (const item of related) {
+    const entries = grouped.get(item.relationshipId) ?? [];
+    entries.push(item.evidence);
+    grouped.set(item.relationshipId, entries);
+  }
+  const name = (id: string) => model.elements.find((e) => e.id === id)?.name ?? id;
+  return (
+    <RequestState query={context}>
+      <div className="space-y-4">
+        {(context.data?.directEvidence.length ?? 0) > 0 ? (
+          <EvidenceViewer evidence={context.data!.directEvidence} subject="element" />
+        ) : (
+          <p className="rounded-lg border p-3 text-sm text-muted-foreground">
+            No evidence is attached directly to this element.
+            {related.length > 0
+              ? " Evidence for its incoming/outgoing relationships is listed below."
+              : " No persisted evidence was found for its incoming/outgoing relationships either. Source previews in 3E are separate from saved evidence."}
+          </p>
+        )}
+        {related.length > 0 && (
+          <section className="space-y-3">
+            <h4 className="text-sm font-semibold">
+              Evidence for related relationships ({related.length})
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              These snippets support the listed relationships; they do not by themselves establish
+              this element&apos;s internal behavior.
+            </p>
+            {[...grouped].map(([relationshipId, entries]) => {
+              const edge = model.edges.find((e) => e.id === relationshipId);
+              const label = edge
+                ? `${name(edge.from)} → ${name(edge.to)} · ${edge.protocol}`
+                : `Relationship ${relationshipId}`;
+              return (
+                <div className="space-y-2" key={relationshipId}>
+                  {onSelect && edge ? (
+                    <button
+                      type="button"
+                      className="break-words text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      onClick={() => onSelect(relationshipId)}
+                    >
+                      {label}
+                    </button>
+                  ) : (
+                    <p className="break-words text-sm font-medium">{label}</p>
+                  )}
+                  <EvidenceViewer evidence={entries} subject="relationship" />
+                </div>
+              );
+            })}
+          </section>
+        )}
+      </div>
+    </RequestState>
+  );
+}
 export function ElementDetailsPanel({
   model,
   selectedId,
@@ -199,6 +272,12 @@ export function ElementDetailsPanel({
   const edge = model.edges.find((e) => e.id === selectedId);
   const incoming = element ? model.edges.filter((relation) => relation.to === element.id) : [];
   const outgoing = element ? model.edges.filter((relation) => relation.from === element.id) : [];
+  const parent = element?.parentId
+    ? model.elements.find((node) => node.id === element.parentId)
+    : undefined;
+  const children = element
+    ? model.elements.filter((node) => node.parentId === element.id)
+    : [];
   const nameOf = (id: string) => model.elements.find((node) => node.id === id)?.name ?? id;
   function connectionList(title: string, relations: ArchitecturalModel["edges"]) {
     return (
@@ -209,24 +288,42 @@ export function ElementDetailsPanel({
         {relations.length ? (
           <ul className="space-y-2">
             {relations.map((relation) => (
-              <li key={relation.id} className="rounded-md border p-2 text-xs">
-                {onSelect ? (
-                  <button
-                    type="button"
-                    className="w-full break-words text-left text-primary underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2"
-                    onClick={() => onSelect(relation.id)}
-                  >
-                    {nameOf(relation.from)} → {nameOf(relation.to)}
-                  </button>
-                ) : (
-                  <p className="break-words">
-                    {nameOf(relation.from)} → {nameOf(relation.to)}
+              <li
+                key={relation.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5 text-xs"
+              >
+                <div className="min-w-0 flex-1">
+                  {onSelect ? (
+                    <button
+                      type="button"
+                      className="w-full break-words text-left font-medium text-primary underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2"
+                      onClick={() => onSelect(relation.id)}
+                    >
+                      {nameOf(relation.from)} → {nameOf(relation.to)}
+                    </button>
+                  ) : (
+                    <p className="break-words font-medium">
+                      {nameOf(relation.from)} → {nameOf(relation.to)}
+                    </p>
+                  )}
+                  <p className="mt-1 text-muted-foreground">
+                    {relation.protocol}
+                    {relation.uncertain ? " · Uncertain mapping" : ""}
                   </p>
+                </div>
+                {onSelect && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-2 text-[11px]"
+                    onClick={() =>
+                      onSelect(relation.from === element?.id ? relation.to : relation.from)
+                    }
+                  >
+                    Inspect peer →
+                  </Button>
                 )}
-                <p className="mt-1 text-muted-foreground">
-                  {relation.protocol}
-                  {relation.uncertain ? " · Uncertain mapping" : ""}
-                </p>
               </li>
             ))}
           </ul>
@@ -244,10 +341,17 @@ export function ElementDetailsPanel({
     element
       ? { modelId: model.id, elementId: element.id }
       : { modelId: model.id, relationshipId: edge?.id ?? "" },
-    { enabled: api.mode === "backend" && !!(element || edge) },
+    { enabled: api.mode === "backend" && !!edge && !element },
   );
   const resolved =
-    api.mode === "backend" ? (
+    api.mode === "backend" && element ? (
+      <ElementEvidenceContext
+        key={`${model.id}:${element.id}`}
+        model={model}
+        elementId={element.id}
+        {...(onSelect ? { onSelect } : {})}
+      />
+    ) : api.mode === "backend" ? (
       <RequestState query={evidence}>
         <EvidenceViewer
           evidence={evidence.data ?? []}
@@ -261,42 +365,149 @@ export function ElementDetailsPanel({
       />
     );
   return (
-    <DetailPanel title="Element details">
+    <DetailPanel title={edge && !element ? "Relationship details" : "Element details"}>
       {element ? (
         <>
-          <h3 className="font-mono text-sm font-semibold">{element.name}</h3>
-          <p className="text-sm text-muted-foreground">{element.description}</p>
+          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {element.elementType && (
+                <Badge variant="outline" className="font-mono text-[11px]">
+                  {element.elementType}
+                </Badge>
+              )}
+              {element.layer && (
+                <Badge variant="secondary" className="text-[11px]">
+                  Layer: {element.layer}
+                </Badge>
+              )}
+              {element.technology && (
+                <Badge variant="outline" className="text-[11px]">
+                  {element.technology}
+                </Badge>
+              )}
+            </div>
+            <h3 className="font-mono text-base font-semibold">{element.name}</h3>
+            {element.description && (
+              <p className="text-sm text-muted-foreground">{element.description}</p>
+            )}
+            {parent && (
+              <p className="text-xs text-muted-foreground">
+                Parent container:{" "}
+                {onSelect ? (
+                  <button
+                    type="button"
+                    className="font-mono font-medium text-primary underline-offset-4 hover:underline"
+                    onClick={() => onSelect(parent.id)}
+                  >
+                    {parent.name}
+                  </button>
+                ) : (
+                  <span className="font-mono font-medium text-foreground">{parent.name}</span>
+                )}
+              </p>
+            )}
+            {children.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Contained components / classifiers ({children.length}):
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {children.slice(0, 12).map((child) =>
+                    onSelect ? (
+                      <button
+                        key={child.id}
+                        type="button"
+                        onClick={() => onSelect(child.id)}
+                        className="rounded border bg-card px-2 py-0.5 font-mono text-[11px] text-foreground transition-colors hover:border-primary hover:text-primary"
+                      >
+                        {child.name}
+                      </button>
+                    ) : (
+                      <span
+                        key={child.id}
+                        className="rounded border bg-card px-2 py-0.5 font-mono text-[11px]"
+                      >
+                        {child.name}
+                      </span>
+                    ),
+                  )}
+                  {children.length > 12 && (
+                    <span className="self-center text-[11px] text-muted-foreground">
+                      +{children.length - 12} more
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
           {connectionList("Incoming", incoming)}
           {connectionList("Outgoing", outgoing)}
-          <h4 className="text-sm font-semibold">Evidence for this element</h4>
+          <h4 className="text-sm font-semibold">Saved evidence context</h4>
           {resolved}
         </>
       ) : edge ? (
         <>
-          <h3 className="text-sm">
-            {nameOf(edge.from)} → {nameOf(edge.to)} · {edge.protocol}
-          </h3>
+          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="outline" className="font-mono text-[11px]">
+                {edge.protocol}
+              </Badge>
+              <Badge variant={edge.uncertain ? "warning" : "secondary"} className="text-[11px]">
+                {edge.resolutionStatus ?? (edge.uncertain ? "UNRESOLVED" : "RESOLVED")}
+              </Badge>
+              {edge.originLayer && (
+                <Badge variant="outline" className="text-[11px]">
+                  Origin: {edge.originLayer}
+                </Badge>
+              )}
+            </div>
+            <h3 className="font-mono text-sm font-semibold">
+              {nameOf(edge.from)} → {nameOf(edge.to)} · {edge.protocol}
+            </h3>
+            {onSelect && (
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => onSelect(edge.from)}
+                >
+                  Source: {nameOf(edge.from)}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => onSelect(edge.to)}
+                >
+                  Target: {nameOf(edge.to)}
+                </Button>
+              </div>
+            )}
+          </div>
           <p className="text-xs text-muted-foreground">
             Origin: {edge.originLayer ?? "unknown"} · Resolution:{" "}
             {edge.resolutionStatus ?? "unknown"}
           </p>
           <p className="text-xs text-muted-foreground">
-            Bằng chứng liên kết:{" "}
+            Linked evidence:{" "}
             <span className="font-medium text-foreground">
               {edge.evidenceCount === null || edge.evidenceCount === undefined
-                ? "— (chưa xác minh / chưa tải)"
+                ? "— (unverified / not loaded)"
                 : edge.evidenceCount === 0
-                  ? "0 (đã xác minh không có bằng chứng)"
-                  : `${edge.evidenceCount} căn cứ xác thực${
+                  ? "0 (verified: no evidence attached)"
+                  : `${edge.evidenceCount} verified evidence item(s)${
                       edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 1
-                        ? ` (tổng hợp phân biệt từ ${edge.underlyingEdgeIds.length} quan hệ con)`
+                        ? ` (deduplicated across ${edge.underlyingEdgeIds.length} member relationships)`
                         : ""
                     }`}
             </span>
           </p>
           {edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 1 && (
             <p className="text-xs text-muted-foreground">
-              Quan hệ gộp (${edge.underlyingEdgeIds.length} quan hệ thành phần)
+              Aggregated relationship ({edge.underlyingEdgeIds.length} member relationships)
             </p>
           )}
           {edge.uncertain && <Badge variant="warning">Uncertain mapping</Badge>}
@@ -318,313 +529,70 @@ export function ArchitectureGraph({
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [showComponents, setShowComponents] = useState(false);
-  const [origin, setOrigin] = useState<"all" | "source" | "deployment" | "runtime">("source");
-  const projection = useMemo(
-    () => projectGraphModel(model, showComponents, origin),
-    [model, showComponents, origin],
-  );
-  const displayed = projection.model;
   const [layer, setLayer] = useState("all");
-  const [zoom, setZoom] = useState(1);
-  const [page, setPage] = useState(1);
-  const marker = useId().replace(/:/g, "");
-  const viewport = useRef<HTMLDivElement>(null);
-  const [viewportWidth, setViewportWidth] = useState(900);
-  useEffect(() => {
-    const element = viewport.current;
-    if (!element) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) setViewportWidth(entry.contentRect.width);
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  const filtered = useMemo(() => {
-    const elements = displayed.elements.filter(
-      (node) =>
-        (layer === "all" || node.layer === layer) &&
-        node.name.toLowerCase().includes(query.toLowerCase()),
+  const [expanded, setExpanded] = useState(false);
+  const [origin, setOrigin] = useState<"all" | "source" | "deployment" | "runtime">("source");
+  const projection = useMemo(() => {
+    const projected = projectGraphModel(model, expanded, origin);
+    const elements = projected.model.elements.filter(
+      (node) => layer === "all" || node.layer === layer,
     );
     const ids = new Set(elements.map((node) => node.id));
-    return layoutGraph({
-      ...displayed,
-      elements,
-      edges: displayed.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)),
-    });
-  }, [displayed, layer, query]);
-  const visible = new Set(filtered.map((node) => node.id));
-  const connections = displayed.edges.filter(
-    (edge) => visible.has(edge.from) && visible.has(edge.to),
+    return {
+      ...projected,
+      model: {
+        ...projected.model,
+        elements,
+        edges: projected.model.edges.filter((edge) => ids.has(edge.from) && ids.has(edge.to)),
+      },
+    };
+  }, [model, expanded, origin, layer]);
+  const group = projection.model.edges.find(
+    (edge) => edge.id === selectedId || edge.underlyingEdgeIds?.includes(selectedId ?? ""),
   );
-  const byId = new Map(filtered.map((node) => [node.id, node]));
-  const large = filtered.length > 300 || connections.length > 1000;
-  const width = filtered.reduce((max, node) => Math.max(max, node.x + NODE_WIDTH + 55), 300);
-  const height = filtered.reduce((max, node) => Math.max(max, node.y + NODE_HEIGHT + 55), 200);
-  const fitScale = Math.min(viewportWidth / width, 620 / height, 1);
-  const scale = fitScale * zoom;
-  const adjacent = new Set<string>();
-  if (selectedId) {
-    adjacent.add(selectedId);
-    connections.forEach((edge) => {
-      if (
-        edge.id === selectedId ||
-        !!edge.underlyingEdgeIds?.includes(selectedId ?? "") ||
-        edge.from === selectedId ||
-        edge.to === selectedId
-      ) {
-        adjacent.add(edge.from);
-        adjacent.add(edge.to);
-      }
-    });
-  }
-  function selectNode(node: ArchitectureElement) {
-    onSelect(node.id);
-  }
   return (
-    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-      <GraphToolbar
-        query={query}
-        onQuery={(v) => {
-          setQuery(v);
-          setPage(1);
-        }}
-        layer={layer}
-        onLayer={(v) => {
-          setLayer(v);
-          setPage(1);
-        }}
-        onZoom={(factor) => setZoom((z) => Math.max(0.4, Math.min(8, z * factor)))}
-        onReset={() => setZoom(1)}
+    <div className="space-y-3">
+      <SelectField
+        label="Layer"
+        value={layer}
+        onChange={setLayer}
+        options={["all", "edge", "domain", "platform", "data", "unclassified"].map((value) => ({
+          value,
+          label: value,
+        }))}
       />
-      <div className="flex flex-wrap items-end gap-3 border-y p-4">
+      <DependencyNetwork
+        model={model}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        projection={projection}
+        expanded={expanded}
+        onToggleExpanded={() => setExpanded((value) => !value)}
+        origin={origin}
+        onOriginChange={setOrigin}
+      />
+      {(group?.underlyingEdgeIds?.length ?? 0) > 1 && (
         <SelectField
-          label="Relationship origin"
-          value={origin}
-          onChange={(value) => setOrigin(value as typeof origin)}
-          options={[
-            { value: "source", label: "Source and configured interactions" },
-            { value: "all", label: "All relationships" },
-            { value: "deployment", label: "Deployment dependencies" },
-            { value: "runtime", label: "Runtime observations" },
-          ]}
+          label="Connections in selected group"
+          value={selectedId ?? ""}
+          onChange={onSelect}
+          options={model.edges
+            .filter((edge) => group?.underlyingEdgeIds?.includes(edge.id))
+            .map((edge) => ({
+              value: edge.id,
+              label: `${model.elements.find((node) => node.id === edge.from)?.name} → ${model.elements.find((node) => node.id === edge.to)?.name} · ${edge.protocol}`,
+            }))}
         />
-        <Button variant="outline" onClick={() => setShowComponents((value) => !value)}>
-          {showComponents ? "Collapse service internals" : "Expand service internals"}
-        </Button>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>
-            <strong className="text-foreground">Source model:</strong> {model.elements.length} elements · {model.edges.length} relationships
-          </span>
-          <span>
-            <strong className="text-foreground">Displayed in view:</strong> {filtered.length} elements · {connections.length} visible connections
-          </span>
-          <span>
-            <strong className="text-foreground">Filtered:</strong> {projection.filteredRelationships} by origin ({origin}) · {Math.max(0, displayed.edges.length - connections.length)} by layer/search
-          </span>
-          <span>
-            <strong className="text-foreground">Internal:</strong> {projection.internalRelationships} hidden within collapsed containers
-          </span>
-          {large && (
-            <span className="font-medium text-amber-600 dark:text-amber-400">
-              (Canvas layout omitted by safety limit &gt;300 elements / &gt;1000 connections; inspect via list below)
-            </span>
-          )}
-        </div>
-      </div>
-      <div ref={viewport}>
-        {!filtered.length ? (
-          <EmptyState
-            title="No graph elements"
-            description="Change the filters or analyze a source snapshot."
-          />
-        ) : (
-          <>
-            {!large && (
-              <div className="h-[620px] overflow-auto bg-[radial-gradient(circle_at_1px_1px,var(--border)_1px,transparent_0)] [background-size:22px_22px]">
-                <svg
-                  className="mx-auto block"
-                  width={width * scale}
-                  height={height * scale}
-                  viewBox={`0 0 ${width} ${height}`}
-                  role="img"
-                  aria-label="Architecture diagram; use the service and relationship controls below to inspect evidence"
-                >
-                  <defs>
-                    <marker
-                      id={marker}
-                      viewBox="0 0 10 10"
-                      refX="9"
-                      refY="5"
-                      markerWidth="6"
-                      markerHeight="6"
-                      orient="auto-start-reverse"
-                    >
-                      <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--graph-edge)" />
-                    </marker>
-                  </defs>
-                  {connections.map((edge) => {
-                    const from = byId.get(edge.from);
-                    const to = byId.get(edge.to);
-                    if (!from || !to) return null;
-                    return (
-                      <path
-                        key={edge.id}
-                        d={graphEdgePath(from, to, edge.from === edge.to)}
-                        opacity={
-                          !selectedId ||
-                          selectedId === edge.id ||
-                          !!edge.underlyingEdgeIds?.includes(selectedId ?? "") ||
-                          selectedId === edge.from ||
-                          selectedId === edge.to
-                            ? 0.8
-                            : 0.15
-                        }
-                        fill="none"
-                        stroke={
-                          selectedId === edge.id ||
-                          !!edge.underlyingEdgeIds?.includes(selectedId ?? "")
-                            ? "var(--primary)"
-                            : "var(--graph-edge)"
-                        }
-                        strokeWidth={
-                          selectedId === edge.id ||
-                          !!edge.underlyingEdgeIds?.includes(selectedId ?? "")
-                            ? 3
-                            : 1.5
-                        }
-                        strokeDasharray={
-                          edge.originLayer === "DEPLOYMENT" || edge.protocol === "DECLARED_COMPOSE"
-                            ? "8 5"
-                            : edge.uncertain
-                              ? "2 4"
-                              : undefined
-                        }
-                        onClick={() => onSelect(edge.id)}
-                        className="cursor-pointer"
-                        markerEnd={`url(#${marker})`}
-                      />
-                    );
-                  })}
-                  {filtered.map((node) => (
-                    <g
-                      key={node.id}
-                      transform={`translate(${node.x},${node.y})`}
-                      opacity={!selectedId || adjacent.has(node.id) ? 1 : 0.35}
-                      onClick={() => onSelect(node.id)}
-                      className="cursor-pointer"
-                    >
-                      <title>{node.name}</title>
-                      <rect
-                        width={NODE_WIDTH}
-                        height={NODE_HEIGHT}
-                        rx={8}
-                        fill="var(--card)"
-                        stroke={selectedId === node.id ? "var(--primary)" : "var(--border)"}
-                        strokeWidth={selectedId === node.id ? 2 : 1}
-                      />
-                      <text x={12} y={25} fill="var(--foreground)" fontSize={12}>
-                        <tspan fill="var(--muted-foreground)" fontFamily="monospace" fontSize={10} fontWeight="bold">
-                          {node.elementType === "SERVICE_CONTAINER"
-                            ? "[SVC] "
-                            : node.elementType === "COMPONENT"
-                              ? "[COMP] "
-                              : node.elementType === "DATABASE"
-                                ? "[DB] "
-                                : node.elementType === "MESSAGE_CHANNEL" || node.elementType === "QUEUE_BROKER"
-                                  ? "[QUEUE] "
-                                  : node.elementType === "EXTERNAL_SYSTEM"
-                                    ? "[EXT] "
-                                    : `[${(node.elementType ?? node.layer ?? "NODE").slice(0, 4).toUpperCase()}] `}
-                        </tspan>
-                        {node.name.slice(0, 19)}
-                      </text>
-                      <text x={12} y={45} fill="var(--muted-foreground)" fontSize={11}>
-                        {Number(node.properties?.["componentCount"] ?? 0) > 0
-                          ? `${node.properties?.["componentCount"]} internal components`
-                          : (node.elementType?.replaceAll("_", " ").toLowerCase() ?? node.layer)}
-                      </text>
-                    </g>
-                  ))}
-                </svg>
-              </div>
-            )}
-            {large && (
-              <p className="p-4 text-sm text-muted-foreground">
-                Large model: use the paginated service list and filters to inspect elements.
-              </p>
-            )}
-            <div className="space-y-3 border-t p-4">
-              <p className="text-xs text-muted-foreground">Select a service ({filtered.length})</p>
-              <div className="flex flex-wrap gap-2">
-                {filtered.slice((page - 1) * 30, page * 30).map((node) => (
-                  <Button
-                    key={node.id}
-                    variant={selectedId === node.id ? "secondary" : "outline"}
-                    size="sm"
-                    aria-pressed={selectedId === node.id}
-                    onClick={() => selectNode(node)}
-                  >
-                    {node.name}
-                  </Button>
-                ))}
-              </div>
-              {filtered.length > 30 && (
-                <Pagination
-                  page={page}
-                  pageCount={Math.ceil(filtered.length / 30)}
-                  onPageChange={setPage}
-                />
-              )}
-              {connections.some(
-                (edge) =>
-                  edge.underlyingEdgeIds?.includes(selectedId ?? "") &&
-                  (edge.underlyingEdgeIds?.length ?? 0) > 1,
-              ) && (
-                <SelectField
-                  label="Connections in selected group"
-                  value={selectedId ?? ""}
-                  onChange={onSelect}
-                  options={model.edges
-                    .filter((edge) =>
-                      connections
-                        .find((group) => group.underlyingEdgeIds?.includes(selectedId ?? ""))
-                        ?.underlyingEdgeIds?.includes(edge.id),
-                    )
-                    .map((edge) => ({
-                      value: edge.id,
-                      label: `${model.elements.find((node) => node.id === edge.from)?.name} → ${model.elements.find((node) => node.id === edge.to)?.name} · ${edge.protocol}`,
-                    }))}
-                />
-              )}
-              <SelectField
-                label={`Inspect relationship (${connections.length > 1000 ? "1000 / " + connections.length + " - dùng bộ lọc để xem tiếp" : connections.length})`}
-                value={connections.some((e) => e.id === selectedId) ? (selectedId ?? "") : ""}
-                onChange={onSelect}
-                options={connections.slice(0, 1000).map((e) => ({
-                  value: e.id,
-                  label: `${byId.get(e.from)?.name ?? e.from} → ${byId.get(e.to)?.name ?? e.to} · ${e.protocol}`,
-                }))}
-              />
-              {connections.length > 1000 && (
-                <p className="text-xs text-amber-600 dark:text-amber-400">
-                  Dropdown đang hiển thị 1000 / {connections.length} quan hệ để đảm bảo hiệu năng. Hãy dùng bộ lọc Layer hoặc Origin để thu hẹp phạm vi.
-                </p>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </section>
+      )}
+    </div>
   );
 }
 export function DiagramViewer(props: {
   model: ArchitecturalModel;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
 }) {
   return <ArchitectureGraph {...props} />;
 }

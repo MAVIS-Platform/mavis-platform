@@ -1,26 +1,166 @@
 import { inspectGeometry, type Rect, type Route } from "@/lib/drawio/geometry";
 import { nodeStyle, palette, RULE_VERSION, type DrawioTheme } from "@/lib/drawio/rules";
-export function themeDrawioXml(xml: string, theme: DrawioTheme) {
-  const doc = new DOMParser().parseFromString(xml, "text/xml");
-  if (doc.querySelector("parsererror")) throw new Error("Invalid XML");
+function getXmlAttr(tag: string, name: string): string {
+  const m = new RegExp(`\\b${name}="([^"]*)"`).exec(tag);
+  return m?.[1] ?? "";
+}
+
+function setXmlAttr(tag: string, name: string, value: string): string {
+  const re = new RegExp(`(\\b${name}=)"[^"]*"`);
+  if (re.test(tag)) return tag.replace(re, `$1"${value}"`);
+  return tag.replace(/(\/?>)$/, ` ${name}="${value}"$1`);
+}
+
+export function themeDrawioXml(xml: string, theme: DrawioTheme, cleanXml?: string) {
+  if (!/<mxGraphModel\b/.test(xml) || /<parsererror\b/.test(xml)) {
+    throw new Error("Invalid XML");
+  }
   const p = palette(theme);
-  const model = doc.querySelector("[mavisRuleVersion]");
-  if (!model) throw new Error("This legacy draft must be regenerated before applying MAVIS styles");
-  if (model.getAttribute("mavisRuleVersion") !== RULE_VERSION)
+  const ruleMatch = /\bmavisRuleVersion="([^"]*)"/.exec(xml);
+  const hasC4Context = /\bmavisC4Context="[^"]*"/.test(xml);
+  const hasUmlOrSeq =
+    /\b(?:mavisUmlDocument|mavisUmlDiagramKind|mavisUmlRole|mavisInteraction|mavisScenario)="[^"]*"/.test(
+      xml,
+    );
+  if (!ruleMatch && !hasC4Context && !hasUmlOrSeq) {
+    throw new Error("This legacy draft must be regenerated before applying MAVIS styles");
+  }
+  if (ruleMatch && !hasC4Context && !hasUmlOrSeq && ruleMatch[1] !== RULE_VERSION) {
     throw new Error("Regenerate this legacy draft before applying MAVIS styles");
-  model.setAttribute("mavisTheme", theme);
-  model.setAttribute("background", p.background);
-  doc.querySelector("mxGraphModel")?.setAttribute("background", p.background);
-  for (const entry of doc.querySelectorAll("[mavisRole], [id=mavis_title], [id=mavis_scope]")) {
-    const cell = entry.localName === "mxCell" ? entry : entry.querySelector("mxCell");
-    if (!cell) continue;
-    const role = entry.getAttribute("mavisRole");
-    let style = cell.getAttribute("style") ?? "";
+  }
+
+  let nextXml = xml.replace(/<mxGraphModel\b[^>]*>/, (tag) => {
+    let updated = setXmlAttr(tag, "mavisTheme", theme);
+    updated = setXmlAttr(updated, "background", p.background);
+    return updated;
+  });
+
+  if (theme === "clean" && cleanXml && /<mxGraphModel\b/.test(cleanXml)) {
+    const cleanStylesById = new Map<string, string>();
+    for (const m of cleanXml.matchAll(/<mxCell\b[^>]*>/g)) {
+      const id = getXmlAttr(m[0], "id");
+      const style = getXmlAttr(m[0], "style");
+      if (id && style) cleanStylesById.set(id, style);
+    }
+    if (cleanStylesById.size > 0) {
+      return nextXml.replace(/<mxCell\b[^>]*>/g, (tag) => {
+        const id = getXmlAttr(tag, "id");
+        const cleanStyle = id ? cleanStylesById.get(id) : undefined;
+        return cleanStyle ? setXmlAttr(tag, "style", cleanStyle) : tag;
+      });
+    }
+  }
+
+  if (hasUmlOrSeq) {
+    return nextXml.replace(/<mxCell\b[^>]*>/g, (tag) => {
+      let style = getXmlAttr(tag, "style");
+      if (!style) return tag;
+      const role = getXmlAttr(tag, "mavisRole");
+      const umlRole = getXmlAttr(tag, "mavisUmlRole");
+      const nodeKind = getXmlAttr(tag, "mavisNodeKind") || getXmlAttr(tag, "mavisStateKind");
+      const set = (name: string, value: string) => {
+        const regex = new RegExp(`(^|;)${name}=[^;]*`);
+        style = regex.test(style)
+          ? style.replace(regex, `$1${name}=${value}`)
+          : `${style}${style.endsWith(";") ? "" : ";"}${name}=${value};`;
+      };
+      if (role === "operand-divider") {
+        set("strokeColor", p.border);
+      } else if (getXmlAttr(tag, "edge") === "1") {
+        set("strokeColor", p.line);
+        set("fontColor", p.text);
+        set("labelBackgroundColor", "none");
+      } else if (getXmlAttr(tag, "vertex") === "1") {
+        if (
+          role === "combined-fragment" ||
+          role === "sd-frame" ||
+          (style.includes("shape=umlFrame") && role !== "interaction-use")
+        ) {
+          set("fillColor", "none");
+          set("strokeColor", p.border);
+          set("fontColor", p.text);
+        } else if (role === "interaction-use") {
+          set("fillColor", p.background);
+          set("strokeColor", p.border);
+          set("fontColor", p.text);
+        } else if (role === "lifeline-destroy" || style.includes("shape=umlDestroy")) {
+          set("fillColor", "none");
+          set("strokeColor", theme === "monochrome" ? "#000000" : "#b91c1c");
+        } else if (
+          role === "found-message-origin" ||
+          role === "lost-message-target" ||
+          nodeKind === "INITIAL" ||
+          nodeKind === "ACTIVITY_FINAL" ||
+          nodeKind === "FINAL_STATE" ||
+          nodeKind === "FORK" ||
+          nodeKind === "JOIN"
+        ) {
+          set("fillColor", p.text);
+          set("strokeColor", p.border);
+          set("fontColor", p.background);
+        } else if (
+          nodeKind === "FLOW_FINAL" ||
+          nodeKind === "SHALLOW_HISTORY" ||
+          nodeKind === "DEEP_HISTORY"
+        ) {
+          set("fillColor", p.background);
+          set("strokeColor", p.text);
+          set("fontColor", p.text);
+        } else if (nodeKind === "DECISION" || nodeKind === "MERGE" || nodeKind === "CHOICE") {
+          set("fillColor", p.data);
+          set("strokeColor", p.border);
+          set("fontColor", p.nodeText);
+        } else if (umlRole === "deployment-artifact" || nodeKind === "OBJECT_NODE") {
+          set("fillColor", p.system);
+          set("strokeColor", p.border);
+          set("fontColor", p.nodeText);
+        } else if (role === "execution-spec") {
+          const execFill =
+            theme === "monochrome"
+              ? "#ffffff"
+              : theme === "dark"
+                ? "#1e3a8a"
+                : theme === "vibrant"
+                  ? "#93c5fd"
+                  : theme === "blueprint"
+                    ? "#bae6fd"
+                    : "#dbeafe";
+          set("fillColor", execFill);
+          set("strokeColor", p.border);
+        } else if (
+          style.includes("text;") ||
+          role === "operand-guard" ||
+          role === "metadata-carrier" ||
+          role === "interaction-use-label"
+        ) {
+          set("fontColor", p.text);
+          set("fillColor", "none");
+          set("labelBackgroundColor", "none");
+        } else if (style.includes("swimlane")) {
+          set("fillColor", p.internal);
+          set("swimlaneFillColor", p.background);
+          set("fontColor", p.nodeText);
+          set("strokeColor", p.border);
+        } else {
+          set("fillColor", p.internal);
+          set("fontColor", p.nodeText);
+          set("strokeColor", p.border);
+        }
+      }
+      return setXmlAttr(tag, "style", style);
+    });
+  }
+
+  return nextXml.replace(/<mxCell\b[^>]*>/g, (tag) => {
+    const id = getXmlAttr(tag, "id");
+    const role = getXmlAttr(tag, "mavisRole");
+    if (!role && id !== "mavis_title" && id !== "mavis_scope") return tag;
+    let style = getXmlAttr(tag, "style");
     const set = (name: string, value: string) => {
       const regex = new RegExp(`(^|;)${name}=[^;]*`);
       style = regex.test(style)
         ? style.replace(regex, `$1${name}=${value}`)
-        : `${style}${name}=${value};`;
+        : `${style}${style.endsWith(";") ? "" : ";"}${name}=${value};`;
     };
     if (role && !["boundary", "edge", "edge-label", "legend"].includes(role)) {
       const locks = style
@@ -29,19 +169,30 @@ export function themeDrawioXml(xml: string, theme: DrawioTheme) {
           /^(movable|resizable|rotatable|editable|connectable|deletable|locked)=/.test(part),
         )
         .join(";");
-      cell.setAttribute("style", nodeStyle(role, theme).replace("html=0", "html=1") + locks + ";");
-      continue;
+      return setXmlAttr(
+        tag,
+        "style",
+        nodeStyle(role, theme).replace("html=0", "html=1") + locks + ";",
+      );
     }
     set("fontColor", p.text);
-    if (role === "edge") set("strokeColor", p.line);
-    else if (role === "boundary") {
+    if (role === "edge") {
+      set("strokeColor", p.line);
+      if (style.includes("labelBackgroundColor=") || getXmlAttr(tag, "value")) {
+        set("labelBackgroundColor", "none");
+      }
+    } else if (role === "boundary") {
       set("fillColor", p.background);
       set("swimlaneFillColor", p.background);
       set("strokeColor", p.border);
-    } else if (role === "edge-label" || role === "legend") set("fillColor", p.background);
-    cell.setAttribute("style", style);
-  }
-  return new XMLSerializer().serializeToString(doc);
+    } else if (role === "edge-label") {
+      set("fillColor", "none");
+    } else if (role === "legend") {
+      set("fillColor", p.background);
+      if (theme === "monochrome") set("strokeColor", p.border);
+    }
+    return setXmlAttr(tag, "style", style);
+  });
 }
 export function drawioSummary(xml: string) {
   const doc = new DOMParser().parseFromString(xml, "text/xml");

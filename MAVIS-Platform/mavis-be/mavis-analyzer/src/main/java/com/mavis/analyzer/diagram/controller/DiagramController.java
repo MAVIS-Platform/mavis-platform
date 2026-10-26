@@ -80,4 +80,9 @@ public class DiagramController {
         List<EvidenceResponseDTO> evidences = diagramProjectionService.getEvidencesByRelationship(relationshipId);
         return ApiResponse.success("Lấy danh sách bằng chứng quan hệ thành công", evidences);
     }
+
+    @GetMapping("/evidences/element/{elementId}/context")
+    public ApiResponse<com.mavis.analyzer.diagram.dto.ElementEvidenceContextDTO> getElementEvidenceContext(@PathVariable UUID elementId) {
+        return ApiResponse.success(diagramProjectionService.getElementEvidenceContext(elementId));
+    }
 }

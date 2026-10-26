@@ -53,7 +53,7 @@ public class CodeDependencyVisitor extends VoidVisitorAdapter<List<CodeEvidenceD
             arg.add(CodeEvidenceDTO.builder()
                     .elementType(isService ? "SERVICE_COMPONENT" : "GENERAL_COMPONENT")
                     .identifier(className)
-                    .sourceComponent(className)
+                    .sourceComponent(className).qualifiedName(n.getFullyQualifiedName().orElse(className))
                     .filePath(currentFilePath)
                     .lineNumber(line)
                     .codeSnippet(snippet.length() > 500 ? snippet.substring(0, 500) : snippet)
@@ -76,7 +76,7 @@ public class CodeDependencyVisitor extends VoidVisitorAdapter<List<CodeEvidenceD
                     arg.add(CodeEvidenceDTO.builder()
                             .elementType("CODE_DEPENDENCY")
                             .identifier(className + " -> " + typeName)
-                            .sourceComponent(className)
+                            .sourceComponent(className).qualifiedName(n.getFullyQualifiedName().orElse(className))
                             .targetComponent(typeName)
                             .filePath(currentFilePath)
                             .lineNumber(line)
@@ -104,7 +104,7 @@ public class CodeDependencyVisitor extends VoidVisitorAdapter<List<CodeEvidenceD
                     arg.add(CodeEvidenceDTO.builder()
                             .elementType("CODE_DEPENDENCY")
                             .identifier(className + " -> " + typeName)
-                            .sourceComponent(className)
+                            .sourceComponent(className).qualifiedName(n.getFullyQualifiedName().orElse(className))
                             .targetComponent(typeName)
                             .filePath(currentFilePath)
                             .lineNumber(line)
@@ -121,11 +121,12 @@ public class CodeDependencyVisitor extends VoidVisitorAdapter<List<CodeEvidenceD
         if (typeName == null || typeName.isBlank()) {
             return false;
         }
-        if (IGNORED_TYPES.contains(typeName)) {
+        String simpleName = typeName.substring(typeName.lastIndexOf('.') + 1);
+        if (IGNORED_TYPES.contains(simpleName)) {
             return false;
         }
         // Phải là một class/interface PascalCase hợp lệ
-        return Character.isUpperCase(typeName.charAt(0));
+        return Character.isUpperCase(simpleName.charAt(0));
     }
 
     private String cleanTypeName(String rawType) {

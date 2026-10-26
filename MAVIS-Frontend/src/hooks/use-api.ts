@@ -20,7 +20,7 @@ export function useSelection() {
 export function useApiQuery<K extends Operation>(
   operation: K,
   input: Request<K>,
-  options: { enabled?: boolean; poll?: boolean } = {},
+  options: { enabled?: boolean; poll?: boolean; refreshMs?: number } = {},
 ) {
   const api = useApi();
   const client = useQueryClient();
@@ -28,45 +28,55 @@ export function useApiQuery<K extends Operation>(
     queryKey: ["api", operation, input],
     queryFn: ({ signal }) => api.execute(operation, input, signal),
     enabled: options.enabled ?? true,
-    refetchInterval: options.poll
-      ? (query) => {
-          const data: unknown = query.state.data;
-          const active = (value: unknown) => {
-            if (!value || typeof value !== "object") return false;
-            if ("executionStatus" in value)
-              return [
-                "NOT_STARTED",
-                "PENDING",
-                "READY_FOR_DISPATCH",
-                "APPROVED",
-                "ALLOCATED",
-                "RUNNING",
-                "CANCELLING",
-              ].includes(String(value.executionStatus));
-            return (
-              "status" in value &&
-              [
-                "queued",
-                "processing",
-                "cancelling",
-                "running",
-                "ready-for-dispatch",
-                "allocated",
-              ].includes(String(value.status))
-            );
-          };
-          if (query.state.error) return false;
-          if (Array.isArray(data)) return data.some(active) ? 1500 : false;
-          return data === undefined || active(data) ? 1500 : false;
-        }
-      : false,
+    refetchInterval: options.refreshMs
+      ? Math.max(10000, options.refreshMs)
+      : options.poll
+        ? (query) => {
+            const data: unknown = query.state.data;
+            const active = (value: unknown) => {
+              if (!value || typeof value !== "object") return false;
+              if ("executionStatus" in value)
+                return [
+                  "NOT_STARTED",
+                  "PENDING",
+                  "READY_FOR_DISPATCH",
+                  "APPROVED",
+                  "ALLOCATED",
+                  "RUNNING",
+                  "CANCELLING",
+                ].includes(String(value.executionStatus));
+              return (
+                "status" in value &&
+                [
+                  "queued",
+                  "processing",
+                  "cancelling",
+                  "running",
+                  "ready-for-dispatch",
+                  "allocated",
+                ].includes(String(value.status))
+              );
+            };
+            if (query.state.error) return false;
+            if (Array.isArray(data)) return data.some(active) ? 1500 : false;
+            return data === undefined || active(data) ? 1500 : false;
+          }
+        : false,
   });
   const terminal = terminalSignature(operation, query.data);
   useEffect(() => {
     if (!terminal) return;
     const related = operation.startsWith("runtime")
       ? ["platformSummary"]
-      : ["models", "modelVersions", "model", "projects", "projectOverviews", "project", "platformSummary"];
+      : [
+          "models",
+          "modelVersions",
+          "model",
+          "projects",
+          "projectOverviews",
+          "project",
+          "platformSummary",
+        ];
     void client.invalidateQueries({
       predicate: (entry) => related.includes(String(entry.queryKey[1])),
     });

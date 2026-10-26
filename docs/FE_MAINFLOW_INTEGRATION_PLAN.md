@@ -2,7 +2,7 @@
 
 ## Mục tiêu và phạm vi
 
-Thực hiện trên nhánh feat/fe-mainflow-integration mới từ main cập nhật, giữ thiết kế và lịch sử Lovable. Không triển khai code trong bước lập plan này.
+Thực hiện trên nhánh feat/fe-mainflow-integration mới từ main cập nhật, giữ thiết kế và lịch sử Git đã chia sẻ. Không triển khai code trong bước lập plan này.
 
 Luồng ưu tiên: đăng nhập → chọn/tạo personal project tối thiểu → upload ZIP → bắt đầu analysis → poll job → graph model thật → chọn node/edge xem evidence → impact → AI explanation → export diagram.
 
@@ -64,7 +64,7 @@ Kiểm thử từng lát ngay khi nối API, sau đó browser E2E toàn luồng;
 - Browser: login → ZIP Java → graph/evidence → impact → AI fallback → export; lặp lại C# để chứng minh Worker có tham gia.
 - Negative: auth hết hạn/403, ZIP sai, job fail/partial/cancel, timeout/mất kết nối, refresh đang poll, đổi project/model, graph rỗng, AI unavailable.
 - Chỉ kiểm P4 khi đã triển khai phần đó; ghi rõ pass/fail/skipped và lý do. Không mở scope CRUD để giải quyết dữ liệu demo.
-- Commit theo lát: nền/auth; import/jobs; graph/evidence; impact/AI/export; mainflow mở rộng nếu trong phạm vi đã chốt; tests/docs. PR vào main sau verification, không force-push lịch sử Lovable.
+- Commit theo lát: nền/auth; import/jobs; graph/evidence; impact/AI/export; mainflow mở rộng nếu trong phạm vi đã chốt; tests/docs. PR vào main sau verification, không force-push lịch sử Git đã chia sẻ.
 
 ## Tiêu chí chốt đợt ưu tiên
 

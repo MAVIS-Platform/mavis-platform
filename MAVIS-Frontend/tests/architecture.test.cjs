@@ -29,6 +29,58 @@ const compileTypeScript = (module, filename) => {
 require.extensions[".ts"] = compileTypeScript;
 require.extensions[".tsx"] = compileTypeScript;
 const { MockAdapter } = require("../src/lib/api/mock-adapter.ts");
+
+test("element details show saved relationship evidence when direct element evidence is empty", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { QueryClient, QueryClientProvider } = require("@tanstack/react-query");
+  const { ApiContext } = require("../src/providers/app-context.ts");
+  const { ElementDetailsPanel } = require("../src/features/architecture/components.tsx");
+  const model = { id:"evidence-model", projectId:"project", snapshotId:"snapshot", revision:4, label:"Saved model",
+    elements:[{id:"handler",name:"CommandHandler",evidence:[]},{id:"channel",name:"Commands",evidence:[]}],
+    edges:[{id:"subscription",from:"channel",to:"handler",protocol:"MESSAGE_SUBSCRIBE",evidence:[],uncertain:false}],
+  };
+  const client = new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
+  client.setQueryData(["api","elementEvidenceContext",{modelId:model.id,elementId:"handler"}],{
+    modelId:model.id,elementId:"handler",directEvidence:[],relationshipEvidence:[{relationshipId:"subscription",evidence:{id:"proof",kind:"source",sourceType:"STATIC_CODE",location:"Handler.java:12",snippet:"subscribe(commands)",complete:true}}],
+  });
+  const api={mode:"backend",execute:()=>{throw Error("Unexpected request during seeded render");}};
+  const html=renderToStaticMarkup(React.createElement(QueryClientProvider,{client},React.createElement(ApiContext.Provider,{value:api},React.createElement(ElementDetailsPanel,{model,selectedId:"handler"}))));
+  assert.match(html,/Evidence for related relationships/);
+  assert.match(html,/Commands → CommandHandler/);
+  assert.match(html,/subscribe\(commands\)/);
+  assert.match(html,/No evidence is attached directly/);
+  assert.doesNotMatch(html,/No evidence attached/);
+  client.clear();
+});
+
+test("3E labels metadata reconstructions as previews and keeps saved evidence distinct", () => {
+  const React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
+  const { collectConcreteThreeEEvidences } = require("../src/features/architecture/three-e-content.ts");
+  const { ThreeEEvidence } = require("../src/features/architecture/three-e-evidence.tsx");
+  const node = { id:"parcel", name:"Parcel", elementType:"CLASS_INTERFACE", evidence:[], properties:{ sourcePath:"Parcel.java", umlClassifier:{name:"Parcel",typeKind:"CLASS",members:[]} } };
+  const model = { id:"preview-model", elements:[node], edges:[] }, ctx = { subject:{node,edge:null} };
+  const preview = collectConcreteThreeEEvidences(model,ctx,[],[]);
+  assert.ok(preview.length > 0);
+  assert.ok(preview.every(e => e.origin === "preview" && e.complete === false && e.sourceType === "MODEL_METADATA_PREVIEW"));
+  const html=renderToStaticMarkup(React.createElement(ThreeEEvidence,{evidence:preview}));
+  assert.match(html,/Metadata preview/);
+  assert.match(html,/not a verbatim source snippet or a saved Evidence record/);
+  const saved={id:"saved",origin:"persisted",kind:"source",sourceType:"STATIC_CODE",location:"Parcel.java:4",snippet:"class Parcel {}",complete:null};
+  const concrete=collectConcreteThreeEEvidences(model,ctx,[saved],[]);
+  assert.deepEqual(concrete,[saved]);
+});
+
+test("mock evidence context follows the same element/model contract", async () => {
+  const api=new MockAdapter();
+  const projects=await api.execute("projects",{});
+  const versions=await api.execute("modelVersions",{projectId:projects[0].id});
+  const model=await api.execute("model",{modelId:versions[0].id});
+  const context=await api.execute("elementEvidenceContext",{modelId:model.id,elementId:model.elements[0].id});
+  assert.equal(context.modelId,model.id);
+  assert.equal(context.elementId,model.elements[0].id);
+  assert.ok(Array.isArray(context.directEvidence) && Array.isArray(context.relationshipEvidence));
+});
 const { BackendAdapter } = require("../src/lib/api/backend-adapter.ts");
 const { fromStatus } = require("../src/lib/errors/api-error.ts");
 const { modelSchema, submissionSchema } = require("../src/types/domain.ts");
@@ -61,9 +113,57 @@ test("mock permissions, sign-out, and response ownership", async () => {
   assert.notEqual((await api.execute("projects", {}))[0].name, "Changed by UI");
   await assert.rejects(api.execute("accounts", {}), kind("forbidden"));
   await api.execute("mockLogin", { role: "lecturer" });
-  await assert.rejects(api.execute("projects", {}), kind("forbidden"));
+  assert.ok((await api.execute("projects", {})).length > 0);
+  await assert.rejects(api.execute("startAnalysis", { projectId, snapshotId: "source-1", idempotencyKey: "lecturer-cannot-write" }), kind("forbidden"));
   await api.execute("signOut", {});
   await assert.rejects(api.execute("submissions", {}), kind("unauthorized"));
+});
+
+test("teaching lifecycle enforces lecturer controls and exposes member assignments and frozen submission review", async () => {
+  const api=new MockAdapter("normal",0);
+  await assert.rejects(api.execute("createWorkspace",{code:"SA1",name:"Architecture class"}),kind("forbidden"));
+  await assert.rejects(api.execute("assignmentSubmissions",{workspaceId:"workspace-1",assignmentId:"assignment-1"}),kind("forbidden"));
+  await api.execute("mockLogin",{role:"lecturer"});
+  const room=await api.execute("createWorkspace",{code:"SA1",name:"Architecture class"});
+  assert.equal(room.myRole,"LECTURER");
+  const joined=await api.execute("addWorkspaceMember",{workspaceId:room.id,email:"student@example.com",memberRole:"STUDENT"});
+  assert.ok(joined.members.some(m=>m.id==="sample-student"));
+  const assignment=await api.execute("createAssignment",{workspaceId:room.id,title:"Review service boundaries",description:"Submit a saved model",dueAt:null,requiredDiagramTypes:[],requireRuntimeTrace:false});
+  assert.equal(assignment.workspaceId,room.id);
+  await api.execute("mockLogin",{role:"student"});
+  assert.ok((await api.execute("workspaces",{})).some(w=>w.id===room.id));
+  assert.ok((await api.execute("assignments",{workspaceId:room.id})).some(a=>a.id===assignment.id));
+  const coursework=await api.execute("createProject",{name:"Coursework",workspaceId:room.id,assignmentId:assignment.id});
+  assert.equal(coursework.workspaceId,room.id);
+  assert.equal(coursework.assignmentId,assignment.id);
+  await assert.rejects(api.execute("createAssignment",{workspaceId:room.id,title:"unauthorized",dueAt:null,requiredDiagramTypes:[],requireRuntimeTrace:false}),kind("forbidden"));
+  await api.execute("mockLogin",{role:"lecturer"});
+  const rows=await api.execute("assignmentSubmissions",{workspaceId:"workspace-1",assignmentId:"assignment-1"});
+  assert.ok(rows.length>0);
+  assert.ok(rows.every(s=>s.assignmentId==="assignment-1"));
+  const submission=rows[0], snapshot=JSON.stringify(submission.model);
+  const reviewed=await api.execute("feedback",{submissionId:submission.id,modelId:submission.model.id,text:"Check the shared database dependency"});
+  assert.equal(reviewed.feedback.at(-1).text,"Check the shared database dependency");
+  assert.equal(JSON.stringify(reviewed.model),snapshot,"Feedback must preserve the submitted model");
+  await assert.rejects(api.execute("assignmentSubmissions",{workspaceId:room.id,assignmentId:"assignment-1"}),kind("not-found"));
+  await api.execute("mockLogin",{role:"admin"});
+  const promoted=await api.execute("setAccountRole",{accountId:"sample-student",role:"lecturer"});
+  assert.equal(promoted.role,"lecturer");
+});
+
+test("student submission readiness checks requirements and grade drafts remain private until publication", async () => {
+ const {missingDiagramRequirements,isDeadlinePassed}=require("../src/features/submissions/submission-readiness.ts");
+ assert.deepEqual(missingDiagramRequirements(["UML_CLASS","UML_PACKAGE"],{documents:[{viewId:"uml-class:all",revision:2}],diagramVersionIds:[]},[]),["UML_PACKAGE"]);
+ assert.ok(isDeadlinePassed("2020-01-01T00:00:00Z"));assert.ok(!isDeadlinePassed("No deadline"));
+ const api=new MockAdapter("normal",0);await api.execute("mockLogin",{role:"lecturer"});
+ const rows=await api.execute("assignmentSubmissions",{workspaceId:"workspace-1",assignmentId:"assignment-1"}),id=rows[0].id;
+ const draft=await api.execute("gradeSubmission",{submissionId:id,expectedRevision:0,status:"DRAFT",score:81.5,summary:"Private rubric notes"});assert.equal(draft.revision,1);
+ await api.execute("mockLogin",{role:"student"});const pending=await api.execute("submissionReview",{submissionId:id});assert.equal(pending.status,"PENDING");assert.equal(pending.summary,"");
+ await assert.rejects(api.execute("gradeSubmission",{submissionId:id,expectedRevision:1,status:"GRADED",score:100,summary:"Self grade"}),kind("forbidden"));
+ await api.execute("mockLogin",{role:"lecturer"});await api.execute("gradeSubmission",{submissionId:id,expectedRevision:1,status:"RETURNED",score:null,summary:"Please revise the service boundary"});
+ await assert.rejects(api.execute("gradeSubmission",{submissionId:id,expectedRevision:1,status:"GRADED",score:90,summary:"Stale review"}),kind("conflict"));
+ await api.execute("gradeSubmission",{submissionId:id,expectedRevision:2,status:"GRADED",score:91.5,summary:"Revisions accepted"});
+ await api.execute("mockLogin",{role:"student"});const published=await api.execute("submissionReview",{submissionId:id});assert.equal(published.score,91.5);assert.equal(published.status,"GRADED");
 });
 test("model revisions remain immutable; stale saves conflict; review uses frozen submission", async () => {
   const api = new MockAdapter("normal", 0);
@@ -359,10 +459,10 @@ test("theme bootstraps before paint with validated preferences and denied-storag
   for (const [stored, systemDark, expected] of [
     ["light", true, false],
     ["dark", false, true],
-    ["system", true, true],
+    ["system", true, false],
     ["invalid", false, false],
-    [null, true, true],
-    ["denied", true, true],
+    [null, true, false],
+    ["denied", true, false],
   ]) {
     let dark;
     const element = {
@@ -386,6 +486,7 @@ test("theme bootstraps before paint with validated preferences and denied-storag
     });
     assert.equal(dark, expected);
     assert.equal(element.style.colorScheme, expected ? "dark" : "light");
+    assert.equal(element.dataset.appearance, expected ? "dark" : "light");
   }
 });
 
@@ -807,13 +908,13 @@ test("Sequence headers and message ports leave room for long wrapped participant
 });
 test("3E preserves configuration provenance and hides machine-local paths without inventing line numbers",()=>{
  const {sourceLabel,shortLocator}=require('../src/features/architecture/three-e-content.ts');
- assert.equal(sourceLabel({kind:'source',sourceType:'CONFIG_FILE'}),'Từ cấu hình');assert.equal(sourceLabel({kind:'source',sourceType:'SOURCE_CODE'}),'Từ mã nguồn');assert.equal(sourceLabel({kind:'runtime',sourceType:'RUNTIME_TRACE'}),'Quan sát khi chạy');assert.equal(sourceLabel({kind:'source'}),'Nguồn chưa phân loại');
+ assert.equal(sourceLabel({kind:'source',sourceType:'CONFIG_FILE'}),'From configuration');assert.equal(sourceLabel({kind:'source',sourceType:'SOURCE_CODE'}),'From source code');assert.equal(sourceLabel({kind:'runtime',sourceType:'RUNTIME_TRACE'}),'Observed at runtime');assert.equal(sourceLabel({kind:'source'}),'Unclassified source');
  assert.equal(shortLocator('C:\\Users\\machine\\uploads\\snapshot_source_extracted\\project-sha\\orders\\src\\Repo.java:5'),'orders/src/Repo.java:5');assert.ok(!shortLocator('C:\\Users\\name\\src\\Repo.java').includes('C:'));assert.equal(shortLocator('src/Repo.java'),'src/Repo.java');
 });
 test("3E treats Compose as startup declaration and physical database identity as unresolved",()=>{
  const {selectionSummary,findingRelated}=require('../src/features/architecture/three-e-content.ts');
  const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[{id:'a',name:'orders',elementType:'SERVICE_CONTAINER',description:'',layer:'unclassified',evidence:[]},{id:'db',name:'mysql',elementType:'DATABASE',description:'',layer:'data',evidence:[]}],edges:[{id:'boot',from:'a',to:'db',protocol:'DECLARED_COMPOSE',uncertain:false,evidence:[]}]};
- assert.match(selectionSummary(model,'boot').summary,/chưa chứng minh/);assert.match(selectionSummary(model,'db').type,/phạm vi cần xác minh/);assert.equal(findingRelated({elementId:'db',details:{relatedElementIds:['a']}},'a'),true);assert.equal(findingRelated({elementId:'other',message:'a'},'a'),false);
+ assert.match(selectionSummary(model,'boot').summary,/does not prove/);assert.match(selectionSummary(model,'db').type,/Scope Requires Verification/i);assert.equal(findingRelated({elementId:'db',details:{relatedElementIds:['a']}},'a'),true);assert.equal(findingRelated({elementId:'other',message:'a'},'a'),false);
 });
 test("C4 Container draws a named system boundary around owned containers and keeps external and unresolved outside",async()=>{
  const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
@@ -1068,3 +1169,356 @@ test("editor round-trip preserves C4 Component container boundary as a business 
  const boundaryMembers=Array.from(doc2.querySelectorAll('mxCell')).filter(c=>c.getAttribute('parent')===boundaryCell.getAttribute('id'));
  assert.equal(boundaryMembers.length,2,"container boundary keeps its two components");
 });
+
+test("Cytoscape preserves source identity, parallel edges, loops and isolated nodes", () => {
+  const { networkElements } = require("../src/features/architecture/cytoscape-network.ts");
+  const cytoscape = require("cytoscape");
+  const node = (id) => ({ id, name: id, elementType: "SERVICE_CONTAINER" });
+  const edge = (id, from, to, extra = {}) => ({ id, from, to, protocol: "HTTP", ...extra });
+  const model = {
+    elements: [node("shared"), node("b"), node("isolated")],
+    edges: [
+      edge("shared", "shared", "b"),
+      edge("parallel", "shared", "b", { uncertain: true }),
+      edge("loop", "b", "b", { originLayer: "DEPLOYMENT" }),
+    ],
+  };
+  const original = JSON.stringify(model);
+  const cy = cytoscape({
+    headless: true,
+    elements: networkElements(model),
+    layout: { name: "grid" },
+  });
+  try {
+    assert.equal(cy.nodes().length, 3);
+    assert.equal(cy.edges().length, 3);
+    assert.equal(cy.getElementById("node:shared").data("sourceId"), "shared");
+    assert.equal(cy.getElementById("node:shared").data("label"), "[SVC] shared");
+    assert.equal(cy.getElementById("node:shared").data("name"), "shared");
+    assert.equal(cy.getElementById("edge:shared").source().id(), "node:shared");
+    assert.equal(cy.getElementById("edge:loop").isLoop(), true);
+    assert.equal(cy.getElementById("edge:parallel").data("lineStyle"), "dotted");
+    assert.equal(cy.getElementById("edge:loop").data("lineStyle"), "dashed");
+    assert.equal(cy.getElementById("node:isolated").degree(), 0);
+    assert.equal(JSON.stringify(model), original, "rendering must not mutate the API model");
+  } finally {
+    cy.destroy();
+  }
+});
+
+test("Network node badges match the legend and preset positions preserve label spacing", () => {
+  const { networkElements, networkBadge } = require("../src/features/architecture/cytoscape-network.ts");
+  for (const [type, badge] of Object.entries({
+    SERVICE_CONTAINER: "[SVC]", DATABASE: "[DB]", COMPONENT: "[COMP]",
+    MESSAGE_CHANNEL: "[QUEUE]", QUEUE_BROKER: "[QUEUE]", EXTERNAL_SYSTEM: "[EXT]",
+  })) assert.equal(networkBadge(type), badge);
+  assert.equal(networkBadge(), "[UNKNOWN]");
+  const model = {
+    elements: Array.from({ length: 17 }, (_, i) => ({ id: `n${i}`, name: `long-service-name-${i}`, elementType: "SERVICE_CONTAINER" })),
+    edges: Array.from({ length: 16 }, (_, i) => ({ id: `e${i}`, from: "n0", to: `n${i + 1}`, protocol: "HTTP" })),
+  };
+  const nodes = networkElements(model).filter(n => n.group === "nodes");
+  assert.deepEqual(nodes, networkElements(model).filter(n => n.group === "nodes"));
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i].position, b = nodes[j].position;
+      assert.ok(Math.abs(a.x - b.x) >= 195 || Math.abs(a.y - b.y) >= 89, "node and label footprints must remain separated");
+    }
+  }
+});
+
+test("Network layout reduces geometric obstruction, uses viewport width, and distinguishes unknown types", () => {
+  const { networkPositions, networkLayoutCost } = require("../src/features/architecture/network-layout.ts");
+  const { layoutGraph, NODE_WIDTH, NODE_HEIGHT } = require("../src/features/architecture/graph-layout.ts");
+  const { networkColor } = require("../src/features/architecture/cytoscape-network.ts");
+  assert.notEqual(networkColor(undefined), networkColor("SERVICE_CONTAINER"));
+  assert.equal(networkColor("UNRECOGNIZED_TYPE"), networkColor(undefined));
+  const model = {
+    elements: Array.from({ length: 17 }, (_, i) => ({ id: `n${i}`, name: `service-${i}`, elementType: "SERVICE_CONTAINER" })),
+    edges: Array.from({ length: 29 }, (_, i) => ({ id: `e${i}`, from: `n${i % 17}`, to: `n${(i * 7 + 3) % 17}`, protocol: "HTTP" })),
+  };
+  const original = JSON.stringify(model);
+  const base = layoutGraph(model);
+  const width = Math.max(...base.map(n=>n.x))-Math.min(...base.map(n=>n.x))+NODE_WIDTH;
+  const height = Math.max(...base.map(n=>n.y))-Math.min(...base.map(n=>n.y))+NODE_HEIGHT;
+  const initial = new Map(base.map(n=>[n.id, {x:(n.x+NODE_WIDTH/2)*Math.max(1, 2.5*height/width), y:(n.y+NODE_HEIGHT/2)*Math.max(1, width/(2.5*height))}]));
+  const optimized = networkPositions(model, 2.5);
+  assert.ok(networkLayoutCost(model, optimized) < networkLayoutCost(model, initial), "reduce crossings and unrelated-node obstructions relative to force layout");
+  assert.deepEqual(optimized, networkPositions(model, 2.5));
+  const xs = [...optimized.values()].map(p=>p.x), ys = [...optimized.values()].map(p=>p.y);
+  const ratio = (Math.max(...xs)-Math.min(...xs)+NODE_WIDTH)/(Math.max(...ys)-Math.min(...ys)+NODE_HEIGHT);
+  assert.ok(ratio > 2 && ratio < 3, "spread into the wide viewport without compressing node spacing");
+  assert.equal(JSON.stringify(model), original);
+});
+
+test("Explore presentation preserves graph identity, camera, manual positions and source selection", () => {
+  const cytoscape = require("cytoscape");
+  const { networkElements } = require("../src/features/architecture/cytoscape-network.ts");
+  const { applyNetworkMode, exploreStyles } = require("../src/features/architecture/network-presentation.ts");
+  const model = {
+    elements: ["hub", "a", "b", "isolated"].map(id => ({ id, name: id, elementType: "SERVICE_CONTAINER" })),
+    edges: [{id:"e1",from:"hub",to:"a",protocol:"HTTP"},{id:"e2",from:"hub",to:"b",protocol:"HTTP"}],
+  };
+  const cy = cytoscape({headless:true, styleEnabled:true, elements:networkElements(model), layout:{name:"preset"}, style:[
+    {selector:"node",style:{width:"data(size)",height:"data(size)",label:"data(label)"}},
+    ...exploreStyles,
+  ]});
+  try {
+    const hub = cy.getElementById("node:hub"), isolated = cy.getElementById("node:isolated");
+    hub.position({x:123,y:234}).addClass("focused");
+    cy.zoom(0.8); cy.pan({x:12,y:34});
+    const camera = {zoom:cy.zoom(),pan:{...cy.pan()}};
+    const sourceIds = cy.elements().map(e=>e.data("sourceId"));
+    applyNetworkMode(cy,"explore");
+    assert.ok(hub.hasClass("explore") && hub.hasClass("hub") && hub.hasClass("focused"));
+    assert.ok(hub.width() > isolated.width(), "connection count controls visual size");
+    assert.equal(isolated.style("text-opacity"), "0");
+    assert.equal(hub.style("text-opacity"), "1");
+    assert.ok(Number(cy.edges()[0].style("opacity")) < 0.5);
+    cy.zoom(1.2); applyNetworkMode(cy,"explore");
+    assert.equal(isolated.style("text-opacity"), "1", "zoom reveals detail labels");
+    cy.zoom(camera.zoom);
+    applyNetworkMode(cy,"analysis");
+    assert.ok(!hub.hasClass("explore") && hub.hasClass("focused"));
+    assert.equal(hub.width(),hub.data("size"));
+    assert.deepEqual(hub.position(),{x:123,y:234});
+    assert.deepEqual({zoom:cy.zoom(),pan:{...cy.pan()}},camera);
+    assert.deepEqual(cy.elements().map(e=>e.data("sourceId")),sourceIds);
+  } finally { cy.destroy(); }
+});
+
+test("Explore clusters use real connections and parent ownership and restore each presentation independently", () => {
+  const cytoscape = require("cytoscape");
+  const { exploreClusters, explorePositions, exploreAppearance } = require("../src/features/architecture/explore-layout.ts");
+  const { networkElements } = require("../src/features/architecture/cytoscape-network.ts");
+  const { createNetworkPresentation } = require("../src/features/architecture/network-presentation.ts");
+  const model = {
+    elements: [
+      {id:"a",name:"Orders",elementType:"SERVICE_CONTAINER"},
+      {id:"b",name:"Payments",elementType:"SERVICE_CONTAINER"},
+      {id:"db",name:"Orders DB",elementType:"DATABASE",parentId:"a"},
+      {id:"unknown",name:"Framework",elementType:"UNKNOWN"},
+      {id:"isolated",name:"Isolated",elementType:"COMPONENT"},
+    ],
+    edges:[{id:"e1",from:"b",to:"db",protocol:"HTTP"},{id:"e2",from:"a",to:"b",protocol:"HTTP"},{id:"e3",from:"a",to:"unknown",protocol:"HTTP"}],
+  };
+  const original=JSON.stringify(model);
+  assert.equal(exploreClusters(model).owners.get("db"),"a","explicit parent overrides nearest connected service");
+  const p=explorePositions(model),appearance=exploreAppearance(model);
+  assert.equal(p.size,model.elements.length);
+  assert.deepEqual(p,explorePositions(model));
+  assert.notEqual(appearance.get("a").color,appearance.get("b").color);
+  assert.equal(appearance.get("a").color,appearance.get("db").color);
+  assert.equal(appearance.get("unknown").color,"#94a3b8");
+  assert.ok(appearance.get("a").image.startsWith("data:image/svg+xml;utf8,"));
+  const cy=cytoscape({headless:true,elements:networkElements(model),layout:{name:"preset"}});
+  try {
+    const present=createNetworkPresentation(cy,model),node=cy.getElementById("node:a");
+    node.position({x:101,y:202});cy.zoom(0.8);cy.pan({x:12,y:34});
+    present("explore");
+    assert.notDeepEqual(node.position(),{x:101,y:202});
+    node.position({x:303,y:404});cy.zoom(1.4);cy.pan({x:45,y:67});
+    present("analysis");
+    assert.deepEqual(node.position(),{x:101,y:202});assert.equal(cy.zoom(),0.8);assert.deepEqual(cy.pan(),{x:12,y:34});
+    present("explore");
+    assert.deepEqual(node.position(),{x:303,y:404});assert.equal(cy.zoom(),1.4);assert.deepEqual(cy.pan(),{x:45,y:67});
+    assert.equal(cy.nodes().length,5);assert.equal(cy.edges().length,3);
+    assert.equal(JSON.stringify(model),original);
+  } finally {cy.destroy();}
+});
+
+test("Explore electricity follows curved paths and cancels frames for cleanup and reduced motion", () => {
+  const { pulsePoint, startNetworkPulse } = require("../src/features/architecture/network-pulse.ts");
+  assert.deepEqual(pulsePoint({x:0,y:0},{x:100,y:0},[{x:50,y:100}],0.5),{x:50,y:50});
+  assert.deepEqual(pulsePoint({x:0,y:0},{x:100,y:0},[],1),{x:100,y:0});
+  const previous={window:global.window,raf:global.requestAnimationFrame,caf:global.cancelAnimationFrame};
+  let reduced=false,serial=0,strokes=0;
+  const frames=new Map(),listeners=new Set();
+  const ctx={clearRect(){},setTransform(){},save(){},restore(){},beginPath(){},arc(){},stroke(){strokes++;},fill(){},moveTo(){},lineTo(){}};
+  const canvas={width:800,height:600,clientWidth:800,clientHeight:600,getContext:()=>ctx};
+  const edge={renderedSourceEndpoint:()=>({x:0,y:0}),renderedTargetEndpoint:()=>({x:100,y:0}),controlPoints:()=>[{x:50,y:100}],data:()=>"#a78bfa"};
+  const node={empty:()=>false,connectedEdges:()=>[edge],renderedPosition:()=>({x:0,y:0}),data:()=>"#a78bfa"};
+  const cy={nodes:()=>({filter:()=>({first:()=>node})}),destroyed:()=>false,zoom:()=>1,pan:()=>({x:0,y:0})};
+  global.window={devicePixelRatio:1,matchMedia:()=>({matches:reduced,addEventListener:(_,fn)=>listeners.add(fn),removeEventListener:(_,fn)=>listeners.delete(fn)})};
+  global.requestAnimationFrame=fn=>{frames.set(++serial,fn);return serial;};
+  global.cancelAnimationFrame=id=>frames.delete(id);
+  const tick=time=>{const batch=[...frames.values()];frames.clear();batch.forEach(fn=>fn(time));};
+  try {
+    const stop=startNetworkPulse(cy,"node",canvas);
+    tick(0);tick(500);
+    assert.ok(strokes>10,"draw the pulse trail along the rendered edge");
+    assert.equal(frames.size,1);
+    stop();assert.equal(frames.size,0);assert.equal(listeners.size,0);
+    startNetworkPulse(cy,"node",canvas);tick(0);tick(1600);
+    assert.equal(frames.size,0,"animation terminates without a perpetual frame loop");
+    reduced=true;startNetworkPulse(cy,"node",canvas);
+    assert.equal(frames.size,0);assert.equal(listeners.size,0);
+  } finally {
+    for (const [key,value] of [["window",previous.window],["requestAnimationFrame",previous.raf],["cancelAnimationFrame",previous.caf]]) {
+      if(value===undefined) delete global[key]; else global[key]=value;
+    }
+  }
+});
+
+test("Pulse handles straight edges without calling Cytoscape's unsafe renderedControlPoints", () => {
+  const { pulseControls, pulsePoint } = require("../src/features/architecture/network-pulse.ts");
+  const straight = {controlPoints:()=>undefined, renderedControlPoints:()=>{throw new TypeError("Cannot read properties of undefined (reading 'map')");}};
+  assert.deepEqual(pulseControls(straight,2,{x:10,y:20}),[]);
+  assert.deepEqual(pulsePoint({x:10,y:20},{x:110,y:20},pulseControls(straight,2,{x:10,y:20}),0.5),{x:60,y:20});
+  assert.deepEqual(pulseControls({controlPoints:()=>[{x:5,y:7}]},2,{x:10,y:20}),[{x:20,y:34}]);
+});
+
+test("Cytoscape focus follows grouped source edges and collapsed component evidence", () => {
+  const { networkFocus } = require("../src/features/architecture/cytoscape-network.ts");
+  const source = {
+    elements: [{ id: "service" }, { id: "component", parentId: "service" }, { id: "db" }],
+    edges: [],
+  };
+  const view = {
+    elements: [{ id: "service" }, { id: "db" }],
+    edges: [
+      { id: "group", from: "service", to: "db", underlyingEdgeIds: ["original-1", "original-2"] },
+    ],
+  };
+  const selected = networkFocus(source, view, "original-2", []);
+  assert.deepEqual([...selected.edges], ["group"]);
+  assert.deepEqual([...selected.nodes].sort(), ["db", "service"]);
+  const highlight = networkFocus(source, view, "original-2", ["component"]);
+  assert.deepEqual([...highlight.nodes], ["service"]);
+  assert.equal(highlight.edges.size, 0, "explicit highlights override selection focus");
+  assert.equal(networkFocus(source, view, null, []).active, false);
+});
+
+test("themeDrawioXml applies all 5 themes across C4 Context, UML Sequence, and UML Class/Package/Deployment/Activity/State and restores clean palette",()=>{
+ const {themeDrawioXml}=require("../src/features/architecture/drawio-document.ts");
+ const {buildContextDiagramDrawioXml}=require("../src/features/architecture/diagram-projections.ts");
+ const {interactionToDrawioXml,buildAutoSequenceInteraction,detectSequenceFlows}=require("../src/features/architecture/scenario-design.ts");
+ const {projectUmlClassDiagram,buildUmlDrawioXml}=require("../src/features/architecture/uml-diagrams.ts");
+ const model={
+  id:"m1",projectId:"p1",snapshotId:"s1",revision:1,label:"Rev 1",
+  elements:[
+   {id:"svc1",name:"OrderService",elementType:"SERVICE_CONTAINER",properties:{},parentId:null,description:"",layer:"unclassified",evidence:[]},
+   {id:"c1",name:"OrderController",elementType:"COMPONENT",properties:{fqn:"com.acme.OrderController",methods:["createOrder(OrderDto): Order"]},parentId:"svc1",description:"",layer:"controller",evidence:[]},
+   {id:"c2",name:"OrderRepository",elementType:"COMPONENT",properties:{fqn:"com.acme.OrderRepository",methods:["save(Order): Order"]},parentId:"svc1",description:"",layer:"repository",evidence:[]}
+  ],
+  edges:[{id:"e1",from:"c1",to:"c2",protocol:"CODE_DEPENDENCY",originLayer:"STATIC",uncertain:false,evidence:[]}]
+ };
+ const ctxXml=buildContextDiagramDrawioXml(model,"OrderSystem");
+ const flows=detectSequenceFlows(model,"MICRO");
+ const seqXml=interactionToDrawioXml(buildAutoSequenceInteraction(model,flows[0]));
+ const umlXml=buildUmlDrawioXml(projectUmlClassDiagram(model,"ALL"));
+ for(const baseXml of [ctxXml,seqXml,umlXml]){
+  const darkXml=themeDrawioXml(baseXml,"dark");
+  assert.ok(darkXml.includes('background="#161B22"'),"dark theme sets #161B22 background");
+  assert.ok(darkXml.includes('mavisTheme="dark"'),"dark theme stamps mavisTheme=dark");
+  const blueprintXml=themeDrawioXml(baseXml,"blueprint");
+  assert.ok(blueprintXml.includes('background="#082032"'),"blueprint theme sets #082032 background");
+  const vibrantXml=themeDrawioXml(baseXml,"vibrant");
+  assert.ok(vibrantXml.includes('mavisTheme="vibrant"'),"vibrant theme stamps mavisTheme=vibrant");
+  const monoXml=themeDrawioXml(baseXml,"monochrome");
+  assert.ok(monoXml.includes('background="#FFFFFF"'),"monochrome theme sets #FFFFFF background");
+  const restoredClean=themeDrawioXml(darkXml,"clean",baseXml);
+  assert.ok(!restoredClean.includes('background="#161B22"'),"clean theme restores light background from cleanXml baseline");
+  assert.ok(restoredClean.includes('background="#FFFFFF"'),"clean theme sets #FFFFFF background");
+ }
+});
+
+test("3E simplified AI explanation and concrete code evidence collector always provide plain-Vietnamese 3E pillars and real code snippets",()=>{
+ const {buildThreeESubjectContext,collectConcreteThreeEEvidences,buildDeterministicThreeESimplified,buildThreeEAiContext,explainEvidenceSnippetSimply}=require("../src/features/architecture/three-e-content.ts");
+ const model={
+  id:"m1",projectId:"p1",snapshotId:"s1",revision:1,label:"Rev 1",
+  elements:[
+   {id:"svc1",name:"ftgo-order-service",elementType:"SERVICE_CONTAINER",properties:{},parentId:null,description:"",layer:"unclassified",evidence:[]},
+   {id:"c1",name:"OrderController",elementType:"COMPONENT",properties:{fqn:"net.chrisrichardson.ftgo.orderservice.web.OrderController",methods:["create(CreateOrderRequest): CreateOrderResponse"]},parentId:"svc1",description:"",layer:"controller",evidence:[{id:"ev1",kind:"source",sourceType:"SOURCE_CODE",location:"OrderController.java:28",snippet:"@RestController\npublic class OrderController {\n  @PostMapping(\"/orders\")\n  public CreateOrderResponse create(@RequestBody CreateOrderRequest req) { ... }\n}",complete:true}]},
+   {id:"db1",name:"ftgo-order-db",elementType:"DATABASE",properties:{resourceRole:"LOGICAL_DATASTORE"},parentId:null,description:"",layer:"data",evidence:[]}
+  ],
+  edges:[{id:"e1",from:"svc1",to:"db1",protocol:"DATABASE_ACCESS",originLayer:"STATIC",uncertain:false,evidence:[]}]
+ };
+ const svcCtx=buildThreeESubjectContext({model,selectedId:"svc1"});
+ const svcEvidences=collectConcreteThreeEEvidences(model,svcCtx,[],[]);
+ assert.ok(svcEvidences.length>=1,"parent service collects concrete code snippets from child components");
+ assert.match(svcEvidences[0].snippet,/@RestController/,"concrete code snippet includes actual source code");
+ const simplified=buildDeterministicThreeESimplified(model,svcCtx,svcEvidences,[{id:"f1",ruleId:"RULE-02",message:"Chia sẻ bảng dữ liệu"}]);
+ assert.match(simplified.explainSimple,/ftgo-order-service/);
+ assert.match(simplified.exploreSimple,/OrderController\.java:28/);
+ assert.match(simplified.evaluateSimple,/Chia sẻ bảng dữ liệu/);
+ assert.match(explainEvidenceSnippetSimply(svcEvidences[0],"ftgo-order-service"),/API/);
+ const aiCtx=buildThreeEAiContext(model,svcCtx,svcEvidences,[]);
+ assert.ok(aiCtx.contextHash.startsWith("3e:m1:"));
+ assert.equal(aiCtx.codeSnippets.length,1);
+ const edgeCtx=buildThreeESubjectContext({model,selectedId:"e1"});
+ const edgeEvidences=collectConcreteThreeEEvidences(model,edgeCtx,[],[]);
+ assert.ok(edgeEvidences.length>=1,"edge without raw evidence synthesizes concrete code example");
+ assert.match(edgeEvidences[0].snippet,/JpaRepository/);
+});
+
+test("computeArchitectureImpact computes upstream blast radius and downstream dependencies across all, source, and components scopes",()=>{
+ const {computeArchitectureImpact}=loadRoutedComponent("src/routes/impact.tsx");
+ const {impactWarning}=require("../src/lib/mainflow-api.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));
+ const model={
+  id:raw.modelVersionId,projectId:"p",snapshotId:"s",revision:1,label:"FTGO",
+  elements:raw.layoutJson.nodes.map(n=>({id:n.id,name:n.name,elementType:n.kind,parentId:n.parentId,technology:n.languageStack,properties:n.properties,description:n.description??"",layer:"unclassified",evidence:[]})),
+  edges:raw.layoutJson.edges.map(e=>({id:e.id,from:e.from,to:e.to,protocol:e.type,originLayer:e.originLayer,uncertain:false,evidence:[]}))
+ };
+ const zipkin=model.elements.find(e=>e.name==="zipkin");
+ const zipkinImpact=computeArchitectureImpact(model,zipkin.id,"all");
+ assert.equal(zipkinImpact.directImpactCount,2,"ftgo-delivery-service and ftgo-order-service directly depend on zipkin");
+ assert.equal(zipkinImpact.indirectImpactCount,2,"ftgo-api-gateway (2 hops) and ftgo-kitchen-service (3 hops) are indirectly impacted");
+ assert.equal(zipkinImpact.upstreamImpacted.length,4);
+
+ const delivery=model.elements.find(e=>e.name==="ftgo-delivery-service");
+ const deliverySourceImpact=computeArchitectureImpact(model,delivery.id,"source");
+ assert.ok(deliverySourceImpact.upstreamImpacted.some(h=>h.name==="ftgo-api-gateway"),"ftgo-api-gateway depends on ftgo-delivery-service via rolled-up component CODE_DEPENDENCY");
+
+ const order=model.elements.find(e=>e.name==="ftgo-order-service");
+ const orderAllImpact=computeArchitectureImpact(model,order.id,"all");
+ assert.ok(orderAllImpact.downstreamDependencies.length>=5,"ftgo-order-service has downstream database and infrastructure dependencies");
+
+ const orderCtrl=model.elements.find(e=>e.name==="OrderController"&&e.parentId===order.id);
+ const compImpact=computeArchitectureImpact(model,orderCtrl.id,"components");
+ assert.ok(compImpact.downstreamDependencies.some(h=>h.name==="OrderRepository"),"OrderController depends on OrderRepository in components scope");
+ assert.ok(compImpact.downstreamDependencies.some(h=>h.name==="localhost"&&h.distance===2),"OrderController transitively depends on localhost database at 2 hops");
+
+ assert.match(impactWarning("ONE_SHORTEST_PATH_PER_SERVICE"),/shortest dependency path/);
+ assert.match(impactWarning("EMPTY_RESULT_DOES_NOT_PROVE_ABSENCE_OUTSIDE_COVERAGE"),/policy scope/);
+});
+
+test("reconcileModelDiff pairs identical elements across revisions with new UUIDs and computes field-by-field side-by-side diffs",()=>{
+ const {reconcileModelDiff}=loadRoutedComponent("src/features/architecture/model-editor.tsx");
+ const falsePositiveRaw={
+  baseRevision:3,targetRevision:4,
+  removedElements:[
+   {id:"u1",name:"zookeeper",elementType:"SERVICE_CONTAINER",languageStack:"JAVA_SPRING",properties:{}},
+   {id:"u2",name:"OrderService",elementType:"COMPONENT",parentElementName:"ftgo-order-service",languageStack:"JAVA_SPRING",properties:{layer:"service",description:"Old description"}},
+   {id:"u3",name:"LegacyQueue",elementType:"QUEUE_BROKER",languageStack:"RabbitMQ",properties:{}}
+  ],
+  addedElements:[
+   {id:"v1",name:"zookeeper",elementType:"SERVICE_CONTAINER",languageStack:"JAVA_SPRING",properties:{}},
+   {id:"v2",name:"OrderService",elementType:"COMPONENT",parentElementName:"ftgo-order-service",languageStack:"JAVA_SPRING",properties:{layer:"domain",description:"Updated domain service"}},
+   {id:"v3",name:"RedisCache",elementType:"DATABASE",languageStack:"Redis",properties:{}}
+  ],
+  removedRelationships:[
+   {id:"r1",sourceElementName:"ftgo-order-service",targetElementName:"zookeeper",relationType:"DECLARED_COMPOSE",originLayer:"DEPLOYMENT",direction:"DIRECTED"}
+  ],
+  addedRelationships:[
+   {id:"r2",sourceElementName:"ftgo-order-service",targetElementName:"zookeeper",relationType:"DECLARED_COMPOSE",originLayer:"DEPLOYMENT",direction:"DIRECTED"},
+   {id:"r3",sourceElementName:"ftgo-order-service",targetElementName:"RedisCache",relationType:"DATABASE_ACCESS",originLayer:"STATIC",direction:"DIRECTED"}
+  ]
+ };
+ const diff=reconcileModelDiff(falsePositiveRaw);
+ assert.equal(diff.unchangedElementsCount,1,"zookeeper is matched as unchanged despite new UUID");
+ assert.equal(diff.modifiedElementsCount,1,"OrderService is matched as modified instead of 1 removed + 1 added");
+ assert.equal(diff.addedElementsCount,1,"RedisCache is added");
+ assert.equal(diff.removedElementsCount,1,"LegacyQueue is removed");
+ assert.equal(diff.unchangedRelationshipsCount,1,"zookeeper relationship is matched as unchanged");
+ assert.equal(diff.addedRelationshipsCount,1,"RedisCache relationship is added");
+ const modRow=diff.rows.find(r=>r.status==="modified");
+ assert.equal(modRow.title,"OrderService");
+ assert.equal(modRow.fieldDiffs.map(f=>f.field).join(","),"layer,description");
+ assert.equal(modRow.fieldDiffs[0].before,"service");
+ assert.equal(modRow.fieldDiffs[0].after,"domain");
+});
+
+
+

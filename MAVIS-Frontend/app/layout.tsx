@@ -5,13 +5,17 @@ import { readAppConfiguration } from "@/lib/api/config";
 import "../src/styles.css";
 
 // Runs before paint; keep the storage key and validation aligned with ThemeProvider.
-const appearanceBootstrap = `(function(){var a="system";try{var s=localStorage.getItem("mavis.appearance");if(s==="light"||s==="dark"||s==="system")a=s;}catch(e){}var d=a==="dark"||(a==="system"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);document.documentElement.dataset.appearance=a;document.documentElement.style.colorScheme=d?"dark":"light";})();`;
+const appearanceBootstrap = `(function(){var a="light";try{var s=localStorage.getItem("mavis.appearance");if(s==="light"||s==="dark")a=s;}catch(e){}var d=a==="dark";document.documentElement.classList.toggle("dark",d);document.documentElement.dataset.appearance=a;document.documentElement.style.colorScheme=d?"dark":"light";})();`;
 
 export const metadata: Metadata = {
+  
   title: "MAVIS — Architecture Learning & Analysis",
   description:
     "AI-Assisted Microservices Architecture Visualization and Change Impact Analysis. Learn through source analysis, architectural models, and scoped runtime evidence.",
   authors: [{ name: "MAVIS" }],
+  icons: {
+  icon: "/mavis-logo.png",
+},
 };
 
 export const dynamic = "force-dynamic";
