@@ -4,11 +4,10 @@ import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
 import { RequestState } from "@/components/shared/request-state";
-import { DataTable, DetailPanel, SummaryCard } from "@/components/shared/data";
-import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
+import { DataTable, SummaryCard } from "@/components/shared/data";
 import { FilterControls, Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { Button } from "@/components/ui/button";
-import { useApiQuery, useSelection } from "@/hooks/use-api";
+import { useApiQuery } from "@/hooks/use-api";
 import { ProjectStatusBadge } from "@/features/projects/components";
 import type { Project } from "@/types/domain";
 export default function Index() {
@@ -43,7 +42,6 @@ function runtimeSummary(projects: Project[] | undefined): string | number {
 }
 function Projects() {
   const projects = useApiQuery("projectOverviews", {});
-  const selection = useSelection();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
@@ -75,8 +73,8 @@ function Projects() {
           <SummaryCard label="Ready projects" value={readySummary(projects.data)} />
           <SummaryCard label="Runtime capable" value={runtimeSummary(projects.data)} />
         </div>
-        <div className="mt-6 grid gap-6 xl:grid-cols-3">
-          <section className="space-y-4 xl:col-span-2">
+        <div className="mt-6">
+          <section className="space-y-4">
             <h2 className="text-sm font-semibold">Recent projects</h2>
             <FilterControls>
               <SearchInput
@@ -95,7 +93,7 @@ function Projects() {
                 }}
                 options={["all", "ready", "processing", "failed", "partial"].map((value) => ({
                   value,
-                  label: value,
+                  label: value.charAt(0).toUpperCase() + value.slice(1), 
                 }))}
               />
             </FilterControls>
@@ -143,39 +141,8 @@ function Projects() {
               onPageChange={setPage}
             />
           </section>
-          <OverviewAnalysis />
         </div>
       </RequestState>
     </PageContainer>
-  );
-}
-function OverviewAnalysis() {
-  const { projectId } = useSelection();
-  const query = useApiQuery(
-    "analysisJobs",
-    { projectId },
-    { enabled: Boolean(projectId), poll: true },
-  );
-  return (
-    <DetailPanel title="Analysis status">
-      {projectId ? (
-        <RequestState
-          query={query}
-          empty={!query.data?.length}
-          emptyMessage="No analysis jobs for the selected project."
-        >
-          {query.data?.map((job) => (
-            <AnalysisStatusIndicator key={job.id} job={job} />
-          ))}
-          <Link href="/analysis-history" className="text-xs text-primary underline">
-            View analysis history
-          </Link>
-        </RequestState>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Select a project to inspect its analysis status.
-        </p>
-      )}
-    </DetailPanel>
   );
 }

@@ -275,7 +275,10 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
       const properties: Record<string, unknown> = {
         ...detailProps,
         protocol: resolveNodeMetadata(n.protocol, detailProps["protocol"]),
-        transportAuthority: resolveNodeMetadata(n.transportAuthority, detailProps["transportAuthority"]),
+        transportAuthority: resolveNodeMetadata(
+          n.transportAuthority,
+          detailProps["transportAuthority"],
+        ),
         resolutionIssue: resolveNodeMetadata(n.resolutionIssue, detailProps["resolutionIssue"]),
       };
       const layer = ["edge", "domain", "platform", "data"].includes(String(properties["layer"]))
@@ -325,6 +328,18 @@ export function roleView(raw: string): "student" | "lecturer" | "admin" {
   return role;
 }
 export function userView(raw: unknown) {
-  const u = z.object({ id: z.string().uuid(), fullName: z.string(), role: z.string() }).parse(raw);
-  return { id: u.id, name: u.fullName, role: roleView(u.role) };
+  const u = z
+    .object({
+      id: z.string().uuid(),
+      fullName: z.string(),
+      role: z.string(),
+      email: z.string().email().nullish(),
+    })
+    .parse(raw);
+  return {
+    id: u.id,
+    name: u.fullName,
+    role: roleView(u.role),
+    ...(u.email ? { email: u.email } : {}),
+  };
 }

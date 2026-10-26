@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     "AI-Assisted Microservices Architecture Visualization and Change Impact Analysis. Learn through source analysis, architectural models, and scoped runtime evidence.",
   authors: [{ name: "MAVIS" }],
   icons: {
-  icon: "/mavis-logo.png",
+  icon: "/logo.png",
 },
 };
 
