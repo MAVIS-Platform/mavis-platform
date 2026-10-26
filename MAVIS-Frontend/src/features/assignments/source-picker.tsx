@@ -72,15 +72,17 @@ export function AssignmentSourcePicker({
       setModelId("");
       setJobId("");
       setMessage("");
-      if (!createdProject.current) {
+      let target = projectId || createdProject.current;
+      if (!target) {
+        if (!title.trim()) throw new Error("Enter the assignment title first.");
         const project = await api.execute("createReferenceProject", {
           workspaceId,
           name: `${title.trim().slice(0, 220)} · reference`,
         });
         createdProject.current = project.id;
+        target = project.id;
         await cache.invalidateQueries({ queryKey: ["api", "workspaceProjects"] });
       }
-      const target = createdProject.current;
       setProjectId(target);
       const snapshot =
         mode === "zip"
@@ -108,10 +110,13 @@ export function AssignmentSourcePicker({
     },
   });
   const retry = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (overrideSnapshotId?: string) => {
+      const targetSnapshot = overrideSnapshotId || snapshotId;
+      if (!targetSnapshot) throw new Error("No snapshot selected for analysis.");
+      setSnapshotId(targetSnapshot);
       const next = await api.execute("startAnalysis", {
         projectId,
-        snapshotId,
+        snapshotId: targetSnapshot,
         idempotencyKey: crypto.randomUUID(),
       });
       setJobId(next.id);
@@ -148,6 +153,17 @@ export function AssignmentSourcePicker({
     prepare.reset();
     retry.reset();
   }
+  const sortedVersions = [...(versions.data ?? [])].sort((a, b) => b.revision - a.revision);
+
+  // Auto-select the latest analyzed revision when a reference project is selected
+  useEffect(() => {
+    if (mode === "existing" && projectId && !modelId && sortedVersions.length > 0) {
+      const latest = sortedVersions[0]!;
+      setModelId(latest.id);
+      setSnapshotId(latest.snapshotId);
+    }
+  }, [mode, projectId, modelId, sortedVersions]);
+
   return (
     <fieldset className="space-y-4 rounded-xl border bg-muted/20 p-4" disabled={busy}>
       <legend className="px-1 text-sm font-semibold">Assignment project & source version</legend>
@@ -185,28 +201,52 @@ export function AssignmentSourcePicker({
               setSnapshotId("");
             }}
             options={[
-              { value: "", label: "No reference source" },
+              { value: "", label: "No reference source (students import their own project)" },
               ...(projects.data ?? [])
                 .filter((p) => p.projectType === "TEACHER_REFERENCE" || p.isReferenceTemplate)
                 .map((p) => ({ value: p.id, label: p.name })),
             ]}
           />
           {projectId && (
-            <SelectField
-              label="Exact analysis version"
-              value={modelId}
-              onChange={(value) => {
-                setModelId(value);
-                setSnapshotId(versions.data?.find((m) => m.id === value)?.snapshotId ?? "");
-              }}
-              options={[
-                { value: "", label: "Select an analyzed version" },
-                ...(versions.data ?? []).map((m) => ({
+            sortedVersions.length > 0 ? (
+              <SelectField
+                label="Analyzed revision (Model Version)"
+                value={modelId}
+                onChange={(value) => {
+                  setModelId(value);
+                  setSnapshotId(sortedVersions.find((m) => m.id === value)?.snapshotId ?? "");
+                }}
+                options={sortedVersions.map((m, idx) => ({
                   value: m.id,
-                  label: `Revision ${m.revision} · ${snapshots.data?.find((s) => s.id === m.snapshotId)?.name ?? m.snapshotId}`,
-                })),
-              ]}
-            />
+                  label: `Revision ${m.revision}${idx === 0 ? " (Latest)" : ""} · ${snapshots.data?.find((s) => s.id === m.snapshotId)?.name ?? m.snapshotId.slice(0, 8)}`,
+                }))}
+              />
+            ) : versions.isFetching || snapshots.isFetching ? (
+              <p className="text-xs text-muted-foreground">Loading analyzed revisions…</p>
+            ) : (snapshots.data?.length ?? 0) > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed bg-background/60 p-3 text-xs">
+                <span className="text-muted-foreground">
+                  This project has {snapshots.data!.length} source snapshot(s) but no analyzed
+                  revision yet.
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => {
+                    const latestSnap = snapshots.data![0]!;
+                    retry.mutate(latestSnap.id);
+                  }}
+                >
+                  Analyze latest snapshot
+                </Button>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed bg-background/60 p-3 text-xs text-muted-foreground">
+                This reference project has no source code or analyzed revisions yet. Switch to{" "}
+                <strong>GitHub repository</strong> or <strong>Upload ZIP</strong> above to import
+                and analyze source code, or select <strong>No reference source</strong>.
+              </div>
+            )
           )}
         </>
       ) : (

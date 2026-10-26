@@ -6,6 +6,7 @@ export function planActivityRows(
   nodes: Array<{ nodeId: string; partitionId: string; kind: string }>,
   edges: Array<{ from: string; to: string }>,
 ): Map<string, number> {
+  const cmpId = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true });
   const byId = new Map(nodes.map((n) => [n.nodeId, n]));
   const children = new Map(nodes.map((n) => [n.nodeId, new Set<string>()]));
   for (const e of edges)
@@ -14,7 +15,7 @@ export function planActivityRows(
   const back = new Set<string>();
   const visit = (id: string) => {
     color.set(id, 1);
-    for (const child of [...children.get(id)!].sort()) {
+    for (const child of [...children.get(id)!].sort(cmpId)) {
       if (color.get(child) === 1) back.add(JSON.stringify([id, child]));
       else if (!color.has(child)) visit(child);
     }
@@ -23,7 +24,7 @@ export function planActivityRows(
   const ordered = [...nodes].sort(
     (a, b) =>
       Number(b.kind === "INITIAL") - Number(a.kind === "INITIAL") ||
-      a.nodeId.localeCompare(b.nodeId),
+      cmpId(a.nodeId, b.nodeId),
   );
   for (const n of ordered) if (!color.has(n.nodeId)) visit(n.nodeId);
   const parents = new Map(nodes.map((n) => [n.nodeId, new Set<string>()]));
@@ -45,10 +46,22 @@ export function planActivityRows(
     rows.set(id, row);
     lane.add(row);
     occupied.set(node.partitionId, lane);
-    for (const child of [...children.get(id)!].sort()) {
+    const immediateTerms: string[] = [];
+    for (const child of [...children.get(id)!].sort(cmpId)) {
       pending.set(child, pending.get(child)! - 1);
-      if (pending.get(child) === 0) queue.push(child);
+      if (pending.get(child) === 0) {
+        const childNode = byId.get(child)!;
+        if (
+          childNode.partitionId === node.partitionId &&
+          (childNode.kind === "FLOW_FINAL" || childNode.kind === "ACTIVITY_FINAL")
+        ) {
+          immediateTerms.push(child);
+        } else {
+          queue.push(child);
+        }
+      }
     }
+    if (immediateTerms.length > 0) queue.unshift(...immediateTerms);
   }
   return rows;
 }

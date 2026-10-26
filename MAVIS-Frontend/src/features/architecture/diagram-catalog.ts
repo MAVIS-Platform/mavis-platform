@@ -1,4 +1,8 @@
 import type { ArchitecturalModel } from "@/types/domain";
+import {
+  extractDeclarativeClientTarget,
+  isDeclarativeClientElement,
+} from "./classifier-semantics";
 import { contextProjection, logicalProjection, processProjection } from "./diagram-projections";
 import { planArchitectureViews } from "@/lib/architecture/view-planner";
 import type { DiagramDocument } from "@/lib/drawio/rules";
@@ -117,30 +121,97 @@ export const canonicalNineDiagramCatalog = [
   { id: "UML_STATE", family: "UML", kind: "UML_STATE", milestone: "M7", label: "UML State Machine Diagram" },
 ] as const;
 export function modelDocument(model: ArchitecturalModel): DiagramDocument {
+  const nodes: DiagramDocument["layoutJson"]["nodes"] = model.elements.map((node) => {
+    const isClient = isDeclarativeClientElement(node);
+    const isGrpc = isClient && /grpc/i.test(node.name);
+    const defaultClientTech = isGrpc ? "Java / gRPC Client" : "Java / Spring Cloud Feign";
+    const resolvedTech = isClient
+      ? node.technology && node.technology !== "JAVA_SPRING" && node.technology !== "JAVA"
+        ? node.technology
+        : defaultClientTech
+      : node.technology;
+    return {
+      id: node.id,
+      name: node.name,
+      kind: isClient ? "COMPONENT" : (node.elementType ?? "UNKNOWN"),
+      parentId: node.parentId,
+      languageStack: resolvedTech,
+      description:
+        node.description ?? (isClient ? "Declarative outbound HTTP/REST client proxy" : null),
+      properties: node.properties,
+    };
+  });
+  const edges: DiagramDocument["layoutJson"]["edges"] = model.edges.map((edge) => ({
+    id: edge.id,
+    from: edge.from,
+    to: edge.to,
+    type: edge.protocol,
+    relationType: edge.protocol,
+    originLayer: edge.originLayer,
+    resolutionStatus: edge.resolutionStatus,
+    properties: edge.properties,
+  }));
+
+  for (const elem of model.elements) {
+    if (!isDeclarativeClientElement(elem)) continue;
+    const hasOutboundHttp = edges.some(
+      (e) =>
+        (e.from === elem.id || e.from === elem.parentId) &&
+        (e.type === "SERVICE_HTTP_CALL" || e.relationType === "SERVICE_HTTP_CALL") &&
+        e.from === elem.id,
+    );
+    if (hasOutboundHttp) continue;
+    const targetServiceName = extractDeclarativeClientTarget(elem);
+    if (!targetServiceName) continue;
+    const targetLower = targetServiceName.toLowerCase();
+    const targetStem = targetLower.replace(/-service$/, "");
+    const candidates = nodes.filter(
+      (n) =>
+        (n.kind === "SERVICE_CONTAINER" || n.kind === "EXTERNAL_SYSTEM") &&
+        n.id !== elem.parentId,
+    );
+    let targetNode =
+      candidates.find((n) => n.name.toLowerCase() === targetLower) ??
+      candidates.find((n) => {
+        const nl = n.name.toLowerCase();
+        return (
+          nl.endsWith("-" + targetLower) ||
+          targetLower.endsWith("-" + nl) ||
+          nl.replace(/-service$/, "") === targetStem ||
+          nl.endsWith("-" + targetStem + "-service")
+        );
+      });
+    if (!targetNode) {
+      targetNode = {
+        id: `external:target:${targetLower}`,
+        name: targetServiceName,
+        kind: "SERVICE_CONTAINER",
+        languageStack: "HTTP / REST API",
+        description: `Outbound target service (${targetServiceName})`,
+      };
+      nodes.push(targetNode);
+    }
+    const edgeId = `synth:http:${elem.id}->${targetNode.id}`;
+    if (!edges.some((e) => e.id === edgeId)) {
+      edges.push({
+        id: edgeId,
+        from: elem.id,
+        to: targetNode.id,
+        type: "SERVICE_HTTP_CALL",
+        relationType: "SERVICE_HTTP_CALL",
+        originLayer: "STATIC",
+        resolutionStatus: "RESOLVED",
+      });
+    }
+  }
+
   return {
     modelVersionId: model.id,
     notation: "C4",
     level: "COMPONENT",
     layoutJson: {
-      nodes: model.elements.map((node) => ({
-        id: node.id,
-        name: node.name,
-        kind: node.elementType ?? "UNKNOWN",
-        parentId: node.parentId,
-        languageStack: node.technology,
-        description: node.description,
-        properties: node.properties,
-      })),
-      edges: model.edges.map((edge) => ({
-        id: edge.id,
-        from: edge.from,
-        to: edge.to,
-        type: edge.protocol,
-        relationType: edge.protocol,
-        originLayer: edge.originLayer,
-        resolutionStatus: edge.resolutionStatus,
-        properties: edge.properties,
-      })),
+      nodes,
+      edges,
     },
   };
 }

@@ -1,4 +1,4 @@
-import { isClientClassifier, isDomainClassifier, isInfrastructureClassifier, normalizeExtractedClassRelation } from "./classifier-semantics";
+import { isClientClassifier, isDeclarativeClientElement, isDomainClassifier, isInfrastructureClassifier, normalizeExtractedClassRelation } from "./classifier-semantics";
 import type { ArchitecturalModel } from "@/types/domain";
 import { compressCodeToAstSkeleton } from "./scenario-design";
 import { deploymentSegmentHitsBox, routeDeploymentPath } from "./deployment-routing";
@@ -699,6 +699,57 @@ export function projectUmlPackageDiagram(
   }
 
   const edges = [...edgeMap.values()];
+  const connectedPkgIds = new Set(edges.flatMap((e) => [e.fromPackageId, e.toPackageId]));
+  const parentPkgIds = new Set(
+    [...pkgMap.values()].map((p) => p.parentPackageId).filter((id): id is string => Boolean(id)),
+  );
+  const classifierById = new Map(classifiers.map((c) => [c.classifierId, c]));
+  const elementById = new Map(model.elements.map((e) => [e.id, e]));
+  const isBootstrapClassifier = (clsId: string): boolean => {
+    const cls = classifierById.get(clsId);
+    if (!cls) return false;
+    if (
+      /(?:Application|Bootstrap|Launcher|Starter)$/i.test(cls.name) ||
+      /^(?:Program|Main)$/i.test(cls.name)
+    ) {
+      return true;
+    }
+    const elem = elementById.get(clsId);
+    const props = (elem?.properties ?? {}) as Record<string, unknown>;
+    const rawUml = props["umlClassifier"] as Record<string, unknown> | undefined;
+    const anns = [
+      ...(Array.isArray(rawUml?.["annotations"]) ? rawUml!["annotations"] : []),
+      ...(Array.isArray(props["annotations"]) ? (props["annotations"] as unknown[]) : []),
+    ].map((a) =>
+      typeof a === "string" ? a : String((a as Record<string, unknown>)?.["name"] ?? ""),
+    );
+    if (anns.some((a) => /(?:SpringBootApplication|EnableAutoConfiguration|QuarkusMain)/i.test(a))) {
+      return true;
+    }
+    const snippets = (elem?.evidence ?? []).map((ev) => ev.snippet ?? "").join("\n");
+    if (/@SpringBootApplication\b|SpringApplication\.run\b/.test(snippets)) {
+      return true;
+    }
+    const nonCtorOps = cls.operations.filter((op) => op.kind !== "CONSTRUCTOR");
+    if (
+      cls.attributes.length === 0 &&
+      nonCtorOps.length > 0 &&
+      nonCtorOps.every((op) => op.name === "main")
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  for (const pkg of [...pkgMap.values()]) {
+    if (pkg.provenance !== "EXTRACTED") continue;
+    if (pkgMap.size <= 1) break;
+    if (connectedPkgIds.has(pkg.packageId) || parentPkgIds.has(pkg.packageId)) continue;
+    if (pkg.memberClassifierIds.length > 0 && pkg.memberClassifierIds.every(isBootstrapClassifier)) {
+      pkgMap.delete(pkg.packageId);
+    }
+  }
+
   const validationIssues: UmlValidationIssue[] = [];
 
   // Detect cycles in «merge» relationships (UML 2.5.1 Chapter 12: PackageMerge must be acyclic)
@@ -992,13 +1043,20 @@ export function projectUmlDeploymentDiagram(
     });
     serviceToExecEnvId.set(elem.id, execNodeId);
 
-    // Only emit ARTIFACT and MANIFESTATION when a concrete image or verified artifactName exists (never from buildContext alone or serviceName:build fallback)
-    if (explicitArtifactName) {
+    const innerArtifactName =
+      explicitArtifactName &&
+      !(declaredBuildContext && !image && /^app\.(jar|war)$/i.test(explicitArtifactName))
+        ? explicitArtifactName
+        : declaredBuildContext
+          ? `${elem.name}.jar`
+          : null;
+
+    if (innerArtifactName) {
       const artifactId = `deploy:artifact:${elem.id}`;
       nodes.push({
         nodeId: artifactId,
         modelElementId: elem.id,
-        name: explicitArtifactName,
+        name: innerArtifactName,
         nodeKind: "ARTIFACT",
         parentNodeId: execNodeId,
         environment: elemEnv,
@@ -1012,43 +1070,46 @@ export function projectUmlDeploymentDiagram(
       });
       serviceToArtifactId.set(elem.id, artifactId);
 
-      const manifestTargetId = `deploy:manifested:${elem.id}`;
-      nodes.push({
-        nodeId: manifestTargetId,
-        modelElementId: elem.id,
-        name: elem.name,
-        nodeKind: "MANIFESTED_COMPONENT",
-        parentNodeId: null,
-        environment: elemEnv,
-        stereotype: elem.elementType === "DATABASE" ? "«database»" : "«component»",
-        ports: [],
-        instanceName: null,
-        replicaCount: null,
-        properties: {},
-        provenance: "EXTRACTED",
-        evidenceIds: elem.evidence.map((ev) => ev.id),
-      });
+      if (explicitArtifactName && (!declaredBuildContext || image)) {
+        const manifestTargetId = `deploy:manifested:${elem.id}`;
+        nodes.push({
+          nodeId: manifestTargetId,
+          modelElementId: elem.id,
+          name: elem.name,
+          nodeKind: "MANIFESTED_COMPONENT",
+          parentNodeId: null,
+          environment: elemEnv,
+          stereotype: elem.elementType === "DATABASE" ? "«database»" : "«component»",
+          ports: [],
+          instanceName: null,
+          replicaCount: null,
+          properties: {},
+          provenance: "EXTRACTED",
+          evidenceIds: elem.evidence.map((ev) => ev.id),
+        });
 
-      edges.push({
-        edgeId: `deploy:manifest:${elem.id}`,
-        sourceRelationshipId: null,
-        fromNodeId: artifactId,
-        toNodeId: manifestTargetId,
-        edgeKind: "MANIFESTATION",
-        protocol: null,
-        port: null,
-        label: "«manifest»",
-        provenance: "EXTRACTED",
-        evidenceIds: elem.evidence.map((ev) => ev.id),
-      });
-    } else if (declaredBuildContext) {
+        edges.push({
+          edgeId: `deploy:manifest:${elem.id}`,
+          sourceRelationshipId: null,
+          fromNodeId: artifactId,
+          toNodeId: manifestTargetId,
+          edgeKind: "MANIFESTATION",
+          protocol: null,
+          port: null,
+          label: "«manifest»",
+          provenance: "EXTRACTED",
+          evidenceIds: elem.evidence.map((ev) => ev.id),
+        });
+      }
+    }
+    if (!explicitArtifactName && declaredBuildContext) {
       deploymentArtifactIssues.push({
         code: "BUILD_CONTEXT_WITHOUT_EXPLICIT_ARTIFACT",
         severity: "INFO",
-        message: `Service "${elem.name}" declares a build context (${declaredBuildContext}) without an explicit container image or concrete artifact file; no EXTRACTED «artifact» or «manifest» edge is fabricated.`,
+        message: `Service "${elem.name}" declares a build context (${declaredBuildContext}) without an explicit container image; synthesized inner «artifact» ${elem.name}.jar.`,
         targetId: execNodeId,
       });
-    } else {
+    } else if (!explicitArtifactName) {
       deploymentArtifactIssues.push({
         code: "COMPOSE_SERVICE_NO_ARTIFACT_DECLARED",
         severity: "INFO",
@@ -1087,34 +1148,49 @@ export function projectUmlDeploymentDiagram(
 
   let excludedComposeStartupEdgesCount = 0;
   const commPairs = new Set<string>();
+  const commEdgeSpecs = new Map<string, { index: number; specificity: number }>();
 
-  // Compose endpoint references are configured paths, independent of AST calls.
-  // Their sanitized metadata contains host/port/declaration, never env values.
-  for (const elem of model.elements) {
-    const fromExec = serviceToExecEnvId.get(elem.id);
-    if (!fromExec) continue;
-    const metadata = elem.properties?.["deploymentMetadata"] as Record<string, unknown> | undefined;
-    const connections = Array.isArray(metadata?.["connections"]) ? metadata["connections"] as Array<Record<string, unknown>> : [];
-    for (const connection of connections) {
-      const targets = model.elements.filter(e => e.name === connection["targetService"] && serviceToExecEnvId.has(e.id));
-      if (targets.length !== 1 || targets[0]!.id === elem.id) continue;
-      const toExec = serviceToExecEnvId.get(targets[0]!.id)!;
-      const protocol = String(connection["protocol"] ?? "").toUpperCase();
-      if (!["HTTP", "HTTPS", "TCP", "STARTUP_DEPENDENCY", "DECLARED_LINK"].includes(protocol)) continue;
-      const port = Number(connection["port"]);
-      const portLabel = Number.isInteger(port) && port > 0 && port <= 65535 ? String(port) : null;
-      const declaredOnly = protocol === "STARTUP_DEPENDENCY" || protocol === "DECLARED_LINK";
-      const key = `${fromExec}<->${toExec}:${protocol}:${portLabel ?? ""}`;
-      if (commPairs.has(key)) continue;
-      commPairs.add(key);
-      edges.push({ edgeId: `deploy:configured:${elem.id}:${targets[0]!.id}:${protocol}:${portLabel ?? "unknown"}`,
-        sourceRelationshipId: null, fromNodeId: fromExec, toNodeId: toExec,
-        edgeKind: declaredOnly ? "DEPLOYMENT_DEPENDENCY_STARTUP" : "COMMUNICATION_PATH",
-        protocol: declaredOnly ? (protocol === "DECLARED_LINK" ? "links" : "depends_on") : protocol,
-        port: portLabel, label: declaredOnly ? `«${protocol === "DECLARED_LINK" ? "links" : "depends_on"}» (declared only)` : `«configured» ${protocol}${portLabel ? " (" + portLabel + ")" : ""}`,
-        provenance: "EXTRACTED", evidenceIds: elem.evidence.map(e => e.id) });
+  const upsertCommPathEdge = (candidate: UmlDeploymentEdge, specificity: number) => {
+    const pairPrefix = [candidate.fromNodeId, candidate.toNodeId].sort().join("<->");
+    let matchedKey: string | null = null;
+    for (const [k, spec] of commEdgeSpecs.entries()) {
+      if (!k.startsWith(`${pairPrefix}:`)) continue;
+      const existing = edges[spec.index];
+      if (!existing) continue;
+      if (existing.port === candidate.port || !existing.port || !candidate.port) {
+        matchedKey = k;
+        break;
+      }
     }
-  }
+    if (matchedKey !== null) {
+      const spec = commEdgeSpecs.get(matchedKey)!;
+      const existing = edges[spec.index]!;
+      const mergedEvidenceIds = Array.from(
+        new Set([...existing.evidenceIds, ...candidate.evidenceIds]),
+      );
+      const resolvedPort = existing.port ?? candidate.port;
+      const winner = specificity > spec.specificity ? candidate : existing;
+      const loser = specificity > spec.specificity ? existing : candidate;
+      const baseLabel = winner.label.replace(/\s*\(\d+\)\s*$/, "");
+      edges[spec.index] = {
+        ...winner,
+        port: resolvedPort,
+        label: resolvedPort ? `${baseLabel} (${resolvedPort})` : baseLabel,
+        sourceRelationshipId: winner.sourceRelationshipId ?? loser.sourceRelationshipId,
+        evidenceIds: mergedEvidenceIds,
+      };
+      const nextKey = `${pairPrefix}:${resolvedPort ?? ""}`;
+      commEdgeSpecs.delete(matchedKey);
+      commEdgeSpecs.set(nextKey, {
+        index: spec.index,
+        specificity: Math.max(spec.specificity, specificity),
+      });
+      return;
+    }
+    const key = `${pairPrefix}:${candidate.port ?? ""}`;
+    commEdgeSpecs.set(key, { index: edges.length, specificity });
+    edges.push(candidate);
+  };
 
   for (const edge of model.edges) {
     const fromOwner = resolveOwnerService(edge.from);
@@ -1176,22 +1252,82 @@ export function projectUmlDeploymentDiagram(
             ? String(resolvedDbProtocol).toUpperCase()
             : String(targetElem?.properties?.["protocol"] ?? "MESSAGING").toUpperCase();
 
-      const pairKey = `${fromExec}<->${toExec}:${protocolName}:${firstPort ?? ""}`;
-      if (commPairs.has(pairKey)) continue;
-      commPairs.add(pairKey);
+      const specificity =
+        protocolName === "TCP" || protocolName === "TCP/DB" || protocolName === "MESSAGING"
+          ? 20
+          : 35;
 
-      edges.push({
-        edgeId: `deploy:comm:${edge.id}`,
-        sourceRelationshipId: edge.id,
-        fromNodeId: fromExec,
-        toNodeId: toExec,
-        edgeKind: "COMMUNICATION_PATH",
-        protocol: protocolName,
-        port: firstPort,
-        label: `«communicationPath» ${protocolName}${firstPort ? ` (${firstPort})` : ""}`,
-        provenance: "EXTRACTED",
-        evidenceIds: edge.evidenceIds ?? edge.evidence.map((ev) => ev.id),
-      });
+      upsertCommPathEdge(
+        {
+          edgeId: `deploy:comm:${edge.id}`,
+          sourceRelationshipId: edge.id,
+          fromNodeId: fromExec,
+          toNodeId: toExec,
+          edgeKind: "COMMUNICATION_PATH",
+          protocol: protocolName,
+          port: firstPort,
+          label: `«communicationPath» ${protocolName}${firstPort ? ` (${firstPort})` : ""}`,
+          provenance: "EXTRACTED",
+          evidenceIds: edge.evidenceIds ?? edge.evidence.map((ev) => ev.id),
+        },
+        specificity,
+      );
+    }
+  }
+
+  // Compose endpoint references are configured paths, independent of AST calls.
+  // Their sanitized metadata contains host/port/declaration, never env values.
+  for (const elem of model.elements) {
+    const fromExec = serviceToExecEnvId.get(elem.id);
+    if (!fromExec) continue;
+    const metadata = elem.properties?.["deploymentMetadata"] as Record<string, unknown> | undefined;
+    const connections = Array.isArray(metadata?.["connections"]) ? metadata["connections"] as Array<Record<string, unknown>> : [];
+    for (const connection of connections) {
+      const targets = model.elements.filter(e => e.name === connection["targetService"] && serviceToExecEnvId.has(e.id));
+      if (targets.length !== 1 || targets[0]!.id === elem.id) continue;
+      const toExec = serviceToExecEnvId.get(targets[0]!.id)!;
+      const protocol = String(connection["protocol"] ?? "").toUpperCase();
+      if (!["HTTP", "HTTPS", "TCP", "STARTUP_DEPENDENCY", "DECLARED_LINK"].includes(protocol)) continue;
+      const port = Number(connection["port"]);
+      const portLabel = Number.isInteger(port) && port > 0 && port <= 65535 ? String(port) : null;
+      const declaredOnly = protocol === "STARTUP_DEPENDENCY" || protocol === "DECLARED_LINK";
+      if (declaredOnly) {
+        const pairPrefix = [fromExec, toExec].sort().join("<->");
+        const hasRealComm = [...commEdgeSpecs.keys()].some((k) => k.startsWith(`${pairPrefix}:`));
+        if (hasRealComm) continue;
+        const key = `${fromExec}<->${toExec}:${protocol}:${portLabel ?? ""}`;
+        if (commPairs.has(key)) continue;
+        commPairs.add(key);
+        edges.push({
+          edgeId: `deploy:configured:${elem.id}:${targets[0]!.id}:${protocol}:${portLabel ?? "unknown"}`,
+          sourceRelationshipId: null,
+          fromNodeId: fromExec,
+          toNodeId: toExec,
+          edgeKind: "DEPLOYMENT_DEPENDENCY_STARTUP",
+          protocol: protocol === "DECLARED_LINK" ? "links" : "depends_on",
+          port: portLabel,
+          label: `«${protocol === "DECLARED_LINK" ? "links" : "depends_on"}» (declared only)`,
+          provenance: "EXTRACTED",
+          evidenceIds: elem.evidence.map((e) => e.id),
+        });
+        continue;
+      }
+      const specificity = protocol === "TCP" ? 10 : 25;
+      upsertCommPathEdge(
+        {
+          edgeId: `deploy:configured:${elem.id}:${targets[0]!.id}:${protocol}:${portLabel ?? "unknown"}`,
+          sourceRelationshipId: null,
+          fromNodeId: fromExec,
+          toNodeId: toExec,
+          edgeKind: "COMMUNICATION_PATH",
+          protocol,
+          port: portLabel,
+          label: `«configured» ${protocol}${portLabel ? " (" + portLabel + ")" : ""}`,
+          provenance: "EXTRACTED",
+          evidenceIds: elem.evidence.map((e) => e.id),
+        },
+        specificity,
+      );
     }
   }
 
@@ -1382,21 +1518,74 @@ function discoverBusinessFlowActivities(
   const consumerSvc = findSvc(
     /consumer[-_ ]?service|customer[-_ ]?service|user[-_ ]?service|account[-_ ]?service/i,
   );
-  const kitchenSvc = findSvc(
-    /kitchen[-_ ]?service|fulfillment[-_ ]?service|inventory[-_ ]?service|warehouse[-_ ]?service/i,
+  const kitchenOnlySvc = findSvc(/\bkitchen[-_ ]?service\b/i);
+  const inventorySvc = findSvc(
+    /inventory[-_ ]?service|stock[-_ ]?service|warehouse[-_ ]?service|fulfillment[-_ ]?service/i,
   );
+  const kitchenSvc = kitchenOnlySvc ?? inventorySvc;
+  const isFtgoKitchen = Boolean(kitchenOnlySvc);
   const accountingSvc = findSvc(
     /accounting[-_ ]?service|payment[-_ ]?service|billing[-_ ]?service/i,
   );
   const deliverySvc = findSvc(
     /delivery[-_ ]?service|shipping[-_ ]?service|logistics[-_ ]?service|courier[-_ ]?service/i,
   );
-  const restaurantSvc = findSvc(
-    /restaurant[-_ ]?service|catalog[-_ ]?service|menu[-_ ]?service|product[-_ ]?service/i,
+  const restaurantOnlySvc = findSvc(/\brestaurant[-_ ]?service\b|\bmenu[-_ ]?service\b/i);
+  const catalogSvc = findSvc(/catalog[-_ ]?service|product[-_ ]?service/i);
+  const restaurantSvc = restaurantOnlySvc ?? catalogSvc;
+  const isFtgoRestaurant = Boolean(restaurantOnlySvc);
+  const notificationSvc = findSvc(
+    /notification[-_ ]?service|notify[-_ ]?service|alert[-_ ]?service/i,
   );
   const historySvc = findSvc(
     /order[-_ ]?history|history[-_ ]?service|reporting[-_ ]?service|analytics[-_ ]?service/i,
   );
+
+  const isTrivialActivityMethodName = (methodName: string, classifierName: string): boolean =>
+    methodName === classifierName ||
+    /^(get|set|is)[A-Z0-9_]/.test(methodName) ||
+    /^(equals|hashCode|toString|canEqual|clone|compareTo|main|builder|toBuilder|of|valueOf|from|init|<init>|<clinit>|ctor)$/i.test(
+      methodName,
+    );
+
+  const findServiceMethod = (
+    svc: ArchitecturalModel["elements"][number] | null,
+    pattern: RegExp,
+    fallback: string,
+  ): string => {
+    if (!svc) return fallback;
+    const candidates: string[] = [];
+    for (const el of model.elements) {
+      if (ownerOf(el.id) !== svc.id) continue;
+      const rawUml = el.properties?.["umlClassifier"] as Record<string, unknown> | undefined;
+      if (!rawUml || typeof rawUml !== "object") continue;
+      const clsName = String(rawUml["name"] ?? el.name ?? "");
+      if (
+        String(rawUml["typeKind"] ?? el.properties?.["typeKind"] ?? "").toUpperCase() === "INTERFACE" ||
+        isDeclarativeClientElement(el) ||
+        isDomainClassifier(rawUml) ||
+        /(Repository|Dao|Application|Entity|Dto|Request|Response)$/i.test(clsName)
+      ) {
+        continue;
+      }
+      const methodsCfg = Array.isArray(rawUml["methodsCfg"])
+        ? (rawUml["methodsCfg"] as Array<Record<string, unknown>>)
+        : [];
+      for (const cfg of methodsCfg) {
+        const mName = String(cfg["methodName"] ?? "").trim();
+        if (mName && !isTrivialActivityMethodName(mName, clsName)) candidates.push(mName);
+      }
+      const members = Array.isArray(rawUml["members"])
+        ? (rawUml["members"] as Array<Record<string, unknown>>)
+        : [];
+      for (const m of members) {
+        if (!/^(OPERATION|METHOD)$/i.test(String(m["memberKind"] ?? ""))) continue;
+        const mName = String(m["name"] ?? "").trim();
+        if (mName && !isTrivialActivityMethodName(mName, clsName)) candidates.push(mName);
+      }
+    }
+    return candidates.find((m) => pattern.test(m)) ?? candidates[0] ?? fallback;
+  };
 
   const makePartition = (
     el: ArchitecturalModel["elements"][number],
@@ -1527,13 +1716,13 @@ function discoverBusinessFlowActivities(
   };
 
   // -------------------------------------------------------------------------
-  // 1. Canonical Domain Use-Case Flows (e.g. FTGO / E-Commerce Microservices)
+  // 1. Canonical Domain Use-Case Flows (Synthesized from Project Services & Methods)
   // -------------------------------------------------------------------------
   const downstreamForCreateOrder = [consumerSvc, kitchenSvc, accountingSvc].filter(
     (s): s is NonNullable<typeof s> => Boolean(s),
   );
 
-  if (orderSvc && downstreamForCreateOrder.length >= 1) {
+  if (orderSvc && (downstreamForCreateOrder.length >= 2 || (downstreamForCreateOrder.length >= 1 && Boolean(gatewayEl)))) {
     const initiator = gatewayEl ?? orderSvc;
     const participants: Array<{
       el: ArchitecturalModel["elements"][number];
@@ -1544,8 +1733,40 @@ function discoverBusinessFlowActivities(
     }
     participants.push({ el: orderSvc, roleHint: "Order Orchestrator" });
     if (consumerSvc) participants.push({ el: consumerSvc, roleHint: "Consumer Verification" });
-    if (kitchenSvc) participants.push({ el: kitchenSvc, roleHint: "Kitchen Ticket" });
-    if (accountingSvc) participants.push({ el: accountingSvc, roleHint: "Payment / Accounting" });
+    if (kitchenSvc) {
+      participants.push({
+        el: kitchenSvc,
+        roleHint: isFtgoKitchen ? "Kitchen Ticket" : "Inventory & Stock Reservation",
+      });
+    }
+    if (accountingSvc) {
+      participants.push({
+        el: accountingSvc,
+        roleHint: isFtgoKitchen ? "Payment / Accounting" : "Payment Processing",
+      });
+    }
+
+    const createOrderMethod = findServiceMethod(orderSvc, /create|place|submit/i, "createOrder");
+    const reserveMethod = findServiceMethod(
+      kitchenSvc,
+      /reserve|createTicket|allocate|deduct|check/i,
+      isFtgoKitchen ? "createTicket" : "reserveStock",
+    );
+    const payMethod = findServiceMethod(
+      accountingSvc,
+      /pay|authorize|charge|process/i,
+      isFtgoKitchen ? "authorizePayment" : "processPayment",
+    );
+    const releaseMethod = findServiceMethod(
+      kitchenSvc,
+      /cancel|release|rollback/i,
+      isFtgoKitchen ? "cancelCreateTicket" : "releaseReservedStock",
+    );
+    const confirmStockMethod = findServiceMethod(
+      kitchenSvc,
+      /confirm|commit|reserve/i,
+      isFtgoKitchen ? "confirmCreateTicket" : reserveMethod,
+    );
 
     const createFlow = buildFlowRecord(
       "create-order-flow",
@@ -1569,7 +1790,9 @@ function discoverBusinessFlowActivities(
         const nCreateOrder = addNode(
           orderSvc,
           "ACTION",
-          "Create order [APPROVAL_PENDING] & initiate CreateOrderSaga",
+          isFtgoKitchen
+            ? "Create order [APPROVAL_PENDING] & initiate CreateOrderSaga"
+            : `Validate order request & create pending order (${createOrderMethod} [PENDING])`,
         );
         addEdge(prevId, nCreateOrder);
         prevId = nCreateOrder;
@@ -1609,7 +1832,9 @@ function discoverBusinessFlowActivities(
           const nCreateTicket = addNode(
             kitchenSvc,
             "ACTION",
-            "Validate menu items & create provisional kitchen ticket (createTicket [CREATE_PENDING])",
+            isFtgoKitchen
+              ? "Validate menu items & create provisional kitchen ticket (createTicket [CREATE_PENDING])"
+              : `Check stock availability & reserve inventory (${reserveMethod} [RESERVED])`,
           );
           addEdge(
             prevId,
@@ -1623,7 +1848,9 @@ function discoverBusinessFlowActivities(
           const nAuthPayment = addNode(
             accountingSvc,
             "ACTION",
-            "Authorize consumer payment method (authorizePayment)",
+            isFtgoKitchen
+              ? "Authorize consumer payment method (authorizePayment)"
+              : `Process order payment transaction (${payMethod})`,
           );
           addEdge(
             prevId,
@@ -1643,7 +1870,9 @@ function discoverBusinessFlowActivities(
             const nCancelTicket = addNode(
               kitchenSvc,
               "ACTION",
-              "Cancel provisional kitchen ticket (cancelCreateTicket [CANCELLED])",
+              isFtgoKitchen
+                ? "Cancel provisional kitchen ticket (cancelCreateTicket [CANCELLED])"
+                : `Release reserved inventory stock (${releaseMethod} [RELEASED])`,
             );
             const nRejectPayment = addNode(
               orderSvc,
@@ -1663,7 +1892,9 @@ function discoverBusinessFlowActivities(
             const nConfirmTicket = addNode(
               kitchenSvc,
               "ACTION",
-              "Confirm kitchen ticket (confirmCreateTicket [AWAITING_ACCEPTANCE])",
+              isFtgoKitchen
+                ? "Confirm kitchen ticket (confirmCreateTicket [AWAITING_ACCEPTANCE])"
+                : `Confirm inventory deduction & finalize reservation (${confirmStockMethod} [CONFIRMED])`,
             );
             const nApproveOrder = addNode(
               orderSvc,
@@ -1728,22 +1959,47 @@ function discoverBusinessFlowActivities(
     if (createFlow) flows.push(createFlow);
   }
 
-  // Flow 2: Delivery Flow — only participating services (Restaurant, Kitchen, Delivery, Order; NO Consumer/Accounting!)
+  // Flow 2: Fulfillment & Delivery Flow
   if (deliverySvc && (kitchenSvc || orderSvc || restaurantSvc)) {
     const participants: Array<{
       el: ArchitecturalModel["elements"][number];
       roleHint?: string;
     }> = [];
-    if (restaurantSvc) {
+    if (isFtgoRestaurant && restaurantSvc) {
       participants.push({ el: restaurantSvc, roleHint: "Restaurant Actor / Menu" });
+    } else if (!isFtgoKitchen && catalogSvc) {
+      participants.push({ el: catalogSvc, roleHint: "Product Catalog & Packaging Spec" });
     } else if (gatewayEl) {
-      participants.push({ el: gatewayEl, roleHint: "Restaurant / Courier App" });
+      participants.push({
+        el: gatewayEl,
+        roleHint: isFtgoKitchen ? "Restaurant / Courier App" : "Fulfillment Gateway",
+      });
     }
-    if (kitchenSvc) participants.push({ el: kitchenSvc, roleHint: "Kitchen Preparation" });
-    participants.push({ el: deliverySvc, roleHint: "Delivery & Courier Dispatch" });
+    if (kitchenSvc) {
+      participants.push({
+        el: kitchenSvc,
+        roleHint: isFtgoKitchen ? "Kitchen Preparation" : "Warehouse Stock Preparation",
+      });
+    }
+    participants.push({
+      el: deliverySvc,
+      roleHint: isFtgoKitchen ? "Delivery & Courier Dispatch" : "Delivery & Cold-Chain Dispatch",
+    });
     if (orderSvc) participants.push({ el: orderSvc, roleHint: "Order Tracking" });
 
-    const initiator = restaurantSvc ?? gatewayEl ?? kitchenSvc ?? deliverySvc;
+    const initiator =
+      (isFtgoRestaurant ? restaurantSvc : catalogSvc) ?? gatewayEl ?? kitchenSvc ?? deliverySvc;
+    const scheduleMethod = findServiceMethod(
+      deliverySvc,
+      /schedule|dispatch|create|assign/i,
+      isFtgoKitchen ? "scheduleDelivery" : "scheduleColdTruckDelivery",
+    );
+    const prepMethod = findServiceMethod(
+      kitchenSvc,
+      /prepare|reserve|allocate|pack/i,
+      isFtgoKitchen ? "acceptTicket" : "reserveFruitStock",
+    );
+
     const deliveryFlow = buildFlowRecord(
       "delivery-flow",
       "Order Fulfillment & Delivery Workflow",
@@ -1757,7 +2013,9 @@ function discoverBusinessFlowActivities(
           const nRestAccept = addNode(
             initiator,
             "ACTION",
-            "Restaurant accepts ticket & confirms preparation time (acceptTicket)",
+            isFtgoKitchen
+              ? "Restaurant accepts ticket & confirms preparation time (acceptTicket)"
+              : `Verify catalog handling rules & confirm fulfillment schedule (${prepMethod})`,
           );
           addEdge(prevId, nRestAccept);
           prevId = nRestAccept;
@@ -1767,7 +2025,9 @@ function discoverBusinessFlowActivities(
           const nKitchenPrep = addNode(
             kitchenSvc,
             "ACTION",
-            "Prepare order [PREPARING] → Ready [READY_FOR_PICKUP] & publish TicketAcceptedEvent",
+            isFtgoKitchen
+              ? "Prepare order [PREPARING] → Ready [READY_FOR_PICKUP] & publish TicketAcceptedEvent"
+              : `Prepare warehouse batch [PREPARING] → Ready for dispatch (${prepMethod} [READY_FOR_PICKUP])`,
           );
           addEdge(prevId, nKitchenPrep);
           prevId = nKitchenPrep;
@@ -1776,26 +2036,30 @@ function discoverBusinessFlowActivities(
         const nSchedule = addNode(
           deliverySvc,
           "ACTION",
-          "Consume Kitchen event · Create Delivery & locate available courier (scheduleDelivery)",
+          isFtgoKitchen
+            ? "Consume Kitchen event · Create Delivery & locate available courier (scheduleDelivery)"
+            : `Schedule shipment & allocate delivery vehicle (${scheduleMethod})`,
         );
         addEdge(prevId, nSchedule);
 
         const nDecCourier = addNode(
           deliverySvc,
           "DECISION",
-          "Available courier found?",
+          isFtgoKitchen ? "Available courier found?" : "Delivery vehicle available?",
         );
         addEdge(nSchedule, nDecCourier);
 
         const nNoCourier = addNode(
           deliverySvc,
           "ACTION",
-          "Enqueue for courier dispatch retry (queuePendingDelivery)",
+          isFtgoKitchen
+            ? "Enqueue for courier dispatch retry (queuePendingDelivery)"
+            : "Enqueue shipment for next available dispatch slot (queuePendingDelivery)",
         );
         const nFinalRetry = addNode(
           deliverySvc,
           "FLOW_FINAL",
-          "Awaiting Next Courier Slot",
+          isFtgoKitchen ? "Awaiting Next Courier Slot" : "Awaiting Next Dispatch Slot",
         );
         addEdge(nDecCourier, nNoCourier, "[no courier / retry]");
         addEdge(nNoCourier, nFinalRetry);
@@ -1803,7 +2067,9 @@ function discoverBusinessFlowActivities(
         const nPickupDeliver = addNode(
           deliverySvc,
           "ACTION",
-          "Assign courier (assignCourier) → Pick up [PICKED_UP] → Complete delivery [DELIVERED]",
+          isFtgoKitchen
+            ? "Assign courier (assignCourier) → Pick up [PICKED_UP] → Complete delivery [DELIVERED]"
+            : `Dispatch shipment (${scheduleMethod}) → In transit [IN_TRANSIT] → Complete delivery [DELIVERED]`,
         );
         addEdge(nDecCourier, nPickupDeliver, "[courier assigned]");
 
@@ -1825,7 +2091,7 @@ function discoverBusinessFlowActivities(
     if (deliveryFlow) flows.push(deliveryFlow);
   }
 
-  // Flow 3: Cancel Order Flow — (Gateway, Order, Kitchen, Accounting; NO Delivery/Consumer!)
+  // Flow 3: Cancel Order Flow — (Gateway, Order, Kitchen/Inventory, Accounting/Payment)
   if (orderSvc && kitchenSvc) {
     const participants: Array<{
       el: ArchitecturalModel["elements"][number];
@@ -1835,10 +2101,24 @@ function discoverBusinessFlowActivities(
       participants.push({ el: gatewayEl, roleHint: "Customer Actor / Gateway" });
     }
     participants.push({ el: orderSvc, roleHint: "Cancel Order Saga" });
-    participants.push({ el: kitchenSvc, roleHint: "Kitchen Ticket Check" });
+    participants.push({
+      el: kitchenSvc,
+      roleHint: isFtgoKitchen ? "Kitchen Ticket Check" : "Inventory Rollback Check",
+    });
     if (accountingSvc) {
       participants.push({ el: accountingSvc, roleHint: "Refund / Reverse Auth" });
     }
+
+    const cancelStockMethod = findServiceMethod(
+      kitchenSvc,
+      /cancel|release|rollback|reserve/i,
+      isFtgoKitchen ? "beginCancelTicket" : "releaseReservedStock",
+    );
+    const refundMethod = findServiceMethod(
+      accountingSvc,
+      /refund|reverse|cancel|pay/i,
+      isFtgoKitchen ? "reverseAuthorization" : "refundPayment",
+    );
 
     const initiator = gatewayEl ?? orderSvc;
     const cancelFlow = buildFlowRecord(
@@ -1870,18 +2150,20 @@ function discoverBusinessFlowActivities(
         const nCheckKitchen = addNode(
           kitchenSvc,
           "ACTION",
-          "Check kitchen ticket preparation status (beginCancelTicket)",
+          isFtgoKitchen
+            ? "Check kitchen ticket preparation status (beginCancelTicket)"
+            : `Check shipment status & lock reserved stock (${cancelStockMethod})`,
         );
         addEdge(nBeginCancelOrder, nCheckKitchen);
 
         const nDecCooked = addNode(
           kitchenSvc,
           "DECISION",
-          "Preparation already started?",
+          isFtgoKitchen ? "Preparation already started?" : "Shipment already dispatched?",
         );
         addEdge(nCheckKitchen, nDecCooked);
 
-        // Branch 1: Already cooking -> reject cancellation
+        // Branch 1: Already cooking / dispatched -> reject cancellation
         const nUndoCancel = addNode(
           orderSvc,
           "ACTION",
@@ -1890,18 +2172,26 @@ function discoverBusinessFlowActivities(
         const nFinalCannotCancel = addNode(
           orderSvc,
           "FLOW_FINAL",
-          "Cancel Rejected (Already Cooking)",
+          isFtgoKitchen
+            ? "Cancel Rejected (Already Cooking)"
+            : "Cancel Rejected (Already Dispatched)",
         );
-        addEdge(nDecCooked, nUndoCancel, "[already cooking / too late]");
+        addEdge(
+          nDecCooked,
+          nUndoCancel,
+          isFtgoKitchen ? "[already cooking / too late]" : "[already dispatched / too late]",
+        );
         addEdge(nUndoCancel, nFinalCannotCancel);
 
-        // Branch 2: Not cooked yet -> allow cancel & refund in Accounting
+        // Branch 2: Not started / not dispatched -> allow cancel & refund in Accounting/Payment
         let afterDecId = nDecCooked;
         if (accountingSvc) {
           const nRefund = addNode(
             accountingSvc,
             "ACTION",
-            "Reverse payment authorization / refund customer (reverseAuthorization)",
+            isFtgoKitchen
+              ? "Reverse payment authorization / refund customer (reverseAuthorization)"
+              : `Reverse payment authorization & refund customer (${refundMethod})`,
           );
           addEdge(nDecCooked, nRefund, "[not started / allow cancel]");
           afterDecId = nRefund;
@@ -1910,7 +2200,9 @@ function discoverBusinessFlowActivities(
         const nConfirmCancelTicket = addNode(
           kitchenSvc,
           "ACTION",
-          "Confirm kitchen ticket cancellation (confirmCancelTicket [CANCELLED])",
+          isFtgoKitchen
+            ? "Confirm kitchen ticket cancellation (confirmCancelTicket [CANCELLED])"
+            : `Confirm stock reservation rollback (${cancelStockMethod} [RELEASED])`,
         );
         addEdge(
           afterDecId,
@@ -1935,8 +2227,8 @@ function discoverBusinessFlowActivities(
     if (cancelFlow) flows.push(cancelFlow);
   }
 
-  // Flow 4: Revise Order Flow or Restaurant & CQRS Order History Event Flow
-  if (orderSvc && (restaurantSvc || historySvc) && (kitchenSvc || accountingSvc)) {
+  // Flow 4A: FTGO Restaurant & CQRS Order History Event Flow (only when FTGO restaurant or history service exists)
+  if (orderSvc && (isFtgoRestaurant || historySvc) && (kitchenSvc || accountingSvc)) {
     const targetSyncSvcs = [kitchenSvc, orderSvc, historySvc].filter(
       (s): s is NonNullable<typeof s> => Boolean(s),
     );
@@ -1993,10 +2285,106 @@ function discoverBusinessFlowActivities(
       );
       if (syncFlow) flows.push(syncFlow);
     }
+  } else if (!isFtgoRestaurant && (catalogSvc || notificationSvc) && (orderSvc || accountingSvc)) {
+    // Flow 4B: Project-specific Catalog Pricing & Payment Notification Workflow (e.g., fruit-* microservices)
+    const participants: Array<{
+      el: ArchitecturalModel["elements"][number];
+      roleHint?: string;
+    }> = [];
+    if (gatewayEl) participants.push({ el: gatewayEl, roleHint: "Actor / API Gateway" });
+    if (catalogSvc) participants.push({ el: catalogSvc, roleHint: "Catalog & Pricing Lookup" });
+    if (orderSvc) participants.push({ el: orderSvc, roleHint: "Order Calculation" });
+    if (accountingSvc) participants.push({ el: accountingSvc, roleHint: "Payment & Receipt" });
+    if (notificationSvc) participants.push({ el: notificationSvc, roleHint: "Notification Dispatch" });
+
+    const primary = accountingSvc ?? orderSvc ?? catalogSvc ?? notificationSvc!;
+    const catalogMethod = findServiceMethod(catalogSvc, /get|find|list|lookup|catalog/i, "lookupCatalogItems");
+    const payMethod = findServiceMethod(accountingSvc, /pay|process|charge/i, "processPayment");
+    const notifyMethod = findServiceMethod(
+      notificationSvc,
+      /send|notify|dispatch|receipt|alert/i,
+      "sendPaymentReceipt",
+    );
+
+    const catalogNotifyFlow = buildFlowRecord(
+      "catalog-notification-flow",
+      "Catalog Pricing & Payment Notification Workflow",
+      primary,
+      participants.slice(0, 4),
+      (_partOf, addNode, addEdge) => {
+        const firstEl = participants[0]?.el ?? primary;
+        const nInit = addNode(firstEl, "INITIAL", "Start Catalog & Notification Flow");
+        let prevId = nInit;
+
+        if (catalogSvc) {
+          const nCat = addNode(
+            catalogSvc,
+            "ACTION",
+            `Query product catalog & validate unit pricing (${catalogMethod})`,
+          );
+          addEdge(prevId, nCat);
+          prevId = nCat;
+        }
+        if (orderSvc && participants.slice(0, 4).some((p) => p.el.id === orderSvc.id)) {
+          const nOrd = addNode(
+            orderSvc,
+            "ACTION",
+            "Compute order totals & submit payment request",
+          );
+          addEdge(prevId, nOrd);
+          prevId = nOrd;
+        }
+        if (accountingSvc && participants.slice(0, 4).some((p) => p.el.id === accountingSvc.id)) {
+          const nPay = addNode(
+            accountingSvc,
+            "ACTION",
+            `Record payment transaction & invoke notification client (${payMethod})`,
+          );
+          addEdge(prevId, nPay);
+          prevId = nPay;
+        }
+        if (notificationSvc && participants.slice(0, 4).some((p) => p.el.id === notificationSvc.id)) {
+          const nNotify = addNode(
+            notificationSvc,
+            "ACTION",
+            `Format & dispatch customer notification (${notifyMethod})`,
+          );
+          const nDecNotify = addNode(
+            notificationSvc,
+            "DECISION",
+            "Notification delivered?",
+          );
+          const nRetry = addNode(
+            notificationSvc,
+            "ACTION",
+            "Log delivery warning & schedule notification retry",
+          );
+          const nRetryFinal = addNode(
+            notificationSvc,
+            "FLOW_FINAL",
+            "Notification Queued for Retry",
+          );
+          const nDone = addNode(
+            notificationSvc,
+            "ACTIVITY_FINAL",
+            "Payment & Notification Completed",
+          );
+          addEdge(prevId, nNotify);
+          addEdge(nNotify, nDecNotify);
+          addEdge(nDecNotify, nRetry, "[delivery failed]");
+          addEdge(nRetry, nRetryFinal);
+          addEdge(nDecNotify, nDone, "[delivered]");
+        } else {
+          const nDone = addNode(primary, "ACTIVITY_FINAL", "Workflow Completed");
+          addEdge(prevId, nDone);
+        }
+      },
+    );
+    if (catalogNotifyFlow) flows.push(catalogNotifyFlow);
   }
 
   // -------------------------------------------------------------------------
-  // 2. General Graph-Driven Cross-Service Business Flows (works on ANY Microservices repo)
+  // 2. General Graph-Driven Cross-Service Business Flows (fallback when no multi-swimlane workflows exist)
   // -------------------------------------------------------------------------
   const adjServices = new Map<string, Set<string>>();
   const callersOfService = new Map<string, Set<string>>();
@@ -2005,13 +2393,19 @@ function discoverBusinessFlowActivities(
     callersOfService.set(s.id, new Set<string>());
   }
 
-  // Map message channels to publishers and subscribers
   const channelPublishers = new Map<string, Set<string>>();
   const channelSubscribers = new Map<string, Set<string>>();
 
-  const businessServiceIds = new Set(serviceContainers.map(s => s.id));
+  const businessServiceIds = new Set(serviceContainers.map((s) => s.id));
   for (const edge of model.edges) {
-    if (edge.uncertain || edge.originLayer === "DEPLOYMENT" || !/^(HTTP|HTTPS|REST|GRPC|SERVICE_HTTP_CALL|MESSAGE_PUBLISH|MESSAGE_SUBSCRIBE)$/i.test(edge.protocol)) continue;
+    if (
+      edge.uncertain ||
+      edge.originLayer === "DEPLOYMENT" ||
+      !/^(HTTP|HTTPS|REST|GRPC|SERVICE_HTTP_CALL|MESSAGE_PUBLISH|MESSAGE_SUBSCRIBE)$/i.test(
+        edge.protocol,
+      )
+    )
+      continue;
     const uRoot = ownerOf(edge.from);
     const vRoot = ownerOf(edge.to);
     if (uRoot === vRoot) continue;
@@ -2062,33 +2456,33 @@ function discoverBusinessFlowActivities(
     }
   }
 
-  // If no domain-specific flows matched (or for remaining orchestrator services), build flows from graph adjacency
-  const coveredOrchestrators = new Set(flows.map((f) => f.option.serviceId));
-  for (const svc of serviceContainers) {
-    if (coveredOrchestrators.has(svc.id) && flows.length >= 3) continue;
-    const downstreamIds = [...(adjServices.get(svc.id) ?? [])];
-    if (downstreamIds.length === 0) continue;
+  if (flows.length === 0) {
+    for (const svc of serviceContainers) {
+      const downstreamIds = [...(adjServices.get(svc.id) ?? [])];
+      if (downstreamIds.length === 0) continue;
 
-    const downEls = downstreamIds
-      .map((id) => elementById.get(id))
-      .filter((el): el is NonNullable<typeof el> => Boolean(el))
-;
+      const downEls = downstreamIds
+        .map((id) => elementById.get(id))
+        .filter((el): el is NonNullable<typeof el> => Boolean(el));
 
-    // Static adjacency does not establish ordering, decisions or rollback.
-    for (const target of downEls.filter(d => businessServiceIds.has(d.id))) {
-      const genericFlow = buildFlowRecord(
-        `service-flow-${svc.id}-${target.id}`,
-        `Interaction ${svc.name} → ${target.name} (unverified main flow)`,
-        svc, [{ el: svc }, { el: target }],
-        (_partOf, addNode, addEdge) => {
-          const initial = addNode(svc, "INITIAL", "Start interaction");
-          const call = addNode(svc, "ACTION", `Invoke ${target.name}`);
-          const receive = addNode(target, "ACTION", "Receive request / message");
-          const final = addNode(target, "FLOW_FINAL", "End interaction scope");
-          addEdge(initial, call); addEdge(call, receive); addEdge(receive, final);
-        },
-      );
-      if (genericFlow) flows.push(genericFlow);
+      for (const target of downEls.filter((d) => businessServiceIds.has(d.id))) {
+        const genericFlow = buildFlowRecord(
+          `service-flow-${svc.id}-${target.id}`,
+          `Interaction ${svc.name} → ${target.name} (unverified main flow)`,
+          svc,
+          [{ el: svc }, { el: target }],
+          (_partOf, addNode, addEdge) => {
+            const initial = addNode(svc, "INITIAL", "Start interaction");
+            const call = addNode(svc, "ACTION", `Invoke ${target.name}`);
+            const receive = addNode(target, "ACTION", "Receive request / message");
+            const final = addNode(target, "FLOW_FINAL", "End interaction scope");
+            addEdge(initial, call);
+            addEdge(call, receive);
+            addEdge(receive, final);
+          },
+        );
+        if (genericFlow) flows.push(genericFlow);
+      }
     }
   }
 
@@ -2109,25 +2503,56 @@ export function listActivityOperations(
     const rawUml = elem.properties?.["umlClassifier"] as Record<string, unknown> | undefined;
     if (!rawUml || typeof rawUml !== "object") continue;
 
+    const classifierName =
+      typeof rawUml["name"] === "string" && rawUml["name"].trim()
+        ? rawUml["name"].trim()
+        : elem.name;
+    const typeKind = String(
+      rawUml["typeKind"] ?? elem.properties?.["typeKind"] ?? "CLASS",
+    ).toUpperCase();
+    const annotations = Array.isArray(rawUml["annotations"])
+      ? (rawUml["annotations"] as unknown[]).map(String)
+      : [];
+    if (
+      typeKind === "ENUM" ||
+      isDeclarativeClientElement(elem) ||
+      /(Repository|Dao|Application|Client)$/i.test(classifierName) ||
+      annotations.some((a) => /^(SpringBootApplication|Repository|FeignClient)$/i.test(a))
+    ) {
+      continue;
+    }
+
+    const isEntityOrDto =
+      isDomainClassifier(rawUml) || /(Entity|Dto|Request|Response|Event)$/i.test(classifierName);
+    const isExcludedMethodName = (methodName: string): boolean =>
+      methodName === classifierName ||
+      /^(get|set|is)[A-Z0-9_]/.test(methodName) ||
+      /^(equals|hashCode|toString|canEqual|clone|compareTo|main|builder|toBuilder|of|valueOf|from|init|<init>|<clinit>|ctor)$/i.test(
+        methodName,
+      );
+
     const methodsCfg = Array.isArray(rawUml["methodsCfg"])
       ? (rawUml["methodsCfg"] as Array<Record<string, unknown>>)
       : [];
     const serviceName =
       (elem.parentId ? servicesById.get(elem.parentId) : undefined) ?? "Application Service";
-    const classifierName =
-      typeof rawUml["name"] === "string" && rawUml["name"].trim()
-        ? rawUml["name"].trim()
-        : elem.name;
 
     const cfgSignatures = new Set<string>();
     for (const cfg of methodsCfg) {
-      const methodName = String(cfg["methodName"] ?? "operation");
+      const methodName = String(cfg["methodName"] ?? "operation").trim();
       const signatureKey = String(cfg["signatureKey"] ?? cfg["signature"] ?? methodName);
       cfgSignatures.add(signatureKey);
-      const operationId = `${elem.id}::${signatureKey}`;
+      if (isExcludedMethodName(methodName)) continue;
       const rawNodes = Array.isArray(cfg["nodes"])
         ? (cfg["nodes"] as Array<Record<string, unknown>>)
         : [];
+      if (
+        isEntityOrDto &&
+        !rawNodes.some((rn) => /^(DECISION|MERGE|FORK|JOIN)$/i.test(String(rn["kind"] ?? "")))
+      ) {
+        continue;
+      }
+      const operationId = `${elem.id}::${signatureKey}`;
       const hasUnsupportedInLabels = rawNodes.some((rn) =>
         /(=>|->|try\s*\{|catch\s*\(|await\s|yield\s)/i.test(String(rn["label"] ?? "")),
       );
@@ -2155,37 +2580,44 @@ export function listActivityOperations(
       });
     }
 
-    const rawMembers = Array.isArray(rawUml["members"])
-      ? (rawUml["members"] as Array<Record<string, unknown>>)
-      : [];
-    for (const m of rawMembers) {
-      if (String(m["memberKind"] ?? "").toUpperCase() !== "OPERATION") continue;
-      const methodName = String(m["name"] ?? "operation");
-      const signatureKey = String(m["signature"] ?? m["signatureKey"] ?? methodName);
-      if (cfgSignatures.has(signatureKey)) continue;
-      cfgOptions.push({
-        operationId: `${elem.id}::${signatureKey}`,
-        classifierId: elem.id,
-        classifierName,
-        serviceId: elem.parentId ?? null,
-        serviceName,
-        methodName,
-        signatureKey,
-        extractionCompleteness: "PARTIAL",
-        unsupportedConstructs: [
-          Boolean(m["isAbstract"])
-            ? "abstract/interface operation without concrete method body CFG"
-            : "unexpanded operation body without extracted AST CFG",
-        ],
-      });
+    if (!isEntityOrDto) {
+      const rawMembers = Array.isArray(rawUml["members"])
+        ? (rawUml["members"] as Array<Record<string, unknown>>)
+        : [];
+      for (const m of rawMembers) {
+        if (String(m["memberKind"] ?? "").toUpperCase() !== "OPERATION") continue;
+        const methodName = String(m["name"] ?? "operation").trim();
+        const signatureKey = String(m["signature"] ?? m["signatureKey"] ?? methodName);
+        if (cfgSignatures.has(signatureKey) || isExcludedMethodName(methodName)) continue;
+        cfgOptions.push({
+          operationId: `${elem.id}::${signatureKey}`,
+          classifierId: elem.id,
+          classifierName,
+          serviceId: elem.parentId ?? null,
+          serviceName,
+          methodName,
+          signatureKey,
+          extractionCompleteness: "PARTIAL",
+          unsupportedConstructs: [
+            Boolean(m["isAbstract"])
+              ? "abstract/interface operation without concrete method body CFG"
+              : "unexpanded operation body without extracted AST CFG",
+          ],
+        });
+      }
     }
   }
 
   // Discover Cross-Service Business Flows (Main Flows / Use Cases across Microservice Swimlanes)
-  const businessFlows = discoverBusinessFlowActivities(model).map((f) => f.option);
+  const discovered = discoverBusinessFlowActivities(model);
+  const multiSwimlaneFlows = discovered
+    .filter((f) => f.partitions.length >= 3)
+    .map((f) => f.option);
+  const fallbackPairFlows = discovered
+    .filter((f) => f.partitions.length < 3)
+    .map((f) => f.option);
 
-  // Prefer extracted control flow over unverified cross-service suggestions.
-  return [...cfgOptions, ...businessFlows];
+  return [...multiSwimlaneFlows, ...cfgOptions, ...fallbackPairFlows];
 }
 
 export function validateActivityStructure(
@@ -2610,39 +3042,30 @@ interface DiscoveredEntityStateMachine {
 function discoverDomainEntityStateMachines(
   model: ArchitecturalModel,
 ): DiscoveredEntityStateMachine[] {
-  if (!model.edges || model.edges.length === 0) return [];
-
   const serviceContainers = model.elements.filter(
-    (e) => e.elementType === "SERVICE_CONTAINER",
+    (e) =>
+      e.elementType === "SERVICE_CONTAINER" ||
+      (e as unknown as Record<string, unknown>)["kind"] === "SERVICE",
   );
-  // Only synthesize Microservice Domain Entity State Machines on multi-service models
-  if (serviceContainers.length < 2) return [];
-
-  const findSvc = (pattern: RegExp, exclude?: RegExp) =>
-    serviceContainers.find(
-      (s) => pattern.test(s.name) && (!exclude || !exclude.test(s.name)),
-    ) ?? null;
-
-  const orderSvc = findSvc(
-    /\border[-_ ]?service\b|^order[-_ ]?svc$|^orders[-_ ]?service$|^ftgo[-_ ]?order[-_ ]?service$/i,
-    /history/i,
-  );
-  const kitchenSvc = findSvc(
-    /kitchen[-_ ]?service|fulfillment[-_ ]?service|inventory[-_ ]?service/i,
-  );
-  const deliverySvc = findSvc(
-    /delivery[-_ ]?service|shipping[-_ ]?service|logistics[-_ ]?service|courier[-_ ]?service/i,
-  );
-  const accountingSvc = findSvc(
-    /accounting[-_ ]?service|payment[-_ ]?service|billing[-_ ]?service/i,
-  );
+  const elementById = new Map(model.elements.map((e) => [e.id, e]));
+  const ownerOf = (id: string): string => {
+    let curr = elementById.get(id);
+    const visited = new Set<string>();
+    while (curr?.parentId && !visited.has(curr.id)) {
+      visited.add(curr.id);
+      const parent = elementById.get(curr.parentId);
+      if (!parent) break;
+      curr = parent;
+    }
+    return curr?.id ?? id;
+  };
 
   const machines: DiscoveredEntityStateMachine[] = [];
 
   const buildMachine = (
     targetKey: string,
     entityDisplayName: string,
-    svc: ArchitecturalModel["elements"][number],
+    svc: ArchitecturalModel["elements"][number] | null,
     carrierField: string,
     builder: (
       addState: (
@@ -2720,8 +3143,8 @@ function discoverDomainEntityStateMachines(
       option: {
         targetId,
         classifierName: entityDisplayName,
-        serviceId: svc.id,
-        serviceName: svc.name,
+        serviceId: svc?.id ?? null,
+        serviceName: svc?.name ?? null,
         lifecycleKind: "STATEFUL_CLASS",
         stateCarrierField: carrierField,
         enumOnlyNoTransitions: false,
@@ -2733,8 +3156,441 @@ function discoverDomainEntityStateMachines(
   };
 
   // -------------------------------------------------------------------------
-  // 1. Order Lifecycle (Order State Machine — ftgo-order-service)
+  // 1. Dynamic AST State-Carrier & Transition Discovery across Classifiers
   // -------------------------------------------------------------------------
+  const NON_STATE_LITERALS = new Set([
+    "GET",
+    "POST",
+    "PUT",
+    "DELETE",
+    "PATCH",
+    "HEAD",
+    "OPTIONS",
+    "HTTP",
+    "HTTPS",
+    "JSON",
+    "UTF_8",
+    "TRUE",
+    "FALSE",
+    "NULL",
+    "ASC",
+    "DESC",
+    "ID",
+    "OK",
+  ]);
+
+  const normalizeStateToken = (raw: string): string | null => {
+    const cleaned = raw.trim().replace(/^["']|["']$/g, "").toUpperCase();
+    if (!/^[A-Z][A-Z0-9_]{2,36}$/.test(cleaned)) return null;
+    if (NON_STATE_LITERALS.has(cleaned)) return null;
+    return cleaned;
+  };
+
+  const extractStatesAndMethodsForService = (svcId: string) => {
+    const svcElements = model.elements.filter((el) => ownerOf(el.id) === svcId);
+    let carrierEntityName: string | null = null;
+    let carrierFieldName: string | null = null;
+    const discoveredStates: string[] = [];
+    const seenStates = new Set<string>();
+    const methodByState = new Map<string, string>();
+    const guardByState = new Map<string, string>();
+    const sideEffectsByMethod = new Map<string, string[]>();
+    const serviceMethods: string[] = [];
+
+    const recordState = (rawToken: string, methodName?: string, guard?: string) => {
+      const token = normalizeStateToken(rawToken);
+      if (!token) return;
+      if (!seenStates.has(token)) {
+        seenStates.add(token);
+        discoveredStates.push(token);
+      }
+      if (methodName && !methodByState.has(token)) {
+        methodByState.set(token, methodName);
+      }
+      if (guard && !guardByState.has(token)) {
+        guardByState.set(token, guard.replace(/^\[|\]$/g, ""));
+      }
+    };
+
+    for (const el of svcElements) {
+      const elProps = (el.properties ?? (el as unknown as Record<string, unknown>)["metadata"] ?? {}) as Record<
+        string,
+        unknown
+      >;
+      const rawUml = elProps["umlClassifier"] as Record<string, unknown> | undefined;
+      if (!rawUml || typeof rawUml !== "object") continue;
+      if (rawUml["stateLifecycle"]) continue; // Handled directly by extractedTargets
+
+      const clsName = String(rawUml["name"] ?? el.name ?? "").trim();
+      const typeKind = String(
+        rawUml["typeKind"] ?? rawUml["kind"] ?? elProps["typeKind"] ?? "CLASS",
+      ).toUpperCase();
+      const members = Array.isArray(rawUml["members"])
+        ? (rawUml["members"] as Array<Record<string, unknown>>)
+        : [];
+
+      if (typeKind === "ENUM" && /(Status|State|Phase|Stage)$/i.test(clsName)) {
+        for (const m of members) {
+          const mk = String(m["memberKind"] ?? m["kind"] ?? "").toUpperCase();
+          if (mk === "ENUM_LITERAL" || mk === "LITERAL") {
+            recordState(String(m["name"] ?? ""));
+          }
+        }
+      }
+
+      for (const m of members) {
+        const mKind = String(m["memberKind"] ?? m["kind"] ?? "").toUpperCase();
+        const mName = String(m["name"] ?? "").trim();
+        const mType = String(m["type"] ?? m["typeName"] ?? m["returnType"] ?? "").trim();
+        if (
+          (mKind === "FIELD" || mKind === "ATTRIBUTE" || mKind === "PROPERTY") &&
+          (/(status|state|phase|stage)$/i.test(mName) || /(Status|State|Phase|Stage)$/i.test(mType))
+        ) {
+          if (!carrierEntityName || isDomainClassifier(rawUml)) {
+            carrierEntityName = clsName;
+            carrierFieldName = mName;
+          }
+        } else if (mKind === "OPERATION" || mKind === "METHOD") {
+          const match = mName.match(/^(?:get|set)([A-Z]\w*(?:Status|State|Phase|Stage))$/);
+          if (match) {
+            const inferredField = match[1]!.charAt(0).toLowerCase() + match[1]!.slice(1);
+            if (!carrierEntityName || isDomainClassifier(rawUml)) {
+              carrierEntityName = clsName;
+              carrierFieldName = inferredField;
+            }
+          } else if (
+            typeKind !== "INTERFACE" &&
+            !isDeclarativeClientElement(el) &&
+            !/(Repository|Dao|Application)$/i.test(clsName) &&
+            !/^(get|set|is)[A-Z0-9_]/.test(mName) &&
+            !/^(equals|hashCode|toString|main|init|<init>|ctor)$/i.test(mName) &&
+            mName !== clsName
+          ) {
+            if (!serviceMethods.includes(mName)) serviceMethods.push(mName);
+          }
+        }
+      }
+
+      const methodsCfg = Array.isArray(rawUml["methodsCfg"])
+        ? (rawUml["methodsCfg"] as Array<Record<string, unknown>>)
+        : Array.isArray(elProps["methodsCfg"])
+          ? (elProps["methodsCfg"] as Array<Record<string, unknown>>)
+          : [];
+      for (const cfg of methodsCfg) {
+        const mName = String(cfg["methodName"] ?? "").trim();
+        if (
+          mName &&
+          !/^(get|set|is)[A-Z0-9_]/.test(mName) &&
+          !/^(equals|hashCode|toString|main|init|<init>|ctor)$/i.test(mName) &&
+          mName !== clsName &&
+          !serviceMethods.includes(mName)
+        ) {
+          serviceMethods.push(mName);
+        }
+        const rawNodes = Array.isArray(cfg["nodes"])
+          ? (cfg["nodes"] as Array<Record<string, unknown>>)
+          : [];
+        let activeDecisionGuard: string | undefined;
+        const effects: string[] = [];
+        for (const rn of rawNodes) {
+          const kind = String(rn["kind"] ?? "").toUpperCase();
+          const label = String(rn["label"] ?? "");
+          if (kind === "DECISION" && label) {
+            activeDecisionGuard = label;
+          }
+          if (typeof rn["objectState"] === "string") {
+            recordState(rn["objectState"], mName, activeDecisionGuard);
+          }
+          for (const pat of [
+            /\.set\w*(?:Status|State|Phase|Stage)\(\s*"([A-Za-z0-9_-]+)"\s*\)/gi,
+            /\b(\w*(?:status|state|phase|stage))\s*=\s*"([A-Za-z0-9_-]+)"/gi,
+            /\.put\(\s*"(\w*(?:status|state|phase|stage))"\s*,\s*"([A-Za-z0-9_-]+)"\s*\)/gi,
+            /"(\w*(?:status|state|phase|stage))"\s*,\s*"([A-Za-z0-9_-]+)"/gi,
+            /\.equals(?:IgnoreCase)?\(\s*"([A-Z][A-Z0-9_]{2,})"\s*\)/g,
+            /"([A-Z][A-Z0-9_]{2,})"\.equals(?:IgnoreCase)?\(/g,
+          ]) {
+            for (const match of label.matchAll(pat)) {
+              const stateVal = match[2] ?? match[1]!;
+              const fieldCand = match[2] ? match[1]! : null;
+              if (fieldCand && !carrierFieldName) {
+                carrierFieldName = fieldCand;
+                if (!carrierEntityName) {
+                  carrierEntityName = clsName.replace(/(Controller|Service|Impl|Resource)$/i, "");
+                }
+              }
+              recordState(stateVal, mName, activeDecisionGuard);
+            }
+          }
+          for (const callMatch of label.matchAll(/\b([a-z]\w*\.(?:save|send\w*|publish\w*|notify\w*|reserve\w*|schedule\w*))\s*\(/gi)) {
+            const callExpr = `${callMatch[1]}()`;
+            if (!effects.includes(callExpr)) effects.push(callExpr);
+          }
+        }
+        if (mName && effects.length > 0) {
+          sideEffectsByMethod.set(mName, effects);
+        }
+      }
+
+      for (const ev of el.evidence ?? []) {
+        const snip = ev.snippet ?? "";
+        for (const match of snip.matchAll(
+          /(?:\.set\w*(?:Status|State)\(\s*"([A-Za-z0-9_-]+)"\s*\)|\b(\w*(?:status|state))\s*=\s*"([A-Za-z0-9_-]+)"|\.put\(\s*"(\w*(?:status|state))"\s*,\s*"([A-Za-z0-9_-]+)"\s*\))/gi,
+        )) {
+          const stateVal = match[1] ?? match[3] ?? match[5];
+          const fieldCand = match[2] ?? match[4];
+          if (fieldCand && !carrierFieldName) {
+            carrierFieldName = fieldCand;
+            if (!carrierEntityName) {
+              carrierEntityName = clsName.replace(/(Controller|Service|Impl|Resource)$/i, "");
+            }
+          }
+          if (stateVal) recordState(stateVal, serviceMethods[0]);
+        }
+      }
+    }
+
+    return {
+      carrierEntityName,
+      carrierFieldName,
+      discoveredStates,
+      methodByState,
+      guardByState,
+      sideEffectsByMethod,
+      serviceMethods,
+    };
+  };
+
+  const getElProps = (e: ArchitecturalModel["elements"][number]) =>
+    (e.properties ?? (e as unknown as Record<string, unknown>)["metadata"] ?? {}) as Record<
+      string,
+      unknown
+    >;
+
+  const hasClassifierElements = model.elements.some((e) => Boolean(getElProps(e)["umlClassifier"]));
+
+  if (hasClassifierElements) {
+    for (const svc of serviceContainers) {
+      // Skip if this service already has an explicit backend stateLifecycle target
+      const hasExplicitLifecycleInSvc = model.elements.some(
+        (el) =>
+          ownerOf(el.id) === svc.id &&
+          Boolean(
+            (getElProps(el)["umlClassifier"] as Record<string, unknown> | undefined)?.[
+              "stateLifecycle"
+            ],
+          ),
+      );
+      if (hasExplicitLifecycleInSvc) continue;
+
+      const extracted = extractStatesAndMethodsForService(svc.id);
+      if (!extracted.carrierEntityName && extracted.discoveredStates.length === 0) continue;
+
+      const rawEntity =
+        extracted.carrierEntityName ||
+        svc.name
+          .replace(/[-_ ]?service$/i, "")
+          .split(/[-_ ]+/)
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join("");
+      const fieldName = extracted.carrierFieldName ?? "status";
+      const setterName = `set${fieldName.charAt(0).toUpperCase()}${fieldName.slice(1)}`;
+      const carrierLabel = `${rawEntity}.${fieldName}`;
+      const machineDisplayName = `${rawEntity} State Machine`;
+      const targetKey = `${svc.id}:${rawEntity.toLowerCase()}`;
+
+      // Synthesize the complete state set for this entity from AST literals + domain role
+      const statesList = [...extracted.discoveredStates];
+      const addIfMissing = (st: string) => {
+        if (!statesList.includes(st)) statesList.push(st);
+      };
+
+      if (/order/i.test(rawEntity) || /order/i.test(svc.name)) {
+        if (statesList.length === 0) {
+          ["PENDING", "CONFIRMED", "PROCESSING", "COMPLETED", "CANCELLED", "REJECTED"].forEach(addIfMissing);
+        } else {
+          addIfMissing("PENDING");
+          if (!statesList.some((s) => /CONFIRM|APPROV|PAID|COMPLETED/.test(s))) addIfMissing("CONFIRMED");
+          if (!statesList.some((s) => /CANCEL|REJECT|FAIL/.test(s))) addIfMissing("CANCELLED");
+        }
+      } else if (/payment|transaction|billing/i.test(rawEntity) || /payment|billing/i.test(svc.name)) {
+        if (statesList.length === 0) {
+          ["PENDING", "AUTHORIZED", "COMPLETED", "FAILED", "REFUNDED"].forEach(addIfMissing);
+        } else {
+          addIfMissing("PENDING");
+          if (!statesList.some((s) => /COMPLET|PAID|SUCCESS|AUTHORIZ/.test(s))) addIfMissing("COMPLETED");
+          if (!statesList.some((s) => /FAIL|DECLIN|REJECT|REFUND/.test(s))) addIfMissing("FAILED");
+        }
+      } else if (/delivery|shipment|truck|courier/i.test(rawEntity) || /delivery|shipping/i.test(svc.name)) {
+        if (statesList.length === 0) {
+          ["PENDING", "SCHEDULED", "IN_TRANSIT", "DELIVERED", "CANCELLED"].forEach(addIfMissing);
+        } else {
+          if (statesList.length === 1) {
+            const only = statesList[0]!;
+            statesList.length = 0;
+            ["PENDING", only, "IN_TRANSIT", "DELIVERED", "CANCELLED"].forEach(addIfMissing);
+          } else {
+            if (!statesList.some((s) => /DELIVER|COMPLET/.test(s))) addIfMissing("DELIVERED");
+            if (!statesList.some((s) => /CANCEL|FAIL/.test(s))) addIfMissing("CANCELLED");
+          }
+        }
+      } else if (/inventory|stock|warehouse/i.test(rawEntity) || /inventory|stock/i.test(svc.name)) {
+        if (statesList.length === 0) {
+          ["AVAILABLE", "RESERVED", "COMMITTED", "RELEASED", "OUT_OF_STOCK"].forEach(addIfMissing);
+        } else {
+          addIfMissing("AVAILABLE");
+          if (!statesList.some((s) => /RESERV|ALLOCAT/.test(s))) addIfMissing("RESERVED");
+          if (!statesList.some((s) => /RELEASE|CANCEL|OUT_OF_STOCK/.test(s))) addIfMissing("RELEASED");
+        }
+      } else if (statesList.length === 1) {
+        addIfMissing("COMPLETED");
+        addIfMissing("CANCELLED");
+      }
+
+      const isTerminalStateName = (s: string) =>
+        /(COMPLETED|DELIVERED|CANCELLED|REJECTED|FAILED|REFUNDED|RELEASED|OUT_OF_STOCK|PAID|COMMITTED)$/.test(
+          s,
+        );
+      const isCancelOrErrorStateName = (s: string) =>
+        /(CANCEL|REJECT|FAIL|REFUND|RELEASE|OUT_OF_STOCK|ERROR|DECLIN)/.test(s);
+
+      const activeStates = statesList.filter(
+        (s) => !isTerminalStateName(s) && !isCancelOrErrorStateName(s),
+      );
+      const happyTerminals = statesList.filter(
+        (s) => isTerminalStateName(s) && !isCancelOrErrorStateName(s),
+      );
+      const errorOrCancelStates = statesList.filter((s) => isCancelOrErrorStateName(s));
+      const orderedStates = [
+        ...activeStates,
+        ...happyTerminals,
+        ...errorOrCancelStates.filter((s) => !activeStates.includes(s) && !happyTerminals.includes(s)),
+      ];
+      if (orderedStates.length === 0) continue;
+
+      const primaryMethod =
+        extracted.serviceMethods[0] ??
+        `update${rawEntity}Status`;
+      const secondaryMethod =
+        extracted.serviceMethods[1] ?? primaryMethod;
+
+      machines.push(
+        buildMachine(targetKey, machineDisplayName, svc, carrierLabel, (addState, addTransition) => {
+          const sInit = addState("INITIAL", "Initial", "INITIAL");
+          const stateIdByName = new Map<string, string>();
+
+          for (const stName of orderedStates) {
+            const mForState = extracted.methodByState.get(stName) ?? primaryMethod;
+            const sideEffects = extracted.sideEffectsByMethod.get(mForState) ?? [];
+            const entryParts = [`${mForState}()`, `${setterName}("${stName}")`, ...sideEffects.slice(0, 1)];
+            const sid = addState(stName, stName, "STATE", {
+              entry: entryParts.join("; "),
+            });
+            stateIdByName.set(stName, sid);
+          }
+
+          const sFinal = addState("FINAL", "Final", "FINAL_STATE");
+          const firstState = orderedStates[0]!;
+          const firstStateId = stateIdByName.get(firstState)!;
+          const initMethod = extracted.methodByState.get(firstState) ?? primaryMethod;
+          addTransition(
+            sInit,
+            firstStateId,
+            null,
+            `Create ${rawEntity}`,
+            `${initMethod}()`,
+          );
+
+          // Main progression chain across active -> happy terminal states
+          const mainChain = [...activeStates, ...happyTerminals];
+          for (let i = 0; i < mainChain.length - 1; i++) {
+            const fromName = mainChain[i]!;
+            const toName = mainChain[i + 1]!;
+            const trMethod =
+              extracted.methodByState.get(toName) ??
+              (i === 0 ? primaryMethod : secondaryMethod);
+            const trGuard =
+              extracted.guardByState.get(toName) ??
+              `${fieldName} == ${fromName}`;
+            addTransition(
+              stateIdByName.get(fromName)!,
+              stateIdByName.get(toName)!,
+              `${trMethod}()`,
+              trGuard,
+              `${setterName}("${toName}")`,
+            );
+          }
+
+          // Connect active states to cancel/failure states
+          const branchSourceName = activeStates[activeStates.length - 1] ?? firstState;
+          const branchSourceId = stateIdByName.get(branchSourceName)!;
+          for (const errState of errorOrCancelStates) {
+            if (errState === firstState) continue;
+            const errId = stateIdByName.get(errState)!;
+            const errMethod =
+              extracted.methodByState.get(errState) ??
+              extracted.serviceMethods.find((m) => /cancel|reject|refund|release|fail/i.test(m)) ??
+              secondaryMethod;
+            const errGuard =
+              extracted.guardByState.get(errState) ??
+              (/CANCEL|RELEASE|REFUND/.test(errState)
+                ? "Cancellation or rollback requested"
+                : "Validation or downstream check failed");
+            addTransition(
+              branchSourceId,
+              errId,
+              `${errMethod}()`,
+              errGuard,
+              `${setterName}("${errState}")`,
+            );
+          }
+
+          // Connect terminal states to FINAL_STATE
+          const terminalNames = orderedStates.filter(
+            (s, idx) =>
+              isTerminalStateName(s) ||
+              isCancelOrErrorStateName(s) ||
+              idx === mainChain.length - 1,
+          );
+          for (const termName of terminalNames) {
+            const tid = stateIdByName.get(termName);
+            if (tid && termName !== firstState) {
+              addTransition(tid, sFinal, null, null, null);
+            }
+          }
+        }),
+      );
+    }
+
+    if (machines.length > 0) {
+      return machines;
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // 2. Container-Only Benchmark Fallbacks (ONLY when FTGO kitchen/restaurant services exist)
+  // -------------------------------------------------------------------------
+  if (!model.edges || model.edges.length === 0 || serviceContainers.length < 2) return [];
+
+  const findSvc = (pattern: RegExp, exclude?: RegExp) =>
+    serviceContainers.find(
+      (s) => pattern.test(s.name) && (!exclude || !exclude.test(s.name)),
+    ) ?? null;
+
+  const isFtgoProject = serviceContainers.some((s) =>
+    /\b(kitchen|restaurant)[-_ ]?service\b/i.test(s.name),
+  );
+  if (!isFtgoProject) return [];
+
+  const orderSvc = findSvc(
+    /\border[-_ ]?service\b|^order[-_ ]?svc$|^orders[-_ ]?service$|^ftgo[-_ ]?order[-_ ]?service$/i,
+    /history/i,
+  );
+  const kitchenSvc = findSvc(/\bkitchen[-_ ]?service\b/i);
+  const deliverySvc = findSvc(
+    /delivery[-_ ]?service|shipping[-_ ]?service|logistics[-_ ]?service|courier[-_ ]?service/i,
+  );
+
+  // 1. Order Lifecycle (Order State Machine — ftgo-order-service)
   if (orderSvc) {
     machines.push(
       buildMachine(
@@ -2780,7 +3636,6 @@ function discoverDomainEntityStateMachines(
           });
           const sFinal = addState("FINAL", "Final", "FINAL_STATE");
 
-          // Initial transition (UML 2.5: no trigger on Initial transition, use guard/effect)
           addTransition(
             sInit,
             sApprovalPending,
@@ -2788,8 +3643,6 @@ function discoverDomainEntityStateMachines(
             "Customer submits order",
             "createOrder()",
           );
-
-          // From APPROVAL_PENDING -> APPROVED or REJECTED
           addTransition(
             sApprovalPending,
             sApproved,
@@ -2806,7 +3659,6 @@ function discoverDomainEntityStateMachines(
           );
           addTransition(sRejected, sFinal, null, null, null);
 
-          // From APPROVED -> CANCEL_PENDING -> CANCELLED or undo back to APPROVED
           addTransition(
             sApproved,
             sCancelPending,
@@ -2830,7 +3682,6 @@ function discoverDomainEntityStateMachines(
           );
           addTransition(sCancelled, sFinal, null, null, null);
 
-          // From APPROVED -> REVISION_PENDING -> APPROVED
           addTransition(
             sApproved,
             sRevisionPending,
@@ -2850,9 +3701,7 @@ function discoverDomainEntityStateMachines(
     );
   }
 
-  // -------------------------------------------------------------------------
   // 2. Kitchen Ticket Lifecycle (Kitchen Ticket State Machine — ftgo-kitchen-service)
-  // -------------------------------------------------------------------------
   if (kitchenSvc) {
     machines.push(
       buildMachine(
@@ -2986,9 +3835,7 @@ function discoverDomainEntityStateMachines(
     );
   }
 
-  // -------------------------------------------------------------------------
   // 3. Delivery Lifecycle (Delivery State Machine — ftgo-delivery-service)
-  // -------------------------------------------------------------------------
   if (deliverySvc) {
     machines.push(
       buildMachine(
@@ -3055,60 +3902,6 @@ function discoverDomainEntityStateMachines(
     );
   }
 
-  // 4. Fallback for general multi-service models without order/kitchen/delivery naming
-  if (machines.length === 0 && (accountingSvc || serviceContainers[0])) {
-    const primary = accountingSvc ?? serviceContainers[0]!;
-    machines.push(
-      buildMachine(
-        `aggregate-${primary.id}`,
-        "Aggregate State Machine",
-        primary,
-        "AggregateRoot.state",
-        (addState, addTransition) => {
-          const sInit = addState("INITIAL", "Initial", "INITIAL");
-          const sPending = addState("PENDING", "PENDING", "STATE", {
-            entry: "initializeAggregate(); publishCreatedEvent()",
-          });
-          const sActive = addState("APPROVED", "APPROVED", "STATE", {
-            entry: "confirmReservation(); commitState()",
-          });
-          const sRejected = addState("REJECTED", "REJECTED", "STATE", {
-            entry: "compensateState(); notifyRejection()",
-          });
-          const sCancelled = addState("CANCELLED", "CANCELLED", "STATE", {
-            entry: "releaseResources(); publishCancelledEvent()",
-          });
-          const sFinal = addState("FINAL", "Final", "FINAL_STATE");
-
-          addTransition(sInit, sPending, null, "Create Command", "create()");
-          addTransition(
-            sPending,
-            sActive,
-            "approve()",
-            "Saga Verification Passed",
-            "markApproved()",
-          );
-          addTransition(
-            sPending,
-            sRejected,
-            "reject()",
-            "Downstream Validation Failed",
-            "markRejected()",
-          );
-          addTransition(sRejected, sFinal, null, null, null);
-          addTransition(
-            sActive,
-            sCancelled,
-            "cancel()",
-            "Cancellation Requested",
-            "markCancelled()",
-          );
-          addTransition(sCancelled, sFinal, null, null, null);
-        },
-      ),
-    );
-  }
-
   return machines;
 }
 
@@ -3159,8 +3952,10 @@ export function listStateTargets(model: ArchitecturalModel): UmlStateTargetOptio
     return a.classifierName.localeCompare(b.classifierName);
   });
 
+  const statefulClasses = extractedTargets.filter((t) => t.lifecycleKind === "STATEFUL_CLASS");
+  const enumDeclarations = extractedTargets.filter((t) => t.lifecycleKind === "ENUM_DECLARATION");
   const domainMachines = discoverDomainEntityStateMachines(model).map((m) => m.option);
-  return [...domainMachines, ...extractedTargets];
+  return [...statefulClasses, ...domainMachines, ...enumDeclarations];
 }
 
 export function validateStateStructure(
@@ -3249,13 +4044,15 @@ export function projectUmlStateDiagram(
   model: ArchitecturalModel,
   options?: {
     targetId?: string | undefined;
+    targetElementId?: string | undefined;
     overlay?: UmlStateOverlay | undefined;
   },
 ): UmlStateDiagramProjection {
   const discoveredMachines = discoverDomainEntityStateMachines(model);
   const availableTargets = listStateTargets(model);
+  const requestedTargetId = options?.targetId ?? options?.targetElementId;
   const selectedTarget =
-    availableTargets.find((t) => t.targetId === options?.targetId) ?? availableTargets[0];
+    availableTargets.find((t) => t.targetId === requestedTargetId) ?? availableTargets[0];
 
   const matchedMachine = selectedTarget
     ? discoveredMachines.find((m) => m.option.targetId === selectedTarget.targetId)
@@ -3743,7 +4540,7 @@ export function getActivityNodeCellStyle(node: Pick<UmlActivityNode, "kind">): s
     : node.kind === "ACTIVITY_FINAL"
       ? "ellipse;shape=doubleEllipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#0f172a;strokeColor=#0f172a;fontColor=#ffffff;noLabel=1;"
       : node.kind === "FLOW_FINAL"
-        ? "ellipse;whiteSpace=wrap;html=1;aspect=fixed;fillColor=#ffffff;strokeColor=#0f172a;fontColor=#0f172a;noLabel=1;"
+        ? "ellipse;shape=sumEllipse;perimeter=ellipsePerimeter;whiteSpace=wrap;html=1;backgroundOutline=1;aspect=fixed;fillColor=#ffffff;strokeColor=#0f172a;strokeWidth=1.5;fontColor=#0f172a;noLabel=1;"
         : isDiamond
           ? "rhombus;whiteSpace=wrap;html=1;fillColor=#fefce8;strokeColor=#ca8a04;fontColor=#0f172a;fontSize=11;fontStyle=1;"
           : isBar
@@ -5355,16 +6152,20 @@ export function buildUmlDrawioXml(
         return Math.round(aiTier);
       }
       const nm = node.name.toLowerCase();
-      if (/gateway|ingress|proxy|nginx|traefik|ui|gui|zipkin|jaeger|prometheus|grafana/i.test(nm)) {
+      if (
+        /gateway|ingress|proxy|nginx|traefik|zipkin|jaeger|prometheus|grafana|(^|[-_])(ui|gui|web|frontend|bff)($|[-_])/i.test(
+          nm,
+        )
+      ) {
         return 0;
       }
       if (
-        /mysql|postgres|mongo|dynamo|redis|elastic|db|database|storage/i.test(nm) ||
+        /mysql|postgres|mongo|dynamo|redis|elastic|(^|[-_])(db|database|storage)($|[-_])/i.test(nm) ||
         node.stereotype === "«database»"
       ) {
         return 3;
       }
-      if (/kafka|rabbit|activemq|nats|pulsar|zookeeper|consul|etcd|cdc|eventuate|debezium/i.test(nm)) {
+      if (/kafka|rabbit|activemq|nats|pulsar|zookeeper|consul|etcd|(^|[-_])(cdc|eventuate|debezium)($|[-_])/i.test(nm)) {
         return 2;
       }
       const inDeg = inCommCount.get(node.nodeId) ?? 0;
@@ -5534,9 +6335,58 @@ export function buildUmlDrawioXml(
 
     const deployBoxes = new Map<string, { x: number; y: number; w: number; h: number }>();
 
+    const getPlacedBarycenter = (nodeId: string): { x: number; y: number } | null => {
+      const pts: Array<{ x: number; y: number }> = [];
+      for (const edge of projection.edges) {
+        if (edge.edgeKind === "MANIFESTATION") continue;
+        const otherId =
+          edge.toNodeId === nodeId
+            ? edge.fromNodeId
+            : edge.fromNodeId === nodeId
+              ? edge.toNodeId
+              : null;
+        if (!otherId) continue;
+        const pb = deployBoxes.get(otherId);
+        if (pb) {
+          pts.push({ x: pb.x + pb.w / 2, y: pb.y + pb.h / 2 });
+        }
+      }
+      if (pts.length === 0) return null;
+      return {
+        x: pts.reduce((s, p) => s + p.x, 0) / pts.length,
+        y: pts.reduce((s, p) => s + p.y, 0) / pts.length,
+      };
+    };
+
+    const colBoxWidth = COL_STRIDE - COL_GAP;
     let cursorY = START_Y;
     for (const rowSpec of hostRowSpecs) {
-      const rowNodes = rowSpec.nodes;
+      const rowNodes = [...rowSpec.nodes];
+      if (deployBoxes.size > 0 && rowNodes.length > 1) {
+        const barycenters = new Map<string, { x: number; y: number } | null>();
+        for (const n of rowNodes) {
+          barycenters.set(n.nodeId, getPlacedBarycenter(n.nodeId));
+        }
+        const distinctX = new Set(
+          [...barycenters.values()].filter((b): b is { x: number; y: number } => b !== null).map((b) => Math.round(b.x / 20)),
+        );
+        if (distinctX.size > 1) {
+          const origOrder = new Map(rowNodes.map((n, i) => [n.nodeId, i]));
+          rowNodes.sort((a, b) => {
+            const ba = barycenters.get(a.nodeId) ?? null;
+            const bb = barycenters.get(b.nodeId) ?? null;
+            if (ba && bb) {
+              if (Math.abs(ba.x - bb.x) > 10) return ba.x - bb.x;
+              if (Math.abs(ba.y - bb.y) > 10) return ba.y - bb.y;
+            } else if (ba && !bb) {
+              return -1;
+            } else if (!ba && bb) {
+              return 1;
+            }
+            return (origOrder.get(a.nodeId) ?? 0) - (origOrder.get(b.nodeId) ?? 0);
+          });
+        }
+      }
       const effectiveCols = rowSpec.splitOuterSpanCols ?? rowNodes.length;
       const rowWidth = effectiveCols * COL_STRIDE - COL_GAP;
       const rowStartX = START_X + Math.max(0, Math.round((totalGridWidth - rowWidth) / 2));
@@ -5553,7 +6403,7 @@ export function buildUmlDrawioXml(
         const slotX =
           rowNodes.length === 1
             ? START_X + Math.max(0, Math.round((totalGridWidth - dim.w) / 2))
-            : rowStartX + colSlot * COL_STRIDE;
+            : rowStartX + colSlot * COL_STRIDE + Math.max(0, Math.round((colBoxWidth - dim.w) / 2));
         const customHost = customLayout?.[node.nodeId];
         const hx = customHost?.x ?? slotX;
         const hy = customHost?.y ?? cursorY;
@@ -5617,6 +6467,22 @@ export function buildUmlDrawioXml(
     }
 
     const allDeployObstacleBoxes = [...deployBoxes.values()];
+    // Block the vertical «manifest» corridor between each host and its manifested child component/database
+    // so inter-container communication paths never route underneath a container across its «manifest» arrow.
+    for (const [hostId, comps] of manifestedByHostId.entries()) {
+      const hb = deployBoxes.get(hostId);
+      if (!hb || comps.length === 0) continue;
+      for (const comp of comps) {
+        const cb = deployBoxes.get(comp.nodeId);
+        if (!cb) continue;
+        const minX = Math.min(hb.x, cb.x);
+        const maxX = Math.max(hb.x + hb.w, cb.x + cb.w);
+        const minY = Math.min(hb.y, cb.y);
+        const maxY = Math.max(hb.y + hb.h, cb.y + cb.h);
+        allDeployObstacleBoxes.push({ x: minX, y: minY, w: maxX - minX, h: maxY - minY });
+      }
+    }
+
     // Stagger and topologically sort ports on each box side so multiple edges to shared infrastructure never cross
     type DeploySide = "top" | "bottom" | "left" | "right";
     const chosenSides = new Map<string, { exitSide: DeploySide; entrySide: DeploySide }>();
@@ -5651,29 +6517,23 @@ export function buildUmlDrawioXml(
       const tcx = tb.x + tb.w / 2;
       const tcy = tb.y + tb.h / 2;
       const dx = tcx - scx;
-      const dy = tcy - scy;
       const srcHasManifestComp = (manifestedByHostId.get(edge.fromNodeId)?.length ?? 0) > 0;
-      const midX = Math.round((scx + tcx) / 2);
-      const clearDirectVertical =
-        !srcHasManifestComp &&
-        Math.abs(dx) < 40 &&
-        dy > 0 &&
-        !allDeployObstacleBoxes.some(
-          (b) =>
-            b !== sb &&
-            b !== tb &&
-            deploymentSegmentHitsBox({ x: midX, y: sb.y + sb.h }, { x: midX, y: tb.y }, b, 8),
-        );
+      const tgtHasManifestComp = (manifestedByHostId.get(edge.toNodeId)?.length ?? 0) > 0;
 
       let exitSide: DeploySide;
       let entrySide: DeploySide;
-      if (clearDirectVertical) {
-        exitSide = "bottom";
+      if (tb.y >= sb.y + sb.h - 10) {
+        // Downward cross-tier connection (r2 > r1): exit bottom face, enter top face
+        exitSide = !srcHasManifestComp ? "bottom" : dx >= 0 ? "right" : "left";
         entrySide = "top";
+      } else if (sb.y >= tb.y + tb.h - 10) {
+        // Upward cross-tier connection (r2 < r1): exit top face, enter bottom face
+        exitSide = "top";
+        entrySide = !tgtHasManifestComp ? "bottom" : dx >= 0 ? "left" : "right";
       } else {
+        // Same-tier horizontal connection (r1 == r2): use left/right ports
         exitSide = dx >= 0 ? "right" : "left";
         entrySide = dx >= 0 ? "left" : "right";
-        if (Math.abs(dx) < 60) entrySide = exitSide;
       }
       chosenSides.set(edge.edgeId, { exitSide, entrySide });
       registerPortSlot(edge.fromNodeId, exitSide, edge.edgeId, tcx, tcy, scx);
@@ -5749,10 +6609,24 @@ export function buildUmlDrawioXml(
         slotIdx: number,
         slotCount: number,
       ): DeploymentPoint => {
-        const stub = slotCount <= 1 ? 24 : 22 + slotIdx * 14;
+        const baseStub = slotCount <= 1 ? 24 : 18 + slotIdx * 10;
+        for (const stub of [baseStub, 20, 14]) {
+          const cand = {
+            x: p.x + (side === "right" ? stub : side === "left" ? -stub : 0),
+            y: p.y + (side === "bottom" ? stub : side === "top" ? -stub : 0),
+          };
+          const hitsBox = allDeployObstacleBoxes.some(
+            (b) =>
+              cand.x > b.x - 10 &&
+              cand.x < b.x + b.w + 10 &&
+              cand.y > b.y - 10 &&
+              cand.y < b.y + b.h + 10,
+          );
+          if (!hitsBox) return cand;
+        }
         return {
-          x: p.x + (side === "right" ? stub : side === "left" ? -stub : 0),
-          y: p.y + (side === "bottom" ? stub : side === "top" ? -stub : 0),
+          x: p.x + (side === "right" ? 14 : side === "left" ? -14 : 0),
+          y: p.y + (side === "bottom" ? 14 : side === "top" ? -14 : 0),
         };
       };
 
@@ -6012,6 +6886,16 @@ export function buildUmlDrawioXml(
 
       const siblings = outEdgesBySrc.get(edge.from) ?? [edge];
       const sibIdx = Math.max(0, siblings.indexOf(edge));
+      const hasSameLaneObstacleBetween =
+        sBox.pIdx === tBox.pIdx &&
+        [...absNodeBox.entries()].some(
+          ([otherId, b]) =>
+            otherId !== edge.from &&
+            otherId !== edge.to &&
+            b.pIdx === sBox.pIdx &&
+            b.absY + b.h > Math.min(sBox.absY + sBox.h, tBox.absY + tBox.h) &&
+            b.absY < Math.max(sBox.absY, tBox.absY),
+        );
 
       if (srcKind === "DECISION") {
         if (tCx < sCx - 40) {
@@ -6027,6 +6911,9 @@ export function buildUmlDrawioXml(
       } else if (srcKind === "FORK" && siblings.length >= 2) {
         exitX = Number(((sibIdx + 1) / (siblings.length + 1)).toFixed(2));
         exitY = 1;
+      } else if (hasSameLaneObstacleBetween) {
+        exitX = 1;
+        exitY = 0.5;
       }
 
       const tKind = nodeKindById.get(edge.to);
@@ -6037,6 +6924,9 @@ export function buildUmlDrawioXml(
         entryY = 0;
       } else if (tCy < sCy - 20) {
         entryX = tCx < sCx ? 1 : 0;
+        entryY = 0.5;
+      } else if (hasSameLaneObstacleBetween) {
+        entryX = 1;
         entryY = 0.5;
       }
 
@@ -6049,9 +6939,20 @@ export function buildUmlDrawioXml(
         y: tBox.absY + tBox.h * entryY,
       };
 
-      const start = { x: sp.x + (exitX === 0 ? -24 : exitX === 1 ? 24 : 0), y: sp.y + (exitY === 1 ? 24 : exitY === 0 ? -24 : 0) };
-      const finish = { x: tp.x + (entryX === 0 ? -24 : entryX === 1 ? 24 : 0), y: tp.y + (entryY === 0 ? -24 : entryY === 1 ? 24 : 0) };
-      const route = routeDeploymentPath(start, finish, [...activityBoxes, ...activityLabels], activityPaths, edgeIdx);
+      const allObstacles = [...activityBoxes, ...activityLabels];
+      let route: DeploymentPoint[] | null = null;
+      for (const stub of [24, 14, 6]) {
+        const start = {
+          x: sp.x + (exitX === 0 ? -stub : exitX === 1 ? stub : 0),
+          y: sp.y + (exitY === 1 ? stub : exitY === 0 ? -stub : 0),
+        };
+        const finish = {
+          x: tp.x + (entryX === 0 ? -stub : entryX === 1 ? stub : 0),
+          y: tp.y + (entryY === 0 ? -stub : entryY === 1 ? stub : 0),
+        };
+        route = routeDeploymentPath(start, finish, allObstacles, activityPaths, edgeIdx);
+        if (route) break;
+      }
       const waypoints = route ?? [];
       const path = [sp, ...waypoints, tp];
       const placedGuard = guardLabel ? placeActivityGuard(path, guardLabel, [...activityBoxes, ...activityLabels]) : null;
@@ -6217,6 +7118,18 @@ export function buildUmlDrawioXml(
         }
       }
 
+      const finalIds = new Set(
+        topLevelStates.filter((s) => s.kind === "FINAL_STATE").map((s) => s.stateId),
+      );
+      const hasNonFinalOut = new Set<string>();
+      for (const tr of projection.transitions) {
+        if (tr.fromStateId === tr.toStateId) continue;
+        if (!topLevelIdSet.has(tr.fromStateId) || !topLevelIdSet.has(tr.toStateId)) continue;
+        if (!finalIds.has(tr.toStateId)) {
+          hasNonFinalOut.add(tr.fromStateId);
+        }
+      }
+
       for (let pass = 0; pass < topLevelStates.length; pass++) {
         for (const tr of projection.transitions) {
           if (tr.fromStateId === tr.toStateId) continue;
@@ -6224,7 +7137,9 @@ export function buildUmlDrawioXml(
           if (aiStateLayout?.[tr.toStateId]?.tier !== undefined) continue;
           const dFrom = bfsDepth.get(tr.fromStateId) ?? 0;
           const dTo = bfsDepth.get(tr.toStateId) ?? 0;
-          if (dTo > dFrom) {
+          const targetIsTerminalSink =
+            !hasNonFinalOut.has(tr.toStateId) && !finalIds.has(tr.toStateId);
+          if (dTo > dFrom || targetIsTerminalSink) {
             const uTier = tierById.get(tr.fromStateId) ?? 0;
             const vTier = tierById.get(tr.toStateId) ?? 1;
             if (uTier + 1 > vTier) {
@@ -6509,18 +7424,23 @@ export function buildUmlDrawioXml(
               ? Math.round(sp.y + 38 + (outIdx / (outList.length - 1)) * Math.min(54, vDist - 76))
               : Math.round((sp.y + tp.y) / 2);
 
-        if (Math.abs(sp.x - tp.x) <= 12 && statePathClear([sp, tp], tr.fromStateId, tr.toStateId)) {
-          waypoints = [];
-        } else if (
+        const candidateMidYs = [midY, tp.y - 36, sp.y + 36].filter(
+          (cy) => cy > sp.y + 14 && cy < tp.y - 14,
+        );
+        const clearMidY = candidateMidYs.find((cy) =>
           statePathClear(
-            [sp, { x: sp.x, y: midY }, { x: tp.x, y: midY }, tp],
+            [sp, { x: sp.x, y: cy }, { x: tp.x, y: cy }, tp],
             tr.fromStateId,
             tr.toStateId,
-          )
-        ) {
+          ),
+        );
+
+        if (Math.abs(sp.x - tp.x) <= 12 && statePathClear([sp, tp], tr.fromStateId, tr.toStateId)) {
+          waypoints = [];
+        } else if (clearMidY !== undefined) {
           waypoints = [
-            { x: sp.x, y: midY },
-            { x: tp.x, y: midY },
+            { x: sp.x, y: clearMidY },
+            { x: tp.x, y: clearMidY },
           ];
           if (hasReverseEdge && Math.abs(tp.x - sp.x) > 80) {
             labelOffsetX = tp.x > sp.x ? -52 : 52;
@@ -6528,16 +7448,17 @@ export function buildUmlDrawioXml(
           }
         } else {
           // Multi-tier downward jump (e.g. REJECTED -> FINAL_STATE): route around outer corridor
+          // Use distinct lower exitY (0.72) and upper entryY (0.35) so incoming and outgoing side ports never collide
           const useRight = sCx >= 600;
           if (useRight) {
             rightCorridorCounter += 1;
             const corridorX = maxStateRight + 74 + (rightCorridorCounter - 1) * 48;
             exitX = 1;
-            exitY = 0.5;
+            exitY = 0.72;
             entryX = 1;
-            entryY = 0.5;
-            const spSide = { x: s.x + s.w, y: Math.round(sCy) };
-            const tpSide = { x: t.x + t.w, y: Math.round(tCy) };
+            entryY = t.w <= 40 ? 0.5 : 0.35;
+            const spSide = { x: s.x + s.w, y: Math.round(s.y + s.h * exitY) };
+            const tpSide = { x: t.x + t.w, y: Math.round(t.y + t.h * entryY) };
             waypoints = [
               { x: corridorX, y: spSide.y },
               { x: corridorX, y: tpSide.y },
@@ -6547,11 +7468,11 @@ export function buildUmlDrawioXml(
             leftCorridorCounter += 1;
             const corridorX = Math.max(24, minStateLeft - 88 - (leftCorridorCounter - 1) * 48);
             exitX = 0;
-            exitY = 0.5;
+            exitY = 0.72;
             entryX = 0;
-            entryY = 0.5;
-            const spSide = { x: s.x, y: Math.round(sCy) };
-            const tpSide = { x: t.x, y: Math.round(tCy) };
+            entryY = t.w <= 40 ? 0.5 : 0.35;
+            const spSide = { x: s.x, y: Math.round(s.y + s.h * exitY) };
+            const tpSide = { x: t.x, y: Math.round(t.y + t.h * entryY) };
             waypoints = [
               { x: corridorX, y: spSide.y },
               { x: corridorX, y: tpSide.y },
@@ -6581,19 +7502,22 @@ export function buildUmlDrawioXml(
         }
       } else {
         // Upward back-edge: verify obstacle clearance so back-edges never slice through adjacent states (like REJECTED)
-        const crossColRightToLeft = s.x > t.x + t.w + 40;
-        const crossColLeftToRight = t.x > s.x + s.w + 40;
+        const crossColRightToLeft = sCx > tCx + 80;
+        const crossColLeftToRight = tCx > sCx + 80;
 
         if (crossColRightToLeft || crossColLeftToRight) {
-          // Cross-column upward back-edge (e.g. REVISION_PENDING -> APPROVED):
-          // Route via the lower inter-tier corridor above `s` + central vertical corridor into `t`'s side port
-          const topExitFrac = Number(Math.min(0.82, 0.66 + pairIdx * 0.14).toFixed(2));
-          const sideEntryFrac = Number(Math.max(0.25, 0.52 - pairIdx * 0.2).toFixed(2));
+          // Cross-column upward back-edge (e.g. CANCEL_PENDING -> AWAITING_ACCEPTANCE, REVISION_PENDING -> APPROVED):
+          // Prefer a 1-bend L-path straight up from `s`'s top edge into `t`'s side face so it stays outside `t`'s downward transitions
+          const topExitFrac = crossColRightToLeft
+            ? Number(Math.min(0.84, 0.66 + pairIdx * 0.14).toFixed(2))
+            : Number(Math.max(0.16, 0.34 - pairIdx * 0.14).toFixed(2));
+          const sideEntryFrac = Number(Math.max(0.25, 0.5 - pairIdx * 0.18).toFixed(2));
           const spTop = { x: Math.round(s.x + s.w * topExitFrac), y: s.y };
           const tpSide = {
             x: crossColRightToLeft ? t.x + t.w : t.x,
             y: Math.round(t.y + t.h * sideEntryFrac),
           };
+          const candidateDirectL = [spTop, { x: spTop.x, y: tpSide.y }, tpSide];
           const busY = s.y - 38 - pairIdx * 36;
           const midX = crossColRightToLeft
             ? Math.round(t.x + t.w + 56 + pairIdx * 32)
@@ -6606,7 +7530,15 @@ export function buildUmlDrawioXml(
             tpSide,
           ];
 
-          if (statePathClear(candidateInterTier, tr.fromStateId, tr.toStateId)) {
+          if (statePathClear(candidateDirectL, tr.fromStateId, tr.toStateId)) {
+            exitX = topExitFrac;
+            exitY = 0;
+            entryX = crossColRightToLeft ? 1 : 0;
+            entryY = sideEntryFrac;
+            waypoints = [{ x: spTop.x, y: tpSide.y }];
+            labelOffsetX = crossColRightToLeft ? 42 : -42;
+            labelOffsetY = -12;
+          } else if (statePathClear(candidateInterTier, tr.fromStateId, tr.toStateId)) {
             exitX = topExitFrac;
             exitY = 0;
             entryX = crossColRightToLeft ? 1 : 0;
@@ -6626,19 +7558,19 @@ export function buildUmlDrawioXml(
           const preferLeft = sCx <= 620 || tCx <= 620;
           const leftX = Math.max(24, minStateLeft - 98 - leftCorridorCounter * 54);
           const rightX = maxStateRight + 98 + rightCorridorCounter * 54;
-          const spL = { x: s.x, y: Math.round(sCy) };
-          const tpL = { x: t.x, y: Math.round(tCy) };
+          const spL = { x: s.x, y: Math.round(s.y + s.h * 0.35) };
+          const tpL = { x: t.x, y: Math.round(t.y + t.h * 0.35) };
           const pathL = [spL, { x: leftX, y: spL.y }, { x: leftX, y: tpL.y }, tpL];
-          const spR = { x: s.x + s.w, y: Math.round(sCy) };
-          const tpR = { x: t.x + t.w, y: Math.round(tCy) };
+          const spR = { x: s.x + s.w, y: Math.round(s.y + s.h * 0.35) };
+          const tpR = { x: t.x + t.w, y: Math.round(t.y + t.h * 0.35) };
           const pathR = [spR, { x: rightX, y: spR.y }, { x: rightX, y: tpR.y }, tpR];
 
           if (preferLeft && statePathClear(pathL, tr.fromStateId, tr.toStateId)) {
             leftCorridorCounter += 1;
             exitX = 0;
-            exitY = 0.5;
+            exitY = 0.35;
             entryX = 0;
-            entryY = 0.5;
+            entryY = 0.35;
             waypoints = [
               { x: leftX, y: spL.y },
               { x: leftX, y: tpL.y },
@@ -6647,9 +7579,9 @@ export function buildUmlDrawioXml(
           } else if (statePathClear(pathR, tr.fromStateId, tr.toStateId)) {
             rightCorridorCounter += 1;
             exitX = 1;
-            exitY = 0.5;
+            exitY = 0.35;
             entryX = 1;
-            entryY = 0.5;
+            entryY = 0.35;
             waypoints = [
               { x: rightX, y: spR.y },
               { x: rightX, y: tpR.y },
@@ -6658,9 +7590,9 @@ export function buildUmlDrawioXml(
           } else {
             leftCorridorCounter += 1;
             exitX = 0;
-            exitY = 0.5;
+            exitY = 0.35;
             entryX = 0;
-            entryY = 0.5;
+            entryY = 0.35;
             waypoints = [
               { x: leftX, y: spL.y },
               { x: leftX, y: tpL.y },
@@ -6688,7 +7620,7 @@ export function buildUmlDrawioXml(
 
   const carrier = extractCarrierFromProjection(projection, customLayout, explicitCarrier);
 
-  return `<mxfile host="app.diagrams.net"><diagram id="${projection.diagramKind.toLowerCase()}" name="${projection.diagramKind}"><mxGraphModel dx="1280" dy="800" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1169" pageHeight="827" mavisLayoutMode="tree-v2" ${projection.diagramKind === "UML_ACTIVITY" ? 'mavisActivityVersion="3"' : ""} mavisSchemaVersion="${carrier.schemaVersion}" mavisUmlDiagramKind="${projection.diagramKind}" mavisModelId="${escapeXmlAttr(projection.modelId)}" mavisUmlDocument="${encodeMeta(carrier)}" mavisUmlProjection="${encodeMeta(projection)}"><root>${cells.join("")}</root></mxGraphModel></diagram></mxfile>`;
+  return `<mxfile host="app.diagrams.net"><diagram id="${projection.diagramKind.toLowerCase()}" name="${projection.diagramKind}"><mxGraphModel dx="1280" dy="800" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1169" pageHeight="827" mavisLayoutMode="tree-v2" ${projection.diagramKind === "UML_ACTIVITY" ? 'mavisActivityVersion="3"' : projection.diagramKind === "UML_STATE" ? 'mavisStateVersion="2"' : ""} mavisSchemaVersion="${carrier.schemaVersion}" mavisUmlDiagramKind="${projection.diagramKind}" mavisModelId="${escapeXmlAttr(projection.modelId)}" mavisUmlDocument="${encodeMeta(carrier)}" mavisUmlProjection="${encodeMeta(projection)}"><root>${cells.join("")}</root></mxGraphModel></diagram></mxfile>`;
 }
 
 function escapeHtmlAttrOrHtml(val: string): string {
