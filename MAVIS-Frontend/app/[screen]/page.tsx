@@ -112,7 +112,7 @@ export default async function FeaturePage({ params }: { params: Promise<{ screen
   if (screen === "diagrams")
     return (
       <AppShell scope="project" activeId="diagrams" pageTitle={config.title}>
-        <ArchitectureWorkspace title={config.title} />
+        <ArchitectureWorkspace title={config.title} mode="diagram" />
       </AppShell>
     );
   return (

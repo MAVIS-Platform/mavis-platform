@@ -17,10 +17,30 @@ class ArchitectureDocumentServiceTest {
     @Mock ArchitectureDocumentRepository documents;
     @Mock AccessPolicyService access;
     @Mock EntityManager entityManager;
+    @Mock DiagramVersionRepository diagrams;
     @InjectMocks ArchitectureDocumentService service;
     private final UUID id=UUID.randomUUID();
     private final ModelVersion model=ModelVersion.builder().id(id).project(Project.builder().id(UUID.randomUUID()).build()).build();
     private final String xml="<mxfile><diagram><mxGraphModel><root/></mxGraphModel></diagram></mxfile>";
+    @Test void exactHistoricalRevisionIsCopiedAndDoesNotFollowLaterSaves() {
+        when(models.findById(id)).thenReturn(Optional.of(model));
+        var old=new ArchitectureDocument();old.setId(UUID.randomUUID());old.setModelVersion(model);old.setViewKey("uml-class:all");old.setRevision(2);old.setXml(xml);
+        when(documents.findByModelVersionIdAndViewKeyAndRevision(id,"uml-class:all",2)).thenReturn(Optional.of(old));
+        when(diagrams.save(any())).thenAnswer(call->{DiagramVersion diagram=call.getArgument(0);diagram.setId(UUID.randomUUID());return diagram;});
+        service.freeze(id,"uml-class:all",2);
+        var captured=org.mockito.ArgumentCaptor.forClass(DiagramVersion.class);verify(diagrams).save(captured.capture());
+        assertThat(captured.getValue().getNotation()).isEqualTo("UML_CLASS");
+        assertThat(captured.getValue().getLayoutJson().path("drawioXml").asText()).isEqualTo(xml);
+        assertThat(captured.getValue().getLayoutJson().path("documentRevision").asLong()).isEqualTo(2);
+        old.setXml("later contents");assertThat(captured.getValue().getLayoutJson().path("drawioXml").asText()).isEqualTo(xml);
+        verify(access).requireProjectWriteAccess(model.getProject());
+    }
+    @Test void bundleRejectsAnotherModelsDiagram() {
+        when(models.findById(id)).thenReturn(Optional.of(model));var diagramId=UUID.randomUUID();
+        when(diagrams.findById(diagramId)).thenReturn(Optional.of(DiagramVersion.builder().id(diagramId).modelVersion(ModelVersion.builder().id(UUID.randomUUID()).build()).build()));
+        assertThatThrownBy(()->service.freezeArtifacts(id,new ArchitectureDocumentService.ArtifactSelection(List.of(),List.of(diagramId)))).isInstanceOf(BusinessException.class);
+        verify(diagrams,never()).save(any());
+    }
     @Test void saveCreatesNewImmutableRevisionAndRejectsStaleWrites() {
         when(models.findById(id)).thenReturn(Optional.of(model));
         var previous=new ArchitectureDocument();previous.setModelVersion(model);previous.setViewKey("containers");previous.setRevision(1);previous.setXml(xml);

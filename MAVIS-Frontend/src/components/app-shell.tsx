@@ -83,13 +83,13 @@ export function AppShell(props: AppShellProps) {
         : pathname.startsWith("/submissions/")
           ? "workspace:read"
           : [
-            "/workspaces",
-            "/workspace-overview",
-            "/assignments",
-            "/submissions",
-            "/members",
-            "/references",
-          ].includes(pathname)
+                "/workspaces",
+                "/workspace-overview",
+                "/assignments",
+                "/submissions",
+                "/members",
+                "/references",
+              ].includes(pathname)
             ? "workspace:read"
             : "project:read";
   if (preview || pathname === "/design-system") return <ManagedShellChrome {...props} />;
@@ -519,16 +519,12 @@ function ShellChrome({
               )}
             </div>
           </Header>
-          {!live && (
+          {!live && (Boolean(onPreviewNavigate) || pathname === "/design-system") && (
             <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-info-subtle px-(--page-gutter) py-2 text-xs text-info">
               <span className="flex items-center gap-2">
                 <Info className="size-3.5 shrink-0" aria-hidden="true" />
                 <span>
-                  {onPreviewNavigate || pathname === "/design-system"
-                    ? "Design preview · All content is illustrative. No live system data."
-                    : apiMode === "mock"
-                      ? "Mock mode · Explicit sample data. No live system connection. Changes reset on reload."
-                      : "Backend mode · Configured service requests. Unavailable operations report an error."}
+                  Design preview · All content is illustrative. No live system data.
                 </span>
               </span>
               <button
@@ -583,7 +579,7 @@ function ShellChrome({
             onOpenAutoFocus={() => {
               detailReturnFocus.current =
                 document.activeElement instanceof HTMLElement &&
-                  document.activeElement !== document.body
+                document.activeElement !== document.body
                   ? document.activeElement
                   : document.getElementById("main-content");
             }}

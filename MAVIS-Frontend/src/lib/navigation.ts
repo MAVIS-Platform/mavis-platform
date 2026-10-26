@@ -151,8 +151,8 @@ export const projectNavigation: readonly NavigationGroup[] = [
     label: "Architecture",
     items: [
       { id: "graph", label: "Architecture Graph Explorer", icon: Network, href: "/architecture" },
-      { id: "model", label: "Architecture Model Editor", icon: Boxes, href: "/model" },
       { id: "diagrams", label: "Architecture Diagrams", icon: Workflow, href: "/diagrams" },
+      { id: "model", label: "Architecture Model Editor", icon: Boxes, href: "/model" },
       { id: "compare", label: "Compare Model Versions", icon: GitCompareArrows, href: "/compare" },
       { id: "impact", label: "Change Impact Analysis", icon: GitFork, href: "/impact" },
     ],

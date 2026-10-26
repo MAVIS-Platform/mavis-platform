@@ -167,10 +167,55 @@ class JavaSourceToGraphC4PipelineTest {
         var configDetector = new SpringConfigDetectorServiceImpl();
         var javaParser = new JavaSourceParser();
 
+        Files.createDirectories(tempDir.resolve("orders"));
+        Files.writeString(tempDir.resolve("orders/Dockerfile"), "FROM eclipse-temurin:21\nCOPY build/libs/*.jar /app/orders.jar\n");
+        Path packageFixture = tempDir.resolve("orders/src/main/java/sample/shipping");
+        for (String directory : List.of("ports", "workflows/abort", "workflows/amend", "domain")) Files.createDirectories(packageFixture.resolve(directory));
+        Files.writeString(packageFixture.resolve("ports/StockPort.java"), "package sample.shipping.ports; public interface StockPort {}");
+        Files.writeString(packageFixture.resolve("ports/LedgerPort.java"), "package sample.shipping.ports; public interface LedgerPort {}");
+        Files.writeString(packageFixture.resolve("workflows/abort/AbortDispatch.java"), """
+            package sample.shipping.workflows.abort;
+            import sample.shipping.ports.*; import java.util.*;
+            public class AbortDispatch {
+                private Map<String, List<StockPort>> ports;
+                @org.springframework.beans.factory.annotation.Autowired private LedgerPort ledger;
+            }
+            """);
+        Files.writeString(packageFixture.resolve("workflows/amend/AmendDispatch.java"), """
+            package sample.shipping.workflows.amend;
+            import sample.shipping.ports.StockPort; import sample.shipping.ports.LedgerPort;
+            public class AmendDispatch {
+                public AmendDispatch(StockPort stock, LedgerPort ledger) {}
+                @org.springframework.context.annotation.Bean public StockPort stock(LedgerPort ledger) { return null; }
+            }
+            """);
+        Files.writeString(packageFixture.resolve("domain/Parcel.java"), "package sample.shipping.domain; @jakarta.persistence.Entity public class Parcel { @jakarta.persistence.Embedded ShippingLabel label; }");
+        Files.writeString(packageFixture.resolve("domain/Depot.java"), "package sample.shipping.domain; @jakarta.persistence.Entity public class Depot {}");
+        Files.writeString(packageFixture.resolve("domain/ShippingLabel.java"), "package sample.shipping.domain; @jakarta.persistence.Embeddable public class ShippingLabel { String destination; }");
+        Files.writeString(packageFixture.resolve("domain/CatalogStore.java"), "package sample.shipping.domain; public interface CatalogStore extends org.springframework.data.repository.CrudRepository<Parcel, Long> {}");
+        Files.writeString(packageFixture.resolve("ports/CommandPort.java"), """
+            package sample.shipping.ports;
+            public class CommandPort {
+                public final CommandEndpoint<DispatchCommand> dispatch = EndpointBuilder.forCommand(DispatchCommand.class).build();
+                protected java.util.function.Supplier<String> status = () -> { return "ready"; };
+            }
+            """);
+        Files.createDirectories(packageFixture.resolve("web"));
+        Files.writeString(packageFixture.resolve("web/FulfillmentResource.java"), """
+            package sample.shipping.web;
+            @org.springframework.web.bind.annotation.RestController
+            public class FulfillmentResource {
+                @org.springframework.web.bind.annotation.GetMapping(path={"/depot", "/depots/{id}"})
+                public final reactor.core.publisher.Mono<sample.shipping.domain.Depot> findDepot(String id) { return null; }
+            }
+            """);
+        Files.writeString(packageFixture.resolve("web/PlumbingFilter.java"), "package sample.shipping.web; public class PlumbingFilter implements jakarta.servlet.Filter {}");
+
         var containers = dockerDetector.detectContainers(tempDir.toString());
         assertThat(containers).isNotEmpty();
         var ordersContainer = containers.stream().filter(c -> "orders-service".equals(c.getServiceName())).findFirst().orElseThrow();
         assertThat(ordersContainer.getDatasourceTechnology()).isEqualTo("mysql");
+        assertThat(ordersContainer.getArtifactName()).isEqualTo("orders.jar");
 
         var codeEvidences = javaParser.parseProject(tempDir.toString());
         assertThat(codeEvidences).isNotEmpty();
@@ -265,6 +310,24 @@ class JavaSourceToGraphC4PipelineTest {
         GraphDataDTO graphDto = graphService.getGraphDataBySessionId(modelVersion.getId());
 
         // Verify GraphDTO
+        assertThat(savedEvidences).anyMatch(e -> e.getElement() != null && "CommandPort".equals(e.getElement().getName()) && e.getRelationship() == null && "STATIC_CODE".equals(e.getSourceType()));
+        assertThat(savedEvidences).anyMatch(e -> e.getElement() != null && "orders-service".equals(e.getElement().getName()) && e.getRelationship() == null && "DOCKER_COMPOSE".equals(e.getSourceType()));
+        assertThat(savedRelationships).anyMatch(r -> "CatalogStore".equals(r.getSourceElement().getName()) && "Parcel".equals(r.getTargetElement().getName()));
+        assertThat(savedRelationships).anyMatch(r -> "FulfillmentResource".equals(r.getSourceElement().getName()) && "Depot".equals(r.getTargetElement().getName()));
+        assertThat(savedRelationships).anyMatch(r -> "Parcel".equals(r.getSourceElement().getName()) && "ShippingLabel".equals(r.getTargetElement().getName()) && "COMPOSITION".equals(r.getProperties().path("umlRelationKind").asText()) && "EMBEDDED_VALUE".equals(r.getProperties().path("ownershipEvidence").asText()));
+        assertThat(savedElements).anyMatch(e -> "CommandPort".equals(e.getName()) && e.getProperties().path("umlClassifier").path("members").toString().contains("dispatch"));
+        assertThat(savedElements).anyMatch(e -> "FulfillmentResource".equals(e.getName()) && e.getProperties().path("umlClassifier").path("members").toString().contains("findDepot"));
+        for (String workflow : List.of("AbortDispatch", "AmendDispatch")) {
+            for (String port : List.of("StockPort", "LedgerPort")) {
+                assertThat(savedRelationships).anyMatch(r -> "CODE_DEPENDENCY".equals(r.getRelationType()) && workflow.equals(r.getSourceElement().getName()) && port.equals(r.getTargetElement().getName()));
+            }
+        }
+        for (String entity : List.of("Parcel", "Depot")) assertThat(savedElements).anyMatch(e -> entity.equals(e.getName()) && e.getProperties().path("umlClassifier").path("annotations").toString().contains("jakarta.persistence.Entity"));
+        var configuredDeployment = savedElements.stream().filter(e -> "orders-service".equals(e.getName())).findFirst().orElseThrow().getProperties().path("deploymentMetadata");
+        assertThat(configuredDeployment.path("artifactName").asText()).isEqualTo("orders.jar");
+        assertThat(configuredDeployment.path("connections").isArray()).isTrue();
+        assertThat(configuredDeployment.path("connections").get(0).path("targetService").asText()).isEqualTo("orders-db");
+        assertThat(configuredDeployment.path("connections").get(0).path("port").asInt()).isEqualTo(3306);
         assertThat(graphDto.getNodes()).anyMatch(n -> "mysql".equals(n.getProtocol()));
         assertThat(graphDto.getEdges()).anyMatch(e -> "DATABASE_ACCESS".equals(e.getKind()) && e.getEvidenceCount() != null && e.getEvidenceCount() > 0);
         assertThat(graphDto.getEdges()).anyMatch(e -> e.getProperties() != null && "REALIZATION".equals(e.getProperties().path("umlRelationKind").asText()));

@@ -1,26 +1,26 @@
 import type { ArchitecturalModel, Evidence } from "@/types/domain";
 export const RULE_SET = "3e-2";
 export const ruleNames: Record<string, string> = {
-  "RULE-01": "Vòng phụ thuộc giữa các service",
-  "RULE-02": "Ranh giới dữ liệu giữa các service",
-  "RULE-03": "Service ít kết nối trong mô hình",
-  "RULE-04": "Căn cứ cho các quan hệ",
-  "RULE-05": "Ánh xạ cần xác minh",
+  "RULE-01": "Cyclic dependencies between services",
+  "RULE-02": "Data ownership boundary across services",
+  "RULE-03": "Low-connectivity service in model",
+  "RULE-04": "Evidence coverage for relationships",
+  "RULE-05": "Mappings requiring verification",
 };
 export const resultNames: Record<string, string> = {
-  PASS: "Đạt trong phạm vi đã kiểm tra",
-  VIOLATION: "Có điểm cần xem xét",
-  NEEDS_REVIEW: "Cần xác minh",
-  NOT_APPLICABLE: "Không áp dụng",
+  PASS: "Passed within verified scope",
+  VIOLATION: "Violation detected",
+  NEEDS_REVIEW: "Needs verification",
+  NOT_APPLICABLE: "Not applicable",
 };
 export function sourceLabel(evidence: Pick<Evidence, "kind" | "sourceType">) {
   const type = evidence.sourceType?.toUpperCase() ?? "";
-  if (type.startsWith("RUNTIME")) return "Quan sát khi chạy";
-  if (type.includes("CONFIG") || type.includes("COMPOSE")) return "Từ cấu hình";
+  if (type.startsWith("RUNTIME")) return "Observed at runtime";
+  if (type.includes("CONFIG") || type.includes("COMPOSE")) return "From configuration";
   if (type.includes("SOURCE") || type.includes("AST") || type.includes("CODE"))
-    return "Từ mã nguồn";
-  if (type.includes("USER")) return "Người dùng xác nhận";
-  return "Nguồn chưa phân loại";
+    return "From source code";
+  if (type.includes("USER")) return "User confirmed";
+  return "Unclassified source";
 }
 export function shortLocator(location: string) {
   const normalized = location.replaceAll("\\", "/");
@@ -28,13 +28,13 @@ export function shortLocator(location: string) {
   if (extracted) return extracted[1]!;
   if (/^[a-z]:\//i.test(normalized) || normalized.startsWith("/"))
     return normalized.split("/").slice(-3).join("/");
-  return normalized || "Chưa có vị trí source";
+  return normalized || "No source location";
 }
 export function selectionSummary(model: ArchitecturalModel, id: string) {
   const node = model.elements.find((node) => node.id === id),
     edge = model.edges.find((edge) => edge.id === id);
   const name = (id: string) =>
-    model.elements.find((node) => node.id === id)?.name ?? "Đối tượng chưa phân giải";
+    model.elements.find((node) => node.id === id)?.name ?? "Unresolved element";
   if (edge) {
     const umlRelKind =
       typeof edge.properties?.["umlRelationKind"] === "string"
@@ -42,25 +42,25 @@ export function selectionSummary(model: ArchitecturalModel, id: string) {
         : null;
     const meaning: Record<string, string> = {
       DATABASE_ACCESS:
-        "Mô hình ánh xạ một quan hệ truy cập dữ liệu. Cần xem cả source và datasource để xác minh đích dữ liệu.",
+        "The model maps a data access relationship. Inspect both source code and datasource configuration to verify the target datastore.",
       DECLARED_COMPOSE:
-        "Cấu hình triển khai khai báo phụ thuộc khởi động; quan hệ này chưa chứng minh có gọi API hay truy cập dữ liệu.",
+        "Deployment configuration declares a startup dependency; this relationship does not prove runtime API calls or data access.",
       CODE_DEPENDENCY: umlRelKind
-        ? `Source khai báo quan hệ UML ${umlRelKind} giữa hai classifier; thứ tự thực thi chưa được xác định.`
-        : "Source khai báo một phụ thuộc giữa các thành phần; thứ tự thực thi chưa được xác định.",
+        ? `Source code declares a UML ${umlRelKind} relationship between two classifiers; execution order is not implied.`
+        : "Source code declares a static dependency between components; execution order is not implied.",
       SERVICE_HTTP_CALL:
-        "Mô hình ghi nhận một lời gọi HTTP giữa hai đầu mút. Xem nguồn để phân biệt khai báo với quan sát thực tế.",
+        "The model records an HTTP call between two endpoints. Inspect evidence to distinguish static declarations from observed runtime traffic.",
       MESSAGE_PUBLISH:
-        "Source/cấu hình khai báo việc gửi tới kênh thông điệp; chưa xác nhận thông điệp đã được chuyển.",
+        "Source or configuration declares publishing to a message channel; runtime delivery is not yet verified.",
       MESSAGE_SUBSCRIBE:
-        "Source/cấu hình khai báo xử lý thông điệp từ kênh; chưa xác nhận đã thực thi.",
+        "Source or configuration declares message consumption from a channel; runtime execution is not yet verified.",
     };
     return {
       title: `${name(edge.from)} → ${name(edge.to)}`,
-      type: umlRelKind ? `Quan hệ UML · ${umlRelKind}` : "Quan hệ kiến trúc",
+      type: umlRelKind ? `UML Relationship · ${umlRelKind}` : "Architectural Relationship",
       summary:
         meaning[edge.protocol] ??
-        "Quan hệ được lưu trong mô hình kiến trúc. Mở căn cứ để kiểm tra ý nghĩa và phạm vi.",
+        "Relationship recorded in the architectural model. Inspect evidence to verify its semantics and scope.",
       connections: [edge],
       node,
       edge,
@@ -68,49 +68,49 @@ export function selectionSummary(model: ArchitecturalModel, id: string) {
   }
   const connections = model.edges.filter((edge) => edge.from === id || edge.to === id);
   const role: Record<string, [string, string]> = {
-    SERVICE_CONTAINER: ["Service / ứng dụng", "Đơn vị ứng dụng được nhận diện trong mô hình."],
+    SERVICE_CONTAINER: ["Service / Application Container", "Deployable service or application unit identified in the model."],
     COMPONENT: [
-      "Thành phần bên trong service",
-      "Thành phần được trích xuất từ source; vai trò kiến trúc cần đối chiếu ngữ cảnh.",
+      "Internal Service Component",
+      "Component extracted from source code; verify its architectural role in context.",
     ],
     CLASS_INTERFACE: [
       "UML Classifier (Class / Interface / Enum)",
-      "Classifier được trích xuất từ AST mã nguồn phục vụ các biểu đồ UML Class, Package, Activity và State.",
+      "Classifier extracted from source AST for UML Class, Package, Activity, and State projections.",
     ],
     DATABASE: [
       node?.properties?.["resourceRole"] === "LOGICAL_DATASTORE"
-        ? "Database logic"
-        : "Cơ sở dữ liệu · phạm vi cần xác minh",
+        ? "Logical Datastore"
+        : "Database · Scope Requires Verification",
       node?.properties?.["resourceRole"] === "LOGICAL_DATASTORE"
-        ? "Đích dữ liệu được ánh xạ từ cấu hình của ứng dụng."
-        : "Chưa đủ thông tin ở node này để phân biệt máy chủ dữ liệu với database/schema logic.",
+        ? "Logical datastore target mapped from application configuration."
+        : "Insufficient metadata on this node to distinguish a physical database server from a logical schema.",
     ],
     MESSAGE_CHANNEL: [
-      "Kênh thông điệp",
-      "Kênh gửi hoặc xử lý thông điệp đã khai báo; chưa khẳng định có trao đổi khi chạy.",
+      "Message Channel",
+      "Declared message publishing or consumption channel; runtime message traffic is not yet confirmed.",
     ],
     QUEUE_BROKER: [
-      "Hạ tầng thông điệp",
-      "Tài nguyên phục vụ trao đổi thông điệp được nhận diện trong mô hình.",
+      "Message Broker Infrastructure",
+      "Messaging broker infrastructure resource identified in the model.",
     ],
     EXTERNAL_SYSTEM: [
-      "Hệ thống bên ngoài",
-      "Phần tử được mô hình phân loại là hệ thống bên ngoài; ranh giới cần đối chiếu dự án.",
+      "External System",
+      "Element classified as an external system; verify system boundary against project scope.",
     ],
   };
   const [type, summary] = role[node?.elementType ?? ""] ?? [
-    "Phần tử kiến trúc",
-    "Vai trò của phần tử này chưa được phân loại đầy đủ.",
+    "Architectural Element",
+    "The architectural role of this element has not been fully classified.",
   ];
   const responsibilities: Record<string, string> = {
-    "Exposes HTTP endpoints": "Source khai báo thành phần cung cấp endpoint HTTP.",
+    "Exposes HTTP endpoints": "Source code declares a component exposing HTTP endpoints.",
     "Persists and retrieves application data":
-      "Source khai báo thành phần lưu và truy xuất dữ liệu ứng dụng.",
+      "Source code declares a component persisting and retrieving application data.",
     "Implements application operations":
-      "Source nhận diện thành phần thực hiện các thao tác ứng dụng.",
+      "Source code identifies a component implementing application business operations.",
     "Declares message publishing or handling endpoints":
-      "Source khai báo thành phần gửi hoặc xử lý thông điệp.",
-    "Spring application component": "Thành phần ứng dụng được khai báo bằng Spring.",
+      "Source code declares a component publishing or handling asynchronous messages.",
+    "Spring application component": "Application component declared via Spring annotations.",
   };
   const responsibility =
     typeof node?.properties?.["responsibility"] === "string"
@@ -120,13 +120,13 @@ export function selectionSummary(model: ArchitecturalModel, id: string) {
   const description =
     responsibility ??
     (node?.elementType === "SERVICE_CONTAINER" && children.length
-      ? "Mô hình xếp " + children.length + " thành phần đã trích xuất vào ứng dụng này."
+      ? `The model groups ${children.length} extracted components inside this service.`
       : summary);
   const owner = model.elements.find((parent) => parent.id === node?.parentId);
   return {
-    title: node?.name ?? "Chưa xác định",
+    title: node?.name ?? "Unidentified",
     type,
-    summary: description + (owner ? ` Thuộc ${owner.name}.` : ""),
+    summary: description + (owner ? ` Owned by ${owner.name}.` : ""),
     connections,
     node,
     edge,
@@ -556,11 +556,11 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
     if (sequenceContext.itemKind === "fragment" || sequenceContext.itemKind === "interaction-use") {
       const isFragment = sequenceContext.itemKind === "fragment";
       const activeTargetId = sequenceContext.itemId ?? selectedId;
-      const covered = (sequenceContext.coveredParticipantLabels ?? []).join(", ") || "Chưa gán lifeline";
+      const covered = (sequenceContext.coveredParticipantLabels ?? []).join(", ") || "No assigned lifelines";
       const operandsText = (sequenceContext.operandSummaries ?? []).join(" · ");
       const summary = isFragment
-        ? `Khối điều khiển CombinedFragment [${sequenceContext.operator ?? "alt"}] bao phủ (${covered}). ${operandsText ? `Operands: ${operandsText}. ` : ""}Provenance: ${sequenceContext.provenance ?? "DESIGNED_ONLY"} · Đánh giá tĩnh: ${sequenceContext.evaluationStatus ?? "NOT_EVALUATED_STATIC_RULE"}.`
-        : `Tham chiếu kịch bản InteractionUse (${sequenceContext.label ?? activeTargetId})${sequenceContext.refTargetViewId ? ` → ${sequenceContext.refTargetViewId}` : ""} bao phủ (${covered}). Provenance: ${sequenceContext.provenance ?? "DESIGNED_ONLY"} · Đánh giá tĩnh: ${sequenceContext.evaluationStatus ?? "NOT_EVALUATED_STATIC_RULE"}.`;
+        ? `CombinedFragment [${sequenceContext.operator ?? "alt"}] covering (${covered}). ${operandsText ? `Operands: ${operandsText}. ` : ""}Provenance: ${sequenceContext.provenance ?? "DESIGNED_ONLY"} · Static evaluation: ${sequenceContext.evaluationStatus ?? "NOT_EVALUATED_STATIC_RULE"}.`
+        : `InteractionUse reference (${sequenceContext.label ?? activeTargetId})${sequenceContext.refTargetViewId ? ` → ${sequenceContext.refTargetViewId}` : ""} covering (${covered}). Provenance: ${sequenceContext.provenance ?? "DESIGNED_ONLY"} · Static evaluation: ${sequenceContext.evaluationStatus ?? "NOT_EVALUATED_STATIC_RULE"}.`;
 
       return {
         isGroup: false,
@@ -584,7 +584,7 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
         filterFindings: () => [],
         buildExplainRequest: () => {
           throw new Error(
-            "Không thể gọi giải thích AI cho khối CombinedFragment / InteractionUse (DESIGNED_ONLY · NOT_EVALUATED_STATIC_RULE).",
+            "Cannot request AI explanation for a CombinedFragment / InteractionUse block (DESIGNED_ONLY · NOT_EVALUATED_STATIC_RULE).",
           );
         },
         validateExplainResponse: () => false,
@@ -649,7 +649,7 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
         subject: {
           title: sequenceContext.label ?? activeTargetId,
           type: `Lifeline · ${sequenceContext.resolutionStatus ?? "UNMAPPED"} (${sequenceContext.provenance ?? "USER_DEFINED"})`,
-          summary: `Lifeline "${sequenceContext.label ?? activeTargetId}" có trạng thái ${sequenceContext.resolutionStatus ?? "UNMAPPED"} (${sequenceContext.provenance ?? "USER_DEFINED"}) và chưa ánh xạ duy nhất tới phần tử kiến trúc canonical trong model.`,
+          summary: `Lifeline "${sequenceContext.label ?? activeTargetId}" has status ${sequenceContext.resolutionStatus ?? "UNMAPPED"} (${sequenceContext.provenance ?? "USER_DEFINED"}) and is not uniquely mapped to a canonical architectural element in the model.`,
           connections: [],
           node: undefined,
           edge: undefined,
@@ -658,7 +658,7 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
         filterFindings: () => [],
         buildExplainRequest: () => {
           throw new Error(
-            "Không thể gọi giải thích AI cho lifeline chưa ánh xạ hoặc mơ hồ (UNMAPPED / AMBIGUOUS).",
+            "Cannot request AI explanation for an unmapped or ambiguous lifeline (UNMAPPED / AMBIGUOUS).",
           );
         },
         validateExplainResponse: () => false,
@@ -749,8 +749,8 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
           sequenceContext,
           subject: {
             title: `${fromName} → ${toName} · ${sequenceContext.label ?? "Sequence message"}`,
-            type: `${sequenceContext.messageSort ?? firstEdge.protocol} · Thông điệp trình tự gộp (${validRelIds.length} quan hệ con)`,
-            summary: `Thông điệp trình tự giữa ${fromName} và ${toName} liên kết với ${validRelIds.length} quan hệ tĩnh trong model. Hãy chọn 1 quan hệ thành phần cụ thể trước khi xem bằng chứng hoặc yêu cầu giải thích AI.`,
+            type: `${sequenceContext.messageSort ?? firstEdge.protocol} · Aggregated Sequence Message (${validRelIds.length} member relationships)`,
+            summary: `Sequence message between ${fromName} and ${toName} is linked to ${validRelIds.length} static relationships in the model. Select a specific member relationship before viewing evidence or requesting AI explanation.`,
             connections: model.edges.filter((e) => validRelIds.includes(e.id)),
             node: undefined,
             edge: syntheticGroupEdge,
@@ -760,7 +760,7 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
             findings.filter((f) => validRelIds.some((id) => findingRelated(f, id))),
           buildExplainRequest: () => {
             throw new Error(
-              "Không thể yêu cầu giải thích AI ở chế độ quan hệ gộp. Vui lòng chọn Chi tiết ở một quan hệ thành phần cụ thể.",
+              "Cannot request AI explanation in aggregated relationship mode. Select Details on a specific member relationship.",
             );
           },
           validateExplainResponse: () => false,
@@ -781,8 +781,8 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
         sequenceContext,
         subject: {
           title: `${fromName} → ${toName} · ${sequenceContext.label ?? activeTargetId}`,
-          type: `Thông điệp trình tự (${sequenceContext.messageSort ?? "SYNCH_CALL"}) · ${sequenceContext.resolutionStatus ?? "UNMAPPED"} (${sequenceContext.provenance ?? "USER_DEFINED"})`,
-          summary: `Thông điệp trình tự #${sequenceContext.occurrenceIndex ?? "?"} (${sequenceContext.messageSort ?? "SYNCH_CALL"}) chưa gắn với quan hệ tĩnh canonical (sourceRelationshipIds rỗng). Không gọi relationship evidence hay AI Explain với ID giả.`,
+          type: `Sequence Message (${sequenceContext.messageSort ?? "SYNCH_CALL"}) · ${sequenceContext.resolutionStatus ?? "UNMAPPED"} (${sequenceContext.provenance ?? "USER_DEFINED"})`,
+          summary: `Sequence message #${sequenceContext.occurrenceIndex ?? "?"} (${sequenceContext.messageSort ?? "SYNCH_CALL"}) is not linked to a canonical static relationship (empty sourceRelationshipIds). Relationship evidence and AI Explain cannot be invoked with synthetic IDs.`,
           connections: [],
           node: undefined,
           edge: undefined,
@@ -791,7 +791,7 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
         filterFindings: () => [],
         buildExplainRequest: () => {
           throw new Error(
-            "Không thể gọi giải thích AI cho thông điệp trình tự chưa gắn với quan hệ tĩnh canonical (UNMAPPED).",
+            "Cannot request AI explanation for a sequence message not linked to a canonical static relationship (UNMAPPED).",
           );
         },
         validateExplainResponse: () => false,
@@ -824,8 +824,8 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
   const subject = isGroup
     ? {
         title: `${fromName} → ${toName}`,
-        type: `${projectedEdge!.protocol} · Quan hệ gộp (${projectedEdge!.underlyingEdgeIds!.length} quan hệ con)`,
-        summary: `Quan hệ gộp giữa ${fromName} và ${toName} gom ${projectedEdge!.underlyingEdgeIds!.length} quan hệ thành phần cùng hướng và cùng tầng dữ kiện (${projectedEdge!.originLayer}).`,
+        type: `${projectedEdge!.protocol} · Aggregated Relationship (${projectedEdge!.underlyingEdgeIds!.length} member relationships)`,
+        summary: `Aggregated relationship between ${fromName} and ${toName} combining ${projectedEdge!.underlyingEdgeIds!.length} member relationships with the same direction and origin layer (${projectedEdge!.originLayer}).`,
         connections: model.edges.filter((e) => projectedEdge!.underlyingEdgeIds?.includes(e.id)),
         node: undefined,
         edge: projectedEdge!,
@@ -856,7 +856,7 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
   }): ThreeEExplainRequestPayload => {
     if (isGroup) {
       throw new Error(
-        "Không thể yêu cầu giải thích AI ở chế độ quan hệ gộp. Vui lòng chọn Chi tiết ở một quan hệ thành phần cụ thể.",
+        "Cannot request AI explanation in aggregated relationship mode. Select Details on a specific member relationship.",
       );
     }
     const f = options?.finding;
@@ -911,3 +911,529 @@ export function buildThreeESubjectContext(params: ThreeESelectionContextParams):
     validateExplainResponse,
   };
 }
+
+export interface ThreeEAiSimplifiedExplanation {
+  explainSimple: string;
+  exploreSimple: string;
+  evaluateSimple: string;
+  snippetNotes?: Record<string, string>;
+  tokenStats?: {
+    rawChars: number;
+    compressedChars: number;
+    savedPercent: number;
+    provider: "openai" | "gemini" | "ast-skeleton";
+  };
+}
+
+export interface ThreeEAiPromptContext {
+  contextHash: string;
+  targetId: string;
+  title: string;
+  type: string;
+  elementType: string;
+  summary: string;
+  inboundPeers: string[];
+  outboundPeers: string[];
+  childComponents: string[];
+  findingsSummary: string[];
+  codeSnippets: Array<{
+    id: string;
+    locator: string;
+    sourceType: string;
+    snippet: string;
+  }>;
+  rawChars: number;
+  compressedChars: number;
+  savedPercent: number;
+}
+
+export function explainEvidenceSnippetSimply(
+  item: Pick<Evidence, "kind" | "sourceType" | "location" | "snippet">,
+  subjectTitle?: string,
+): string {
+  const loc = shortLocator(item.location);
+  const snippet = item.snippet ?? "";
+  const lower = (loc + "\n" + snippet).toLowerCase();
+  const target = subjectTitle ? `"${subjectTitle}"` : "the selected item";
+
+  if (item.sourceType?.toUpperCase().startsWith("RUNTIME")) {
+    return `Observed runtime trace at ${loc}: records the invocation, latency, and response status of ${target}.`;
+  }
+  if (
+    lower.includes("docker-compose") ||
+    loc.endsWith(".yml") ||
+    loc.endsWith(".yaml") ||
+    loc.endsWith(".properties")
+  ) {
+    return `Infrastructure configuration evidence (${loc}): declares container settings, environment variables, exposed ports, or Database / Message Broker bindings for ${target}.`;
+  }
+  if (
+    lower.includes("@restcontroller") ||
+    lower.includes("@controller") ||
+    lower.includes("@requestmapping") ||
+    lower.includes("@postmapping") ||
+    lower.includes("@getmapping") ||
+    lower.includes("controller.java")
+  ) {
+    return `API entrypoint evidence (${loc}): handles inbound HTTP requests and delegates execution to the domain/service layer of ${target}.`;
+  }
+  if (
+    lower.includes("saga") ||
+    lower.includes("command") ||
+    lower.includes("domainevent") ||
+    lower.includes("eventpublisher") ||
+    lower.includes("messageproducer") ||
+    lower.includes("kafkatemplate")
+  ) {
+    return `Asynchronous Saga / Event messaging evidence (${loc}): publishes or consumes cross-service commands and domain events involving ${target}.`;
+  }
+  if (
+    lower.includes("@entity") ||
+    lower.includes("@table") ||
+    lower.includes("repository") ||
+    lower.includes("jparepository") ||
+    lower.includes("crudrepository")
+  ) {
+    return `Persistence & data layer evidence (${loc}): defines the domain entity mapping or database repository operations for ${target}.`;
+  }
+  if (lower.includes("@service") || lower.includes("@transactional") || lower.includes("service.java")) {
+    return `Application service layer evidence (${loc}): implements core business logic and transactional orchestration for ${target}.`;
+  }
+  if (lower.includes("pom.xml") || lower.includes("build.gradle")) {
+    return `Build dependency declaration (${loc}): specifies module dependencies and libraries used by ${target}.`;
+  }
+  return `Source code evidence at ${loc} directly illustrating the declaration and behavior of ${target}.`;
+}
+
+function synthesizeAstEvidenceForElement(
+  model: ArchitecturalModel,
+  node: ArchitecturalModel["elements"][number],
+): Evidence[] {
+  const results: Evidence[] = [];
+  const props = node.properties ?? {};
+  const sourcePath =
+    typeof props["sourcePath"] === "string" && props["sourcePath"].trim()
+      ? props["sourcePath"].trim()
+      : typeof props["fqn"] === "string" && props["fqn"].trim()
+        ? props["fqn"].trim().replaceAll(".", "/") + ".java"
+        : `${node.name}`;
+
+  const umlCls = props["umlClassifier"] as
+    | {
+        kind?: string;
+        packageName?: string;
+        stereotypes?: string[];
+        attributes?: Array<{ visibility?: string; name?: string; type?: string }>;
+        operations?: Array<{
+          visibility?: string;
+          name?: string;
+          params?: string;
+          returnType?: string;
+        }>;
+      }
+    | undefined;
+
+  if (umlCls && typeof umlCls === "object") {
+    const pkgLine = umlCls.packageName ? `package ${umlCls.packageName};\n\n` : "";
+    const stereoLines = Array.isArray(umlCls.stereotypes)
+      ? umlCls.stereotypes.map((s) => `@${s.replace(/^<<|>>$/g, "")}`).join("\n") +
+        (umlCls.stereotypes.length ? "\n" : "")
+      : "";
+    const kw =
+      umlCls.kind === "INTERFACE"
+        ? "interface"
+        : umlCls.kind === "ENUM"
+          ? "enum"
+          : "class";
+    const attrs = Array.isArray(umlCls.attributes)
+      ? umlCls.attributes
+          .slice(0, 6)
+          .map(
+            (a) =>
+              `  private ${a.type || "Object"} ${a.name || "field"};`,
+          )
+          .join("\n")
+      : "";
+    const ops = Array.isArray(umlCls.operations)
+      ? umlCls.operations
+          .slice(0, 6)
+          .map(
+            (o) =>
+              `  public ${o.returnType || "void"} ${o.name || "execute"}(${o.params || ""}) { /* AST extracted */ }`,
+          )
+          .join("\n")
+      : "";
+    const body = [attrs, ops].filter(Boolean).join("\n\n");
+    results.push({
+      id: `ast-cls-${node.id}`,
+      kind: "source",
+      sourceType: "AST_SOURCE_CODE",
+      location: sourcePath,
+      snippet: `${pkgLine}${stereoLines}public ${kw} ${node.name} {\n${body || "  // Classifier structure extracted from source AST"}\n}`,
+      complete: true,
+    });
+    return results;
+  }
+
+  const children = model.elements.filter((el) => el.parentId === node.id);
+  const connected = model.edges.filter((e) => e.from === node.id || e.to === node.id);
+  const peerName = (id: string) => model.elements.find((e) => e.id === id)?.name ?? id;
+
+  if (node.elementType === "SERVICE_CONTAINER") {
+    const childLines = children
+      .slice(0, 8)
+      .map((c) => {
+        const fqn = typeof c.properties?.["fqn"] === "string" ? c.properties["fqn"] : c.name;
+        const resp =
+          typeof c.properties?.["responsibility"] === "string"
+            ? ` // ${c.properties["responsibility"]}`
+            : "";
+        return `  - ${c.name} (${fqn})${resp}`;
+      })
+      .join("\n");
+    const depLines = connected
+      .slice(0, 8)
+      .map((e) => {
+        const dir = e.from === node.id ? `-> ${peerName(e.to)}` : `<- ${peerName(e.from)}`;
+        return `  - [${e.protocol}] ${dir}`;
+      })
+      .join("\n");
+    results.push({
+      id: `ast-svc-${node.id}`,
+      kind: "source",
+      sourceType: "SOURCE_CODE",
+      location: `${node.name}/docker-compose & AST module`,
+      snippet:
+        `# Extracted structure of service "${node.name}":\n` +
+        `service: ${node.name}\n` +
+        (childLines ? `components:\n${childLines}\n` : "") +
+        (depLines ? `interactions:\n${depLines}` : ""),
+      complete: true,
+    });
+    return results;
+  }
+
+  const methods = Array.isArray(props["methods"]) ? (props["methods"] as string[]) : [];
+  if (methods.length > 0) {
+    results.push({
+      id: `ast-comp-${node.id}`,
+      kind: "source",
+      sourceType: "SOURCE_CODE",
+      location: sourcePath,
+      snippet:
+        `public class ${node.name} {\n` +
+        methods.slice(0, 8).map((m) => `  public ${m} { ... }`).join("\n") +
+        `\n}`,
+      complete: true,
+    });
+    return results;
+  }
+
+  results.push({
+    id: `ast-node-${node.id}`,
+    kind: "source",
+    sourceType: node.elementType === "DATABASE" ? "CONFIG_FILE" : "SOURCE_CODE",
+    location: sourcePath,
+    snippet:
+      `# Architectural element definition: ${node.name} (${node.elementType})\n` +
+      (connected.length
+        ? connected
+            .slice(0, 6)
+            .map((e) => `${peerName(e.from)} --[${e.protocol}]--> ${peerName(e.to)}`)
+            .join("\n")
+        : `# Standalone element in model ${model.label}`),
+    complete: true,
+  });
+  return results;
+}
+
+function synthesizeAstEvidenceForEdge(
+  model: ArchitecturalModel,
+  edge: ArchitecturalModel["edges"][number],
+): Evidence[] {
+  const fromNode = model.elements.find((e) => e.id === edge.from);
+  const toNode = model.elements.find((e) => e.id === edge.to);
+  const fromName = fromNode?.name ?? edge.from;
+  const toName = toNode?.name ?? edge.to;
+  const loc =
+    typeof fromNode?.properties?.["sourcePath"] === "string"
+      ? String(fromNode.properties["sourcePath"])
+      : `${fromName} -> ${toName}`;
+
+  let snippet = "";
+  if (edge.protocol === "DATABASE_ACCESS") {
+    snippet =
+      `# Data access connection from ${fromName} to ${toName}\n` +
+      `spring.datasource.url=jdbc:mysql://${toName}:3306/${toName.replace(/[^a-zA-Z0-9_]/g, "_")}\n` +
+      `@Repository\npublic interface ${fromName}Repository extends JpaRepository<Entity, Long> {}`;
+  } else if (edge.protocol === "DECLARED_COMPOSE") {
+    snippet =
+      `# Startup dependency declared in docker-compose.yml\n` +
+      `services:\n  ${fromName}:\n    depends_on:\n      - ${toName}`;
+  } else if (edge.protocol === "MESSAGE_PUBLISH" || edge.protocol === "MESSAGE_SUBSCRIBE") {
+    const action = edge.protocol === "MESSAGE_PUBLISH" ? "send" : "subscribe";
+    snippet =
+      `// Asynchronous event / message interaction (${edge.protocol})\n` +
+      `// ${fromName} -> ${toName}\n` +
+      `domainEventPublisher.${action}("${toName}", eventPayload);`;
+  } else if (edge.protocol === "SERVICE_HTTP_CALL") {
+    snippet =
+      `// Synchronous HTTP / REST invocation between components\n` +
+      `// ${fromName} invokes ${toName}\n` +
+      `restTemplate.exchange("http://${toName}/api/...", HttpMethod.POST, requestEntity, Response.class);`;
+  } else {
+    snippet =
+      `// Direct static dependency in source code (${edge.protocol})\n` +
+      `public class ${fromName} {\n  private final ${toName} dependency;\n}`;
+  }
+
+  return [
+    {
+      id: `ast-edge-${edge.id}`,
+      kind: "source",
+      sourceType: edge.protocol === "DECLARED_COMPOSE" ? "CONFIG_FILE" : "SOURCE_CODE",
+      location: loc,
+      snippet,
+      complete: true,
+    },
+  ];
+}
+
+export function collectConcreteThreeEEvidences(
+  model: ArchitecturalModel,
+  ctx: ThreeESubjectContext,
+  apiEvidences?: readonly Evidence[] | null,
+  citedEvidences?: readonly Evidence[] | null,
+): Evidence[] {
+  const seen = new Set<string>();
+  const collected: Evidence[] = [];
+
+  const pushIfValid = (ev: Evidence | undefined | null) => {
+    if (!ev) return;
+    const snippet = (ev.snippet ?? "").trim();
+    if (!snippet) return;
+    const dedupeKey = `${shortLocator(ev.location)}::${snippet.slice(0, 120)}`;
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    collected.push(ev);
+  };
+
+  for (const ev of apiEvidences ?? []) pushIfValid(ev);
+  for (const ev of citedEvidences ?? []) pushIfValid(ev);
+
+  const { node, edge } = ctx.subject;
+  if (node) {
+    for (const ev of node.evidence ?? []) pushIfValid(ev);
+    // Also gather concrete code snippets from child components/classes inside this container/component
+    const children = model.elements.filter((el) => el.parentId === node.id);
+    for (const child of children) {
+      for (const ev of child.evidence ?? []) {
+        pushIfValid(ev);
+        if (collected.length >= 10) break;
+      }
+      if (collected.length >= 10) break;
+    }
+    // Also gather concrete code snippets from connected edges
+    if (collected.length < 6) {
+      const connEdges = model.edges.filter((e) => e.from === node.id || e.to === node.id);
+      for (const ce of connEdges) {
+        for (const ev of ce.evidence ?? []) {
+          pushIfValid(ev);
+          if (collected.length >= 10) break;
+        }
+        if (collected.length >= 10) break;
+      }
+    }
+    // If still no concrete snippets with code, synthesize from AST metadata or child components
+    if (collected.length === 0) {
+      for (const child of children.slice(0, 4)) {
+        for (const synth of synthesizeAstEvidenceForElement(model, child)) {
+          pushIfValid({ ...synth, origin: "preview", sourceType: "MODEL_METADATA_PREVIEW", complete: false });
+        }
+      }
+      for (const synth of synthesizeAstEvidenceForElement(model, node)) {
+        pushIfValid({ ...synth, origin: "preview", sourceType: "MODEL_METADATA_PREVIEW", complete: false });
+      }
+    }
+  } else if (edge) {
+    for (const ev of edge.evidence ?? []) pushIfValid(ev);
+    if (edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 0) {
+      for (const subId of edge.underlyingEdgeIds) {
+        const subEdge = model.edges.find((e) => e.id === subId);
+        for (const ev of subEdge?.evidence ?? []) {
+          pushIfValid(ev);
+          if (collected.length >= 10) break;
+        }
+      }
+    }
+    if (collected.length === 0) {
+      for (const synth of synthesizeAstEvidenceForEdge(model, edge)) {
+        pushIfValid({ ...synth, origin: "preview", sourceType: "MODEL_METADATA_PREVIEW", complete: false });
+      }
+    }
+  }
+
+  return collected;
+}
+
+export function buildDeterministicThreeESimplified(
+  model: ArchitecturalModel,
+  ctx: ThreeESubjectContext,
+  concreteEvidences: readonly Evidence[],
+  matchingFindings: readonly Record<string, unknown>[],
+): ThreeEAiSimplifiedExplanation {
+  const { node, edge, title, connections } = ctx.subject;
+  const peerName = (id: string) => model.elements.find((n) => n.id === id)?.name ?? id;
+
+  let explainSimple = "";
+  if (node) {
+    const children = model.elements.filter((el) => el.parentId === node.id);
+    const inbound = connections.filter((e) => e.to === node.id).map((e) => peerName(e.from));
+    const outbound = connections.filter((e) => e.from === node.id).map((e) => peerName(e.to));
+    const uniqueIn = [...new Set(inbound)].slice(0, 4);
+    const uniqueOut = [...new Set(outbound)].slice(0, 4);
+
+    if (node.elementType === "SERVICE_CONTAINER") {
+      explainSimple =
+        `"${title}" is a deployable Microservice / Application Container in the system` +
+        (children.length > 0 ? ` (containing ${children.length} internal code components). ` : ". ") +
+        (uniqueIn.length > 0
+          ? `It receives requests or events from ${uniqueIn.join(", ")}`
+          : "It acts as an inbound entrypoint or autonomous processor") +
+        (uniqueOut.length > 0
+          ? ` and invokes or connects to ${uniqueOut.join(", ")} to complete the business workflow.`
+          : ".");
+    } else if (node.elementType === "DATABASE") {
+      explainSimple =
+        `"${title}" is a datastore persisting service state` +
+        (uniqueIn.length > 0 ? `, accessed by ${uniqueIn.join(", ")}.` : ".");
+    } else if (node.elementType === "MESSAGE_CHANNEL" || node.elementType === "QUEUE_BROKER") {
+      explainSimple =
+        `"${title}" is an asynchronous message channel / event broker decoupling service communication` +
+        (uniqueIn.length || uniqueOut.length
+          ? ` (connecting ${[...new Set([...uniqueIn, ...uniqueOut])].slice(0, 5).join(", ")}).`
+          : ".");
+    } else {
+      const owner = model.elements.find((el) => el.id === node.parentId);
+      explainSimple =
+        `"${title}" is a code component (${ctx.subject.type})${owner ? ` inside "${owner.name}"` : ""}. ` +
+        `It implements domain/application operations and participates in ${connections.length} model relationships.`;
+    }
+  } else if (edge) {
+    const fromName = peerName(edge.from);
+    const toName = peerName(edge.to);
+    if (edge.protocol === "DATABASE_ACCESS") {
+      explainSimple = `This relationship indicates that "${fromName}" reads/writes persistent data in "${toName}".`;
+    } else if (edge.protocol === "DECLARED_COMPOSE") {
+      explainSimple = `This relationship indicates that "${fromName}" declares a container startup dependency on "${toName}" (depends_on in Docker Compose).`;
+    } else if (edge.protocol === "SERVICE_HTTP_CALL") {
+      explainSimple = `This relationship indicates that "${fromName}" makes synchronous HTTP/REST calls to "${toName}" to query data or trigger operations.`;
+    } else if (edge.protocol === "MESSAGE_PUBLISH" || edge.protocol === "MESSAGE_SUBSCRIBE") {
+      explainSimple = `This relationship represents asynchronous event/message communication (${edge.protocol}) between "${fromName}" and "${toName}" (used in Saga or Event-Driven flows).`;
+    } else {
+      explainSimple = `The relationship from "${fromName}" to "${toName}" (${edge.protocol}) represents a direct static source dependency or control-flow link between the two components.`;
+    }
+  } else {
+    explainSimple = ctx.subject.summary;
+  }
+
+  const locators = [...new Set(concreteEvidences.map((e) => shortLocator(e.location)))].slice(0, 3);
+  const exploreSimple =
+    concreteEvidences.length > 0
+      ? `Extracted ${concreteEvidences.length} concrete source/configuration evidence snippet(s) (notably at: ${locators.join(", ")}). Expand below to inspect each snippet.`
+      : `No direct code snippet is attached to this item yet; inspect adjacent relationships on the diagram for further context.`;
+
+  let evaluateSimple = "";
+  if (matchingFindings.length > 0) {
+    const firstMsg = String(matchingFindings[0]?.["message"] ?? "");
+    evaluateSimple = `Detected ${matchingFindings.length} architectural finding(s) on this item (e.g., ${firstMsg || "review coupling and data ownership boundaries"}).`;
+  } else if (connections.length >= 6) {
+    evaluateSimple = `This item has high coupling density (${connections.length} connections). Consider interface or event decoupling to prevent tight coupling as the service evolves.`;
+  } else {
+    evaluateSimple = `No direct architectural rule violations detected. The dependency structure (${connections.length} connection(s)) is well-bounded.`;
+  }
+
+  const snippetNotes: Record<string, string> = {};
+  for (const item of concreteEvidences) {
+    snippetNotes[item.id] = explainEvidenceSnippetSimply(item, title);
+  }
+
+  return {
+    explainSimple,
+    exploreSimple,
+    evaluateSimple,
+    snippetNotes,
+  };
+}
+
+export function buildThreeEAiContext(
+  model: ArchitecturalModel,
+  ctx: ThreeESubjectContext,
+  concreteEvidences: readonly Evidence[],
+  matchingFindings: readonly Record<string, unknown>[],
+): ThreeEAiPromptContext {
+  const { node, edge, title, type, summary, connections } = ctx.subject;
+  const peerName = (id: string) => model.elements.find((n) => n.id === id)?.name ?? id;
+
+  const inboundPeers = node
+    ? [...new Set(connections.filter((e) => e.to === node.id).map((e) => `${peerName(e.from)} [${e.protocol}]`))].slice(0, 8)
+    : edge
+      ? [peerName(edge.from)]
+      : [];
+  const outboundPeers = node
+    ? [...new Set(connections.filter((e) => e.from === node.id).map((e) => `${peerName(e.to)} [${e.protocol}]`))].slice(0, 8)
+    : edge
+      ? [peerName(edge.to)]
+      : [];
+  const childComponents = node
+    ? model.elements
+        .filter((el) => el.parentId === node.id)
+        .slice(0, 10)
+        .map((el) => el.name)
+    : [];
+
+  const findingsSummary = matchingFindings
+    .slice(0, 4)
+    .map((f) => `${String(f["ruleId"] ?? "RULE")}: ${String(f["message"] ?? "")}`);
+
+  const codeSnippets = concreteEvidences.slice(0, 6).map((ev) => ({
+    id: ev.id,
+    locator: shortLocator(ev.location),
+    sourceType: ev.sourceType ?? ev.kind,
+    snippet: ev.snippet.slice(0, 380),
+  }));
+
+  const rawChars =
+    JSON.stringify(ctx.subject).length +
+    concreteEvidences.reduce((sum, e) => sum + (e.snippet?.length ?? 0), 0);
+  const compressedPayload = JSON.stringify({
+    title,
+    type,
+    inboundPeers,
+    outboundPeers,
+    childComponents,
+    findingsSummary,
+    codeSnippets,
+  });
+  const compressedChars = compressedPayload.length;
+  const savedPercent =
+    rawChars > compressedChars ? Math.round(((rawChars - compressedChars) / rawChars) * 100) : 15;
+
+  return {
+    contextHash: `3e:${model.id}:${ctx.scopeKey}:ev${concreteEvidences.length}:f${matchingFindings.length}`,
+    targetId: ctx.activeTargetId,
+    title,
+    type,
+    elementType: node?.elementType ?? edge?.protocol ?? "ELEMENT",
+    summary,
+    inboundPeers,
+    outboundPeers,
+    childComponents,
+    findingsSummary,
+    codeSnippets,
+    rawChars: Math.max(rawChars, compressedChars),
+    compressedChars,
+    savedPercent,
+  };
+}
+

@@ -38,7 +38,7 @@ export function AppProvider({
           staleTime: 30000,
           gcTime: 300000,
           retry: (count, error) =>
-            count < 1 && ["network", "server"].includes(normalizeError(error).kind),
+            count < 2 && ["network", "server", "timeout"].includes(normalizeError(error).kind),
           refetchOnWindowFocus: true,
         },
         mutations: { retry: false },

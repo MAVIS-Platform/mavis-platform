@@ -17,6 +17,72 @@ const project="11111111-1111-4111-8111-111111111111",snapshot="22222222-2222-422
 const metadata={id:model,projectId:project,sourceSnapshotId:snapshot,revision:1,isLatestValid:true};
 const jobDto={jobId:job,projectId:project,sourceSnapshotId:snapshot,status:"COMPLETED",analysisState:"COMPLETED_WITH_REVIEW",modelVersionId:model,dotnetStatus:"PARTIAL"};
 function environment(t){for(const [key,value] of Object.entries({MAVIS_API_MODE:"backend",MAVIS_JAVA_URL:"https://java.invalid"})){const before=process.env[key];process.env[key]=value;t.after(()=>before===undefined?delete process.env[key]:process.env[key]=before);}}
+
+test("teaching API maps workspace creation, class projects and lecturer provisioning to existing backend contracts", async t => {
+ environment(t);const requests=[];
+ const workspace={id:job,code:"SA1",name:"Architecture class",status:"ACTIVE",myRoleInWorkspace:"LECTURER"};
+ t.mock.method(globalThis,"fetch",async(url,options={})=>{
+  const pathname=new URL(url).pathname.replace("/api/v1/","");
+  const body=options.body?JSON.parse(options.body):undefined;requests.push({pathname,method:options.method??"GET",body});
+  let data;
+  if(pathname===`workspaces/${job}/members`)data=[{userId:node,fullName:"Teaching user",memberRole:"LECTURER"}];
+  else if(pathname==="workspaces")data=workspace;
+  else if(pathname===`assignments/${snapshot}`)data={id:snapshot,workspaceId:job,title:"Architecture review",description:"Instructions",dueAt:null};
+  else if(pathname==="projects")data={id:project,name:"Course project",workspaceId:job,assignmentId:snapshot};
+  else if(pathname===`admin/users/${node}/role`)data={id:node,email:"teacher@example.com",fullName:"Teaching user",roleCode:"LECTURER",status:"ACTIVE"};
+  else throw Error("Unexpected path "+pathname);
+  return Response.json({code:200,data});
+ });
+ const created=await executeJava("createWorkspace",{code:"SA1",name:"Architecture class"},"jwt",new AbortController().signal);
+ assert.equal(created.myRole,"LECTURER");
+ const coursework=await executeJava("createProject",{name:"Course project",workspaceId:job,assignmentId:snapshot},"jwt",new AbortController().signal);
+ assert.equal(coursework.workspaceId,job);
+ const projectRequest=requests.find(r=>r.pathname==="projects");
+ assert.equal(projectRequest.body.projectType,"STUDENT_WORKING");assert.equal(projectRequest.body.assignmentId,snapshot);
+ const teacher=await executeJava("setAccountRole",{accountId:node,role:"lecturer"},"jwt",new AbortController().signal);
+ assert.equal(teacher.role,"lecturer");assert.equal(teacher.email,"teacher@example.com");
+ assert.deepEqual(requests.find(r=>r.pathname.endsWith("/role")).body,{newRoleCode:"LECTURER"});
+});
+
+test("assignment review rejects foreign assignments and submissions before loading frozen models", async t => {
+ environment(t);let mode="foreign-assignment",paths=[];
+ t.mock.method(globalThis,"fetch",async url=>{
+  const pathname=new URL(url).pathname.replace("/api/v1/","");paths.push(pathname);
+  if(pathname===`assignments/${job}`)return Response.json({code:200,data:{id:job,workspaceId:mode==="foreign-assignment"?project:snapshot,title:"Review",description:"",dueAt:null}});
+  if(pathname===`assignments/${job}/submissions`)return Response.json({code:200,data:mode==="empty"?[]:[{id:node,assignmentId:project}]});
+  throw Error("Must not hydrate models for another assignment");
+ });
+ await assert.rejects(executeJava("assignmentSubmissions",{workspaceId:snapshot,assignmentId:job},"jwt",new AbortController().signal),e=>e.kind==="not-found");
+ assert.ok(!paths.some(p=>p.endsWith("/submissions")));
+ mode="foreign-submission";paths=[];
+ await assert.rejects(executeJava("assignmentSubmissions",{workspaceId:snapshot,assignmentId:job},"jwt",new AbortController().signal),e=>e.kind==="contract");
+ mode="empty";
+ assert.deepEqual(await executeJava("assignmentSubmissions",{workspaceId:snapshot,assignmentId:job},"jwt",new AbortController().signal),[]);
+ assert.throws(()=>validateResponse("assignmentSubmissions",{workspaceId:snapshot,assignmentId:job},[{assignmentId:project}]));
+});
+
+test("element evidence context preserves direct/relationship attribution and rejects another model", async t => {
+ environment(t);
+ const direct={id:"66666666-6666-4666-8666-666666666666",modelVersionId:model,elementId:node,relationshipId:null,sourceType:"STATIC_CODE",locator:"Handler.java:4",excerpt:"class Handler"};
+ const related={id:"77777777-7777-4777-8777-777777777777",modelVersionId:model,elementId:null,relationshipId:job,sourceType:"STATIC_CODE",locator:"Handler.java:12",excerpt:"subscribe(commands)"};
+ let responseModel=model;
+ t.mock.method(globalThis,"fetch",async url=>Response.json({code:200,data:String(url).endsWith("/context")?{modelVersionId:responseModel,elementId:node,directEvidence:[direct],relationshipEvidence:[related]}:{id:node,modelVersionId:model}}));
+ const context=await executeJava("elementEvidenceContext",{modelId:model,elementId:node},"jwt",new AbortController().signal);
+ assert.equal(context.directEvidence[0].snippet,"class Handler");
+ assert.equal(context.relationshipEvidence[0].relationshipId,job);
+ assert.equal(context.relationshipEvidence[0].evidence.snippet,"subscribe(commands)");
+ responseModel=project;
+ await assert.rejects(executeJava("elementEvidenceContext",{modelId:model,elementId:node},"jwt",new AbortController().signal),e=>e.kind==="contract");
+});
+
+test("regenerate explanation explicitly refreshes the backend cache", async t => {
+ environment(t);let body;
+ t.mock.method(globalThis,"fetch",async(_url,options)=>{body=JSON.parse(options.body);return Response.json({code:200,data:{id:job,modelVersionId:model,elementId:node,explanationText:"Based on the linked relationship",citedEvidenceIds:[],providerMode:"DETERMINISTIC_EVIDENCE_SYNTHESIS",epistemicBadge:"Model context"}});});
+ const result=await executeJava("explain",{modelId:model,elementId:node,forceRefresh:true},"jwt",new AbortController().signal);
+ assert.equal(body.forceRefresh,true);
+ assert.equal(body.explanationScope,"ELEMENT");
+ assert.equal(result.modelId,model);
+});
 test("wire project/snapshot preserve unknown coverage and runtime capability",()=>{
  const p=wire.projectView({id:project,name:"Actual project",repositoryUrl:null});assert.equal(p.services,null);assert.equal(p.runtimeSupported,null);assert.equal(p.status,"unknown");
  const s=wire.snapshotView({id:snapshot,projectId:project,sourceType:"GITHUB_COMMIT",branchName:"main",createdAt:"2026-10-22T00:00:00Z"});assert.equal(s.validation,"unknown");assert.equal(s.evidenceComplete,null);
@@ -100,7 +166,7 @@ test("GitHub validation distinguishes URL, missing repository, rate limit and mi
 test("browser adapter displays only approved actionable GitHub errors",async t=>{
  const {BackendAdapter}=require("../src/lib/api/backend-adapter.ts");const api=new BackendAdapter();
  t.mock.method(globalThis,"fetch",async()=>Response.json({code:"GITHUB_BRANCH",message:"private backend detail"},{status:400}));
- await assert.rejects(api.execute("importGithub",{projectId:project,repositoryUrl:"https://github.com/owner/repo",branchName:"main"}),e=>e.code==="GITHUB_BRANCH"&&e.message.includes("không tồn tại")&&!e.message.includes("private backend"));
+ await assert.rejects(api.execute("importGithub",{projectId:project,repositoryUrl:"https://github.com/owner/repo",branchName:"main"}),e=>e.code==="GITHUB_BRANCH"&&e.message.includes("does not exist")&&!e.message.includes("private backend"));
  t.mock.method(globalThis,"fetch",async()=>Response.json({code:"RAW_SECRET",message:"private backend detail"},{status:400}));
  await assert.rejects(api.execute("githubBranches",{repositoryUrl:"https://github.com/owner/repo"}),e=>!e.code&&!e.message.includes("private backend"));
 });
@@ -274,3 +340,36 @@ test("merged 3E finding evidence retains provenance and refuses another model's 
  await assert.rejects(executeJava("findingEvidence",input,"jwt",new AbortController().signal),e=>e.status===502);
  assert.equal(calls.length,1);assert.ok(!calls[0].endsWith("/evidence"));
 });
+
+test("elementEvidenceContext fallback hydrates incident relationship evidence when /context returns 404 and explain supports RELATIONSHIP + userQuestion",async t=>{
+ environment(t);
+ const edgeId="88888888-8888-4888-8888-888888888888";
+ const peerId="99999999-9999-4999-8999-999999999999";
+ let lastPostBody=null;
+ t.mock.method(globalThis,"fetch",async(url,options)=>{
+  const u=String(url);
+  if(u.endsWith("/context"))return Response.json({code:404,message:"Not found"},{status:404});
+  if(u.endsWith(`/evidences/element/${node}`))return Response.json({code:200,data:[]});
+  if(u.endsWith(`/models/${model}/graph`))return Response.json({code:200,data:{nodes:[{id:node},{id:peerId}],edges:[{id:edgeId,sourceNodeId:peerId,targetNodeId:node,evidenceCount:1}]}});
+  if(u.endsWith(`/evidences/relationship/${edgeId}`))return Response.json({code:200,data:[{id:project,modelVersionId:model,relationshipId:edgeId,sourceType:"STATIC_CODE",locator:"Repo.java:9",excerpt:"interface Repo"}]});
+  if(u.endsWith("/ai/explain")&&options?.method==="POST"){
+   lastPostBody=JSON.parse(options.body);
+   return Response.json({code:200,data:{id:job,modelVersionId:model,elementId:null,relationshipId:edgeId,explanationScope:"RELATIONSHIP",userQuestion:lastPostBody.userQuestion,explanationText:"### Grounded\n- **Verified**",citedEvidenceIds:[project],citedEvidences:[{id:project,sourceType:"STATIC_CODE",locator:"Repo.java:9",excerpt:"interface Repo"}],providerMode:"LIVE_LLM_PROVIDER",aiModelName:"gemini-2.5-flash",epistemicBadge:"Grounded",cached:false}});
+  }
+  return Response.json({code:200,data:{id:node,modelVersionId:model}});
+ });
+ const ctx=await executeJava("elementEvidenceContext",{modelId:model,elementId:node},"jwt",new AbortController().signal);
+ assert.equal(ctx.directEvidence.length,0);
+ assert.equal(ctx.relationshipEvidence.length,1);
+ assert.equal(ctx.relationshipEvidence[0].relationshipId,edgeId);
+ assert.equal(ctx.relationshipEvidence[0].evidence.snippet,"interface Repo");
+
+ const explainInput={modelId:model,elementId:edgeId,relationshipId:edgeId,explanationScope:"RELATIONSHIP",userQuestion:"How does this connect?",forceRefresh:true};
+ const explained=validateResponse("explain",explainInput,await executeJava("explain",explainInput,"jwt",new AbortController().signal));
+ assert.equal(lastPostBody.explanationScope,"RELATIONSHIP");
+ assert.equal(lastPostBody.relationshipId,edgeId);
+ assert.equal(lastPostBody.userQuestion,"How does this connect?");
+ assert.equal(explained.citedEvidences[0].locator,"Repo.java:9");
+ assert.equal(explained.aiModelName,"gemini-2.5-flash");
+});
+

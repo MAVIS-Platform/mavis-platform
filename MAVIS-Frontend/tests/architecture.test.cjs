@@ -29,6 +29,58 @@ const compileTypeScript = (module, filename) => {
 require.extensions[".ts"] = compileTypeScript;
 require.extensions[".tsx"] = compileTypeScript;
 const { MockAdapter } = require("../src/lib/api/mock-adapter.ts");
+
+test("element details show saved relationship evidence when direct element evidence is empty", () => {
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  const { QueryClient, QueryClientProvider } = require("@tanstack/react-query");
+  const { ApiContext } = require("../src/providers/app-context.ts");
+  const { ElementDetailsPanel } = require("../src/features/architecture/components.tsx");
+  const model = { id:"evidence-model", projectId:"project", snapshotId:"snapshot", revision:4, label:"Saved model",
+    elements:[{id:"handler",name:"CommandHandler",evidence:[]},{id:"channel",name:"Commands",evidence:[]}],
+    edges:[{id:"subscription",from:"channel",to:"handler",protocol:"MESSAGE_SUBSCRIBE",evidence:[],uncertain:false}],
+  };
+  const client = new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
+  client.setQueryData(["api","elementEvidenceContext",{modelId:model.id,elementId:"handler"}],{
+    modelId:model.id,elementId:"handler",directEvidence:[],relationshipEvidence:[{relationshipId:"subscription",evidence:{id:"proof",kind:"source",sourceType:"STATIC_CODE",location:"Handler.java:12",snippet:"subscribe(commands)",complete:true}}],
+  });
+  const api={mode:"backend",execute:()=>{throw Error("Unexpected request during seeded render");}};
+  const html=renderToStaticMarkup(React.createElement(QueryClientProvider,{client},React.createElement(ApiContext.Provider,{value:api},React.createElement(ElementDetailsPanel,{model,selectedId:"handler"}))));
+  assert.match(html,/Evidence for related relationships/);
+  assert.match(html,/Commands → CommandHandler/);
+  assert.match(html,/subscribe\(commands\)/);
+  assert.match(html,/No evidence is attached directly/);
+  assert.doesNotMatch(html,/No evidence attached/);
+  client.clear();
+});
+
+test("3E labels metadata reconstructions as previews and keeps saved evidence distinct", () => {
+  const React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
+  const { collectConcreteThreeEEvidences } = require("../src/features/architecture/three-e-content.ts");
+  const { ThreeEEvidence } = require("../src/features/architecture/three-e-evidence.tsx");
+  const node = { id:"parcel", name:"Parcel", elementType:"CLASS_INTERFACE", evidence:[], properties:{ sourcePath:"Parcel.java", umlClassifier:{name:"Parcel",typeKind:"CLASS",members:[]} } };
+  const model = { id:"preview-model", elements:[node], edges:[] }, ctx = { subject:{node,edge:null} };
+  const preview = collectConcreteThreeEEvidences(model,ctx,[],[]);
+  assert.ok(preview.length > 0);
+  assert.ok(preview.every(e => e.origin === "preview" && e.complete === false && e.sourceType === "MODEL_METADATA_PREVIEW"));
+  const html=renderToStaticMarkup(React.createElement(ThreeEEvidence,{evidence:preview}));
+  assert.match(html,/Metadata preview/);
+  assert.match(html,/not a verbatim source snippet or a saved Evidence record/);
+  const saved={id:"saved",origin:"persisted",kind:"source",sourceType:"STATIC_CODE",location:"Parcel.java:4",snippet:"class Parcel {}",complete:null};
+  const concrete=collectConcreteThreeEEvidences(model,ctx,[saved],[]);
+  assert.deepEqual(concrete,[saved]);
+});
+
+test("mock evidence context follows the same element/model contract", async () => {
+  const api=new MockAdapter();
+  const projects=await api.execute("projects",{});
+  const versions=await api.execute("modelVersions",{projectId:projects[0].id});
+  const model=await api.execute("model",{modelId:versions[0].id});
+  const context=await api.execute("elementEvidenceContext",{modelId:model.id,elementId:model.elements[0].id});
+  assert.equal(context.modelId,model.id);
+  assert.equal(context.elementId,model.elements[0].id);
+  assert.ok(Array.isArray(context.directEvidence) && Array.isArray(context.relationshipEvidence));
+});
 const { BackendAdapter } = require("../src/lib/api/backend-adapter.ts");
 const { fromStatus } = require("../src/lib/errors/api-error.ts");
 const { modelSchema, submissionSchema } = require("../src/types/domain.ts");
@@ -61,9 +113,57 @@ test("mock permissions, sign-out, and response ownership", async () => {
   assert.notEqual((await api.execute("projects", {}))[0].name, "Changed by UI");
   await assert.rejects(api.execute("accounts", {}), kind("forbidden"));
   await api.execute("mockLogin", { role: "lecturer" });
-  await assert.rejects(api.execute("projects", {}), kind("forbidden"));
+  assert.ok((await api.execute("projects", {})).length > 0);
+  await assert.rejects(api.execute("startAnalysis", { projectId, snapshotId: "source-1", idempotencyKey: "lecturer-cannot-write" }), kind("forbidden"));
   await api.execute("signOut", {});
   await assert.rejects(api.execute("submissions", {}), kind("unauthorized"));
+});
+
+test("teaching lifecycle enforces lecturer controls and exposes member assignments and frozen submission review", async () => {
+  const api=new MockAdapter("normal",0);
+  await assert.rejects(api.execute("createWorkspace",{code:"SA1",name:"Architecture class"}),kind("forbidden"));
+  await assert.rejects(api.execute("assignmentSubmissions",{workspaceId:"workspace-1",assignmentId:"assignment-1"}),kind("forbidden"));
+  await api.execute("mockLogin",{role:"lecturer"});
+  const room=await api.execute("createWorkspace",{code:"SA1",name:"Architecture class"});
+  assert.equal(room.myRole,"LECTURER");
+  const joined=await api.execute("addWorkspaceMember",{workspaceId:room.id,email:"student@example.com",memberRole:"STUDENT"});
+  assert.ok(joined.members.some(m=>m.id==="sample-student"));
+  const assignment=await api.execute("createAssignment",{workspaceId:room.id,title:"Review service boundaries",description:"Submit a saved model",dueAt:null,requiredDiagramTypes:[],requireRuntimeTrace:false});
+  assert.equal(assignment.workspaceId,room.id);
+  await api.execute("mockLogin",{role:"student"});
+  assert.ok((await api.execute("workspaces",{})).some(w=>w.id===room.id));
+  assert.ok((await api.execute("assignments",{workspaceId:room.id})).some(a=>a.id===assignment.id));
+  const coursework=await api.execute("createProject",{name:"Coursework",workspaceId:room.id,assignmentId:assignment.id});
+  assert.equal(coursework.workspaceId,room.id);
+  assert.equal(coursework.assignmentId,assignment.id);
+  await assert.rejects(api.execute("createAssignment",{workspaceId:room.id,title:"unauthorized",dueAt:null,requiredDiagramTypes:[],requireRuntimeTrace:false}),kind("forbidden"));
+  await api.execute("mockLogin",{role:"lecturer"});
+  const rows=await api.execute("assignmentSubmissions",{workspaceId:"workspace-1",assignmentId:"assignment-1"});
+  assert.ok(rows.length>0);
+  assert.ok(rows.every(s=>s.assignmentId==="assignment-1"));
+  const submission=rows[0], snapshot=JSON.stringify(submission.model);
+  const reviewed=await api.execute("feedback",{submissionId:submission.id,modelId:submission.model.id,text:"Check the shared database dependency"});
+  assert.equal(reviewed.feedback.at(-1).text,"Check the shared database dependency");
+  assert.equal(JSON.stringify(reviewed.model),snapshot,"Feedback must preserve the submitted model");
+  await assert.rejects(api.execute("assignmentSubmissions",{workspaceId:room.id,assignmentId:"assignment-1"}),kind("not-found"));
+  await api.execute("mockLogin",{role:"admin"});
+  const promoted=await api.execute("setAccountRole",{accountId:"sample-student",role:"lecturer"});
+  assert.equal(promoted.role,"lecturer");
+});
+
+test("student submission readiness checks requirements and grade drafts remain private until publication", async () => {
+ const {missingDiagramRequirements,isDeadlinePassed}=require("../src/features/submissions/submission-readiness.ts");
+ assert.deepEqual(missingDiagramRequirements(["UML_CLASS","UML_PACKAGE"],{documents:[{viewId:"uml-class:all",revision:2}],diagramVersionIds:[]},[]),["UML_PACKAGE"]);
+ assert.ok(isDeadlinePassed("2020-01-01T00:00:00Z"));assert.ok(!isDeadlinePassed("No deadline"));
+ const api=new MockAdapter("normal",0);await api.execute("mockLogin",{role:"lecturer"});
+ const rows=await api.execute("assignmentSubmissions",{workspaceId:"workspace-1",assignmentId:"assignment-1"}),id=rows[0].id;
+ const draft=await api.execute("gradeSubmission",{submissionId:id,expectedRevision:0,status:"DRAFT",score:81.5,summary:"Private rubric notes"});assert.equal(draft.revision,1);
+ await api.execute("mockLogin",{role:"student"});const pending=await api.execute("submissionReview",{submissionId:id});assert.equal(pending.status,"PENDING");assert.equal(pending.summary,"");
+ await assert.rejects(api.execute("gradeSubmission",{submissionId:id,expectedRevision:1,status:"GRADED",score:100,summary:"Self grade"}),kind("forbidden"));
+ await api.execute("mockLogin",{role:"lecturer"});await api.execute("gradeSubmission",{submissionId:id,expectedRevision:1,status:"RETURNED",score:null,summary:"Please revise the service boundary"});
+ await assert.rejects(api.execute("gradeSubmission",{submissionId:id,expectedRevision:1,status:"GRADED",score:90,summary:"Stale review"}),kind("conflict"));
+ await api.execute("gradeSubmission",{submissionId:id,expectedRevision:2,status:"GRADED",score:91.5,summary:"Revisions accepted"});
+ await api.execute("mockLogin",{role:"student"});const published=await api.execute("submissionReview",{submissionId:id});assert.equal(published.score,91.5);assert.equal(published.status,"GRADED");
 });
 test("model revisions remain immutable; stale saves conflict; review uses frozen submission", async () => {
   const api = new MockAdapter("normal", 0);
@@ -808,13 +908,13 @@ test("Sequence headers and message ports leave room for long wrapped participant
 });
 test("3E preserves configuration provenance and hides machine-local paths without inventing line numbers",()=>{
  const {sourceLabel,shortLocator}=require('../src/features/architecture/three-e-content.ts');
- assert.equal(sourceLabel({kind:'source',sourceType:'CONFIG_FILE'}),'Từ cấu hình');assert.equal(sourceLabel({kind:'source',sourceType:'SOURCE_CODE'}),'Từ mã nguồn');assert.equal(sourceLabel({kind:'runtime',sourceType:'RUNTIME_TRACE'}),'Quan sát khi chạy');assert.equal(sourceLabel({kind:'source'}),'Nguồn chưa phân loại');
+ assert.equal(sourceLabel({kind:'source',sourceType:'CONFIG_FILE'}),'From configuration');assert.equal(sourceLabel({kind:'source',sourceType:'SOURCE_CODE'}),'From source code');assert.equal(sourceLabel({kind:'runtime',sourceType:'RUNTIME_TRACE'}),'Observed at runtime');assert.equal(sourceLabel({kind:'source'}),'Unclassified source');
  assert.equal(shortLocator('C:\\Users\\machine\\uploads\\snapshot_source_extracted\\project-sha\\orders\\src\\Repo.java:5'),'orders/src/Repo.java:5');assert.ok(!shortLocator('C:\\Users\\name\\src\\Repo.java').includes('C:'));assert.equal(shortLocator('src/Repo.java'),'src/Repo.java');
 });
 test("3E treats Compose as startup declaration and physical database identity as unresolved",()=>{
  const {selectionSummary,findingRelated}=require('../src/features/architecture/three-e-content.ts');
  const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Revision',elements:[{id:'a',name:'orders',elementType:'SERVICE_CONTAINER',description:'',layer:'unclassified',evidence:[]},{id:'db',name:'mysql',elementType:'DATABASE',description:'',layer:'data',evidence:[]}],edges:[{id:'boot',from:'a',to:'db',protocol:'DECLARED_COMPOSE',uncertain:false,evidence:[]}]};
- assert.match(selectionSummary(model,'boot').summary,/chưa chứng minh/);assert.match(selectionSummary(model,'db').type,/phạm vi cần xác minh/);assert.equal(findingRelated({elementId:'db',details:{relatedElementIds:['a']}},'a'),true);assert.equal(findingRelated({elementId:'other',message:'a'},'a'),false);
+ assert.match(selectionSummary(model,'boot').summary,/does not prove/);assert.match(selectionSummary(model,'db').type,/Scope Requires Verification/i);assert.equal(findingRelated({elementId:'db',details:{relatedElementIds:['a']}},'a'),true);assert.equal(findingRelated({elementId:'other',message:'a'},'a'),false);
 });
 test("C4 Container draws a named system boundary around owned containers and keeps external and unresolved outside",async()=>{
  const {selectDiagram}=require("../src/features/architecture/diagram-catalog.ts");
@@ -1288,3 +1388,137 @@ test("Cytoscape focus follows grouped source edges and collapsed component evide
   assert.equal(highlight.edges.size, 0, "explicit highlights override selection focus");
   assert.equal(networkFocus(source, view, null, []).active, false);
 });
+
+test("themeDrawioXml applies all 5 themes across C4 Context, UML Sequence, and UML Class/Package/Deployment/Activity/State and restores clean palette",()=>{
+ const {themeDrawioXml}=require("../src/features/architecture/drawio-document.ts");
+ const {buildContextDiagramDrawioXml}=require("../src/features/architecture/diagram-projections.ts");
+ const {interactionToDrawioXml,buildAutoSequenceInteraction,detectSequenceFlows}=require("../src/features/architecture/scenario-design.ts");
+ const {projectUmlClassDiagram,buildUmlDrawioXml}=require("../src/features/architecture/uml-diagrams.ts");
+ const model={
+  id:"m1",projectId:"p1",snapshotId:"s1",revision:1,label:"Rev 1",
+  elements:[
+   {id:"svc1",name:"OrderService",elementType:"SERVICE_CONTAINER",properties:{},parentId:null,description:"",layer:"unclassified",evidence:[]},
+   {id:"c1",name:"OrderController",elementType:"COMPONENT",properties:{fqn:"com.acme.OrderController",methods:["createOrder(OrderDto): Order"]},parentId:"svc1",description:"",layer:"controller",evidence:[]},
+   {id:"c2",name:"OrderRepository",elementType:"COMPONENT",properties:{fqn:"com.acme.OrderRepository",methods:["save(Order): Order"]},parentId:"svc1",description:"",layer:"repository",evidence:[]}
+  ],
+  edges:[{id:"e1",from:"c1",to:"c2",protocol:"CODE_DEPENDENCY",originLayer:"STATIC",uncertain:false,evidence:[]}]
+ };
+ const ctxXml=buildContextDiagramDrawioXml(model,"OrderSystem");
+ const flows=detectSequenceFlows(model,"MICRO");
+ const seqXml=interactionToDrawioXml(buildAutoSequenceInteraction(model,flows[0]));
+ const umlXml=buildUmlDrawioXml(projectUmlClassDiagram(model,"ALL"));
+ for(const baseXml of [ctxXml,seqXml,umlXml]){
+  const darkXml=themeDrawioXml(baseXml,"dark");
+  assert.ok(darkXml.includes('background="#161B22"'),"dark theme sets #161B22 background");
+  assert.ok(darkXml.includes('mavisTheme="dark"'),"dark theme stamps mavisTheme=dark");
+  const blueprintXml=themeDrawioXml(baseXml,"blueprint");
+  assert.ok(blueprintXml.includes('background="#082032"'),"blueprint theme sets #082032 background");
+  const vibrantXml=themeDrawioXml(baseXml,"vibrant");
+  assert.ok(vibrantXml.includes('mavisTheme="vibrant"'),"vibrant theme stamps mavisTheme=vibrant");
+  const monoXml=themeDrawioXml(baseXml,"monochrome");
+  assert.ok(monoXml.includes('background="#FFFFFF"'),"monochrome theme sets #FFFFFF background");
+  const restoredClean=themeDrawioXml(darkXml,"clean",baseXml);
+  assert.ok(!restoredClean.includes('background="#161B22"'),"clean theme restores light background from cleanXml baseline");
+  assert.ok(restoredClean.includes('background="#FFFFFF"'),"clean theme sets #FFFFFF background");
+ }
+});
+
+test("3E simplified AI explanation and concrete code evidence collector always provide plain-Vietnamese 3E pillars and real code snippets",()=>{
+ const {buildThreeESubjectContext,collectConcreteThreeEEvidences,buildDeterministicThreeESimplified,buildThreeEAiContext,explainEvidenceSnippetSimply}=require("../src/features/architecture/three-e-content.ts");
+ const model={
+  id:"m1",projectId:"p1",snapshotId:"s1",revision:1,label:"Rev 1",
+  elements:[
+   {id:"svc1",name:"ftgo-order-service",elementType:"SERVICE_CONTAINER",properties:{},parentId:null,description:"",layer:"unclassified",evidence:[]},
+   {id:"c1",name:"OrderController",elementType:"COMPONENT",properties:{fqn:"net.chrisrichardson.ftgo.orderservice.web.OrderController",methods:["create(CreateOrderRequest): CreateOrderResponse"]},parentId:"svc1",description:"",layer:"controller",evidence:[{id:"ev1",kind:"source",sourceType:"SOURCE_CODE",location:"OrderController.java:28",snippet:"@RestController\npublic class OrderController {\n  @PostMapping(\"/orders\")\n  public CreateOrderResponse create(@RequestBody CreateOrderRequest req) { ... }\n}",complete:true}]},
+   {id:"db1",name:"ftgo-order-db",elementType:"DATABASE",properties:{resourceRole:"LOGICAL_DATASTORE"},parentId:null,description:"",layer:"data",evidence:[]}
+  ],
+  edges:[{id:"e1",from:"svc1",to:"db1",protocol:"DATABASE_ACCESS",originLayer:"STATIC",uncertain:false,evidence:[]}]
+ };
+ const svcCtx=buildThreeESubjectContext({model,selectedId:"svc1"});
+ const svcEvidences=collectConcreteThreeEEvidences(model,svcCtx,[],[]);
+ assert.ok(svcEvidences.length>=1,"parent service collects concrete code snippets from child components");
+ assert.match(svcEvidences[0].snippet,/@RestController/,"concrete code snippet includes actual source code");
+ const simplified=buildDeterministicThreeESimplified(model,svcCtx,svcEvidences,[{id:"f1",ruleId:"RULE-02",message:"Chia sẻ bảng dữ liệu"}]);
+ assert.match(simplified.explainSimple,/ftgo-order-service/);
+ assert.match(simplified.exploreSimple,/OrderController\.java:28/);
+ assert.match(simplified.evaluateSimple,/Chia sẻ bảng dữ liệu/);
+ assert.match(explainEvidenceSnippetSimply(svcEvidences[0],"ftgo-order-service"),/API/);
+ const aiCtx=buildThreeEAiContext(model,svcCtx,svcEvidences,[]);
+ assert.ok(aiCtx.contextHash.startsWith("3e:m1:"));
+ assert.equal(aiCtx.codeSnippets.length,1);
+ const edgeCtx=buildThreeESubjectContext({model,selectedId:"e1"});
+ const edgeEvidences=collectConcreteThreeEEvidences(model,edgeCtx,[],[]);
+ assert.ok(edgeEvidences.length>=1,"edge without raw evidence synthesizes concrete code example");
+ assert.match(edgeEvidences[0].snippet,/JpaRepository/);
+});
+
+test("computeArchitectureImpact computes upstream blast radius and downstream dependencies across all, source, and components scopes",()=>{
+ const {computeArchitectureImpact}=loadRoutedComponent("src/routes/impact.tsx");
+ const {impactWarning}=require("../src/lib/mainflow-api.ts");
+ const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));
+ const model={
+  id:raw.modelVersionId,projectId:"p",snapshotId:"s",revision:1,label:"FTGO",
+  elements:raw.layoutJson.nodes.map(n=>({id:n.id,name:n.name,elementType:n.kind,parentId:n.parentId,technology:n.languageStack,properties:n.properties,description:n.description??"",layer:"unclassified",evidence:[]})),
+  edges:raw.layoutJson.edges.map(e=>({id:e.id,from:e.from,to:e.to,protocol:e.type,originLayer:e.originLayer,uncertain:false,evidence:[]}))
+ };
+ const zipkin=model.elements.find(e=>e.name==="zipkin");
+ const zipkinImpact=computeArchitectureImpact(model,zipkin.id,"all");
+ assert.equal(zipkinImpact.directImpactCount,2,"ftgo-delivery-service and ftgo-order-service directly depend on zipkin");
+ assert.equal(zipkinImpact.indirectImpactCount,2,"ftgo-api-gateway (2 hops) and ftgo-kitchen-service (3 hops) are indirectly impacted");
+ assert.equal(zipkinImpact.upstreamImpacted.length,4);
+
+ const delivery=model.elements.find(e=>e.name==="ftgo-delivery-service");
+ const deliverySourceImpact=computeArchitectureImpact(model,delivery.id,"source");
+ assert.ok(deliverySourceImpact.upstreamImpacted.some(h=>h.name==="ftgo-api-gateway"),"ftgo-api-gateway depends on ftgo-delivery-service via rolled-up component CODE_DEPENDENCY");
+
+ const order=model.elements.find(e=>e.name==="ftgo-order-service");
+ const orderAllImpact=computeArchitectureImpact(model,order.id,"all");
+ assert.ok(orderAllImpact.downstreamDependencies.length>=5,"ftgo-order-service has downstream database and infrastructure dependencies");
+
+ const orderCtrl=model.elements.find(e=>e.name==="OrderController"&&e.parentId===order.id);
+ const compImpact=computeArchitectureImpact(model,orderCtrl.id,"components");
+ assert.ok(compImpact.downstreamDependencies.some(h=>h.name==="OrderRepository"),"OrderController depends on OrderRepository in components scope");
+ assert.ok(compImpact.downstreamDependencies.some(h=>h.name==="localhost"&&h.distance===2),"OrderController transitively depends on localhost database at 2 hops");
+
+ assert.match(impactWarning("ONE_SHORTEST_PATH_PER_SERVICE"),/shortest dependency path/);
+ assert.match(impactWarning("EMPTY_RESULT_DOES_NOT_PROVE_ABSENCE_OUTSIDE_COVERAGE"),/policy scope/);
+});
+
+test("reconcileModelDiff pairs identical elements across revisions with new UUIDs and computes field-by-field side-by-side diffs",()=>{
+ const {reconcileModelDiff}=loadRoutedComponent("src/features/architecture/model-editor.tsx");
+ const falsePositiveRaw={
+  baseRevision:3,targetRevision:4,
+  removedElements:[
+   {id:"u1",name:"zookeeper",elementType:"SERVICE_CONTAINER",languageStack:"JAVA_SPRING",properties:{}},
+   {id:"u2",name:"OrderService",elementType:"COMPONENT",parentElementName:"ftgo-order-service",languageStack:"JAVA_SPRING",properties:{layer:"service",description:"Old description"}},
+   {id:"u3",name:"LegacyQueue",elementType:"QUEUE_BROKER",languageStack:"RabbitMQ",properties:{}}
+  ],
+  addedElements:[
+   {id:"v1",name:"zookeeper",elementType:"SERVICE_CONTAINER",languageStack:"JAVA_SPRING",properties:{}},
+   {id:"v2",name:"OrderService",elementType:"COMPONENT",parentElementName:"ftgo-order-service",languageStack:"JAVA_SPRING",properties:{layer:"domain",description:"Updated domain service"}},
+   {id:"v3",name:"RedisCache",elementType:"DATABASE",languageStack:"Redis",properties:{}}
+  ],
+  removedRelationships:[
+   {id:"r1",sourceElementName:"ftgo-order-service",targetElementName:"zookeeper",relationType:"DECLARED_COMPOSE",originLayer:"DEPLOYMENT",direction:"DIRECTED"}
+  ],
+  addedRelationships:[
+   {id:"r2",sourceElementName:"ftgo-order-service",targetElementName:"zookeeper",relationType:"DECLARED_COMPOSE",originLayer:"DEPLOYMENT",direction:"DIRECTED"},
+   {id:"r3",sourceElementName:"ftgo-order-service",targetElementName:"RedisCache",relationType:"DATABASE_ACCESS",originLayer:"STATIC",direction:"DIRECTED"}
+  ]
+ };
+ const diff=reconcileModelDiff(falsePositiveRaw);
+ assert.equal(diff.unchangedElementsCount,1,"zookeeper is matched as unchanged despite new UUID");
+ assert.equal(diff.modifiedElementsCount,1,"OrderService is matched as modified instead of 1 removed + 1 added");
+ assert.equal(diff.addedElementsCount,1,"RedisCache is added");
+ assert.equal(diff.removedElementsCount,1,"LegacyQueue is removed");
+ assert.equal(diff.unchangedRelationshipsCount,1,"zookeeper relationship is matched as unchanged");
+ assert.equal(diff.addedRelationshipsCount,1,"RedisCache relationship is added");
+ const modRow=diff.rows.find(r=>r.status==="modified");
+ assert.equal(modRow.title,"OrderService");
+ assert.equal(modRow.fieldDiffs.map(f=>f.field).join(","),"layer,description");
+ assert.equal(modRow.fieldDiffs[0].before,"service");
+ assert.equal(modRow.fieldDiffs[0].after,"domain");
+});
+
+
+

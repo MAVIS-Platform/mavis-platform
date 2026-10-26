@@ -22,6 +22,7 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
     private final EvidenceRepository evidence;
     private final ObjectMapper json;
     private final com.mavis.common.security.AccessPolicyService accessPolicy;
+    private final SubmissionSnapshotRepository submissions;
 
     @Override @Transactional(propagation=Propagation.MANDATORY)
     public List<com.mavis.analyzer.diagram.dto.DiagramResponseDTO> generateDefaultDiagramsForModel(ModelVersion model,List<ModelElement> nodes,List<ModelRelationship> edges){
@@ -72,6 +73,7 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
             known.get(id).put("x",x).put("y",y);
             known.get(id).putObject("position").put("x",x).put("y",y);
         }
+        if (entity.getLayoutJson().path("frozenDocument").asBoolean(false) || submissions.existsByDiagramVersionId(entity.getId())) throw new BusinessException(ErrorCode.CONFLICT, "Submitted diagrams are immutable. Save a new document revision instead.");
         entity.setLayoutJson(copy);diagrams.save(entity);return view(entity);
     }
     @Override @Transactional(readOnly=true)
@@ -89,6 +91,17 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
     @Transactional(readOnly=true) public com.mavis.analyzer.diagram.dto.DiagramResponseDTO getDiagramById(UUID id){return dto(get(id));}
     @Transactional public com.mavis.analyzer.diagram.dto.DiagramResponseDTO updateDiagramLayout(UUID id,JsonNode positions){return dto(updateLayout(id,positions));}
     @Transactional(readOnly=true) public List<com.mavis.analyzer.diagram.dto.EvidenceResponseDTO> getEvidencesByElement(UUID id){var target=elements.findById(id).orElseThrow(()->missing());owner(target.getModelVersion());return evidence.findByElementIdOrderByCreatedAtAsc(id).stream().map(com.mavis.analyzer.diagram.dto.EvidenceResponseDTO::fromEntity).toList();}
+    @Override @Transactional(readOnly=true)
+    public com.mavis.analyzer.diagram.dto.ElementEvidenceContextDTO getElementEvidenceContext(UUID id) {
+        var target = elements.findById(id).orElseThrow(() -> missing());
+        owner(target.getModelVersion());
+        var scoped = evidence.findElementContext(target.getModelVersion().getId(), id).stream()
+            .filter(e -> com.mavis.analyzer.diagram.service.ElementEvidenceScope.includes(e, target))
+            .collect(java.util.stream.Collectors.toMap(Evidence::getId, e -> e, (a, b) -> a, LinkedHashMap::new)).values();
+        var direct = scoped.stream().filter(e -> com.mavis.analyzer.diagram.service.ElementEvidenceScope.isDirect(e, target)).map(com.mavis.analyzer.diagram.dto.EvidenceResponseDTO::fromEntity).toList();
+        var related = scoped.stream().filter(e -> !com.mavis.analyzer.diagram.service.ElementEvidenceScope.isDirect(e, target)).map(com.mavis.analyzer.diagram.dto.EvidenceResponseDTO::fromEntity).toList();
+        return new com.mavis.analyzer.diagram.dto.ElementEvidenceContextDTO(target.getModelVersion().getId(), id, direct, related);
+    }
     @Transactional(readOnly=true) public List<com.mavis.analyzer.diagram.dto.EvidenceResponseDTO> getEvidencesByRelationship(UUID id){var target=relationships.findById(id).orElseThrow(()->missing());owner(target.getModelVersion());return evidence.findByRelationshipIdOrderByCreatedAtAsc(id).stream().map(com.mavis.analyzer.diagram.dto.EvidenceResponseDTO::fromEntity).toList();}
     private com.mavis.analyzer.diagram.dto.DiagramResponseDTO dto(DiagramView view){return com.mavis.analyzer.diagram.dto.DiagramResponseDTO.builder().id(view.id()).modelVersionId(view.modelVersionId()).notation(view.notation()).level(view.level()).layoutJson(view.layoutJson()).createdAt(view.createdAt()).build();}
 }

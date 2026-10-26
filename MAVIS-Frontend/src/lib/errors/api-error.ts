@@ -2,18 +2,18 @@ export const publicErrors = {
   SUBMISSION_DIAGRAM: "Save a diagram for this exact model version before submitting.",
   REFERENCE_MODEL:
     "This published snapshot has no matching model version. Ask the lecturer to finish the reference analysis.",
-  GITHUB_URL: "GitHub URL không hợp lệ. Dùng https://github.com/owner/repository.",
+  GITHUB_URL: "Invalid GitHub URL. Use https://github.com/owner/repository.",
   GITHUB_REPOSITORY:
-    "Không tìm thấy repository công khai trên GitHub. Kiểm tra URL; repository private cần tải ZIP.",
-  GITHUB_BRANCH: "Nhánh đã chọn không tồn tại hoặc đã bị xóa. Tải lại danh sách nhánh và chọn lại.",
-  GITHUB_LIMIT: "GitHub đang giới hạn truy cập. Vui lòng thử lại sau.",
-  GITHUB_CONNECTION: "Không kết nối được GitHub hoặc GitHub đang gặp lỗi. Vui lòng thử lại.",
-  GITHUB_EMPTY: "Repository chưa có nhánh/source để import.",
+    "Public GitHub repository not found. Check the URL; private repositories require uploading a ZIP archive.",
+  GITHUB_BRANCH: "The selected branch does not exist or has been deleted. Reload the branch list and select again.",
+  GITHUB_LIMIT: "GitHub rate limit reached. Please try again later.",
+  GITHUB_CONNECTION: "Unable to connect to GitHub or GitHub is experiencing an outage. Please try again.",
+  GITHUB_EMPTY: "This repository has no branches or source files to import.",
   GITHUB_COMMIT_MISSING:
-    "Không tìm thấy commit trong repository công khai này. Kiểm tra URL và Commit SHA.",
-  GITHUB_COMMIT: "Commit SHA phải là đầy đủ 40 ký tự hexadecimal.",
+    "Commit not found in this public repository. Verify the repository URL and Commit SHA.",
+  GITHUB_COMMIT: "Commit SHA must be a full 40-character hexadecimal string.",
   GITHUB_IMPORT:
-    "Không thể tải hoặc xử lý archive GitHub. Kiểm tra commit SHA, giới hạn kích thước và source Java/C#. Có thể thử tải ZIP.",
+    "Unable to download or process the GitHub archive. Verify the commit SHA, archive size limits, and Java/C# source files, or upload a ZIP instead.",
 } as const;
 export type PublicErrorCode = keyof typeof publicErrors;
 export function publicErrorCode(value: unknown): PublicErrorCode | undefined {
@@ -80,7 +80,10 @@ export function normalizeError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
   if (error instanceof Error && "status" in error && typeof error.status === "number")
     return fromStatus(error.status);
-  if (error instanceof DOMException && error.name === "AbortError")
+  if (
+    (error instanceof DOMException || error instanceof Error) &&
+    ["AbortError", "CancelledError"].includes(error.name)
+  )
     return new ApiError("cancelled");
   return new ApiError("network");
 }

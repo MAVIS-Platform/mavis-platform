@@ -46,7 +46,7 @@ public class DockerDetectorServiceImpl implements DockerDetectorService {
         Path composeFile = composeFileOpt.get();
         log.info("Tìm thấy file Docker Compose tại: {}", composeFile);
 
-        return parseContainers(composeFile);
+        return parseContainers(composeFile, rootPath);
     }
 
     @Override
@@ -81,7 +81,7 @@ public class DockerDetectorServiceImpl implements DockerDetectorService {
         }
     }
 
-    private List<DetectedContainerDTO> parseContainers(Path composeFile) {
+    private List<DetectedContainerDTO> parseContainers(Path composeFile, Path rootPath) {
         List<DetectedContainerDTO> containers = new ArrayList<>();
         try {
             List<String> lines = Files.readAllLines(composeFile, StandardCharsets.UTF_8);
@@ -217,6 +217,7 @@ public class DockerDetectorServiceImpl implements DockerDetectorService {
                 currentContainer.setElementType(resolveElementType(currentContainer.getImage(), currentContainer.getServiceName()));
                 containers.add(currentContainer);
             }
+            ComposeReferenceScanner.scan(rootPath, composeFile, lines, containers);
         } catch (IOException e) {
             log.error("Lỗi khi đọc file docker-compose tại {}", composeFile, e);
         }

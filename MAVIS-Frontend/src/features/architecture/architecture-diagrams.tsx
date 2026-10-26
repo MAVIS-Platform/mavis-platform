@@ -3,23 +3,55 @@ import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
-import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/shared/forms";
-import { SelectablePreview, download } from "./selectable-diagram-preview";
 import { DrawioEditor } from "./drawio-editor";
 import { ScenarioDiagram } from "./scenario-diagram";
 import { UmlDiagramWorkspace } from "./uml-diagram-workspace";
+import { SearchableThreeESelect } from "./three-e-searchable-select";
 import type { UmlDiagramKind } from "./uml-diagrams";
 import {
   diagramKinds,
   selectDiagram,
-  diagramMembers,
-  type DiagramFamily,
   type DiagramKind,
 } from "./diagram-catalog";
+import {
+  applyC4AiEnrichmentToDocument,
+  buildC4CompactContext,
+  buildContextDiagramDrawioXml,
+  deriveC4ContextModel,
+  type C4AiDiagramEnrichment,
+} from "./diagram-projections";
 import { generateDrawio } from "@/lib/drawio/generate";
+import type { DrawioTheme } from "@/lib/drawio/rules";
 import { layoutLocally } from "./drawio-local-layout";
 import type { SequenceSelectionContext } from "./three-e-content";
+
+const POPULAR_KINDS = new Set<DiagramKind>(["CONTAINER", "CONTEXT", "UML_SEQUENCE", "UML_CLASS"]);
+const diagramOptions = [...diagramKinds.C4, ...diagramKinds.UML];
+const clientC4EnrichmentCache = new Map<string, C4AiDiagramEnrichment>();
+
+function formatC4NodeBadge(kind?: string): string {
+  switch (kind) {
+    case "SERVICE_CONTAINER":
+    case "PROCESS_UNIT":
+      return "[Container]";
+    case "DATABASE":
+      return "[Database]";
+    case "MESSAGE_CHANNEL":
+    case "QUEUE_BROKER":
+      return "[Channel]";
+    case "COMPONENT":
+    case "LOGICAL_COMPONENT":
+      return "[Component]";
+    case "CLASS_INTERFACE":
+      return "[Class/Interface]";
+    case "EXTERNAL_SYSTEM":
+      return "[External]";
+    default:
+      return "[Element]";
+  }
+}
+
 export function ArchitectureDiagrams({
   model,
   selectedId,
@@ -33,22 +65,26 @@ export function ArchitectureDiagrams({
   onSelectSequence?: ((id: string | null, seqCtx: SequenceSelectionContext | null) => void) | undefined;
   systemName?: string | undefined;
 }) {
-  const [family, setFamily] = useState<DiagramFamily>("C4"),
-    [kind, setKind] = useState<DiagramKind>("CONTAINER"),
+  const [kind, setKind] = useState<DiagramKind>("CONTAINER"),
     [service, setService] = useState(""),
-    [editing, setEditing] = useState(false),
-    [generated, setGenerated] = useState(""),
+    [theme, setTheme] = useState<DrawioTheme>("clean"),
+    [c4AiEnrichment, setC4AiEnrichment] = useState<C4AiDiagramEnrichment | null>(null),
+    [generatedState, setGeneratedState] = useState<{ targetKey: string; xml: string }>({
+      targetKey: "",
+      xml: "",
+    }),
     [error, setError] = useState("");
-  const [group, setGroup] = useState<string | null>(null);
   const api = useApi(),
     cache = useQueryClient();
-  const containers = model.elements
+  const allContainers = model.elements
     .filter((node) => node.elementType === "SERVICE_CONTAINER")
     .map((node) => ({
       ...node,
       count: model.elements.filter((child) => child.parentId === node.id).length,
     }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const populatedContainers = allContainers.filter((node) => node.count > 0);
+  const containers = populatedContainers.length > 0 ? populatedContainers : allContainers;
   const container = containers.find((node) => node.id === service) ?? containers[0];
   const isUmlWorkspaceKind = [
     "UML_CLASS",
@@ -57,26 +93,156 @@ export function ArchitectureDiagrams({
     "UML_ACTIVITY",
     "UML_STATE",
   ].includes(kind);
+  const isC4EnrichableKind =
+    kind === "CONTEXT" || kind === "CONTAINER" || kind === "COMPONENT";
+
+  useEffect(() => {
+    if (!isC4EnrichableKind) {
+      setC4AiEnrichment(null);
+      return;
+    }
+    const c4Ctx = buildC4CompactContext(
+      model,
+      kind as "CONTEXT" | "CONTAINER" | "COMPONENT",
+      container?.id,
+      systemName,
+    );
+    const cached = clientC4EnrichmentCache.get(c4Ctx.contextHash);
+    if (cached) {
+      setC4AiEnrichment(cached);
+      return;
+    }
+    setC4AiEnrichment(null);
+    let cancelled = false;
+    fetch("/api/ai-diagram-semantics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ c4Context: c4Ctx }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { c4Enrichment?: C4AiDiagramEnrichment } | null) => {
+        if (cancelled || !data?.c4Enrichment) return;
+        clientC4EnrichmentCache.set(c4Ctx.contextHash, data.c4Enrichment);
+        setC4AiEnrichment(data.c4Enrichment);
+      })
+      .catch(() => {
+        // Keep base C4 projection on offline/error
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isC4EnrichableKind, kind, model, container?.id, systemName]);
+
   const selection = useMemo(
     () => selectDiagram(model, kind, container?.id, { systemName }),
     [model, kind, container?.id, systemName],
   );
-  const document = selection.document,
-    key = selection.key;
+  const document = useMemo(
+    () =>
+      selection.document && (kind === "CONTAINER" || kind === "COMPONENT")
+        ? applyC4AiEnrichmentToDocument(selection.document, c4AiEnrichment)
+        : selection.document,
+    [selection.document, kind, c4AiEnrichment],
+  );
+  const c4ContextInspector = useMemo(() => {
+    if (kind !== "CONTEXT") return null;
+    const base = deriveC4ContextModel(model);
+    const resolvedSystemName = systemName?.trim() || model.label || "System under analysis";
+    const persons = base.persons.map((p) => {
+      const ov = c4AiEnrichment?.persons?.[p.id];
+      return {
+        ...p,
+        name: ov?.name?.trim() || p.name,
+        description: ov?.description?.trim() || p.description,
+        actionLabel: ov?.actionLabel?.trim() || p.actionLabel,
+      };
+    });
+    const externals = base.externals.map((ext) => {
+      const ov = c4AiEnrichment?.externals?.[ext.id];
+      return {
+        ...ext,
+        description: ov?.description?.trim() || ext.description,
+        actionLabel: ov?.actionLabel?.trim() || ext.actionLabel,
+      };
+    });
+    const primarySystemElementId =
+      containers.find((c) => /gateway|order/i.test(c.name))?.id ??
+      containers[0]?.id ??
+      base.internalNodeIds[0] ??
+      null;
+    return {
+      resolvedSystemName,
+      primarySystemElementId,
+      persons,
+      externals,
+    };
+  }, [kind, model, systemName, c4AiEnrichment, containers]);
+
+  const c4DocNodes = useMemo(() => {
+    if (!document || kind === "CONTEXT") return [];
+    const validElementIds = new Set(model.elements.map((e) => e.id));
+    return document.layoutJson.nodes.filter(
+      (n) => n.kind !== "BOUNDARY" && !n.id.startsWith("boundary:") && validElementIds.has(n.id),
+    );
+  }, [document, kind, model.elements]);
+
+  const c4DocEdges = useMemo(() => {
+    if (!document || kind === "CONTEXT") return [];
+    const nodeNameById = new Map<string, string>();
+    for (const el of model.elements) nodeNameById.set(el.id, el.name);
+    for (const n of document.layoutJson.nodes) nodeNameById.set(n.id, n.name);
+    const validEdgeIds = new Set(model.edges.map((e) => e.id));
+
+    return document.layoutJson.edges.map((edge) => {
+      const underlying = Array.isArray(edge["underlyingEdgeIds"])
+        ? (edge["underlyingEdgeIds"] as string[]).filter((id) => validEdgeIds.has(id))
+        : [];
+      const strippedId = edge.id.replace(/^projection:/, "");
+      const canonicalEdgeId =
+        underlying[0] ??
+        (validEdgeIds.has(edge.id) ? edge.id : validEdgeIds.has(strippedId) ? strippedId : null);
+      const fromName = nodeNameById.get(edge.from ?? "") ?? edge.from ?? "Source";
+      const toName = nodeNameById.get(edge.to ?? "") ?? edge.to ?? "Target";
+      const protocol = edge.type ?? edge.relationType ?? "INTERACTION";
+      return {
+        key: edge.id,
+        canonicalId: canonicalEdgeId ?? edge.from ?? edge.to ?? edge.id,
+        fromName,
+        toName,
+        protocol,
+        underlyingCount: underlying.length,
+        description:
+          typeof edge["description"] === "string" ? (edge["description"] as string) : null,
+      };
+    });
+  }, [document, kind, model.elements, model.edges]);
+
+  const key = selection.key,
+    targetKey = `${model.id}:${key}`;
   const saved = useApiQuery(
     "architectureDocument",
     { modelId: model.id, viewId: key },
     { enabled: api.mode === "backend" && !!document && !isUmlWorkspaceKind },
   );
+  const contextXml = useMemo(
+    () =>
+      kind === "CONTEXT" && document
+        ? buildContextDiagramDrawioXml(model, systemName, "clean", c4AiEnrichment)
+        : "",
+    [kind, document, model, systemName, c4AiEnrichment],
+  );
   useEffect(() => {
     let live = true;
-    setGenerated("");
     setError("");
-    setGroup(null);
-    if (!document || isUmlWorkspaceKind) return;
+    if (!document || isUmlWorkspaceKind || kind === "CONTEXT") return;
     void generateDrawio(document, "clean", layoutLocally)
+      .catch(() =>
+        selection.document
+          ? generateDrawio(selection.document, "clean", layoutLocally)
+          : Promise.reject(new Error("Diagram layout failed")),
+      )
       .then((xml) => {
-        if (live) setGenerated(xml);
+        if (live) setGeneratedState({ targetKey, xml });
       })
       .catch((error) => {
         if (live) setError(error instanceof Error ? error.message : "Diagram layout failed");
@@ -84,100 +250,73 @@ export function ArchitectureDiagrams({
     return () => {
       live = false;
     };
-  }, [document, isUmlWorkspaceKind]);
-  const xml = saved.data?.xml ?? generated;
-  function pick(id: string) {
-    if (
-      model.elements.some((node) => node.id === id) ||
-      model.edges.some((edge) => edge.id === id)
-    ) {
-      setGroup(null);
-      onSelect(id);
-      return;
-    }
-    const members = document ? diagramMembers(document, id, model) : [];
-    if (members.length === 1) {
-      setGroup(null);
-      onSelect(members[0]!);
-    } else if (members.length) setGroup(id);
-  }
-  const members = group && document ? diagramMembers(document, group, model) : [];
+  }, [document, selection.document, isUmlWorkspaceKind, kind, targetKey]);
+  const generated =
+    kind === "CONTEXT"
+      ? contextXml
+      : generatedState.targetKey === targetKey
+        ? generatedState.xml
+        : "";
+  const hasValidSavedXml = Boolean(
+    saved.data?.xml &&
+      (kind === "CONTEXT"
+        ? saved.data.xml.includes('mavisC4Context="4"')
+        : saved.data.xml.includes('mavisSmartRouting="3"') &&
+          (!document || saved.data.xml.includes(`name="${document.notation} · ${document.level}"`))),
+  );
+  const xml = (hasValidSavedXml ? saved.data?.xml : null) ?? generated;
+  const currentOption = diagramOptions.find((item) => item.value === kind);
   const title =
     kind === "COMPONENT"
-      ? `C4 · Component · ${container?.name ?? "Service"}`
-      : `${family} · ${diagramKinds[family].find((item) => item.value === kind)?.label ?? kind}`;
+      ? `Component · ${container?.name ?? "Service"}`
+      : (currentOption?.label ?? kind);
   function change(nextKind: DiagramKind) {
     setKind(nextKind);
-    setEditing(false);
-    setGroup(null);
     if (nextKind !== "SCENARIOS" && nextKind !== "UML_SEQUENCE" && onSelectSequence) {
       onSelectSequence(null, null);
     }
   }
+  const showServiceSelect = ["COMPONENT", "LOGICAL"].includes(kind);
+  const showServiceScopeSelect = ["UML_CLASS", "UML_PACKAGE"].includes(kind);
   return (
-    <section aria-label="Architecture diagrams" className="min-w-0 space-y-4">
-      <div className="space-y-3 rounded-xl border bg-card p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <SelectField
-            label="Diagram family"
-            value={family}
-            onChange={(value) => {
-              const nextFam = value as DiagramFamily;
-              setFamily(nextFam);
-              change(
-                nextFam === "C4"
-                  ? "CONTAINER"
-                  : nextFam === "UML"
-                    ? "UML_SEQUENCE"
-                    : "LOGICAL",
-              );
-            }}
-            options={[
-              { value: "C4", label: "C4" },
-              { value: "UML", label: "UML (6 Diagrams)" },
-              { value: "4+1", label: "4+1 View Model" },
-            ]}
-          />
+    <section aria-label="Architecture diagrams" className="min-w-0 space-y-2.5">
+      <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
+        <div className="w-full sm:w-64">
           <SelectField
             label="Diagram type"
             value={kind}
             onChange={(value) => change(value as DiagramKind)}
-            options={diagramKinds[family]}
+            options={diagramOptions}
           />
         </div>
-        <p className="text-sm text-muted-foreground">
-          {diagramKinds[family].find((item) => item.value === kind)?.description}
-        </p>
-        {["COMPONENT", "LOGICAL"].includes(kind) && (
-          <SelectField
-            label="Service"
-            value={container?.id ?? ""}
-            onChange={(value) => {
-              setService(value);
-              setEditing(false);
-            }}
-            options={containers.map((node) => ({
-              value: node.id,
-              label: `${node.name}${node.count === 0 ? " · no components extracted" : ""}`,
-            }))}
-          />
-        )}
-        {["UML_CLASS", "UML_PACKAGE"].includes(kind) && (
-          <SelectField
-            label="Service Scope"
-            value={service}
-            onChange={(value) => {
-              setService(value);
-              setEditing(false);
-            }}
-            options={[
-              { value: "", label: "All Services (System-wide)" },
-              ...containers.map((node) => ({
+        {showServiceSelect && (
+          <div className="w-full sm:w-80">
+            <SelectField
+              label="Service"
+              value={container?.id ?? ""}
+              onChange={setService}
+              options={containers.map((node) => ({
                 value: node.id,
-                label: node.name,
-              })),
-            ]}
-          />
+                label: `${node.name}${node.count === 0 ? " · no components extracted" : ""}`,
+              }))}
+            />
+          </div>
+        )}
+        {showServiceScopeSelect && (
+          <div className="w-full sm:w-80">
+            <SelectField
+              label="Service"
+              value={kind === "UML_CLASS" ? service || container?.id || "ALL" : service || "ALL"}
+              onChange={setService}
+              options={[
+                { value: "ALL", label: "All services" },
+                ...containers.map((node) => ({
+                  value: node.id,
+                  label: node.name,
+                })),
+              ]}
+            />
+          </div>
         )}
       </div>
       {kind === "SCENARIOS" || kind === "UML_SEQUENCE" ? (
@@ -186,106 +325,192 @@ export function ArchitectureDiagrams({
           selectedId={selectedId}
           onSelect={onSelect}
           onSelectSequence={onSelectSequence}
+          theme={theme}
+          onThemeChange={setTheme}
         />
       ) : isUmlWorkspaceKind ? (
         <UmlDiagramWorkspace
           model={model}
           kind={kind as UmlDiagramKind}
-          serviceId={service || undefined}
+          serviceId={
+            (kind === "UML_CLASS"
+              ? service === "ALL"
+                ? ""
+                : service || container?.id || ""
+              : service === "ALL"
+                ? ""
+                : service) || undefined
+          }
           selectedId={selectedId}
           onSelect={onSelect}
+          theme={theme}
+          onThemeChange={setTheme}
         />
       ) : !document ? (
         <p role="status" className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">
           {selection.reason}
         </p>
+      ) : error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : !xml ? (
+        <p role="status">Preparing diagram…</p>
       ) : (
-        <>
-          {selection.notice && <p className="text-xs text-muted-foreground">{selection.notice}</p>}
-          {error ? (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
-          ) : !xml ? (
-            <p role="status">Preparing diagram…</p>
-          ) : (
-            <>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="sm" onClick={() => setEditing(!editing)}>
-                  {editing ? "View diagram" : "Edit in draw.io"}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => download(xml, "mavis-diagram.drawio", "application/xml")}
-                >
-                  Download .drawio
-                </Button>
-                {saved.data?.revision ? (
-                  <span className="text-xs text-muted-foreground">
-                    Saved revision {saved.data.revision}
-                  </span>
-                ) : null}
+        <div className="space-y-2.5">
+          {/* C4 Top 3E Element & Relationship Inspector Card */}
+          {kind === "CONTEXT" && c4ContextInspector && (
+            <div
+              className="rounded-xl border bg-card p-3"
+              data-testid="c4-context-top-inspector-card"
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SearchableThreeESelect
+                  label="Element to explore"
+                  placeholder="Select or search elements…"
+                  selectedValue={selectedId}
+                  onSelect={onSelect}
+                  options={[
+                    ...(c4ContextInspector.primarySystemElementId
+                      ? [
+                          {
+                            value: c4ContextInspector.primarySystemElementId,
+                            badge: "Software System",
+                            label: `1. ${c4ContextInspector.resolvedSystemName}`,
+                          },
+                        ]
+                      : []),
+                    ...c4ContextInspector.persons.flatMap((person, idx) => {
+                      const targetId =
+                        person.underlyingNodeIds[0] ?? c4ContextInspector.primarySystemElementId;
+                      if (!targetId) return [];
+                      return [
+                        {
+                          value: targetId,
+                          badge: "Person",
+                          label: `${idx + 2}. ${person.name}`,
+                          sublabel: person.description,
+                        },
+                      ];
+                    }),
+                    ...c4ContextInspector.externals.map((ext, idx) => ({
+                      value: ext.id,
+                      badge: "External System",
+                      label: `${idx + 2 + c4ContextInspector.persons.length}. ${ext.name}`,
+                      sublabel: ext.description,
+                    })),
+                  ]}
+                />
+                <SearchableThreeESelect
+                  label="Connection to explore"
+                  placeholder="Select or search connections…"
+                  selectedValue={selectedId}
+                  onSelect={onSelect}
+                  options={[
+                    ...c4ContextInspector.persons.flatMap((person, idx) => {
+                      const targetId =
+                        person.underlyingNodeIds[0] ?? c4ContextInspector.primarySystemElementId;
+                      if (!targetId) return [];
+                      return [
+                        {
+                          value: targetId,
+                          badge: "HTTP_ENTRYPOINT",
+                          label: `#${idx + 1} ${person.name} → ${c4ContextInspector.resolvedSystemName}`,
+                          sublabel: person.actionLabel,
+                        },
+                      ];
+                    }),
+                    ...c4ContextInspector.externals.map((ext, idx) => ({
+                      value: ext.underlyingEdgeIds[0] ?? ext.id,
+                      badge: `EXTERNAL_${ext.direction}`,
+                      label:
+                        ext.direction === "INBOUND"
+                          ? `#${c4ContextInspector.persons.length + idx + 1} ${ext.name} → ${c4ContextInspector.resolvedSystemName}`
+                          : `#${c4ContextInspector.persons.length + idx + 1} ${c4ContextInspector.resolvedSystemName} → ${ext.name}`,
+                      sublabel: ext.actionLabel,
+                    })),
+                  ]}
+                />
               </div>
-              {editing ? (
-                <DrawioEditor
-                  key={`${model.id}:${key}`}
-                  modelId={model.id}
-                  diagramId={key}
-                  title={title}
-                  notation={document.notation}
-                  level={document.level}
-                  scope={key}
-                  xml={xml}
-                  generatedXml={generated || xml}
-                  preferProvidedXml={!!saved.data?.xml}
-                  onSave={async (content) => {
-                    if (!saved.data || saved.error)
-                      throw Error("The saved version could not load. Retry before saving.");
-                    const result = await api.execute("saveArchitectureDocument", {
-                      modelId: model.id,
-                      viewId: key,
-                      expectedRevision: saved.data.revision,
-                      xml: content,
-                    });
-                    cache.setQueryData(
-                      ["api", "architectureDocument", { modelId: model.id, viewId: key }],
-                      result,
-                    );
-                  }}
-                />
-              ) : (
-                <SelectablePreview
-                  key={`${model.id}:${key}:${saved.data?.revision ?? 0}`}
-                  xml={xml}
-                  title={title}
-                  selectedId={selectedId}
-                  onSelect={pick}
-                />
-              )}
-              {members.length > 0 && (
-                <div className="space-y-2 rounded-md border p-3">
-                  <p className="text-sm">
-                    This shape represents {members.length} model elements or relationships. Choose
-                    one to explore 3E.
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {members.map((id) => {
-                      const node = model.elements.find((n) => n.id === id),
-                        edge = model.edges.find((e) => e.id === id);
-                      return (
-                        <Button key={id} size="sm" variant="outline" onClick={() => onSelect(id)}>
-                          {node?.name ??
-                            `${model.elements.find((n) => n.id === edge?.from)?.name} → ${model.elements.find((n) => n.id === edge?.to)?.name}`}
-                        </Button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </>
+            </div>
           )}
-        </>
+
+          {kind !== "CONTEXT" && c4DocNodes.length > 0 && (
+            <div
+              className="rounded-xl border bg-card p-3"
+              data-testid={`c4-${kind.toLowerCase()}-top-inspector-card`}
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <SearchableThreeESelect
+                  label="Element to explore"
+                  placeholder="Select or search elements…"
+                  selectedValue={selectedId}
+                  onSelect={onSelect}
+                  options={c4DocNodes.map((node, idx) => ({
+                    value: node.id,
+                    badge: formatC4NodeBadge(node.kind),
+                    label: `${idx + 1}. ${node.name}`,
+                    sublabel:
+                      typeof node.description === "string" && node.description.trim()
+                        ? node.description
+                        : undefined,
+                    testId: `c4-item-${node.name}`,
+                  }))}
+                />
+                <SearchableThreeESelect
+                  label="Connection to explore"
+                  placeholder="Select or search connections…"
+                  selectedValue={selectedId}
+                  onSelect={onSelect}
+                  options={c4DocEdges.map((edge, idx) => ({
+                    value: edge.canonicalId,
+                    badge: edge.protocol,
+                    label: `#${idx + 1} ${edge.fromName} → ${edge.toName}`,
+                    sublabel:
+                      [
+                        edge.description,
+                        edge.underlyingCount > 1 ? `${edge.underlyingCount} calls` : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || undefined,
+                  }))}
+                />
+              </div>
+            </div>
+          )}
+
+          <DrawioEditor
+            key={`${model.id}:${key}`}
+            modelId={model.id}
+            diagramId={key}
+            title={title}
+            notation={document.notation}
+            level={document.level}
+            scope={key}
+            theme={theme}
+            onThemeChange={setTheme}
+            xml={xml}
+            generatedXml={generated || xml}
+            preferProvidedXml={hasValidSavedXml}
+            autoSaveWhenReady={Boolean(
+              saved.data && !hasValidSavedXml && !saved.error && generated,
+            )}
+            onSave={async (content) => {
+              if (!saved.data || saved.error)
+                throw Error("The saved version could not load. Retry before saving.");
+              const result = await api.execute("saveArchitectureDocument", {
+                modelId: model.id,
+                viewId: key,
+                expectedRevision: saved.data.revision,
+                xml: content,
+              });
+              cache.setQueryData(
+                ["api", "architectureDocument", { modelId: model.id, viewId: key }],
+                result,
+              );
+            }}
+          />
+        </div>
       )}
     </section>
   );
