@@ -188,15 +188,23 @@ export function UmlDiagramWorkspace({
       (kind === "UML_ACTIVITY" &&
         (!xml.includes('mavisActivityVersion="3"') ||
           (hydrated.projection.diagramKind === "UML_ACTIVITY" &&
-           (xml.match(/mavisUmlRole="activity-partition"/g) ?? []).length < hydrated.projection.partitions.length))) ||
+            ((xml.match(/mavisUmlRole="activity-partition"/g) ?? []).length <
+              hydrated.projection.partitions.length ||
+              (hydrated.projection.nodes.some((n) => n.kind === "FLOW_FINAL") &&
+                !xml.includes("shape=sumEllipse")) ||
+              (/Kitchen Ticket|beginCancelTicket|acceptTicket|already cooking/i.test(xml) &&
+                !model.elements.some((e) => /kitchen[-_ ]?service/i.test(e.name))))))) ||
       (kind === "UML_STATE" &&
-        hydrated.projection.diagramKind === "UML_STATE" &&
-        hydrated.projection.transitions.length > 0 &&
-        (!xml.includes('<Array as="points">') ||
-          (hydrated.projection.transitions.some(
-            (t) => Boolean(t.trigger || t.guard) && Boolean(t.guard || t.effect),
-          ) &&
-            !xml.includes("&#xa;"))));
+        (!xml.includes('mavisStateVersion="2"') ||
+          (hydrated.projection.diagramKind === "UML_STATE" &&
+            hydrated.projection.transitions.length > 0 &&
+            (!xml.includes('<Array as="points">') ||
+              (hydrated.projection.transitions.some(
+                (t) => Boolean(t.trigger || t.guard) && Boolean(t.guard || t.effect),
+              ) &&
+                !xml.includes("&#xa;")) ||
+              (/TicketAcceptedEvent|verifyRestaurantMenu|releaseKitchenSlot/i.test(xml) &&
+                !model.elements.some((e) => /kitchen[-_ ]?service/i.test(e.name)))))));
 
     setPreservedLayout(isPreTreeLayoutXml ? {} : hydrated.preservedLayout);
     setDrawioDraftXml(isPreTreeLayoutXml ? null : xml);

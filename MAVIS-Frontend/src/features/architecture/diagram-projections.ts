@@ -1,5 +1,6 @@
 import type { ArchitecturalModel } from "@/types/domain";
 import { palette, type DiagramDocument, type DiagramNode, type DrawioTheme } from "@/lib/drawio/rules";
+import { isDeclarativeClientElement } from "./classifier-semantics";
 import { compressCodeToAstSkeleton } from "./scenario-design";
 
 type Edge = DiagramDocument["layoutJson"]["edges"][number];
@@ -492,7 +493,7 @@ export function buildC4CompactContext(
     focusElements = model.elements.filter(
       (el) =>
         (!containerId || el.parentId === containerId || el.id === containerId) &&
-        el.elementType !== "CLASS_INTERFACE",
+        (el.elementType !== "CLASS_INTERFACE" || isDeclarativeClientElement(el)),
     );
   }
 

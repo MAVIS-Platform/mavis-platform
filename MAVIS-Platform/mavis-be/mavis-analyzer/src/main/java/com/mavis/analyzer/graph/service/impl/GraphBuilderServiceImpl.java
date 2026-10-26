@@ -296,9 +296,23 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     if (owningContainer == null && serviceContainers.size() == 1) {
                         owningContainer = serviceContainers.get(0);
                     }
+                    CodeEvidenceDTO feignEv = evidences.stream()
+                            .filter(e -> "FEIGN_CLIENT".equalsIgnoreCase(e.getElementType())
+                                    && Objects.equals(e.getSourceComponent(), umlEv.getIdentifier())
+                                    && (e.getFilePath() == null || Objects.equals(e.getFilePath(), umlEv.getFilePath())))
+                            .findFirst()
+                            .orElse(null);
+                    boolean isDeclarativeClient = feignEv != null
+                            || (umlEv.getCodeSnippet() != null && umlEv.getCodeSnippet().matches("(?s).*@(FeignClient|HttpExchange|GrpcClient|WebServiceClient|RegisterRestClient)\\b.*"));
                     ObjectNode props = createPropertiesNode(umlEv.getFilePath());
-                    props.put("componentBasis", "UML_CLASSIFIER");
+                    props.put("componentBasis", isDeclarativeClient ? "FEIGN_CLIENT" : "UML_CLASSIFIER");
                     props.put("qualifiedName", umlEv.getQualifiedName());
+                    if (isDeclarativeClient) {
+                        props.put("responsibility", "Declarative outbound HTTP/REST client proxy");
+                        if (feignEv != null && feignEv.getIdentifier() != null) {
+                            props.put("targetService", feignEv.getIdentifier());
+                        }
+                    }
                     attachUmlClassifierMetadata(props, umlEv);
                     if (owningContainer == null) {
                         props.put("resolutionIssue", "UNRESOLVED_COMPONENT_OWNER");
@@ -307,8 +321,8 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                             .modelVersion(modelVersion)
                             .parentElement(owningContainer)
                             .name(umlEv.getIdentifier())
-                            .elementType("CLASS_INTERFACE")
-                            .languageStack("JAVA_SPRING")
+                            .elementType(isDeclarativeClient ? "COMPONENT" : "CLASS_INTERFACE")
+                            .languageStack(isDeclarativeClient ? "Java / Spring Cloud Feign" : "JAVA_SPRING")
                             .scope(umlEv.getFilePath())
                             .properties(props)
                             .status(owningContainer == null ? "UNCERTAIN_MAPPING" : "VALIDATED")
@@ -523,6 +537,22 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     ModelElement targetElement = elementByNameMap.get(targetServiceName.toLowerCase().trim());
                     if (targetElement == null) {
                         targetElement = matchTargetElement(elements, targetServiceName);
+                    }
+                    if (targetElement == null && "FEIGN_CLIENT".equalsIgnoreCase(type) && !targetServiceName.contains("${")) {
+                        ObjectNode extProps = createPropertiesNode(ev.getFilePath());
+                        extProps.put("sourceType", "FEIGN_CLIENT_TARGET");
+                        targetElement = modelElementRepository.save(ModelElement.builder()
+                                .modelVersion(modelVersion)
+                                .name(targetServiceName.trim())
+                                .elementType("SERVICE_CONTAINER")
+                                .languageStack("HTTP / REST API")
+                                .scope(ev.getFilePath())
+                                .properties(extProps)
+                                .status("VALIDATED")
+                                .build());
+                        elements.add(targetElement);
+                        allElements.add(targetElement);
+                        elementByNameMap.put(targetServiceName.toLowerCase().trim(), targetElement);
                     }
 
                     if (targetElement != null && findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath()) != null) {

@@ -861,13 +861,14 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
             for (VariableDeclarator v : field.getVariables()) {
                 String vName = v.getNameAsString();
                 String vType = field.getElementType().asString();
-                if (PRIMITIVE_OR_BUILT_IN.contains(vType) || field.getElementType().isPrimitiveType()) {
+                boolean isStateNamedField = vName.matches("(?i).*(status|state|phase|stage)$");
+                if ((PRIMITIVE_OR_BUILT_IN.contains(vType) && !("String".equals(vType) && isStateNamedField))
+                        || field.getElementType().isPrimitiveType()) {
                     continue;
                 }
                 boolean isKnownEnum = declaredEnumTypes.contains(vType)
-                        || vType.endsWith("Status")
-                        || vType.endsWith("State");
-                if (isKnownEnum || vName.equalsIgnoreCase("status") || vName.equalsIgnoreCase("state")) {
+                        || vType.matches("(?i).*(Status|State|Phase|Stage)$");
+                if (isKnownEnum || isStateNamedField) {
                     stateField = field;
                     stateFieldName = vName;
                     stateTypeName = vType;
@@ -1052,6 +1053,18 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
         if (cond.isUnaryExpr() && cond.asUnaryExpr().getOperator() == UnaryExpr.Operator.LOGICAL_COMPLEMENT) {
             return extractNegativeInequalityState(cond.asUnaryExpr().getExpression(), fieldName);
         }
+        if (cond.isMethodCallExpr()) {
+            MethodCallExpr mc = cond.asMethodCallExpr();
+            if ((mc.getNameAsString().equals("equals") || mc.getNameAsString().equals("equalsIgnoreCase"))
+                    && mc.getArguments().size() == 1 && mc.getScope().isPresent()) {
+                if (isTargetField(mc.getScope().get(), fieldName)) {
+                    return extractEnumConstantName(mc.getArgument(0));
+                }
+                if (isTargetField(mc.getArgument(0), fieldName)) {
+                    return extractEnumConstantName(mc.getScope().get());
+                }
+            }
+        }
         for (BinaryExpr bin : cond.findAll(BinaryExpr.class)) {
             if (bin.getOperator() == BinaryExpr.Operator.OR) {
                 return null;
@@ -1094,6 +1107,10 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
         if (expr.isNameExpr()) {
             String name = expr.asNameExpr().getNameAsString();
             if (name.toUpperCase().equals(name) && !name.isEmpty()) return name;
+        }
+        if (expr.isStringLiteralExpr()) {
+            String val = expr.asStringLiteralExpr().asString().trim();
+            if (val.matches("[A-Z][A-Z0-9_]{1,40}")) return val;
         }
         return null;
     }

@@ -123,7 +123,7 @@ export function SelectField({
           disabled={disabled}
           className="h-9 w-full min-w-0 rounded-md border bg-card px-3 text-sm disabled:opacity-50"
         >
-          {!value && (
+          {!value && !options.some((option) => option.value === "") && (
             <option value="" disabled>
               Select {label.toLowerCase()}
             </option>

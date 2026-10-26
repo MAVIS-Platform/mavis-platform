@@ -65,7 +65,7 @@ export function ArchitectureDiagrams({
   onSelectSequence?: ((id: string | null, seqCtx: SequenceSelectionContext | null) => void) | undefined;
   systemName?: string | undefined;
 }) {
-  const [kind, setKind] = useState<DiagramKind>("CONTAINER"),
+  const [kind, setKind] = useState<DiagramKind>("CONTEXT"),
     [service, setService] = useState(""),
     [theme, setTheme] = useState<DrawioTheme>("clean"),
     [c4AiEnrichment, setC4AiEnrichment] = useState<C4AiDiagramEnrichment | null>(null),

@@ -40,6 +40,7 @@ const {
   projectUmlDeploymentDiagram,
   projectUmlActivityDiagram,
   projectUmlStateDiagram,
+  listStateTargets,
   buildUmlDrawioXml,
   reconcileUmlDrawioXml,
   hydrateUmlWorkspaceFromXml,
@@ -753,8 +754,8 @@ test("M5-AC01 through M5-AC06: UML Deployment nodes, nested artifacts, «manifes
   const commPaths = deployProj.edges.filter((e) => e.edgeKind === "COMMUNICATION_PATH");
 
   assert.ok(execNodes.length >= 2, "Must extract executionEnvironment deployment nodes");
-  assert.equal(artifacts.length, 1, "Only explicit container image (mysql:8.0) must produce extracted ARTIFACT");
-  assert.equal(artifacts[0].name, "mysql:8.0");
+  assert.equal(artifacts.length, 2, "Explicit container image (mysql:8.0) and build-context service (orders-service.jar) must produce inner ARTIFACT nodes");
+  assert.deepEqual(new Set(artifacts.map((a) => a.name)), new Set(["orders-service.jar", "mysql:8.0"]));
   assert.ok(!deployProj.nodes.some((n) => n.name.endsWith(":build")), "Must never fabricate :build artifact node");
   assert.equal(manifestations.length, 1, "Must emit «manifest» edge only for verified artifact");
   assert.ok(
@@ -2155,4 +2156,832 @@ test("Multi-Swimlane Microservices Business Flow Activity Diagrams: groups diagr
   assert.equal(deliveryStateProj.validationIssues.filter((i) => i.severity === "ERROR").length, 0);
 });
 
+test("UML_DEPLOYMENT multi-source deduplication, barycenter DB column alignment, top-down cross-tier ports, and inner build artifacts", () => {
+  const makeBuildService = (id, name, port, connections = []) => ({
+    id,
+    name,
+    elementType: "SERVICE_CONTAINER",
+    parentId: null,
+    technology: "Spring Boot",
+    evidence: [{ id: `ev-compose-${id}` }],
+    properties: {
+      sourceType: "DOCKER_COMPOSE",
+      ports: [`${port}:${port}`],
+      buildContext: `./${name}`,
+      deploymentMetadata: {
+        environment: "default",
+        nodeStereotype: "<<executionEnvironment>>",
+        declaredBuildContext: `./${name}`,
+        artifactResolution: "BUILD_CONTEXT_ONLY_UNRESOLVED_ARTIFACT",
+        connections,
+      },
+    },
+  });
+  const makeDb = (id, name, hostPort) => ({
+    id,
+    name,
+    elementType: "DATABASE",
+    parentId: null,
+    technology: "PostgreSQL",
+    evidence: [{ id: `ev-db-${id}` }],
+    properties: {
+      sourceType: "DOCKER_COMPOSE",
+      image: "postgres:15-alpine",
+      protocol: "postgresql",
+      ports: [`${hostPort}:5432`],
+      deploymentMetadata: {
+        environment: "default",
+        nodeStereotype: "<<device>>",
+        artifactName: "postgres:15-alpine",
+        artifactKind: "CONTAINER_IMAGE",
+        artifactResolution: "EXPLICIT_CONTAINER_IMAGE",
+        connections: [],
+      },
+    },
+  });
 
+  const model = {
+    id: "fruit-deployment-benchmark",
+    elements: [
+      makeBuildService("gw", "api-gateway", 8080, [
+        { targetService: "fruit-order-service", protocol: "HTTP", port: 8081 },
+      ]),
+      makeBuildService("order", "fruit-order-service", 8081, [
+        { targetService: "order-db", protocol: "TCP", port: 5432 },
+        { targetService: "order-db", protocol: "STARTUP_DEPENDENCY", port: 5432 },
+      ]),
+      makeBuildService("inventory", "fruit-inventory-service", 8082, [
+        { targetService: "inventory-db", protocol: "TCP", port: 5432 },
+      ]),
+      makeBuildService("catalog", "fruit-catalog-service", 8083, [
+        { targetService: "catalog-db", protocol: "TCP", port: 5432 },
+      ]),
+      makeBuildService("payment", "fruit-payment-service", 8084, [
+        { targetService: "payment-db", protocol: "TCP", port: 5432 },
+      ]),
+      makeDb("db-order", "order-db", 5431),
+      makeDb("db-inventory", "inventory-db", 5432),
+      makeDb("db-catalog", "catalog-db", 5433),
+      makeDb("db-payment", "payment-db", 5434),
+    ],
+    edges: [
+      { id: "e-gw-order", from: "gw", to: "order", protocol: "SERVICE_HTTP_CALL", evidence: [{ id: "ev-http-gw" }], uncertain: false },
+      { id: "e-order-db", from: "order", to: "db-order", protocol: "DATABASE_ACCESS", evidence: [{ id: "ev-jdbc-order" }], uncertain: false },
+      { id: "e-inv-db", from: "inventory", to: "db-inventory", protocol: "DATABASE_ACCESS", evidence: [{ id: "ev-jdbc-inv" }], uncertain: false },
+      { id: "e-cat-db", from: "catalog", to: "db-catalog", protocol: "DATABASE_ACCESS", evidence: [{ id: "ev-jdbc-cat" }], uncertain: false },
+      { id: "e-pay-db", from: "payment", to: "db-payment", protocol: "DATABASE_ACCESS", evidence: [{ id: "ev-jdbc-pay" }], uncertain: false },
+    ],
+  };
+
+  const proj = projectUmlDeploymentDiagram(model);
+
+  // 1. Parallel «configured» TCP (5432) and «communicationPath» POSTGRESQL (5432) edges must be deduplicated into 1 POSTGRESQL edge with merged evidence
+  for (const [svcId, dbId, evJdbc, evCompose] of [
+    ["order", "db-order", "ev-jdbc-order", "ev-compose-order"],
+    ["inventory", "db-inventory", "ev-jdbc-inv", "ev-compose-inventory"],
+    ["catalog", "db-catalog", "ev-jdbc-cat", "ev-compose-catalog"],
+    ["payment", "db-payment", "ev-jdbc-pay", "ev-compose-payment"],
+  ]) {
+    const pairEdges = proj.edges.filter(
+      (e) => e.fromNodeId === `deploy:node:${svcId}` && e.toNodeId === `deploy:node:${dbId}`,
+    );
+    assert.equal(pairEdges.length, 1, `Expected exactly 1 deduplicated edge for ${svcId} -> ${dbId}`);
+    assert.equal(pairEdges[0].protocol, "POSTGRESQL");
+    assert.equal(pairEdges[0].port, "5432");
+    assert.equal(pairEdges[0].label, "«communicationPath» POSTGRESQL (5432)");
+    assert.ok(pairEdges[0].evidenceIds.includes(evJdbc) && pairEdges[0].evidenceIds.includes(evCompose));
+  }
+
+  // 4. Built microservices must have synthesized inner «artifact» <service-name>.jar nodes
+  for (const svcName of [
+    "api-gateway",
+    "fruit-order-service",
+    "fruit-inventory-service",
+    "fruit-catalog-service",
+    "fruit-payment-service",
+  ]) {
+    assert.ok(
+      proj.nodes.some((n) => n.nodeKind === "ARTIFACT" && n.name === `${svcName}.jar`),
+      `Built service ${svcName} must have inner «artifact» ${svcName}.jar`,
+    );
+  }
+
+  // 2 & 3. Verify Barycenter DB column alignment and exitY=1 -> entryY=0 cross-tier port routing in Draw.io XML
+  const xml = buildUmlDrawioXml(proj);
+  const attrs = (text) => Object.fromEntries([...text.matchAll(/([\w]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+  const cells = new Map(
+    [...xml.matchAll(/<mxCell\b([^>]*?)(?<!\/)>([\s\S]*?)<\/mxCell>/g)].map((m) => {
+      const a = attrs(m[1]);
+      return [a.id, { a, body: m[2], g: attrs(m[2].match(/<mxGeometry\b([^>]*)/)[1]) }];
+    }),
+  );
+
+  const centerX = (nodeId) => {
+    const g = cells.get(nodeId).g;
+    return +g.x + +g.width / 2;
+  };
+  for (const [svcId, dbId] of [
+    ["order", "db-order"],
+    ["inventory", "db-inventory"],
+    ["catalog", "db-catalog"],
+    ["payment", "db-payment"],
+  ]) {
+    assert.ok(
+      Math.abs(centerX(`deploy:node:${svcId}`) - centerX(`deploy:node:${dbId}`)) < 5,
+      `Dedicated DB ${dbId} must align directly beneath ${svcId} in the same column`,
+    );
+    const edge = proj.edges.find(
+      (e) => e.fromNodeId === `deploy:node:${svcId}` && e.toNodeId === `deploy:node:${dbId}`,
+    );
+    const style = Object.fromEntries(cells.get(edge.edgeId).a.style.split(";").map((p) => p.split("=")));
+    assert.equal(+style.exitY, 1, `Downward edge ${edge.edgeId} must exit bottom face (exitY=1)`);
+    assert.equal(+style.entryY, 0, `Downward edge ${edge.edgeId} must enter top face (entryY=0)`);
+  }
+  assert.equal(reconcileUmlDrawioXml(xml, proj).conflicts.length, 0);
+});
+
+test("fruit-payment-service: @FeignClient promoted to C4 Component with outbound target edge & orphan bootstrap root package pruned in UML_PACKAGE", () => {
+  const model = {
+    id: "fruit-payment-v1",
+    projectId: "proj-fruit",
+    label: "fruit-payment",
+    createdAt: "2026-04-17T00:00:00Z",
+    status: "READY",
+    elements: [
+      {
+        id: "svc-payment",
+        name: "fruit-payment-service",
+        elementType: "SERVICE_CONTAINER",
+        technology: "JAVA_SPRING",
+        parentId: null,
+        description: null,
+        evidence: [],
+        properties: {},
+      },
+      {
+        id: "cls-app",
+        name: "FruitPaymentApplication",
+        elementType: "CLASS_INTERFACE",
+        technology: "JAVA_SPRING",
+        parentId: "svc-payment",
+        description: null,
+        evidence: [
+          {
+            id: "ev-app",
+            sourceType: "STATIC_CODE",
+            filePath: "src/main/java/com/mekongfruit/payment/FruitPaymentApplication.java",
+            lineRange: "1-12",
+            snippet: "@SpringBootApplication public class FruitPaymentApplication { public static void main(String[] args) {} }",
+          },
+        ],
+        properties: {
+          qualifiedName: "com.mekongfruit.payment.FruitPaymentApplication",
+          packageName: "com.mekongfruit.payment",
+          typeKind: "CLASS",
+          umlClassifier: {
+            name: "FruitPaymentApplication",
+            qualifiedName: "com.mekongfruit.payment.FruitPaymentApplication",
+            packageName: "com.mekongfruit.payment",
+            typeKind: "CLASS",
+            annotations: ["SpringBootApplication"],
+            members: [
+              {
+                name: "main",
+                memberKind: "METHOD",
+                returnType: "void",
+                visibility: "PUBLIC",
+                isStatic: true,
+                parameters: [{ name: "args", type: "String[]" }],
+              },
+            ],
+          },
+        },
+      },
+      {
+        id: "comp-controller",
+        name: "FruitPaymentController",
+        elementType: "COMPONENT",
+        technology: "JAVA_SPRING",
+        parentId: "svc-payment",
+        description: "Exposes HTTP endpoints",
+        evidence: [],
+        properties: {
+          qualifiedName: "com.mekongfruit.payment.controller.FruitPaymentController",
+          packageName: "com.mekongfruit.payment.controller",
+          typeKind: "CLASS",
+          umlClassifier: {
+            name: "FruitPaymentController",
+            qualifiedName: "com.mekongfruit.payment.controller.FruitPaymentController",
+            packageName: "com.mekongfruit.payment.controller",
+            typeKind: "CLASS",
+            annotations: ["RestController"],
+            members: [],
+          },
+        },
+      },
+      {
+        id: "cls-feign",
+        name: "NotificationFeignClient",
+        elementType: "CLASS_INTERFACE",
+        technology: "JAVA_SPRING",
+        parentId: "svc-payment",
+        description: null,
+        evidence: [
+          {
+            id: "ev-feign",
+            sourceType: "STATIC_CODE",
+            filePath: "src/main/java/com/mekongfruit/payment/client/NotificationFeignClient.java",
+            lineRange: "1-10",
+            snippet: '@FeignClient(name = "notification-service", url = "${notification.service.url}") public interface NotificationFeignClient {}',
+          },
+        ],
+        properties: {
+          qualifiedName: "com.mekongfruit.payment.client.NotificationFeignClient",
+          packageName: "com.mekongfruit.payment.client",
+          typeKind: "INTERFACE",
+          umlClassifier: {
+            name: "NotificationFeignClient",
+            qualifiedName: "com.mekongfruit.payment.client.NotificationFeignClient",
+            packageName: "com.mekongfruit.payment.client",
+            typeKind: "INTERFACE",
+            annotations: ["FeignClient"],
+            members: [],
+          },
+        },
+      },
+      {
+        id: "comp-repo",
+        name: "FruitPaymentRepository",
+        elementType: "COMPONENT",
+        technology: "JAVA_SPRING",
+        parentId: "svc-payment",
+        description: "Persists and retrieves application data",
+        evidence: [],
+        properties: {
+          qualifiedName: "com.mekongfruit.payment.repository.FruitPaymentRepository",
+          packageName: "com.mekongfruit.payment.repository",
+          typeKind: "INTERFACE",
+          umlClassifier: {
+            name: "FruitPaymentRepository",
+            qualifiedName: "com.mekongfruit.payment.repository.FruitPaymentRepository",
+            packageName: "com.mekongfruit.payment.repository",
+            typeKind: "INTERFACE",
+            annotations: ["Repository"],
+            members: [],
+          },
+        },
+      },
+      {
+        id: "cls-entity",
+        name: "PaymentRecord",
+        elementType: "CLASS_INTERFACE",
+        technology: "JAVA_SPRING",
+        parentId: "svc-payment",
+        description: null,
+        evidence: [],
+        properties: {
+          qualifiedName: "com.mekongfruit.payment.entity.PaymentRecord",
+          packageName: "com.mekongfruit.payment.entity",
+          typeKind: "CLASS",
+          umlClassifier: {
+            name: "PaymentRecord",
+            qualifiedName: "com.mekongfruit.payment.entity.PaymentRecord",
+            packageName: "com.mekongfruit.payment.entity",
+            typeKind: "CLASS",
+            annotations: ["Entity"],
+            members: [],
+          },
+        },
+      },
+    ],
+    edges: [
+      {
+        id: "edge-ctrl-feign",
+        from: "comp-controller",
+        to: "cls-feign",
+        protocol: "CODE_DEPENDENCY",
+        originLayer: "STATIC",
+        resolutionStatus: "RESOLVED",
+        evidence: [],
+      },
+      {
+        id: "edge-ctrl-repo",
+        from: "comp-controller",
+        to: "comp-repo",
+        protocol: "CODE_DEPENDENCY",
+        originLayer: "STATIC",
+        resolutionStatus: "RESOLVED",
+        evidence: [],
+      },
+      {
+        id: "edge-ctrl-entity",
+        from: "comp-controller",
+        to: "cls-entity",
+        protocol: "CODE_DEPENDENCY",
+        originLayer: "STATIC",
+        resolutionStatus: "RESOLVED",
+        evidence: [],
+      },
+      {
+        id: "edge-repo-entity",
+        from: "comp-repo",
+        to: "cls-entity",
+        protocol: "CODE_DEPENDENCY",
+        originLayer: "STATIC",
+        resolutionStatus: "RESOLVED",
+        evidence: [],
+      },
+    ],
+  };
+
+  // 1. Verify C4_COMPONENT and C4_CONTAINER include NotificationFeignClient and its outbound target service
+  const c3Selection = selectDiagram(model, "COMPONENT", "svc-payment");
+  assert.ok(c3Selection.document, "C4 Component view for fruit-payment-service must be generated");
+  const c3Nodes = c3Selection.document.layoutJson.nodes;
+  const c3Edges = c3Selection.document.layoutJson.edges;
+
+  const feignNode = c3Nodes.find((n) => n.id === "cls-feign");
+  assert.ok(feignNode, "NotificationFeignClient must be present in C4 Component diagram");
+  assert.equal(feignNode.kind, "COMPONENT");
+  assert.equal(feignNode.languageStack, "Java / Spring Cloud Feign");
+  assert.equal(feignNode.parentId, "svc-payment");
+
+  const targetNode = c3Nodes.find((n) => n.name === "notification-service");
+  assert.ok(targetNode, "Synthesized target service notification-service must be present outside C4 Component boundary");
+  assert.ok(!targetNode.parentId, "External target service must sit outside the fruit-payment-service boundary");
+
+  assert.ok(
+    c3Edges.some((e) => e.from === "comp-controller" && e.to === "cls-feign"),
+    "FruitPaymentController -> NotificationFeignClient edge must be rendered in C4 Component diagram",
+  );
+  assert.ok(
+    c3Edges.some((e) => e.from === "cls-feign" && e.to === targetNode.id && e.type === "SERVICE_HTTP_CALL"),
+    "NotificationFeignClient -> notification-service outbound HTTP call edge must be rendered in C4 Component diagram",
+  );
+
+  const c2Selection = selectDiagram(model, "CONTAINER");
+  assert.ok(c2Selection.document, "C4 Container view must be generated");
+  assert.ok(
+    c2Selection.document.layoutJson.edges.some(
+      (e) => e.from === "svc-payment" && e.to === targetNode.id && e.type === "SERVICE_HTTP_CALL",
+    ),
+    "Outbound HTTP call from NotificationFeignClient must aggregate to fruit-payment-service -> notification-service in C4 Container view",
+  );
+
+  // 2. Verify UML_PACKAGE prunes orphan root bootstrap package com.mekongfruit.payment
+  const pkgProj = projectUmlPackageDiagram(model, { serviceId: "svc-payment" });
+  const pkgNames = pkgProj.packages.map((p) => p.qualifiedName);
+  assert.ok(
+    !pkgNames.includes("com.mekongfruit.payment"),
+    "Orphan bootstrap root package com.mekongfruit.payment (degree == 0) must be pruned from UML_PACKAGE",
+  );
+  assert.deepEqual(
+    pkgNames.sort(),
+    [
+      "com.mekongfruit.payment.client",
+      "com.mekongfruit.payment.controller",
+      "com.mekongfruit.payment.entity",
+      "com.mekongfruit.payment.repository",
+    ],
+  );
+});
+
+test("fruit-* UML_ACTIVITY: removes hardcoded FTGO labels, promotes project-specific multi-swimlane workflows to top, purges getters/setters/interfaces/main, and routes FLOW_FINAL/ACTIVITY_FINAL without box overlaps", () => {
+  const { listActivityOperations } = require("../src/features/architecture/uml-diagrams.ts");
+  const makeSvc = (id, name) => ({
+    id,
+    name,
+    elementType: "SERVICE_CONTAINER",
+    parentId: null,
+    technology: "JAVA_SPRING",
+    evidence: [],
+    properties: {},
+  });
+  const makeClass = (id, parentId, name, typeKind, annotations, methodsCfg = [], members = []) => ({
+    id,
+    name,
+    parentId,
+    elementType: "CLASS_INTERFACE",
+    technology: "JAVA_SPRING",
+    evidence: [],
+    properties: {
+      typeKind,
+      umlClassifier: {
+        name,
+        qualifiedName: `com.mekongfruit.${name}`,
+        packageName: "com.mekongfruit",
+        typeKind,
+        annotations,
+        methodsCfg,
+        members,
+      },
+    },
+  });
+
+  const fruitModel = {
+    id: "fruit-activity-benchmark",
+    projectId: "proj-fruit",
+    label: "fruit-microservices",
+    elements: [
+      makeSvc("gw", "api-gateway"),
+      makeSvc("order", "fruit-order-service"),
+      makeSvc("inventory", "fruit-inventory-service"),
+      makeSvc("payment", "fruit-payment-service"),
+      makeSvc("catalog", "fruit-catalog-service"),
+      makeSvc("delivery", "fruit-delivery-service"),
+      makeSvc("notification", "fruit-notification-service"),
+      makeClass(
+        "cls-order-app",
+        "order",
+        "FruitOrderApplication",
+        "CLASS",
+        ["SpringBootApplication"],
+        [{ methodName: "main", signatureKey: "main(String[])", nodes: [{ id: "n1", kind: "INITIAL", label: "Start" }], edges: [] }],
+      ),
+      makeClass(
+        "cls-order-entity",
+        "order",
+        "FruitOrder",
+        "CLASS",
+        ["Entity"],
+        [
+          { methodName: "getTotalAmount", signatureKey: "getTotalAmount()", nodes: [{ id: "n1", kind: "INITIAL", label: "Start" }], edges: [] },
+          { methodName: "setOrderStatus", signatureKey: "setOrderStatus(String)", nodes: [{ id: "n1", kind: "INITIAL", label: "Start" }], edges: [] },
+        ],
+      ),
+      makeClass(
+        "cls-feign",
+        "payment",
+        "NotificationFeignClient",
+        "INTERFACE",
+        ["FeignClient"],
+        [],
+        [{ memberKind: "OPERATION", name: "sendPaymentReceiptNotification", signature: "sendPaymentReceiptNotification(Map)" }],
+      ),
+      makeClass(
+        "cls-inv-ctrl",
+        "inventory",
+        "FruitInventoryController",
+        "CLASS",
+        ["RestController"],
+        [
+          {
+            methodName: "reserveFruitStock",
+            signatureKey: "reserveFruitStock(Map)",
+            extractionCompleteness: "COMPLETE",
+            nodes: [
+              { id: "i1", kind: "INITIAL", label: "Start" },
+              { id: "i2", kind: "DECISION", label: "stock >= qty" },
+              { id: "i3", kind: "ACTIVITY_FINAL", label: "End" },
+            ],
+            edges: [
+              { id: "e1", from: "i1", to: "i2", flowKind: "CONTROL_FLOW", guard: null },
+              { id: "e2", from: "i2", to: "i3", flowKind: "CONTROL_FLOW", guard: "[inStock]" },
+            ],
+          },
+        ],
+      ),
+      makeClass(
+        "cls-del-ctrl",
+        "delivery",
+        "FruitDeliveryController",
+        "CLASS",
+        ["RestController"],
+        [
+          {
+            methodName: "scheduleColdTruckDelivery",
+            signatureKey: "scheduleColdTruckDelivery(Map)",
+            extractionCompleteness: "COMPLETE",
+            nodes: [
+              { id: "d1", kind: "INITIAL", label: "Start" },
+              { id: "d2", kind: "ACTIVITY_FINAL", label: "End" },
+            ],
+            edges: [{ id: "de1", from: "d1", to: "d2", flowKind: "CONTROL_FLOW", guard: null }],
+          },
+        ],
+      ),
+    ],
+    edges: [
+      { id: "e1", from: "gw", to: "order", protocol: "SERVICE_HTTP_CALL", uncertain: false, evidence: [] },
+      { id: "e2", from: "order", to: "inventory", protocol: "SERVICE_HTTP_CALL", uncertain: false, evidence: [] },
+      { id: "e3", from: "order", to: "payment", protocol: "SERVICE_HTTP_CALL", uncertain: false, evidence: [] },
+      { id: "e4", from: "payment", to: "notification", protocol: "SERVICE_HTTP_CALL", uncertain: false, evidence: [] },
+    ],
+  };
+
+  const ops = listActivityOperations(fruitModel);
+  // 1. Multi-swimlane workflows promoted to the top & selected by default
+  assert.equal(ops[0].operationId, "flow:business:create-order-flow");
+  const defaultProj = projectUmlActivityDiagram(fruitModel);
+  assert.equal(defaultProj.selectedOperationId, "flow:business:create-order-flow");
+  assert.equal(defaultProj.partitions.length, 4);
+
+  // 2. Getters, setters, main(), and FeignClient interface methods are purged from dropdown
+  const opNames = ops.map((o) => `${o.classifierName}.${o.methodName}`);
+  for (const forbidden of [
+    "FruitOrder.getTotalAmount",
+    "FruitOrder.setOrderStatus",
+    "FruitOrderApplication.main",
+    "NotificationFeignClient.sendPaymentReceiptNotification",
+  ]) {
+    assert.ok(!opNames.includes(forbidden), `Forbidden method ${forbidden} must be excluded from Activity dropdown`);
+  }
+  assert.ok(
+    opNames.includes("FruitInventoryController.reserveFruitStock"),
+    "Real service/controller method reserveFruitStock must remain in Activity dropdown",
+  );
+
+  // 3. Zero hardcoded FTGO strings in any fruit-* multi-swimlane workflow, and real project methods used
+  for (const flowId of [
+    "flow:business:create-order-flow",
+    "flow:business:delivery-flow",
+    "flow:business:cancel-order-flow",
+    "flow:business:catalog-notification-flow",
+  ]) {
+    const proj = projectUmlActivityDiagram(fruitModel, { operationId: flowId });
+    const xml = buildUmlDrawioXml(proj);
+    assert.ok(
+      !/Kitchen Ticket|beginCancelTicket|acceptTicket|already cooking|Menu & CQRS/i.test(xml),
+      `Workflow ${flowId} must not leak FTGO restaurant/kitchen strings`,
+    );
+    if (proj.nodes.some((n) => n.kind === "FLOW_FINAL")) {
+      assert.match(xml, /shape=sumEllipse/, `${flowId}: FLOW_FINAL must render with UML 2.5 sumEllipse (⊗)`);
+    }
+
+    // 4. Verify zero edges cut through non-endpoint activity boxes
+    const attrs = (text) => Object.fromEntries([...text.matchAll(/([\w]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+    const cells = new Map(
+      [...xml.matchAll(/<mxCell\b([^>]*?)(?<!\/)>([\s\S]*?)<\/mxCell>/g)].map((m) => {
+        const a = attrs(m[1]);
+        return [a.id, { a, body: m[2], g: attrs(m[2].match(/<mxGeometry\b([^>]*)/)[1]) }];
+      }),
+    );
+    const boxes = proj.nodes.map((n) => {
+      const g = cells.get(n.nodeId).g;
+      const parent = cells.get(n.partitionId).g;
+      return { id: n.nodeId, x: +g.x + +parent.x, y: +g.y + +parent.y, w: +g.width, h: +g.height };
+    });
+    for (const edge of proj.edges) {
+      const cell = cells.get(edge.edgeId);
+      const style = Object.fromEntries(cell.a.style.split(";").map((p) => p.split("=")));
+      const sb = boxes.find((b) => b.id === edge.from);
+      const tb = boxes.find((b) => b.id === edge.to);
+      const points = [...cell.body.matchAll(/<mxPoint\b([^>]*)\/>/g)].map((m) => attrs(m[1]));
+      const path = [
+        { x: sb.x + sb.w * +style.exitX, y: sb.y + sb.h * +style.exitY },
+        ...points.filter((p) => !p.as).map((p) => ({ x: +p.x, y: +p.y })),
+        { x: tb.x + tb.w * +style.entryX, y: tb.y + tb.h * +style.entryY },
+      ];
+      for (let i = 1; i < path.length; i++) {
+        for (const box of boxes) {
+          if ((box === sb && i === 1) || (box === tb && i === path.length - 1)) continue;
+          assert.ok(
+            !deploymentSegmentHitsBox(path[i - 1], path[i], box, 0),
+            `${flowId} edge ${edge.edgeId} must not cut through node box ${box.id}`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test("UML_STATE: dynamically discovers project-specific state machines from AST and separates terminal/back-edge ports", () => {
+  const fruitStateModel = {
+    id: "fruit-state-model",
+    elements: [
+      { id: "svc:order", kind: "SERVICE", name: "fruit-order-service", metadata: {} },
+      { id: "svc:payment", kind: "SERVICE", name: "fruit-payment-service", metadata: {} },
+      { id: "svc:delivery", kind: "SERVICE", name: "fruit-delivery-service", metadata: {} },
+      {
+        id: "comp:FruitOrder",
+        kind: "COMPONENT",
+        name: "FruitOrder",
+        parentId: "svc:order",
+        metadata: {
+          umlClassifier: {
+            qualifiedName: "com.mekongfruit.order.entity.FruitOrder",
+            kind: "CLASS",
+            stereotypes: ["Entity"],
+            annotations: ["Entity"],
+            members: [
+              { kind: "ATTRIBUTE", name: "id", typeName: "Long" },
+              { kind: "ATTRIBUTE", name: "orderStatus", typeName: "String" },
+              { kind: "OPERATION", name: "getOrderStatus", returnType: "String", parameters: [] },
+              {
+                kind: "OPERATION",
+                name: "setOrderStatus",
+                returnType: "void",
+                parameters: [{ name: "orderStatus", type: "String" }],
+              },
+            ],
+          },
+        },
+      },
+      {
+        id: "comp:FruitOrderController",
+        kind: "COMPONENT",
+        name: "FruitOrderController",
+        parentId: "svc:order",
+        metadata: {
+          umlClassifier: {
+            qualifiedName: "com.mekongfruit.order.controller.FruitOrderController",
+            kind: "CLASS",
+            stereotypes: ["RestController"],
+            members: [
+              { kind: "OPERATION", name: "createOrder", returnType: "FruitOrder", parameters: [] },
+              { kind: "OPERATION", name: "cancelOrder", returnType: "FruitOrder", parameters: [] },
+            ],
+          },
+          methodsCfg: [
+            {
+              methodName: "createOrder",
+              nodes: [
+                { id: "n0", kind: "ENTRY", label: "createOrder()" },
+                { id: "n1", kind: "STATEMENT", label: 'order.setOrderStatus("PENDING_PAYMENT")' },
+                { id: "n2", kind: "CALL", label: "inventoryClient.reserveFruitStock()" },
+                { id: "n3", kind: "DECISION", label: "paymentSucceeded" },
+                { id: "n4", kind: "STATEMENT", label: 'order.setOrderStatus("CONFIRMED")' },
+                { id: "n5", kind: "STATEMENT", label: 'order.setOrderStatus("PAYMENT_FAILED")' },
+              ],
+              edges: [],
+            },
+            {
+              methodName: "cancelOrder",
+              nodes: [
+                { id: "c0", kind: "ENTRY", label: "cancelOrder()" },
+                { id: "c1", kind: "DECISION", label: '"CONFIRMED".equals(order.getOrderStatus())' },
+                { id: "c2", kind: "STATEMENT", label: 'order.setOrderStatus("CANCELLED")' },
+              ],
+              edges: [],
+            },
+          ],
+        },
+      },
+      {
+        id: "comp:FruitPaymentTransaction",
+        kind: "COMPONENT",
+        name: "FruitPaymentTransaction",
+        parentId: "svc:payment",
+        metadata: {
+          umlClassifier: {
+            qualifiedName: "com.mekongfruit.payment.entity.FruitPaymentTransaction",
+            kind: "CLASS",
+            stereotypes: ["Entity"],
+            annotations: ["Entity"],
+            members: [
+              { kind: "ATTRIBUTE", name: "paymentStatus", typeName: "String" },
+              {
+                kind: "OPERATION",
+                name: "setPaymentStatus",
+                returnType: "void",
+                parameters: [{ name: "paymentStatus", type: "String" }],
+              },
+            ],
+          },
+        },
+      },
+      {
+        id: "comp:FruitPaymentService",
+        kind: "COMPONENT",
+        name: "FruitPaymentService",
+        parentId: "svc:payment",
+        metadata: {
+          umlClassifier: {
+            qualifiedName: "com.mekongfruit.payment.service.FruitPaymentService",
+            kind: "CLASS",
+            stereotypes: ["Service"],
+            members: [
+              { kind: "OPERATION", name: "processPayment", returnType: "FruitPaymentTransaction", parameters: [] },
+            ],
+          },
+          methodsCfg: [
+            {
+              methodName: "processPayment",
+              nodes: [
+                { id: "p0", kind: "STATEMENT", label: 'tx.setPaymentStatus("PROCESSING")' },
+                { id: "p1", kind: "DECISION", label: "amount <= limit" },
+                { id: "p2", kind: "STATEMENT", label: 'tx.setPaymentStatus("COMPLETED")' },
+                { id: "p3", kind: "STATEMENT", label: 'tx.setPaymentStatus("DECLINED")' },
+              ],
+              edges: [],
+            },
+          ],
+        },
+      },
+      {
+        id: "comp:ColdChainDeliveryController",
+        kind: "COMPONENT",
+        name: "ColdChainDeliveryController",
+        parentId: "svc:delivery",
+        metadata: {
+          umlClassifier: {
+            qualifiedName: "com.mekongfruit.delivery.controller.ColdChainDeliveryController",
+            kind: "CLASS",
+            stereotypes: ["RestController"],
+            members: [
+              { kind: "OPERATION", name: "scheduleDelivery", returnType: "Map", parameters: [] },
+              { kind: "OPERATION", name: "completeDelivery", returnType: "Map", parameters: [] },
+            ],
+          },
+          methodsCfg: [
+            {
+              methodName: "scheduleDelivery",
+              nodes: [
+                { id: "d0", kind: "STATEMENT", label: 'response.put("status", "COLD_TRUCK_SCHEDULED")' },
+              ],
+              edges: [],
+            },
+            {
+              methodName: "completeDelivery",
+              nodes: [
+                { id: "d1", kind: "STATEMENT", label: 'response.put("status", "DELIVERED")' },
+              ],
+              edges: [],
+            },
+          ],
+        },
+      },
+    ],
+    edges: [],
+    evidence: [],
+  };
+
+  const targets = listStateTargets(fruitStateModel);
+  assert.ok(targets.length >= 3, "Must discover at least 3 state machines for fruit-* services");
+  assert.ok(
+    !targets.some((t) => /Kitchen Ticket/i.test(t.classifierName)),
+    "Non-FTGO project must NEVER expose hardcoded Kitchen Ticket State Machine",
+  );
+  assert.ok(
+    targets.some((t) => /FruitOrder State Machine/i.test(t.classifierName)),
+    "Must discover FruitOrder State Machine",
+  );
+  assert.ok(
+    targets.some((t) => /FruitPaymentTransaction State Machine/i.test(t.classifierName)),
+    "Must discover FruitPaymentTransaction State Machine",
+  );
+
+  const orderTarget = targets.find((t) => /FruitOrder State Machine/i.test(t.classifierName));
+  const orderProj = projectUmlStateDiagram(fruitStateModel, { targetElementId: orderTarget.targetId });
+  const stateNames = orderProj.states.map((s) => s.name);
+  assert.ok(stateNames.includes("PENDING_PAYMENT"), "FruitOrder must include PENDING_PAYMENT state");
+  assert.ok(stateNames.includes("CONFIRMED"), "FruitOrder must include CONFIRMED state");
+  assert.ok(stateNames.includes("CANCELLED"), "FruitOrder must include CANCELLED state");
+  const orderXml = buildUmlDrawioXml(orderProj);
+  assert.ok(
+    !/TicketAcceptedEvent|verifyRestaurantMenu|releaseKitchenSlot/i.test(orderXml),
+    "FruitOrder XML must not contain any hardcoded FTGO strings",
+  );
+  assert.match(orderXml, /entry \//, "States must render internal entry / compartment actions");
+  assert.match(orderXml, /setOrderStatus/, "Transitions/entries must reference actual setOrderStatus mutator");
+
+  // Verify Kitchen Ticket State Machine (when FTGO services exist) separates CANCELLED ports and routes undoCancel via L-path
+  const ftgoModel = {
+    id: "ftgo-state-model",
+    elements: [
+      { id: "svc:order", kind: "SERVICE", name: "ftgo-order-service", metadata: {} },
+      { id: "svc:kitchen", kind: "SERVICE", name: "ftgo-kitchen-service", metadata: {} },
+    ],
+    edges: [{ id: "e1", source: "svc:order", target: "svc:kitchen", kind: "CALLS" }],
+    evidence: [],
+  };
+  const kitchenProj = projectUmlStateDiagram(ftgoModel, { targetId: "state:entity:kitchen-ticket" });
+  const kitchenXml = buildUmlDrawioXml(kitchenProj);
+  const attrs = (text) => Object.fromEntries([...text.matchAll(/([\w]+)="([^"]*)"/g)].map((m) => [m[1], m[2]]));
+  const cells = new Map(
+    [...kitchenXml.matchAll(/<mxCell\b([^>]*?)(?<!\/)>([\s\S]*?)<\/mxCell>/g)].map((m) => {
+      const a = attrs(m[1]);
+      return [a.id, { a, body: m[2], g: attrs((m[2].match(/<mxGeometry\b([^>]*)/) || ["", ""])[1]) }];
+    }),
+  );
+  const cancelPendingId = kitchenProj.states.find((s) => s.name === "CANCEL_PENDING").stateId;
+  const cancelledId = kitchenProj.states.find((s) => s.name === "CANCELLED").stateId;
+  const awaitingId = kitchenProj.states.find((s) => s.name === "AWAITING_ACCEPTANCE").stateId;
+  const finalId = kitchenProj.states.find((s) => s.kind === "FINAL_STATE").stateId;
+
+  assert.ok(
+    +cells.get(cancelledId).g.y > +cells.get(cancelPendingId).g.y,
+    "Terminal sink CANCELLED must be tiered strictly below CANCEL_PENDING",
+  );
+
+  const cancelToFinalTr = kitchenProj.transitions.find(
+    (t) => t.fromStateId === cancelledId && t.toStateId === finalId,
+  );
+  const cancelToFinalStyle = Object.fromEntries(
+    cells.get(cancelToFinalTr.transitionId).a.style.split(";").map((p) => p.split("=")),
+  );
+  assert.equal(
+    +cancelToFinalStyle.exitY,
+    1,
+    "CANCELLED -> FINAL_STATE must exit from the bottom face (exitY = 1) so it never collides with incoming ports",
+  );
+
+  const undoCancelTr = kitchenProj.transitions.find(
+    (t) => t.fromStateId === cancelPendingId && t.toStateId === awaitingId,
+  );
+  const undoCancelStyle = Object.fromEntries(
+    cells.get(undoCancelTr.transitionId).a.style.split(";").map((p) => p.split("=")),
+  );
+  assert.equal(+undoCancelStyle.exitY, 0, "undoCancel() must exit from top face of CANCEL_PENDING (exitY = 0)");
+  assert.equal(+undoCancelStyle.entryX, 1, "undoCancel() must enter right face of AWAITING_ACCEPTANCE (entryX = 1)");
+});
