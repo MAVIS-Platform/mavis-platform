@@ -5,7 +5,14 @@ import { z } from "zod";
 export const roleSchema = z.enum(["student", "lecturer", "admin"]);
 export type AppRole = z.infer<typeof roleSchema>;
 export const sessionSchema = z.object({
-  user: z.object({ id: z.string(), name: z.string(), role: roleSchema }).nullable(),
+  user: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      role: roleSchema,
+      email: z.string().email().nullish(),
+    })
+    .nullable(),
 });
 export const projectSchema = z.object({
   id: z.string(),
@@ -349,4 +356,3 @@ export const runtimeReadSchema = z.object({
   completedAt: z.string().nullable(),
 });
 export type RuntimeReadSession = z.infer<typeof runtimeReadSchema>;
-

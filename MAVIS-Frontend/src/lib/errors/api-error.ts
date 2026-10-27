@@ -1,4 +1,5 @@
 export const publicErrors = {
+  PROFILE_CURRENT_PASSWORD: "Current password is incorrect. Please try again.",
   SUBMISSION_DIAGRAM: "Save a diagram for this exact model version before submitting.",
   REFERENCE_MODEL:
     "This published snapshot has no matching model version. Ask the lecturer to finish the reference analysis.",

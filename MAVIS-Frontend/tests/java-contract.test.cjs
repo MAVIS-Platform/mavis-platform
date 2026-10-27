@@ -13,6 +13,37 @@ const {executeJava,currentSession}=require("../src/lib/api/java-operations.ts");
 const {validateResponse}=require("../src/lib/api/validate-response.ts");
 const {NextRequest}=require("next/server");
 const route=require("../app/api/mavis/[operation]/route.ts");
+
+test("profile response preserves actual email and strips private account fields", async t => {
+ environment(t);
+ t.mock.method(globalThis,"fetch",async()=>Response.json({code:200,data:{id:project,email:"learner@example.org",fullName:"Real Learner",role:"STUDENT",passwordHash:"private",token:"private-token"}}));
+ const session=await currentSession("jwt");
+ assert.deepEqual(session,{user:{id:project,name:"Real Learner",role:"student",email:"learner@example.org"}});
+ assert.ok(!JSON.stringify(session).includes("private"));
+});
+
+test("profile password API uses authenticated PATCH, validates policy and safely maps current-password errors",async t=>{
+ environment(t);
+ const input={fullName:"Real Learner",currentPassword:"old-secret",newPassword:"new-secret"};
+ const {contracts}=require("../src/lib/api/contracts.ts");
+ for(const bad of [{...input,currentPassword:""},{fullName:input.fullName,newPassword:input.newPassword},{...input,newPassword:"short"},{...input,newPassword:"x".repeat(101)}]) assert.equal(contracts.updateProfile.input.safeParse(bad).success,false);
+ assert.equal(contracts.updateProfile.input.safeParse({fullName:input.fullName}).success,true);
+ let mode="success";
+ t.mock.method(globalThis,"fetch",async(url,options)=>{
+   assert.ok(url.endsWith("/api/v1/auth/me"));assert.equal(options.method,"PATCH");assert.equal(options.headers.get("Authorization"),"Bearer jwt");assert.deepEqual(JSON.parse(options.body),input);
+   if(mode==="wrong") return Response.json({message:"Current password is incorrect"},{status:400});
+   if(mode==="unsafe") return Response.json({message:"private-upstream-details"},{status:400});
+   return Response.json({code:200,data:{id:project,fullName:input.fullName,email:"learner@example.org",role:"STUDENT"}});
+ });
+ const result=await executeJava("updateProfile",input,"jwt",new AbortController().signal);
+ assert.equal(result.user.email,"learner@example.org");assert.ok(!JSON.stringify(result).includes("secret"));
+ mode="wrong";
+ await assert.rejects(executeJava("updateProfile",input,"jwt",new AbortController().signal),e=>e.code==="PROFILE_CURRENT_PASSWORD" && !e.message.includes("secret"));
+ const proxy=await route.POST(new NextRequest("http://127.0.0.1:3000/api/mavis/updateProfile",{method:"POST",headers:{host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000",cookie:"mavis_session=jwt","Content-Type":"application/json"},body:JSON.stringify(input)}),{params:Promise.resolve({operation:"updateProfile"})});
+ assert.equal(proxy.status,400);assert.equal((await proxy.json()).code,"PROFILE_CURRENT_PASSWORD");
+ mode="unsafe";
+ await assert.rejects(executeJava("updateProfile",input,"jwt",new AbortController().signal),e=>!e.code && !e.message.includes("private-upstream-details"));
+});
 const project="11111111-1111-4111-8111-111111111111",snapshot="22222222-2222-4222-8222-222222222222",model="33333333-3333-4333-8333-333333333333",node="44444444-4444-4444-8444-444444444444",job="55555555-5555-4555-8555-555555555555";
 const metadata={id:model,projectId:project,sourceSnapshotId:snapshot,revision:1,isLatestValid:true};
 const jobDto={jobId:job,projectId:project,sourceSnapshotId:snapshot,status:"COMPLETED",analysisState:"COMPLETED_WITH_REVIEW",modelVersionId:model,dotnetStatus:"PARTIAL"};
