@@ -611,5 +611,18 @@ class GraphBuilderServiceTest {
         assertThat(capture.getValue().get(0).getRelationType()).isEqualTo("DECLARED_LINK");
         assertThat(capture.getValue().get(0).getOriginLayer()).isEqualTo("DEPLOYMENT");
     }
+
+    @Test
+    void doesNotPersistRestEvidenceWithoutResolvedTarget() {
+        ModelElement element = ModelElement.builder()
+                .id(UUID.randomUUID()).name("other-service").elementType("SERVICE_CONTAINER")
+                .scope("/other-service").modelVersion(sampleModelVersion).build();
+        CodeEvidenceDTO fact = CodeEvidenceDTO.builder()
+                .elementType("REST_API").sourceComponent("MissingController")
+                .filePath("/unmapped/ApiGatewayController.java").lineNumber(54).build();
+        graphBuilderService.buildRelationshipsAndEvidences(
+                sampleSnapshot, sampleModelVersion, List.of(element), List.of(fact));
+        verify(evidenceRepository, never()).saveAll(anyList());
+    }
 }
 

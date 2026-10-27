@@ -12,3 +12,8 @@ API_KEY.txt
 /test-results/
 /MAVIS-Frontend/.next*/
 /MAVIS.Worker/integration/java-client/target/
+
+# Deployment secrets and image exports
+.env.production*
+/mavis-images.tar
+/drawio-static.tar.gz
