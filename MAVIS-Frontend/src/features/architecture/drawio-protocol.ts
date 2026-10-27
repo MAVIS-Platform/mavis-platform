@@ -1,4 +1,5 @@
-export const DRAWIO_ORIGIN = "http://127.0.0.1:8090";
+export const DRAWIO_URL = process.env["NEXT_PUBLIC_DRAWIO_URL"] ?? "http://127.0.0.1:8090";
+export const DRAWIO_ORIGIN = new URL(DRAWIO_URL).origin;
 // Arrange and route connectors locally, without changing element IDs or labels.
 export const DRAWIO_LAYOUT = [
   {

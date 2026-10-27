@@ -1,0 +1,17 @@
+# Build from the repository root; keep the existing publish-artifact Dockerfile intact.
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /source
+# Use the .NET 10 SDK shipped in the image, independently of the local SDK pin.
+COPY MAVIS.Worker/Directory.Build.props ./
+COPY MAVIS.Worker/src/ ./src/
+RUN dotnet publish src/MAVIS.Worker.Api/MAVIS.Worker.Api.csproj -c Release -o /publish -p:ContinuousIntegrationBuild=true
+
+# Uploaded projects are analyzed as syntax; their build targets are never executed.
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+WORKDIR /app
+RUN mkdir -p /data/uploads /data/worker-artifacts && chown -R 1654:1654 /data
+COPY --from=build /publish/ ./
+ENV ASPNETCORE_HTTP_PORTS=8080 ASPNETCORE_ENVIRONMENT=Production
+USER 1654:1654
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "MAVIS.Worker.Api.dll"]
