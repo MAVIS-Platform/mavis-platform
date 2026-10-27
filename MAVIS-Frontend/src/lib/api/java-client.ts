@@ -27,7 +27,25 @@ export async function javaRequest(
       throw new ApiError("timeout", 504);
     throw new ApiError("network", 502);
   }
-  if (!response.ok) throw fromStatus(response.status);
+  if (!response.ok) {
+    // Only expose this exact, known profile error; never forward arbitrary
+    // upstream messages or validation bodies that could contain credentials.
+    if (
+      path === "auth/me" &&
+      ["PATCH", "PUT"].includes(init.method ?? "") &&
+      response.status === 400
+    ) {
+      const error: unknown = await response.json().catch(() => null);
+      if (
+        error &&
+        typeof error === "object" &&
+        "message" in error &&
+        error.message === "Current password is incorrect"
+      )
+        throw new ApiError("invalid", 400, "PROFILE_CURRENT_PASSWORD");
+    }
+    throw fromStatus(response.status);
+  }
   let raw: unknown;
   try {
     raw = await response.json();

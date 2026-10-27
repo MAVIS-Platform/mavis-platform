@@ -14,11 +14,16 @@ function contract<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
 }
 export const contracts = {
   updateProfile: contract(
-    z.object({
-      fullName: z.string().trim().min(1).max(255),
-      currentPassword: z.string().max(100).optional(),
-      newPassword: z.string().min(6).max(100).optional(),
-    }),
+    z
+      .object({
+        fullName: z.string().trim().min(1).max(255),
+        currentPassword: z.string().min(1).max(100).optional(),
+        newPassword: z.string().min(6).max(100).optional(),
+      })
+      .refine((value) => value.newPassword === undefined || Boolean(value.currentPassword), {
+        path: ["currentPassword"],
+        message: "Current Password is required when changing the password.",
+      }),
     d.sessionSchema,
     true,
   ),

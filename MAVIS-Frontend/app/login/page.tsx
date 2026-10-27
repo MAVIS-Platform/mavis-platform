@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { GoogleSignIn } from "@/features/auth/google-sign-in";
-import { useState } from "react";
+import { LoginBackground } from "@/features/auth/login-background";
+import { useId, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -13,7 +14,6 @@ import {
   Layers3,
   LoaderCircle,
   Mail,
-  Network,
   ShieldCheck,
 } from "lucide-react";
 import { useApi, useApiMutation } from "@/hooks/use-api";
@@ -23,6 +23,7 @@ import { AppearanceSelector } from "@/components/appearance-selector";
 import { MavisLogo } from "@/components/mavis-logo";
 import { ErrorState } from "@/components/shared/request-state";
 import type { AppRole } from "@/types/domain";
+import { networkBadge, networkColor } from "@/features/architecture/cytoscape-network";
 export default function LoginPage() {
   const api = useApi();
   const login = useApiMutation("mockLogin");
@@ -62,24 +63,21 @@ export default function LoginPage() {
     }
   }
   return (
-    <div className="flex min-h-svh flex-col bg-background text-foreground">
-      <header className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6 sm:px-10">
-        <div className="flex items-center gap-3">
-          <MavisLogo />
-          <div>
-            <span className="block text-base font-bold tracking-widest text-foreground">
+    <div className="relative isolate flex min-h-svh flex-col bg-background text-foreground">
+      <LoginBackground />
+      <header className="mx-auto flex w-full max-w-7xl shrink-0 items-center justify-between gap-4 px-4 py-3 sm:px-8">
+        <div className="flex min-w-0 items-center gap-3">
+          <MavisLogo className="h-12 w-12" />
+          <div className="min-w-0 max-w-sm">
+            <span className="block text-xs font-semibold leading-5 text-foreground sm:text-sm">
               AI-Assisted Microservices Architecture Visualization and Change Impact Analysis
             </span>
           </div>
         </div>
         <AppearanceSelector />
       </header>
-      <main className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-12 px-6 py-8 sm:px-10 lg:grid-cols-[1.1fr_1fr] lg:gap-20 lg:py-14">
+      <main className="mx-auto grid w-full max-w-6xl flex-1 items-center gap-6 px-4 py-3 sm:px-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:gap-12">
         <section className="hidden self-center lg:block">
-          <div className="mb-6 inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-xs text-muted-foreground">
-            <Network size={14} className="text-primary" />
-            From source to architecture
-          </div>
           <h1 className="max-w-lg text-4xl font-semibold leading-[1.18] tracking-tight">
             Understand your services.
             <br />
@@ -105,17 +103,17 @@ export default function LoginPage() {
           </div>
         </section>
         <section
-          className="mx-auto w-full max-w-md rounded-2xl border bg-card p-7 sm:p-10"
+          className="mx-auto w-full min-w-0 max-w-md rounded-2xl border bg-card p-5 sm:p-6"
           aria-labelledby="login-title"
         >
-          <div className="mb-8">
-            <p className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-primary">
+          <div className="mb-5">
+            <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-primary">
               Your workspace awaits
             </p>
-            <h2 id="login-title" className="text-3xl font-semibold tracking-tight">
+            <h2 id="login-title" className="text-2xl font-semibold tracking-tight">
               Welcome back
             </h2>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Sign in to continue exploring your architecture.
             </p>
           </div>
@@ -156,7 +154,7 @@ export default function LoginPage() {
             </div>
           ) : (
             <form
-              className="space-y-5"
+              className="space-y-4"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!real.isPending) void signIn();
@@ -176,7 +174,7 @@ export default function LoginPage() {
                     autoComplete="username"
                     required
                     placeholder="you@example.com"
-                    className="h-12 pl-10"
+                    className="h-11 pl-10"
                     value={email}
                     disabled={real.isPending}
                     onChange={(e) => setEmail(e.target.value)}
@@ -195,7 +193,7 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     required
                     placeholder="Enter your password"
-                    className="h-12 pr-12"
+                    className="h-11 pr-12"
                     value={password}
                     disabled={real.isPending}
                     onChange={(e) => setPassword(e.target.value)}
@@ -222,7 +220,7 @@ export default function LoginPage() {
               </div>
               {real.isError && <ErrorState error={real.error} />}
               <Button
-                className="h-12 w-full text-sm font-medium"
+                className="h-11 w-full text-sm font-medium"
                 disabled={real.isPending}
                 type="submit"
               >
@@ -246,7 +244,7 @@ export default function LoginPage() {
           {api.mode === "backend" && (
             <>
               <GoogleSignIn onSignedIn={finish} />
-              <p className="mt-6 text-center text-sm text-muted-foreground">
+              <p className="mt-4 text-center text-sm text-muted-foreground">
                 New to MAVIS?{" "}
                 <Link href="/auth/register" className="font-medium text-primary hover:underline">
                   Create an account
@@ -260,65 +258,99 @@ export default function LoginPage() {
               </p>
             </>
           )}
-          <div className="mt-8 flex items-center justify-center gap-2 border-t pt-5 text-xs text-muted-foreground">
+          <div className="mt-5 flex items-center justify-center gap-2 border-t pt-3 text-xs text-muted-foreground">
             <ShieldCheck size={14} />
             <span>Source. Architecture. Evidence.</span>
           </div>
         </section>
       </main>
-      <footer className="px-6 py-6 text-center text-xs text-muted-foreground">
+      <footer className="shrink-0 px-4 py-3 text-center text-xs text-muted-foreground">
         MAVIS · Microservices Architecture Visualization
       </footer>
     </div>
   );
 }
 function ArchitecturePreview() {
+  const markerId = useId();
+  const services = "SERVICE_CONTAINER";
+  const database = "DATABASE";
+  const nodes = [
+    { name: "api-gateway", x: 54, y: 108, radius: 11, type: services },
+    { name: "orders", x: 180, y: 62, radius: 14, type: services },
+    { name: "inventory", x: 180, y: 157, radius: 12, type: services },
+    { name: "payments", x: 300, y: 105, radius: 12, type: services },
+    { name: "orders-db", x: 300, y: 24, radius: 9, type: database },
+    { name: "inventory-db", x: 300, y: 201, radius: 9, type: database },
+    { name: "payments-db", x: 423, y: 105, radius: 9, type: database },
+  ];
+  const edges = [
+    { path: "M65 104 Q105 45 164 62", declared: false },
+    { path: "M64 114 Q104 170 166 157", declared: true },
+    { path: "M194 66 Q240 65 286 101", declared: false },
+    { path: "M192 153 Q243 153 287 111", declared: true },
+    { path: "M190 51 Q231 18 289 24", declared: false },
+    { path: "M192 163 Q237 207 289 201", declared: false },
+    { path: "M314 105 L412 105", declared: false },
+  ];
   return (
-    <div className="mt-9 rounded-xl border bg-card/60 p-4" aria-hidden="true">
-      <svg viewBox="0 0 440 156" className="w-full text-primary" fill="none">
-        <path
-          d="M104 78H168M240 47H290M240 109H290M168 47V109"
-          stroke="currentColor"
-          strokeOpacity=".35"
-          strokeWidth="1.5"
-        />
-        <circle cx="168" cy="78" r="3" fill="currentColor" />
-        {[
-          { x: 8, y: 53, label: "API gateway", sub: "Entry point", width: 96 },
-          { x: 176, y: 22, label: "Orders", sub: "Service", width: 100 },
-          { x: 176, y: 86, label: "Catalog", sub: "Service", width: 100 },
-          { x: 308, y: 53, label: "Data", sub: "Persistence", width: 112 },
-        ].map((n) => (
-          <g key={n.label}>
-            <rect
-              x={n.x}
-              y={n.y}
-              width={n.width}
-              height="50"
-              rx="9"
-              className="fill-card stroke-border"
+    <figure className="mt-6 rounded-xl border border-border/60 bg-card/40 p-4">
+      <figcaption className="mb-2 text-xs font-medium text-muted-foreground">
+        Illustrative dependency graph
+      </figcaption>
+      <svg
+        viewBox="0 0 500 245"
+        className="w-full opacity-80"
+        fill="none"
+        role="img"
+        aria-label="Sample dependency graph: API gateway, orders, inventory and payments services connected to their databases"
+      >
+        <defs>
+          <marker
+            id={markerId}
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="6"
+            markerHeight="6"
+            orient="auto-start-reverse"
+          >
+            <path d="M0 0L10 5L0 10Z" fill={networkColor(services)} />
+          </marker>
+        </defs>
+        {edges.map((edge) => (
+          <path
+            key={edge.path}
+            d={edge.path}
+            stroke={networkColor(services)}
+            strokeWidth="1.4"
+            strokeOpacity="0.7"
+            strokeDasharray={edge.declared ? "5 4" : undefined}
+            markerEnd={`url(#${markerId})`}
+          />
+        ))}
+        {nodes.map((n) => (
+          <g key={n.name}>
+            <circle
+              cx={n.x}
+              cy={n.y}
+              r={n.radius}
+              fill={networkColor(n.type)}
+              className="stroke-foreground"
+              strokeWidth="1.3"
             />
             <text
-              x={n.x + 12}
-              y={n.y + 21}
+              x={n.x}
+              y={n.y + n.radius + 16}
               className="fill-foreground"
-              fontSize="11"
-              fontFamily="inherit"
+              fontSize="10"
+              fontFamily="monospace"
+              textAnchor="middle"
             >
-              {n.label}
-            </text>
-            <text
-              x={n.x + 12}
-              y={n.y + 37}
-              className="fill-muted-foreground"
-              fontSize="9"
-              fontFamily="inherit"
-            >
-              {n.sub}
+              {networkBadge(n.type)} {n.name}
             </text>
           </g>
         ))}
       </svg>
-    </div>
+    </figure>
   );
 }

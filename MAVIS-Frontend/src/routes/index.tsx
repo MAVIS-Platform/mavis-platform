@@ -125,7 +125,11 @@ function Projects() {
                           </Link>
                         ),
                       },
-                      { key: "services", label: "Services", render: (p) => p.services ?? "Unknown" },
+                      {
+                        key: "services",
+                        label: "Services",
+                        render: (p) => p.services ?? "Unknown",
+                      },
                       {
                         key: "status",
                         label: "Status",

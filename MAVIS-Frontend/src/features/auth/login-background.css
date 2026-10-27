@@ -1,0 +1,84 @@
+.mavis-auth-background {
+  z-index: -1;
+}
+.mavis-auth-network {
+  width: 100%;
+  height: 100%;
+  transform: translate(var(--pointer-x, 0px), var(--pointer-y, 0px)) scale(1.035);
+  transition: transform 700ms ease-out;
+}
+.mavis-auth-cluster {
+  animation: mavis-auth-drift 19s ease-in-out infinite alternate;
+  animation-delay: var(--delay);
+}
+.mavis-auth-edge {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 0.9;
+  opacity: 0.12;
+}
+.mavis-auth-signal {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-dasharray: 1.4 98.6;
+  opacity: 0.4;
+  animation: mavis-auth-transmit 9s linear infinite;
+}
+.mavis-auth-node {
+  fill: currentColor;
+  opacity: 0.32;
+}
+.mavis-auth-hub {
+  fill: currentColor;
+  opacity: 0.5;
+}
+.mavis-auth-halo {
+  fill: currentColor;
+  opacity: 0.045;
+}
+.mavis-auth-background[data-paused="true"] .mavis-auth-cluster,
+.mavis-auth-background[data-paused="true"] .mavis-auth-signal {
+  animation-play-state: paused;
+}
+@keyframes mavis-auth-drift {
+  from {
+    transform: translate(-4px, -6px);
+  }
+  to {
+    transform: translate(6px, 8px);
+  }
+}
+@keyframes mavis-auth-transmit {
+  from {
+    stroke-dashoffset: 100;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@media (max-width: 767px) {
+  .mavis-auth-extra {
+    display: none;
+  }
+  .mavis-auth-edge {
+    opacity: 0.08;
+  }
+  .mavis-auth-signal {
+    opacity: 0.22;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mavis-auth-network {
+    transform: none;
+    transition: none;
+  }
+  .mavis-auth-cluster {
+    animation: none;
+  }
+  .mavis-auth-signal {
+    display: none;
+    animation: none;
+  }
+}
