@@ -12,6 +12,7 @@ import {
   collectConcreteThreeEEvidences,
   buildDeterministicThreeESimplified,
   buildThreeEAiContext,
+  checkThreeEScopeGuardrail,
   type ThreeEAiSimplifiedExplanation,
 } from "./three-e-content";
 
@@ -178,6 +179,18 @@ export function SelectionThreeE({
     const scopeKey = ctx.scopeKey;
     const prevHistory = chatByScope[scopeKey] ?? [];
     setChatInput("");
+    const guard = checkThreeEScopeGuardrail(q, threeEAiCtx);
+    if (!guard.allowed && guard.refusalMessage) {
+      setChatByScope((prev) => ({
+        ...prev,
+        [scopeKey]: [
+          ...(prev[scopeKey] ?? []),
+          { role: "user", content: q },
+          { role: "assistant", content: guard.refusalMessage! },
+        ],
+      }));
+      return;
+    }
     setChatByScope((prev) => ({
       ...prev,
       [scopeKey]: [...(prev[scopeKey] ?? []), { role: "user", content: q }],
@@ -274,7 +287,7 @@ export function SelectionThreeE({
                 ? "AI 3E analyzing…"
                 : active3E.tokenStats?.provider && active3E.tokenStats.provider !== "ast-skeleton"
                   ? `AI 3E (${active3E.tokenStats.provider.toUpperCase()})`
-                  : "AI 3E + AST"}
+                  : active3E.grounding?.status === "MODEL_ONLY" ? "Model context · source not attached" : "Selected source evidence"}
             </span>
           </div>
           <h2 className="mt-1 break-words text-base font-semibold">{subject.title}</h2>
@@ -292,9 +305,10 @@ export function SelectionThreeE({
           data-ai-three-e-simplified
           className="space-y-2.5 rounded-lg border border-primary/25 bg-primary/5 p-3 text-xs leading-5"
         >
+          <p className="text-xs text-muted-foreground">{active3E.grounding?.notice ?? deterministic3E.grounding?.notice}</p>
           <div className="flex items-center justify-between gap-2">
             <span className="font-semibold text-primary">
-              AI 3E Architectural Summary
+              3E interpretation
             </span>
             {active3E.tokenStats && (
               <span className="font-mono text-[10px] text-muted-foreground">
@@ -305,7 +319,7 @@ export function SelectionThreeE({
           <div className="space-y-2">
             <div className="rounded border bg-background/90 p-2">
               <p className="font-semibold text-foreground">
-                1. Explain (Architectural Role):
+                1. Explain (what is known):
               </p>
               <p className="mt-0.5 text-foreground/90">{active3E.explainSimple}</p>
             </div>
@@ -323,9 +337,16 @@ export function SelectionThreeE({
             </div>
           </div>
 
+          {(active3E.assumptions?.length || active3E.unknowns?.length) ? <details className="rounded-md border bg-background p-2.5">
+            <summary className="cursor-pointer font-medium">Assumptions and unknowns</summary>
+            <ul className="mt-2 list-disc space-y-1 pl-4">
+              {active3E.assumptions?.map((text, index) => <li key={"assumption-" + index}>Inference (unverified): {text}</li>)}
+              {active3E.unknowns?.map((text, index) => <li key={"unknown-" + index}>Unknown: {text}</li>)}
+            </ul>
+          </details> : null}
           <details className="rounded-md border bg-background p-2.5">
             <summary className="cursor-pointer font-semibold text-primary select-none">
-              Expand concrete source code evidence ({concreteEvidences.length} snippet{concreteEvidences.length === 1 ? "" : "s"})
+              Expand source evidence and metadata previews ({concreteEvidences.length} snippet{concreteEvidences.length === 1 ? "" : "s"})
             </summary>
             <div className="mt-3">
               <ThreeEEvidence
@@ -360,26 +381,6 @@ export function SelectionThreeE({
                 </button>
               )}
             </div>
-
-            {currentChatMessages.length === 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  "Explain this with a concrete example?",
-                  "Who calls this and what does it call downstream?",
-                  "What architectural risks should I watch out for?",
-                ].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    disabled={chatLoading}
-                    onClick={() => void sendChatQuestion(preset)}
-                    className="rounded-full border bg-muted/50 px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
-            )}
 
             {currentChatMessages.length > 0 && (
               <div className="max-h-56 space-y-2 overflow-y-auto rounded border bg-muted/20 p-2">

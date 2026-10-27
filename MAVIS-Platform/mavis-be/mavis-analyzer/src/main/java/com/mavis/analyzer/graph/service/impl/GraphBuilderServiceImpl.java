@@ -445,6 +445,27 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             }
         }
 
+        // Source-backed descriptions: a Repository name alone does not prove a database.
+        for (var element : allElements) {
+            var properties = element.getProperties();
+            var classifier = properties == null ? null : properties.get("umlClassifier");
+            if (classifier == null) continue;
+            String annotations = classifier.path("annotations").toString();
+            var parent = element.getParentElement();
+            if (parent != null && (annotations.contains("EnableConfigServer") || annotations.contains("EnableEurekaServer"))) {
+                var parentProperties = parent.getProperties() instanceof ObjectNode object ? object.deepCopy() : objectMapper.createObjectNode();
+                boolean configServer = annotations.contains("EnableConfigServer");
+                parent.setLanguageStack(configServer ? "Spring Cloud Config Server" : "Eureka Server");
+                parentProperties.put("responsibility", configServer ? "Configuration server declared by @EnableConfigServer" : "Service registry declared by @EnableEurekaServer");
+                parentProperties.put("roleEvidencePath", classifier.path("filePath").asText());parent.setProperties(parentProperties);
+            }
+            if (properties instanceof ObjectNode object && element.getName().endsWith("Repository")) {
+                boolean collection = false;
+                for (var member : classifier.path("members")) if (member.path("defaultValue").asText().matches("(?s).*new (ArrayList|LinkedList|HashMap|ConcurrentHashMap).*")) collection = true;
+                if (collection) {object.put("responsibility", "Repository declaring in-memory collections; external persistence not established");object.put("storageEvidence", "IN_MEMORY_COLLECTION_DECLARED");}
+            }
+        }
+
         // Bổ sung các standalone evidences từ C# Worker (nếu có gắn liền với element)
         if (dotnetAnalysis != null && dotnetAnalysis.getEvidences() != null) {
             for (DotnetEvidenceDTO evDto : dotnetAnalysis.getEvidences()) {
@@ -518,6 +539,21 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                             relEvidenceContexts.add(new RelEvidenceContext(rel, loc, "DOCKER_COMPOSE", "depends_on: " + dep.getTargetService(), "DOCKER_COMPOSE"));
                         }
                     }
+                    for (var connection : c.getConnections()) {
+                        boolean link = "DECLARED_LINK".equals(connection.protocol());
+                        if (!link && !connection.declaration().startsWith("environment:")) continue;
+                        ModelElement targetContainer = elementByNameMap.get(connection.targetService().toLowerCase(java.util.Locale.ROOT));
+                        if (sourceContainer == null || targetContainer == null) continue;
+                        String key = connection.declaration().replaceFirst("^environment:", "").toLowerCase(java.util.Locale.ROOT).replace('_', '.');
+                        String type = link ? "DECLARED_LINK" : com.mavis.analyzer.detector.config.service.impl.SpringConfigDetectorServiceImpl.relationTypeForKey(key);
+                        if (containsRelationship(relationshipsToSave, sourceContainer, targetContainer, type)) continue;
+                        var relationship = ModelRelationship.builder().modelVersion(modelVersion).sourceElement(sourceContainer).targetElement(targetContainer)
+                                .relationType(type).originLayer(link ? "DEPLOYMENT" : "CONFIG").direction("DIRECTED")
+                                .properties(objectMapper.createObjectNode().put("resolutionStatus", "RESOLVED").put("evidenceBasis", "COMPOSE_DECLARATION").put("configKey", connection.declaration())).build();
+                        relationshipsToSave.add(relationship);
+                        String locator = c.getComposeFilePath() + ":" + connection.lineNumber();
+                        relEvidenceContexts.add(new RelEvidenceContext(relationship, locator, "DOCKER_COMPOSE", connection.declaration() + " -> " + connection.targetService(), "DOCKER_COMPOSE"));
+                    }
                 }
             } catch (Exception e) {
                 log.warn("Lỗi khi xây dựng quan hệ DECLARED_COMPOSE: {}", e.getMessage());
@@ -583,31 +619,41 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             try {
                 List<DetectedSpringConfigDTO> configs = springConfigDetectorService.detectConfigs(sourcePath);
                 for (DetectedSpringConfigDTO cfg : configs) {
-                    if (cfg.getApplicationName() == null) continue;
-                    ModelElement sourceContainer = elementByNameMap.get(cfg.getApplicationName().toLowerCase().trim());
-                    if (sourceContainer == null) sourceContainer = matchTargetElement(elements, cfg.getApplicationName());
+                    String sourceName = cfg.getApplicationName() != null ? cfg.getApplicationName() : cfg.getServiceName();
+                    if (sourceName == null || sourceName.contains("${")) continue;
+                    ModelElement sourceContainer = elementByNameMap.get(sourceName.toLowerCase().trim());
+                    if (sourceContainer == null) sourceContainer = matchTargetElement(elements, sourceName);
 
                     for (ConfigTargetUrlDTO targetUrlDto : cfg.getTargetServiceUrls()) {
+                        if (targetUrlDto.getTargetUrl() == null || targetUrlDto.getTargetUrl().contains("${")) continue;
+                        String relationType = com.mavis.analyzer.detector.config.service.impl.SpringConfigDetectorServiceImpl.relationTypeForKey(targetUrlDto.getConfigKey());
                         String targetHost = extractHostFromUrl(targetUrlDto.getTargetUrl());
                         if (targetHost == null) continue;
                         ModelElement targetContainer = elementByNameMap.get(targetHost.toLowerCase().trim());
                         if (targetContainer == null) targetContainer = matchTargetElement(elements, targetHost);
 
+                        if (sourceContainer != null && "GATEWAY_ROUTE".equals(relationType)) {
+                            sourceContainer.setLanguageStack("Spring Cloud Gateway (configured)");
+                            var props = sourceContainer.getProperties() instanceof ObjectNode object ? object.deepCopy() : objectMapper.createObjectNode();
+                            props.put("responsibility", "HTTP routes declared in Spring Cloud Gateway configuration");props.put("roleEvidencePath", cfg.getConfigFilePath());sourceContainer.setProperties(props);
+                        }
                         if (sourceContainer != null && targetContainer != null
-                                && !containsRelationship(relationshipsToSave, sourceContainer, targetContainer, "SERVICE_HTTP_CALL")) {
+                                && !containsConfiguredRelationship(relationshipsToSave, sourceContainer, targetContainer, relationType, targetUrlDto.getProfile())) {
 
                             ModelRelationship relationship = ModelRelationship.builder()
                                     .modelVersion(modelVersion)
                                     .sourceElement(sourceContainer)
                                     .targetElement(targetContainer)
-                                    .relationType("SERVICE_HTTP_CALL")
+                                    .relationType(relationType)
+                                    .properties(objectMapper.createObjectNode().put("resolutionStatus", "RESOLVED").put("evidenceBasis", "CONFIGURATION_DECLARATION")
+                                            .put("configKey", targetUrlDto.getConfigKey()).put("profile", targetUrlDto.getProfile()))
                                     .originLayer("CONFIG")
                                     .direction("DIRECTED")
                                     .build();
                             relationshipsToSave.add(relationship);
 
                             String loc = cfg.getConfigFilePath() + ":" + targetUrlDto.getLineNumber();
-                            relEvidenceContexts.add(new RelEvidenceContext(relationship, loc, "CONFIG_FILE", targetUrlDto.getConfigKey() + "=" + targetUrlDto.getTargetUrl(), "SPRING_CONFIG"));
+                            relEvidenceContexts.add(new RelEvidenceContext(relationship, loc, "CONFIG_FILE", targetUrlDto.getConfigKey() + "=" + targetUrlDto.getTargetUrl() + (targetUrlDto.getProfile() == null ? "" : " [profile=" + targetUrlDto.getProfile() + "]"), "SPRING_CONFIG"));
                         }
                     }
                 }
@@ -1069,6 +1115,11 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         } catch (Exception ignored) {
         }
         return url;
+    }
+
+    private boolean containsConfiguredRelationship(List<ModelRelationship> list, ModelElement source, ModelElement target, String type, String profile) {
+        return list.stream().anyMatch(rel -> type.equals(rel.getRelationType()) && source.equals(rel.getSourceElement()) && target.equals(rel.getTargetElement())
+                && java.util.Objects.equals(profile, rel.getProperties() == null ? null : rel.getProperties().path("profile").asText(null)));
     }
 
     private boolean containsRelationship(List<ModelRelationship> list, ModelElement src, ModelElement tgt, String type) {

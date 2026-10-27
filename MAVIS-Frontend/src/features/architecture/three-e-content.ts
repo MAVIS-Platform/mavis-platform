@@ -49,7 +49,13 @@ export function selectionSummary(model: ArchitecturalModel, id: string) {
         ? `Source code declares a UML ${umlRelKind} relationship between two classifiers; execution order is not implied.`
         : "Source code declares a static dependency between components; execution order is not implied.",
       SERVICE_HTTP_CALL:
-        "The model records an HTTP call between two endpoints. Inspect evidence to distinguish static declarations from observed runtime traffic.",
+        "The model records a declared HTTP dependency. Inspect evidence to distinguish static declarations from observed runtime traffic.",
+      DECLARED_LINK: "Compose declares a link between containers; it does not establish HTTP calls or business behavior.",
+      CONFIGURATION_DEPENDENCY: "Configuration declares a configuration-server dependency; actual execution is not observed.",
+      SERVICE_DISCOVERY: "Configuration declares a service registry/discovery dependency; runtime registration is not verified.",
+      TRACING_EXPORT: "Configuration declares a trace exporter endpoint; actual trace delivery is not verified.",
+      GATEWAY_ROUTE: "Configuration declares an HTTP route; it does not prove that any request traversed it.",
+      CONFIGURED_ENDPOINT: "Configuration references an endpoint; a reference alone does not prove an invocation.",
       MESSAGE_PUBLISH:
         "Source or configuration declares publishing to a message channel; runtime delivery is not yet verified.",
       MESSAGE_SUBSCRIBE:
@@ -917,6 +923,9 @@ export interface ThreeEAiSimplifiedExplanation {
   exploreSimple: string;
   evaluateSimple: string;
   snippetNotes?: Record<string, string>;
+  assumptions?: string[];
+  unknowns?: string[];
+  grounding?: { status: "MODEL_ONLY" | "PARTIAL_SOURCE"; suppliedSnippets: number; omittedSnippets: number; notice: string };
   tokenStats?: {
     rawChars: number;
     compressedChars: number;
@@ -936,12 +945,15 @@ export interface ThreeEAiPromptContext {
   outboundPeers: string[];
   childComponents: string[];
   findingsSummary: string[];
+  evidencePolicy?: "literal-source-v2";
+  omittedSnippets?: number;
   codeSnippets: Array<{
     id: string;
     locator: string;
     sourceType: string;
     snippet: string;
   }>;
+  otherElementNames?: string[];
   rawChars: number;
   compressedChars: number;
   savedPercent: number;
@@ -1009,192 +1021,50 @@ function synthesizeAstEvidenceForElement(
   model: ArchitecturalModel,
   node: ArchitecturalModel["elements"][number],
 ): Evidence[] {
-  const results: Evidence[] = [];
-  const props = node.properties ?? {};
-  const sourcePath =
-    typeof props["sourcePath"] === "string" && props["sourcePath"].trim()
-      ? props["sourcePath"].trim()
-      : typeof props["fqn"] === "string" && props["fqn"].trim()
-        ? props["fqn"].trim().replaceAll(".", "/") + ".java"
-        : `${node.name}`;
-
-  const umlCls = props["umlClassifier"] as
-    | {
-        kind?: string;
-        packageName?: string;
-        stereotypes?: string[];
-        attributes?: Array<{ visibility?: string; name?: string; type?: string }>;
-        operations?: Array<{
-          visibility?: string;
-          name?: string;
-          params?: string;
-          returnType?: string;
-        }>;
-      }
-    | undefined;
-
-  if (umlCls && typeof umlCls === "object") {
-    const pkgLine = umlCls.packageName ? `package ${umlCls.packageName};\n\n` : "";
-    const stereoLines = Array.isArray(umlCls.stereotypes)
-      ? umlCls.stereotypes.map((s) => `@${s.replace(/^<<|>>$/g, "")}`).join("\n") +
-        (umlCls.stereotypes.length ? "\n" : "")
-      : "";
-    const kw =
-      umlCls.kind === "INTERFACE"
-        ? "interface"
-        : umlCls.kind === "ENUM"
-          ? "enum"
-          : "class";
-    const attrs = Array.isArray(umlCls.attributes)
-      ? umlCls.attributes
-          .slice(0, 6)
-          .map(
-            (a) =>
-              `  private ${a.type || "Object"} ${a.name || "field"};`,
-          )
-          .join("\n")
-      : "";
-    const ops = Array.isArray(umlCls.operations)
-      ? umlCls.operations
-          .slice(0, 6)
-          .map(
-            (o) =>
-              `  public ${o.returnType || "void"} ${o.name || "execute"}(${o.params || ""}) { /* AST extracted */ }`,
-          )
-          .join("\n")
-      : "";
-    const body = [attrs, ops].filter(Boolean).join("\n\n");
-    results.push({
-      id: `ast-cls-${node.id}`,
+  const path =
+    typeof node.properties?.["sourcePath"] === "string"
+      ? node.properties["sourcePath"]
+      : "Model metadata";
+  const children = model.elements
+    .filter((item) => item.parentId === node.id)
+    .map((item) => item.name);
+  return [
+    {
+      id: "ast-node-" + node.id,
       kind: "source",
-      sourceType: "AST_SOURCE_CODE",
-      location: sourcePath,
-      snippet: `${pkgLine}${stereoLines}public ${kw} ${node.name} {\n${body || "  // Classifier structure extracted from source AST"}\n}`,
-      complete: true,
-    });
-    return results;
-  }
-
-  const children = model.elements.filter((el) => el.parentId === node.id);
-  const connected = model.edges.filter((e) => e.from === node.id || e.to === node.id);
-  const peerName = (id: string) => model.elements.find((e) => e.id === id)?.name ?? id;
-
-  if (node.elementType === "SERVICE_CONTAINER") {
-    const childLines = children
-      .slice(0, 8)
-      .map((c) => {
-        const fqn = typeof c.properties?.["fqn"] === "string" ? c.properties["fqn"] : c.name;
-        const resp =
-          typeof c.properties?.["responsibility"] === "string"
-            ? ` // ${c.properties["responsibility"]}`
-            : "";
-        return `  - ${c.name} (${fqn})${resp}`;
-      })
-      .join("\n");
-    const depLines = connected
-      .slice(0, 8)
-      .map((e) => {
-        const dir = e.from === node.id ? `-> ${peerName(e.to)}` : `<- ${peerName(e.from)}`;
-        return `  - [${e.protocol}] ${dir}`;
-      })
-      .join("\n");
-    results.push({
-      id: `ast-svc-${node.id}`,
-      kind: "source",
-      sourceType: "SOURCE_CODE",
-      location: `${node.name}/docker-compose & AST module`,
-      snippet:
-        `# Extracted structure of service "${node.name}":\n` +
-        `service: ${node.name}\n` +
-        (childLines ? `components:\n${childLines}\n` : "") +
-        (depLines ? `interactions:\n${depLines}` : ""),
-      complete: true,
-    });
-    return results;
-  }
-
-  const methods = Array.isArray(props["methods"]) ? (props["methods"] as string[]) : [];
-  if (methods.length > 0) {
-    results.push({
-      id: `ast-comp-${node.id}`,
-      kind: "source",
-      sourceType: "SOURCE_CODE",
-      location: sourcePath,
-      snippet:
-        `public class ${node.name} {\n` +
-        methods.slice(0, 8).map((m) => `  public ${m} { ... }`).join("\n") +
-        `\n}`,
-      complete: true,
-    });
-    return results;
-  }
-
-  results.push({
-    id: `ast-node-${node.id}`,
-    kind: "source",
-    sourceType: node.elementType === "DATABASE" ? "CONFIG_FILE" : "SOURCE_CODE",
-    location: sourcePath,
-    snippet:
-      `# Architectural element definition: ${node.name} (${node.elementType})\n` +
-      (connected.length
-        ? connected
-            .slice(0, 6)
-            .map((e) => `${peerName(e.from)} --[${e.protocol}]--> ${peerName(e.to)}`)
-            .join("\n")
-        : `# Standalone element in model ${model.label}`),
-    complete: true,
-  });
-  return results;
+      origin: "preview",
+      sourceType: "MODEL_METADATA_PREVIEW",
+      location: path,
+      snippet: [
+        "Model element: " + node.name,
+        "Kind: " + (node.elementType ?? "Unknown"),
+        "Source path: " + path,
+        children.length ? "Child elements: " + children.join(", ") : "No child elements recorded.",
+        "This metadata preview is not source code and does not establish implementation behavior.",
+      ].join("\n"),
+      complete: false,
+    },
+  ];
 }
-
 function synthesizeAstEvidenceForEdge(
   model: ArchitecturalModel,
   edge: ArchitecturalModel["edges"][number],
 ): Evidence[] {
-  const fromNode = model.elements.find((e) => e.id === edge.from);
-  const toNode = model.elements.find((e) => e.id === edge.to);
-  const fromName = fromNode?.name ?? edge.from;
-  const toName = toNode?.name ?? edge.to;
-  const loc =
-    typeof fromNode?.properties?.["sourcePath"] === "string"
-      ? String(fromNode.properties["sourcePath"])
-      : `${fromName} -> ${toName}`;
-
-  let snippet = "";
-  if (edge.protocol === "DATABASE_ACCESS") {
-    snippet =
-      `# Data access connection from ${fromName} to ${toName}\n` +
-      `spring.datasource.url=jdbc:mysql://${toName}:3306/${toName.replace(/[^a-zA-Z0-9_]/g, "_")}\n` +
-      `@Repository\npublic interface ${fromName}Repository extends JpaRepository<Entity, Long> {}`;
-  } else if (edge.protocol === "DECLARED_COMPOSE") {
-    snippet =
-      `# Startup dependency declared in docker-compose.yml\n` +
-      `services:\n  ${fromName}:\n    depends_on:\n      - ${toName}`;
-  } else if (edge.protocol === "MESSAGE_PUBLISH" || edge.protocol === "MESSAGE_SUBSCRIBE") {
-    const action = edge.protocol === "MESSAGE_PUBLISH" ? "send" : "subscribe";
-    snippet =
-      `// Asynchronous event / message interaction (${edge.protocol})\n` +
-      `// ${fromName} -> ${toName}\n` +
-      `domainEventPublisher.${action}("${toName}", eventPayload);`;
-  } else if (edge.protocol === "SERVICE_HTTP_CALL") {
-    snippet =
-      `// Synchronous HTTP / REST invocation between components\n` +
-      `// ${fromName} invokes ${toName}\n` +
-      `restTemplate.exchange("http://${toName}/api/...", HttpMethod.POST, requestEntity, Response.class);`;
-  } else {
-    snippet =
-      `// Direct static dependency in source code (${edge.protocol})\n` +
-      `public class ${fromName} {\n  private final ${toName} dependency;\n}`;
-  }
-
+  const name = (id: string) => model.elements.find((node) => node.id === id)?.name ?? id;
   return [
     {
-      id: `ast-edge-${edge.id}`,
+      id: "ast-edge-" + edge.id,
       kind: "source",
-      sourceType: edge.protocol === "DECLARED_COMPOSE" ? "CONFIG_FILE" : "SOURCE_CODE",
-      location: loc,
-      snippet,
-      complete: true,
+      origin: "preview",
+      sourceType: "MODEL_METADATA_PREVIEW",
+      location: "Model relationship",
+      snippet: [
+        "Relationship: " + edge.protocol,
+        "Source: " + name(edge.from),
+        "Target: " + name(edge.to),
+        "No verbatim implementation snippet is attached. HTTP methods, database engine, execution order and business purpose are unknown.",
+      ].join("\n"),
+      complete: false,
     },
   ];
 }
@@ -1283,86 +1153,67 @@ export function buildDeterministicThreeESimplified(
   matchingFindings: readonly Record<string, unknown>[],
 ): ThreeEAiSimplifiedExplanation {
   const { node, edge, title, connections } = ctx.subject;
-  const peerName = (id: string) => model.elements.find((n) => n.id === id)?.name ?? id;
-
-  let explainSimple = "";
-  if (node) {
-    const children = model.elements.filter((el) => el.parentId === node.id);
-    const inbound = connections.filter((e) => e.to === node.id).map((e) => peerName(e.from));
-    const outbound = connections.filter((e) => e.from === node.id).map((e) => peerName(e.to));
-    const uniqueIn = [...new Set(inbound)].slice(0, 4);
-    const uniqueOut = [...new Set(outbound)].slice(0, 4);
-
-    if (node.elementType === "SERVICE_CONTAINER") {
-      explainSimple =
-        `"${title}" is a deployable Microservice / Application Container in the system` +
-        (children.length > 0 ? ` (containing ${children.length} internal code components). ` : ". ") +
-        (uniqueIn.length > 0
-          ? `It receives requests or events from ${uniqueIn.join(", ")}`
-          : "It acts as an inbound entrypoint or autonomous processor") +
-        (uniqueOut.length > 0
-          ? ` and invokes or connects to ${uniqueOut.join(", ")} to complete the business workflow.`
-          : ".");
-    } else if (node.elementType === "DATABASE") {
-      explainSimple =
-        `"${title}" is a datastore persisting service state` +
-        (uniqueIn.length > 0 ? `, accessed by ${uniqueIn.join(", ")}.` : ".");
-    } else if (node.elementType === "MESSAGE_CHANNEL" || node.elementType === "QUEUE_BROKER") {
-      explainSimple =
-        `"${title}" is an asynchronous message channel / event broker decoupling service communication` +
-        (uniqueIn.length || uniqueOut.length
-          ? ` (connecting ${[...new Set([...uniqueIn, ...uniqueOut])].slice(0, 5).join(", ")}).`
-          : ".");
-    } else {
-      const owner = model.elements.find((el) => el.id === node.parentId);
-      explainSimple =
-        `"${title}" is a code component (${ctx.subject.type})${owner ? ` inside "${owner.name}"` : ""}. ` +
-        `It implements domain/application operations and participates in ${connections.length} model relationships.`;
-    }
-  } else if (edge) {
-    const fromName = peerName(edge.from);
-    const toName = peerName(edge.to);
-    if (edge.protocol === "DATABASE_ACCESS") {
-      explainSimple = `This relationship indicates that "${fromName}" reads/writes persistent data in "${toName}".`;
-    } else if (edge.protocol === "DECLARED_COMPOSE") {
-      explainSimple = `This relationship indicates that "${fromName}" declares a container startup dependency on "${toName}" (depends_on in Docker Compose).`;
-    } else if (edge.protocol === "SERVICE_HTTP_CALL") {
-      explainSimple = `This relationship indicates that "${fromName}" makes synchronous HTTP/REST calls to "${toName}" to query data or trigger operations.`;
-    } else if (edge.protocol === "MESSAGE_PUBLISH" || edge.protocol === "MESSAGE_SUBSCRIBE") {
-      explainSimple = `This relationship represents asynchronous event/message communication (${edge.protocol}) between "${fromName}" and "${toName}" (used in Saga or Event-Driven flows).`;
-    } else {
-      explainSimple = `The relationship from "${fromName}" to "${toName}" (${edge.protocol}) represents a direct static source dependency or control-flow link between the two components.`;
-    }
-  } else {
-    explainSimple = ctx.subject.summary;
-  }
-
-  const locators = [...new Set(concreteEvidences.map((e) => shortLocator(e.location)))].slice(0, 3);
-  const exploreSimple =
-    concreteEvidences.length > 0
-      ? `Extracted ${concreteEvidences.length} concrete source/configuration evidence snippet(s) (notably at: ${locators.join(", ")}). Expand below to inspect each snippet.`
-      : `No direct code snippet is attached to this item yet; inspect adjacent relationships on the diagram for further context.`;
-
-  let evaluateSimple = "";
-  if (matchingFindings.length > 0) {
-    const firstMsg = String(matchingFindings[0]?.["message"] ?? "");
-    evaluateSimple = `Detected ${matchingFindings.length} architectural finding(s) on this item (e.g., ${firstMsg || "review coupling and data ownership boundaries"}).`;
-  } else if (connections.length >= 6) {
-    evaluateSimple = `This item has high coupling density (${connections.length} connections). Consider interface or event decoupling to prevent tight coupling as the service evolves.`;
-  } else {
-    evaluateSimple = `No direct architectural rule violations detected. The dependency structure (${connections.length} connection(s)) is well-bounded.`;
-  }
-
-  const snippetNotes: Record<string, string> = {};
-  for (const item of concreteEvidences) {
-    snippetNotes[item.id] = explainEvidenceSnippetSimply(item, title);
-  }
-
+  const saved = concreteEvidences.filter(
+    (ev) => ev.origin !== "preview" && ev.sourceType !== "MODEL_METADATA_PREVIEW",
+  );
+  const kinds: Record<string, string> = {
+    DECLARED_COMPOSE: "a startup dependency; it does not prove HTTP traffic",
+    SERVICE_HTTP_CALL:
+      "a declared HTTP dependency; runtime traffic and business purpose are not established",
+    CONFIGURATION_DEPENDENCY: "a configured configuration-server dependency",
+    SERVICE_DISCOVERY: "a configured service-discovery dependency",
+    TRACING_EXPORT: "a configured tracing exporter",
+    GATEWAY_ROUTE: "a configured HTTP gateway route",
+    CONFIGURED_ENDPOINT: "a configured endpoint reference; invocation is not established",
+  };
+  const explainSimple = node
+    ? 'The model classifies "' +
+      title +
+      '" as ' +
+      (node.elementType ?? "an element") +
+      ". Its name and dependency count do not establish a business role or runtime behavior."
+    : edge
+      ? "The model records " +
+        (kinds[edge.protocol] ?? "a declared " + edge.protocol + " relationship") +
+        "."
+      : ctx.subject.summary;
+  const grounding = {
+    status: saved.length ? ("PARTIAL_SOURCE" as const) : ("MODEL_ONLY" as const),
+    suppliedSnippets: Math.min(saved.length, 6),
+    omittedSnippets: Math.max(0, saved.length - 6),
+    notice: saved.length
+      ? "Interpretation of selected evidence only; this is not a complete source or runtime verification."
+      : "Model metadata only. No saved source snippet is available; implementation behavior and business roles are unknown.",
+  };
   return {
     explainSimple,
-    exploreSimple,
-    evaluateSimple,
-    snippetNotes,
+    exploreSimple: saved.length
+      ? saved.length +
+        " saved source/configuration snippet(s) are attached (" +
+        saved
+          .slice(0, 3)
+          .map((item) => shortLocator(item.location))
+          .join(", ") +
+        "); inspect their exact scope below."
+      : "No saved source snippet is attached. Metadata reconstructions are previews, not source evidence.",
+    evaluateSimple: matchingFindings.length
+      ? matchingFindings.length +
+        " recorded finding(s) require review: " +
+        String(matchingFindings[0]?.["message"] ?? "Details unavailable")
+      : "No findings are attached to this selection. This does not establish correctness, low coupling or operational safety (" +
+        connections.length +
+        " declared connection(s)).",
+    snippetNotes: Object.fromEntries(
+      concreteEvidences.map((ev) => [
+        ev.id,
+        ev.origin === "preview"
+          ? "Metadata preview only; this is not verbatim source and cannot prove implementation details."
+          : explainEvidenceSnippetSimply(ev, title),
+      ]),
+    ),
+    assumptions: [],
+    unknowns: [grounding.notice],
+    grounding,
   };
 }
 
@@ -1376,12 +1227,24 @@ export function buildThreeEAiContext(
   const peerName = (id: string) => model.elements.find((n) => n.id === id)?.name ?? id;
 
   const inboundPeers = node
-    ? [...new Set(connections.filter((e) => e.to === node.id).map((e) => `${peerName(e.from)} [${e.protocol}]`))].slice(0, 8)
+    ? [
+        ...new Set(
+          connections
+            .filter((e) => e.to === node.id)
+            .map((e) => `${peerName(e.from)} [${e.protocol}]`),
+        ),
+      ].slice(0, 8)
     : edge
       ? [peerName(edge.from)]
       : [];
   const outboundPeers = node
-    ? [...new Set(connections.filter((e) => e.from === node.id).map((e) => `${peerName(e.to)} [${e.protocol}]`))].slice(0, 8)
+    ? [
+        ...new Set(
+          connections
+            .filter((e) => e.from === node.id)
+            .map((e) => `${peerName(e.to)} [${e.protocol}]`),
+        ),
+      ].slice(0, 8)
     : edge
       ? [peerName(edge.to)]
       : [];
@@ -1396,7 +1259,10 @@ export function buildThreeEAiContext(
     .slice(0, 4)
     .map((f) => `${String(f["ruleId"] ?? "RULE")}: ${String(f["message"] ?? "")}`);
 
-  const codeSnippets = concreteEvidences.slice(0, 6).map((ev) => ({
+  const savedSnippets = concreteEvidences.filter(
+    (ev) => ev.origin !== "preview" && ev.sourceType !== "MODEL_METADATA_PREVIEW",
+  );
+  const codeSnippets = savedSnippets.slice(0, 6).map((ev) => ({
     id: ev.id,
     locator: shortLocator(ev.location),
     sourceType: ev.sourceType ?? ev.kind,
@@ -1419,8 +1285,33 @@ export function buildThreeEAiContext(
   const savedPercent =
     rawChars > compressedChars ? Math.round(((rawChars - compressedChars) / rawChars) * 100) : 15;
 
+  const relatedElementIds = new Set<string>();
+  if (node) {
+    relatedElementIds.add(node.id);
+    if (node.parentId) relatedElementIds.add(node.parentId);
+    for (const c of connections) {
+      relatedElementIds.add(c.from);
+      relatedElementIds.add(c.to);
+    }
+    for (const el of model.elements) {
+      if (el.parentId === node.id) relatedElementIds.add(el.id);
+    }
+  } else if (edge) {
+    relatedElementIds.add(edge.from);
+    relatedElementIds.add(edge.to);
+  }
+  const otherElementNames = model.elements
+    .filter((el) => !relatedElementIds.has(el.id) && el.name.trim().length >= 4)
+    .map((el) => el.name.trim())
+    .slice(0, 40);
+
+  let evidenceHash = 2166136261;
+  for (const char of JSON.stringify(codeSnippets)) {
+    evidenceHash ^= char.charCodeAt(0);
+    evidenceHash = Math.imul(evidenceHash, 16777619);
+  }
   return {
-    contextHash: `3e:${model.id}:${ctx.scopeKey}:ev${concreteEvidences.length}:f${matchingFindings.length}`,
+    contextHash: `3e:${model.id}:literal-source-v2:${ctx.scopeKey}:ev${(evidenceHash >>> 0).toString(16)}:f${matchingFindings.length}`,
     targetId: ctx.activeTargetId,
     title,
     type,
@@ -1431,9 +1322,90 @@ export function buildThreeEAiContext(
     childComponents,
     findingsSummary,
     codeSnippets,
+    evidencePolicy: "literal-source-v2",
+    omittedSnippets: Math.max(0, savedSnippets.length - codeSnippets.length),
+    otherElementNames,
     rawChars: Math.max(rawChars, compressedChars),
     compressedChars,
     savedPercent,
   };
 }
 
+const OFF_TOPIC_GUARDRAIL_REGEX =
+  /(ăn gì|uống gì|món ăn|nấu ăn|cơm trưa|cơm tối|ăn cơm|ăn phở|ăn bún|trà sữa|cà phê|nhà hàng|quán ăn|đi chơi|du lịch|mua sắm|thời tiết|trời mưa|trời nắng|nhiệt độ|xem bói|tử vi|cung hoàng đạo|xổ số|lô đề|bóng đá|ca sĩ|bài hát|xem phim|kể chuyện|chuyện cười|làm thơ|viết thơ|chứng khoán|cổ phiếu|bitcoin|crypto|giá vàng|tỷ giá|ignore previous|ignore all|disregard|system prompt|jailbreak|bỏ qua hướng dẫn|quên hướng dẫn)/i;
+
+const CHITCHAT_ONLY_REGEX =
+  /^(hi|hello|hey|xin chào|chào|chào bạn|alo|ok|test|abc|123|haha|hihi|keke|wtf|ờ|ừ|vậy à|sao thế|khỏe không|bạn là ai|who are you|what's up)[?!.\s]*$/i;
+
+const ARCH_DOMAIN_KEYWORDS_REGEX =
+  /(service|microservice|api|rest|http|https|grpc|graphql|endpoint|route|routing|gateway|proxy|controller|repository|repo|entity|model|dto|class|interface|method|function|hàm|lớp|code|mã nguồn|source|snippet|file|tệp|package|module|component|container|layer|tầng|domain|edge|platform|database|db|sql|postgres|postgresql|mysql|mongo|redis|cache|queue|broker|kafka|rabbit|event|message|topic|channel|saga|transaction|async|sync|đồng bộ|bất đồng bộ|call|caller|callee|luồng gọi|luồng|flow|request|response|payload|port|cổng|config|cấu hình|docker|compose|yaml|yml|pom|gradle|spring|jpa|hibernate|jdbc|bean|annotation|dependency|dependencies|phụ thuộc|kết nối|connection|relationship|quan hệ|inbound|outbound|upstream|downstream|peer|client|server|node|kiến trúc|architecture|architectural|c4|uml|diagram|sơ đồ|3e|explain|explore|evaluate|giải thích|phân tích|đánh giá|evidence|bằng chứng|runtime|static|trace|log|error|lỗi|bug|exception|rủi ro|risk|trade-off|tradeoff|coupling|cohesion|bottleneck|nghẽn|latency|độ trễ|timeout|retry|circuit|breaker|resilience|scale|scaling|performance|hiệu năng|security|bảo mật|auth|jwt|token|vai trò|chức năng|nhiệm vụ|trách nhiệm|responsibility|định tuyến|truy vấn|bảng)/i;
+
+const CONTEXTUAL_INQUIRY_REGEX =
+  /((?:^|\s)(nó|này|đây|this|it)(?:\s|$).*(làm gì|dùng để|hoạt động|xử lý|kết nối|gọi|gồm|chứa|ở đâu|như thế nào|như nào|tại sao|vì sao|work|do|handle|connect|call|contain|role|purpose))|((làm gì|dùng để|hoạt động|xử lý|như thế nào|tại sao|vì sao).*(?:^|\s)(nó|này|đây|this|it)(?:\s|[?!.]|$))/i;
+
+export function checkThreeEScopeGuardrail(
+  question: string,
+  tCtx: Pick<
+    ThreeEAiPromptContext,
+    | "title"
+    | "type"
+    | "inboundPeers"
+    | "outboundPeers"
+    | "childComponents"
+    | "codeSnippets"
+    | "otherElementNames"
+  >,
+): { allowed: boolean; reason?: "off-topic" | "wrong-service"; refusalMessage?: string } {
+  const q = question.trim();
+  const isVi = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(q);
+  const defaultRefusal = isVi
+    ? `Chỉ hỗ trợ giải đáp các vấn đề về kiến trúc, mã nguồn (code evidence), luồng gọi và rủi ro thiết kế của "${tCtx.title}" (${tCtx.type}). Vui lòng đặt câu hỏi bám sát phần tử đang chọn.`
+    : `I only answer questions about the software architecture, code evidence, dependencies, and design trade-offs of "${tCtx.title}" (${tCtx.type}). Please ask a question scoped to this selected element.`;
+
+  if (q.length < 2 || CHITCHAT_ONLY_REGEX.test(q) || OFF_TOPIC_GUARDRAIL_REGEX.test(q)) {
+    return { allowed: false, reason: "off-topic", refusalMessage: defaultRefusal };
+  }
+
+  const lower = q.toLowerCase();
+  const normalizePeer = (p: string) => p.replace(/\s*\[.*\]$/, "").trim().toLowerCase();
+  const scopedTerms = [
+    tCtx.title.toLowerCase(),
+    ...tCtx.title
+      .toLowerCase()
+      .split(/[-_.\s/→]+/)
+      .filter((tok) => tok.length >= 4),
+    ...tCtx.inboundPeers.map(normalizePeer),
+    ...tCtx.outboundPeers.map(normalizePeer),
+    ...tCtx.childComponents.map((c) => c.toLowerCase()),
+    ...tCtx.codeSnippets.map((s) => s.locator.toLowerCase()),
+  ].filter(Boolean);
+
+  const mentionsSelectedOrPeer = scopedTerms.some((term) => term && lower.includes(term));
+
+  if (!mentionsSelectedOrPeer && Array.isArray(tCtx.otherElementNames)) {
+    const foreignMatch = tCtx.otherElementNames.find((other) => {
+      const oLower = other.toLowerCase();
+      return oLower.length >= 4 && lower.includes(oLower);
+    });
+    if (foreignMatch) {
+      return {
+        allowed: false,
+        reason: "wrong-service",
+        refusalMessage: isVi
+          ? `Bạn đang chọn "${tCtx.title}", nhưng câu hỏi lại đề cập đến "${foreignMatch}" (nằm ngoài phạm vi trực tiếp của "${tCtx.title}"). Vui lòng chọn "${foreignMatch}" trên sơ đồ để phân tích hoặc chỉ hỏi về "${tCtx.title}".`
+          : `You currently have "${tCtx.title}" selected, but your question asks about "${foreignMatch}" (which is outside "${tCtx.title}"'s direct scope). Please select "${foreignMatch}" on the diagram or ask about "${tCtx.title}".`,
+      };
+    }
+  }
+
+  const hasArchIntent =
+    mentionsSelectedOrPeer ||
+    ARCH_DOMAIN_KEYWORDS_REGEX.test(q) ||
+    CONTEXTUAL_INQUIRY_REGEX.test(q);
+
+  if (!hasArchIntent) {
+    return { allowed: false, reason: "off-topic", refusalMessage: defaultRefusal };
+  }
+
+  return { allowed: true };
+}

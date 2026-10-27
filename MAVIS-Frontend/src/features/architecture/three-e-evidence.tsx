@@ -39,7 +39,7 @@ export function ThreeEEvidence({
               </span>
             </div>
             {item.origin === "preview" && <p className="mt-2 text-xs text-muted-foreground">Reconstructed from AST/model metadata. This is not a verbatim source snippet or a saved Evidence record.</p>}
-            <p className="mt-2 text-xs leading-5 text-foreground/90">{note}</p>
+            <p className="mt-2 text-xs leading-5 text-foreground/90">{snippetNotes?.[item.id] ? "Interpretation: " : ""}{note}</p>
             <details className="mt-2.5" open={defaultOpen}>
               <summary className="cursor-pointer break-words text-xs font-medium text-primary select-none">
                 {shortLocator(item.location)} — {item.origin === "preview" ? "View metadata reconstruction" : "View source snippet"}

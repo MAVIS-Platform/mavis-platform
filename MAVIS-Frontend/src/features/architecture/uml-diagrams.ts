@@ -1157,6 +1157,13 @@ export function projectUmlDeploymentDiagram(
   const commEdgeSpecs = new Map<string, { index: number; specificity: number }>();
 
   const upsertCommPathEdge = (candidate: UmlDeploymentEdge, specificity: number) => {
+    const configured = ["CONFIGURATION_DEPENDENCY", "SERVICE_DISCOVERY", "TRACING_EXPORT", "GATEWAY_ROUTE", "CONFIGURED_ENDPOINT"].includes(candidate.protocol ?? "");
+    if (configured) {
+      // A configuration dependency is directional and semantically distinct
+      // from an HTTP business call, even when ports and endpoints coincide.
+      edges.push(candidate);
+      return;
+    }
     const pairPrefix = [candidate.fromNodeId, candidate.toNodeId].sort().join("<->");
     let matchedKey: string | null = null;
     for (const [k, spec] of commEdgeSpecs.entries()) {
@@ -1227,6 +1234,7 @@ export function projectUmlDeploymentDiagram(
     if (
       [
         "SERVICE_HTTP_CALL",
+        "CONFIGURATION_DEPENDENCY", "SERVICE_DISCOVERY", "TRACING_EXPORT", "GATEWAY_ROUTE", "CONFIGURED_ENDPOINT",
         "DATABASE_ACCESS",
         "DATABASE_QUERY",
         "MESSAGE_PUBLISH",
@@ -1252,8 +1260,8 @@ export function projectUmlDeploymentDiagram(
         targetElem?.properties?.["protocol"] ??
         "TCP/DB";
       const protocolName =
-        edge.protocol === "SERVICE_HTTP_CALL"
-          ? "HTTP"
+        ["SERVICE_HTTP_CALL", "CONFIGURATION_DEPENDENCY", "SERVICE_DISCOVERY", "TRACING_EXPORT", "GATEWAY_ROUTE", "CONFIGURED_ENDPOINT"].includes(edge.protocol)
+          ? edge.protocol === "SERVICE_HTTP_CALL" ? "HTTP" : edge.protocol
           : edge.protocol === "DATABASE_ACCESS" || edge.protocol === "DATABASE_QUERY"
             ? String(resolvedDbProtocol).toUpperCase()
             : String(targetElem?.properties?.["protocol"] ?? "MESSAGING").toUpperCase();
@@ -1367,6 +1375,7 @@ export function projectUmlDeploymentDiagram(
     }
   }
 
+  validationIssues.push({ code: "DECLARED_DEPLOYMENT_NOT_RUNTIME", severity: "INFO", message: "Declared deployment configuration only. Image tags do not establish that running images contain this analyzed source; configured profiles do not establish observed traffic." });
   const nodeEnvSet = new Set(nodes.map((n) => n.environment));
   if (nodeEnvSet.size > 1) {
     validationIssues.push({
@@ -2480,8 +2489,8 @@ function discoverBusinessFlowActivities(
           (_partOf, addNode, addEdge) => {
             const initial = addNode(svc, "INITIAL", "Start interaction");
             const call = addNode(svc, "ACTION", `Invoke ${target.name}`);
-            const receive = addNode(target, "ACTION", "Receive request / message");
-            const final = addNode(target, "FLOW_FINAL", "End interaction scope");
+            const receive = addNode(target, "ACTION", "Declared target · execution not verified");
+            const final = addNode(target, "ACTIVITY_FINAL", "End illustrative activity");
             addEdge(initial, call);
             addEdge(call, receive);
             addEdge(receive, final);
@@ -2623,7 +2632,7 @@ export function listActivityOperations(
     .filter((f) => f.partitions.length < 3)
     .map((f) => f.option);
 
-  return [...multiSwimlaneFlows, ...cfgOptions, ...fallbackPairFlows];
+  return [...cfgOptions, ...multiSwimlaneFlows.map(option => ({ ...option, methodName: "Unverified dependency illustration · " + option.methodName })), ...fallbackPairFlows.map(option => ({ ...option, methodName: "Unverified dependency illustration · " + option.methodName }))];
 }
 
 export function validateActivityStructure(
@@ -2778,8 +2787,8 @@ export function projectUmlActivityDiagram(
       modelId: model.id,
       selectedOperationId: options?.operationId ?? "none",
       availableOperations,
-      extractionCompleteness: "COMPLETE",
-      unsupportedConstructs: [],
+      extractionCompleteness: "PARTIAL",
+      unsupportedConstructs: ["NO_METHOD_CFG_AVAILABLE"],
       partitions: [],
       nodes: [],
       edges: [],
@@ -4507,7 +4516,7 @@ export function formatDeploymentNodeCellValue(node: UmlDeploymentNode): string {
     ? `<u>${escapeHtmlText(node.instanceName)}:${escapeHtmlText(node.name)}</u>`
     : `<b>${escapeHtmlText(node.name)}</b>`;
   const portsLine =
-    node.ports.length > 0 ? `<br/>Ports: ${escapeHtmlText(node.ports.join(", "))}` : "";
+    node.ports.length > 0 ? `<br/>Ports: ${escapeHtmlText(node.ports.map(port => { const parts = port.split(":"); return parts.length === 1 ? "container " + port + " (host dynamically assigned)" : "host → container " + port; }).join(", "))}` : "";
   const repLine = node.replicaCount !== null ? `<br/>Replicas: ${node.replicaCount}` : "";
   return `<div style="overflow-wrap:anywhere;word-break:break-word;line-height:1.35">${escapeHtmlText(node.stereotype)}<br/>${titleText}${portsLine}${repLine}</div>`;
 }

@@ -67,6 +67,12 @@ public class WorkerModelPublisher {
         manifest.set("dotnetAdapter",json.createObjectNode().put("status",outcome.status().name()).put("code",outcome.code()));
         manifest.put("completeness",complete||notApplicable?"ADAPTERS_COMPLETED":"PARTIAL");
         manifest.put("canonicalMapping","REQUIRES_REVIEW");
+        manifest.put("analysisPolicyVersion", "source-method-v2");
+        var javaFacts = javaFindings == null ? java.util.List.<CodeEvidenceDTO>of() : javaFindings;
+        manifest.putObject("javaExtractionCoverage")
+                .put("classifierFacts", javaFacts.stream().filter(f -> "CLASS_INTERFACE".equals(f.getElementType())).count())
+                .put("feignClientFacts", javaFacts.stream().filter(f -> "FEIGN_CLIENT".equals(f.getElementType())).count())
+                .put("coverageMeaning", "Counts describe extracted facts, not proof of complete source or runtime coverage");
         if(complete) {
             manifest.set("dotnetCoverage",json.valueToTree(outcome.result().coverage()));manifest.set("dotnetWarnings",json.valueToTree(outcome.result().warnings()));
             manifest.put("analyzerVersion",outcome.result().analyzerVersion()).put("inputDigest",outcome.result().inputDigest());

@@ -5,7 +5,7 @@ import { compressCodeToAstSkeleton } from "./scenario-design";
 
 type Edge = DiagramDocument["layoutJson"]["edges"][number];
 const deployed = (edge: Edge) =>
-  edge.type === "DECLARED_COMPOSE" || edge.originLayer === "DEPLOYMENT";
+  edge.type === "DECLARED_COMPOSE" || edge.type === "DECLARED_LINK" || edge.originLayer === "DEPLOYMENT";
 const interaction = (edge: Edge) =>
   !deployed(edge) &&
   [
@@ -58,9 +58,13 @@ export function contextProjection(
   raw: DiagramDocument,
   options?: { systemName?: string | undefined },
 ) {
-  const external = raw.layoutJson.nodes.filter((node) => node.kind === "EXTERNAL_SYSTEM");
+  const external = raw.layoutJson.nodes.filter((node) =>
+    ["EXTERNAL_SYSTEM", "PERSON"].includes(node.kind ?? ""),
+  );
   const inside = new Set(
-    raw.layoutJson.nodes.filter((node) => node.kind !== "EXTERNAL_SYSTEM").map((node) => node.id),
+    raw.layoutJson.nodes
+      .filter((node) => !["EXTERNAL_SYSTEM", "PERSON"].includes(node.kind ?? ""))
+      .map((node) => node.id),
   );
   const system: DiagramNode = {
     id: `system:${model.projectId}`,
@@ -94,7 +98,9 @@ export function contextProjection(
         edges: links,
       },
     },
-    notice: entrypoints.length
+    notice: external.some((node) => node.kind === "PERSON" && connected.has(node.id))
+      ? "Only explicit model actors and declared dependencies are shown; no roles are inferred from endpoint or entity names."
+      : entrypoints.length
       ? `The analysis declares ${entrypoints.length} HTTP entrypoint component(s), but no external caller or actor is established by this model; the context shows the system alone and callers require review.`
       : external.length
         ? "Only known external dependencies are shown. Internal services and infrastructure stay inside the system."
@@ -220,6 +226,8 @@ interface C4ContextPersonSpec {
   description: string;
   actionLabel: string;
   underlyingNodeIds: string[];
+  underlyingEdgeIds: string[];
+  direction: "INBOUND" | "OUTBOUND";
 }
 
 interface C4ContextExternalSpec {
@@ -237,139 +245,38 @@ export function deriveC4ContextModel(model: ArchitecturalModel): {
   systemDescription: string;
   internalNodeIds: string[];
 } {
-  const internalNodes = model.elements.filter((e) => e.elementType !== "EXTERNAL_SYSTEM");
-  const internalNodeIds = internalNodes.map((e) => e.id);
-  const byLowerName = new Map<string, string[]>();
-  for (const el of internalNodes) {
-    const k = el.name.toLowerCase();
-    byLowerName.set(k, [...(byLowerName.get(k) ?? []), el.id]);
-  }
-  const matchIds = (...candidates: string[]) => {
-    const matched: string[] = [];
-    for (const el of internalNodes) {
-      const lower = el.name.toLowerCase();
-      if (candidates.some((c) => lower === c.toLowerCase() || lower.includes(c.toLowerCase()))) {
-        matched.push(el.id);
-      }
-    }
-    return matched;
-  };
-
-  const persons: C4ContextPersonSpec[] = [];
-  const addedKeys = new Set<string>();
-  const pushPerson = (key: string, spec: C4ContextPersonSpec) => {
-    if (addedKeys.has(key)) return;
-    addedKeys.add(key);
-    persons.push(spec);
-  };
-
-  const consumerIds = matchIds("consumercontroller", "ftgo-consumer-service");
-  if (consumerIds.length > 0) {
-    pushPerson("consumer", {
-      id: "person:consumer",
-      name: "Consumer",
-      description: "End user who registers and manages a consumer account",
-      actionLabel: "Registers account & manages consumer profile",
-      underlyingNodeIds: consumerIds,
-    });
-  }
-
-  const orderIds = matchIds(
-    "ordercontroller",
-    "orderhistorycontroller",
-    "ftgo-order-service",
-    "ftgo-order-history-service",
+  // Controller/entity names establish interfaces, never human roles. Only an
+  // explicit PERSON with an existing inbound relationship can enter this view.
+  const internalNodes = model.elements.filter(
+    (element) => !["EXTERNAL_SYSTEM", "PERSON"].includes(element.elementType ?? ""),
   );
-  if (orderIds.length > 0) {
-    pushPerson("customer", {
-      id: "person:customer",
-      name: "Customer",
-      description: "Customer placing, revising, and tracking food orders",
-      actionLabel: "Places, revises & queries status of orders",
-      underlyingNodeIds: orderIds,
+  const internalNodeIds = internalNodes.map((element) => element.id);
+  const internalIds = new Set(internalNodeIds);
+  const isInteraction = (edge: ArchitecturalModel["edges"][number]) =>
+    edge.originLayer !== "DEPLOYMENT" &&
+    !["DECLARED_COMPOSE", "DECLARED_LINK", "STARTUP_DEPENDENCY"].includes(edge.protocol);
+  const persons: C4ContextPersonSpec[] = model.elements
+    .filter((element) => element.elementType === "PERSON")
+    .flatMap((element) => {
+      const incoming = model.edges.filter(
+        (edge) => ((edge.from === element.id && internalIds.has(edge.to)) || (edge.to === element.id && internalIds.has(edge.from))) && isInteraction(edge),
+      );
+      return incoming.length
+        ? [
+            {
+              id: element.id,
+              name: element.name,
+              description:
+                element.description ||
+                "Explicit actor declared in the model; its business role requires confirmation.",
+              actionLabel: "Declared interaction with the system",
+              underlyingNodeIds: [element.id],
+              underlyingEdgeIds: incoming.map((edge) => edge.id),
+              direction: incoming.some((edge) => edge.from === element.id) ? "INBOUND" as const : "OUTBOUND" as const,
+            },
+          ]
+        : [];
     });
-  }
-
-  const restaurantIds = matchIds(
-    "restaurantcontroller",
-    "kitchencontroller",
-    "ftgo-restaurant-service",
-    "ftgo-kitchen-service",
-  );
-  if (restaurantIds.length > 0) {
-    pushPerson("restaurant", {
-      id: "person:restaurant-operator",
-      name: "Restaurant / Kitchen Operator",
-      description: "Restaurant staff managing menus and preparing kitchen tickets",
-      actionLabel: "Manages restaurant menus & updates kitchen tickets",
-      underlyingNodeIds: restaurantIds,
-    });
-  }
-
-  const deliveryIds = matchIds("deliveryservicecontroller", "ftgo-delivery-service", "courier");
-  if (deliveryIds.length > 0) {
-    pushPerson("courier", {
-      id: "person:courier",
-      name: "Courier",
-      description: "Delivery courier picking up and delivering customer orders",
-      actionLabel: "Updates courier availability & delivery progress",
-      underlyingNodeIds: deliveryIds,
-    });
-  }
-
-  const accountingIds = matchIds("accountscontroller", "ftgo-accounting-service");
-  if (accountingIds.length > 0) {
-    pushPerson("accounting", {
-      id: "person:billing-admin",
-      name: "Billing / Account Admin",
-      description: "Administrator overseeing customer accounts and billing authorization",
-      actionLabel: "Manages billing accounts & payment authorizations",
-      underlyingNodeIds: accountingIds,
-    });
-  }
-
-  // Generic HTTP entrypoint / controller extraction for any other repository
-  for (const el of internalNodes) {
-    if (persons.length >= 6) break;
-    const isEntrypoint =
-      (el.elementType === "COMPONENT" || el.elementType === "CLASS_INTERFACE") &&
-      (/(Controller|Resource|Endpoint|Handler)$/i.test(el.name) ||
-        el.properties?.["responsibility"] === "Exposes HTTP endpoints");
-    if (!isEntrypoint) continue;
-    const base = el.name
-      .replace(/(Service)?(Controller|Resource|Endpoint|Handler)$/i, "")
-      .replace(/([a-z])([A-Z])/g, "$1 $2")
-      .trim();
-    if (!base) continue;
-    const key = base.toLowerCase();
-    if (
-      key.includes("consumer") ||
-      key.includes("order") ||
-      key.includes("restaurant") ||
-      key.includes("kitchen") ||
-      key.includes("delivery") ||
-      key.includes("account")
-    ) {
-      continue;
-    }
-    pushPerson(key, {
-      id: `person:${key.replace(/\s+/g, "-")}`,
-      name: `${base} User`,
-      description: `Actor interacting with ${base} HTTP endpoints`,
-      actionLabel: `Submits requests & queries ${base.toLowerCase()} operations`,
-      underlyingNodeIds: [el.id],
-    });
-  }
-
-  if (persons.length === 0) {
-    pushPerson("user", {
-      id: "person:user",
-      name: "Application User",
-      description: "External user interacting with the software system entrypoints",
-      actionLabel: "Sends business requests & queries system state",
-      underlyingNodeIds: internalNodeIds.slice(0, 5),
-    });
-  }
 
   // N-C1-02: Strictly exclude internal Databases, Kafka/Queues, CDC, Zipkin, and Services!
   // Only include true EXTERNAL_SYSTEM elements outside the system boundary.
@@ -379,32 +286,34 @@ export function deriveC4ContextModel(model: ArchitecturalModel): {
     if (el.elementType !== "EXTERNAL_SYSTEM") continue;
     const relatedEdges = model.edges.filter(
       (edge) =>
-        (internalSet.has(edge.from) && edge.to === el.id) ||
-        (edge.from === el.id && internalSet.has(edge.to)),
+        isInteraction(edge) &&
+        ((internalSet.has(edge.from) && edge.to === el.id) ||
+          (edge.from === el.id && internalSet.has(edge.to))),
     );
+    if (!relatedEdges.length) continue;
     const inboundCount = relatedEdges.filter((edge) => edge.from === el.id).length;
     const outboundCount = relatedEdges.length - inboundCount;
-    const direction: "OUTBOUND" | "INBOUND" =
-      inboundCount > outboundCount ? "INBOUND" : "OUTBOUND";
+    const direction: "OUTBOUND" | "INBOUND" = inboundCount > outboundCount ? "INBOUND" : "OUTBOUND";
     externals.push({
       id: el.id,
       name: el.name,
       description:
         el.description?.trim() || "External software system outside the target system boundary",
       actionLabel:
-        direction === "INBOUND"
-          ? `Sends requests or callbacks to system`
-          : `Calls external API / integrates with ${el.name}`,
+        direction === "INBOUND" ? "Declared inbound dependency" : "Declared external dependency",
       direction,
       underlyingEdgeIds: relatedEdges.map((e) => e.id),
     });
   }
 
-  const serviceCount = internalNodes.filter((e) => e.elementType === "SERVICE_CONTAINER").length;
-  const systemDescription =
-    consumerIds.length > 0 && orderIds.length > 0
-      ? "Core software system managing consumer accounts, food orders, restaurant menus, kitchen tickets, courier delivery, and billing."
-      : `Core software system encapsulating ${serviceCount || internalNodes.length} internal application and data containers.`;
+  const declaredApiOwners = model.elements.filter(element => {
+    const classifier = element.properties?.["umlClassifier"] as Record<string, unknown> | undefined;
+    const methods = Array.isArray(classifier?.["methodsCfg"]) ? classifier["methodsCfg"] as Record<string, unknown>[] : [];
+    return methods.some(method => Array.isArray(method["endpointDeclarations"]) && method["endpointDeclarations"].length > 0);
+  }).map(element => element.name);
+  const systemDescription = declaredApiOwners.length
+    ? "HTTP APIs declared by " + [...new Set(declaredApiOwners)].slice(0, 4).join(", ") + ". External caller roles are not established."
+    : "Software system under analysis. API purpose and external caller roles are not established by this revision.";
 
   return { persons, externals, systemDescription, internalNodeIds };
 }
@@ -446,6 +355,7 @@ export interface CompactC4AiContext {
     kind: string;
     technology?: string | null;
     defaultDescription?: string | null;
+    hasSourceEvidence?: boolean;
   }>;
   persons?: Array<{
     id: string;
@@ -485,9 +395,13 @@ export function buildC4CompactContext(
     );
   } else if (kind === "CONTAINER") {
     focusElements = model.elements.filter((el) =>
-      ["SERVICE_CONTAINER", "DATABASE", "MESSAGE_CHANNEL", "QUEUE_BROKER", "EXTERNAL_SYSTEM"].includes(
-        el.elementType ?? "",
-      ),
+      [
+        "SERVICE_CONTAINER",
+        "DATABASE",
+        "MESSAGE_CHANNEL",
+        "QUEUE_BROKER",
+        "EXTERNAL_SYSTEM",
+      ].includes(el.elementType ?? ""),
     );
   } else if (kind === "COMPONENT") {
     focusElements = model.elements.filter(
@@ -499,7 +413,9 @@ export function buildC4CompactContext(
 
   const capped = focusElements.slice(0, 18);
   for (const el of capped) {
-    for (const ev of (el.evidence ?? []).slice(0, 2)) {
+    for (const ev of (el.evidence ?? [])
+      .filter((item) => item.origin !== "preview" && item.sourceType !== "MODEL_METADATA_PREVIEW")
+      .slice(0, 2)) {
       if (ev.snippet) rawChunks.push(`// [${el.name}]\n${ev.snippet}`);
     }
   }
@@ -509,7 +425,9 @@ export function buildC4CompactContext(
   const rawChars = rawJoined.length;
   const compressedChars = astSkeleton.length;
   const savedPercent =
-    rawChars > 0 ? Math.max(0, Math.min(99, Math.round((1 - compressedChars / rawChars) * 100))) : 0;
+    rawChars > 0
+      ? Math.max(0, Math.min(99, Math.round((1 - compressedChars / rawChars) * 100)))
+      : 0;
 
   const ctxBase = kind === "CONTEXT" ? deriveC4ContextModel(model) : null;
   const nodeSpecs = capped.map((el) => ({
@@ -518,9 +436,15 @@ export function buildC4CompactContext(
     kind: el.elementType ?? "COMPONENT",
     technology: el.technology ?? null,
     defaultDescription: el.description ?? null,
+    hasSourceEvidence: (el.evidence ?? []).some(
+      (ev) =>
+        ev.origin !== "preview" &&
+        ev.sourceType !== "MODEL_METADATA_PREVIEW" &&
+        !!ev.snippet.trim(),
+    ),
   }));
 
-  const sig = `${model.id}|${kind}|${containerId ?? ""}|${resolvedSystemName}|${nodeSpecs.map((n) => n.id).join(",")}|${astSkeleton}`;
+  const sig = `evidence-policy-2|${model.id}|${kind}|${containerId ?? ""}|${resolvedSystemName}|${nodeSpecs.map((n) => n.id).join(",")}|${astSkeleton}`;
   let hash = 2166136261;
   for (let i = 0; i < sig.length; i += 1) {
     hash ^= sig.charCodeAt(i);
@@ -596,7 +520,7 @@ export function buildContextDiagramDrawioXml(
     if (!ov) return person;
     return {
       ...person,
-      name: ov.name?.trim() || person.name,
+      name: person.name,
       description: ov.description?.trim() || person.description,
       actionLabel: ov.actionLabel?.trim() || person.actionLabel,
     };
@@ -651,8 +575,9 @@ export function buildContextDiagramDrawioXml(
     badge: "Person",
     description: person.description,
     actionLabel: person.actionLabel,
-    direction: "INBOUND",
+    direction: person.direction,
     underlyingNodeIds: person.underlyingNodeIds,
+    underlyingEdgeIds: person.underlyingEdgeIds,
   }));
 
   const externalItems: Omit<PlacedActor, "side">[] = externals.map((ext, idx) => ({
@@ -765,8 +690,8 @@ export function buildContextDiagramDrawioXml(
   const cells: string[] = [
     '<mxCell id="0"/>',
     '<mxCell id="1" parent="0"/>',
-    `<mxCell id="mavis_title" mavisC4Context="4" mavisDocument="${escapeXml(JSON.stringify(documentMeta))}" mavisRuleVersion="mavis-se-3" mavisTheme="${theme}" value="${escapeXml(`System Context diagram for ${resolvedSystemName}`)}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=${p.text};align=left;" vertex="1" parent="1"><mxGeometry x="64" y="24" width="960" height="32" as="geometry"/></mxCell>`,
-    `<mxCell id="mavis_scope" value="${escapeXml(`C4 Level 1 (System Context) · 1 Software System · ${persons.length} Person(s) · ${externals.length} External System(s) · Internal containers, DBs & brokers are encapsulated in C2`)}" style="text;html=0;fontFamily=Arial;fontSize=12;fontColor=${p.text};align=left;" vertex="1" parent="1"><mxGeometry x="64" y="60" width="980" height="24" as="geometry"/></mxCell>`,
+    `<mxCell id="mavis_title" mavisC4Context="6" mavisDocument="${escapeXml(JSON.stringify(documentMeta))}" mavisRuleVersion="mavis-se-3" mavisTheme="${theme}" value="${escapeXml(`System Context diagram for ${resolvedSystemName}`)}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=${p.text};align=left;" vertex="1" parent="1"><mxGeometry x="64" y="24" width="960" height="32" as="geometry"/></mxCell>`,
+    `<mxCell id="mavis_scope" value="${escapeXml(`C4 Level 1 (System Context) · 1 Software System · ${persons.length} identified actor(s) · ${externals.length} identified external system(s) · Missing callers are unknown, not absent`)}" style="text;html=0;fontFamily=Arial;fontSize=12;fontColor=${p.text};align=left;" vertex="1" parent="1"><mxGeometry x="64" y="60" width="980" height="24" as="geometry"/></mxCell>`,
     `<mxCell id="system_center" mavisId="system:${escapeXml(model.projectId)}" mavisRole="SYSTEM" mavisName="${escapeXml(resolvedSystemName)}" mavisDescription="${escapeXml(systemDescription)}" mavisNodeMetadata="${escapeXml(JSON.stringify({ underlyingNodeIds: internalNodeIds }))}" value="${escapeXml(boxHtml(resolvedSystemName, "Software System", systemDescription))}" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=${p.system};fontColor=${p.nodeText};strokeColor=${p.border};strokeWidth=2;fontFamily=Arial;spacing=12;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="${sysX}" y="${sysY}" width="${sysWidth}" height="${sysHeight}" as="geometry"/></mxCell>`,
   ];
 
@@ -915,9 +840,9 @@ export function buildContextDiagramDrawioXml(
   const legendY = maxBottomY + 48;
   const legendLines = [
     "SYSTEM CONTEXT LEGEND (C4 LEVEL 1 — SYSTEM CONTEXT)",
-    "• [Person] (Perimeter): External actors or users interacting with the system via declared HTTP entrypoints.",
+    "• [Person] (Perimeter): Explicit actors with declared model relationships; roles are never inferred from controller or entity names.",
     "• [Software System] (Center): Target software system treated as a black box (internal microservices, databases, and brokers are detailed in the C2 Container diagram).",
-    "• Directed Arrow (───►): Direction of request initiation or business interaction (responses are implicit in the connection).",
+    "• Directed Arrow (───►): Declared relationship direction; not proof of observed traffic or business behavior.",
   ];
   const minVisualX = hasLeft ? leftX : sysX;
   const maxVisualX = hasRight ? rightX + cardWidth : sysX + sysWidth;
@@ -927,7 +852,7 @@ export function buildContextDiagramDrawioXml(
     `<mxCell id="mavis_legend" mavisRole="legend" value="${escapeXml(legendLines.join("\n"))}" style="rounded=1;arcSize=6;dashed=1;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=12;fontColor=${p.text};fillColor=${p.background};strokeColor=${p.border};align=left;verticalAlign=middle;spacing=12;" vertex="1" parent="1"><mxGeometry x="${legendX}" y="${legendY}" width="${legendWidth}" height="92" as="geometry"/></mxCell>`,
   );
 
-  return `<?xml version="1.0" encoding="UTF-8"?><mxfile host="MAVIS" agent="MAVIS" version="1"><diagram id="context-${escapeXml(model.id)}" name="C4 · CONTEXT"><mxGraphModel mavisC4Context="4" mavisDocument="${escapeXml(JSON.stringify(documentMeta))}" mavisModelId="${escapeXml(model.id)}" mavisViewId="context" mavisRuleVersion="mavis-se-3" mavisTheme="${theme}" grid="1" gridSize="10" page="0" background="${p.background}" connect="1" arrows="1" math="0" shadow="0"><root>${cells.join("")}</root></mxGraphModel></diagram></mxfile>`;
+  return `<?xml version="1.0" encoding="UTF-8"?><mxfile host="MAVIS" agent="MAVIS" version="1"><diagram id="context-${escapeXml(model.id)}" name="C4 · CONTEXT"><mxGraphModel mavisC4Context="6" mavisDocument="${escapeXml(JSON.stringify(documentMeta))}" mavisModelId="${escapeXml(model.id)}" mavisViewId="context" mavisRuleVersion="mavis-se-3" mavisTheme="${theme}" grid="1" gridSize="10" page="0" background="${p.background}" connect="1" arrows="1" math="0" shadow="0"><root>${cells.join("")}</root></mxGraphModel></diagram></mxfile>`;
 }
 
 

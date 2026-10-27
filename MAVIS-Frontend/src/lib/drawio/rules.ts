@@ -120,9 +120,15 @@ export function componentContainers(raw: unknown) {
 }
 const relations: Record<string, string> = {
   USES_API: "Uses exposed API",
-  DECLARED_COMPOSE: "Compose dependency",
+  DECLARED_COMPOSE: "Compose startup dependency",
+  DECLARED_LINK: "Compose link (declared)",
   CODE_DEPENDENCY: "Code dependency",
-  SERVICE_HTTP_CALL: "HTTP call",
+  SERVICE_HTTP_CALL: "HTTP call (declared)",
+  CONFIGURATION_DEPENDENCY: "Loads configuration",
+  SERVICE_DISCOVERY: "Service discovery (configured)",
+  TRACING_EXPORT: "Exports traces (configured)",
+  GATEWAY_ROUTE: "Routes HTTP (configured)",
+  CONFIGURED_ENDPOINT: "Endpoint reference (configured)",
   DATABASE_ACCESS: "Database access",
   DATABASE_QUERY: "Database query",
   MESSAGE_PUBLISH: "Declares publishing to",
@@ -130,7 +136,10 @@ const relations: Record<string, string> = {
 };
 export function relationLabel(edge: DiagramDocument["layoutJson"]["edges"][number]) {
   const raw = edge.relationType ?? edge.type ?? "";
-  return relations[raw] ?? (raw.replaceAll("_", " ") || "Unclassified relationship");
+  const label = relations[raw] ?? (raw.replaceAll("_", " ") || "Unclassified relationship");
+  const properties = edge["properties"];
+  const profile = properties && typeof properties === "object" ? (properties as Record<string, unknown>)["profile"] : null;
+  return typeof profile === "string" && profile ? label + " [profile: " + profile + "]" : label;
 }
 // S2e: C4 Container messaging labels may append the channel protocol in brackets. The protocol
 // comes ONLY from the MESSAGE_CHANNEL endpoint's properties.protocol (non-blank string) — never

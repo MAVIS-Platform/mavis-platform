@@ -203,10 +203,10 @@
     "labelExpectations": {
       "note": "Giá trị golden đóng băng ngày 24/10/2026 sau khi review contract; KHÔNG đọc bảng mapping production lúc chạy test. Nếu production đổi nhãn, test đỏ và phải review lại answer key.",
       "explicit": {
-        "SERVICE_HTTP_CALL": "HTTP call",
+        "SERVICE_HTTP_CALL": "HTTP call (declared)",
         "CODE_DEPENDENCY": "Code dependency",
         "DATABASE_ACCESS": "Database access",
-        "DECLARED_COMPOSE": "Compose dependency",
+        "DECLARED_COMPOSE": "Compose startup dependency",
         "MESSAGE_PUBLISH": "Declares publishing to",
         "MESSAGE_SUBSCRIBE": "Delivers messages to"
       },

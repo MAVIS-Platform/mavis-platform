@@ -230,6 +230,7 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
             Map<String, Object> opMap = new LinkedHashMap<>();
             opMap.put("memberKind", "OPERATION");
             opMap.put("name", mName);
+            opMap.put("endpointDeclarations", method.getAnnotations().stream().map(Object::toString).filter(a -> a.matches("(?s)@(Get|Post|Put|Delete|Patch|Request)Mapping.*")).toList());
             opMap.put("type", retType);
             opMap.put("returnType", retType);
             opMap.put("parameters", params);
@@ -542,6 +543,35 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
 
         Map<String, Object> cfg = new LinkedHashMap<>();
         cfg.put("methodName", method.getNameAsString());
+        cfg.put("sourceBody", method.getBody().orElseThrow().toString().substring(0, Math.min(12000, method.getBody().orElseThrow().toString().length())));
+        var owner = method.findAncestor(ClassOrInterfaceDeclaration.class).orElse(null);
+        var receiverTypes = new java.util.LinkedHashMap<String, String>();
+        if (owner != null) for (var field : owner.getFields()) for (var variable : field.getVariables()) receiverTypes.put(variable.getNameAsString(), variable.getTypeAsString());
+        for (var param : method.getParameters()) receiverTypes.put(param.getNameAsString(), param.getTypeAsString());
+        var calls = new ArrayList<Map<String, Object>>();
+        for (var call : method.findAll(com.github.javaparser.ast.expr.MethodCallExpr.class)) {
+            String scope = call.getScope().map(Object::toString).orElse("").replaceFirst("^this\\.", "");
+            if (!receiverTypes.containsKey(scope)) continue;
+            var item = new LinkedHashMap<String, Object>();
+            item.put("receiver", scope);item.put("receiverType", receiverTypes.get(scope));item.put("methodName", call.getNameAsString());
+            item.put("arguments", call.getArguments().toString());
+            item.put("line", call.getBegin().map(p -> p.line).orElse(startLine));
+            item.put("endLine", call.getEnd().map(p -> p.line).orElse(startLine));item.put("endColumn", call.getEnd().map(p -> p.column).orElse(0));
+            var loopConditions = new ArrayList<String>();
+            for (var parent = call.getParentNode().orElse(null); parent != null && parent != method; parent = parent.getParentNode().orElse(null)) {
+                if (parent instanceof com.github.javaparser.ast.stmt.ForEachStmt loop) loopConditions.add(loop.getVariable() + " : " + loop.getIterable());
+                if (parent instanceof com.github.javaparser.ast.expr.LambdaExpr lambda && lambda.getParentNode().orElse(null) instanceof com.github.javaparser.ast.expr.MethodCallExpr loop && loop.getNameAsString().equals("forEach")) loopConditions.add("each " + lambda.getParameters() + " in " + loop.getScope().map(Object::toString).orElse("collection"));
+            }
+            item.put("loopConditions", loopConditions);calls.add(item);
+        }
+        calls.sort(java.util.Comparator.comparingInt((Map<String,Object> call) -> (Integer) call.get("endLine")).thenComparingInt(call -> (Integer) call.get("endColumn")));
+        cfg.put("calls", calls);
+        var endpoints = new ArrayList<String>();
+        for (var annotation : method.getAnnotations()) {
+            String name = annotation.getName().getIdentifier();
+            if (java.util.Set.of("GetMapping", "PostMapping", "PutMapping", "DeleteMapping", "PatchMapping", "RequestMapping").contains(name)) endpoints.add(annotation.toString());
+        }
+        cfg.put("endpointDeclarations", endpoints);
         cfg.put("signature", signature);
         cfg.put("ownerName", className);
         cfg.put("ownerQualifiedName", qualifiedClassName);
@@ -577,6 +607,21 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
                 if (current.isEmpty()) break;
             }
             return current;
+        }
+
+        if (stmt.isExpressionStmt() && stmt.asExpressionStmt().getExpression() instanceof com.github.javaparser.ast.expr.MethodCallExpr call
+                && call.getNameAsString().equals("forEach") && call.getArguments().size() == 1 && call.getArgument(0) instanceof LambdaExpr lambda
+                && call.getScope().isPresent() && call.getScope().get().isNameExpr()) {
+            String header = "cfg-each-" + (++counter[0]);String decision = "cfg-each-dec-" + (++counter[0]);
+            nodes.add(cfgNode(header, "MERGE", "forEach loop", partitionName, line));
+            nodes.add(cfgNode(decision, "DECISION", "each " + lambda.getParameters() + " in " + call.getScope().get(), partitionName, line));
+            connectAll(incomingIds, header, pendingGuard, edges, counter);
+            edges.add(cfgEdge("cfg-e-" + (++counter[0]), header, decision, "CONTROL_FLOW", null));
+            var tails = buildStmtCfg(lambda.getBody(), List.of(decision), "[next item]", partitionName, nodes, edges, unsupported, counter);
+            for (String tail : tails) edges.add(cfgEdge("cfg-e-" + (++counter[0]), tail, header, "CONTROL_FLOW", null));
+            String exit = "cfg-each-exit-" + (++counter[0]);nodes.add(cfgNode(exit, "MERGE", "iteration complete", partitionName, line));
+            edges.add(cfgEdge("cfg-e-" + (++counter[0]), decision, exit, "CONTROL_FLOW", "[no more items]"));
+            return List.of(exit);
         }
 
         if (stmt.isIfStmt()) {
