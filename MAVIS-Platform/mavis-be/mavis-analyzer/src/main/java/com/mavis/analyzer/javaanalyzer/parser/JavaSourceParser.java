@@ -1,6 +1,8 @@
 package com.mavis.analyzer.javaanalyzer.parser;
 
-import com.github.javaparser.StaticJavaParser;
+import com.github.javaparser.JavaParser;
+import com.github.javaparser.ParserConfiguration;
+import com.github.javaparser.ParseProblemException;
 import com.github.javaparser.ast.CompilationUnit;
 import com.mavis.analyzer.javaanalyzer.dto.CodeEvidenceDTO;
 import com.mavis.analyzer.javaanalyzer.visitor.CodeDependencyVisitor;
@@ -117,7 +119,10 @@ public class JavaSourceParser {
             }
 
             String sourceCode = codeBuilder.toString();
-            CompilationUnit cu = StaticJavaParser.parse(sourceCode);
+            var parsed = new JavaParser(new ParserConfiguration()
+                    .setLanguageLevel(ParserConfiguration.LanguageLevel.BLEEDING_EDGE)).parse(sourceCode);
+            if (!parsed.isSuccessful()) throw new ParseProblemException(parsed.getProblems());
+            CompilationUnit cu = parsed.getResult().orElseThrow();
             String normalizedFile = javaFile.toString().replace('\\', '/').toLowerCase(java.util.Locale.ROOT);
             if (!normalizedFile.contains("/src/main/") && cu.getImports().stream().anyMatch(i ->
                     i.getNameAsString().startsWith("org.junit.") || i.getNameAsString().startsWith("org.testng.") ||

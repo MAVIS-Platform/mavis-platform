@@ -427,7 +427,11 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                 if ("REST_API".equalsIgnoreCase(ev.getElementType())) {
                     ModelElement owningEl = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
                     if (owningEl == null) {
-                        owningEl = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
+                        owningEl = findClassifierElement(allElements, ev.getQualifiedName(), ev.getFilePath());
+                    }
+                    if (owningEl == null) {
+                        log.warn("Skipping REST evidence without a resolved owner: {}:{}", ev.getFilePath(), ev.getLineNumber());
+                        continue;
                     }
                     String locator = (ev.getFilePath() != null ? ev.getFilePath() : "") + ":" + ev.getLineNumber();
 

@@ -31,4 +31,18 @@ class JavaSourceParserTest {
         assertThat(JavaSourceParser.isIgnoredPath(Paths.get("/project/src/main/java/OrderService.java"))).isFalse();
         assertThat(JavaSourceParser.isIgnoredPath(Paths.get("C:\\project\\src\\main\\java\\OrderService.java"))).isFalse();
     }
+
+    @Test
+    void parsesControllerContainingJavaRecord(@org.junit.jupiter.api.io.TempDir Path root) throws Exception {
+        java.nio.file.Files.writeString(root.resolve("SampleController.java"), """
+                @RestController
+                class SampleController {
+                    record Response(String name) {}
+                    @GetMapping("/sample")
+                    Response sample() { return new Response("ok"); }
+                }
+                """);
+        var facts = new JavaSourceParser().parseProject(root.toString());
+        assertThat(facts).anyMatch(f -> "REST_API".equals(f.getElementType()));
+    }
 }

@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  ...(process.env["MAVIS_DOCKER_STANDALONE"] === "1" ? { output: "standalone" as const } : {}),
   serverExternalPackages: ["elkjs"],
   outputFileTracingIncludes: {
     "/api/mavis/*": ["./node_modules/elkjs/lib/elk.bundled.js"],

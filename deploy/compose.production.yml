@@ -1,0 +1,77 @@
+name: mavis
+
+services:
+  backend:
+    image: ${IMAGE_PREFIX:-mavis}-backend:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: MAVIS-Platform/mavis-be/Dockerfile
+    restart: unless-stopped
+    env_file: ${MAVIS_ENV_FILE:-../.env.backend.local}
+    environment:
+      SPRING_PROFILES_ACTIVE: cloud
+      SERVER_PORT: "8080"
+      MAVIS_DB_URL: ${MAVIS_DB_URL:?Set MAVIS_DB_URL in deploy/.env}
+      MAVIS_DB_USERNAME: ${MAVIS_DB_USERNAME:?Set MAVIS_DB_USERNAME in deploy/.env}
+      MAVIS_DB_PASSWORD: ${MAVIS_DB_PASSWORD:?Set MAVIS_DB_PASSWORD in deploy/.env}
+      MAVIS_JWT_SECRET: ${MAVIS_JWT_SECRET:?Generate MAVIS_JWT_SECRET}
+      MAVIS_RUNNER_SERVICE_KEY: ${MAVIS_RUNNER_SERVICE_KEY:?Generate MAVIS_RUNNER_SERVICE_KEY}
+      MAVIS_WORKER_SERVICE_KEY: ${MAVIS_WORKER_SERVICE_KEY:?Generate MAVIS_WORKER_SERVICE_KEY}
+      MAVIS_WORKER_GRANT_KEY: ${MAVIS_WORKER_GRANT_KEY:?Generate MAVIS_WORKER_GRANT_KEY}
+      MAVIS_WORKER_ENABLED: "true"
+      MAVIS_WORKER_DOTNET_URL: http://worker:8080
+      MAVIS_WORKER_GRANT_KEY_ID: production
+      MAVIS_STORAGE_UPLOAD_DIR: /data/uploads
+      MAVIS_WORKER_SNAPSHOT_ROOT: /data/uploads
+      MAVIS_WORKER_ARTIFACT_ROOT: /data/worker-artifacts
+      APP_GOOGLE_CLIENT_ID: ${MAVIS_GOOGLE_CLIENT_ID:-}
+    volumes:
+      - data:/data
+    depends_on:
+      worker:
+        condition: service_started
+    expose:
+      - "8080"
+
+  worker:
+    image: ${IMAGE_PREFIX:-mavis}-worker:${IMAGE_TAG:-local}
+    build:
+      context: ..
+      dockerfile: MAVIS.Worker/Dockerfile.production
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_ENVIRONMENT: Production
+      WorkerAccess__ApiKey: ${MAVIS_WORKER_SERVICE_KEY:?Generate MAVIS_WORKER_SERVICE_KEY}
+      ArtifactScope__Root: /data/worker-artifacts
+      ArtifactScope__GrantKeys__production: ${MAVIS_WORKER_GRANT_KEY:?Generate MAVIS_WORKER_GRANT_KEY}
+    volumes:
+      - data:/data
+    expose:
+      - "8080"
+
+  frontend:
+    image: ${IMAGE_PREFIX:-mavis}-frontend:${IMAGE_TAG:-local}
+    build:
+      context: ../MAVIS-Frontend
+      args:
+        NEXT_PUBLIC_DRAWIO_URL: ${NEXT_PUBLIC_DRAWIO_URL:-https://maviss.site/drawio}
+    restart: unless-stopped
+    environment:
+      MAVIS_API_MODE: backend
+      MAVIS_JAVA_URL: http://backend:8080
+      MAVIS_GOOGLE_CLIENT_ID: ${MAVIS_GOOGLE_CLIENT_ID:-}
+    ports:
+      - "${MAVIS_BIND_ADDRESS:-127.0.0.1}:${MAVIS_FE_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/auth-config').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+volumes:
+  data:
