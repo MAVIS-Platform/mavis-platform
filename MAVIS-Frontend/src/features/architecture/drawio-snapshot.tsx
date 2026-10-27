@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { DRAWIO_ORIGIN, DRAWIO_MAX_XML_LENGTH } from "./drawio-protocol";
+import { DRAWIO_ORIGIN, DRAWIO_URL, DRAWIO_MAX_XML_LENGTH } from "./drawio-protocol";
 export function DrawioSnapshot({
   xml,
   onRender,
@@ -69,7 +69,7 @@ export function DrawioSnapshot({
       aria-hidden="true"
       tabIndex={-1}
       className="pointer-events-none fixed -left-[10000px] top-0 h-[900px] w-[1400px]"
-      src={`${DRAWIO_ORIGIN}/?embed=1&proto=json&spin=1&ui=atlas&offline=1&plugins=0&noExitBtn=1`}
+      src={`${DRAWIO_URL}/?embed=1&proto=json&spin=1&ui=atlas&offline=1&plugins=0&noExitBtn=1`}
       sandbox="allow-scripts allow-same-origin"
     />
   );

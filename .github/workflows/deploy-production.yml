@@ -1,0 +1,136 @@
+name: Build and deploy production
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: mavis-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - name: Deployment and rollback tests
+        run: docker run --rm -v "$PWD/deploy:/source:ro" python:3.12-slim bash /source/tests/deploy-vps.test.sh
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Backend regression tests
+        working-directory: MAVIS-Platform/mavis-be
+        run: bash mvnw -B -ntp -pl mavis-analyzer -am -Dtest=JavaSourceParserTest,GraphBuilderServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: MAVIS.Worker/global.json
+      - name: Worker tests
+        run: dotnet test MAVIS.Worker/tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj --configuration Release
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: MAVIS-Frontend/package-lock.json
+      - name: Frontend tests
+        working-directory: MAVIS-Frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+
+  images:
+    if: github.event_name != 'pull_request'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: backend
+            context: .
+            dockerfile: MAVIS-Platform/mavis-be/Dockerfile
+          - service: frontend
+            context: MAVIS-Frontend
+            dockerfile: MAVIS-Frontend/Dockerfile
+          - service: worker
+            context: .
+            dockerfile: MAVIS.Worker/Dockerfile.production
+    steps:
+      - uses: actions/checkout@v6
+      - name: Image prefix
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "prefix=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@3b5e8027fcad23fda98b2e3ac259d8d67585f671
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.image.outputs.prefix }}-${{ matrix.service }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          build-args: NEXT_PUBLIC_DRAWIO_URL=https://maviss.site/drawio
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    needs: images
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v6
+      - name: Skip superseded commits
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          latest=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [ "$latest" = "$COMMIT" ]; then echo "deploy=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Deploy with health checks and rollback
+        if: steps.latest.outputs.deploy == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          GH_TOKEN: ${{ github.token }}
+          GH_USER: ${{ github.actor }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/mavis_deploy
+          chmod 600 ~/.ssh/mavis_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          trap 'rm -f ~/.ssh/mavis_deploy' EXIT
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          incoming="/opt/mavis/incoming-$COMMIT"
+          ssh_opts=(-i ~/.ssh/mavis_deploy -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          ssh "${ssh_opts[@]}" "$target" "mkdir -p '$incoming'"
+          scp "${ssh_opts[@]}" deploy/compose.production.yml deploy/deploy-vps.sh "$target:$incoming/"
+          prefix="ghcr.io/${REPOSITORY,,}"
+          printf '%s\n' "$GH_TOKEN" | ssh "${ssh_opts[@]}" "$target" "bash '$incoming/deploy-vps.sh' '$COMMIT' '$prefix' '$GH_USER'"
