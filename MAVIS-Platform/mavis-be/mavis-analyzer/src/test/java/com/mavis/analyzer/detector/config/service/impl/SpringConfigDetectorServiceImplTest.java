@@ -152,4 +152,100 @@ class SpringConfigDetectorServiceImplTest {
         assertThat(configs).hasSize(1);
         assertThat(configs.get(0).getApplicationName()).isEqualTo("valid-service");
     }
+
+    @Test void namedConfigServerFilesKeepOwnerProfileAndDependencyMeaning() throws Exception {
+        Path folder = tempDir.resolve("config-service/src/main/resources/config");Files.createDirectories(folder);
+        Files.writeString(folder.resolve("employee-service.yml"), """
+                spring:
+                  config:
+                    import: optional:configserver:http://config-service:8888
+                eureka:
+                  client:
+                    serviceUrl:
+                      defaultZone: http://discovery-service:8761/eureka/
+                ---
+                spring:
+                  config:
+                    activate:
+                      on-profile: docker
+                management:
+                  zipkin:
+                    tracing:
+                      endpoint: http://zipkin:9411/api/v2/spans
+                """);
+        var configs = detectorService.detectConfigs(tempDir.toString());assertThat(configs).hasSize(1);
+        var config = configs.get(0);assertThat(config.getApplicationName()).isEqualTo("employee-service");
+        assertThat(config.getTargetServiceUrls()).extracting(ConfigTargetUrlDTO::getRelationType)
+                .containsExactly("CONFIGURATION_DEPENDENCY", "SERVICE_DISCOVERY", "TRACING_EXPORT");
+        assertThat(config.getTargetServiceUrls().get(0).getTargetUrl()).isEqualTo("http://config-service:8888");
+        assertThat(config.getTargetServiceUrls().get(2).getProfile()).isEqualTo("docker");
+        assertThat(config.getTargetServiceUrls()).allMatch(target -> target.getLineNumber() > 0);
+    }
+
+    @Test void gatewayYamlListsAndIndexedPropertiesAreRoutesNotInvocations() throws Exception {
+        Path folder = tempDir.resolve("config-service/src/main/resources/config");Files.createDirectories(folder);
+        Files.writeString(folder.resolve("gateway-service.yml"), """
+                spring:
+                  cloud:
+                    gateway:
+                      server:
+                        webflux:
+                          routes:
+                            - id: employees
+                              uri: lb://employee-service
+                            - id: departments
+                              uri: lb://department-service
+                """);
+        var config = detectorService.detectConfigs(tempDir.toString()).get(0);
+        assertThat(config.getApplicationName()).isEqualTo("gateway-service");
+        assertThat(config.getTargetServiceUrls()).hasSize(2).allMatch(target -> "GATEWAY_ROUTE".equals(target.getRelationType()));
+        Files.writeString(folder.resolve("gateway-service.properties"), "spring.cloud.gateway.routes[0].uri=lb://organization-service");
+        var configs = detectorService.detectConfigs(tempDir.toString());
+        assertThat(configs.stream().flatMap(value -> value.getTargetServiceUrls().stream())).anyMatch(target -> "lb://organization-service".equals(target.getTargetUrl()) && "GATEWAY_ROUTE".equals(target.getRelationType()));
+    }
+
+    @Test void importListsAndProfileFilesKeepDeclaredScopeWithoutResolvingPlaceholders() throws Exception {
+        Path folder = tempDir.resolve("employee-service/src/main/resources");Files.createDirectories(folder);
+        Files.writeString(folder.resolve("application-docker.yml"), """
+                spring:
+                  config:
+                    import:
+                      - optional:configserver:http://config-service:8888
+                management:
+                  otlp:
+                    tracing:
+                      endpoint: http://otel-collector:4318/v1/traces
+                """);
+        var config = detectorService.detectConfigs(tempDir.toString()).get(0);
+        assertThat(config.getServiceName()).isEqualTo("employee-service");
+        assertThat(config.getTargetServiceUrls()).hasSize(2).allMatch(target -> "docker".equals(target.getProfile()));
+        Files.writeString(folder.resolve("application.yml"), "spring.config.import: optional:configserver:${CONFIG_URL}");
+        assertThat(detectorService.detectConfigs(tempDir.toString()).stream().flatMap(value -> value.getTargetServiceUrls().stream()))
+                .noneMatch(target -> target.getTargetUrl().contains("${CONFIG_URL}"));
+    }
+
+    @Test void sharedConfigDefaultsHaveNoInventedSingleServiceOwner() throws Exception {
+        Path folder = tempDir.resolve("config-server/src/main/resources/config");Files.createDirectories(folder);
+        Files.writeString(folder.resolve("application.yml"), "spring.cloud.config.uri: http://config-service:8888");
+        var config = detectorService.detectConfigs(tempDir.toString()).get(0);
+        assertThat(config.getApplicationName()).isNull();assertThat(config.getServiceName()).isNull();
+    }
+
+    @Test void indentlessGatewayRouteSequencesAreNotDropped() throws Exception {
+        var folder=tempDir.resolve("config-service/src/main/resources/config");Files.createDirectories(folder);
+        Files.writeString(folder.resolve("gateway-service.yml"), """
+                spring:
+                  cloud:
+                    gateway:
+                      routes:
+                      - id: employee
+                        uri: lb://employee-service
+                        predicates:
+                        - Path=/employee/**
+                      - id: department
+                        uri: lb://department-service
+                """);
+        var config=detectorService.detectConfigs(tempDir.toString()).get(0);
+        assertThat(config.getTargetServiceUrls()).hasSize(2).allMatch(target->"GATEWAY_ROUTE".equals(target.getRelationType()));
+    }
 }

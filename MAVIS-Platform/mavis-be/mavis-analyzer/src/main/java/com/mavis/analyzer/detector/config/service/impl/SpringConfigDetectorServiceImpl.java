@@ -83,7 +83,8 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
 
     private boolean isSpringConfigFile(Path path) {
         String fileName = path.getFileName().toString().toLowerCase();
-        return (fileName.startsWith("application") || fileName.startsWith("bootstrap"))
+        boolean resourceConfig = path.toString().replace('\\', '/').contains("/src/main/resources/");
+        return (fileName.startsWith("application") || fileName.startsWith("bootstrap") || resourceConfig)
                 && (fileName.endsWith(".yml") || fileName.endsWith(".yaml") || fileName.endsWith(".properties"));
     }
 
@@ -106,6 +107,11 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
                 .build();
 
         String inferredServiceName = inferServiceNameFromPath(configFile, rootPath);
+        boolean namedConfig = !fileName.startsWith("application") && !fileName.startsWith("bootstrap");
+        if (namedConfig) {
+            inferredServiceName = fileName.replaceFirst("\\.(yml|yaml|properties)$", "").replaceFirst("-(docker|dev|prod|production|staging|test|local)$", "");
+            dto.setApplicationName(inferredServiceName);
+        }
         dto.setServiceName(inferredServiceName);
 
         for (RawProperty prop : properties) {
@@ -149,11 +155,15 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
                         .sourceType("CONFIG_FILE")
                         .build());
             } else if (isTargetServiceUrlKey(key)) {
-                dto.getTargetServiceUrls().add(ConfigTargetUrlDTO.builder()
-                        .configKey(key)
-                        .targetUrl(val)
-                        .lineNumber(line)
-                        .build());
+                for (String candidate : val.split(",")) {
+                    String target = stripQuotes(candidate.trim()).replaceFirst("^optional:", "").replaceFirst("^configserver:", "");
+                    if (!target.matches("(?i)^(https?|lb)://.+")) continue;
+                    String profile = prop.getProfile();
+                    if (profile == null && fileName.matches("(application|bootstrap)-.+\\.(yml|yaml|properties)")) profile = fileName.replaceFirst("^(application|bootstrap)-", "").replaceFirst("\\.(yml|yaml|properties)$", "");
+                    if (profile == null && namedConfig && fileName.matches(".*-(docker|dev|prod|production|staging|test|local)\\.(yml|yaml|properties)")) profile = fileName.replaceFirst("^.*-(docker|dev|prod|production|staging|test|local)\\.(yml|yaml|properties)$", "$1");
+                    dto.getTargetServiceUrls().add(ConfigTargetUrlDTO.builder().configKey(key).targetUrl(target)
+                            .relationType(relationTypeForKey(key)).profile(profile).lineNumber(line).build());
+                }
                 dto.getEvidences().add(ConfigEvidenceDTO.builder()
                         .configKey(key)
                         .configValue(val)
@@ -164,7 +174,9 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
             }
         }
 
-        return dto;
+        String configPath = configFile.toString().replace('\\', '/');
+        if (dto.getApplicationName() == null && configPath.matches(".*/(config-service|config-server)/src/main/resources/config/.*")) dto.setServiceName(null);
+        return dto.getEvidences().isEmpty() ? null : dto;
     }
 
     private void extractDatasourceHostAndDb(String jdbcUrl, DetectedSpringConfigDTO dto) {
@@ -233,7 +245,11 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
         if (lower.equals("spring.datasource.url")) {
             return false;
         }
-        return lower.endsWith(".url")
+        return lower.equals("spring.config.import") || lower.equals("spring.cloud.config.uri")
+                || lower.equals("eureka.client.serviceurl.defaultzone")
+                || (lower.equals("management.zipkin.tracing.endpoint") || lower.equals("management.otlp.tracing.endpoint")) || lower.equals("spring.zipkin.base-url")
+                || (lower.contains(".gateway.") && (lower.contains(".routes.") || lower.contains(".routes[")) && lower.endsWith(".uri"))
+                || lower.endsWith(".url")
                 || lower.endsWith("-url")
                 || lower.endsWith("_url")
                 || lower.endsWith(".service-url")
@@ -242,6 +258,15 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
                 || lower.endsWith("-service_url")
                 || lower.contains(".service-url.")
                 || lower.contains(".url.");
+    }
+
+    public static String relationTypeForKey(String key) {
+        String lower = key == null ? "" : key.toLowerCase(java.util.Locale.ROOT);
+        if (lower.equals("spring.config.import") || lower.equals("spring.cloud.config.uri")) return "CONFIGURATION_DEPENDENCY";
+        if (lower.startsWith("eureka.client.serviceurl.")) return "SERVICE_DISCOVERY";
+        if (lower.contains("zipkin") || lower.contains("tracing.endpoint")) return "TRACING_EXPORT";
+        if (lower.contains(".gateway.") && (lower.contains(".routes.") || lower.contains(".routes[")) && lower.endsWith(".uri")) return "GATEWAY_ROUTE";
+        return "CONFIGURED_ENDPOINT"; // An endpoint setting alone does not prove an HTTP invocation.
     }
 
     private List<RawProperty> parsePropertiesFile(Path file) throws IOException {
@@ -282,23 +307,35 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
         List<String> lines = Files.readAllLines(file, StandardCharsets.UTF_8);
 
         List<YamlIndentEntry> stack = new ArrayList<>();
+        List<RawProperty> document = new ArrayList<>();
 
         for (int i = 0; i < lines.size(); i++) {
             int lineNum = i + 1;
             String rawLine = lines.get(i);
             String trimmed = rawLine.trim();
 
-            if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.equals("---")) {
+            if (trimmed.equals("---")) {
+                appendDocumentProperties(document, list); document.clear(); stack.clear(); continue;
+            }
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) {
                 continue;
             }
 
             int indent = countLeadingSpaces(rawLine);
 
             // Pop stack entries with indent >= currentIndent
-            while (!stack.isEmpty() && stack.get(stack.size() - 1).indent >= indent) {
+            while (!stack.isEmpty() && (stack.get(stack.size() - 1).indent > indent || (stack.get(stack.size() - 1).indent == indent && !trimmed.startsWith("- ")))) {
                 stack.remove(stack.size() - 1);
             }
 
+            if (trimmed.startsWith("- ")) {
+                String item = stripQuotes(trimmed.substring(2).trim());
+                if (!stack.isEmpty() && item.matches("(?i)^(optional:)?(configserver:)?(https?|lb)://.*")) {
+                    String listKey = stack.stream().map(entry -> entry.key).collect(java.util.stream.Collectors.joining("."));
+                    document.add(new RawProperty(listKey, item, lineNum)); continue;
+                }
+                trimmed = item;
+            }
             int colonIdx = trimmed.indexOf(':');
             if (colonIdx == -1) {
                 continue;
@@ -327,11 +364,18 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
                 // Node cha (object/map)
                 stack.add(new YamlIndentEntry(indent, key));
             } else {
-                list.add(new RawProperty(fullKey, val, lineNum));
+                document.add(new RawProperty(fullKey, val, lineNum));
             }
         }
 
+        appendDocumentProperties(document, list);
         return list;
+    }
+
+    private void appendDocumentProperties(List<RawProperty> document, List<RawProperty> output) {
+        String profile = document.stream().filter(p -> p.key.equals("spring.config.activate.on-profile") || p.key.equals("spring.profiles"))
+                .map(RawProperty::getValue).findFirst().orElse(null);
+        for (RawProperty property : document) { property.setProfile(profile); output.add(property); }
     }
 
     private String stripInlineComment(String val) {
@@ -392,6 +436,8 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
         private String key;
         private String value;
         private int lineNumber;
+        private String profile;
+        RawProperty(String key, String value, int lineNumber) { this(key, value, lineNumber, null); }
     }
 
     @Data

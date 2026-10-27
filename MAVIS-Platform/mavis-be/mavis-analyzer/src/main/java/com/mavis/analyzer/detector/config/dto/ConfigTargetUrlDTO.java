@@ -12,5 +12,7 @@ import lombok.NoArgsConstructor;
 public class ConfigTargetUrlDTO {
     private String configKey;
     private String targetUrl;
+    private String relationType;
+    private String profile;
     private Integer lineNumber;
 }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { ArchitecturalModel } from "@/types/domain";
 import { relationLabel, wrapText } from "@/lib/drawio/rules";
+import { sourceMethodFlows, buildSourceMethodInteraction } from "./source-method-sequence";
 import { snap4 } from "@/lib/drawio/geometry";
 
 export const MESSAGE_SORTS = [
@@ -1260,7 +1261,7 @@ export function interactionToDrawioXml(
 
   const cells: string[] = [
     '<mxCell id="0"/><mxCell id="1" parent="0"/>',
-    `<mxCell id="title" mavisRole="metadata-carrier" mavisInteraction="${escapeXml(encodedInteraction)}" mavisScenario="${escapeXml(encodedLegacy)}" mavisRuleVersion="M3-UML251-v2" mavisAutoSeqVersion="5" value="${escapeXml(effectiveDoc.name)}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="16" width="${width - 80}" height="30" as="geometry"/></mxCell>`,
+    `<mxCell id="title" mavisRole="metadata-carrier" mavisInteraction="${escapeXml(encodedInteraction)}" mavisScenario="${escapeXml(encodedLegacy)}" mavisRuleVersion="M3-UML251-v2" mavisAutoSeqVersion="6" value="${escapeXml(effectiveDoc.name)}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="16" width="${width - 80}" height="30" as="geometry"/></mxCell>`,
     `<mxCell id="scope" value="${escapeXml(scopeBannerText)}" style="text;html=0;fontFamily=Arial;fontSize=12;fontColor=#334155;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="48" width="${width - 80}" height="22" as="geometry"/></mxCell>`,
     `<mxCell id="notation-legend" value="${escapeXml("Legend: solid+filled=SYNCH_CALL · solid+open=ASYNCH · dashed+open=REPLY/CREATE · X=DELETE · dashed+oval+[?]=UNKNOWN (unclassified)")}" style="text;html=0;fontFamily=Arial;fontSize=11;fontColor=#475569;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="72" width="${width - 80}" height="20" as="geometry"/></mxCell>`,
     `<mxCell id="sd-frame" mavisRole="sd-frame" value="${escapeXml(sdHeaderLabel)}" style="shape=umlFrame;whiteSpace=wrap;html=0;width=${sdTabWidth};height=26;boundedLbl=1;verticalAlign=top;align=left;spacingLeft=8;fontFamily=Arial;fontSize=12;fontStyle=1;fillColor=none;strokeColor=#475569;strokeWidth=1.3;fontColor=#0f172a;" vertex="1" parent="1"><mxGeometry x="16" y="100" width="${width - 32}" height="${height - 114}" as="geometry"/></mxCell>`,
@@ -2563,6 +2564,7 @@ export interface DetectedSequenceStepSpec {
 }
 
 export interface DetectedSequenceFlow {
+  sourceMethod?: { classifierId: string; signature: string };
   entryFlows?: DetectedSequenceFlow[] | undefined;
   flowId: string;
   viewId: string;
@@ -3169,7 +3171,7 @@ export function detectSequenceFlows(
     }
   }
 
-  return flows;
+  return [...sourceMethodFlows(model, requestedLevel, requestedServiceId), ...flows.map((flow) => ({ ...flow, title: `Dependency preview · ${flow.serviceName ?? "system"} · ${flow.level.toLowerCase()}`, description: "Static dependency declarations only. Endpoint identity, invocation order and control flow have not been extracted." }))];
 }
 
 export interface SequenceAiEnrichment {
@@ -3328,133 +3330,13 @@ export function synthesizeAiSequenceEnrichment(
     evidenceSnippets?: Array<{ location?: string; snippet?: string }> | null;
   },
 ): SequenceAiEnrichment {
-  const elementById = new Map(model.elements.map((el) => [el.id, el]));
-  const compact = buildFlowCompactContext(model, flow);
-  const extraSnippets = (input?.evidenceSnippets ?? [])
-    .map((e) => e.snippet ?? "")
-    .filter(Boolean)
-    .join("\n");
-  const combinedCode = extraSnippets
-    ? `${compact.astSkeleton}\n${compressCodeToAstSkeleton(extraSnippets, 600)}`
-    : compact.astSkeleton;
-
-  const aiTexts: string[] = [];
-  if (input?.explanation?.summary) aiTexts.push(input.explanation.summary);
-  for (const r of input?.explanation?.responsibilities ?? []) aiTexts.push(r);
-  for (const it of input?.explanation?.interactions ?? []) aiTexts.push(it);
-  const combinedText = [combinedCode, ...aiTexts, flow.title, flow.description].join("\n");
-
-  // 1. Extract method calls from compressed AST skeleton
-  const methodMatches = new Set<string>();
-  const methodRegex = /\b([a-z][a-zA-Z0-9_]{2,28})\s*\(/g;
-  const ignoredKeywords = new Set([
-    "if",
-    "for",
-    "while",
-    "switch",
-    "catch",
-    "return",
-    "super",
-    "new",
-    "class",
-    "function",
-    "require",
-    "import",
-  ]);
-  let m: RegExpExecArray | null;
-  while ((m = methodRegex.exec(combinedCode)) !== null) {
-    const fn = m[1];
-    if (fn && !ignoredKeywords.has(fn)) {
-      methodMatches.add(`${fn}()`);
-    }
-  }
-
-  // 2. Detect explicit if(...) and for/while/forEach/stream from AST skeleton
-  const ifMatch = /\bif\s*\(([^()\n]{3,44})\)/.exec(combinedCode)?.[1]?.trim();
-  const forMatch = /\b(?:for|while)\s*\(([^()\n]{3,44})\)/.exec(combinedCode)?.[1]?.trim();
-  const hasStreamLoop = /\.(?:forEach|stream)\s*\(/.test(combinedCode);
-
-  const hasLoop = Boolean(forMatch || hasStreamLoop);
-  const hasExplicitBranchInCode =
-    Boolean(ifMatch) || /\b(?:else|switch|orElseThrow|catch)\b/.test(combinedCode);
-  const hasAlt = hasExplicitBranchInCode || flow.steps.length >= 2;
-
-  const lastStep = flow.steps[flow.steps.length - 1];
-  const lastReceiverEl = lastStep ? elementById.get(lastStep.toElementId) : undefined;
-  const hasOpt = Boolean(
-    flow.steps.length >= 4 &&
-      lastStep?.messageSort === "ASYNCH_SIGNAL" &&
-      (lastReceiverEl?.elementType === "MESSAGE_CHANNEL" ||
-        lastReceiverEl?.elementType === "QUEUE_BROKER") &&
-      /\b(?:if|Optional|event|notify|publish)\b/i.test(combinedCode),
-  );
-
-  const hasSaga = /saga|compensat/i.test(combinedText);
-  const firstStep = flow.steps[0];
-  const firstTargetName =
-    (firstStep ? elementById.get(firstStep.toElementId)?.name : undefined) ?? "request";
-  const cleanTargetToken =
-    firstTargetName
-      .replace(/Repository|Dao|Service|Controller|Handler|Proxy|Adapter/gi, "")
-      .replace(/[^a-zA-Z0-9]/g, "") || "request";
-  const camelToken =
-    cleanTargetToken.charAt(0).toLowerCase() + cleanTargetToken.slice(1);
-
-  const loopGuard = forMatch
-    ? `for (${forMatch})`
-    : "for each item in collection";
-
-  const altGuard = ifMatch
-    ? ifMatch
-    : hasSaga
-      ? "commandReply == SUCCESS"
-      : `${camelToken} == valid`;
-
-  const altElseGuard = "else";
-
-  const altElseLabel = hasSaga
-    ? "compensate() / rollbackSaga()"
-    : "return invalid / error";
-
-  const optGuard = "domainEventPublished";
-  const dispatchLabel = "dispatch()";
-
-  const detectedList = [...methodMatches].slice(0, 6);
-  const participantNames = flow.participantElementIds
-    .map((id) => elementById.get(id)?.name ?? id)
-    .slice(0, 5);
-  const summaryParts: string[] = [];
-  if (input?.explanation?.summary) {
-    summaryParts.push(input.explanation.summary);
-  } else {
-    summaryParts.push(
-      `${flow.level === "MACRO" ? "Inter-service (Macro)" : "Intra-service (Micro)"} sequence traversing ${participantNames.join(" → ")}.`,
-    );
-  }
-  if (detectedList.length > 0) {
-    summaryParts.push(`Methods extracted from source code: ${detectedList.join(", ")}.`);
-  }
-
   return {
-    flowTitle: flow.title,
-    flowSummary: summaryParts.join(" "),
-    dispatchLabel,
-    hasLoop,
-    hasAlt,
-    hasOpt,
-    loopGuard,
-    altGuard,
-    altElseGuard,
-    altElseLabel,
-    optGuard,
-    summary: summaryParts.join(" "),
-    detectedMethods: detectedList,
-    tokenStats: {
-      rawChars: compact.rawChars,
-      compressedChars: compact.compressedChars,
-      savedPercent: compact.savedPercent,
-      provider: "ast-skeleton",
-    },
+    flowTitle: "Declared interactions · " + (flow.serviceName ?? "system"),
+    flowSummary:
+      "Dependency declarations only; a method-scoped execution trace is not available. Branches, loops, returns and business purpose are not inferred from names or graph topology.",
+    hasAlt: false,
+    hasLoop: false,
+    hasOpt: false,
   };
 }
 
@@ -3463,502 +3345,66 @@ export function buildAutoSequenceInteraction(
   flow: DetectedSequenceFlow,
   aiEnrichment?: SequenceAiEnrichment | null,
 ): InteractionDocument {
-  if (flow.entryFlows?.length) {
-    const entries = flow.entryFlows.slice();
-    const covered = new Set(entries.flatMap(e => e.steps.flatMap(s => s.sourceRelationshipIds)));
-    const remaining = flow.steps.filter(s => s.sourceRelationshipIds.some(id => !covered.has(id)));
-    if (remaining.length) entries.push({ ...flow, entryFlows: undefined, title: "Other source interactions (entrypoint unresolved)", steps: remaining });
-    const docs = entries.map(entry => buildAutoSequenceInteraction(model, entry));
-    const base = docs[0]!;
-    const messages: SequenceMessage[] = [], executions: ExecutionSpecification[] = [], fragments: CombinedFragment[] = [];
-    const participants = new Map<string, SequenceParticipant>();
-    docs.forEach((doc, index) => {
-      const prefix = `entry-${index + 1}:`;
-      const id = (value: string) => prefix + value;
-      for (const p of doc.participants) if (!participants.has(p.participantId)) participants.set(p.participantId, p);
-      const remapFragment = (fragment: CombinedFragment): CombinedFragment => ({ ...fragment, fragmentId: id(fragment.fragmentId),
-        operands: fragment.operands.map(o => ({ ...o, operandId: id(o.operandId), messageIds: o.messageIds.map(id), nestedFragments: o.nestedFragments?.map(remapFragment) })) });
-      for (const message of doc.messages) messages.push({ ...message, messageId: id(message.messageId), sequenceIndex: messages.length + 1,
-        causalParentMessageIds: message.causalParentMessageIds.map(id), replyToMessageId: message.replyToMessageId ? id(message.replyToMessageId) : message.replyToMessageId });
-      for (const execution of doc.executions) executions.push({ ...execution, executionId: id(execution.executionId), startMessageId: id(execution.startMessageId), endMessageId: id(execution.endMessageId) });
-      fragments.push({ fragmentId: prefix + "scope", operator: "strict", label: entries[index]!.title, provenance: "DESIGNED",
-        coveredParticipantIds: doc.participants.map(p => p.participantId), operands: [{ operandId: prefix + "body", guard: entries[index]!.title, messageIds: doc.messages.map(m => id(m.messageId)), nestedFragments: doc.fragments.map(remapFragment) }] });
-    });
-    return { ...base, interactionId: flow.viewId, name: flow.title, semanticStatus: "PARTIAL", participants: [...participants.values()], messages, executions, fragments,
-      limitations: [...new Set(docs.flatMap(d => d.limitations)), "Entrypoint frames are independent views; their order does not establish a runtime causal chain."] };
-  }
-  const elementById = new Map(model.elements.map((el) => [el.id, el]));
-  const edgeById = new Map(model.edges.map((ed) => [ed.id, ed]));
-  const semantics: SequenceAiEnrichment = {
-    ...synthesizeAiSequenceEnrichment(model, flow),
-    ...(aiEnrichment ?? {}),
-  };
-
-  const activeSteps = flow.steps;
-
-  let participants: SequenceParticipant[] = [];
-  const participantByElementId = new Map<string, SequenceParticipant>();
-
-  const ensurePart = (elementId: string): SequenceParticipant => {
-    const existing = participantByElementId.get(elementId);
-    if (existing) return existing;
-    const res = ensureModelParticipantInInteraction(participants, model, elementId, "STATIC");
-    participants = res.participants;
-    participantByElementId.set(elementId, res.participant);
-    return res.participant;
-  };
-
-  for (const step of activeSteps) {
-    ensurePart(step.fromElementId);
-    ensurePart(step.toElementId);
-  }
-
-  // Order participants left-to-right: Inbound/Actors/Controllers -> Services/Sagas/Proxies -> Channels -> Databases
-  const lifelineRank = (p: SequenceParticipant): number => {
-    const el = p.modelElementId ? elementById.get(p.modelElementId) : undefined;
-    const type = el?.elementType ?? p.elementType;
-    const name = p.name;
-    if (type === "PERSON" || type === "EXTERNAL_SYSTEM") return 0;
-    if (/gateway/i.test(name)) return 1;
-    if (type === "COMPONENT") {
-      if (/Controller|Resource|Endpoint|Server/i.test(name)) return 2;
-      if (/CommandHandler|EventConsumer|EventHandler|MessageHandler|Listener/i.test(name))
-        return 3;
-      if (/Service$/i.test(name)) return 4;
-      if (/Saga$/i.test(name)) return 5;
-      if (/Proxy|Publisher|Client/i.test(name)) return 6;
-      if (/Repository|Dao/i.test(name)) return 7;
-      return 5;
-    }
-    if (type === "SERVICE_CONTAINER") {
-      return flow.serviceId && p.modelElementId === flow.serviceId ? 2 : 5;
-    }
-    if (type === "MESSAGE_CHANNEL" || type === "QUEUE_BROKER") {
-      const isOnlySender =
-        flow.level === "MICRO" &&
-        activeSteps.some((s) => s.fromElementId === p.modelElementId) &&
-        !activeSteps.some((s) => s.toElementId === p.modelElementId);
-      return isOnlySender ? 1 : 8;
-    }
-    if (type === "DATABASE") return 9;
-    return 5;
-  };
-
-  const firstIndexMap = new Map<string, number>();
-  participants.forEach((p, idx) => firstIndexMap.set(p.participantId, idx));
-  participants.sort(
-    (a, b) =>
-      (flow.level === "MACRO" ? 0 : lifelineRank(a) - lifelineRank(b)) ||
-      (firstIndexMap.get(a.participantId) ?? 0) - (firstIndexMap.get(b.participantId) ?? 0),
-  );
-
-  const participantById = new Map(participants.map((p) => [p.participantId, p]));
-  const canHaveActivationBar = (participantId: string): boolean => {
-    const p = participantById.get(participantId);
-    if (!p) return false;
-    const el = p.modelElementId ? elementById.get(p.modelElementId) : undefined;
-    const type = el?.elementType ?? p.elementType;
-    return (
-      type !== "PERSON" &&
-      type !== "EXTERNAL_SYSTEM" &&
-      type !== "MESSAGE_CHANNEL" &&
-      type !== "QUEUE_BROKER"
+  if (flow.sourceMethod) return buildSourceMethodInteraction(model, flow);
+  // These candidates come from dependency edges, not a method execution trace.
+  // Render independent declarations, with no synthesized dispatch, reply, guard,
+  // activation or causal chain. Keep exact endpoint direction and source IDs.
+  const ids = new Set(flow.steps.flatMap((step) => [step.fromElementId, step.toElementId]));
+  const declaredParticipants: SequenceParticipant[] = model.elements
+    .filter((node) => ids.has(node.id))
+    .map(
+      (node) =>
+        ({
+          participantId: "part:" + node.id,
+          name: node.name,
+          elementType: node.elementType ?? "COMPONENT",
+          modelElementId: node.id,
+          role: null,
+          resolutionStatus: "RESOLVED",
+          abstractionLevel: node.elementType === "SERVICE_CONTAINER" ? "CONTAINER" : "COMPONENT",
+          provenance: "STATIC",
+        }) as SequenceParticipant,
     );
-  };
-
-  const messages: SequenceMessage[] = [];
-  const executions: ExecutionSpecification[] = [];
-  const fragments: CombinedFragment[] = [];
-
-  const pushMsg = (
-    spec: Omit<SequenceMessage, "messageId" | "sequenceIndex" | "causalParentMessageIds">,
-  ): SequenceMessage => {
-    const idx = messages.length + 1;
-    const msgId = `msg-${idx}`;
-    const prevId = idx > 1 ? `msg-${idx - 1}` : null;
-    const created: SequenceMessage = {
-      ...spec,
-      messageId: msgId,
-      sequenceIndex: idx,
-      causalParentMessageIds: prevId ? [prevId] : [],
-    };
-    messages.push(created);
-    return created;
-  };
-
-  const enrichStepLabelWithEvidence = (step: DetectedSequenceStepSpec): string => {
-    const stepIdx = activeSteps.indexOf(step);
-    const aiLabel = stepIdx >= 0 ? semantics.stepLabels?.[stepIdx]?.trim() : undefined;
-    if (aiLabel) return aiLabel;
-
-    const relId = step.sourceRelationshipIds[0];
-    const edge = relId ? edgeById.get(relId) : undefined;
-    const snippet = edge?.evidence?.[0]?.snippet ?? "";
-    const callMatch = /\b([a-z][a-zA-Z0-9_]{2,24})\s*\(/.exec(snippet)?.[1];
-    if (
-      callMatch &&
-      !["if", "for", "while", "switch", "return", "super", "require"].includes(callMatch) &&
-      !step.label.includes(callMatch)
-    ) {
-      return `${step.label} · ${callMatch}()`;
-    }
-    return step.label;
-  };
-
-  const inferReplyInfo = (
-    receiverEl: ArchitecturalModel["elements"][number] | undefined,
-    step?: DetectedSequenceStepSpec,
-  ): { label: string; returnValue: string } => {
-    const stepIdx = step ? activeSteps.indexOf(step) : -1;
-    const aiReturn = stepIdx >= 0 ? semantics.stepReturns?.[stepIdx]?.trim() : undefined;
-    if (aiReturn) {
-      return {
-        label: aiReturn.startsWith("return ") ? aiReturn : `return ${aiReturn}`,
-        returnValue: aiReturn.replace(/^return\s+/i, ""),
-      };
-    }
-    const rType = receiverEl?.elementType ?? "";
-    const rName = receiverEl?.name ?? "target";
-    if (rType === "DATABASE" || /Repository|Dao/i.test(rName)) {
-      return { label: `return persisted / entity`, returnValue: "entity" };
-    }
-    if (/payment|accounting|auth/i.test(rName)) {
-      return { label: `return authorized`, returnValue: "200 OK" };
-    }
-    if (/consumer|customer/i.test(rName)) {
-      return { label: `return verified`, returnValue: "verified" };
-    }
-    if (/kitchen|ticket|inventory/i.test(rName)) {
-      return { label: `return ticketCreated`, returnValue: "ticketId" };
-    }
-    return { label: `return ${rName}Result`, returnValue: "ok" };
-  };
-
-  interface RawExecInterval {
-    section: "entry" | "pre" | "happy" | "else" | "opt";
-    participantId: string;
-    startOrd: number;
-    endOrd: number;
-    nestingLevel: number;
-  }
-  const rawIntervals: RawExecInterval[] = [];
-  const addExecInterval = (
-    section: RawExecInterval["section"],
-    participantId: string,
-    startMsgId: string,
-    endMsgId: string,
-    nestingLevel = 0,
-  ) => {
-    if (!canHaveActivationBar(participantId)) return;
-    const sOrd = messages.findIndex((m) => m.messageId === startMsgId);
-    const eOrd = messages.findIndex((m) => m.messageId === endMsgId);
-    if (sOrd < 0 || eOrd < 0) return;
-    rawIntervals.push({
-      section,
-      participantId,
-      startOrd: Math.min(sOrd, eOrd),
-      endOrd: Math.max(sOrd, eOrd),
-      nestingLevel,
-    });
-  };
-
-  if (activeSteps.length > 0) {
-    const firstStep = activeSteps[0]!;
-    const firstSender = ensurePart(firstStep.fromElementId);
-    const firstSenderEl = elementById.get(firstStep.fromElementId);
-    const firstSenderType = firstSenderEl?.elementType ?? firstSender.elementType;
-    const isExternalEntry =
-      firstSenderType === "PERSON" ||
-      firstSenderType === "EXTERNAL_SYSTEM" ||
-      firstSenderType === "MESSAGE_CHANNEL" ||
-      firstSenderType === "QUEUE_BROKER";
-
-    // 1. Emit UML 2.5 Found Message (●──► 1. dispatch()) only when entry starts inside an internal component/service
-    if (!isExternalEntry) {
-      const foundMsg = pushMsg({
-        fromParticipantId: "__FOUND__",
-        toParticipantId: firstSender.participantId,
-        endpointKind: "FOUND",
-        label: semantics.dispatchLabel ?? "dispatch()",
-        messageSort: "SYNCH_CALL",
-        sourceRelationshipIds: [],
-        evidenceIds: firstStep.evidenceIds.slice(0, 1),
-        provenance: "STATIC",
-        isUncertain: false,
-      });
-      addExecInterval("entry", firstSender.participantId, foundMsg.messageId, foundMsg.messageId, 0);
-    }
-
-    // Split activeSteps based on source-detected opt and pre-alt initial request step (like Image 5 sd searchForItems)
-    const optCount = semantics.hasOpt && activeSteps.length >= 4 ? 1 : 0;
-    const mainSteps = activeSteps.slice(0, activeSteps.length - optCount);
-    const optSteps = optCount > 0 ? activeSteps.slice(activeSteps.length - optCount) : [];
-
-    // When mainSteps has >= 2 steps and alt is active, step 0 is the initial request/lookup ABOVE alt (like Image 5)
-    const splitPreStep = Boolean(semantics.hasAlt && mainSteps.length >= 2 && !semantics.hasLoop);
-    const preSteps = splitPreStep ? mainSteps.slice(0, 1) : [];
-    const branchSteps = splitPreStep ? mainSteps.slice(1) : mainSteps;
-
-    const pendingCalls: Array<{ sender: SequenceParticipant; receiver: SequenceParticipant; call: SequenceMessage; step: DetectedSequenceStepSpec; section: "pre" | "happy" }> = [];
-    const closeCall = (outMsgIds?: string[]) => {
-      const pending = pendingCalls.pop(); if (!pending) return;
-      const info = inferReplyInfo(elementById.get(pending.step.toElementId), pending.step);
-      const reply = pushMsg({ fromParticipantId: pending.receiver.participantId, toParticipantId: pending.sender.participantId,
-        label: info.label, messageSort: "REPLY", replyToMessageId: pending.call.messageId,
-        sourceRelationshipIds: [], evidenceIds: pending.step.evidenceIds.slice(0, 1), provenance: "STATIC", isUncertain: true });
-      outMsgIds?.push(reply.messageId);
-      addExecInterval(pending.section, pending.sender.participantId, pending.call.messageId, reply.messageId, 0);
-      addExecInterval(pending.section, pending.receiver.participantId, pending.call.messageId, reply.messageId, 0);
-    };
-    const emitStepList = (
-      stepList: DetectedSequenceStepSpec[],
-      section: "pre" | "happy",
-      outMsgIds?: string[],
-      coveredSet?: Set<string>,
-    ) => {
-      stepList.forEach((step, idx) => {
-        const sender = ensurePart(step.fromElementId);
-        const receiver = ensurePart(step.toElementId);
-        const receiverEl = elementById.get(step.toElementId);
-        while (pendingCalls.length && pendingCalls.at(-1)!.receiver.participantId !== sender.participantId) closeCall(outMsgIds);
-        const asynchronous = [sender.elementType, receiver.elementType].some(t => t === "MESSAGE_CHANNEL" || t === "QUEUE_BROKER");
-
-        const callMsg = pushMsg({
-          fromParticipantId: sender.participantId,
-          toParticipantId: receiver.participantId,
-          label: enrichStepLabelWithEvidence(step),
-          messageSort: asynchronous ? "ASYNCH_SIGNAL" : step.messageSort,
-          sourceRelationshipIds: step.sourceRelationshipIds.slice(0, 1),
-          evidenceIds: step.evidenceIds,
-          provenance: "STATIC",
-          isUncertain: false,
-        });
-        outMsgIds?.push(callMsg.messageId);
-        coveredSet?.add(sender.participantId);
-        coveredSet?.add(receiver.participantId);
-
-        if (callMsg.messageSort === "SYNCH_CALL" && sender.participantId !== receiver.participantId) {
-          pendingCalls.push({ sender, receiver, call: callMsg, step, section });
-        } else {
-          addExecInterval(section, sender.participantId, callMsg.messageId, callMsg.messageId, 0);
-          addExecInterval(section, receiver.participantId, callMsg.messageId, callMsg.messageId, sender.participantId === receiver.participantId ? 1 : 0);
-        }
-      });
-    };
-
-    // Emit initial request / lookup step(s) above alt
-    emitStepList(preSteps, "pre");
-
-    const happyPathMsgIds: string[] = [];
-    const coveredInAlt = new Set<string>();
-    emitStepList(branchSteps, "happy", happyPathMsgIds, coveredInAlt);
-    while (pendingCalls.length) closeCall(happyPathMsgIds);
-
-    // 2. Emit [else] branch & CombinedFragment only when semantics.hasAlt or semantics.hasLoop is true from src
-    const elseMsgIds: string[] = [];
-    if (semantics.hasAlt && happyPathMsgIds.length > 0) {
-      const firstBranchStep = branchSteps[0]!;
-      const branchSender = ensurePart(firstBranchStep.fromElementId);
-      const branchReceiver = ensurePart(firstBranchStep.toElementId);
-      const preCaller = preSteps[0] ? ensurePart(preSteps[0].fromElementId) : null;
-
-      // If preCaller initiated the flow into branchSender (like Customer -> SearchForm in Image 5), reply error back to preCaller; otherwise branchSender -> branchReceiver
-      const elseFrom =
-        preCaller && preCaller.participantId !== branchSender.participantId
-          ? branchSender
-          : branchSender;
-      const elseTo =
-        preCaller && preCaller.participantId !== branchSender.participantId
-          ? preCaller
-          : branchReceiver;
-      const isErrorReply = elseFrom === branchSender && elseTo === preCaller && ![elseFrom.elementType, elseTo.elementType].some(t => t === "MESSAGE_CHANNEL" || t === "QUEUE_BROKER");
-
-      const elseMsg = pushMsg({
-        fromParticipantId: elseFrom.participantId,
-        toParticipantId: elseTo.participantId,
-        label: semantics.altElseLabel ?? "return invalid / error",
-        messageSort: isErrorReply ? "REPLY" : "ASYNCH_SIGNAL",
-        ...(isErrorReply ? { returnValue: "error" } : {}),
-        sourceRelationshipIds: [],
-        evidenceIds: [],
-        provenance: "STATIC",
-        isUncertain: false,
-      });
-      elseMsgIds.push(elseMsg.messageId);
-      coveredInAlt.add(elseFrom.participantId);
-      coveredInAlt.add(elseTo.participantId);
-      addExecInterval("else", elseFrom.participantId, elseMsg.messageId, elseMsg.messageId, 0);
-      addExecInterval("else", elseTo.participantId, elseMsg.messageId, elseMsg.messageId, 0);
-
-      const altFragment: CombinedFragment = {
-        fragmentId: "frag-auto-alt",
-        operator: "alt",
-        label: "Conditional branch",
-        coveredParticipantIds: [...coveredInAlt],
-        provenance: "STATIC",
-        operands: [
-          {
-            operandId: "op-auto-alt-ok",
-            guard: semantics.altGuard ?? "valid",
-            messageIds: happyPathMsgIds,
-          },
-          {
-            operandId: "op-auto-alt-else",
-            guard: semantics.altElseGuard ?? "else",
-            messageIds: elseMsgIds,
-          },
-        ],
-      };
-
-      // Only wrap in `loop` when source code evidence explicitly contains a loop (semantics.hasLoop)
-      if (semantics.hasLoop) {
-        fragments.push({
-          fragmentId: "frag-auto-loop",
-          operator: "loop",
-          label: "Source loop iteration",
-          coveredParticipantIds: [...coveredInAlt],
-          provenance: "STATIC",
-          operands: [
-            {
-              operandId: "op-auto-loop-1",
-              guard: semantics.loopGuard ?? "for each item",
-              minIterations: 1,
-              maxIterations: "n",
-              messageIds: [...happyPathMsgIds, ...elseMsgIds],
-              nestedFragments: [altFragment],
-            },
-          ],
-        });
-      } else {
-        fragments.push(altFragment);
-      }
-    } else if (semantics.hasLoop && happyPathMsgIds.length > 0) {
-      fragments.push({
-        fragmentId: "frag-auto-loop",
-        operator: "loop",
-        label: "Source loop iteration",
-        coveredParticipantIds: [...coveredInAlt],
-        provenance: "STATIC",
-        operands: [
-          {
-            operandId: "op-auto-loop-1",
-            guard: semantics.loopGuard ?? "for each item",
-            minIterations: 1,
-            maxIterations: "n",
-            messageIds: happyPathMsgIds,
-          },
-        ],
-      });
-    }
-
-    // 3. Emit trailing opt steps wrapped in an `opt` CombinedFragment ONLY when semantics.hasOpt is true from src
-    const optMsgIds: string[] = [];
-    const coveredInOpt = new Set<string>();
-    for (const step of optSteps) {
-      const sender = ensurePart(step.fromElementId);
-      const receiver = ensurePart(step.toElementId);
-      const optMsg = pushMsg({
-        fromParticipantId: sender.participantId,
-        toParticipantId: receiver.participantId,
-        label: enrichStepLabelWithEvidence(step),
+  const declarations = flow.steps.map(
+    (step, index) =>
+      ({
+        messageId: "dependency-" + index,
+        sequenceIndex: index + 1,
+        fromParticipantId: "part:" + step.fromElementId,
+        toParticipantId: "part:" + step.toElementId,
+        label:
+          step.sourceRelationshipIds
+            .map((id) => model.edges.find((edge) => edge.id === id))
+            .filter((edge): edge is ArchitecturalModel["edges"][number] => !!edge)
+            .map((edge) => relationLabel({ id: edge.id, type: edge.protocol }))
+            .join(" / ") || "Declared dependency",
         messageSort: step.messageSort,
-        sourceRelationshipIds: step.sourceRelationshipIds.slice(0, 1),
+        endpointKind: "COMPLETE",
+        sourceRelationshipIds: step.sourceRelationshipIds,
         evidenceIds: step.evidenceIds,
         provenance: "STATIC",
-        isUncertain: false,
-      });
-      optMsgIds.push(optMsg.messageId);
-      coveredInOpt.add(sender.participantId);
-      coveredInOpt.add(receiver.participantId);
-      addExecInterval("opt", sender.participantId, optMsg.messageId, optMsg.messageId, 0);
-      if (sender.participantId !== receiver.participantId) {
-        addExecInterval("opt", receiver.participantId, optMsg.messageId, optMsg.messageId, 0);
-      }
-    }
-
-    if (optMsgIds.length > 0) {
-      fragments.push({
-        fragmentId: "frag-auto-opt",
-        operator: "opt",
-        label: "Optional notification / event",
-        coveredParticipantIds: [...coveredInOpt],
-        provenance: "STATIC",
-        operands: [
-          {
-            operandId: "op-auto-opt-1",
-            guard: semantics.optGuard ?? "domainEventPublished",
-            messageIds: optMsgIds,
-          },
-        ],
-      });
-    }
-
-    // 4. A caller activation may enclose fragments; merge its overlapping intervals across sections.
-    const grouped = new Map<string, RawExecInterval[]>();
-    for (const iv of rawIntervals) {
-      const key = `${iv.participantId}::${iv.nestingLevel}`;
-      const list = grouped.get(key) ?? [];
-      list.push({ ...iv });
-      grouped.set(key, list);
-    }
-
-    let execCounter = 1;
-    for (const list of grouped.values()) {
-      list.sort((a, b) => a.startOrd - b.startOrd || a.endOrd - b.endOrd);
-      const merged: RawExecInterval[] = [];
-      for (const iv of list) {
-        const prev = merged[merged.length - 1];
-        if (!prev) {
-          merged.push(iv);
-          continue;
-        }
-        const nextMsg = messages[iv.startOrd];
-        const continuesAsCaller =
-          iv.startOrd === prev.endOrd + 1 && nextMsg?.fromParticipantId === iv.participantId;
-        if (iv.startOrd <= prev.endOrd || continuesAsCaller) {
-          prev.endOrd = Math.max(prev.endOrd, iv.endOrd);
-        } else {
-          merged.push(iv);
-        }
-      }
-      for (const iv of merged) {
-        const startMsg = messages[iv.startOrd];
-        const endMsg = messages[iv.endOrd];
-        if (!startMsg || !endMsg) continue;
-        executions.push({
-          executionId: `exec-${iv.section}-${execCounter++}`,
-          participantId: iv.participantId,
-          startMessageId: startMsg.messageId,
-          endMessageId: endMsg.messageId,
-          nestingLevel: iv.nestingLevel,
-          provenance: "STATIC",
-        });
-      }
-    }
-  }
-
+        isUncertain: true,
+        causalParentMessageIds: [],
+      }) as SequenceMessage,
+  );
   return {
     schemaVersion: 2,
     interactionId: flow.viewId,
-    name:
-      typeof semantics.flowTitle === "string" && semantics.flowTitle.trim()
-        ? semantics.flowTitle.trim()
-        : flow.title,
+    name: "Declared interactions · " + (flow.serviceName ?? "system"),
     modelId: model.id,
     baseModelId: model.id,
     snapshotId: model.snapshotId,
     mode: "DESIGNED",
-    semanticStatus: "COMPLETE",
-    provenance: {
-      origin: "STATIC",
-    },
-    limitations: [],
-    participants,
-    messages,
-    executions,
-    fragments,
+    semanticStatus: "PARTIAL",
+    provenance: { origin: "STATIC" },
+    participants: declaredParticipants,
+    messages: declarations,
+    executions: [],
+    fragments: [],
+    limitations: [
+      "DEPENDENCY_ONLY_NOT_AN_EXECUTION_TRACE",
+      "Each frame is independent. Vertical order is layout only; no request, endpoint, branching, loop, return or runtime causality has been established. Select a source method Activity or an observed runtime trace for execution semantics.",
+    ],
     interactionUses: [],
   };
 }
-
-

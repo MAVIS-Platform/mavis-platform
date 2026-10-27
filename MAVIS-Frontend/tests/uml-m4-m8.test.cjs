@@ -2671,10 +2671,10 @@ test("fruit-* UML_ACTIVITY: removes hardcoded FTGO labels, promotes project-spec
 
   const ops = listActivityOperations(fruitModel);
   // 1. Multi-swimlane workflows promoted to the top & selected by default
-  assert.equal(ops[0].operationId, "flow:business:create-order-flow");
+  assert.ok(!ops[0].operationId.startsWith("flow:"), "Extracted method CFG takes priority over dependency illustrations");
   const defaultProj = projectUmlActivityDiagram(fruitModel);
-  assert.equal(defaultProj.selectedOperationId, "flow:business:create-order-flow");
-  assert.equal(defaultProj.partitions.length, 4);
+  assert.equal(defaultProj.selectedOperationId, "cls-inv-ctrl::reserveFruitStock(Map)");
+  assert.equal(defaultProj.partitions.length, 1);
 
   // 2. Getters, setters, main(), and FeignClient interface methods are purged from dropdown
   const opNames = ops.map((o) => `${o.classifierName}.${o.methodName}`);

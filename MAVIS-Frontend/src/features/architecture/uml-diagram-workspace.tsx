@@ -1,4 +1,5 @@
 "use client";
+import { savedUmlCoversSource } from "./uml-source-coverage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
@@ -174,6 +175,7 @@ export function UmlDiagramWorkspace({
     // If a saved UML_CLASS, UML_PACKAGE, UML_DEPLOYMENT, UML_ACTIVITY, or UML_STATE document predates the tree-v2 obstacle-routed layout, recompute clean positions
     const isPreTreeLayoutXml =
       hydrated.conflicts.length > 0 ||
+      !savedUmlCoversSource(xml, hydrated.projection) ||
       !xml.includes('mavisLayoutMode="tree-v2"') ||
       (kind === "UML_PACKAGE" &&
         (xml.includes("(empty package)") ||
@@ -543,6 +545,12 @@ export function UmlDiagramWorkspace({
           />
         )}
 
+        {effectiveProjection.diagramKind === "UML_CLASS" && <p role="status" className="text-xs text-muted-foreground">
+          Showing {effectiveProjection.classifiers.length} extracted/designed classifiers in the selected scope. Missing client or model types require inspecting this revision's extracted metadata; they are not invented from field names.
+        </p>}
+        {effectiveProjection.diagramKind === "UML_PACKAGE" && <p role="status" className="text-xs text-muted-foreground">
+          Packages are grouped by service and qualified name. HTTP service calls do not establish Java package imports; only recorded code dependencies are used.
+        </p>}
         <div className="border-t pt-3" data-testid="uml-interactive-items">
           {effectiveProjection.diagramKind === "UML_CLASS" && (
             <div className="grid gap-3 sm:grid-cols-2">
@@ -766,8 +774,10 @@ export function UmlDiagramWorkspace({
         </div>
       </div>
 
-      {/* Draw.io Canvas */}
-      <DrawioEditor
+      {/* Never present a dependency template as a behavioral Activity. */}
+      {effectiveProjection.diagramKind === "UML_ACTIVITY" && effectiveProjection.unsupportedConstructs.includes("INFERRED_BUSINESS_FLOW_REQUIRES_SOURCE_VERIFICATION") ? (
+        <p role="status" className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">This selection only has static dependencies, not an extracted method control-flow graph. Choose a method above to view its source Activity, or inspect these relationships in Graph Explorer.</p>
+      ) : <DrawioEditor
         key={documentScope}
         modelId={model.id}
         diagramId={viewKey}
@@ -804,7 +814,7 @@ export function UmlDiagramWorkspace({
         onSave={async (content) => {
           await persistCurrentDiagramXml(content);
         }}
-      />
+      />}
     </div>
   );
 }

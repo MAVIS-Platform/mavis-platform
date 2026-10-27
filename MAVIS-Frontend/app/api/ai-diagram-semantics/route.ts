@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
+import { literalSourceContext, normalizeThreeE, normalizeC4 } from "@/lib/ai/evidence-grounding";
 import type { CompactFlowAiContext, SequenceAiEnrichment } from "@/features/architecture/scenario-design";
 import type { C4AiDiagramEnrichment, CompactC4AiContext } from "@/features/architecture/diagram-projections";
 import type { CompactUmlAiContext, UmlAiDiagramEnrichment } from "@/features/architecture/uml-diagrams";
-import type { ThreeEAiPromptContext, ThreeEAiSimplifiedExplanation } from "@/features/architecture/three-e-content";
+import {
+  checkThreeEScopeGuardrail,
+  type ThreeEAiPromptContext,
+  type ThreeEAiSimplifiedExplanation,
+} from "@/features/architecture/three-e-content";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +18,7 @@ const enrichmentCache = new Map<string, SequenceAiEnrichment>();
 const c4EnrichmentCache = new Map<string, C4AiDiagramEnrichment>();
 const umlEnrichmentCache = new Map<string, UmlAiDiagramEnrichment>();
 const threeEEnrichmentCache = new Map<string, ThreeEAiSimplifiedExplanation>();
+const threeEChatCache = new Map<string, string>();
 
 function resolveAiKey(): { key: string; provider: "openai" | "gemini" } | null {
   const envOpenAi = process.env["OPENAI_API_KEY"]?.trim();
@@ -73,13 +79,12 @@ Given a compact AST skeleton slice and participant call-chain of a software flow
 - stepReturns: map of step index ("0", "1", ...) to concise return label <= 26 chars (e.g. "return order", "return savedOrder").
 Return valid JSON only.`;
 
-const C4_SYSTEM_PROMPT = `You are a C4 Architecture Diagram Semantic Analyzer (Simon Brown C4 standard).
-Given a compact AST skeleton and node list for a C4 view (CONTEXT, CONTAINER, or COMPONENT), return concise, code-grounded semantics in JSON:
-- systemDescription: (for CONTEXT) 1-sentence summary of the software system <= 105 chars.
-- persons: (for CONTEXT) map of person.id -> { name: concise role <= 26 chars, description: 1-line role description <= 68 chars, actionLabel: concise arrow verb phrase <= 44 chars }.
-- externals: (for CONTEXT) map of external.id -> { description: <= 68 chars, actionLabel: <= 44 chars }.
-- nodeDescriptions: (for CONTAINER / COMPONENT) map of node.id -> concise 1-line business/technical responsibility <= 54 chars grounded in the AST skeleton and node name (e.g. "REST controller handling POST /orders & queries", "Orchestrates distributed credit & ticket saga", "JPA repository persisting Order aggregates").
-Return valid JSON only.`;
+const C4_SYSTEM_PROMPT = `You annotate a C4 diagram using a partial source AST, not the entire repository.
+Return JSON only: { "nodeDescriptions": { "supplied-node-id": "concise description up to 54 characters" } }.
+Only annotate nodes with hasSourceEvidence=true, and only describe what the supplied AST supports.
+Never infer people, human roles, business purpose, database persistence or runtime behavior from names.
+Startup links, configured endpoints, discovery and tracing are not business HTTP calls.
+Do not add or rename actors, nodes, edges or the software system. Omit descriptions that cannot be supported.`;
 
 const UML_SYSTEM_PROMPT = `You are a Top-Down Microservice Business Flow & OMG UML 2.5 Static/Behavioral Analyzer.
 Given a compact AST skeleton and item list for a UML diagram (UML_CLASS, UML_PACKAGE, UML_DEPLOYMENT, UML_ACTIVITY, or UML_STATE), return ONLY code-grounded semantic and layout refinements in JSON:
@@ -90,25 +95,31 @@ Given a compact AST skeleton and item list for a UML diagram (UML_CLASS, UML_PAC
 - For UML_STATE: evaluate the Domain Entity / Aggregate Root lifecycle from the AST and return "flowTitle" (concise SE English Entity State Machine title <= 76 chars), "flowSummary" (1-2 sentence English explanation of this entity's state transitions triggered by Saga/Commands/Events <= 180 chars), "flowCatalogTitles" (map of STATE_TARGET_OPTION id -> concise SE English Entity State Machine title <= 76 chars), "stateLayout" map of STATE id -> { tier: 0 (INITIAL) | 1..6 (lifecycle progression stage from pending -> active/approved -> cancel/revision -> terminal) | 7 (FINAL_STATE), order: number (0..N left-to-right order within tier, placing happy-path states on the left and rejection/cancellation on the right) }, "stateNodes" map of STATE:STATE id -> { entryBehavior?: <= 34 chars, doActivity?: <= 34 chars, exitBehavior?: <= 34 chars }, and "stateTransitions" map of TRANSITION id -> { trigger?: concise event/method <= 30 chars, guard?: <= 26 chars, effect?: concise action <= 34 chars }.
 Return valid JSON only.`;
 
-const THREE_E_SYSTEM_PROMPT = `You are a Senior Software Architecture 3E (Explain · Explore · Evaluate) Analyst for Microservices systems.
+const THREE_E_SYSTEM_PROMPT = `EVIDENCE POLICY: The payload is a partial selection, not the entire repository. Names, AST/model reconstructions and dependency counts do not prove behavior. Distinguish configuration/startup/discovery/tracing from business calls. Describe only what literal snippets support; do not invent validation, persistence, transactions, execution order, user roles or runtime traffic. Return assumptions (unverified inferences) and unknowns as separate string arrays. When no evidence supports a claim say unknown. Snippet notes may reference only supplied IDs.
+You are a Senior Software Architecture 3E (Explain · Explore · Evaluate) Analyst for Microservices systems.
 Given the selected architectural element or relationship and its extracted source code snippets (codeSnippets), return a clear, concise JSON explanation in standard Software Engineering English:
-- explainSimple: (2-3 concise sentences) Explain the architectural responsibility of this item in the business flow, its upstream callers, and its downstream dependencies.
+- explainSimple: State the model classification and only the role supported by supplied snippets. Say unknown for unestablished business purpose, caller identity or runtime behavior.
 - exploreSimple: (1-2 sentences) Summarize what the extracted source code evidence below implements (citing key classes/files).
-- evaluateSimple: (1-2 sentences) Evaluate coupling, architectural trade-offs, or operational risks (e.g. Saga compensation, synchronous HTTP latency, shared database coupling, or clean separation of concerns).
-- snippetNotes: object mapping each codeSnippet id to a 1-sentence English explanation of what that specific code snippet proves.
+- evaluateSimple: Describe risks only as conditional possibilities supported by the snippets or recorded findings. Missing findings do not prove correctness, low coupling or operational safety.
+- snippetNotes: Map supplied snippet IDs only to what that snippet declares; preserve dependency kinds and do not invent validation, persistence or execution order.
+- assumptions: string array of explicitly unverified inferences; empty when unsupported.
+- unknowns: string array of missing facts that prevent stronger conclusions.
 Return valid JSON only.`;
 
-const THREE_E_CHAT_SYSTEM_PROMPT = `You are an interactive 3E (Explain · Explore · Evaluate) Software Architecture AI Assistant.
-The user is inspecting an architectural element or relationship and asking a follow-up question to clarify its behavior, code evidence, or design trade-offs.
-Based on the 3E context (title, type, inboundPeers, outboundPeers, childComponents, extracted codeSnippets, current 3E summary) and chat history:
-- Answer in clear, concise Software Engineering English (2-4 sentences), directly addressing the question with concrete references to classes, methods, files, or services in codeSnippets.
-- If the question asks about details not present in the extracted snippets, state what is verified in the code and point to the related component to inspect next.
-Return valid JSON only: { "answer": "concise English explanation" }`;
+const THREE_E_CHAT_SYSTEM_PROMPT = `EVIDENCE POLICY: Only the supplied source snippets are evidence, and they are partial. Prior explanations and chat history are not evidence; do not repeat unsupported claims from them. Clearly label inferences as unverified and missing facts as unknown. Do not infer business behavior, human actors or runtime calls from names, deployment links or configuration alone.
+You are a strictly-scoped 3E (Explain · Explore · Evaluate) Software Architecture AI Assistant.
+STRICT SCOPE GUARDRAIL:
+1. You are strictly locked to the currently selected architectural element/relationship (target.title, target.type), its direct inboundPeers/outboundPeers, its childComponents, and its codeSnippets.
+2. NEVER answer off-topic questions (food, weather, daily life, entertainment, general coding tasks, trivia) or questions about unrelated services outside target.title's direct architectural scope.
+3. If userQuestion is unrelated to the software architecture, code evidence, dependencies, or design risks of target.title, DO NOT answer the question. Instead, return { "offTopic": true, "answer": "<1-sentence refusal in the user's language stating you only answer questions about target.title's architecture and code evidence>" }.
+4. For valid in-scope questions, respond in the same language as userQuestion (Vietnamese if asked in Vietnamese, English if asked in English) in 2-4 concise sentences, citing concrete classes, files, methods, or peers from the provided context.
+Return valid JSON only: { "answer": "concise response", "offTopic": false }`;
 
 async function callStructuredLlm<T>(
   resolved: { key: string; provider: "openai" | "gemini" },
   systemPrompt: string,
   userPayload: string,
+  maxTokens?: number,
 ): Promise<Partial<T> | null> {
   if (resolved.provider === "openai") {
     const endpoint =
@@ -122,6 +133,7 @@ async function callStructuredLlm<T>(
         { role: "system", content: systemPrompt },
         { role: "user", content: userPayload },
       ],
+      ...(maxTokens ? { max_completion_tokens: maxTokens } : {}),
     };
     if (!isReasoningModel) {
       requestBody["temperature"] = 0.1;
@@ -156,6 +168,7 @@ async function callStructuredLlm<T>(
       generationConfig: {
         temperature: 0.1,
         responseMimeType: "application/json",
+        ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
       },
     }),
     signal: AbortSignal.timeout(8000),
@@ -193,8 +206,30 @@ export async function POST(request: NextRequest) {
 
     // Branch -2: Interactive 3E Follow-up Q&A Chat
     if (body.threeEChat && body.threeEChat.question?.trim()) {
-      const { threeEContext: tCtx, currentExplanation, history = [], question } = body.threeEChat;
+      const { threeEContext: rawChatContext, currentExplanation, history = [], question } = body.threeEChat;
+      const tCtx = literalSourceContext(rawChatContext);
       const q = question.trim();
+
+      // Layer 1: Zero-token deterministic scope guardrail before any LLM API call
+      const guard = checkThreeEScopeGuardrail(q, tCtx);
+      if (!guard.allowed) {
+        return NextResponse.json({
+          answer: guard.refusalMessage,
+          provider: "scope-guardrail",
+          blocked: true,
+        });
+      }
+
+      const chatCacheKey = `evidence-v2:${tCtx.contextHash}::${q.toLowerCase()}`;
+      const cachedAnswer = threeEChatCache.get(chatCacheKey);
+      if (cachedAnswer) {
+        return NextResponse.json({
+          answer: cachedAnswer,
+          provider: "cache",
+          cached: true,
+        });
+      }
+
       const buildFallbackAnswer = (): string => {
         const files = tCtx.codeSnippets.map((s) => s.locator).filter(Boolean);
         const inbound = tCtx.inboundPeers.slice(0, 4).join(", ");
@@ -205,8 +240,8 @@ export async function POST(request: NextRequest) {
         ];
         if (inbound || outbound) {
           parts.push(
-            `Dependency flow: ${inbound ? `invoked by [${inbound}]` : "acts as an inbound entrypoint"}${
-              outbound ? ` and calls [${outbound}]` : ""
+            `Declared model connections: ${inbound ? `incoming [${inbound}]` : "no incoming peers recorded"}${
+              outbound ? ` and outgoing [${outbound}]` : ""
             }.`,
           );
         }
@@ -219,15 +254,15 @@ export async function POST(request: NextRequest) {
         return parts.join(" ");
       };
 
-      const resolved = resolveAiKey();
-      if (!resolved) {
+      const resolved = tCtx.codeSnippets.length ? resolveAiKey() : null;
+      if (!resolved || !tCtx.codeSnippets.length) {
         return NextResponse.json({
-          answer: buildFallbackAnswer(),
+          answer: tCtx.codeSnippets.length ? buildFallbackAnswer() : "No saved source snippets are available for this selection. The model alone cannot establish its implementation behavior or business role.",
           provider: "ast-skeleton",
         });
       }
 
-      const parsedChat = await callStructuredLlm<{ answer?: string }>(
+      const parsedChat = await callStructuredLlm<{ answer?: string; offTopic?: boolean }>(
         resolved,
         THREE_E_CHAT_SYSTEM_PROMPT,
         JSON.stringify({
@@ -242,15 +277,24 @@ export async function POST(request: NextRequest) {
             codeSnippets: tCtx.codeSnippets,
           },
           currentExplanation,
-          history: history.slice(-6),
+          history: history.slice(-4),
           userQuestion: q,
         }),
+        350,
       );
 
       const answer =
         typeof parsedChat?.answer === "string" && parsedChat.answer.trim()
           ? parsedChat.answer.trim()
           : buildFallbackAnswer();
+
+      if (parsedChat?.answer) {
+        if (threeEChatCache.size >= 500) {
+          const oldest = threeEChatCache.keys().next().value;
+          if (oldest) threeEChatCache.delete(oldest);
+        }
+        threeEChatCache.set(chatCacheKey, answer);
+      }
 
       return NextResponse.json({
         answer,
@@ -260,18 +304,14 @@ export async function POST(request: NextRequest) {
 
     // Branch -1: 3E Simplified AI Explanation + Per-Snippet Code Notes
     if (body.threeEContext && body.threeEContext.contextHash) {
-      const tCtx = body.threeEContext;
-      const fallback3E: ThreeEAiSimplifiedExplanation = body.threeEFallback ?? {
-        explainSimple: tCtx.summary,
-        exploreSimple: `Extracted ${tCtx.codeSnippets.length} source code evidence snippets.`,
-        evaluateSimple: tCtx.findingsSummary[0] ?? "Current coupling and structural boundaries conform to standard architectural guidelines.",
-      };
-      const hit = threeEEnrichmentCache.get(tCtx.contextHash);
+      const tCtx = literalSourceContext(body.threeEContext);
+      const fallback3E = normalizeThreeE(null, tCtx);
+      const hit = threeEEnrichmentCache.get("evidence-v2:" + tCtx.contextHash);
       if (hit) {
         return NextResponse.json({ threeEEnrichment: hit, cached: true });
       }
-      const resolved = resolveAiKey();
-      if (!resolved) {
+      const resolved = tCtx.codeSnippets.length ? resolveAiKey() : null;
+      if (!resolved || !tCtx.codeSnippets.length) {
         return NextResponse.json({
           threeEEnrichment: {
             ...fallback3E,
@@ -301,24 +341,7 @@ export async function POST(request: NextRequest) {
         userPayload,
       );
       const merged3E: ThreeEAiSimplifiedExplanation = {
-        explainSimple:
-          typeof parsed3E?.explainSimple === "string" && parsed3E.explainSimple.trim()
-            ? parsed3E.explainSimple.trim()
-            : fallback3E.explainSimple,
-        exploreSimple:
-          typeof parsed3E?.exploreSimple === "string" && parsed3E.exploreSimple.trim()
-            ? parsed3E.exploreSimple.trim()
-            : fallback3E.exploreSimple,
-        evaluateSimple:
-          typeof parsed3E?.evaluateSimple === "string" && parsed3E.evaluateSimple.trim()
-            ? parsed3E.evaluateSimple.trim()
-            : fallback3E.evaluateSimple,
-        snippetNotes: {
-          ...(fallback3E.snippetNotes ?? {}),
-          ...(parsed3E?.snippetNotes && typeof parsed3E.snippetNotes === "object"
-            ? parsed3E.snippetNotes
-            : {}),
-        },
+        ...normalizeThreeE(parsed3E, tCtx),
         tokenStats: {
           rawChars: tCtx.rawChars,
           compressedChars: tCtx.compressedChars,
@@ -330,7 +353,7 @@ export async function POST(request: NextRequest) {
         const oldest = threeEEnrichmentCache.keys().next().value;
         if (oldest) threeEEnrichmentCache.delete(oldest);
       }
-      threeEEnrichmentCache.set(tCtx.contextHash, merged3E);
+      threeEEnrichmentCache.set("evidence-v2:" + tCtx.contextHash, merged3E);
       return NextResponse.json({ threeEEnrichment: merged3E, cached: false });
     }
 
@@ -421,8 +444,8 @@ export async function POST(request: NextRequest) {
       if (hit) {
         return NextResponse.json({ c4Enrichment: hit, cached: true });
       }
-      const resolved = resolveAiKey();
-      if (!resolved) {
+      const resolved = c4Ctx.astSkeleton.trim() ? resolveAiKey() : null;
+      if (!resolved || !c4Ctx.astSkeleton.trim()) {
         return NextResponse.json({ c4Enrichment: {}, cached: false });
       }
       const userPayload = JSON.stringify({
@@ -439,18 +462,7 @@ export async function POST(request: NextRequest) {
         userPayload,
       );
       const mergedC4: C4AiDiagramEnrichment = {
-        ...(typeof parsedC4?.systemDescription === "string"
-          ? { systemDescription: parsedC4.systemDescription }
-          : {}),
-        ...(parsedC4?.persons && typeof parsedC4.persons === "object"
-          ? { persons: parsedC4.persons }
-          : {}),
-        ...(parsedC4?.externals && typeof parsedC4.externals === "object"
-          ? { externals: parsedC4.externals }
-          : {}),
-        ...(parsedC4?.nodeDescriptions && typeof parsedC4.nodeDescriptions === "object"
-          ? { nodeDescriptions: parsedC4.nodeDescriptions }
-          : {}),
+        ...normalizeC4(parsedC4, c4Ctx),
         tokenStats: {
           rawChars: c4Ctx.rawChars,
           compressedChars: c4Ctx.compressedChars,

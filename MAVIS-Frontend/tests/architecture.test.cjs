@@ -790,7 +790,7 @@ test("FTGO component scope selects populated service and distinguishes infrastru
  const scope=projectDiagram(doc,containers[0].id);
  assert.equal(scope.layoutJson.nodes.filter(n=>n.kind==="COMPONENT"&&n.parentId===containers[0].id).length,5);
  assert.ok(!scope.layoutJson.nodes.some(n=>n.name==="cdc-service"));
- assert.equal(relationLabel({id:"e",type:"DECLARED_COMPOSE"}),"Compose dependency");
+ assert.equal(relationLabel({id:"e",type:"DECLARED_COMPOSE"}),"Compose startup dependency");
  assert.equal(relationLabel({id:"e",type:"CODE_DEPENDENCY"}),"Code dependency");
  assert.doesNotMatch(nodeText({id:"n",name:"Service",kind:"SERVICE_CONTAINER"}).join(" "),/Responsibility not extracted/);
  const xml=await generateDrawio(scope);assert.match(xml,/mavisRole="boundary"/);assert.doesNotMatch(xml,/Phụ thuộc|Trách nhiệm/);
@@ -990,12 +990,12 @@ test("boundary header and legend scale with long names and many unresolved eleme
  const edges=[{id:'e0',from:'svc-a',to:'svc-b',protocol:'CODE_DEPENDENCY',originLayer:'STATIC',uncertain:false,evidence:[]},
   ...[0,1,2,3].map(i=>({id:'x'+i,from:'svc-b',to:'u'+i,protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',uncertain:true,evidence:[]}))];
  const doc=selectDiagram({id:'m',projectId:'p',snapshotId:'s',revision:1,label:'R',elements,edges},'CONTAINER',undefined,{systemName:longName}).document;
- assert.equal(doc.systemBoundary.unresolvedIds.length,4,"full unresolved list stays in traceable metadata");
- assert.ok(doc.scopeWarning.includes("(+1 more; full list in view metadata)"),"legend warning is summarized, not silently truncated");
+ assert.equal(doc.systemBoundary.unresolvedIds.length,8,"full unresolved list stays in traceable metadata");
+ assert.ok(doc.scopeWarning.includes("(+5 more; full list in view metadata)"),"legend warning is summarized, not silently truncated");
  const modelIds=new Set(elements.map(e=>e.id));
  assert.ok(doc.projection.includedNodeIds.every(id=>modelIds.has(id)));
  assert.ok(!doc.projection.includedNodeIds.includes("system:boundary"));
- assert.equal(doc.projection.includedNodeIds.length,6);
+ assert.equal(doc.projection.includedNodeIds.length,10);
  const xml=await generateDrawio(doc);
  const legendCell=xml.match(/<mxCell id="mavis_legend" value="([^"]*)"/);
  assert.ok(legendCell);
@@ -1110,7 +1110,7 @@ test("editor round-trip preserves C4 Container boundary, membership and metadata
  const inside=draft.layoutJson.nodes.filter(n=>n.parentId==='system:boundary').map(n=>n.id).sort();
  assert.deepEqual(inside,['ch','db','svc-a','svc-b']);
  assert.ok(draft.layoutJson.nodes.find(n=>n.id==='ext'),'ext must be in the draft');assert.ok(draft.layoutJson.nodes.find(n=>n.id==='ext').parentId!=='system:boundary');
- assert.ok(!draft.layoutJson.nodes.some(n=>n.id==='broker'),"unconnected broker is omitted from the container view per planner policy");
+ assert.ok(draft.layoutJson.nodes.some(n=>n.id==='broker'),"recognized unconnected broker remains visible outside unresolved ownership boundary");
  assert.deepEqual(draft.layoutJson.nodes.find(n=>n.id==='ch').properties,{protocol:"kafka",transportAuthority:"kafka"},"properties must survive the round-trip");
  const edges1=draft.layoutJson.edges;assert.equal(edges1.length,4);
  assert.ok(edges1.every(e=>e.relationType&&e.originLayer));
@@ -1448,8 +1448,9 @@ test("3E simplified AI explanation and concrete code evidence collector always p
  assert.equal(aiCtx.codeSnippets.length,1);
  const edgeCtx=buildThreeESubjectContext({model,selectedId:"e1"});
  const edgeEvidences=collectConcreteThreeEEvidences(model,edgeCtx,[],[]);
- assert.ok(edgeEvidences.length>=1,"edge without raw evidence synthesizes concrete code example");
- assert.match(edgeEvidences[0].snippet,/JpaRepository/);
+ assert.ok(edgeEvidences.length>=1,"edge without raw evidence exposes metadata without inventing implementation");
+ assert.equal(edgeEvidences[0].origin,"preview");
+ assert.doesNotMatch(edgeEvidences[0].snippet,/JpaRepository|jdbc:mysql|restTemplate/);
 });
 
 test("computeArchitectureImpact computes upstream blast radius and downstream dependencies across all, source, and components scopes",()=>{

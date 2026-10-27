@@ -5,7 +5,7 @@ import {
   projectDiagram,
   type DiagramDocument,
 } from "../drawio/rules";
-export const VIEW_POLICY_VERSION = "architecture-views-1";
+export const VIEW_POLICY_VERSION = "architecture-views-2";
 export type ArchitectureView = {
   id: string;
   title: string;
@@ -31,8 +31,8 @@ const insideSystemScope = (node: DiagramDocument["layoutJson"]["nodes"][number])
 const outsideAsExternal = (node: DiagramDocument["layoutJson"]["nodes"][number]) =>
   ["EXTERNAL_SYSTEM", "PERSON"].includes(kindOf(node));
 const deployment = (edge: DiagramDocument["layoutJson"]["edges"][number]) =>
-  edge.relationType === "DECLARED_COMPOSE" ||
-  edge.type === "DECLARED_COMPOSE" ||
+  edge.relationType === "DECLARED_COMPOSE" || edge.relationType === "DECLARED_LINK" ||
+  edge.type === "DECLARED_COMPOSE" || edge.type === "DECLARED_LINK" ||
   edge.originLayer === "DEPLOYMENT";
 export function planArchitectureViews(
   raw: unknown,
@@ -113,7 +113,7 @@ export function planArchitectureViews(
       to = owner(points.to);
     if (from === to || !byId.has(from) || !byId.has(to)) continue;
     const type = edge.relationType ?? edge.type ?? "UNKNOWN";
-    const key = JSON.stringify([from, to, type, edge.originLayer ?? "UNKNOWN"]);
+    const key = JSON.stringify([from, to, type, edge.originLayer ?? "UNKNOWN", edge["properties"] && typeof edge["properties"] === "object" ? (edge["properties"] as Record<string, unknown>)["profile"] ?? null : null]);
     const prior = aggregated.get(key);
     if (prior) (prior["underlyingEdgeIds"] as string[]).push(edge.id);
     else
@@ -135,7 +135,10 @@ export function planArchitectureViews(
   // S2d: C4 Container system boundary. Internal containers sit inside a named system boundary;
   // external systems/persons stay outside; ownership that the model does not establish is left
   // outside with an explicit warning instead of a boundary that would assert fake membership.
-  const containerSelection = applicationRoots.length ? applicationRoots : roots;
+  // Recognition is independent of connectivity: isolated infrastructure is still
+  // a container. Only relationships, not the containers, are split by view.
+  const knownContainers = roots.filter((node) => ["SERVICE_CONTAINER", "DATABASE", "QUEUE_BROKER", "MESSAGE_CHANNEL", "EXTERNAL_SYSTEM", "PERSON"].includes(kindOf(node)));
+  const containerSelection = knownContainers.length ? knownContainers : applicationRoots.length ? applicationRoots : roots;
   const insideNodes = containerSelection.filter(insideSystemScope);
   const externalNodes = containerSelection.filter(outsideAsExternal);
   const unresolvedNodes = containerSelection.filter(

@@ -578,5 +578,38 @@ class GraphBuilderServiceTest {
         assertThat(portsOnlyMeta.has("declaredBuildContext")).isFalse();
         assertThat(portsOnlyMeta.path("artifactResolution").asText()).isEqualTo("NO_ARTIFACT_DECLARED");
     }
+
+    @Test void configurationProfilesProduceTypedEvidenceRatherThanBusinessHttpCalls() {
+        var source = ModelElement.builder().id(UUID.randomUUID()).name("employee-service").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
+        var config = ModelElement.builder().id(UUID.randomUUID()).name("config-service").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
+        var tracing = ModelElement.builder().id(UUID.randomUUID()).name("zipkin").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
+        when(springConfigDetectorService.detectConfigs(anyString())).thenReturn(List.of(DetectedSpringConfigDTO.builder()
+                .serviceName("employee-service").configFilePath("employee-service/src/main/resources/application.yml")
+                .targetServiceUrls(List.of(
+                        ConfigTargetUrlDTO.builder().configKey("spring.config.import").targetUrl("http://config-service:8888").lineNumber(3).build(),
+                        ConfigTargetUrlDTO.builder().configKey("management.zipkin.tracing.endpoint").targetUrl("http://zipkin:9411/api/v2/spans").profile("docker").lineNumber(8).build(),
+                        ConfigTargetUrlDTO.builder().configKey("management.zipkin.tracing.endpoint").targetUrl("http://zipkin:9411/api/v2/spans").profile("dev").lineNumber(12).build())).build()));
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion, List.of(source, config, tracing), List.of());
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<ModelRelationship>> capture = ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository).saveAll(capture.capture());
+        assertThat(capture.getValue()).hasSize(3).extracting(ModelRelationship::getRelationType)
+                .containsExactlyInAnyOrder("CONFIGURATION_DEPENDENCY", "TRACING_EXPORT", "TRACING_EXPORT");
+        assertThat(capture.getValue().stream().filter(rel -> "TRACING_EXPORT".equals(rel.getRelationType())))
+                .extracting(rel -> rel.getProperties().path("profile").asText()).containsExactlyInAnyOrder("docker", "dev");
+    }
+
+    @Test void composeLinksRemainDeploymentDeclarationsAndNeverBecomeHttpCalls() {
+        var source = ModelElement.builder().id(UUID.randomUUID()).name("employee-service").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
+        var target = ModelElement.builder().id(UUID.randomUUID()).name("discovery-service").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
+        var compose = DetectedContainerDTO.builder().serviceName("employee-service").composeFilePath("docker-compose.yml").lineNumber(3).build();
+        compose.getConnections().add(new com.mavis.analyzer.detector.docker.dto.DetectedConnectionDTO("discovery-service", "DECLARED_LINK", 8761, "links", 5));
+        when(dockerDetectorService.detectContainers(anyString())).thenReturn(List.of(compose));
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion, List.of(source, target), List.of());
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<ModelRelationship>> capture = ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository).saveAll(capture.capture());
+        assertThat(capture.getValue()).hasSize(1);
+        assertThat(capture.getValue().get(0).getRelationType()).isEqualTo("DECLARED_LINK");
+        assertThat(capture.getValue().get(0).getOriginLayer()).isEqualTo("DEPLOYMENT");
+    }
 }
 

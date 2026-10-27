@@ -152,7 +152,7 @@ export function ArchitectureDiagrams({
       const ov = c4AiEnrichment?.persons?.[p.id];
       return {
         ...p,
-        name: ov?.name?.trim() || p.name,
+        name: p.name,
         description: ov?.description?.trim() || p.description,
         actionLabel: ov?.actionLabel?.trim() || p.actionLabel,
       };
@@ -260,8 +260,9 @@ export function ArchitectureDiagrams({
   const hasValidSavedXml = Boolean(
     saved.data?.xml &&
       (kind === "CONTEXT"
-        ? saved.data.xml.includes('mavisC4Context="4"')
+        ? saved.data.xml.includes('mavisC4Context="6"')
         : saved.data.xml.includes('mavisSmartRouting="3"') &&
+          (!document?.["policyVersion"] || saved.data.xml.includes(String(document["policyVersion"]))) &&
           (!document || saved.data.xml.includes(`name="${document.notation} · ${document.level}"`))),
   );
   const xml = (hasValidSavedXml ? saved.data?.xml : null) ?? generated;
@@ -319,6 +320,14 @@ export function ArchitectureDiagrams({
           </div>
         )}
       </div>
+      {selection.notice && !isUmlWorkspaceKind && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">{selection.notice}</p>}
+      {kind === "CONTAINER" && document && (
+        <p role="status" className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+          Showing {document.layoutJson.nodes.filter((node) => node.kind === "SERVICE_CONTAINER").length} recognized service containers, including infrastructure and isolated services.
+          {" "}{Number(document["omittedNodes"] ?? 0)} lower-level element(s) and {Number(document["omittedEdges"] ?? 0)} relationship(s) are outside this view.
+          Startup dependencies are shown in Deployment; configuration across profiles is declared, not observed runtime traffic.
+        </p>
+      )}
       {kind === "SCENARIOS" || kind === "UML_SEQUENCE" ? (
         <ScenarioDiagram
           model={model}
@@ -415,7 +424,7 @@ export function ArchitectureDiagrams({
                         {
                           value: targetId,
                           badge: "HTTP_ENTRYPOINT",
-                          label: `#${idx + 1} ${person.name} → ${c4ContextInspector.resolvedSystemName}`,
+                          label: person.direction === "OUTBOUND" ? `#${idx + 1} ${c4ContextInspector.resolvedSystemName} → ${person.name}` : `#${idx + 1} ${person.name} → ${c4ContextInspector.resolvedSystemName}`,
                           sublabel: person.actionLabel,
                         },
                       ];
