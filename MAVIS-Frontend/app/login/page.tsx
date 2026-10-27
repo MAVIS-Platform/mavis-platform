@@ -111,7 +111,7 @@ export default function LoginPage() {
               Your workspace awaits
             </p>
             <h2 id="login-title" className="text-2xl font-semibold tracking-tight">
-              Welcome back
+              Welcome back <span aria-hidden="true" className="text-green-600">✓</span>
             </h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               Sign in to continue exploring your architecture.
