@@ -34,15 +34,19 @@ export function sourceMethodFlows(
       .map((method) => ({
         flowId: "method:" + node.id + ":" + String(method["signature"]),
         viewId: "scenarios:source-method:" + node.id + ":" + String(method["signature"]),
-        title:
-          "Source endpoint · " +
-          node.name +
-          "." +
-          String(method["methodName"]) +
-          " · " +
-          strings(method["endpointDeclarations"]).join(" "),
+        title: ("Source endpoint · " + node.name + "." + String(method["methodName"])).slice(
+          0,
+          120,
+        ),
         description:
-          "Source method calls in lexical evaluation order. Only uniquely resolved receiver types and exact Feign endpoint matches are expanded; this is static analysis, not observed execution.",
+          [
+            service?.name,
+            node.name + "." + String(method["methodName"]),
+            ...strings(method["endpointDeclarations"]),
+          ]
+            .filter(Boolean)
+            .join(" · ") +
+          ". Source method calls in lexical evaluation order. Only uniquely resolved receiver types and exact Feign endpoint matches are expanded; this is static analysis, not observed execution.",
         level: level === "MACRO" ? ("MACRO" as const) : ("MICRO" as const),
         serviceId: node.parentId ?? null,
         serviceName: service?.name ?? null,
@@ -226,7 +230,7 @@ export function buildSourceMethodInteraction(
   return {
     schemaVersion: 2,
     interactionId: flow.viewId,
-    name: flow.title,
+    name: flow.title.slice(0, 120),
     modelId: model.id,
     baseModelId: model.id,
     snapshotId: model.snapshotId,
