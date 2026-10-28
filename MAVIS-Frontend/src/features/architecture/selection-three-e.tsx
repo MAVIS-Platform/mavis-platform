@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { z } from "zod";
 import type { ArchitecturalModel, Evidence } from "@/types/domain";
@@ -71,6 +72,7 @@ function nodeMetadataRows(
   });
 }
 export function SelectionThreeE({
+  projectId,
   model,
   selectedId,
   onSelect,
@@ -80,6 +82,7 @@ export function SelectionThreeE({
   onDrilldown,
   sequenceContext,
 }: {
+  projectId?: string;
   model: ArchitecturalModel;
   selectedId: string;
   onSelect: (id: string) => void;
@@ -320,6 +323,27 @@ export function SelectionThreeE({
             {savedEvidenceCount} saved · {previewCount} preview{previewCount === 1 ? "" : "s"}
           </span>
         </div>
+        {node ? (
+          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs">
+            <div className="min-w-[170px] flex-1">
+              <p className="font-semibold text-rose-300">
+                💥 Giả lập sự cố: Nếu {node.name} bị sập?
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Kiểm tra ngay các Service bị lỗi trực tiếp (1-hop) và dây chuyền (2+ hops).
+              </p>
+            </div>
+            <Button
+              size="sm"
+              className="bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs h-7 px-2.5"
+              asChild
+            >
+              <Link href={`/impact?project=${projectId ?? model.projectId}&model=${model.id}&element=${node.id}`}>
+                Phân tích Tác động (Blast Radius)
+              </Link>
+            </Button>
+          </div>
+        ) : null}
       </header>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 border-b bg-muted/20 px-4 py-3">
@@ -377,10 +401,12 @@ export function SelectionThreeE({
             </section>
             <CommunicationPanel
               key={edge?.id ?? node?.id ?? selectedId}
+              projectId={projectId ?? model.projectId}
               model={model}
               selectedId={edge?.id ?? node?.id ?? selectedId}
               onSelect={onSelect}
             />
+            
             <details className="group rounded-xl border bg-background">
               <summary className="flex cursor-pointer list-none items-center gap-2 p-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <MessageSquare className="h-4 w-4 text-primary" aria-hidden="true" />
@@ -454,6 +480,7 @@ export function SelectionThreeE({
                       disabled={chatLoading}
                       className="h-11 min-w-0 flex-1 rounded-md border bg-background px-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                     />
+            
                     <Button
                       type="submit"
                       size="sm"
@@ -517,6 +544,13 @@ export function SelectionThreeE({
               snippetNotes={active3E.snippetNotes}
               defaultOpen={false}
             />
+            <CommunicationPanel
+              key={`evidence-panel-${edge?.id ?? node?.id ?? selectedId}`}
+              projectId={projectId ?? model.projectId}
+              model={model}
+              selectedId={edge?.id ?? node?.id ?? selectedId}
+              onSelect={onSelect}
+            />
             <details open={isGroup} className="rounded-xl border bg-muted/20 p-4">
               <summary className="cursor-pointer text-sm font-semibold">
                 Selection details &amp; relationships
@@ -572,7 +606,8 @@ export function SelectionThreeE({
                                   className="flex items-center justify-between rounded border bg-background p-1.5 text-xs"
                                 >
                                   <span className="font-mono text-[11px]" title={subId}>
-                                    {subEdge?.protocol ?? "EDGE"}: {subId.slice(0, 8)}…
+                                    {subEdge?.protocol ?? "EDGE"}: {
+                                    subId.slice(0, 8)}…
                                   </span>
                                   <span className="text-muted-foreground text-[11px]">
                                     {subEdge?.evidenceCount === null ||

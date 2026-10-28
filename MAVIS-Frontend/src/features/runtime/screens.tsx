@@ -1,5 +1,55 @@
 "use client";
+export function RuntimeStepperBanner({ currentStep, projectId }: { currentStep: 1 | 2 | 3; projectId?: string }) {
+  const steps = [
+    { num: 1, title: "Bước 1: Cấu hình Sandbox", path: "/runtime-config", desc: "Giới hạn tài nguyên, phát hiện service" },
+    { num: 2, title: "Bước 2: Kịch bản Kiểm thử", path: "/scenarios", desc: "Thiết lập các bước gọi API" },
+    { num: 3, title: "Bước 3: Chạy & Trace", path: "/sessions", desc: "Theo dõi thực thi & Sequence Diagram" },
+  ];
+  return (
+    <div className="rounded-xl border bg-card p-4 shadow-sm mb-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {steps.map((s) => {
+          const isActive = s.num === currentStep;
+          const isDone = s.num < currentStep;
+          return (
+            <Link
+              key={s.num}
+              href={`${s.path}${projectId ? `?project=${projectId}` : ""}`}
+              className={`rounded-lg border p-3 transition flex items-start gap-3 ${
+                isActive
+                  ? "border-primary bg-primary/10 text-primary shadow-sm"
+                  : isDone
+                  ? "border-emerald-500/40 bg-emerald-500/5 text-foreground hover:bg-muted/50"
+                  : "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40"
+              }`}
+            >
+              <div
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : isDone
+                    ? "bg-emerald-500 text-white"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {isDone ? "✓" : s.num}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold leading-tight">{s.title}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{s.desc}</p>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useApi, useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { RequestState, ErrorState, EmptyState } from "@/components/shared/request-state";
 import { ConfirmDialog, FormField, SelectField } from "@/components/shared/forms";
@@ -28,6 +78,7 @@ export function RuntimeConfiguration() {
 }
 
 function RuntimeConfigurationView({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const snapshots = useApiQuery("snapshots", { projectId });
   const config = useApiQuery("runtimeConfiguration", { projectId });
   const preflight = useApiMutation("runtimePreflight");
@@ -59,6 +110,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      <RuntimeStepperBanner currentStep={1} projectId={projectId} />
       {/* Step 1: Preflight Eligibility */}
       <DetailPanel title="1. Source Snapshot & Compose Preflight Check">
         <p className="text-sm text-muted-foreground">
@@ -266,6 +318,7 @@ export function RuntimeScenarios() {
 }
 
 function RuntimeScenariosView({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const snapshots = useApiQuery("snapshots", { projectId });
   const models = useApiQuery("models", { projectId });
   const scenarios = useApiQuery("scenarios", { projectId });
@@ -311,7 +364,17 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       {
         projectId,
         snapshotId,
+        modelId: modelId || undefined,
         scenarioId: "scen-" + Math.random().toString(16).slice(2, 8),
+        scenarioName: scenarioName?.trim() || "Scenario " + new Date().toLocaleTimeString(),
+        steps: steps.map((st, i) => ({
+          id: `step-${i + 1}`,
+          title: `${st.method} ${st.path}`,
+          service: st.service,
+          method: st.method,
+          path: st.path,
+          expectedStatus: parseInt(st.status, 10) || 200,
+        })),
         configurationRevision: config.data?.revision ?? 1,
         scenarioRevision: 1,
         approved: true,
@@ -319,8 +382,11 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       {
         onSuccess: (session) => {
           setRunMessage(
-            `Session ${session.id.slice(0, 8)} created successfully! Status: ${session.executionStatus || session.status}. You can inspect it on the Sessions page.`,
+            `Session ${session.id.slice(0, 8)} created successfully! Status: ${session.executionStatus || session.status}. Đang chuyển hướng sang trang Sessions...`,
           );
+          setTimeout(() => {
+            router.push(`/sessions?project=${projectId}&session=${session.id}`);
+          }, 800);
         },
         onError: (err) => {
           setRunMessage(`Execution failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -331,6 +397,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
+      <RuntimeStepperBanner currentStep={2} projectId={projectId} />
       <DetailPanel title="Create & Approve Runtime Scenario Session">
         <p className="text-sm text-muted-foreground">
           Define HTTP scenario steps to execute inside the isolated Docker sandbox network. OpenTelemetry

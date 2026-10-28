@@ -413,6 +413,22 @@ export const contracts = {
     project.extend({
       snapshotId: id,
       scenarioId: id,
+      modelId: id.optional(),
+      scenarioName: z.string().optional(),
+      steps: z
+        .array(
+          z.object({
+            id: z.string().optional(),
+            title: z.string().optional(),
+            service: z.string().optional(),
+            serviceId: z.string().optional(),
+            method: z.string(),
+            path: z.string(),
+            expectedStatus: z.union([z.number(), z.string()]).optional(),
+            status: z.union([z.number(), z.string()]).optional(),
+          }),
+        )
+        .optional(),
       configurationRevision: z.number().int().positive(),
       scenarioRevision: z.number().int().positive(),
       approved: z.literal(true),
