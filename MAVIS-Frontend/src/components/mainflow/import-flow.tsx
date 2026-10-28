@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorState } from "@/components/shared/request-state";
 import { githubImportRequest } from "@/lib/mainflow-api";
+import { importAndAnalyze, type ImportWorkflowState } from "@/features/projects/import-workflow";
 import type { Response } from "@/lib/api/contracts";
 
-type ImportResult = { projectId: string; snapshotId: string };
+type ImportResult = { projectId: string; snapshotId: string; jobId: string };
 export function ImportFlow({
   projectId = "",
   onComplete,
@@ -32,7 +33,9 @@ export function ImportFlow({
     [stage, setStage] = useState("");
   const [created, setCreated] = useState<Response<"createProject"> | null>(null);
   const inFlight = useRef(false),
-    createdRef = useRef<Response<"createProject"> | null>(null);
+    workflow = useRef<ImportWorkflowState>({});
+  const [importedSnapshot, setImportedSnapshot] = useState("");
+  const importedSource = useRef<Parameters<typeof importAndAnalyze>[1]["source"] | null>(null);
   const sourceType = boundRepository || !projectId ? "github" : source;
   let repositoryUrl = "";
   try {
@@ -58,58 +61,65 @@ export function ImportFlow({
     retry: false,
     staleTime: 60000,
   });
-  const branches = refs.data?.branches ?? [];
+  const discoveredBranches = refs.data?.branches ?? [];
+  const branches =
+    refs.data?.defaultBranch && !discoveredBranches.includes(refs.data.defaultBranch)
+      ? [refs.data.defaultBranch, ...discoveredBranches]
+      : discoveredBranches;
   const preferredBranch = project.data?.defaultBranch || created?.defaultBranch || "";
-  const selectedBranch = branches.includes(branch)
-    ? branch
-    : branches.includes(preferredBranch)
-      ? preferredBranch
-      : refs.data?.defaultBranch || created?.defaultBranch || "";
+  const selectedBranch =
+    importedSnapshot && importedSource.current?.kind === "github"
+      ? importedSource.current.branchName
+      : branches.includes(branch)
+        ? branch
+        : branches.includes(preferredBranch)
+          ? preferredBranch
+          : refs.data?.defaultBranch || created?.defaultBranch || "";
   const branchesCurrent = repositoryUrl === lookupUrl && refs.isSuccess;
   const run = useMutation({
     mutationFn: async () => {
       if (projectId && !project.data)
         throw new Error("Project details are unavailable. Refresh and try again.");
-      let target = projectId || createdRef.current?.id || "";
-      if (!target) {
-        if (!name.trim() || !repositoryUrl || !branchesCurrent || !selectedBranch)
-          throw new Error("Enter a project name and a valid public GitHub repository.");
-        setStage("Creating project…");
-        const next = await api.execute("createProject", {
-          name: name.trim(),
-          repositoryUrl,
-          defaultBranch: selectedBranch,
-        });
-        createdRef.current = next;
-        setCreated(next);
-        target = next.id;
-        cache.setQueryData(["api", "project", { projectId: target }], next);
-        void cache.invalidateQueries({ queryKey: ["api", "projects"] });
-        void cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
-      }
-      setStage("Importing snapshot…");
-      const snapshot =
+      if (
+        !projectId &&
+        !workflow.current.project &&
+        (!name.trim() || !repositoryUrl || !branchesCurrent || !selectedBranch)
+      )
+        throw new Error("Enter a project name and a valid public GitHub repository.");
+      const candidate: Parameters<typeof importAndAnalyze>[1]["source"] =
         sourceType === "github"
-          ? await api.execute("importGithub", {
-              projectId: target,
+          ? {
+              kind: "github",
               repositoryUrl,
               branchName: selectedBranch || project.data?.defaultBranch || "main",
               commitSha: commit.trim(),
-            })
-          : await api.execute("importSource", {
-              projectId: target,
-              name: file!.name,
-              fileName: file!.name,
-              size: file!.size,
-              archive: file!,
-            });
-      void cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
-      void cache.invalidateQueries({ queryKey: ["api", "project", { projectId: target }] });
-      void cache.invalidateQueries({ queryKey: ["api", "projects"] });
-      void cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
-      return { projectId: target, snapshotId: snapshot.id };
+            }
+          : { kind: "zip", file: file! };
+      const source =
+        workflow.current.snapshot && importedSource.current ? importedSource.current : candidate;
+      importedSource.current = source;
+      return importAndAnalyze(api, { projectId, name, source }, workflow.current, {
+        stage: setStage,
+        created: (next) => {
+          setCreated(next);
+          cache.setQueryData(["api", "project", { projectId: next.id }], next);
+          void cache.invalidateQueries({ queryKey: ["api", "projects"] });
+          void cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
+        },
+        imported: (target, snapshotId) => {
+          setImportedSnapshot(snapshotId);
+          void cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
+          void cache.invalidateQueries({ queryKey: ["api", "project", { projectId: target }] });
+          void cache.invalidateQueries({ queryKey: ["api", "projects"] });
+          void cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
+        },
+      });
     },
-    onSuccess: (result) => onComplete?.(result),
+    onSuccess: (result) => {
+      void cache.invalidateQueries({ queryKey: ["api", "analysisJobs"] });
+      void cache.invalidateQueries({ queryKey: ["api", "projectAnalysisActivity"] });
+      onComplete?.(result);
+    },
     onSettled: () => setStage(""),
   });
   const busy = run.isPending;
@@ -117,12 +127,13 @@ export function ImportFlow({
     onBusyChange?.(busy);
   }, [busy, onBusyChange]);
   const valid =
-    sourceType === "zip"
+    !!importedSnapshot ||
+    (sourceType === "zip"
       ? !!file && !validation
       : !!repositoryUrl &&
         (projectId
           ? !!commit.trim() || (branchesCurrent && !!selectedBranch)
-          : !!name.trim() && !!selectedBranch && (branchesCurrent || !!created));
+          : !!name.trim() && !!selectedBranch && (branchesCurrent || !!created)));
   async function submit() {
     if (inFlight.current || !valid) return;
     inFlight.current = true;
@@ -191,7 +202,7 @@ export function ImportFlow({
             type="button"
             size="sm"
             variant={source === "github" ? "default" : "outline"}
-            disabled={busy}
+            disabled={busy || !!importedSnapshot}
             onClick={() => setSource("github")}
           >
             GitHub repository
@@ -200,7 +211,7 @@ export function ImportFlow({
             type="button"
             size="sm"
             variant={source === "zip" ? "default" : "outline"}
-            disabled={busy}
+            disabled={busy || !!importedSnapshot}
             onClick={() => setSource("zip")}
           >
             Upload ZIP
@@ -238,7 +249,7 @@ export function ImportFlow({
                 aria-label="Branch"
                 className="h-10 w-full rounded-md border bg-card px-3 text-sm"
                 value={selectedBranch}
-                disabled={busy || !branchesCurrent || !!commit.trim()}
+                disabled={busy || !!importedSnapshot || !branchesCurrent || !!commit.trim()}
                 onChange={(e) => setBranch(e.target.value)}
               >
                 {!branchesCurrent && (
@@ -249,6 +260,9 @@ export function ImportFlow({
                         ? "Branches unavailable"
                         : "Enter a repository URL first"}
                   </option>
+                )}
+                {importedSnapshot && selectedBranch && !branches.includes(selectedBranch) && (
+                  <option value={selectedBranch}>{selectedBranch} (imported)</option>
                 )}
                 {branches.map((b) => (
                   <option key={b} value={b}>
@@ -266,7 +280,7 @@ export function ImportFlow({
                 value={commit}
                 onChange={(e) => setCommit(e.target.value)}
                 pattern="[a-fA-F0-9]{40}"
-                disabled={busy}
+                disabled={busy || !!importedSnapshot}
               />
               <span className="block text-xs font-normal text-muted-foreground">
                 Leave empty for the latest commit on the selected branch. A SHA overrides the branch
@@ -277,7 +291,7 @@ export function ImportFlow({
               type="button"
               variant="ghost"
               size="sm"
-              disabled={busy || !repositoryUrl || refs.isFetching}
+              disabled={busy || !!importedSnapshot || !repositoryUrl || refs.isFetching}
               onClick={() => {
                 setLookup(repositoryUrl);
                 if (lookupUrl === repositoryUrl) void refs.refetch();
@@ -301,7 +315,7 @@ export function ImportFlow({
             type="file"
             accept=".zip"
             required
-            disabled={busy}
+            disabled={busy || !!importedSnapshot}
             onChange={(e) => {
               const f = e.target.files?.[0] ?? null;
               const error =
@@ -320,7 +334,12 @@ export function ImportFlow({
           {validation}
         </p>
       )}
-      {created && run.isError && (
+      {importedSnapshot && run.isError && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Snapshot imported. Retry analysis will reuse this snapshot and the same request key.
+        </p>
+      )}
+      {created && !importedSnapshot && run.isError && (
         <p role="status" className="text-sm text-muted-foreground">
           Project created. Retry will import into the same project; its name and repository are now
           fixed.
@@ -331,11 +350,11 @@ export function ImportFlow({
         <Button type="submit" disabled={busy || !valid}>
           {busy
             ? stage || "Working…"
-            : projectId
-              ? "Import snapshot"
+            : importedSnapshot
+              ? "Retry analysis"
               : created
-                ? "Retry import"
-                : "Import project"}
+                ? "Retry import & analyze"
+                : "Import & analyze"}
         </Button>
         {busy && (
           <p role="status" className="text-xs text-muted-foreground">
