@@ -329,7 +329,7 @@ function ShellChrome({
               live
                 ? `/import${navigationQuery}`
                 : role === "admin"
-                  ? "/administration/users"
+                  ? "/administration/health"
                   : role === "lecturer"
                     ? "/workspaces"
                     : "/"
@@ -489,7 +489,7 @@ function ShellChrome({
             </Sheet>
             <Breadcrumbs
               items={[
-                { label: "MAVIS", href: "/", visibility: "sm" },
+                { label: "MAVIS", href: role === "admin" ? "/administration/health" : "/", visibility: "sm" },
                 ...(scope !== "global"
                   ? [{
                       label: context,
