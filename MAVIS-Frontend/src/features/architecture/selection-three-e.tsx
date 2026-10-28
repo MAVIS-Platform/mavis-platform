@@ -1,6 +1,5 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
-import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { z } from "zod";
 import type { ArchitecturalModel, Evidence } from "@/types/domain";
@@ -323,27 +322,6 @@ export function SelectionThreeE({
             {savedEvidenceCount} saved · {previewCount} preview{previewCount === 1 ? "" : "s"}
           </span>
         </div>
-        {node ? (
-          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs">
-            <div className="min-w-[170px] flex-1">
-              <p className="font-semibold text-rose-300">
-                💥 Giả lập sự cố: Nếu {node.name} bị sập?
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                Kiểm tra ngay các Service bị lỗi trực tiếp (1-hop) và dây chuyền (2+ hops).
-              </p>
-            </div>
-            <Button
-              size="sm"
-              className="bg-rose-600 hover:bg-rose-500 text-white font-medium text-xs h-7 px-2.5"
-              asChild
-            >
-              <Link href={`/impact?project=${projectId ?? model.projectId}&model=${model.id}&element=${node.id}`}>
-                Phân tích Tác động (Blast Radius)
-              </Link>
-            </Button>
-          </div>
-        ) : null}
       </header>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
         <div className="shrink-0 border-b bg-muted/20 px-4 py-3">
