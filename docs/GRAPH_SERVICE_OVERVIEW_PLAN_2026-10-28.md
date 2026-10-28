@@ -22,7 +22,7 @@ Graph có hai mức hiển thị, dùng chung project và model revision:
 
 ### Tổng quan — mặc định
 - Chỉ hiện các service được model xác định là SERVICE_CONTAINER; giữ cả service độc lập.
-- Đề xuất node dạng thẻ bo góc để tên service dài dễ đọc, tên tối đa hai dòng và có tooltip đầy đủ. Không dùng tiền tố [SVC] cho mọi node.
+- Giữ node tròn màu service như Graph hiện tại, nhãn bên dưới tối đa hai dòng và tooltip đầy đủ. Đường nối thẳng đơn giản; không đổi sang thẻ hoặc đường gấp khúc kiểu diagram.
 - Mỗi cặp service có tối đa một đường nối không đầu mũi tên, không tạo đường song song theo protocol/origin.
 - Đường nối có nghĩa là có quan hệ trực tiếp được ghi nhận giữa hai service. Không ngụ ý chiều gọi, luồng nghiệp vụ, traffic hay trạng thái sức khỏe.
 - Màu và kích thước mặc định trung tính, nhất quán; không suy ra healthy/unhealthy từ degree hoặc màu node.
@@ -97,7 +97,7 @@ Selection cần phân biệt service, nhóm kết nối và quan hệ gốc. Khi
 
 ### P2 — Renderer tổng quan
 - Thêm Tổng quan/Chi tiết ở ArchitecturePresentation; default là Tổng quan.
-- Vẽ một node/service và một đường/cặp; áp dụng tên đầy đủ, kích thước và khoảng cách phù hợp.
+- Vẽ một node/service và một đường/cặp; giữ hình tròn, nhãn bên dưới và khoảng cách phù hợp.
 - Tách renderer ID của nhóm khỏi canonical source ID; không để networkFocus coi nhóm như cạnh gốc.
 - Đạt khi graph mẫu nhiều cạnh song song trở thành một đường/cặp và vẫn có đầy đủ dữ liệu mở rộng.
 
@@ -125,7 +125,7 @@ Selection cần phân biệt service, nhóm kết nối và quan hệ gốc. Khi
 - src/features/architecture/graph-projection.ts: mapping và projection; cân nhắc tách overview projection thành module nhỏ.
 - src/features/architecture/cytoscape-network.ts: element definitions và renderer ID nhóm.
 - src/features/architecture/dependency-network.tsx: mode, tương tác, nhãn, đường nối, count và accessibility.
-- src/features/architecture/network-layout.ts, graph-layout.ts, network-presentation.ts: kích thước/thẻ, cụm và camera; chỉ sửa khi cần.
+- src/features/architecture/network-layout.ts, graph-layout.ts, network-presentation.ts: kích thước node/nhãn, cụm và camera; chỉ sửa khi cần.
 - src/features/architecture/architecture-presentation.tsx: selection phân biệt nhóm/quan hệ thật, filter dùng chung.
 - src/features/architecture/selection-three-e.tsx và panel nhóm mới nếu cần: điều hướng về evidence/finding thật.
 - tests/architecture.test.cjs, tests/edge-semantics.test.cjs: regression projection, focus và evidence; thêm browser coverage phù hợp.
@@ -157,9 +157,14 @@ Không suy luận business flow, traffic, latency, health, ownership hoặc depe
 
 - Overview mặc định chỉ dùng service canonical, một đường không mũi tên cho mỗi cặp; Details giữ quan hệ có hướng, tài nguyên và nội bộ service. Bộ lọc quan hệ dùng chung và chỉnh được ở cả hai mức.
 - ServiceConnection là projection riêng, giữ ID và hướng gốc; nhóm không gọi API. Chỉ row có metadata cá nhân được tải mới có thể mở 3E. Metadata aggregate legacy không được trình bày như dữ kiện riêng của một cạnh.
-- Layout tái sử dụng solver topology hiện có với khoảng cách thẻ và grid cho tập service lớn, có test hình học không chồng thẻ. Không ép graph thành cây. Thẻ trùng tên được phân biệt thêm bằng ID ngắn.
+- Layout tái sử dụng solver topology hiện có với vùng chừa cho node/nhãn và grid cho tập service lớn, có test hình học không chồng vùng nhãn. Không ép graph thành cây. Node trùng tên được phân biệt thêm bằng ID ngắn.
 - Camera, vị trí kéo, search/focus, fullscreen, Escape, danh sách bàn phím và drawer mobile đã kiểm tra bằng Cytoscape thật trong browser; không dùng draw.io cho Graph.
 - 272 frontend tests, TypeScript và lint các module thay đổi đều qua. Regression bao gồm fixture FTGO, Java và CSharp đã trích xuất; fixture CSharp không khai báo SERVICE_CONTAINER được giữ trạng thái thiếu service, không đoán từ tên class.
 - Browser fixture có 6 service, 3 cặp, 6 quan hệ; bấm nhóm không có request backend, drill-down gửi canonical relationshipId. Test thêm 180 service và 900 quan hệ gốc, có 180 cặp, tìm/focus service ở mức đọc được. Đây là fixture kiểm thử, không phải số đo production hay cam kết benchmark.
 - Browser đã kiểm tra Overview/Details camera, kéo node, hai hướng, lọc làm panel cập nhật/đóng, đổi revision, Light/Dark, mobile 390px và fullscreen. API backend được giả lập để ghi lại ID request; chưa chứng nhận chất lượng metadata của mọi project production hoặc live AI explanation.
 - Không thay database, API contract hoặc các sơ đồ UML/C4. Chặng phát hành/kiểm tra production chờ merge theo yêu cầu người dùng.
+
+
+### Hiệu chỉnh hình thức theo xác nhận người dùng
+
+Giữ phong cách network graph: node tròn màu service, tên bên dưới và một đường thẳng đơn giản cho mỗi cặp. Bỏ thẻ bo góc và routing gấp khúc. Các footprint hình chữ nhật trong test chỉ là vùng dành chỗ cho node + nhãn, không phải hình dạng node trên giao diện. Cách gom quan hệ, panel và canonical ID/evidence không đổi.

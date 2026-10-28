@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import cytoscape, { type Core, type StylesheetStyle } from "cytoscape";
 import { Button } from "@/components/ui/button";
-import { serviceOverviewPositions, SERVICE_WIDTH, SERVICE_HEIGHT } from "./service-overview-layout";
+import { serviceOverviewPositions, SERVICE_DIAMETER } from "./service-overview-layout";
 import { ServiceRelationshipFilters } from "./service-relationship-filters";
 import { captureNetworkSnapshot, type NetworkSnapshot } from "./network-presentation";
 import {
@@ -113,30 +113,32 @@ export function ServiceOverviewCanvas({
         {
           selector: "node",
           style: {
-            shape: "round-rectangle",
-            width: SERVICE_WIDTH,
-            height: SERVICE_HEIGHT,
+            shape: "ellipse",
+            width: SERVICE_DIAMETER,
+            height: SERVICE_DIAMETER,
             label: "data(label)",
             "text-wrap": "wrap",
             "text-max-width": "185px",
-            "text-valign": "center",
+            "text-valign": "bottom",
+            "text-margin-y": 11,
             "text-halign": "center",
-            "font-size": 13,
-            "font-family": "sans-serif",
-            "font-weight": 600,
-            "background-color": dark ? "#182334" : "#ffffff",
+            "text-background-color": dark ? "#0f172a" : "#f8fafc",
+            "text-background-opacity": 0.95,
+            "text-background-padding": "3px",
+            "font-size": 12,
+            "font-family": "monospace",
+            "font-weight": 500,
+            "background-color": "#397ed7",
             color: dark ? "#e2e8f0" : "#0f172a",
-            "border-color": dark ? "#64748b" : "#cbd5e1",
-            "border-width": 1.5,
+            "border-color": dark ? "#cbd5e1" : "#334155",
+            "border-width": 2,
             "overlay-opacity": 0,
           },
         },
         {
           selector: "edge",
           style: {
-            "curve-style": "taxi",
-            "taxi-direction": "auto",
-            "taxi-turn": "50%",
+            "curve-style": "straight",
             "target-arrow-shape": "none",
             "source-arrow-shape": "none",
             "line-color": dark ? "#64748b" : "#94a3b8",
