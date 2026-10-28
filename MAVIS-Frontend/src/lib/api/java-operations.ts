@@ -495,8 +495,8 @@ export async function executeJava(
       createdAt: a.createdAt ?? null,
       email: a.email ?? "",
       role: roleView(a.roleCode),
-      locked: a.status === "LOCKED",
-      status: a.status,
+      locked: a.status === "LOCKED" || a.status === "INACTIVE",
+      status: a.status === "INACTIVE" ? "LOCKED" : a.status,
     };
   };
   const patch = (path: string, body: unknown) =>

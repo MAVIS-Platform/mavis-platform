@@ -17,7 +17,7 @@ public interface AdminPortalService {
     List<AdminUserResponseDTO> getAllUsers();
 
     /**
-     * Thay đổi trạng thái tài khoản người dùng ('ACTIVE', 'LOCKED', 'INACTIVE') và ghi AuditLog (BR-65).
+     * Thay đổi trạng thái tài khoản người dùng ('ACTIVE', 'LOCKED') và ghi AuditLog (BR-65).
      *
      * @param userId ID người dùng
      * @param newStatus Trạng thái mới

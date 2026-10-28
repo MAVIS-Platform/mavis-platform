@@ -13,6 +13,6 @@ import lombok.*;
 public class UserStatusUpdateRequest {
 
     @NotBlank(message = "Trạng thái người dùng không được để trống")
-    @Schema(description = "Trạng thái mới: ACTIVE, LOCKED, INACTIVE", example = "LOCKED")
+    @Schema(description = "Trạng thái mới: ACTIVE, LOCKED", example = "LOCKED")
     private String newStatus;
 }

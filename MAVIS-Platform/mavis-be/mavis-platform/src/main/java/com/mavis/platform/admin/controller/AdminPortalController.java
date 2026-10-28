@@ -29,7 +29,7 @@ public class AdminPortalController {
     }
 
     @PatchMapping("/users/{userId}/status")
-    @Operation(summary = "Cập nhật trạng thái tài khoản (ACTIVE, LOCKED, INACTIVE)",
+    @Operation(summary = "Cập nhật trạng thái tài khoản (ACTIVE, LOCKED)",
             description = "Khóa hoặc mở khóa tài khoản người dùng và tự động ghi AuditLog theo BR-65")
     public ApiResponse<AdminUserResponseDTO> changeUserStatus(
             @PathVariable UUID userId,
