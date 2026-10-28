@@ -72,6 +72,7 @@ function nodeMetadataRows(
 }
 export function SelectionThreeE({
   projectId,
+  docked = false,
   model,
   selectedId,
   onSelect,
@@ -82,6 +83,7 @@ export function SelectionThreeE({
   sequenceContext,
 }: {
   projectId?: string;
+  docked?: boolean;
   model: ArchitecturalModel;
   selectedId: string;
   onSelect: (id: string) => void;
@@ -286,28 +288,41 @@ export function SelectionThreeE({
     <aside
       aria-label="3E details"
       data-selection-scope-key={ctx.scopeKey}
-      className="fixed inset-x-2 bottom-2 z-40 flex h-[min(86dvh,780px)] min-w-0 max-w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl [overflow-wrap:anywhere] [&_dt]:max-w-full [&_button]:max-w-full xl:sticky xl:inset-auto xl:top-20 xl:z-auto xl:h-[calc(100dvh-6rem)] xl:max-h-[960px] xl:w-full xl:self-start xl:shadow-sm"
+      className={
+        docked
+          ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card [&_dt]:max-w-full [&_button]:max-w-full"
+          : "fixed inset-x-2 bottom-2 z-40 flex h-[min(86dvh,780px)] min-w-0 max-w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-xl [overflow-wrap:anywhere] [&_dt]:max-w-full [&_button]:max-w-full xl:sticky xl:inset-auto xl:top-20 xl:z-auto xl:h-[calc(100dvh-6rem)] xl:max-h-[960px] xl:w-full xl:self-start xl:shadow-sm"
+      }
     >
-      <header className="shrink-0 border-b bg-card px-5 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
-            Architecture Inspector · 3E
-          </p>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-11 w-11 shrink-0 rounded-full"
-            aria-label="Close 3E"
-            onClick={onClose}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        </div>
+      <header
+        className={
+          docked ? "shrink-0 border-b bg-card px-4 py-2" : "shrink-0 border-b bg-card px-5 py-4"
+        }
+      >
+        {!docked && (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+              Architecture Inspector · 3E
+            </p>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-11 w-11 shrink-0 rounded-full"
+              aria-label="Close 3E"
+              onClick={onClose}
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          </div>
+        )}
         <h2 className="mt-1 break-words text-lg font-semibold leading-snug tracking-tight">
           {subject.title}
         </h2>
-        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">{subject.type}</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+        <p className="mt-1 text-xs text-muted-foreground">
+          {subject.type}
+          {docked ? ` · Revision ${model.revision}` : ""}
+        </p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
           <span
             className={
               "rounded-full px-2.5 py-1 font-medium " +
@@ -324,7 +339,7 @@ export function SelectionThreeE({
         </div>
       </header>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex min-h-0 flex-1 flex-col">
-        <div className="shrink-0 border-b bg-muted/20 px-4 py-3">
+        <div className="shrink-0 border-b bg-muted/20 px-4 py-2">
           <TabsList
             aria-label="3E sections"
             className="grid h-11 w-full grid-cols-3 rounded-xl bg-muted/70"
@@ -377,7 +392,7 @@ export function SelectionThreeE({
                 <span aria-hidden="true">→</span>
               </Button>
             </section>
-            
+
             <details className="group rounded-xl border bg-background">
               <summary className="flex cursor-pointer list-none items-center gap-2 p-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                 <MessageSquare className="h-4 w-4 text-primary" aria-hidden="true" />
@@ -451,7 +466,7 @@ export function SelectionThreeE({
                       disabled={chatLoading}
                       className="h-11 min-w-0 flex-1 rounded-md border bg-background px-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary"
                     />
-            
+
                     <Button
                       type="submit"
                       size="sm"
@@ -591,8 +606,7 @@ export function SelectionThreeE({
                                   className="flex items-center justify-between rounded border bg-background p-1.5 text-xs"
                                 >
                                   <span className="font-mono text-[11px]" title={subId}>
-                                    {subEdge?.protocol ?? "EDGE"}: {
-                                    subId.slice(0, 8)}…
+                                    {subEdge?.protocol ?? "EDGE"}: {subId.slice(0, 8)}…
                                   </span>
                                   <span className="text-muted-foreground text-[11px]">
                                     {subEdge?.evidenceCount === null ||
@@ -819,16 +833,18 @@ export function SelectionThreeE({
           </TabsContent>
         </div>
       </Tabs>
-      <footer className="flex shrink-0 items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-xs text-muted-foreground">
-        <span>Model revision {model.revision}</span>
-        <span>
-          {active3E.tokenStats?.provider && active3E.tokenStats.provider !== "ast-skeleton"
-            ? "AI-assisted interpretation"
-            : isModelOnly
-              ? "Model-based interpretation"
-              : "Source-based interpretation"}
-        </span>
-      </footer>
+      {!docked && (
+        <footer className="flex shrink-0 items-center justify-between gap-3 border-t bg-muted/20 px-5 py-3 text-xs text-muted-foreground">
+          <span>Model revision {model.revision}</span>
+          <span>
+            {active3E.tokenStats?.provider && active3E.tokenStats.provider !== "ast-skeleton"
+              ? "AI-assisted interpretation"
+              : isModelOnly
+                ? "Model-based interpretation"
+                : "Source-based interpretation"}
+          </span>
+        </footer>
+      )}
     </aside>
   );
 }
