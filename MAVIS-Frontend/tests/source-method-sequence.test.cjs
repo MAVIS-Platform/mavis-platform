@@ -40,3 +40,55 @@ test('Source-backed API context is useful without inventing human actors',()=>{
  const {deriveC4ContextModel}=require('../src/features/architecture/diagram-projections.ts');const model=fixture();const context=deriveC4ContextModel(model);
  assert.equal(context.persons.length,0);assert.match(context.systemDescription,/HTTP APIs declared by/);assert.match(context.systemDescription,/OrganizationController/);assert.doesNotMatch(context.systemDescription,/Employee User/);
 });
+
+test('Long RequestMapping annotations keep full source metadata but no longer break sequence rendering',()=>{
+ const {interactionToDrawioXml}=require('../src/features/architecture/scenario-design.ts');
+ const model=fixture(),controller=model.elements.find(n=>n.id==='oc');
+ controller.name='DeliveryServiceController';
+ const method=controller.properties.umlClassifier.methodsCfg[0];
+ method.methodName='updateCourierLocation';
+ method.endpointDeclarations=['@RequestMapping(path = "/couriers/{courierId}/availability", method = RequestMethod.POST)'];
+ const flow=detectSequenceFlows(model,{level:'MACRO'}).find(f=>f.sourceMethod?.classifierId==='oc');
+ assert.ok(flow.title.length<=120);assert.ok(!flow.title.includes('@RequestMapping'));
+ assert.ok(flow.description.includes(method.endpointDeclarations[0]));
+ const doc=buildAutoSequenceInteraction(model,flow);
+ assert.ok(doc.messages.length>0);assert.doesNotThrow(()=>interactionToDrawioXml(doc,model));
+ controller.name='ExtremelyLongControllerName'.repeat(8);
+ const longFlow=detectSequenceFlows(model,{level:'MACRO'}).find(f=>f.sourceMethod?.classifierId==='oc');
+ assert.ok(longFlow.title.length<=120);assert.ok(longFlow.description.includes(controller.name));
+});
+
+test('Sequence candidates and dependency references are separate without losing service scope',()=>{
+ const {partitionSequenceFlows}=require('../src/features/architecture/sequence-preview.ts');
+ const model=fixture();model.edges=[{id:'dep',from:'org',to:'dep',protocol:'SERVICE_HTTP_CALL',evidence:[]}];
+ const flows=detectSequenceFlows(model,{level:'MACRO'}),groups=partitionSequenceFlows(flows);
+ assert.ok(groups.sequences.length>0);assert.ok(groups.dependencies.length>0);
+ assert.ok(groups.sequences.every(f=>f.sourceMethod));assert.ok(groups.dependencies.every(f=>!f.sourceMethod));
+ assert.equal(groups.sequences.length+groups.dependencies.length,flows.length);
+});
+
+test('Sequence preview reports renderer validation failures and unresolved calls explicitly',()=>{
+ const {renderSequencePreview}=require('../src/features/architecture/sequence-preview.ts');
+ const model=fixture(),flow=detectSequenceFlows(model,{level:'MACRO'}).find(f=>f.sourceMethod);
+ const doc=buildAutoSequenceInteraction(model,flow);
+ assert.ok(renderSequencePreview(doc,model).xml.includes('mxGraphModel'));
+ const invalid=renderSequencePreview({...doc,name:'x'.repeat(121)},model);
+ assert.equal(invalid.xml,'');assert.match(invalid.error,/name:.*120/);
+ const empty=renderSequencePreview({...doc,messages:[]},model);
+ assert.equal(empty.xml,'');assert.match(empty.empty,/does not mean the service has no behavior/);
+ assert.equal(renderSequencePreview(null,model).error,'');
+});
+
+test('Duplicate dependency declarations merge exact canonical endpoints, retaining all evidence and distinct same-name targets',()=>{
+ const model=fixture();model.elements.push(node('different-dep','department-service'));
+ model.edges=[{id:'e1',from:'org',to:'dep',protocol:'CODE_DEPENDENCY',evidence:[]},
+ {id:'e2',from:'org',to:'dep',protocol:'CODE_DEPENDENCY',evidence:[]},
+ {id:'e3',from:'org',to:'different-dep',protocol:'CODE_DEPENDENCY',evidence:[]}];
+ const step=(to,id,ev)=>({fromElementId:'org',toElementId:to,label:'Dependency',messageSort:'UNKNOWN',sourceRelationshipIds:[id],evidenceIds:[ev]});
+ const flow={flowId:'d',viewId:'d',level:'MACRO',serviceId:'org',serviceName:'organization-service',title:'Dependencies',description:'',participantElementIds:['org','dep','different-dep'],steps:[step('dep','e1','ev1'),step('dep','e2','ev2'),step('different-dep','e3','ev3')]};
+ const before=JSON.stringify(flow),doc=buildAutoSequenceInteraction(model,flow);
+ assert.equal(doc.messages.length,2);assert.deepEqual(doc.messages[0].sourceRelationshipIds,['e1','e2']);
+ assert.deepEqual(doc.messages[0].evidenceIds,['ev1','ev2']);assert.equal(doc.messages[0].label,'Code dependency');
+ assert.notEqual(doc.messages[0].toParticipantId,doc.messages[1].toParticipantId);assert.equal(JSON.stringify(flow),before);
+ assert.ok(doc.limitations.includes('DEPENDENCY_ONLY_NOT_AN_EXECUTION_TRACE'));
+});
