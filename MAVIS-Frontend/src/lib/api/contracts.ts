@@ -656,6 +656,12 @@ export const contracts = {
       ),
     }),
   ),
+  adminHealth: contract(nothing, z.object({
+    status: z.enum(["UP", "DEGRADED", "UNKNOWN"]), checkedAt: z.string(), scope: z.string(),
+    checks: z.array(z.object({ id: z.string(), name: z.string(), status: z.enum(["UP","DOWN","WARNING","UNKNOWN","DISABLED"]), latencyMs: z.number().nullable(), message: z.string(), action: z.string().nullable() })),
+    jvm: z.object({ usedBytes: z.number(), maxBytes: z.number(), uptimeSeconds: z.number() }),
+    storage: z.object({ totalBytes: z.number().optional(), freeBytes: z.number().optional() }),
+  })),
   platformSummary: contract(
     nothing,
     z.object({

@@ -41,7 +41,7 @@ jobs:
           cache: maven
       - name: Backend regression tests
         working-directory: MAVIS-Platform/mavis-be
-        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=JavaSourceParserTest,GraphBuilderServiceTest,FeignCommunicationResolverTest,CrossLanguageServiceLinkerTest,SecurityConfigTest,JobServiceImplTest,RuntimeRecoveryControllerTest,OtelTraceCorrelationServiceImplTest,MigrationUpgradeTest -Dsurefire.failIfNoSpecifiedTests=false test
+        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=JavaSourceParserTest,GraphBuilderServiceTest,FeignCommunicationResolverTest,CrossLanguageServiceLinkerTest,SecurityConfigTest,JobServiceImplTest,RuntimeRecoveryControllerTest,OtelTraceCorrelationServiceImplTest,MigrationUpgradeTest,AdminHealthControllerTest,AiUsageControllerTest,GeminiMonitoringClientTest -Dsurefire.failIfNoSpecifiedTests=false test
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: MAVIS.Worker/global.json

@@ -720,6 +720,10 @@ export class MockAdapter implements ApiAdapter {
         return this.audit;
       case "adminJobs":
         return this.jobs.map((job) => this.advanceJob(job));
+      case "adminHealth":
+        return { status:"UNKNOWN", checkedAt:new Date().toISOString(), scope:"Preview data. No live health probes have been performed.", checks:[{id:"backend",name:"Application API",status:"UNKNOWN",latencyMs:null,message:"Live checks are unavailable in preview mode.",action:"Connect to the backend to run health checks."}], jvm:{usedBytes:0,maxBytes:0,uptimeSeconds:0},storage:{} };
+      case "adminAiUsage":
+        return {status:"UNAVAILABLE",updatedAt:new Date().toISOString(),message:"Token tracking is not available in preview mode.",providers:[]};
       case "platformSummary":
         return {
           health: "unknown",
