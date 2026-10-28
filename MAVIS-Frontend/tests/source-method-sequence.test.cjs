@@ -92,3 +92,96 @@ test('Duplicate dependency declarations merge exact canonical endpoints, retaini
  assert.notEqual(doc.messages[0].toParticipantId,doc.messages[1].toParticipantId);assert.equal(JSON.stringify(flow),before);
  assert.ok(doc.limitations.includes('DEPENDENCY_ONLY_NOT_AN_EXECUTION_TRACE'));
 });
+
+
+function activitySourceFixture() {
+ const cfg=(name,action,calls=[],endpoint=false)=>({methodName:name,signature:name+'()',endpointDeclarations:endpoint?['@PostMapping("/orders")']:[],calls,
+  nodes:[{id:name+'-start',kind:'INITIAL',label:'Start',line:1},{id:name+'-decision',kind:'DECISION',label:'valid?',line:2},
+   {id:name+'-action',kind:'ACTION',label:action,line:10},{id:name+'-end',kind:'ACTIVITY_FINAL',label:'End',line:20}],
+  edges:[{id:name+'-e1',from:name+'-start',to:name+'-decision'}, {id:name+'-e2',from:name+'-decision',to:name+'-action',guard:'[valid]'},
+   {id:name+'-e3',from:name+'-decision',to:name+'-end',guard:'[invalid]'}, {id:name+'-e4',from:name+'-action',to:name+'-end'}]});
+ const call={receiver:'orderService',receiverType:'OrderService',methodName:'createOrder',line:10};
+ return {id:'activity-source',projectId:'p',snapshotId:'s',revision:1,label:'Source workflow',elements:[
+ node('svc','order-service'),
+ node('controller','OrderController','svc',{umlClassifier:{annotations:['RestController'],methodsCfg:[cfg('create','return orderService.createOrder()', [call],true),cfg('getOrder','return orderService.createOrder()', [call],true)]}}),
+ node('service','OrderService','svc',{umlClassifier:{annotations:['Service'],methodsCfg:[cfg('createOrder','return saveOrder()')]}}),
+ node('config','OrderWebConfiguration','svc',{umlClassifier:{annotations:['Configuration'],methodsCfg:[cfg('objectMapper','return new ObjectMapper()')]}}),
+ node('builder','OrderBuilder','svc',{umlClassifier:{methodsCfg:[cfg('build','return new Order()')]}}),
+ ],edges:[]};
+}
+
+test('Activity default list excludes configuration/builders and retains getter-named HTTP endpoints',()=>{
+ const {listActivityOperations}=require('../src/features/architecture/uml-diagrams.ts');const model=activitySourceFixture();
+ const standard=listActivityOperations(model);assert.ok(!standard.some(op=>op.methodName==='objectMapper'||op.methodName==='build'));
+ assert.ok(standard.some(op=>op.methodName==='getOrder'));
+ assert.ok(listActivityOperations(model,{includeTechnical:true}).some(op=>op.methodName==='objectMapper'));
+});
+
+test('Source Activity workflow expands exact callee CFG into responsibility lanes and preserves root/callee branch guards',()=>{
+ const {projectUmlActivityDiagram,validateActivityStructure}=require('../src/features/architecture/uml-diagrams.ts');const model=activitySourceFixture(),before=JSON.stringify(model);
+ const method=projectUmlActivityDiagram(model,{operationId:'controller::create()'});
+ const workflow=projectUmlActivityDiagram(model,{operationId:'workflow:controller::create()'});
+ assert.equal(method.partitions.length,1);assert.equal(workflow.partitions.length,2);
+ assert.ok(workflow.partitions.some(p=>p.name.includes('OrderController')));assert.ok(workflow.partitions.some(p=>p.name.includes('OrderService')));
+ assert.equal(workflow.edges.filter(e=>e.guard==='[valid]').length,2);assert.equal(workflow.edges.filter(e=>e.guard==='[invalid]').length,2);
+ assert.equal(workflow.nodes.filter(n=>n.kind==='INITIAL').length,1);assert.equal(workflow.nodes.filter(n=>n.kind==='ACTIVITY_FINAL').length,1);
+ assert.ok(workflow.nodes.some(n=>n.label==='return saveOrder()'));assert.ok(workflow.nodes.length>method.nodes.length);
+ assert.equal(validateActivityStructure(workflow.nodes,workflow.edges).filter(i=>i.severity==='ERROR').length,0);
+ assert.equal(JSON.stringify(model),before);
+});
+
+test('Ambiguous receivers and unavailable workflow entries remain explicit instead of fabricating swimlanes',()=>{
+ const {projectUmlActivityDiagram}=require('../src/features/architecture/uml-diagrams.ts');const model=activitySourceFixture();
+ model.elements.push({...model.elements.find(n=>n.id==='service'),id:'duplicate-service-class'});
+ const projected=projectUmlActivityDiagram(model,{operationId:'workflow:controller::create()'});
+ assert.equal(projected.partitions.length,1);assert.equal(projected.extractionCompleteness,'PARTIAL');
+ assert.ok(projected.unsupportedConstructs.some(s=>s.includes('ambiguous receiver')));
+ const unavailable=projectUmlActivityDiagram(model,{operationId:'workflow:none'});assert.equal(unavailable.nodes.length,0);
+ const technical=projectUmlActivityDiagram(model,{operationId:'config::objectMapper()',includeTechnical:true});
+ assert.equal(technical.selectedOperationId,'config::objectMapper()');assert.ok(technical.nodes.length>0);
+});
+
+
+test('Source workflow crosses a service boundary only for a unique exact Feign endpoint',()=>{
+ const {projectUmlActivityDiagram}=require('../src/features/architecture/uml-diagrams.ts');const model=activitySourceFixture();
+ const client=model.elements.find(n=>n.id==='service');client.properties={targetService:'payment-service',umlClassifier:{methodsCfg:[],members:[{name:'createOrder',endpointDeclarations:['@PostMapping("/orders")']}]}};
+ model.elements.push(node('remote-svc','payment-service'),node('remote-controller','PaymentController','remote-svc',{umlClassifier:{annotations:['RestController'],methodsCfg:[{...model.elements.find(n=>n.id==='controller').properties.umlClassifier.methodsCfg[0],calls:[],methodName:'accept',signature:'accept()'}]}}));
+ const op='workflow:controller::create()';const projected=projectUmlActivityDiagram(model,{operationId:op});
+ assert.equal(projected.partitions.length,2);assert.ok(projected.partitions.some(p=>p.serviceId==='remote-svc'));
+ assert.ok(projected.nodes.some(n=>n.partitionName.includes('PaymentController')));
+ client.properties.umlClassifier.members[0].endpointDeclarations=['@PostMapping("/different")'];
+ const unmatched=projectUmlActivityDiagram(model,{operationId:op});assert.equal(unmatched.partitions.length,1);
+ assert.ok(unmatched.unsupportedConstructs.some(s=>s.includes('exact remote endpoint')));
+});
+
+test('Source workflow preserves authored overlays only in their exact operation scope',()=>{
+ const {projectUmlActivityDiagram}=require('../src/features/architecture/uml-diagrams.ts');const model=activitySourceFixture();
+ const operationId='workflow:controller::create()';
+ const overlay={operationId,designedNodes:[{nodeId:'authored-note',kind:'OBJECT_NODE',label:'Review note',partitionId:'partition:review',partitionName:'Reviewer',objectState:null,joinSpec:null,provenance:'DESIGNED'}],designedEdges:[]};
+ const same=projectUmlActivityDiagram(model,{operationId,overlay});assert.ok(same.nodes.some(n=>n.nodeId==='authored-note'));
+ assert.ok(same.partitions.some(p=>p.partitionId==='partition:review'));
+ const other=projectUmlActivityDiagram(model,{operationId:'workflow:controller::getOrder()',overlay});assert.ok(!other.nodes.some(n=>n.nodeId==='authored-note'));
+});
+
+
+test('Expanded source Activity keeps partitions and CFG edges through XML save/hydrate cycles',()=>{
+ const {projectUmlActivityDiagram,buildUmlDrawioXml,hydrateUmlWorkspaceFromXml}=require('../src/features/architecture/uml-diagrams.ts');
+ const model=activitySourceFixture(),operationId='workflow:controller::create()';
+ const baseline=projectUmlActivityDiagram(model,{operationId});let current=baseline;
+ for(let cycle=0;cycle<3;cycle++) {
+  const xml=buildUmlDrawioXml(current);const hydrated=hydrateUmlWorkspaceFromXml(xml,model,{diagramKind:'UML_ACTIVITY',selectedOperationId:operationId});
+  assert.equal(hydrated.conflicts.length,0,JSON.stringify(hydrated.conflicts));
+  current=projectUmlActivityDiagram(model,{operationId,overlay:hydrated.activityOverlay});
+  assert.equal(current.nodes.length,baseline.nodes.length);assert.equal(current.edges.length,baseline.edges.length);
+  assert.deepEqual(current.partitions,baseline.partitions);
+ }
+});
+
+test('Recursive source Activity calls stop without losing a valid caller CFG',()=>{
+ const {projectUmlActivityDiagram,validateActivityStructure}=require('../src/features/architecture/uml-diagrams.ts');const model=activitySourceFixture();
+ const cfg=model.elements.find(n=>n.id==='service').properties.umlClassifier.methodsCfg[0];
+ cfg.calls=[{receiver:'this',receiverType:'OrderService',methodName:'createOrder',line:10}];cfg.nodes.find(n=>n.kind==='ACTION').label='return this.createOrder()';
+ const projected=projectUmlActivityDiagram(model,{operationId:'workflow:controller::create()'});
+ assert.ok(projected.unsupportedConstructs.some(s=>s.includes('Recursive')));assert.equal(projected.extractionCompleteness,'PARTIAL');
+ assert.equal(validateActivityStructure(projected.nodes,projected.edges).filter(i=>i.severity==='ERROR').length,0);
+});

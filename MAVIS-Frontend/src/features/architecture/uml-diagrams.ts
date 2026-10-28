@@ -1,3 +1,4 @@
+import { expandSourceActivityWorkflow, isActivityWorkflowEntry } from "./source-activity-workflow";
 import { isClientClassifier, isDeclarativeClientElement, isDomainClassifier, isInfrastructureClassifier, normalizeExtractedClassRelation } from "./classifier-semantics";
 import type { ArchitecturalModel } from "@/types/domain";
 import { compressCodeToAstSkeleton } from "./scenario-design";
@@ -2506,6 +2507,7 @@ function discoverBusinessFlowActivities(
 
 export function listActivityOperations(
   model: ArchitecturalModel,
+  options?: { includeTechnical?: boolean },
 ): UmlActivityOperationOption[] {
   const servicesById = new Map(
     model.elements
@@ -2537,6 +2539,11 @@ export function listActivityOperations(
       continue;
     }
 
+    if (!options?.includeTechnical && (
+      /(Configuration|Config|Builder|Mapper|Test|Tests|TestUtil|Validator|Util|Utils)$/i.test(classifierName) ||
+      annotations.some((annotation) => /(^|\.)Configuration$/.test(annotation.replace(/^@/, "").split("(")[0] ?? ""))
+    )) continue;
+
     const isEntityOrDto =
       isDomainClassifier(rawUml) || /(Entity|Dto|Request|Response|Event)$/i.test(classifierName);
     const isExcludedMethodName = (methodName: string): boolean =>
@@ -2557,7 +2564,7 @@ export function listActivityOperations(
       const methodName = String(cfg["methodName"] ?? "operation").trim();
       const signatureKey = String(cfg["signatureKey"] ?? cfg["signature"] ?? methodName);
       cfgSignatures.add(signatureKey);
-      if (isExcludedMethodName(methodName)) continue;
+      if (isExcludedMethodName(methodName) && !(Array.isArray(cfg["endpointDeclarations"]) && cfg["endpointDeclarations"].length)) continue;
       const rawNodes = Array.isArray(cfg["nodes"])
         ? (cfg["nodes"] as Array<Record<string, unknown>>)
         : [];
@@ -2614,7 +2621,7 @@ export function listActivityOperations(
           signatureKey,
           extractionCompleteness: "PARTIAL",
           unsupportedConstructs: [
-            Boolean(m["isAbstract"])
+            m["isAbstract"]
               ? "abstract/interface operation without concrete method body CFG"
               : "unexpanded operation body without extracted AST CFG",
           ],
@@ -2769,13 +2776,39 @@ export function projectUmlActivityDiagram(
   options?: {
     operationId?: string | undefined;
     overlay?: UmlActivityOverlay | undefined;
+    includeTechnical?: boolean;
   },
 ): UmlActivityDiagramProjection {
   const discoveredFlows = discoverBusinessFlowActivities(model);
-  const availableOperations = listActivityOperations(model);
+  const workflow = options?.operationId?.startsWith("workflow:") ?? false;
+  const availableOperations = listActivityOperations(model, { includeTechnical: options?.includeTechnical ?? Boolean(options?.operationId && !workflow) });
+  const requestedOperationId = workflow ? options!.operationId!.slice("workflow:".length) : options?.operationId;
   const selectedOp =
-    availableOperations.find((op) => op.operationId === options?.operationId) ??
-    availableOperations[0];
+    availableOperations.find((op) => op.operationId === requestedOperationId && (!workflow || isActivityWorkflowEntry(model, op))) ??
+    (workflow ? undefined : availableOperations[0]);
+
+  if (workflow && selectedOp && isActivityWorkflowEntry(model, selectedOp)) {
+    const method = projectUmlActivityDiagram(model, { operationId: selectedOp.operationId });
+    const expanded = expandSourceActivityWorkflow(model, selectedOp, method,
+      (operationId) => projectUmlActivityDiagram(model, { operationId, includeTechnical: true }));
+    const overlay = options?.overlay;
+    if (overlay && (!overlay.operationId || overlay.operationId === options!.operationId)) {
+      const nodeIds = new Set(expanded.nodes.map(node => node.nodeId));
+      const edgeIds = new Set(expanded.edges.map(edge => edge.edgeId));
+      for (const node of overlay.designedNodes ?? []) {
+        if (isGeneratedActivityItem(node) || nodeIds.has(node.nodeId)) continue;
+        nodeIds.add(node.nodeId);
+        if (!expanded.partitions.some(partition => partition.partitionId === node.partitionId)) expanded.partitions.push({ partitionId: node.partitionId, name: node.partitionName, serviceId: null });
+        expanded.nodes.push({ ...node, provenance: "DESIGNED" });
+      }
+      for (const edge of overlay.designedEdges ?? []) {
+        if (isGeneratedActivityItem(edge) || edgeIds.has(edge.edgeId)) continue;
+        edgeIds.add(edge.edgeId); expanded.edges.push({ ...edge, provenance: "DESIGNED" });
+      }
+    }
+    return { ...expanded, selectedOperationId: options!.operationId!,
+      validationIssues: [...expanded.validationIssues, ...validateActivityStructure(expanded.nodes, expanded.edges)] };
+  }
 
   const hasDesigned =
     Boolean(options?.overlay?.designedNodes && options.overlay.designedNodes.length > 0) ||
@@ -9476,7 +9509,7 @@ export function hydrateUmlWorkspaceFromXml(
   if (
     diagramKind === "UML_ACTIVITY" &&
     docOperationId &&
-    !listActivityOperations(model).some((op) => op.operationId === docOperationId)
+    !listActivityOperations(model, { includeTechnical: !docOperationId.startsWith("workflow:") }).some((op) => docOperationId.startsWith("workflow:") ? op.operationId === docOperationId.slice("workflow:".length) && isActivityWorkflowEntry(model, op) : op.operationId === docOperationId)
   ) {
     boundaryConflicts.push({
       code: "INVALID_DOCUMENT_SCOPE_REFERENCE",

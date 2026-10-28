@@ -1,4 +1,5 @@
 "use client";
+import { isActivityWorkflowEntry } from "./source-activity-workflow";
 import { savedUmlCoversSource } from "./uml-source-coverage";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -67,10 +68,14 @@ export function UmlDiagramWorkspace({
 
   const [packageFilter, setPackageFilter] = useState<string>("");
   const [environmentFilter, setEnvironmentFilter] = useState<string>("default");
+  const [activityView, setActivityView] = useState<"workflow" | "method" | "reference">("workflow");
   const [selectedOperationId, setSelectedOperationId] = useState<string>("");
   const [selectedStateTargetId, setSelectedStateTargetId] = useState<string>("");
 
-  const activityOps = useMemo(() => listActivityOperations(model), [model]);
+  const activityOps = useMemo(() => listActivityOperations(model, { includeTechnical: activityView === "method" })
+    .filter((operation) => activityView === "reference" ? operation.operationId.startsWith("flow:")
+      : activityView === "workflow" ? isActivityWorkflowEntry(model, operation) : !operation.operationId.startsWith("flow:"))
+    .map((operation) => activityView === "workflow" ? { ...operation, operationId: "workflow:" + operation.operationId } : operation), [model, activityView]);
   const stateTargets = useMemo(() => listStateTargets(model), [model]);
 
   const activeOpId = activityOps.find(op => op.operationId === selectedOperationId)?.operationId || activityOps[0]?.operationId || "";
@@ -80,9 +85,9 @@ export function UmlDiagramWorkspace({
     if (kind === "UML_CLASS") return `uml-class:${serviceId || "all"}:${packageFilter || "all"}`;
     if (kind === "UML_PACKAGE") return `uml-package:${serviceId || "all"}`;
     if (kind === "UML_DEPLOYMENT") return `uml-deployment:${environmentFilter || "default"}`;
-    if (kind === "UML_ACTIVITY") return `uml-activity:${activeOpId || "default"}`;
+    if (kind === "UML_ACTIVITY") return `uml-activity:${activeOpId || activityView + ":none"}`;
     return `uml-state:${activeStateTargetId || "default"}`;
-  }, [kind, serviceId, packageFilter, environmentFilter, activeOpId, activeStateTargetId]);
+  }, [kind, serviceId, packageFilter, environmentFilter, activeOpId, activeStateTargetId, activityView]);
 
   const documentScope = `${model.id}:${viewKey}`;
 
@@ -249,7 +254,8 @@ export function UmlDiagramWorkspace({
         });
       case "UML_ACTIVITY":
         return projectUmlActivityDiagram(model, {
-          operationId: activeOpId,
+          operationId: activeOpId || (activityView === "workflow" ? "workflow:none" : undefined),
+          includeTechnical: activityView === "method",
           overlay: activityOverlay,
         });
       case "UML_STATE":
@@ -270,6 +276,7 @@ export function UmlDiagramWorkspace({
     packageOverlay,
     deploymentOverlay,
     activityOverlay,
+    activityView,
     stateOverlay,
   ]);
 
@@ -506,24 +513,26 @@ export function UmlDiagramWorkspace({
         )}
 
         {projection.diagramKind === "UML_ACTIVITY" && (
-          <SelectField
-            label="Activity flow"
-            value={projection.selectedOperationId}
-            onChange={(v) => {
-              clearDraftConflictState();
-              setSelectedOperationId(v);
-            }}
-            options={
-              projection.availableOperations.length > 0
-                ? projection.availableOperations.map((op) => ({
-                    value: op.operationId,
-                    label: op.operationId.startsWith("flow:")
-                      ? op.methodName
-                      : `${op.serviceName} · ${op.classifierName}.${op.methodName}`,
-                  }))
-                : [{ value: "designed", label: "Designed Workflow" }]
-            }
-          />
+          <div className="space-y-3">
+            <div role="group" aria-label="Activity perspective" className="flex flex-wrap gap-2">
+              {(["workflow", "method", "reference"] as const).map((view) => <Button key={view} type="button" size="sm"
+                aria-pressed={activityView === view} variant={activityView === view ? "default" : "outline"}
+                onClick={() => { clearDraftConflictState(); setActivityView(view); setSelectedOperationId(""); onSelectUmlContext?.(null); }}>
+                {view === "workflow" ? "Source workflow" : view === "method" ? "Method control flow" : "Dependency reference"}
+              </Button>)}
+            </div>
+            <p className="text-xs leading-5 text-muted-foreground">
+              {activityView === "workflow" ? "Endpoint/use-case CFG with uniquely resolved method bodies expanded. Swimlanes show classifier responsibility. Missing receiver types, ambiguous overloads and unsupported control paths remain explicit; this is static analysis, not observed execution."
+                : activityView === "method" ? "One method's extracted control-flow graph. Technical/configuration methods are available here; a single lane can be correct for a local method."
+                : "Unverified dependency illustrations are reference material and are not executable business workflows."}
+            </p>
+            {activityOps.length ? <SelectField label={activityView === "reference" ? "Dependency reference" : "Activity flow"}
+              value={activeOpId} onChange={(value) => { clearDraftConflictState(); setSelectedOperationId(value); }}
+              options={activityOps.map((operation) => ({ value: operation.operationId,
+                label: operation.operationId.startsWith("flow:") ? operation.methodName
+                  : `${operation.serviceName} · ${operation.classifierName}.${operation.signatureKey}` }))} />
+              : <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">No source-supported {activityView === "workflow" ? "endpoint/use-case workflow" : activityView === "method" ? "method CFG" : "dependency reference"} is available. Try another perspective or analyze the snapshot again; no behavior has been invented.</p>}
+          </div>
         )}
 
         {projection.diagramKind === "UML_STATE" && (
@@ -777,7 +786,7 @@ export function UmlDiagramWorkspace({
       {/* Never present a dependency template as a behavioral Activity. */}
       {effectiveProjection.diagramKind === "UML_ACTIVITY" && effectiveProjection.unsupportedConstructs.includes("INFERRED_BUSINESS_FLOW_REQUIRES_SOURCE_VERIFICATION") ? (
         <p role="status" className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">This selection only has static dependencies, not an extracted method control-flow graph. Choose a method above to view its source Activity, or inspect these relationships in Graph Explorer.</p>
-      ) : <DrawioEditor
+      ) : effectiveProjection.diagramKind === "UML_ACTIVITY" && !effectiveProjection.nodes.length ? null : <DrawioEditor
         key={documentScope}
         modelId={model.id}
         diagramId={viewKey}
