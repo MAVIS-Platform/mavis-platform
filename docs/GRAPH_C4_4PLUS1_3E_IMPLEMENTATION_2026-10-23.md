@@ -40,3 +40,30 @@ Final local release: port 3000 runs .artifacts/complete-diagrams-ready. Browser 
 - The 3E inspector shares the filtered projection. Hiding the selected node or relationship clears selection, drill-down and highlight; restoring visibility does not silently restore the old selection.
 - Each presentation retains its camera and dragged positions across filtering, including hiding every node and switching between presentations. Returning nodes recover cached positions; changing model revision creates a new view cache.
 - Verification: 252 frontend tests pass, including ownership/cycle/resource preservation, canonical selection visibility and camera cache regressions. TypeScript and changed-file lint pass. Local mock browser checks verify Analysis/Explore filter parity, exact zoom/pan restoration, empty-state recovery and 3E closing on hidden selection. The mock session receives HTTP 401 from the authenticated AI semantics endpoint; this check does not validate live AI generation or production analyzer ownership completeness.
+
+
+## Sequence flow clarity update — 2026-10-28
+
+- Source sequence names use a compact classifier/method label within the 120-character interaction name limit. Full endpoint declarations and service/method identity remain in the flow description; existing flow/view IDs stay unchanged.
+- Source sequences and Dependency reference have separate selectors. Static dependencies do not establish a request boundary or invocation order and are never presented as executed Sequence messages. Dependency references do not load saved Sequence layouts.
+- Dependency rows merge only identical canonical sender/receiver and protocol/origin/sort groups. All relationship IDs and evidence IDs survive; matching display names alone never cause a merge. Repeated protocol labels are deduplicated.
+- Invalid generated documents show a render/validation error. Endpoint methods without resolved supported calls show an explicit limitation state; absence of extracted calls is not proof of absent service behavior.
+- Verification: 256 frontend tests passed, including the reproduced long RequestMapping title, explicit renderer errors/empty states, flow separation and dependency evidence retention. TypeScript and modified UI/helper lint passed; scenario-design semantic lint passed with its pre-existing formatting diagnostics excluded. Browser mock checks passed for default source-only selection, separate dependency scope and both no-data states. The local draw.io service was not running; generated XML rendering was verified in tests, not a live draw.io iframe or production flow.
+
+
+## Source Activity responsibilities and diagram reading — 2026-10-28
+
+- Activity defaults to Source workflow: source endpoint/use-case CFGs only. Method control flow exposes local and technical methods; Dependency reference contains the unverified templates and never renders them as behavioral UML. Configuration/builders/utilities are excluded from the default operation catalog; getter-named HTTP endpoints remain available.
+- Source workflows inline only uniquely resolved receiver/method CFGs at an exact source action line. Caller and callee guards/branches remain intact, with one root initial/final and explicit call/return handoffs. Partitions represent actual classifier responsibility within its service, not invented actors or database behavior.
+- Feign cross-service expansion requires a unique exact declared endpoint and an available remote method CFG. Missing receiver types, absent bodies/line metadata, overload ambiguity, lambda/multiple-call actions, unsupported termination, recursion and expansion limits remain explicit PARTIAL limitations. This is static source analysis, not proof of observed execution or a complete business process.
+- Workflow IDs and authored overlays have separate scope from method diagrams. Save/hydrate validation recognizes only source-supported workflow entrypoints; authored nodes survive only in their own operation scope.
+- Component/Class use the shared viewer controls: 100%, zoom in/out and Fit. Resizing the iframe no longer automatically fits away the reader's chosen zoom. No component/class relations were invented or changed by the readability controls.
+- Verification: 263 frontend tests passed and TypeScript passed. Tests cover source guards, responsibility partitions, unique Feign endpoint expansion, ambiguity/recursion, authored overlay isolation and repeated XML save/hydrate. Browser checks verify three Activity perspectives, honest no-data states and zoom action messages. Docker Desktop was unavailable, so zoom was tested with an iframe protocol stub; live draw.io visual rendering and the production FTGO model still need post-deploy inspection.
+
+
+## Live draw.io verification before merge — 2026-10-28
+
+- Verified the real draw.io application at https://maviss.site/drawio in an iframe using a local synthetic source fixture. No production project data or saved documents were modified. Docker Desktop started but its local engine remained unavailable; the production-served editor was used instead of a stub.
+- Activity rendered two classifier-responsibility swimlanes and both valid/invalid guards. Sequence rendered its two lifelines and resolved source call; Component and Class rendered the fixture classifiers. Screenshots were visually inspected.
+- Live testing exposed an unsupported action name in the 100% toolbar button: actualSize did nothing. Replaced it with draw.io's resetView action. Verified actual editor zoom changes 36% -> 100% -> 120%, zoom out, Fit, and preservation of 100% through iframe resizing. This supersedes the earlier protocol-stub-only zoom check.
+- This verifies rendering and editor integration with synthetic source facts; it does not certify that every production FTGO method has complete extracted metadata.
