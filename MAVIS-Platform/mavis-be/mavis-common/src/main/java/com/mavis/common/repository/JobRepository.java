@@ -19,4 +19,7 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
     List<Job> findBySourceSnapshotId(UUID sourceSnapshotId);
     List<Job> findByStatus(String status);
     List<Job> findTop100ByStatusOrderByStartedAtAsc(String status);
+    @org.springframework.data.jpa.repository.EntityGraph(attributePaths={"project","sourceSnapshot"})
+    @org.springframework.data.jpa.repository.Query(value="select j from Job j where j.project.owner.id=:owner and (j.project.status is null or j.project.status<>'DELETED') order by coalesce(j.completedAt,j.startedAt) desc,j.id desc",countQuery="select count(j) from Job j where j.project.owner.id=:owner and (j.project.status is null or j.project.status<>'DELETED')")
+    org.springframework.data.domain.Page<Job> findActivityForOwner(@org.springframework.data.repository.query.Param("owner") UUID owner,org.springframework.data.domain.Pageable page);
 }

@@ -299,6 +299,11 @@ export class MockAdapter implements ApiAdapter {
         this.snapshots.push(s);
         return s;
       }
+      case "projectAnalysisActivity": {
+        const args=contracts.projectAnalysisActivity.input.parse(raw);
+        const rows=this.jobs.map(job=>({...job,projectName:this.projects.find(p=>p.id===job.projectId)?.name??job.projectId,startedAt:null,completedAt:null}));
+        return {items:rows.slice(args.page*args.size,(args.page+1)*args.size),total:rows.length,page:args.page,size:args.size};
+      }
       case "analysisJobs":
         return this.jobs
           .filter((j) => j.projectId === contracts.analysisJobs.input.parse(raw).projectId)

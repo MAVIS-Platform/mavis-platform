@@ -1229,6 +1229,10 @@ export async function executeJava(
       const result = z.object({ snapshotId: z.string().uuid() }).parse(imported);
       return snapshotView(await get(`analyzer/snapshots/${result.snapshotId}`));
     }
+    case "projectAnalysisActivity": {
+      const result = z.object({items:z.array(z.object({job:z.record(z.string(),z.unknown()),projectName:z.string()})),total:z.number(),page:z.number(),size:z.number()}).parse(await get(`activity/analysis?page=${input["page"]}&size=${input["size"]}`));
+      return {...result,items:result.items.map(row=>({...jobView(row.job),projectName:row.projectName,startedAt:row.job["startedAt"]??null,completedAt:row.job["completedAt"]??null}))};
+    }
     case "analysisJobs":
       return list.parse(await get(`analyzer/projects/${id(input, "projectId")}/jobs`)).map(jobView);
     case "startAnalysis": {
