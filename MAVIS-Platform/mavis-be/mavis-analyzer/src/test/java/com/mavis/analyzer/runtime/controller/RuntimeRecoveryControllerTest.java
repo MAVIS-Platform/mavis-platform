@@ -19,7 +19,7 @@ class RuntimeRecoveryControllerTest {
    .profileVersionId("p").runConfigurationVersionId("c").scenarioVersionId("v").resourceProject("allocation")
    .executionStatus("RUNNING").build();
   when(repo.findLockedById(id)).thenReturn(Optional.of(session));
-  var result=new RuntimeRecoveryController.Result(id.toString(),model.toString(),source.toString(),"p","c","v","allocation","a".repeat(32),"Confirmed",OffsetDateTime.now());
+  var result=new RuntimeRecoveryController.Result(id.toString(),model.toString(),source.toString(),"p","c","v","allocation","a".repeat(32),"Confirmed",OffsetDateTime.now().toString());
   controller.recover(id,result);controller.recover(id,result);
   assertEquals("FAILED",session.getExecutionStatus());assertEquals("CONFIRMED",session.getCleanupStatus());
   assertEquals("HELD_NON_PROMOTED",session.getPublicationGateStatus());assertNull(session.getRunnerReceiptJson());

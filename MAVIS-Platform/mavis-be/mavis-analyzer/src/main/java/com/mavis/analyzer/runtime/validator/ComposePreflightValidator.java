@@ -26,6 +26,8 @@ public class ComposePreflightValidator {
     public PreflightCheckResponseDTO validate(String yamlContent) {
         List<String> detectedServices = new ArrayList<>();
         List<String> securityWarnings = new ArrayList<>();
+        Map<String, Integer> servicePorts = new HashMap<>();
+        Map<String, String> serviceStacks = new HashMap<>();
 
         if (yamlContent == null || yamlContent.isBlank()) {
             securityWarnings.add("Nội dung docker-compose rỗng hoặc không tồn tại");
@@ -34,6 +36,8 @@ public class ComposePreflightValidator {
                     .detectedServices(detectedServices)
                     .securityWarnings(securityWarnings)
                     .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
+                    .servicePorts(servicePorts)
+                    .serviceStacks(serviceStacks)
                     .build();
         }
 
@@ -49,6 +53,8 @@ public class ComposePreflightValidator {
                         .detectedServices(detectedServices)
                         .securityWarnings(securityWarnings)
                         .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
+                        .servicePorts(servicePorts)
+                        .serviceStacks(serviceStacks)
                         .build();
             }
 
@@ -60,6 +66,11 @@ public class ComposePreflightValidator {
 
                     if (entry.getValue() instanceof Map<?, ?> serviceConfig) {
                         checkServiceSecurity(serviceName, serviceConfig, securityWarnings);
+                        servicePorts.put(serviceName, extractTargetPort(serviceConfig));
+                        serviceStacks.put(serviceName, extractStack(serviceName, serviceConfig));
+                    } else {
+                        servicePorts.put(serviceName, 8080);
+                        serviceStacks.put(serviceName, "java");
                     }
                 }
             } else {
@@ -77,6 +88,8 @@ public class ComposePreflightValidator {
                 .detectedServices(detectedServices)
                 .securityWarnings(securityWarnings)
                 .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
+                .servicePorts(servicePorts)
+                .serviceStacks(serviceStacks)
                 .build();
     }
 
@@ -155,5 +168,42 @@ public class ComposePreflightValidator {
             return source != null ? String.valueOf(source).trim() : null;
         }
         return null;
+    }
+
+    private Integer extractTargetPort(Map<?, ?> serviceConfig) {
+        Object portsObj = serviceConfig.get("ports");
+        if (portsObj instanceof List<?> portList && !portList.isEmpty()) {
+            for (Object p : portList) {
+                if (p != null) {
+                    String str = String.valueOf(p).trim();
+                    if (str.contains(":")) {
+                        String[] parts = str.split(":");
+                        String target = parts[parts.length - 1].replaceAll("[^0-9]", "");
+                        if (!target.isBlank()) {
+                            try { return Integer.parseInt(target); } catch (Exception ignored) {}
+                        }
+                    } else {
+                        String target = str.replaceAll("[^0-9]", "");
+                        if (!target.isBlank()) {
+                            try { return Integer.parseInt(target); } catch (Exception ignored) {}
+                        }
+                    }
+                }
+            }
+        }
+        return 8080;
+    }
+
+    private String extractStack(String serviceName, Map<?, ?> serviceConfig) {
+        String lowerName = serviceName.toLowerCase();
+        Object imageObj = serviceConfig.get("image");
+        String img = imageObj != null ? String.valueOf(imageObj).toLowerCase() : "";
+        Object buildObj = serviceConfig.get("build");
+        String build = buildObj != null ? String.valueOf(buildObj).toLowerCase() : "";
+
+        if (lowerName.contains("dotnet") || lowerName.contains("csharp") || img.contains("dotnet") || img.contains("aspnet") || build.contains("dotnet")) {
+            return "dotnet";
+        }
+        return "java";
     }
 }
