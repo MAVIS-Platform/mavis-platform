@@ -900,14 +900,14 @@ test('Overview focus is one-hop only and virtual group keys cannot become canoni
 });
 
 
-test('Overview card layout is deterministic and leaves non-overlapping rectangles at small and large scales',()=>{
+test('Overview circular-node label layout is deterministic and reserves non-overlapping footprints at small and large scales',()=>{
  const {projectServiceOverview}=require('../src/features/architecture/service-overview.ts');
  const {serviceOverviewPositions,SERVICE_WIDTH,SERVICE_HEIGHT}=require('../src/features/architecture/service-overview-layout.ts');
  for(const count of [6,180]) {
   const source=serviceOverviewFixture();if(count>6){source.elements=Array.from({length:count},(_,i)=>({...source.elements[0],id:'svc'+i,parentId:null}));source.edges=[];}
   const projection=projectServiceOverview(source),points=serviceOverviewPositions(projection,2.4);
   assert.deepEqual(points,serviceOverviewPositions(projection,2.4));assert.equal(points.size,count);
-  const entries=[...points.values()];for(let i=0;i<entries.length;i++)for(let j=i+1;j<entries.length;j++)assert.ok(Math.abs(entries[i].x-entries[j].x)>=SERVICE_WIDTH||Math.abs(entries[i].y-entries[j].y)>=SERVICE_HEIGHT,'service rectangles must not overlap');
+  const entries=[...points.values()];for(let i=0;i<entries.length;i++)for(let j=i+1;j<entries.length;j++)assert.ok(Math.abs(entries[i].x-entries[j].x)>=SERVICE_WIDTH||Math.abs(entries[i].y-entries[j].y)>=SERVICE_HEIGHT,'node and label footprints must not overlap');
  }
 });
 

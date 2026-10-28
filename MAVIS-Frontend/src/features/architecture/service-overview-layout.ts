@@ -1,7 +1,9 @@
 import { layoutGraph } from "./graph-layout";
 import type { ServiceOverviewProjection } from "./service-overview";
+export const SERVICE_DIAMETER = 42;
+// Reserve space for the circular node and its label, not a diagram card.
 export const SERVICE_WIDTH = 210;
-export const SERVICE_HEIGHT = 78;
+export const SERVICE_HEIGHT = 104;
 
 // Layout consumes topology only: connection UI keys are never canonical edges.
 export function serviceOverviewPositions(projection: ServiceOverviewProjection, aspectRatio = 2) {
