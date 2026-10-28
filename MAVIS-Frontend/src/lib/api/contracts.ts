@@ -565,7 +565,7 @@ export const contracts = {
   accounts: contract(nothing, z.array(d.accountSchema)),
   setAccountLock: contract(z.object({ accountId: id, locked: z.boolean() }), d.accountSchema, true),
   setAccountRole: contract(
-    z.object({ accountId: id, role: z.enum(["student", "lecturer"]) }),
+    z.object({ accountId: id, role: z.enum(["student", "lecturer", "admin"]) }),
     d.accountSchema,
     true,
   ),

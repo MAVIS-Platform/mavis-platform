@@ -4,6 +4,7 @@ import {
   snapshotSchema,
   analysisJobSchema,
   evidenceSchema,
+  communicationRoleSchema,
   modelSchema,
   modelSummarySchema,
   type Project,
@@ -194,15 +195,18 @@ export function evidenceView(raw: unknown) {
     .object({
       id: z.string().uuid(),
       sourceType: z.string(),
+      provenance: z.object({ communicationRole: z.string().optional() }).nullish(),
       locator: nullableText,
       excerpt: nullableText,
     })
     .parse(raw);
+  const role = communicationRoleSchema.safeParse(e.provenance?.communicationRole);
   return evidenceSchema.parse({
     id: e.id,
     origin: "persisted",
     kind: e.sourceType.startsWith("RUNTIME") ? "runtime" : "source",
     sourceType: e.sourceType,
+    ...(role.success ? { communicationRole: role.data } : {}),
     location: e.locator ?? "",
     snippet: e.excerpt ?? "",
     complete: null,
@@ -218,6 +222,13 @@ function resolveNodeMetadata(graphValue: unknown, detailValue: unknown): string 
   if (graphValue === undefined && typeof detailValue === "string" && detailValue.trim() !== "")
     return detailValue;
   return null;
+}
+function inferredLayer(type: string, name: string) {
+  if (type === "DATABASE") return "data";
+  if (["QUEUE_BROKER", "MESSAGE_CHANNEL", "EXTERNAL_SYSTEM"].includes(type)) return "platform";
+  if (/(?:gateway|bff|controller|ingress)/i.test(name)) return "edge";
+  if (["SERVICE_CONTAINER", "COMPONENT", "CLASS_INTERFACE"].includes(type)) return "domain";
+  return "unclassified";
 }
 export function modelView(metadata: unknown, graph: unknown, details: unknown) {
   const summary = modelSummary(metadata);
@@ -287,35 +298,9 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
         ),
         resolutionIssue: resolveNodeMetadata(n.resolutionIssue, detailProps["resolutionIssue"]),
       };
-      let layer = ["edge", "domain", "platform", "data"].includes(String(properties["layer"]))
-        ? String(properties["layer"])
-        : "";
-      if (!layer) {
-        const elType = n.type;
-        const lowerName = n.name.toLowerCase();
-        if (lowerName === "service") {
-          layer = "unclassified";
-        } else if (elType === "DATABASE") {
-          layer = "data";
-        } else if (elType === "QUEUE_BROKER" || elType === "EXTERNAL_SYSTEM") {
-          layer = "platform";
-        } else if (
-          lowerName.includes("gateway") ||
-          lowerName.includes("bff") ||
-          lowerName.includes("ingress") ||
-          lowerName.includes("controller")
-        ) {
-          layer = "edge";
-        } else if (
-          elType === "SERVICE_CONTAINER" ||
-          elType === "COMPONENT" ||
-          elType === "CLASS_INTERFACE"
-        ) {
-          layer = "domain";
-        } else {
-          layer = "unclassified";
-        }
-      }
+      const layer = ["edge", "domain", "platform", "data"].includes(String(properties["layer"]))
+        ? properties["layer"]
+        : inferredLayer(n.type, n.name);
       return {
         id: n.id,
         name: n.name,
@@ -338,6 +323,7 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
       const targetStatus = nodeStatusById.get(e.targetNodeId);
       const edgeProps = e.properties as Record<string, unknown> | null | undefined;
       const isUncertain =
+        e.resolutionStatus !== "RESOLVED" ||
         sourceStatus === "UNCERTAIN_MAPPING" ||
         sourceStatus === "NEEDS_REVIEW" ||
         targetStatus === "UNCERTAIN_MAPPING" ||

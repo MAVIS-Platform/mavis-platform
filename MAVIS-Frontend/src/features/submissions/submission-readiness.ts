@@ -25,3 +25,10 @@ export function isDeadlinePassed(dueAt: string | undefined, now = Date.now()): b
   const due = Date.parse(dueAt);
   return Number.isFinite(due) && now > due;
 }
+export function runtimeEvidenceBlocked(
+  required: boolean,
+  pending: boolean,
+  failed: boolean,
+): boolean {
+  return required && (pending || failed);
+}

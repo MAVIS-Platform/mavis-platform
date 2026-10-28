@@ -59,7 +59,9 @@ public class HttpClientVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>>
                             || m.getAnnotationByName("DeleteExchange").isPresent()
                             || m.getAnnotationByName("PatchExchange").isPresent());
 
-            if (clientAnnOpt.isPresent() || hasExchangeMethod) {
+            var feign=n.getAnnotations().stream().filter(a->a.getName().getIdentifier().equals("FeignClient")).findFirst();
+            if(feign.isPresent() && arg!=null) arg.add(FeignSourceFacts.client(n,feign.get(),currentFilePath));
+            else if (clientAnnOpt.isPresent() || hasExchangeMethod) {
                 String targetServiceName = clientAnnOpt.map(this::extractFeignTarget).orElse("");
                 if (targetServiceName == null || targetServiceName.isBlank() || targetServiceName.contains("${")) {
                     targetServiceName = deriveTargetFromClientName(n.getNameAsString());

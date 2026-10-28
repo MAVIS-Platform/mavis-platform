@@ -63,7 +63,7 @@ app:
 
 mavis:
   security:
-    dev-bypass-enabled: true
+    dev-bypass-enabled: false
   runner:
     state-root: ${MAVIS_RUNNER_STATE_ROOT:${java.io.tmpdir}/mavis-runner-state}
     auto-dispatch-enabled: ${MAVIS_RUNNER_AUTO_DISPATCH:true}

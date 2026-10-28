@@ -79,7 +79,7 @@ class AdminPortalApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 1: GET /api/v1/admin/users ---
         MvcResult usersResult = mockMvc.perform(get("/api/v1/admin/users")
-                        .header("X-Test-User-Email", adminUser.getEmail())
+                        .header("Authorization", testAuthorization(adminUser.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -104,7 +104,7 @@ class AdminPortalApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         MvcResult lockResult = mockMvc.perform(patch("/api/v1/admin/users/{userId}/status", targetStudent.getId())
-                        .header("X-Test-User-Email", adminUser.getEmail())
+                        .header("Authorization", testAuthorization(adminUser.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(lockReq)))
                 .andExpect(status().isOk())
@@ -129,7 +129,7 @@ class AdminPortalApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         MvcResult roleResult = mockMvc.perform(patch("/api/v1/admin/users/{userId}/role", targetStudent.getId())
-                        .header("X-Test-User-Email", adminUser.getEmail())
+                        .header("Authorization", testAuthorization(adminUser.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(roleReq)))
                 .andExpect(status().isOk())
@@ -150,7 +150,7 @@ class AdminPortalApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 4: GET /dashboard-stats ---
         MvcResult statsResult = mockMvc.perform(get("/api/v1/admin/dashboard-stats")
-                        .header("X-Test-User-Email", adminUser.getEmail())
+                        .header("Authorization", testAuthorization(adminUser.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -172,7 +172,7 @@ class AdminPortalApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 5: GET /audit-logs ---
         MvcResult auditResult = mockMvc.perform(get("/api/v1/admin/audit-logs")
-                        .header("X-Test-User-Email", adminUser.getEmail())
+                        .header("Authorization", testAuthorization(adminUser.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))

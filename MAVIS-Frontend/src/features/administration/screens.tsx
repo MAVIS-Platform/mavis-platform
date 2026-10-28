@@ -160,26 +160,38 @@ export function Accounts() {
 function TeachingRoleControl({ account }: { account: Response<"accounts">[number] }) {
   const update = useApiMutation("setAccountRole");
   const [open, setOpen] = useState(false);
+  const [role, setRole] = useState<"student" | "lecturer" | "admin">(account.role);
   if (account.role === "admin") return <StatusBadge status="Administrator" />;
-  const role = account.role === "lecturer" ? "student" : "lecturer";
   return (
     <div className="space-y-2">
-      <span className="block text-xs capitalize">{account.role}</span>
+      <SelectField
+        label={`Role for ${account.name}`}
+        value={role}
+        onChange={(value) => {
+          if (value === "student" || value === "lecturer" || value === "admin") setRole(value);
+        }}
+        options={[
+          { value: "student", label: "Student" },
+          { value: "lecturer", label: "Lecturer" },
+          { value: "admin", label: "System administrator" },
+        ]}
+      />
       <Button
         size="sm"
         variant="outline"
+        disabled={update.isPending || role === account.role}
         onClick={() => {
           update.reset();
           setOpen(true);
         }}
       >
-        Set as {role}
+        Save role
       </Button>
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
         title={`Change role to ${role}?`}
-        description={`${account.name} will receive ${role} permissions. They should sign in again after this change.`}
+        description={`${account.name} will receive ${role} permissions. ${role === "admin" ? "This grants full system administration access. " : ""}They should sign in again after this change.`}
         pending={update.isPending}
         error={update.isError ? <ErrorState error={update.error} /> : undefined}
         onConfirm={() =>

@@ -16,11 +16,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 class AdminHealthControllerTest {
  @TempDir Path folder;
- AccessPolicyService policy; DataSource db; Connection connection; AdminHealthController controller;
+ AccessPolicyService policy; DataSource db; Connection connection; AdminHealthController controller; java.nio.file.FileStore storage;
  @BeforeEach void setup() throws Exception {
   policy=mock(AccessPolicyService.class);db=mock(DataSource.class);connection=mock(Connection.class);
   when(db.getConnection()).thenReturn(connection);when(connection.isValid(2)).thenReturn(true);
-  controller=new AdminHealthController(policy,db){@Override protected int workerStatus(){return 200;}};
+  storage=mock(java.nio.file.FileStore.class);when(storage.getTotalSpace()).thenReturn(100L);when(storage.getUsableSpace()).thenReturn(80L);
+  controller=new AdminHealthController(policy,db){@Override protected int workerStatus(){return 200;} @Override protected java.nio.file.FileStore storageStore(Path path){return storage;}};
   ReflectionTestUtils.setField(controller,"workerEnabled",true);ReflectionTestUtils.setField(controller,"storagePath",folder.toString());
  }
  @Test void rejectsNonAdminBeforeAnyProbes() throws Exception {
@@ -38,12 +39,16 @@ class AdminHealthControllerTest {
   Map<?,?> result=(Map<?,?>)controller.health().getData();assertThat(result.get("status")).isEqualTo("DEGRADED");assertThat(result.toString()).doesNotContain("secret-password");
  }
  @Test void workerFailureIsNotReportedHealthy() throws Exception {
-  controller=new AdminHealthController(policy,db){@Override protected int workerStatus(){return 503;}};
+  controller=new AdminHealthController(policy,db){@Override protected int workerStatus(){return 503;} @Override protected java.nio.file.FileStore storageStore(Path path){return storage;}};
   ReflectionTestUtils.setField(controller,"workerEnabled",true);ReflectionTestUtils.setField(controller,"storagePath",folder.toString());
   assertThat(((Map<?,?>)controller.health().getData()).get("status")).isEqualTo("DEGRADED");
  }
  @Test void unmeasuredStorageAndDisabledWorkerAreUnknownNotHealthy() {
   ReflectionTestUtils.setField(controller,"workerEnabled",false);ReflectionTestUtils.setField(controller,"storagePath",folder.resolve("missing").toString());
   assertThat(((Map<?,?>)controller.health().getData()).get("status")).isEqualTo("UNKNOWN");
+ }
+ @Test void lowStorageIsDegradedRatherThanHealthy() throws Exception {
+  when(storage.getUsableSpace()).thenReturn(5L);
+  assertThat(((Map<?,?>)controller.health().getData()).get("status")).isEqualTo("DEGRADED");
  }
 }
