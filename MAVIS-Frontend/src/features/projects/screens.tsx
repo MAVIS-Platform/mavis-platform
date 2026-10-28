@@ -649,23 +649,19 @@ export function AnalysisHistory() {
               label: "Actions",
               render: (job) =>
                 job.modelId ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button asChild size="sm" variant="outline">
-                      <Link href={`/diagrams?project=${projectId}&model=${job.modelId}`}>
-                        Open Diagrams
-                      </Link>
-                    </Button>
-                    <Button asChild size="sm" variant="ghost">
-                      <Link href={`/architecture?project=${projectId}&model=${job.modelId}`}>
-                        Open Graph
-                      </Link>
-                    </Button>
-                  </div>
-                ) : (
-                  <Button asChild size="sm" variant="ghost">
-                    <Link href={`/snapshots?project=${projectId}&snapshot=${job.snapshotId}`}>
-                      Re-run analysis
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/architecture?project=${projectId}&model=${job.modelId}`}>
+                      View
                     </Link>
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled
+                    title="No architecture revision is available for this run"
+                  >
+                    View
                   </Button>
                 ),
             },
