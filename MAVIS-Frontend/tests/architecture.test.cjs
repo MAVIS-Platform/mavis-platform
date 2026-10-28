@@ -1853,3 +1853,28 @@ test("graph camera cache survives filtering, restores hidden dragged nodes and k
     assert.deepEqual(empty.positions.get("node:db"),{x:505,y:606});
   } finally {cy.destroy();}
 });
+
+
+test("SelectField placeholders cannot clear required choices or silently select a different stale value", () => {
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {SelectField}=require("../src/components/shared/forms.tsx");
+ const options=[{value:"alpha",label:"Alpha"},{value:"beta",label:"Beta"}];
+ const render=(value,opts=options)=>renderToStaticMarkup(React.createElement(SelectField,{label:"Project",value,onChange(){},options:opts,placeholder:"Select a project"}));
+ const chosen=render("beta");assert.ok(!chosen.includes('value=""'));assert.match(chosen,/<option[^>]*value="beta"[^>]*selected/);
+ for(const value of ["","deleted-project"]) {
+  const html=render(value);const placeholder=html.match(/<option[^>]*value=""[^>]*>/)[0];
+  assert.match(placeholder,/disabled/);assert.match(placeholder,/hidden/);assert.match(placeholder,/selected/);
+  assert.ok(!/<option[^>]*value="alpha"[^>]*selected/.test(html));
+ }
+ assert.match(render("",[]),/<select[^>]*disabled/);
+});
+
+test("SelectField retains meaningful All/None empty choices while stale filters remain visibly unselected", () => {
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {SelectField}=require("../src/components/shared/forms.tsx");
+ const render=(value)=>renderToStaticMarkup(React.createElement(SelectField,{label:"Status",value,onChange(){},options:[{value:"",label:"All"},{value:"active",label:"Active"}]}));
+ const all=render("");const allOption=all.match(/<option[^>]*value=""[^>]*>/)[0];
+ assert.match(allOption,/selected/);assert.ok(!/disabled|hidden/.test(allOption));
+ const stale=render("removed-status");assert.ok(!/<option[^>]*value=""[^>]*selected/.test(stale));
+ assert.match(stale,/<option[^>]*disabled[^>]*hidden[^>]*selected/);
+});

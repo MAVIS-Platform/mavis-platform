@@ -274,13 +274,8 @@ export function AssignmentSourcePicker({
                   setModelId("");
                   setJobId("");
                 }}
-                options={[
-                  {
-                    value: "",
-                    label: branches.isFetching ? "Loading branches…" : "Select repository branch",
-                  },
-                  ...(branches.data?.branches ?? []).map((value) => ({ value, label: value })),
-                ]}
+                placeholder={branches.isFetching ? "Loading branches…" : "Select repository branch"}
+                options={(branches.data?.branches ?? []).map((value) => ({ value, label: value }))}
               />
               <label className="block text-sm">
                 Commit SHA (optional; overrides branch)

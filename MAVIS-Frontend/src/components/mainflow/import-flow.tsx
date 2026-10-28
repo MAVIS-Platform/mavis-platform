@@ -253,7 +253,7 @@ export function ImportFlow({
                 onChange={(e) => setBranch(e.target.value)}
               >
                 {!branchesCurrent && (
-                  <option value="">
+                  <option value="" disabled hidden>
                     {refs.isFetching
                       ? "Loading branches…"
                       : repositoryUrl

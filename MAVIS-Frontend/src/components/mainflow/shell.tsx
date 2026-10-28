@@ -93,7 +93,9 @@ function Authenticated({ children, title }: { children: React.ReactNode; title: 
                 value={project}
                 onChange={(e) => router.push(contextHref("/import", e.target.value))}
               >
-                <option value="">Choose a project</option>
+                <option value="" disabled hidden>
+                  Choose a project
+                </option>
                 {projects.data?.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
@@ -113,7 +115,9 @@ function Authenticated({ children, title }: { children: React.ReactNode; title: 
                     router.push(contextHref("/architecture", project, e.target.value))
                   }
                 >
-                  <option value="">Choose a model</option>
+                  <option value="" disabled hidden>
+                    Choose a model
+                  </option>
                   {models.data?.map((m) => (
                     <option key={m.id} value={m.id}>
                       Revision {m.revision} · {m.id.slice(0, 8)}

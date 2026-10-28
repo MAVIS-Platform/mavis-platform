@@ -58,10 +58,11 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
         label="Reference project"
         value={projectId}
         onChange={setProjectId}
-        options={[
-          { value: "", label: "Select a project" },
-          ...(projects.data ?? []).map((p) => ({ value: p.id, label: p.name })),
-        ]}
+        placeholder="Select a project"
+        options={(projects.data ?? []).map((project) => ({
+          value: project.id,
+          label: project.name,
+        }))}
       />
       {project && (
         <>
@@ -69,10 +70,11 @@ export function ReferenceManagement({ workspaceId }: { workspaceId: string }) {
             label="Source snapshot to publish"
             value={snapshotId}
             onChange={setSnapshotId}
-            options={[
-              { value: "", label: "Select an analyzed source snapshot" },
-              ...(snapshots.data ?? []).map((s) => ({ value: s.id, label: `${s.name} · ${s.id}` })),
-            ]}
+            placeholder="Select an analyzed source snapshot"
+            options={(snapshots.data ?? []).map((snapshot) => ({
+              value: snapshot.id,
+              label: `${snapshot.name} · ${snapshot.id}`,
+            }))}
           />
           <Button
             disabled={publish.isPending || !snapshots.data?.some((s) => s.id === snapshotId)}

@@ -15,12 +15,13 @@ export function WorkspaceSelector() {
       <div className="max-w-sm">
         <SelectField
           label="Selected workspace"
+          placeholder="Select a workspace"
           value={selection.workspaceId}
           onChange={selection.setWorkspaceId}
-          options={[
-            { value: "", label: "Choose a workspace…" },
-            ...(query.data ?? []).map((w) => ({ value: w.id, label: w.name })),
-          ]}
+          options={(query.data ?? []).map((workspace) => ({
+            value: workspace.id,
+            label: workspace.name,
+          }))}
         />
       </div>
     </RequestState>

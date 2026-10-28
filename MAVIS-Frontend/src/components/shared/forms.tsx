@@ -104,32 +104,42 @@ export function SelectField({
   value,
   onChange,
   options,
+  placeholder,
   disabled = false,
 }: {
   label: string;
   sublabel?: string | undefined;
   value: string;
   onChange: (value: string) => void;
-  options: readonly { value: string; label: string }[];
+  options: readonly { value: string; label: string; disabled?: boolean }[];
+  placeholder?: string;
   disabled?: boolean;
 }) {
+  const hasValue = options.some((option) => option.value === value && !option.disabled);
+  // Empty can be a real choice (All / None), so an unavailable value needs
+  // its own placeholder rather than silently displaying that real choice.
+  let placeholderValue = "";
+  while (options.some((option) => option.value === placeholderValue)) placeholderValue += "_";
   return (
     <FormField label={label} sublabel={sublabel}>
       {(props) => (
         <select
           {...props}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          disabled={disabled}
+          value={hasValue ? value : placeholderValue}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (options.some((option) => option.value === next && !option.disabled)) onChange(next);
+          }}
+          disabled={disabled || !options.length}
           className="h-9 w-full min-w-0 rounded-md border bg-card px-3 text-sm disabled:opacity-50"
         >
-          {!value && !options.some((option) => option.value === "") && (
-            <option value="" disabled>
-              Select {label.toLowerCase()}
+          {!hasValue && (
+            <option value={placeholderValue} disabled hidden>
+              {placeholder ?? `Select ${label.toLowerCase()}`}
             </option>
           )}
           {options.map((option) => (
-            <option key={option.value} value={option.value}>
+            <option key={option.value} value={option.value} disabled={option.disabled}>
               {option.label}
             </option>
           ))}

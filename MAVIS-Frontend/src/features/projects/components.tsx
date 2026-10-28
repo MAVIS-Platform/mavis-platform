@@ -59,24 +59,38 @@ export function ProjectSelector({
   const busy = useIsMutating() > 0;
   const query = useApiQuery("projects", {});
   const selection = useSelection();
+  const projects = (query.data ?? []).filter(
+    (project) =>
+      !workspaceId ||
+      (project.workspaceId === workspaceId &&
+        (!project.assignmentId || project.assignmentId === assignmentId)),
+  );
+  const firstProjectId = projects[0]?.id ?? "";
+  const { projectId, setProjectId } = selection;
+  useEffect(() => {
+    if (query.isSuccess && !busy && !projectId && firstProjectId) setProjectId(firstProjectId);
+  }, [query.isSuccess, busy, projectId, firstProjectId, setProjectId]);
   return (
-    <RequestState query={query} empty={query.data?.length === 0}>
+    <RequestState
+      query={query}
+      empty={projects.length === 0}
+      emptyMessage={
+        workspaceId
+          ? "No projects are available for this workspace and assignment."
+          : "No projects are available yet. Import a project from My Projects to get started."
+      }
+    >
       <SelectField
         disabled={busy}
         label="Selected project"
-        value={selection.projectId}
-        onChange={selection.setProjectId}
-        options={[
-          { value: "", label: "Choose a project…" },
-          ...(query.data ?? [])
-            .filter(
-              (p) =>
-                !workspaceId ||
-                (p.workspaceId === workspaceId &&
-                  (!p.assignmentId || p.assignmentId === assignmentId)),
-            )
-            .map((p) => ({ value: p.id, label: p.name })),
-        ]}
+        placeholder={
+          projectId
+            ? "Selected project is unavailable — choose another project"
+            : "Select a project"
+        }
+        value={projectId}
+        onChange={setProjectId}
+        options={projects.map((project) => ({ value: project.id, label: project.name }))}
       />
     </RequestState>
   );
