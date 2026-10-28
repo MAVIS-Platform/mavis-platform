@@ -3,26 +3,26 @@ import { useState } from "react";
 import type { ArchitectureElement } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { relationLabel } from "@/lib/drawio/rules";
-import { serviceName, type ServiceConnection } from "./service-overview";
-export function ServiceConnectionPanel({
+import type { NetworkConnection } from "./network-connections";
+const elementName = (elements: ArchitectureElement[], id: string) =>
+  elements.find((element) => element.id === id)?.name ?? id;
+export function ConnectionDetailsPanel({
   connection,
-  services,
+  elements,
   onInspect,
   onClose,
-  onDetails,
 }: {
-  connection: ServiceConnection;
-  services: ArchitectureElement[];
+  connection: NetworkConnection;
+  elements: ArchitectureElement[];
   onInspect: (id: string) => void;
   onClose: () => void;
-  onDetails: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [direction, setDirection] = useState("all");
   const [page, setPage] = useState(0);
   const rows = connection.relationships.filter(
     (row) =>
-      (direction === "all" || row.fromServiceId === direction) &&
+      (direction === "all" || row.fromElementId === direction) &&
       [row.id, row.edge.protocol, row.edge.originLayer ?? "", row.edge.resolutionStatus ?? ""]
         .join(" ")
         .toLowerCase()
@@ -30,17 +30,17 @@ export function ServiceConnectionPanel({
   );
   const pages = Math.max(1, Math.ceil(rows.length / 20));
   const current = Math.min(page, pages - 1);
-  const names = connection.serviceIds.map((id) => serviceName(services, id));
+  const names = connection.elementIds.map((id) => elementName(elements, id));
   return (
     <aside
-      aria-label="Service connection details"
+      aria-label="Connection details"
       className="[&_button]:min-h-11 fixed inset-x-2 bottom-2 z-40 flex max-h-[86dvh] min-w-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-lg xl:sticky xl:inset-auto xl:top-20 xl:z-auto xl:max-h-[calc(100dvh-6rem)] xl:self-start xl:shadow-none"
     >
       <header className="space-y-3 border-b p-4">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-              Connection overview
+              Connection details
             </p>
             <h2 className="mt-1 break-words text-base font-semibold">
               {names[0]} — {names[1]}
@@ -52,7 +52,7 @@ export function ServiceConnectionPanel({
         </div>
         <p className="text-sm">
           {connection.relationshipIds.length} recorded relationship(s) ·{" "}
-          {new Set(connection.relationships.map((row) => row.fromServiceId)).size} direction(s)
+          {new Set(connection.relationships.map((row) => row.fromElementId)).size} direction(s)
         </p>
         <p className="text-xs text-muted-foreground">
           {connection.evidenceCount === null
@@ -90,9 +90,9 @@ export function ServiceConnectionPanel({
             className="mt-2 h-9 w-full rounded-md border bg-card px-2 text-sm"
           >
             <option value="all">Both directions</option>
-            {connection.serviceIds.map((id) => (
+            {[...new Set(connection.elementIds)].map((id) => (
               <option key={id} value={id}>
-                From {serviceName(services, id)}
+                From {elementName(elements, id)}
               </option>
             ))}
           </select>
@@ -100,7 +100,7 @@ export function ServiceConnectionPanel({
         {rows.slice(current * 20, current * 20 + 20).map((row) => (
           <article key={row.id} className="space-y-2 rounded-lg border p-3">
             <p className="break-words text-sm font-medium">
-              {serviceName(services, row.fromServiceId)} → {serviceName(services, row.toServiceId)}
+              {elementName(elements, row.fromElementId)} → {elementName(elements, row.toElementId)}
             </p>
             <p className="text-sm">{relationLabel({ id: row.id, type: row.edge.protocol })}</p>
             <p className="text-xs text-muted-foreground">
@@ -159,11 +159,6 @@ export function ServiceConnectionPanel({
           </div>
         )}
       </div>
-      <footer className="border-t p-3">
-        <Button size="sm" variant="outline" onClick={onDetails}>
-          Show these relationships in Details
-        </Button>
-      </footer>
     </aside>
   );
 }

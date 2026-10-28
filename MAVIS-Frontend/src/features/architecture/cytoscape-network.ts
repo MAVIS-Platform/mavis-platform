@@ -1,6 +1,7 @@
 import type { ElementDefinition } from "cytoscape";
 import type { ArchitecturalModel } from "@/types/domain";
 import { networkPositions } from "./network-layout";
+import type { NetworkConnection } from "./network-connections";
 import { exploreAppearance } from "./explore-layout";
 
 export function networkBadge(type?: string) {
@@ -40,7 +41,11 @@ export function networkColor(type?: string) {
 }
 
 // Renderer IDs are namespaced; source IDs remain unchanged for evidence and 3E.
-export function networkElements(model: ArchitecturalModel, aspectRatio = 2): ElementDefinition[] {
+export function networkElements(
+  model: ArchitecturalModel,
+  aspectRatio = 2,
+  connections?: NetworkConnection[],
+): ElementDefinition[] {
   const positions = networkPositions(model, aspectRatio);
   const appearance = exploreAppearance(model);
   const nodes = new Map(model.elements.map((node) => [node.id, node]));
@@ -70,26 +75,43 @@ export function networkElements(model: ArchitecturalModel, aspectRatio = 2): Ele
         elementType: node.elementType,
       },
     })),
-    ...model.edges
-      .filter((edge) => nodes.has(edge.from) && nodes.has(edge.to))
-      .map((edge) => ({
-        group: "edges" as const,
-        data: {
-          id: `edge:${edge.id}`,
-          sourceId: edge.id,
-          source: `node:${edge.from}`,
-          target: `node:${edge.to}`,
-          label: edge.protocol,
-          color: networkColor(nodes.get(edge.from)?.elementType),
-          exploreColor: appearance.get(edge.from)!.color,
-          lineStyle: edge.uncertain
-            ? "dotted"
-            : edge.protocol === "DECLARED_COMPOSE" || edge.originLayer === "DEPLOYMENT"
-              ? "dashed"
-              : "solid",
-          underlyingEdgeIds: edge.underlyingEdgeIds ?? [edge.id],
-        },
-      })),
+    ...(connections
+      ? connections.map((connection) => ({
+          group: "edges" as const,
+          data: {
+            id: connection.key,
+            connectionKey: connection.key,
+            sourceId: connection.key,
+            source: `node:${connection.elementIds[0]}`,
+            target: `node:${connection.elementIds[1]}`,
+            label: `${connection.relationshipIds.length} recorded relationship(s)`,
+            color: networkColor(nodes.get(connection.elementIds[0])?.elementType),
+            exploreColor: appearance.get(connection.elementIds[0])!.color,
+            lineStyle: "solid",
+            underlyingEdgeIds: connection.relationshipIds,
+            projectedEdgeIds: connection.projectedEdgeIds,
+          },
+        }))
+      : model.edges
+          .filter((edge) => nodes.has(edge.from) && nodes.has(edge.to))
+          .map((edge) => ({
+            group: "edges" as const,
+            data: {
+              id: `edge:${edge.id}`,
+              sourceId: edge.id,
+              source: `node:${edge.from}`,
+              target: `node:${edge.to}`,
+              label: edge.protocol,
+              color: networkColor(nodes.get(edge.from)?.elementType),
+              exploreColor: appearance.get(edge.from)!.color,
+              lineStyle: edge.uncertain
+                ? "dotted"
+                : edge.protocol === "DECLARED_COMPOSE" || edge.originLayer === "DEPLOYMENT"
+                  ? "dashed"
+                  : "solid",
+              underlyingEdgeIds: edge.underlyingEdgeIds ?? [edge.id],
+            },
+          }))),
   ];
 }
 
