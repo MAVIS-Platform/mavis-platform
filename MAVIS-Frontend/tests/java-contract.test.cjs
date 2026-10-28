@@ -562,3 +562,11 @@ test("admin AI usage denies access on backend authorization failure", async t =>
  environment(t);t.mock.method(globalThis,"fetch",async()=>new Response(null,{status:403}));
  await assert.rejects(()=>executeJava("adminAiUsage",{},"jwt",new AbortController().signal),error=>error.status===403);
 });
+
+test("admin health uses protected backend probes and preserves degraded states",async t=>{
+ environment(t);
+ const data={status:"DEGRADED",checkedAt:"2026-10-28T08:00:00Z",scope:"Application dependencies",checks:[{id:"database",name:"PostgreSQL",status:"DOWN",latencyMs:20,message:"Could not connect",action:"Check database"}],jvm:{usedBytes:100,maxBytes:1000,uptimeSeconds:30},storage:{}};
+ t.mock.method(globalThis,"fetch",async(url,options)=>{assert.ok(url.endsWith("/api/v1/admin/health"));assert.equal(options.headers.get("Authorization"),"Bearer jwt");return Response.json({code:200,data});});
+ const result=await executeJava("adminHealth",{},"jwt");assert.equal(result.status,"DEGRADED");
+ const {operationPermission}=require("../src/lib/auth/permissions.ts");assert.equal(operationPermission("adminHealth"),"admin:manage");
+});

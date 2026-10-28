@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { DetailPanel } from "@/components/shared/data";
 import { RequestState, ErrorState } from "@/components/shared/request-state";
-import { SelectField, ConfirmDialog } from "@/components/shared/forms";
+import { SelectField, ConfirmDialog, SearchInput } from "@/components/shared/forms";
+import { AdminToolbar } from "@/features/administration/operations";
 import { Button } from "@/components/ui/button";
 const active = new Set([
   "NOT_STARTED",
@@ -29,7 +30,16 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     { enabled: administrative || !!projectId, poll: true },
   );
   const [selected, setSelected] = useState("");
-  const selectedId = selected || list.data?.[0]?.id || "";
+  const [search, setSearch] = useState(""),
+    [status, setStatus] = useState("all");
+  const visible = administrative
+    ? (list.data ?? []).filter(
+        (s) =>
+          (s.id + " " + (s.scenarioName ?? "")).toLowerCase().includes(search.toLowerCase()) &&
+          (status === "all" || s.executionStatus === status),
+      )
+    : (list.data ?? []);
+  const selectedId = visible.find((s) => s.id === selected)?.id || visible[0]?.id || "";
   const session = useApiQuery(
     "runtimeReadSession",
     { sessionId: selectedId },
@@ -93,17 +103,48 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           </RequestState>
         </DetailPanel>
       )}
+      {administrative && (
+        <>
+          <AdminToolbar
+            fetching={list.isFetching}
+            updatedAt={list.dataUpdatedAt}
+            refresh={() => void list.refetch()}
+          >
+            <span className="text-sm text-muted-foreground">
+              Latest 50 sessions · inspect before stopping a run
+            </span>
+          </AdminToolbar>
+          <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr]">
+            <SearchInput label="Search session or scenario" value={search} onChange={setSearch} />
+            <SelectField
+              label="Execution status"
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: "all", label: "All statuses" },
+                ...Array.from(new Set((list.data ?? []).map((s) => s.executionStatus)))
+                  .sort()
+                  .map((value) => ({ value, label: value })),
+              ]}
+            />
+          </div>
+        </>
+      )}
       <DetailPanel title="Runtime sessions">
         <RequestState
           query={list}
-          empty={!list.data?.length}
-          emptyMessage="No runtime session exists for this project. Save a configuration and scenario above, then approve and queue a session."
+          empty={!visible.length}
+          emptyMessage={
+            administrative
+              ? "No sessions match this view. Try clearing the filters or refresh to check for new runs."
+              : "No runtime session exists for this project. Save a configuration and scenario above, then approve and queue a session."
+          }
         >
           <SelectField
             label="Runtime session"
             value={selectedId}
             onChange={setSelected}
-            options={(list.data ?? []).map((s) => ({
+            options={visible.map((s) => ({
               value: s.id,
               label: `${s.scenarioName ?? s.id.slice(0, 8)} · ${s.executionStatus}`,
             }))}

@@ -539,6 +539,7 @@ export async function executeJava(
       return list.parse(await get("admin/jobs")).map(jobView);
     case "adminAiUsage":
       return get("admin/ai-usage");
+    case "adminHealth": return get("admin/health");
     case "platformSummary": {
       const a = z
         .object({
