@@ -13,7 +13,44 @@ import type { Response } from "@/lib/api/contracts";
 export function Accounts() {
   const query = useApiQuery("accounts", {});
   const lock = useApiMutation("setAccountLock");
-  const [selected, setSelected] = useState<Response<"accounts">[number] | null>(null);
+  const updateRole = useApiMutation("setAccountRole");
+  type Account = Response<"accounts">[number];
+  const [drafts, setDrafts] = useState<Record<string, Partial<Pick<Account, "role" | "locked">>>>(
+    {},
+  );
+  const [saving, setSaving] = useState<string | null>(null);
+  const change = (account: Account, patch: Partial<Pick<Account, "role" | "locked">>) => {
+    setDrafts((previous) => ({ ...previous, [account.id]: { ...previous[account.id], ...patch } }));
+  };
+  const save = async (account: Account) => {
+    const draft = drafts[account.id];
+    if (!draft || saving) return;
+    setSaving(account.id);
+    lock.reset();
+    updateRole.reset();
+    try {
+      if (draft.locked !== undefined && draft.locked !== account.locked) {
+        await lock.mutateAsync({ accountId: account.id, locked: draft.locked });
+        setDrafts((previous) => {
+          const remaining = { ...previous[account.id] };
+          delete remaining.locked;
+          return { ...previous, [account.id]: remaining };
+        });
+      }
+      if (draft.role !== undefined && draft.role !== account.role) {
+        await updateRole.mutateAsync({ accountId: account.id, role: draft.role });
+        setDrafts((previous) => {
+          const remaining = { ...previous[account.id] };
+          delete remaining.role;
+          return { ...previous, [account.id]: remaining };
+        });
+      }
+    } catch {
+      // Mutation errors remain visible; keep unsaved fields available for retry.
+    } finally {
+      setSaving(null);
+    }
+  };
   const [search, setSearch] = useState("");
   const [role, setRole] = useState("all"),
     [state, setState] = useState("all"),
@@ -33,7 +70,7 @@ export function Accounts() {
         refresh={() => void query.refetch()}
       >
         <p className="text-sm text-muted-foreground">
-          Manage access and teaching roles. Changes require confirmation.
+          Manage access and teaching roles. Click Save at the end of a row to apply changes.
         </p>
       </AdminToolbar>
       <div className="grid gap-4 sm:grid-cols-3">
@@ -82,7 +119,7 @@ export function Accounts() {
         />
       </div>
       <RequestState query={query}>
-        <div className="space-y-4">
+        <div className="space-y-4 [&_table]:min-w-[1000px] [&_th:first-child]:w-[300px] [&_th:nth-child(2)]:w-[220px] [&_th:last-child]:w-[190px] [&_thead]:bg-muted/50 [&_th]:py-4 [&_th]:font-semibold [&_td]:py-5">
           <DataTable
             emptyDescription="Try clearing the filters or refresh to check for new records."
             rows={rows.slice((activePage - 1) * 10, activePage * 10)}
@@ -93,13 +130,50 @@ export function Accounts() {
                 key: "name",
                 label: "Account",
                 render: (a) => (
-                  <div>
-                    {a.name}
-                    {a.email && <p className="text-xs text-muted-foreground">{a.email}</p>}
+                  <div className="flex min-w-56 items-center gap-3">
+                    <span
+                      aria-hidden="true"
+                      className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary"
+                    >
+                      {a.name
+                        .trim()
+                        .split(/\s+/)
+                        .map((part) => part[0])
+                        .slice(-2)
+                        .join("")
+                        .toUpperCase()}
+                    </span>
+                    <div className="space-y-1">
+                      <p className="font-semibold text-foreground">{a.name}</p>
+                      {a.email && <p className="text-sm text-muted-foreground">{a.email}</p>}
+                    </div>
                   </div>
                 ),
               },
-              { key: "role", label: "Role", render: (a) => <TeachingRoleControl account={a} /> },
+              {
+                key: "role",
+                label: "Role",
+                render: (a) =>
+                  a.role === "admin" ? (
+                    <StatusBadge status="Administrator" />
+                  ) : (
+                    <select
+                      aria-label={`Role for ${a.name}`}
+                      className="h-9 w-44 rounded-md border bg-card px-3 text-sm disabled:opacity-50"
+                      value={drafts[a.id]?.role ?? a.role}
+                      disabled={saving !== null}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (value === "student" || value === "lecturer" || value === "admin")
+                          change(a, { role: value });
+                      }}
+                    >
+                      <option value="student">Student</option>
+                      <option value="lecturer">Lecturer</option>
+                      <option value="admin">System administrator</option>
+                    </select>
+                  ),
+              },
               {
                 key: "status",
                 label: "Status",
@@ -117,87 +191,61 @@ export function Accounts() {
                 ),
               },
               {
+                key: "createdAt",
+                label: "Created at",
+                render: (a) => {
+                  const date = a.createdAt ? new Date(a.createdAt) : null;
+                  if (!date || Number.isNaN(date.getTime()))
+                    return <span className="text-muted-foreground">—</span>;
+                  return (
+                    <time
+                      dateTime={a.createdAt ?? undefined}
+                      className="block min-w-28 space-y-1 tabular-nums"
+                    >
+                      <span className="block font-medium">{date.toLocaleDateString("vi-VN")}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </time>
+                  );
+                },
+              },
+              {
                 key: "action",
                 label: "Action",
-                render: (a) => (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      lock.reset();
-                      setSelected(a);
-                    }}
-                  >
-                    {a.locked ? "Unlock" : "Lock"}
-                  </Button>
-                ),
+                render: (a) => {
+                  const draft = drafts[a.id];
+                  const locked = draft?.locked ?? a.locked;
+                  const dirty = locked !== a.locked || (draft?.role ?? a.role) !== a.role;
+                  return (
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        aria-pressed={locked}
+                        disabled={saving !== null}
+                        onClick={() => change(a, { locked: !locked })}
+                      >
+                        {locked ? "Unlock" : "Lock"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={!dirty || saving !== null}
+                        onClick={() => void save(a)}
+                      >
+                        {saving === a.id ? "Saving…" : "Save"}
+                      </Button>
+                    </div>
+                  );
+                },
               },
             ]}
           />
-          <ConfirmDialog
-            open={Boolean(selected)}
-            onOpenChange={(open) => {
-              if (!open) setSelected(null);
-            }}
-            title={`${selected?.locked ? "Unlock" : "Lock"} this account?`}
-            description={`This changes sign-in access for ${selected?.name} (${selected?.email ?? "no email"}). Review the account before confirming.`}
-            pending={lock.isPending}
-            error={lock.isError ? <ErrorState error={lock.error} /> : undefined}
-            onConfirm={() => {
-              if (selected)
-                lock.mutate(
-                  { accountId: selected.id, locked: !selected.locked },
-                  { onSuccess: () => setSelected(null) },
-                );
-            }}
-          />
+          {lock.isError && <ErrorState error={lock.error} />}
+          {updateRole.isError && <ErrorState error={updateRole.error} />}
           <PageResults count={rows.length} page={activePage} onPage={setPage} />
         </div>
       </RequestState>
-    </div>
-  );
-}
-function TeachingRoleControl({ account }: { account: Response<"accounts">[number] }) {
-  const update = useApiMutation("setAccountRole");
-  const [open, setOpen] = useState(false);
-  const [role, setRole] = useState<"student" | "lecturer" | "admin">(account.role);
-  if (account.role === "admin") return <StatusBadge status="Administrator" />;
-  return (
-    <div className="space-y-2">
-      <SelectField
-        label={`Role for ${account.name}`}
-        value={role}
-        onChange={(value) => {
-          if (value === "student" || value === "lecturer" || value === "admin") setRole(value);
-        }}
-        options={[
-          { value: "student", label: "Student" },
-          { value: "lecturer", label: "Lecturer" },
-          { value: "admin", label: "System administrator" },
-        ]}
-      />
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={update.isPending || role === account.role}
-        onClick={() => {
-          update.reset();
-          setOpen(true);
-        }}
-      >
-        Save role
-      </Button>
-      <ConfirmDialog
-        open={open}
-        onOpenChange={setOpen}
-        title={`Change role to ${role}?`}
-        description={`${account.name} will receive ${role} permissions. ${role === "admin" ? "This grants full system administration access. " : ""}They should sign in again after this change.`}
-        pending={update.isPending}
-        error={update.isError ? <ErrorState error={update.error} /> : undefined}
-        onConfirm={() =>
-          update.mutate({ accountId: account.id, role }, { onSuccess: () => setOpen(false) })
-        }
-      />
     </div>
   );
 }
@@ -380,9 +428,27 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
   );
 }
 export function PlatformUsage() {
+  const [logSearch, setLogSearch] = useState("");
+  const [logPage, setLogPage] = useState(1);
   const q = useApiQuery("adminAiUsage", {}, { refreshMs: 60000 });
   const rows = q.data?.providers ?? [],
     measured = rows.filter((r) => r.usage);
+  const events = (q.data?.events ?? []).filter((event) =>
+    [
+      event.userName,
+      event.userEmail,
+      event.userId,
+      event.provider,
+      event.model,
+      event.source,
+      event.requestId,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(logSearch.trim().toLowerCase()),
+  );
+  const activeLogPage = Math.min(logPage, Math.max(1, Math.ceil(events.length / 10)));
   const providers = rows.filter((r, i) => rows.findIndex((x) => x.provider === r.provider) === i);
   return (
     <div className="space-y-5">
@@ -477,6 +543,97 @@ export function PlatformUsage() {
                 },
               ]}
             />
+          </DetailPanel>
+          <DetailPanel title="Usage logs">
+            <p className="text-sm text-muted-foreground">
+              Latest 200 recorded requests, newest first. Times use your local timezone. Earlier
+              records may not have a user attached.
+            </p>
+            <SearchInput
+              label="Search user, email, provider or model"
+              value={logSearch}
+              onChange={(value) => {
+                setLogSearch(value);
+                setLogPage(1);
+              }}
+            />
+            {q.data?.eventsAvailable ? (
+              <>
+                <DataTable
+                  caption="AI usage request logs"
+                  emptyDescription="No recorded requests match this search."
+                  rows={events.slice((activeLogPage - 1) * 10, activeLogPage * 10)}
+                  rowKey={(event) => event.requestId}
+                  columns={[
+                    {
+                      key: "user",
+                      label: "User",
+                      render: (event) => (
+                        <div className="min-w-44 space-y-1">
+                          <p className="font-medium">{event.userName ?? "User not recorded"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {event.userEmail ?? event.userId ?? "Historical or background request"}
+                          </p>
+                        </div>
+                      ),
+                    },
+                    {
+                      key: "time",
+                      label: "Time",
+                      render: (event) => (
+                        <time
+                          dateTime={event.recordedAt}
+                          className="whitespace-nowrap tabular-nums"
+                        >
+                          {new Date(event.recordedAt).toLocaleString("vi-VN")}
+                        </time>
+                      ),
+                    },
+                    {
+                      key: "model",
+                      label: "Provider / model",
+                      render: (event) => (
+                        <div>
+                          <p className="font-medium">
+                            {event.provider === "openai" ? "OpenAI" : "Gemini"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">{event.model}</p>
+                        </div>
+                      ),
+                    },
+                    {
+                      key: "input",
+                      label: "Input tokens",
+                      render: (event) => event.inputTokens.toLocaleString(),
+                    },
+                    {
+                      key: "output",
+                      label: "Output tokens",
+                      render: (event) => event.outputTokens.toLocaleString(),
+                    },
+                    {
+                      key: "source",
+                      label: "Source",
+                      render: (event) => (event.source === "next" ? "Next.js" : "Java"),
+                    },
+                    {
+                      key: "request",
+                      label: "Request ID",
+                      render: (event) => (
+                        <code className="text-xs" title={event.requestId}>
+                          {event.requestId.slice(0, 8)}
+                        </code>
+                      ),
+                    },
+                  ]}
+                />
+                <PageResults count={events.length} page={activeLogPage} onPage={setLogPage} />
+              </>
+            ) : (
+              <Notice>
+                Usage logs are unavailable. Check the usage storage and apply migration V23.
+              </Notice>
+            )}
           </DetailPanel>
           <DetailPanel
             title="Provider account data"
