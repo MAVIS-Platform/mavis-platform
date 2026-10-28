@@ -1853,3 +1853,31 @@ test("graph camera cache survives filtering, restores hidden dragged nodes and k
     assert.deepEqual(empty.positions.get("node:db"),{x:505,y:606});
   } finally {cy.destroy();}
 });
+
+
+test("Bilateral evidence assigns saved source roles independently of array order and selected side",()=>{
+ const {buildPeerConnectionGroups}=require("../src/features/architecture/communication-evidence.ts");
+ const proof=(id,role,location)=>({id,communicationRole:role,location,snippet:id+" source",kind:"source",origin:"persisted",complete:true});
+ const source={elements:[{id:"a",name:"A",elementType:"SERVICE_CONTAINER"},{id:"client",name:"Client",parentId:"a",elementType:"COMPONENT",properties:{sourceFile:"a/ClientDeclaration.java"}},{id:"b",name:"B",elementType:"SERVICE_CONTAINER"},{id:"server",name:"Controller",parentId:"b",elementType:"COMPONENT",properties:{sourceFile:"b/ControllerDefinition.java"}}],edges:[{id:"http",from:"client",to:"server",protocol:"SERVICE_HTTP_CALL",properties:{clientFramework:"OPENFEIGN",callerFile:"a/OldDeclaration.java",callerLine:99,calleeFile:"b/OldDeclaration.java",calleeLine:88},evidence:[proof("server-proof","SERVER_ENDPOINT","b/Controller.java:20"),proof("caller-proof","CALL_SITE","a/Service.java:10")]}]};
+ const before=JSON.stringify(source);const outbound=buildPeerConnectionGroups(source,"a")[0],inbound=buildPeerConnectionGroups(source,"b")[0];
+ assert.equal(outbound.subjectCodeItems[0].file,"a/Service.java:10");assert.equal(outbound.peerCodeItems[0].file,"b/Controller.java:20");
+ assert.equal(outbound.subjectCodeItems[0].snippet,"caller-proof source");assert.equal(inbound.subjectCodeItems[0].snippet,"server-proof source");
+ assert.equal(inbound.peerCodeItems[0].file,"a/Service.java:10");assert.equal(outbound.subjectCodeItems[0].line,undefined);assert.equal(JSON.stringify(source),before);
+ source.edges[0].properties.callerSnippet="explicit metadata source";source.edges[0].properties.callerFile="a/Explicit.java";source.edges[0].properties.callerLine=7;
+ const explicit=buildPeerConnectionGroups(source,"a")[0].subjectCodeItems[0];assert.equal(explicit.file,"a/Explicit.java");assert.equal(explicit.line,7);assert.equal(explicit.snippet,"explicit metadata source");
+});
+
+test("Unscoped relationship snippets are not guessed into caller or receiver code columns",()=>{
+ const {buildPeerConnectionGroups}=require("../src/features/architecture/communication-evidence.ts");
+ const source={elements:[{id:"a",name:"A",elementType:"SERVICE_CONTAINER"},{id:"b",name:"B",elementType:"SERVICE_CONTAINER"}],edges:[{id:"http",from:"a",to:"b",protocol:"SERVICE_HTTP_CALL",properties:{clientFramework:"OPENFEIGN"},evidence:[{id:"unassigned",kind:"source",origin:"persisted",location:"unknown/Source.java",snippet:"unscoped source",complete:true}]}]};
+ const group=buildPeerConnectionGroups(source,"a")[0];assert.equal(group.subjectCodeItems[0].snippet,undefined);assert.equal(group.peerCodeItems[0].snippet,undefined);
+ assert.ok(group.subjectCodeItems[0].componentName.includes("Chưa xác định"));assert.ok(group.peerCodeItems[0].componentName.includes("Chưa xác định"));
+ assert.equal(source.edges[0].evidence[0].snippet,"unscoped source");
+});
+
+
+test("Communication tree never promotes metadata previews into caller or server source proof",()=>{
+ const {buildPeerConnectionGroups}=require("../src/features/architecture/communication-evidence.ts");
+ const source={elements:[{id:"a",name:"A",elementType:"SERVICE_CONTAINER"},{id:"b",name:"B",elementType:"SERVICE_CONTAINER"}],edges:[{id:"http",from:"a",to:"b",protocol:"SERVICE_HTTP_CALL",properties:{},evidence:[{id:"preview",origin:"preview",kind:"source",communicationRole:"CALL_SITE",sourceType:"MODEL_METADATA_PREVIEW",location:"model metadata",snippet:"illustrative source",complete:false}]}]};
+ const group=buildPeerConnectionGroups(source,"a")[0];assert.equal(group.subjectCodeItems[0].snippet,undefined);assert.equal(group.peerCodeItems[0].snippet,undefined);
+});
