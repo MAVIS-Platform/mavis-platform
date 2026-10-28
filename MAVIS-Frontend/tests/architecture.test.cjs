@@ -1801,3 +1801,18 @@ test("communications include descendants and messaging channels without inventin
  assert.ok(communicationDescription(edges[0]).includes("does not prove runtime"));assert.ok(communicationDescription(edges[2]).includes("does not prove HTTP"));
  assert.ok(communicationTitle(edges[0]).includes("Messaging"));assert.ok(!nodeCommunications({elements,edges},"a").some(e=>e.from==="a"&&e.to==="b"));
 });
+
+test("3E evidence empty state explains next action and source snippets start collapsed when requested", () => {
+  const React = require("react"), { renderToStaticMarkup } = require("react-dom/server");
+  const { ThreeEEvidence } = require("../src/features/architecture/three-e-evidence.tsx");
+  const empty = renderToStaticMarkup(React.createElement(ThreeEEvidence, { evidence: [] }));
+  assert.match(empty, /No evidence snippets are attached/);
+  assert.match(empty, /re-run analysis/);
+  const snippet = { id:"caller-proof",origin:"persisted",kind:"source",sourceType:"STATIC_CODE",communicationRole:"CALL_SITE",location:"order/OrderService.java:42",snippet:"catalog.deduct(request);",complete:true };
+  const html = renderToStaticMarkup(React.createElement(ThreeEEvidence, { evidence:[snippet],defaultOpen:false }));
+  assert.match(html, /Caller · invocation in source/);
+  assert.match(html, /order\/OrderService.java:42/);
+  assert.match(html, /Copy source snippet 1/);
+  assert.doesNotMatch(html, /<details[^>]*open/);
+  assert.match(html, /tabindex="0"/);
+});

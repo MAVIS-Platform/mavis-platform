@@ -61,7 +61,7 @@ export function ArchitecturePresentation({
       <div
         className={
           selectedId
-            ? "grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_420px]"
+            ? "grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,440px)] 2xl:grid-cols-[minmax(0,1fr)_480px]"
             : "min-w-0"
         }
       >

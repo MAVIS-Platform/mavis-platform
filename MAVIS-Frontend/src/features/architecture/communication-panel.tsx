@@ -18,7 +18,7 @@ export function CommunicationPanel({
   selectedId: string;
   onSelect: (id: string) => void;
 }) {
-  const [limit, setLimit] = useState(12);
+  const [limit, setLimit] = useState(4);
   const edge = model.edges.find((e) => e.id === selectedId);
   const contract = edge ? feignContract(edge) : null;
   const description = edge ? communicationDescription(edge) : null;
@@ -37,7 +37,7 @@ export function CommunicationPanel({
   return (
     <section
       aria-label="Communication evidence"
-      className="space-y-2 rounded-lg border bg-background p-3 text-xs"
+      className="space-y-3 rounded-xl border bg-background p-4 text-sm leading-6"
     >
       <h3 className="font-semibold">How these services communicate</h3>
       {!contract && edge && description && (
@@ -118,7 +118,7 @@ export function CommunicationPanel({
             ))}
           </ul>
           {related.length > limit && (
-            <Button size="sm" variant="outline" onClick={() => setLimit(limit + 12)}>
+            <Button size="sm" variant="outline" onClick={() => setLimit(limit + 4)}>
               Show more relationships
             </Button>
           )}
