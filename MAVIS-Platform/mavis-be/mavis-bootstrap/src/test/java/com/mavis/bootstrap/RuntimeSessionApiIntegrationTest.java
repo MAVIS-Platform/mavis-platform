@@ -122,7 +122,7 @@ class RuntimeSessionApiIntegrationTest extends ApiIntegrationContext {
         // --- BƯỚC 1: POST /api/v1/analyzer/runtime/preflight ---
         MvcResult preflightResult = mockMvc.perform(post("/api/v1/analyzer/runtime/preflight")
                         .param("snapshotId", snapshot.getId().toString())
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -160,7 +160,7 @@ class RuntimeSessionApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         MvcResult createResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions")
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(createRequest)))
                 .andExpect(status().isOk())
@@ -195,7 +195,7 @@ class RuntimeSessionApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 3: POST /api/v1/analyzer/runtime/sessions/{sessionId}/approve ---
         MvcResult approveResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/approve", sessionId)
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -231,7 +231,7 @@ class RuntimeSessionApiIntegrationTest extends ApiIntegrationContext {
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
                         .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test")
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(ackAllocated)))
                 .andExpect(status().isOk())
@@ -250,7 +250,7 @@ class RuntimeSessionApiIntegrationTest extends ApiIntegrationContext {
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
                         .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test")
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(ackRunning)))
                 .andExpect(status().isOk())
@@ -268,7 +268,7 @@ class RuntimeSessionApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 4: POST /api/v1/analyzer/runtime/sessions/{sessionId}/stop ---
         MvcResult stopResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/stop", sessionId)
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -289,7 +289,7 @@ class RuntimeSessionApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 5: GET /api/v1/analyzer/projects/{projectId}/runtime-sessions ---
         MvcResult listResult = mockMvc.perform(get("/api/v1/analyzer/projects/{projectId}/runtime-sessions", project.getId())
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))

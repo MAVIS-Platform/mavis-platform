@@ -213,7 +213,7 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 1: POST /api/v1/analyzer/models/{modelVersionId}/evaluate ---
         MvcResult evalResult = mockMvc.perform(post("/api/v1/analyzer/models/{modelVersionId}/evaluate", modelVersion.getId())
-                        .header("X-Test-User-Email",user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -249,7 +249,7 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 2: GET /api/v1/analyzer/models/{modelVersionId}/evaluations ---
         MvcResult getEvaluationsResult = mockMvc.perform(get("/api/v1/analyzer/models/{modelVersionId}/evaluations", modelVersion.getId())
-                        .header("X-Test-User-Email",user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -267,7 +267,7 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 3: GET /api/v1/analyzer/evaluations/{evaluationRunId}/findings ---
         MvcResult getFindingsResult = mockMvc.perform(get("/api/v1/analyzer/evaluations/{evaluationRunId}/findings", evaluationRunId)
-                        .header("X-Test-User-Email",user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -291,7 +291,7 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
         String findingId = sharedFinding.path("id").asText();
         MvcResult evidenceResult = mockMvc.perform(get(
                         "/api/v1/analyzer/evaluations/{run}/findings/{finding}/evidence", evaluationRunId, findingId)
-                        .header("X-Test-User-Email", user.getEmail()))
+                        .header("Authorization", testAuthorization(user.getEmail())))
                 .andExpect(status().isOk()).andReturn();
         JsonNode evidenceRows = objectMapper.readTree(evidenceResult.getResponse().getContentAsString()).path("data");
         assertThat(evidenceRows.size()).isEqualTo(2);
@@ -304,7 +304,7 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
                 .put("elementId", sharedDb.getId().toString()).put("explanationScope", "RULE_FINDING")
                 .put("evaluationRunId", evaluationRunId.toString()).put("findingId", findingId);
         mockMvc.perform(post("/api/v1/analyzer/ai/explain")
-                        .header("X-Test-User-Email", user.getEmail()).contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", testAuthorization(user.getEmail())).contentType(MediaType.APPLICATION_JSON)
                         .content(explanation.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.contractVersion").value("3e/2"))
@@ -312,14 +312,14 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
                 .andExpect(jsonPath("$.data.citedEvidenceIds.length()").value(2));
         explanation.put("elementId", serviceIsolated.getId().toString());
         mockMvc.perform(post("/api/v1/analyzer/ai/explain")
-                        .header("X-Test-User-Email", user.getEmail()).contentType(MediaType.APPLICATION_JSON)
+                        .header("Authorization", testAuthorization(user.getEmail())).contentType(MediaType.APPLICATION_JSON)
                         .content(explanation.toString()))
                 .andExpect(status().isBadRequest());
 
         User outsider = userRepository.save(User.builder().email("outsider_" + UUID.randomUUID() + "@example.invalid")
                 .passwordHash("fixture-only").fullName("Unrelated student").role(studentRole).build());
         mockMvc.perform(get("/api/v1/analyzer/evaluations/{run}/findings/{finding}/evidence", evaluationRunId, findingId)
-                        .header("X-Test-User-Email", outsider.getEmail()))
+                        .header("Authorization", testAuthorization(outsider.getEmail())))
                 .andExpect(status().isForbidden());
 
         System.out.println("\n>>> [XÁC MINH CHI TIẾT TỪNG QUY TẮC]:");

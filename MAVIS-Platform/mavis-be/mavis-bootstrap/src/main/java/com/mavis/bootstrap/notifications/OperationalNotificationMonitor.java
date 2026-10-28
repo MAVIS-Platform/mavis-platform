@@ -19,5 +19,5 @@ public class OperationalNotificationMonitor {
  public void check(){try{
   Object checks=health.snapshot().get("checks");
   if(checks instanceof List<?> list) for(Object item:list) if(item instanceof Map<?,?> row) jdbc.queryForObject("SELECT mavis_observe_health(?,?)",Object.class,String.valueOf(row.get("id")),String.valueOf(row.get("status")));
- }catch(org.springframework.dao.DataAccessException e){log.warn("Operational notification storage unavailable; check migration V21.");}}
+ }catch(org.springframework.dao.DataAccessException e){log.warn("Operational notification storage unavailable; check migration V22.");}}
 }

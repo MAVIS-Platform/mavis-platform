@@ -12,7 +12,11 @@ import { DetailPanel } from "@/components/shared/data";
 import { Button } from "@/components/ui/button";
 import type { Request } from "@/lib/api/contracts";
 import { ArtifactSelector, type ArtifactSelection } from "./artifact-selector";
-import { isDeadlinePassed, missingDiagramRequirements } from "./submission-readiness";
+import {
+  isDeadlinePassed,
+  missingDiagramRequirements,
+  runtimeEvidenceBlocked,
+} from "./submission-readiness";
 import { Textarea } from "@/components/ui/textarea";
 import type { Assignment } from "@/features/assignments/requirements";
 import { Input } from "@/components/ui/input";
@@ -194,7 +198,12 @@ export function SubmissionComposer({
                   diagrams.isError ||
                   !choice ||
                   choice.documents.length + choice.diagramVersionIds.length === 0 ||
-                  (requirements?.requireRuntimeTrace && (!selectedRuntime || sessions.isError || sessions.isPending))
+                  (requirements?.requireRuntimeTrace && !selectedRuntime) ||
+                  runtimeEvidenceBlocked(
+                    !!requirements?.requireRuntimeTrace,
+                    sessions.isPending,
+                    sessions.isError,
+                  )
                 }
                 onClick={async () => {
                   if (!state.model || !choice) return;

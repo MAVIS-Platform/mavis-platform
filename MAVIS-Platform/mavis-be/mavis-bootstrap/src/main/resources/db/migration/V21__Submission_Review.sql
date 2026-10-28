@@ -1,4 +1,5 @@
-CREATE TABLE submission_reviews (
+-- Some environments provisioned this table manually while duplicate V11 prevented Flyway startup.
+CREATE TABLE IF NOT EXISTS submission_reviews (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     submission_id UUID NOT NULL UNIQUE REFERENCES submission_snapshots(id) ON DELETE CASCADE,
     lecturer_id UUID NOT NULL REFERENCES users(id),

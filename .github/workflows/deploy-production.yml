@@ -27,6 +27,20 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 5
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: mavis_ci
+          POSTGRES_USER: mavis_ci
+          POSTGRES_PASSWORD: isolated_migration_ci_only
+        ports: ['15438:5432']
+        options: >-
+          --health-cmd "pg_isready -U mavis_ci -d mavis_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      MAVIS_MIGRATION_TEST_JDBC_URL: jdbc:postgresql://127.0.0.1:15438/mavis_ci
+      MAVIS_MIGRATION_TEST_JDBC_USER: mavis_ci
+      MAVIS_MIGRATION_TEST_JDBC_PASSWORD: isolated_migration_ci_only
     steps:
       - uses: actions/checkout@v6
       - name: Deployment and rollback tests
@@ -38,10 +52,7 @@ jobs:
           cache: maven
       - name: Backend regression tests
         working-directory: MAVIS-Platform/mavis-be
-        run: bash mvnw -B -ntp -pl mavis-analyzer -am -Dtest=JavaSourceParserTest,GraphBuilderServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
-      - name: Notification API authorization tests
-        working-directory: MAVIS-Platform/mavis-be
-        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=NotificationControllerTest -Dsurefire.failIfNoSpecifiedTests=false test
+        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=JavaSourceParserTest,GraphBuilderServiceTest,FeignCommunicationResolverTest,CrossLanguageServiceLinkerTest,SecurityConfigTest,JobServiceImplTest,RuntimeRecoveryControllerTest,OtelTraceCorrelationServiceImplTest,MigrationUpgradeTest,AdminHealthControllerTest,AiUsageControllerTest,GeminiMonitoringClientTest,NotificationControllerTest -Dsurefire.failIfNoSpecifiedTests=false test
       - name: Transactional notification delivery tests
         run: >-
           docker run --rm --network host -v "$PWD:/source:ro" -w /source

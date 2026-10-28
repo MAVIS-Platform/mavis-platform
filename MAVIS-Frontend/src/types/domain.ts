@@ -63,11 +63,19 @@ export const analysisJobSchema = z.object({
   message: z.string(),
 });
 export type AnalysisJob = z.infer<typeof analysisJobSchema>;
+export const communicationRoleSchema = z.enum([
+  "CLIENT_DECLARATION",
+  "CLIENT_CONFIGURATION",
+  "CLIENT_CONTRACT",
+  "CALL_SITE",
+  "SERVER_ENDPOINT",
+]);
 export const evidenceSchema = z.object({
   id: z.string(),
   origin: z.enum(["persisted", "preview"]).optional(),
   kind: z.enum(["source", "runtime"]),
   sourceType: z.string().optional(),
+  communicationRole: communicationRoleSchema.optional(),
   location: z.string(),
   snippet: z.string(),
   complete: z.boolean().nullable(),

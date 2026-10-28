@@ -38,4 +38,19 @@ class CrossLanguageServiceLinkerTest {
         assertEquals(1,result.unresolved());assertEquals(0,result.linked());assertNull(result.bindingHash());
     }
     private static ModelElement service(String name){return ModelElement.builder().id(UUID.randomUUID()).name(name).elementType("SERVICE_CONTAINER").build();}
+    @Test void methodLevelFeignDoesNotProduceAnotherSummaryEdge()throws Exception{
+        Files.writeString(root.resolve("mavis.bindings.json"),"""
+            {"schemaVersion":"1.0","bindings":[
+              {"service":"order","projects":[],"sourceRoots":["src"],"endpoints":[]},
+              {"service":"catalog","projects":[],"sourceRoots":[],"endpoints":["http://catalog"]}]}
+            """);
+        var elements=mock(ModelElementRepository.class);var rels=mock(ModelRelationshipRepository.class);var evidence=mock(EvidenceRepository.class);
+        var model=ModelVersion.builder().id(UUID.randomUUID()).build();
+        when(elements.findByModelVersionId(model.getId())).thenReturn(List.of(service("order"),service("catalog")));
+        var client=CodeEvidenceDTO.builder().elementType("FEIGN_CLIENT").endpointAlias("catalog")
+                .filePath(root.resolve("src/Client.java").toString()).metadata(Map.of("clientFramework","OPENFEIGN")).build();
+        var result=new CrossLanguageServiceLinker(elements,rels,evidence,new ObjectMapper()).link(model,root.toString(),null,List.of(client));
+        assertEquals(0,result.linked());assertEquals(0,result.unresolved());assertEquals(0,result.ambiguous());
+        verify(rels).saveAll(List.of());verify(evidence).saveAll(List.of());
+    }
 }

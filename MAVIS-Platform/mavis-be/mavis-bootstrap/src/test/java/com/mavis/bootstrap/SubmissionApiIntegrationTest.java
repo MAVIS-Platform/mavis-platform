@@ -164,7 +164,7 @@ class SubmissionApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         mockMvc.perform(post("/api/v1/submissions")
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(invalidReq)))
                 .andExpect(status().isBadRequest())
@@ -189,7 +189,7 @@ class SubmissionApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         MvcResult submitResult = mockMvc.perform(post("/api/v1/submissions")
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validReq)))
                 .andExpect(status().isOk())
@@ -213,7 +213,7 @@ class SubmissionApiIntegrationTest extends ApiIntegrationContext {
         System.out.println("================================================================================");
 
         // --- BƯỚC 3: GET /api/v1/assignments/{assignmentId}/submissions ---
-        MvcResult classSubmissionsResult = mockMvc.perform(get("/api/v1/assignments/{assignmentId}/submissions", assignment.getId()).header("X-Test-User-Email",lecturer.getEmail())
+        MvcResult classSubmissionsResult = mockMvc.perform(get("/api/v1/assignments/{assignmentId}/submissions", assignment.getId()).header("Authorization", testAuthorization(lecturer.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -235,7 +235,7 @@ class SubmissionApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 4: GET /api/v1/projects/{projectId}/submissions ---
         MvcResult projectSubmissionsResult = mockMvc.perform(get("/api/v1/projects/{projectId}/submissions", project.getId())
-                        .header("X-Test-User-Email",user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -255,7 +255,7 @@ class SubmissionApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 5: GET /api/v1/submissions/{submissionId} ---
         MvcResult detailResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}", submissionId)
-                        .header("X-Test-User-Email",user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
