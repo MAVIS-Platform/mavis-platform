@@ -61,15 +61,6 @@ export function ProjectOverview() {
                     <Link href={`/snapshots?project=${projectId}`}>Analyze Source</Link>
                   </Button>
                 )}
-                <Button asChild size="sm" variant={models.length > 0 ? "default" : "outline"}>
-                  <Link href={`/diagrams?project=${projectId}`}>Architecture Diagrams</Link>
-                </Button>
-                <Button asChild size="sm" variant="outline">
-                  <Link href={`/architecture?project=${projectId}`}>Graph Explorer</Link>
-                </Button>
-                <Button asChild size="sm" variant="outline">
-                  <Link href={`/snapshots?project=${projectId}`}>Source Snapshots</Link>
-                </Button>
                 <ImportSnapshotAction />
               </div>
             }
