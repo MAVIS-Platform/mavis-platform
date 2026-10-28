@@ -13,13 +13,8 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useSearchParams();
   const router = useRouter();
   const cache = useQueryClient();
-  const [selectedProject, setSelectedProject] = useState("");
-  const project = embedded ? selectedProject : (params.get("project") ?? "");
-  const projects = useQuery({
-    queryKey: ["api", "projects", {}],
-    queryFn: ({ signal }) => adapter.execute("projects", {}, signal),
-    enabled: embedded,
-  });
+  const [createdProject, setCreatedProject] = useState("");
+  const project = params.get("project") ?? "";
   const [source, setSource] = useState<"zip" | "github">("zip");
   const [repository, setRepository] = useState("");
   const [branch, setBranch] = useState("");
@@ -32,29 +27,31 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
   const create = useMutation({
     mutationFn: () => adapter.execute("createProject", { name }),
     onSuccess: (p) => {
-      setName("");
       cache.invalidateQueries({ queryKey: ["api", "projects"] });
       cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
-      if (embedded) setSelectedProject(p.id);
-      else router.push(contextHref("/import", p.id));
+      if (embedded) setCreatedProject(p.id);
+      else {
+        setName("");
+        router.push(contextHref("/import", p.id));
+      }
     },
   });
 
   const upload = useMutation({
-    mutationFn: async () => {
-      if (!file || !project) throw new Error("Choose project and ZIP first");
+    mutationFn: async (projectId: string) => {
+      if (!file || !projectId) throw new Error("Choose project and ZIP first");
       return adapter.execute("importSource", {
-        projectId: project,
+        projectId,
         name: file.name,
         fileName: file.name,
         size: file.size,
         archive: file,
       });
     },
-    onSuccess: (s) => {
+    onSuccess: (s, projectId) => {
       setFile(null);
       cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
-      router.push(contextHref("/snapshots", project, "", { snapshot: s.id }));
+      router.push(contextHref("/snapshots", projectId, "", { snapshot: s.id }));
     },
   });
 
@@ -82,30 +79,35 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
   const branchesCurrent = repository.trim() === branchRepository && branches.isSuccess;
 
   const github = useMutation({
-    mutationFn: () =>
+    mutationFn: (projectId: string) =>
       adapter.execute("importGithub", {
-        projectId: project,
+        projectId,
         repositoryUrl: repository,
         branchName: selectedBranch,
         commitSha: commit,
       }),
-    onSuccess: (s) => {
+    onSuccess: (s, projectId) => {
       cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
-      router.push(contextHref("/snapshots", project, "", { snapshot: s.id }));
+      router.push(contextHref("/snapshots", projectId, "", { snapshot: s.id }));
     },
   });
 
-  async function submitUpload() {
-    if (inFlight.current) return;
+  async function submitImport(kind: "zip" | "github") {
+    if (inFlight.current || (embedded && !name.trim())) return;
     inFlight.current = true;
     try {
-      await upload.mutateAsync();
+      const projectId = embedded ? createdProject || (await create.mutateAsync()).id : project;
+      if (kind === "zip") await upload.mutateAsync(projectId);
+      else await github.mutateAsync(projectId);
     } catch {
-      /* mutation error shown below */
+      /* mutation error shown below; retry reuses the created project */
     } finally {
       inFlight.current = false;
     }
   }
+
+  const busy = create.isPending || upload.isPending || github.isPending;
+  const needsProject = embedded ? !name.trim() : !project;
 
   return (
     <div className="max-w-3xl">
@@ -119,52 +121,50 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
             </p>
           </div>
         )}
-        {embedded && (
-          <div className="space-y-2">
-            <label className="block text-sm">
-              Selected project
-              <select
-                className="mt-2 w-full rounded-md border bg-background p-2 text-sm"
-                value={project}
-                onChange={(event) => setSelectedProject(event.target.value)}
-                disabled={create.isPending || upload.isPending || github.isPending}
-              >
-                <option value="">Choose a project…</option>
-                {projects.data?.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {projects.isLoading && <p role="status">Loading projects…</p>}
-            {projects.isError && <ErrorNotice error={projects.error} />}
-          </div>
+        {embedded ? (
+          <label className="block text-sm">
+            Project name
+            <Input
+              className="mt-2"
+              placeholder="New personal project name"
+              maxLength={255}
+              value={name}
+              required
+              disabled={busy || !!createdProject}
+              onChange={(e) => setName(e.target.value)}
+            />
+            {createdProject && (
+              <span className="mt-1 block text-xs text-muted-foreground">
+                Project created. Retry the import if it failed.
+              </span>
+            )}
+          </label>
+        ) : (
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              create.mutate();
+            }}
+          >
+            <Input
+              aria-label="New project name"
+              placeholder="New personal project name"
+              maxLength={255}
+              value={name}
+              required
+              onChange={(e) => setName(e.target.value)}
+            />
+            <Button variant="outline" disabled={create.isPending}>
+              Create project
+            </Button>
+          </form>
         )}
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            create.mutate();
-          }}
-        >
-          <Input
-            aria-label="New project name"
-            placeholder="New personal project name"
-            maxLength={255}
-            value={name}
-            required
-            onChange={(e) => setName(e.target.value)}
-          />
-          <Button variant="outline" disabled={create.isPending}>
-            Create project
-          </Button>
-        </form>
         <div className="flex gap-2" role="group" aria-label="Source type">
           <Button
             variant={source === "zip" ? "default" : "outline"}
             aria-pressed={source === "zip"}
-            disabled={upload.isPending || github.isPending}
+            disabled={busy}
             onClick={() => setSource("zip")}
           >
             Upload ZIP
@@ -172,7 +172,7 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
           <Button
             variant={source === "github" ? "default" : "outline"}
             aria-pressed={source === "github"}
-            disabled={upload.isPending || github.isPending}
+            disabled={busy}
             onClick={() => setSource("github")}
           >
             GitHub URL
@@ -186,7 +186,7 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
                 className="mt-3"
                 type="file"
                 accept=".zip"
-                disabled={!project || upload.isPending}
+                disabled={busy || (!embedded && !project)}
                 onChange={(e) => {
                   const f = e.target.files?.[0] ?? null;
                   const error =
@@ -199,8 +199,11 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
               />
             </label>
             {validation && <p role="alert">{validation}</p>}
-            <Button disabled={!project || !file || upload.isPending} onClick={submitUpload}>
-              {upload.isPending ? "Uploading…" : "Upload snapshot"}
+            <Button
+              disabled={needsProject || !file || busy}
+              onClick={() => void submitImport("zip")}
+            >
+              {busy ? "Importing…" : "Import project"}
             </Button>
           </>
         ) : (
@@ -208,7 +211,7 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
             className="space-y-4 rounded-lg border border-dashed p-5"
             onSubmit={(e) => {
               e.preventDefault();
-              if (project && !github.isPending) github.mutate();
+              if (!needsProject && !busy) void submitImport("github");
             }}
           >
             <label className="block text-sm">
@@ -224,7 +227,7 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
                   setBranch("");
                   github.reset();
                 }}
-                disabled={!project || github.isPending}
+                disabled={busy || (!embedded && !project)}
               />
             </label>
             <label className="block text-sm">
@@ -237,7 +240,7 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
                   setBranch(e.target.value);
                   github.reset();
                 }}
-                disabled={github.isPending || !branchesCurrent || !!commit.trim()}
+                disabled={busy || !branchesCurrent || !!commit.trim()}
               >
                 {!branchesCurrent && (
                   <option value="">
@@ -265,7 +268,7 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
                   variant="outline"
                   size="sm"
                   className="mt-2"
-                  disabled={branches.isFetching || github.isPending}
+                  disabled={branches.isFetching || busy}
                   onClick={() => {
                     setBranchRepository(repository.trim());
                     if (branchRepository === repository.trim()) void branches.refetch();
@@ -280,9 +283,11 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
               <Input
                 className="mt-2"
                 placeholder="Full 40-character SHA; overrides branch"
+                pattern="[0-9a-fA-F]{40}"
+                title="Enter a full 40-character hexadecimal commit SHA"
                 value={commit}
                 onChange={(e) => setCommit(e.target.value)}
-                disabled={github.isPending}
+                disabled={busy}
               />
             </label>
             <p className="text-xs text-muted-foreground">
@@ -291,13 +296,13 @@ export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
             </p>
             <Button
               disabled={
-                !project ||
+                needsProject ||
                 !repository.trim() ||
-                github.isPending ||
+                busy ||
                 (!commit.trim() && (!branchesCurrent || !selectedBranch))
               }
             >
-              {github.isPending ? "Importing from GitHub…" : "Import from GitHub"}
+              {busy ? "Importing from GitHub…" : "Import from GitHub"}
             </Button>
           </form>
         )}
