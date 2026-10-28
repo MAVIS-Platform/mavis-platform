@@ -1,4 +1,10 @@
 spring:
+  config:
+    import:
+      - optional:file:../../../.env.backend.local[.properties]
+      - optional:file:../../.env.backend.local[.properties]
+      - optional:file:../.env.backend.local[.properties]
+      - optional:file:.env.backend.local[.properties]
   servlet:
     multipart:
       max-file-size: 100MB
@@ -8,9 +14,9 @@ spring:
 
   datasource:
     # URL kết nối tới Cloud PostgreSQL (Aiven)
-    url: ${MAVIS_DB_URL:jdbc:postgresql://localhost:5432/mavis}
-    username: ${MAVIS_DB_USERNAME:mavis}
-    password: ${MAVIS_DB_PASSWORD:}
+    url: ${MAVIS_DB_URL:${mavis.db.url:${mavis_db_url:jdbc:postgresql://localhost:5432/mavis}}}
+    username: ${MAVIS_DB_USERNAME:${mavis.db.username:${mavis_db_username:mavis}}}
+    password: ${MAVIS_DB_PASSWORD:${mavis.db.password:${mavis_db_password:}}}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -28,7 +34,7 @@ spring:
         order_updates: true
 
   flyway:
-    enabled: true
+    enabled: ${MAVIS_DB_MIGRATIONS_ENABLED:false}
     baseline-on-migrate: true
     # Session-level advisory locks allow CREATE INDEX CONCURRENTLY migrations.
     postgresql:
@@ -51,7 +57,7 @@ spring:
             required: ${MAIL_STARTTLS_ENABLE:true}
 
 server:
-  port: 8080
+  port: ${SERVER_PORT:${server_port:8081}}
 
   jwt:
     secret: "3cfa76ef14937c1c0ea519f8fc057a80fcd04a7420f8e8bcd0a756788e25d2b7c7b8d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c"
