@@ -30,6 +30,7 @@ export function operationPermission(operation: Operation): Permission | undefine
       "audit",
       "adminJobs",
       "platformSummary",
+      "adminAiUsage",
     ].includes(operation)
   )
     return "admin:manage";

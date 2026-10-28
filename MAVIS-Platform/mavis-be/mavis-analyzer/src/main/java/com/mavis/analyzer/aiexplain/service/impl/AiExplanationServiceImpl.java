@@ -9,6 +9,7 @@ import com.mavis.analyzer.aiexplain.dto.AiExplainRequestDTO;
 import com.mavis.analyzer.aiexplain.dto.AiExplanationResponseDTO;
 import com.mavis.analyzer.aiexplain.dto.EvidenceSummaryDTO;
 import com.mavis.analyzer.aiexplain.service.AiExplanationService;
+import com.mavis.analyzer.aiexplain.service.AiUsageRecorder;
 import com.mavis.analyzer.runtime.util.SecretRedactor;
 import com.mavis.common.entity.*;
 import com.mavis.common.exception.BusinessException;
@@ -56,6 +57,8 @@ public class AiExplanationServiceImpl implements AiExplanationService {
 
     @Autowired(required = false)
     private AccessPolicyService accessPolicyService;
+    @Autowired(required = false)
+    private AiUsageRecorder aiUsageRecorder;
     @Autowired
     private GroundedFindingExplanation groundedFindingExplanation;
 
@@ -359,6 +362,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
                 throw new RuntimeException("OpenAI HTTP error status: " + response.statusCode());
             }
             JsonNode responseNode = objectMapper.readTree(response.body());
+            if (aiUsageRecorder != null) aiUsageRecorder.recordResponse("openai", "gpt-5-mini", responseNode);
             JsonNode contentNode = responseNode.path("choices").path(0).path("message").path("content");
             if (contentNode.isMissingNode() || contentNode.asText().isBlank()) {
                 throw new RuntimeException("OpenAI response missing message content");
@@ -393,6 +397,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
             }
 
             JsonNode responseNode = objectMapper.readTree(response.body());
+            if (aiUsageRecorder != null && !hasCustomUrl) aiUsageRecorder.recordResponse("gemini", "gemini-2.5-flash", responseNode);
             JsonNode textCandidate = responseNode.path("candidates").path(0).path("content").path("parts").path(0).path("text");
             if (textCandidate.isMissingNode() || textCandidate.asText().isBlank()) {
                 throw new RuntimeException("Gemini response missing text candidate");

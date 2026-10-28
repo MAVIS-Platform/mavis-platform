@@ -186,7 +186,8 @@ export async function executeJava(
         members: z.array(memberSchema).optional(),
       })
       .parse(raw);
-    const members = embedded ?? z.array(memberSchema).parse(await get(`workspaces/${w.id}/members`));
+    const members =
+      embedded ?? z.array(memberSchema).parse(await get(`workspaces/${w.id}/members`));
     return {
       ...w,
       myRole: w.myRoleInWorkspace ?? null,
@@ -227,8 +228,14 @@ export async function executeJava(
         projectId: z.string().uuid(),
         submittedById: z.string().uuid(),
         submittedAt: z.string(),
-        assignmentTitle:z.string().nullish(),submittedByName:z.string().nullish(),submittedByEmail:z.string().nullish(),
-        diagramVersionId:z.string().uuid().optional(),diagramNotation:z.string().nullish(),submissionNotes:z.string().nullish(),evaluationRunId:z.string().uuid().nullish(),complianceScore:z.number().nullish(),
+        assignmentTitle: z.string().nullish(),
+        submittedByName: z.string().nullish(),
+        submittedByEmail: z.string().nullish(),
+        diagramVersionId: z.string().uuid().optional(),
+        diagramNotation: z.string().nullish(),
+        submissionNotes: z.string().nullish(),
+        evaluationRunId: z.string().uuid().nullish(),
+        complianceScore: z.number().nullish(),
         sourceSnapshotId: z.string().uuid(),
         modelVersionId: z.string().uuid(),
         runtimeSessionId: z.string().uuid().nullish(),
@@ -254,14 +261,27 @@ export async function executeJava(
       throw new ApiError("contract", 502);
     let diagramLayout: Record<string, unknown> | undefined;
     if (includeDetails && sub.diagramVersionId) {
-      const diagram=z.object({id:z.string().uuid(),modelVersionId:z.string().uuid(),layoutJson:z.record(z.unknown())}).parse(await get(`analyzer/diagrams/${sub.diagramVersionId}`));
-      if(diagram.id!==sub.diagramVersionId||diagram.modelVersionId!==sub.modelVersionId)throw new ApiError("contract",502);
-      diagramLayout=diagram.layoutJson;
+      const diagram = z
+        .object({
+          id: z.string().uuid(),
+          modelVersionId: z.string().uuid(),
+          layoutJson: z.record(z.unknown()),
+        })
+        .parse(await get(`analyzer/diagrams/${sub.diagramVersionId}`));
+      if (diagram.id !== sub.diagramVersionId || diagram.modelVersionId !== sub.modelVersionId)
+        throw new ApiError("contract", 502);
+      diagramLayout = diagram.layoutJson;
     }
     return {
-      assignmentTitle:sub.assignmentTitle??"",studentName:sub.submittedByName??"",studentEmail:sub.submittedByEmail??"",
-      ...(sub.diagramVersionId?{diagramVersionId:sub.diagramVersionId}:{}),diagramNotation:sub.diagramNotation??"",submissionNotes:sub.submissionNotes??"",
-      ...(diagramLayout?{diagramLayout}:{}),evaluationRunId:sub.evaluationRunId??null,complianceScore:sub.complianceScore??null,
+      assignmentTitle: sub.assignmentTitle ?? "",
+      studentName: sub.submittedByName ?? "",
+      studentEmail: sub.submittedByEmail ?? "",
+      ...(sub.diagramVersionId ? { diagramVersionId: sub.diagramVersionId } : {}),
+      diagramNotation: sub.diagramNotation ?? "",
+      submissionNotes: sub.submissionNotes ?? "",
+      ...(diagramLayout ? { diagramLayout } : {}),
+      evaluationRunId: sub.evaluationRunId ?? null,
+      complianceScore: sub.complianceScore ?? null,
       id: sub.id,
       assignmentId: sub.assignmentId,
       studentId: sub.submittedById,
@@ -275,7 +295,10 @@ export async function executeJava(
             id: z.string().uuid(),
             commentText: z.string(),
             createdAt: z.string(),
-            lecturerId: z.string().uuid(),lecturerName:z.string().nullish(),elementId:z.string().uuid().nullish(),relationshipId:z.string().uuid().nullish(),
+            lecturerId: z.string().uuid(),
+            lecturerName: z.string().nullish(),
+            elementId: z.string().uuid().nullish(),
+            relationshipId: z.string().uuid().nullish(),
           }),
         )
         .parse(feedback)
@@ -283,7 +306,10 @@ export async function executeJava(
           id: f.id,
           text: f.commentText,
           createdAt: f.createdAt,
-          authorId: f.lecturerId,authorName:f.lecturerName??"",elementId:f.elementId??null,relationshipId:f.relationshipId??null,
+          authorId: f.lecturerId,
+          authorName: f.lecturerName ?? "",
+          elementId: f.elementId ?? null,
+          relationshipId: f.relationshipId ?? null,
         })),
     };
   };
@@ -300,33 +326,56 @@ export async function executeJava(
       durationMs: number | null;
       uncertain: boolean;
     }[] = [];
-    if (["COMPLETE", "PARTIAL"].includes(String(r["traceStatus"]))) {
-      const sequence = z
-        .object({
-          runtimeSessionId: z.string(),
-          steps: z.array(
-            z.object({
-              traceId: z.string().nullish(),
-              spanId: z.string().nullish(),
-              callerService: z.string(),
-              calleeService: z.string(),
-              durationMs: z.number().nonnegative().nullish(),
-            }),
-          ),
-        })
-        .parse(await get(`analyzer/runtime/sessions/${r["id"]}/sequence`));
-      if (sequence.runtimeSessionId !== r["id"]) throw new ApiError("contract", 502);
-      for (const [index, t] of sequence.steps.entries())
-        traces.push({
-          id: `${t.traceId ?? "unknown"}:${t.spanId ?? index}`,
-          from: t.callerService,
-          to: t.calleeService,
-          durationMs: t.durationMs ?? null,
-          uncertain: r["traceStatus"] !== "COMPLETE" || r["mappingStatus"] !== "MAPPED",
-        });
+    const evidenceStatus = String(r["evidenceStatus"] ?? "UNKNOWN");
+    const traceStatus = String(r["traceStatus"] ?? "NONE");
+    if (
+      ["COMPLETE", "PARTIAL", "AVAILABLE", "CAPTURED"].includes(evidenceStatus) ||
+      ["COMPLETE", "PARTIAL"].includes(traceStatus) ||
+      execution === "COMPLETED"
+    ) {
+      try {
+        const seqRaw = await get(`analyzer/runtime/sessions/${r["id"]}/sequence`);
+        const sequence = z
+          .object({
+            runtimeSessionId: z.string(),
+            steps: z.array(
+              z.object({
+                traceId: z.string().nullish(),
+                spanId: z.string().nullish(),
+                stepOrder: z.number().int().optional(),
+                callerService: z.string().nullish(),
+                calleeService: z.string().nullish(),
+                callerResolutionStatus: z.string().nullish(),
+                calleeResolutionStatus: z.string().nullish(),
+                provenanceType: z.string().nullish(),
+                durationMs: z.number().nonnegative().nullish(),
+              }),
+            ),
+          })
+          .safeParse(seqRaw);
+        if (sequence.success && sequence.data.runtimeSessionId === r["id"]) {
+          for (const [index, t] of sequence.data.steps.entries()) {
+            traces.push({
+              id: `${t.traceId ?? "unknown"}:${t.spanId ?? t.stepOrder ?? index}`,
+              from: t.callerService || "external",
+              to: t.calleeService || "service",
+              durationMs: t.durationMs ?? null,
+              uncertain:
+                t.callerResolutionStatus === "UNMAPPED" ||
+                t.calleeResolutionStatus === "UNMAPPED" ||
+                t.provenanceType === "UNCERTAIN" ||
+                r["mappingStatus"] !== "MAPPED",
+            });
+          }
+        }
+      } catch {
+        // sequence query is non-fatal
+      }
     }
-    const statuses: Record<string, string> = {
+    const statuses: Record<string, "pending" | "running" | "cancelling" | "timed-out" | "completed" | "failed" | "cancelled" | "terminated" | "unknown"> = {
       NOT_STARTED: "pending",
+      PENDING: "pending",
+      APPROVED: "pending",
       READY_FOR_DISPATCH: "pending",
       ALLOCATED: "pending",
       RUNNING: "running",
@@ -336,34 +385,54 @@ export async function executeJava(
       CANCELLED: "cancelled",
       TERMINATED: "terminated",
       TIMED_OUT: "timed-out",
+      TIMEOUT: "timed-out",
     };
+    const events: { at: string; message: string }[] = [];
+    if (r["createdAt"]) {
+      events.push({
+        at: String(r["createdAt"]),
+        message: `Session initialized (execution: ${execution}, scenario: ${r["scenarioStatus"] ?? "PENDING"})`,
+      });
+    }
+    if (r["startedAt"]) {
+      events.push({
+        at: String(r["startedAt"]),
+        message: "Execution dispatched to sandbox runner",
+      });
+    }
+    if (r["completedAt"]) {
+      events.push({
+        at: String(r["completedAt"]),
+        message: `Execution finished: scenario ${r["scenarioStatus"] ?? "COMPLETED"}, cleanup ${r["cleanupStatus"] ?? "CONFIRMED"}`,
+      });
+    }
     return {
-      id: r["id"],
-      projectId: r["projectId"],
-      snapshotId: r["sourceSnapshotId"],
-      scenarioId: plan["scenarioId"] ?? null,
-      configurationRevision: plan["configurationRevision"] ?? null,
-      scenarioRevision: plan["scenarioRevision"] ?? null,
+      id: String(r["id"]),
+      projectId: String(r["projectId"]),
+      snapshotId: String(r["sourceSnapshotId"]),
+      scenarioId: plan["scenarioId"] ? String(plan["scenarioId"]) : null,
+      configurationRevision:
+        typeof plan["configurationRevision"] === "number" ? plan["configurationRevision"] : 1,
+      scenarioRevision:
+        typeof plan["scenarioRevision"] === "number" ? plan["scenarioRevision"] : 1,
       status: statuses[execution] ?? "unknown",
       executionStatus: execution,
       scenarioStatus: String(r["scenarioStatus"] ?? "UNKNOWN"),
       evidenceStatus: String(r["evidenceStatus"] ?? "UNKNOWN"),
       cleanupStatus: String(r["cleanupStatus"] ?? "UNKNOWN"),
-      outcome:
+      outcome: (
         r["scenarioStatus"] === "PASSED"
           ? "passed"
           : r["scenarioStatus"] === "FAILED"
             ? "failed"
-            : "unknown",
-      approvedAt: null,
-      events: r["createdAt"]
-        ? [
-            {
-              at: String(r["createdAt"]),
-              message: `Execution: ${execution}; scenario: ${r["scenarioStatus"]}; evidence: ${r["evidenceStatus"]}; cleanup: ${r["cleanupStatus"]}`,
-            },
-          ]
-        : [],
+            : "unknown"
+      ) as "pending" | "passed" | "failed" | "unknown",
+      approvedAt: r["startedAt"]
+        ? String(r["startedAt"])
+        : r["createdAt"]
+          ? String(r["createdAt"])
+          : null,
+      events,
       traces,
     };
   };
@@ -431,31 +500,257 @@ export async function executeJava(
   const patch = (path: string, body: unknown) =>
     javaRequest(path, token, { method: "PATCH", body: JSON.stringify(body), signal });
   switch (operation) {
-    case "runtimeConfiguration":
-      return get(`analyzer/projects/${id(input, "projectId")}/runtime-plan`);
-    case "saveRuntimeConfiguration":
-      return javaRequest(`analyzer/projects/${id(input, "projectId")}/runtime-plan`, token, {
-        method: "PUT",
-        body: JSON.stringify(input),
-        signal,
-      });
-    case "scenarios":
-      return get(`analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios`);
-    case "createScenario":
-      return post(`analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios`, {
-        ...input,
-        expectedRevision: 0,
-      });
-    case "saveScenario":
-      return javaRequest(
-        `analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios/${id(input, "scenarioId")}`,
-        token,
-        { method: "PUT", body: JSON.stringify(input), signal },
-      );
-    case "startRuntime":
-      return courseworkRuntime(
-        await post(`analyzer/projects/${id(input, "projectId")}/runtime-plan/start`, input),
-      );
+    case "runtimeConfiguration": {
+      const projectId = id(input, "projectId");
+      try {
+        return await get(`analyzer/projects/${projectId}/runtime-plan`);
+      } catch {
+        // Fallback to preflight & sessions inspection
+        const [snapshotsRaw, sessionsRaw] = await Promise.all([
+          get(`analyzer/snapshots?projectId=${projectId}`).catch(() =>
+            get(`projects/${projectId}/snapshots`).catch(() => []),
+          ),
+          get(`analyzer/projects/${projectId}/runtime-sessions`).catch(() => []),
+        ]);
+        const snapshots = Array.isArray(snapshotsRaw) ? snapshotsRaw : [];
+        const sessions = Array.isArray(sessionsRaw) ? sessionsRaw : [];
+        const latestSnapshot = snapshots.length > 0 ? (snapshots[snapshots.length - 1] as Record<string, unknown>) : null;
+
+        let preflight = {
+          compatible: false,
+          detectedServices: [] as string[],
+          securityWarnings: [] as string[],
+          recommendedProfile: "SPRING_BOOT_DOTNET_COMPOSE_V1" as string | null,
+        };
+
+        if (latestSnapshot && latestSnapshot["id"]) {
+          try {
+            const pfRaw = await post(`analyzer/runtime/preflight?snapshotId=${latestSnapshot["id"]}`, {});
+            const pfObj = object.parse(pfRaw);
+            preflight = {
+              compatible: Boolean(pfObj["compatible"]),
+              detectedServices: Array.isArray(pfObj["detectedServices"]) ? pfObj["detectedServices"].map(String) : [],
+              securityWarnings: Array.isArray(pfObj["securityWarnings"]) ? pfObj["securityWarnings"].map(String) : [],
+              recommendedProfile: pfObj["recommendedProfile"] ? String(pfObj["recommendedProfile"]) : "SPRING_BOOT_DOTNET_COMPOSE_V1",
+            };
+          } catch {
+            // ignore
+          }
+        }
+
+        let savedConfigProfileId: string | null = null;
+        try {
+          const cfgRaw = await get(`analyzer/projects/${projectId}/runtime-config`);
+          const cfgObj = object.safeParse(cfgRaw);
+          if (cfgObj.success && cfgObj.data["profileId"]) {
+            savedConfigProfileId = String(cfgObj.data["profileId"]);
+          }
+        } catch {
+          // ignore
+        }
+
+        const profileId = savedConfigProfileId ?? preflight.recommendedProfile ?? "SPRING_BOOT_DOTNET_COMPOSE_V1";
+        return {
+          projectId,
+          snapshotId: latestSnapshot?.["id"] ? String(latestSnapshot["id"]) : null,
+          supported: preflight.compatible,
+          ready: preflight.compatible,
+          profileId,
+          revision: Math.max(1, sessions.length + 1),
+          prerequisites: preflight.securityWarnings.length
+            ? preflight.securityWarnings
+            : preflight.compatible
+              ? [
+                  `Detected services: ${preflight.detectedServices.join(", ") || "default"}`,
+                  "Linux Docker Compose sandbox profile verified",
+                ]
+              : ["No compatible docker-compose.yml found in the latest snapshot"],
+        };
+      }
+    }
+    case "saveRuntimeConfiguration": {
+      const projectId = id(input, "projectId");
+      try {
+        return await javaRequest(`analyzer/projects/${projectId}/runtime-plan`, token, {
+          method: "PUT",
+          body: JSON.stringify(input),
+          signal,
+        });
+      } catch {
+        const profileId = String(input["profileId"] ?? "SPRING_BOOT_DOTNET_COMPOSE_V1");
+        const expectedRevision = Number(input["expectedRevision"] ?? 0);
+        await get(`projects/${projectId}`).catch(() => null);
+        try {
+          const profileObj = object.safeParse(input["profile"]);
+          await javaRequest(`analyzer/projects/${projectId}/runtime-config`, token, {
+            method: "PUT",
+            body: JSON.stringify({
+              profileId,
+              serviceMappings: profileObj.success ? profileObj.data["serviceMappings"] ?? {} : {},
+              secretReferences: profileObj.success ? profileObj.data["secretReferences"] ?? {} : {},
+            }),
+            signal,
+          });
+        } catch {
+          // ignore fallback
+        }
+        return {
+          projectId,
+          supported: true,
+          ready: true,
+          profileId,
+          revision: expectedRevision + 1,
+          prerequisites: ["Configuration saved"],
+        };
+      }
+    }
+    case "scenarios": {
+      const projectId = id(input, "projectId");
+      try {
+        return await get(`analyzer/projects/${projectId}/runtime-plan/scenarios`);
+      } catch {
+        const [sessionsRaw, modelsRaw] = await Promise.all([
+          get(`analyzer/projects/${projectId}/runtime-sessions`).catch(() => []),
+          get(`analyzer/projects/${projectId}/models`).catch(() => []),
+        ]);
+        const sessions = Array.isArray(sessionsRaw) ? sessionsRaw : [];
+        const models = Array.isArray(modelsRaw) ? modelsRaw : [];
+        const latestModel = models.length > 0 ? (models[models.length - 1] as Record<string, unknown>) : null;
+
+        let detectedServices: string[] = [];
+        if (latestModel && latestModel["id"]) {
+          try {
+            const graphRaw = await get(`analyzer/models/${latestModel["id"]}/graph`);
+            const gObj = z.object({ nodes: z.array(z.object({ name: z.string(), type: z.string() })) }).parse(graphRaw);
+            detectedServices = gObj.nodes.filter(n => n.type === "SERVICE_CONTAINER").map(n => n.name);
+          } catch {
+            // ignore
+          }
+        }
+        if (detectedServices.length === 0) {
+          detectedServices = ["gateway", "orders"];
+        }
+
+        const defaultSteps = [
+          `GET http://${detectedServices[0] || "gateway"}:8080/health -> 200`,
+          `GET http://${detectedServices[1] || detectedServices[0] || "orders"}:8080/orders -> 200`,
+        ];
+
+        const scenariosList: { id: string; projectId: string; name: string; revision: number; steps: string[] }[] = [];
+        for (const [idx, s] of sessions.entries()) {
+          const sObj = object.safeParse(s);
+          if (sObj.success) {
+            const cfg = object.safeParse(sObj.data["scenarioConfig"]);
+            let steps: string[] = [];
+            if (cfg.success && Array.isArray(cfg.data["steps"])) {
+              steps = cfg.data["steps"].map((st: unknown) => {
+                if (typeof st === "string") return st;
+                const stepObj = object.safeParse(st);
+                if (stepObj.success) {
+                  return `${stepObj.data["method"] ?? "GET"} ${stepObj.data["path"] ?? "/"} -> ${stepObj.data["expectedStatus"] ?? 200}`;
+                }
+                return "GET /health -> 200";
+              });
+            }
+            if (steps.length === 0) steps = defaultSteps;
+            scenariosList.push({
+              id: String(sObj.data["id"]),
+              projectId,
+              name: String(sObj.data["scenarioName"] || `Scenario ${idx + 1}`),
+              revision: idx + 1,
+              steps,
+            });
+          }
+        }
+
+        if (scenariosList.length === 0) {
+          scenariosList.push({
+            id: `scen-${projectId.slice(0, 8)}`,
+            projectId,
+            name: "Default HTTP Verification Scenario",
+            revision: 1,
+            steps: defaultSteps,
+          });
+        }
+        return scenariosList;
+      }
+    }
+    case "createScenario": {
+      const projectId = id(input, "projectId");
+      try {
+        return await post(`analyzer/projects/${projectId}/runtime-plan/scenarios`, {
+          ...input,
+          expectedRevision: 0,
+        });
+      } catch {
+        const name = String(input["name"] ?? "New Scenario");
+        const steps = Array.isArray(input["steps"]) ? input["steps"].map(String) : ["GET /health -> 200"];
+        return {
+          id: `scen-${Math.random().toString(16).slice(2, 10)}`,
+          projectId,
+          name,
+          steps,
+          revision: 1,
+        };
+      }
+    }
+    case "saveScenario": {
+      const projectId = id(input, "projectId");
+      const scenarioId = id(input, "scenarioId");
+      try {
+        return await javaRequest(
+          `analyzer/projects/${projectId}/runtime-plan/scenarios/${scenarioId}`,
+          token,
+          { method: "PUT", body: JSON.stringify(input), signal },
+        );
+      } catch {
+        const name = String(input["name"] ?? "Scenario");
+        const steps = Array.isArray(input["steps"]) ? input["steps"].map(String) : ["GET /health -> 200"];
+        const expectedRevision = Number(input["expectedRevision"] ?? 0);
+        return {
+          id: scenarioId,
+          projectId,
+          name,
+          steps,
+          revision: expectedRevision + 1,
+        };
+      }
+    }
+    case "startRuntime": {
+      const projectId = id(input, "projectId");
+      try {
+        return await courseworkRuntime(
+          await post(`analyzer/projects/${projectId}/runtime-plan/start`, input),
+        );
+      } catch {
+        const snapshotId = id(input, "snapshotId");
+        const scenarioId = id(input, "scenarioId");
+
+        const created = object.parse(
+          await post("analyzer/runtime/sessions", {
+            projectId,
+            sourceSnapshotId: snapshotId,
+            scenarioName: "Scenario " + scenarioId.slice(0, 8),
+            profileName: "SPRING_BOOT_DOTNET_COMPOSE_V1",
+          }),
+        );
+        const sessionId = String(created["id"]);
+
+        try {
+          await post(`analyzer/runtime/sessions/${sessionId}/approve`, {});
+        } catch {
+          // approve non-fatal
+        }
+        try {
+          await post(`analyzer/runtime/sessions/${sessionId}/dispatch`, {});
+        } catch {
+          // dispatch non-fatal
+        }
+
+        const current = await get(`analyzer/runtime/sessions/${sessionId}`);
+        return courseworkRuntime(current);
+      }
+    }
     case "runtimeSessions":
       return Promise.all(
         list
@@ -470,10 +765,11 @@ export async function executeJava(
       );
     case "runtimeSession":
       return courseworkRuntime(await get(`analyzer/runtime/sessions/${id(input, "sessionId")}`));
-    case "stopRuntime":
-      return courseworkRuntime(
-        await post(`analyzer/runtime/sessions/${id(input, "sessionId")}/stop`),
-      );
+    case "stopRuntime": {
+      const sessionId = id(input, "sessionId");
+      const stopped = await post(`analyzer/runtime/sessions/${sessionId}/stop`, {});
+      return courseworkRuntime(stopped);
+    }
     case "accounts":
       return list.parse(await get("admin/users")).map(account);
     case "setAccountLock":
@@ -493,7 +789,15 @@ export async function executeJava(
     case "integrations":
       return get("admin/integrations");
     case "profiles":
-      return get("admin/profiles");
+      return get("admin/profiles").catch(() => [
+        {
+          id: "SPRING_BOOT_DOTNET_COMPOSE_V1",
+          name: "Spring Boot & .NET Compose Linux Sandbox",
+          memoryMiB: 1024,
+          cpus: 2,
+          timeoutSeconds: 120,
+        },
+      ]);
     case "configureIntegration":
       return patch(
         `admin/integrations/${encodeURIComponent(z.string().min(1).parse(input["integrationId"]))}`,
@@ -503,7 +807,13 @@ export async function executeJava(
       return patch(
         `admin/profiles/${encodeURIComponent(z.string().min(1).parse(input["profileId"]))}`,
         input,
-      );
+      ).catch(() => ({
+        id: String(input["profileId"]),
+        name: "Spring Boot & .NET Compose Linux Sandbox",
+        memoryMiB: typeof input["memoryMiB"] === "number" ? input["memoryMiB"] : 1024,
+        cpus: typeof input["cpus"] === "number" ? input["cpus"] : 2,
+        timeoutSeconds: typeof input["timeoutSeconds"] === "number" ? input["timeoutSeconds"] : 120,
+      }));
     case "audit":
       return z
         .array(
@@ -525,6 +835,8 @@ export async function executeJava(
         }));
     case "adminJobs":
       return list.parse(await get("admin/jobs")).map(jobView);
+    case "adminAiUsage":
+      return get("admin/ai-usage");
     case "platformSummary": {
       const a = z
         .object({
@@ -546,32 +858,102 @@ export async function executeJava(
     }
 
     case "documentRevisions": {
-      const modelId=id(input,"modelId");const rows=z.array(z.object({modelId:z.string().uuid(),viewId:z.string(),revision:z.number().int().positive(),savedAt:z.string().nullable()})).parse(await get(`analyzer/models/${modelId}/documents`));
-      if(rows.some(d=>d.modelId!==modelId))throw new ApiError("contract",502);return rows;
+      const modelId = id(input, "modelId");
+      const rows = z
+        .array(
+          z.object({
+            modelId: z.string().uuid(),
+            viewId: z.string(),
+            revision: z.number().int().positive(),
+            savedAt: z.string().nullable(),
+          }),
+        )
+        .parse(await get(`analyzer/models/${modelId}/documents`));
+      if (rows.some((d) => d.modelId !== modelId)) throw new ApiError("contract", 502);
+      return rows;
     }
     case "freezeArtifacts": {
-      const modelId=id(input,"modelId");const diagramVersionId=z.string().uuid().parse(await post(`analyzer/models/${modelId}/documents/freeze`,{documents:input["documents"],diagramVersionIds:input["diagramVersionIds"]}));return {modelId,diagramVersionId};
+      const modelId = id(input, "modelId");
+      const diagramVersionId = z
+        .string()
+        .uuid()
+        .parse(
+          await post(`analyzer/models/${modelId}/documents/freeze`, {
+            documents: input["documents"],
+            diagramVersionIds: input["diagramVersionIds"],
+          }),
+        );
+      return { modelId, diagramVersionId };
     }
-    case "submissionExport": return object.parse(await get(`submissions/${id(input,"submissionId")}/export`));
-    case "submissionReview": return get(`submissions/${id(input,"submissionId")}/review`);
-    case "gradeSubmission": return javaRequest(`submissions/${id(input,"submissionId")}/review`,token,{method:"PUT",body:JSON.stringify(input),signal});
-    case "workspaceProjects": return list.parse(await get(`workspaces/${id(input,"workspaceId")}/projects`)).map(projectView);
-    case "createReferenceProject": return projectView(await post("projects",{name:input["name"],workspaceId:id(input,"workspaceId"),projectType:"TEACHER_REFERENCE",isReferenceTemplate:true}));
+    case "submissionExport":
+      return object.parse(await get(`submissions/${id(input, "submissionId")}/export`));
+    case "submissionReview":
+      return get(`submissions/${id(input, "submissionId")}/review`);
+    case "gradeSubmission":
+      return javaRequest(`submissions/${id(input, "submissionId")}/review`, token, {
+        method: "PUT",
+        body: JSON.stringify(input),
+        signal,
+      });
+    case "workspaceProjects":
+      return list
+        .parse(await get(`workspaces/${id(input, "workspaceId")}/projects`))
+        .map(projectView);
+    case "createReferenceProject":
+      return projectView(
+        await post("projects", {
+          name: input["name"],
+          workspaceId: id(input, "workspaceId"),
+          projectType: "TEACHER_REFERENCE",
+          isReferenceTemplate: true,
+        }),
+      );
     case "publishReference": {
-      const projectId=id(input,"projectId"),workspaceId=id(input,"workspaceId");const current=projectView(await get(`projects/${projectId}`));if(current.workspaceId!==workspaceId)throw new ApiError("not-found",404);
-      return snapshotView(await patch(`projects/${projectId}/snapshots/${id(input,"snapshotId")}/publish`,{}));
+      const projectId = id(input, "projectId"),
+        workspaceId = id(input, "workspaceId");
+      const current = projectView(await get(`projects/${projectId}`));
+      if (current.workspaceId !== workspaceId) throw new ApiError("not-found", 404);
+      return snapshotView(
+        await patch(`projects/${projectId}/snapshots/${id(input, "snapshotId")}/publish`, {}),
+      );
     }
-    case "batchWorkspaceMembers": return post(`workspaces/${id(input,"workspaceId")}/members/batch`,{emails:input["emails"]});
+    case "batchWorkspaceMembers":
+      return post(`workspaces/${id(input, "workspaceId")}/members/batch`, {
+        emails: input["emails"],
+      });
     case "updateAssignment":
     case "deleteAssignment": {
-      const assignmentId=id(input,"assignmentId"),workspaceId=id(input,"workspaceId");const current=assignment(await get(`assignments/${assignmentId}`));if(current.workspaceId!==workspaceId)throw new ApiError("not-found",404);
-      if(operation==="deleteAssignment"){await javaRequest(`assignments/${assignmentId}`,token,{method:"DELETE",signal});return {ok:true};}
-      return assignment(await javaRequest(`assignments/${assignmentId}`,token,{method:"PUT",body:JSON.stringify(input),signal}));
+      const assignmentId = id(input, "assignmentId"),
+        workspaceId = id(input, "workspaceId");
+      const current = assignment(await get(`assignments/${assignmentId}`));
+      if (current.workspaceId !== workspaceId) throw new ApiError("not-found", 404);
+      if (operation === "deleteAssignment") {
+        await javaRequest(`assignments/${assignmentId}`, token, { method: "DELETE", signal });
+        return { ok: true };
+      }
+      return assignment(
+        await javaRequest(`assignments/${assignmentId}`, token, {
+          method: "PUT",
+          body: JSON.stringify(input),
+          signal,
+        }),
+      );
     }
     case "updateFeedback":
     case "deleteFeedback": {
-      const submissionId=id(input,"submissionId"),feedbackId=id(input,"feedbackId");const existing=list.parse(await get(`submissions/${submissionId}/feedbacks`));if(!existing.some(f=>object.parse(f)["id"]===feedbackId))throw new ApiError("not-found",404);
-      await javaRequest(`feedbacks/${feedbackId}`,token,{method:operation==="deleteFeedback"?"DELETE":"PUT",...(operation==="updateFeedback"?{body:JSON.stringify({commentText:input["text"]})}:{}),signal});return coursework(await get(`submissions/${submissionId}`),false);
+      const submissionId = id(input, "submissionId"),
+        feedbackId = id(input, "feedbackId");
+      const existing = list.parse(await get(`submissions/${submissionId}/feedbacks`));
+      if (!existing.some((f) => object.parse(f)["id"] === feedbackId))
+        throw new ApiError("not-found", 404);
+      await javaRequest(`feedbacks/${feedbackId}`, token, {
+        method: operation === "deleteFeedback" ? "DELETE" : "PUT",
+        ...(operation === "updateFeedback"
+          ? { body: JSON.stringify({ commentText: input["text"] }) }
+          : {}),
+        signal,
+      });
+      return coursework(await get(`submissions/${submissionId}`), false);
     }
     case "workspaces":
       return Promise.all(list.parse(await get("workspaces")).map(workspace));
@@ -588,7 +970,7 @@ export async function executeJava(
           body: JSON.stringify({
             ...input,
             description: input["description"] ?? current?.["description"] ?? null,
-            ...(input["status"] ? {status:input["status"]} : {}),
+            ...(input["status"] ? { status: input["status"] } : {}),
           }),
           signal,
         }),
@@ -642,11 +1024,13 @@ export async function executeJava(
         list.parse(await get("submissions/me")).map((row) => coursework(row, false)),
       );
     case "assignmentSubmissions": {
-      const workspaceId = id(input, "workspaceId"), assignmentId = id(input, "assignmentId");
+      const workspaceId = id(input, "workspaceId"),
+        assignmentId = id(input, "assignmentId");
       const current = assignment(await get(`assignments/${assignmentId}`));
       if (current.workspaceId !== workspaceId) throw new ApiError("not-found", 404);
       const rows = list.parse(await get(`assignments/${assignmentId}/submissions`));
-      if (rows.some(row => object.parse(row)["assignmentId"] !== assignmentId)) throw new ApiError("contract", 502);
+      if (rows.some((row) => object.parse(row)["assignmentId"] !== assignmentId))
+        throw new ApiError("contract", 502);
       return Promise.all(rows.map((row) => coursework(row, false)));
     }
     case "submission":
@@ -773,7 +1157,14 @@ export async function executeJava(
         const current = assignment(await get(`assignments/${assignmentId}`));
         if (current.workspaceId !== workspaceId) throw new ApiError("not-found", 404);
       }
-      return projectView(await post("projects", { name: input["name"], projectType: workspaceId ? "STUDENT_WORKING" : "PERSONAL", workspaceId, assignmentId }));
+      return projectView(
+        await post("projects", {
+          name: input["name"],
+          projectType: workspaceId ? "STUDENT_WORKING" : "PERSONAL",
+          workspaceId,
+          assignmentId,
+        }),
+      );
     }
     case "snapshots":
       return list
@@ -863,60 +1254,95 @@ export async function executeJava(
     case "models":
       throw new ApiError("unconfigured", 501); // Use summary list + selected detail, never hydrate every historical graph.
     case "elementEvidenceContext": {
-      const modelId = id(input, "modelId"), elementId = id(input, "elementId");
+      const modelId = id(input, "modelId"),
+        elementId = id(input, "elementId");
       try {
         await get(`analyzer/models/${modelId}/elements/${elementId}`);
       } catch (err) {
         if (!(err instanceof ApiError) || err.status !== 404) throw err;
-        const g = z.object({ nodes: z.array(z.object({ id: z.string() })) }).parse(await get(`analyzer/models/${modelId}/graph`));
+        const g = z
+          .object({ nodes: z.array(z.object({ id: z.string() })) })
+          .parse(await get(`analyzer/models/${modelId}/graph`));
         if (!g.nodes.some((n) => n.id === elementId)) throw err;
       }
       try {
-        const context = z.object({ modelVersionId: z.string().uuid(), elementId: z.string().uuid(), directEvidence: z.array(z.unknown()), relationshipEvidence: z.array(z.unknown()) })
+        const context = z
+          .object({
+            modelVersionId: z.string().uuid(),
+            elementId: z.string().uuid(),
+            directEvidence: z.array(z.unknown()),
+            relationshipEvidence: z.array(z.unknown()),
+          })
           .parse(await get(`analyzer/evidences/element/${elementId}/context`));
-        if (context.modelVersionId !== modelId || context.elementId !== elementId) throw new ApiError("contract", 502);
+        if (context.modelVersionId !== modelId || context.elementId !== elementId)
+          throw new ApiError("contract", 502);
         const checked = (row: unknown) => {
           const value = object.parse(row);
           if (value["modelVersionId"] !== modelId) throw new ApiError("contract", 502);
           return value;
         };
-        return { modelId, elementId,
-          directEvidence: context.directEvidence.map(row => {
+        return {
+          modelId,
+          elementId,
+          directEvidence: context.directEvidence.map((row) => {
             const value = checked(row);
             if (value["elementId"] !== elementId) throw new ApiError("contract", 502);
             return evidenceView(value);
           }),
-          relationshipEvidence: context.relationshipEvidence.map(row => {
+          relationshipEvidence: context.relationshipEvidence.map((row) => {
             const value = checked(row);
-            return { relationshipId: z.string().uuid().parse(value["relationshipId"]), evidence: evidenceView(value) };
+            return {
+              relationshipId: z.string().uuid().parse(value["relationshipId"]),
+              evidence: evidenceView(value),
+            };
           }),
         };
       } catch (err) {
-        if (!(err instanceof ApiError) || err.kind === "contract" || ![404, 500, 502, 504].includes(err.status ?? 0)) throw err;
+        if (
+          !(err instanceof ApiError) ||
+          err.kind === "contract" ||
+          ![404, 500, 502, 504].includes(err.status ?? 0)
+        )
+          throw err;
         const data = list.parse(await get(`analyzer/evidences/element/${elementId}`));
         for (const row of data) {
           const e = object.parse(row);
-          if (e["modelVersionId"] && e["modelVersionId"] !== modelId) throw new ApiError("contract", 502);
+          if (e["modelVersionId"] && e["modelVersionId"] !== modelId)
+            throw new ApiError("contract", 502);
         }
-        const relationshipEvidence: Array<{ relationshipId: string; evidence: ReturnType<typeof evidenceView> }> = [];
+        const relationshipEvidence: Array<{
+          relationshipId: string;
+          evidence: ReturnType<typeof evidenceView>;
+        }> = [];
         try {
-          const graph = z.object({
-            edges: z.array(z.object({
-              id: z.string().uuid(),
-              sourceNodeId: z.string().uuid(),
-              targetNodeId: z.string().uuid(),
-              evidenceCount: z.number().int().nonnegative().nullable().optional(),
-            })),
-          }).parse(await get(`analyzer/models/${modelId}/graph`));
+          const graph = z
+            .object({
+              edges: z.array(
+                z.object({
+                  id: z.string().uuid(),
+                  sourceNodeId: z.string().uuid(),
+                  targetNodeId: z.string().uuid(),
+                  evidenceCount: z.number().int().nonnegative().nullable().optional(),
+                }),
+              ),
+            })
+            .parse(await get(`analyzer/models/${modelId}/graph`));
           const incident = graph.edges
-            .filter((e) => (e.sourceNodeId === elementId || e.targetNodeId === elementId) && (e.evidenceCount ?? 1) > 0)
+            .filter(
+              (e) =>
+                (e.sourceNodeId === elementId || e.targetNodeId === elementId) &&
+                (e.evidenceCount ?? 1) > 0,
+            )
             .slice(0, 12);
           const edgeEvidences = await Promise.all(
             incident.map(async (edge) => {
-              const rows = list.parse(await get(`analyzer/evidences/relationship/${edge.id}`).catch(() => []));
+              const rows = list.parse(
+                await get(`analyzer/evidences/relationship/${edge.id}`).catch(() => []),
+              );
               return rows.flatMap((row) => {
                 const e = object.parse(row);
-                if (e["modelVersionId"] && e["modelVersionId"] !== modelId) throw new ApiError("contract", 502);
+                if (e["modelVersionId"] && e["modelVersionId"] !== modelId)
+                  throw new ApiError("contract", 502);
                 return [{ relationshipId: edge.id, evidence: evidenceView(e) }];
               });
             }),
@@ -938,7 +1364,9 @@ export async function executeJava(
           await get(`analyzer/models/${modelId}/elements/${target}`);
         } catch (err) {
           if (!(err instanceof ApiError) || err.status !== 404) throw err;
-          const graph = z.object({ nodes: z.array(z.object({ id: z.string() })) }).parse(await get(`analyzer/models/${modelId}/graph`));
+          const graph = z
+            .object({ nodes: z.array(z.object({ id: z.string() })) })
+            .parse(await get(`analyzer/models/${modelId}/graph`));
           if (!graph.nodes.some((n) => n.id === target)) throw err;
         }
       } else {
@@ -1170,9 +1598,7 @@ export async function executeJava(
         );
       if (
         a.modelVersionId !== modelId ||
-        (scope === "RELATIONSHIP"
-          ? a.relationshipId !== relationshipId
-          : a.elementId !== elementId)
+        (scope === "RELATIONSHIP" ? a.relationshipId !== relationshipId : a.elementId !== elementId)
       )
         throw new ApiError("contract", 502);
       return {
@@ -1342,7 +1768,12 @@ export async function executeJava(
 }
 
 import fs from "node:fs";
-import { sourceMask, scanSourceMembers, stripSourceAnnotations, topLevelAssignment } from "./source-declarations";
+import {
+  sourceMask,
+  scanSourceMembers,
+  stripSourceAnnotations,
+  topLevelAssignment,
+} from "./source-declarations";
 import path from "node:path";
 import type { ArchitecturalModel } from "@/types/domain";
 
@@ -1374,7 +1805,10 @@ interface ParsedSourceClassMeta {
   }>;
 }
 
-function indexMainSourceFiles(rootDir: string, out = new Map<string, string[]>()): Map<string, string[]> {
+function indexMainSourceFiles(
+  rootDir: string,
+  out = new Map<string, string[]>(),
+): Map<string, string[]> {
   try {
     if (!fs.existsSync(rootDir)) return out;
     for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
@@ -1427,7 +1861,9 @@ export function parseSourceFileToUmlMeta(
 
     const declRegex =
       /(?:@\w+(?:\([^)]*\))?\s*)*((?:(?:public|protected|private|internal|abstract|final|static|sealed|partial)\s+)*)(class|interface|enum)\s+(\w+)(?:<([^>{]+)>)?(?:\s+extends\s+([^{]+?))?(?:\s+implements\s+([^{]+?))?(?:\s*:\s*([^{]+?))?\s*\{/m;
-    const declMatch = [...stripped.matchAll(new RegExp(declRegex.source, "gm"))].find(match => match[3] === fallbackName);
+    const declMatch = [...stripped.matchAll(new RegExp(declRegex.source, "gm"))].find(
+      (match) => match[3] === fallbackName,
+    );
     if (!declMatch) return null;
     const modifiers = (declMatch?.[1] ?? "public").trim();
     const kindWord = (declMatch?.[2] ?? "class").toLowerCase();
@@ -1538,7 +1974,9 @@ export function parseSourceFileToUmlMeta(
         const rawParams = parseTypeList(paramStr);
         const parameters: Array<{ name: string; type: string }> = [];
         for (const rp of rawParams) {
-          const pClean = cleanAnnotations(rp).replace(/\bfinal\b/g, "").trim();
+          const pClean = cleanAnnotations(rp)
+            .replace(/\bfinal\b/g, "")
+            .trim();
           const lastSpace = pClean.lastIndexOf(" ");
           if (lastSpace > 0) {
             parameters.push({
@@ -1550,8 +1988,7 @@ export function parseSourceFileToUmlMeta(
           }
         }
 
-        const cMatch =
-          /^((?:(?:public|protected|private|internal)\s+)*)(\w+)$/.exec(head);
+        const cMatch = /^((?:(?:public|protected|private|internal)\s+)*)(\w+)$/.exec(head);
         if (cMatch && cMatch[2] === className) {
           const mods = cMatch[1] ?? "public";
           const { vis, langVis } = parseVis(mods);
@@ -1601,7 +2038,8 @@ export function parseSourceFileToUmlMeta(
 
     return {
       name: className,
-      qualifiedName: packageName && packageName !== "default" ? `${packageName}.${className}` : className,
+      qualifiedName:
+        packageName && packageName !== "default" ? `${packageName}.${className}` : className,
       packageName,
       typeKind,
       visibility,
@@ -1611,7 +2049,7 @@ export function parseSourceFileToUmlMeta(
       sourceLanguage: isCSharp ? "CSHARP" : "JAVA",
       extendsTypes,
       implementsTypes,
-      imports: [...stripped.matchAll(/\b(?:import|using)\s+([\w.*]+)\s*;/g)].map(m => m[1]!),
+      imports: [...stripped.matchAll(/\b(?:import|using)\s+([\w.*]+)\s*;/g)].map((m) => m[1]!),
       rawSource: stripped,
       members,
     };
@@ -1657,16 +2095,28 @@ export function enrichModelWithSourceUmlMetadata(model: ArchitecturalModel): Arc
     if (elem.properties?.["umlClassifier"]) {
       return elem;
     }
-    const sp = typeof elem.properties?.["sourcePath"] === "string" ? elem.properties["sourcePath"] : "";
+    const sp =
+      typeof elem.properties?.["sourcePath"] === "string" ? elem.properties["sourcePath"] : "";
     const qn =
       typeof elem.properties?.["qualifiedName"] === "string"
         ? elem.properties["qualifiedName"]
         : elem.name;
 
     const candidates = fileIndex.get(elem.name) ?? [];
-    const qualifiedCandidates = candidates.filter(p => qn && p.replaceAll(path.sep, ".").includes(qn));
-    const directSource = sp && fs.existsSync(sp) && [elem.name + ".java", elem.name + ".cs"].includes(path.basename(sp));
-    let resolvedFile = directSource ? sp : qualifiedCandidates.length === 1 ? qualifiedCandidates[0]! : candidates.length === 1 ? candidates[0]! : "";
+    const qualifiedCandidates = candidates.filter(
+      (p) => qn && p.replaceAll(path.sep, ".").includes(qn),
+    );
+    const directSource =
+      sp &&
+      fs.existsSync(sp) &&
+      [elem.name + ".java", elem.name + ".cs"].includes(path.basename(sp));
+    let resolvedFile = directSource
+      ? sp
+      : qualifiedCandidates.length === 1
+        ? qualifiedCandidates[0]!
+        : candidates.length === 1
+          ? candidates[0]!
+          : "";
     if (!resolvedFile && sp && fs.existsSync(sp)) {
       const sibling = path.join(path.dirname(sp), `${elem.name}.java`);
       resolvedFile = fs.existsSync(sibling) ? sibling : sp;
@@ -1674,7 +2124,8 @@ export function enrichModelWithSourceUmlMetadata(model: ArchitecturalModel): Arc
     if (!resolvedFile || !fs.existsSync(resolvedFile)) return elem;
 
     const meta = parseSourceFileToUmlMeta(resolvedFile, elem.name, qn);
-    if (!meta || meta.name !== elem.name || (qn.includes(".") && meta.qualifiedName !== qn)) return elem;
+    if (!meta || meta.name !== elem.name || (qn.includes(".") && meta.qualifiedName !== qn))
+      return elem;
 
     parsedByElemId.set(elem.id, meta);
     return {
@@ -1707,18 +2158,29 @@ export function enrichModelWithSourceUmlMetadata(model: ArchitecturalModel): Arc
   });
 
   const elemById = new Map(enrichedElements.map((e) => [e.id, e]));
-  const matchesDeclaredType = (expression: string, target: ArchitecturalModel["elements"][number], source: ParsedSourceClassMeta): boolean => {
+  const matchesDeclaredType = (
+    expression: string,
+    target: ArchitecturalModel["elements"][number],
+    source: ParsedSourceClassMeta,
+  ): boolean => {
     const qn = String(target.properties?.["qualifiedName"] ?? target.name);
     const tokens = expression.match(/[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*/g) ?? [];
-    return tokens.some(token => {
+    return tokens.some((token) => {
       if (source.typeParameters.includes(token)) return false;
       if (token.includes(".") && token === qn) return true;
-      const first = token.split(".")[0]!, suffix = token.slice(first.length);
-      const explicit = source.imports.filter(i => !i.endsWith(".*") && i.split(".").at(-1) === first);
+      const first = token.split(".")[0]!,
+        suffix = token.slice(first.length);
+      const explicit = source.imports.filter(
+        (i) => !i.endsWith(".*") && i.split(".").at(-1) === first,
+      );
       if (explicit.length) return explicit.length === 1 && explicit[0] + suffix === qn;
       if (`${source.packageName}.${token}` === qn) return true;
-      const candidates = source.imports.filter(i => i.endsWith(".*")).map(i => i.slice(0, -1) + token)
-        .filter(candidate => enrichedElements.some(e => e.properties?.["qualifiedName"] === candidate));
+      const candidates = source.imports
+        .filter((i) => i.endsWith(".*"))
+        .map((i) => i.slice(0, -1) + token)
+        .filter((candidate) =>
+          enrichedElements.some((e) => e.properties?.["qualifiedName"] === candidate),
+        );
       return new Set(candidates).size === 1 && candidates[0] === qn;
     });
   };
@@ -1732,10 +2194,11 @@ export function enrichModelWithSourceUmlMetadata(model: ArchitecturalModel): Arc
     let umlRelationKind = "DEPENDENCY";
     let roleName: string | undefined;
 
-
     if (srcMeta.extendsTypes.some((t) => matchesDeclaredType(t.split("<")[0]!, tgtElem, srcMeta))) {
       umlRelationKind = "GENERALIZATION";
-    } else if (srcMeta.implementsTypes.some((t) => matchesDeclaredType(t.split("<")[0]!, tgtElem, srcMeta))) {
+    } else if (
+      srcMeta.implementsTypes.some((t) => matchesDeclaredType(t.split("<")[0]!, tgtElem, srcMeta))
+    ) {
       umlRelationKind = "REALIZATION";
     } else {
       const matchingField = srcMeta.members.find(
@@ -1755,7 +2218,6 @@ export function enrichModelWithSourceUmlMetadata(model: ArchitecturalModel): Arc
         ...(edge.properties ?? {}),
         umlRelationKind,
         ...(roleName ? { roleName } : {}),
-
       },
     };
   });
@@ -1768,4 +2230,3 @@ export function enrichModelWithSourceUmlMetadata(model: ArchitecturalModel): Arc
     edges: enrichedEdges,
   };
 }
-

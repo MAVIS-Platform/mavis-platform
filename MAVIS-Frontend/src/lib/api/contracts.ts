@@ -125,7 +125,16 @@ export const contracts = {
     true,
   ),
   createProject: contract(
-    z.object({ name: z.string().trim().min(1).max(255), workspaceId: id.optional(), assignmentId: id.optional() }).refine(value => !value.assignmentId || !!value.workspaceId, "Assignment projects require a workspace"),
+    z
+      .object({
+        name: z.string().trim().min(1).max(255),
+        workspaceId: id.optional(),
+        assignmentId: id.optional(),
+      })
+      .refine(
+        (value) => !value.assignmentId || !!value.workspaceId,
+        "Assignment projects require a workspace",
+      ),
     d.projectSchema,
     true,
   ),
@@ -149,22 +158,79 @@ export const contracts = {
     z.array(d.evidenceSchema),
   ),
   elementEvidence: contract(z.object({ modelId: id, elementId: id }), z.array(d.evidenceSchema)),
-  elementEvidenceContext: contract(z.object({ modelId: id, elementId: id }), z.object({
-    modelId: id,
-    elementId: id,
-    directEvidence: z.array(d.evidenceSchema),
-    relationshipEvidence: z.array(z.object({ relationshipId: id, evidence: d.evidenceSchema })),
-  })),
+  elementEvidenceContext: contract(
+    z.object({ modelId: id, elementId: id }),
+    z.object({
+      modelId: id,
+      elementId: id,
+      directEvidence: z.array(d.evidenceSchema),
+      relationshipEvidence: z.array(z.object({ relationshipId: id, evidence: d.evidenceSchema })),
+    }),
+  ),
   relationshipEvidence: contract(
     z.object({ modelId: id, relationshipId: id }),
     z.array(d.evidenceSchema),
   ),
   diagrams: contract(z.object({ modelId: id }), z.array(d.diagramSchema)),
-  documentRevisions: contract(z.object({ modelId:id }), z.array(z.object({modelId:id,viewId:z.string(),revision:z.number().int().positive(),savedAt:z.string().nullable()}))),
-  freezeArtifacts: contract(z.object({modelId:id,documents:z.array(z.object({viewId:z.string().regex(/^[a-zA-Z0-9:_-]{1,160}$/),revision:z.number().int().positive()})),diagramVersionIds:z.array(id)}),z.object({modelId:id,diagramVersionId:id}),true),
-  submissionExport: contract(z.object({submissionId:id}),z.record(z.unknown())),
-  submissionReview: contract(z.object({submissionId:id}),z.object({submissionId:id,revision:z.number().int().nonnegative(),status:z.enum(["PENDING","DRAFT","RETURNED","GRADED"]),score:z.number().min(0).max(100).nullable(),summary:z.string(),lecturerId:z.string().nullable(),lecturerName:z.string().nullable(),updatedAt:z.string().nullable()})),
-  gradeSubmission: contract(z.object({submissionId:id,expectedRevision:z.number().int().nonnegative(),status:z.enum(["DRAFT","RETURNED","GRADED"]),score:z.number().min(0).max(100).nullable(),summary:z.string().max(10000)}),z.object({submissionId:id,revision:z.number().int().positive(),status:z.enum(["DRAFT","RETURNED","GRADED"]),score:z.number().min(0).max(100).nullable(),summary:z.string(),lecturerId:z.string().nullable(),lecturerName:z.string().nullable(),updatedAt:z.string().nullable()}),true),
+  documentRevisions: contract(
+    z.object({ modelId: id }),
+    z.array(
+      z.object({
+        modelId: id,
+        viewId: z.string(),
+        revision: z.number().int().positive(),
+        savedAt: z.string().nullable(),
+      }),
+    ),
+  ),
+  freezeArtifacts: contract(
+    z.object({
+      modelId: id,
+      documents: z.array(
+        z.object({
+          viewId: z.string().regex(/^[a-zA-Z0-9:_-]{1,160}$/),
+          revision: z.number().int().positive(),
+        }),
+      ),
+      diagramVersionIds: z.array(id),
+    }),
+    z.object({ modelId: id, diagramVersionId: id }),
+    true,
+  ),
+  submissionExport: contract(z.object({ submissionId: id }), z.record(z.unknown())),
+  submissionReview: contract(
+    z.object({ submissionId: id }),
+    z.object({
+      submissionId: id,
+      revision: z.number().int().nonnegative(),
+      status: z.enum(["PENDING", "DRAFT", "RETURNED", "GRADED"]),
+      score: z.number().min(0).max(100).nullable(),
+      summary: z.string(),
+      lecturerId: z.string().nullable(),
+      lecturerName: z.string().nullable(),
+      updatedAt: z.string().nullable(),
+    }),
+  ),
+  gradeSubmission: contract(
+    z.object({
+      submissionId: id,
+      expectedRevision: z.number().int().nonnegative(),
+      status: z.enum(["DRAFT", "RETURNED", "GRADED"]),
+      score: z.number().min(0).max(100).nullable(),
+      summary: z.string().max(10000),
+    }),
+    z.object({
+      submissionId: id,
+      revision: z.number().int().positive(),
+      status: z.enum(["DRAFT", "RETURNED", "GRADED"]),
+      score: z.number().min(0).max(100).nullable(),
+      summary: z.string(),
+      lecturerId: z.string().nullable(),
+      lecturerName: z.string().nullable(),
+      updatedAt: z.string().nullable(),
+    }),
+    true,
+  ),
   architectureDocument: contract(
     z.object({ modelId: id, viewId: id, revision: z.number().int().positive().optional() }),
     z.object({
@@ -379,7 +445,7 @@ export const contracts = {
       workspaceId: id,
       name: z.string().trim().min(1).max(255),
       description: z.string().max(5000).optional(),
-      status:z.enum(["ACTIVE","ARCHIVED"]).optional(),
+      status: z.enum(["ACTIVE", "ARCHIVED"]).optional(),
     }),
     d.workspaceSchema,
     true,
@@ -394,10 +460,27 @@ export const contracts = {
     d.workspaceSchema,
     true,
   ),
-  batchWorkspaceMembers: contract(z.object({workspaceId:id,emails:z.array(z.string().email()).min(1).max(200)}),z.object({addedCount:z.number(),addedEmails:z.array(z.string()),alreadyMemberEmails:z.array(z.string()),notFoundEmails:z.array(z.string())}),true),
-  workspaceProjects: contract(z.object({workspaceId:id}),z.array(d.projectSchema)),
-  createReferenceProject: contract(z.object({workspaceId:id,name:z.string().trim().min(1).max(255)}),d.projectSchema,true),
-  publishReference: contract(z.object({workspaceId:id,projectId:id,snapshotId:id}),d.snapshotSchema,true),
+  batchWorkspaceMembers: contract(
+    z.object({ workspaceId: id, emails: z.array(z.string().email()).min(1).max(200) }),
+    z.object({
+      addedCount: z.number(),
+      addedEmails: z.array(z.string()),
+      alreadyMemberEmails: z.array(z.string()),
+      notFoundEmails: z.array(z.string()),
+    }),
+    true,
+  ),
+  workspaceProjects: contract(z.object({ workspaceId: id }), z.array(d.projectSchema)),
+  createReferenceProject: contract(
+    z.object({ workspaceId: id, name: z.string().trim().min(1).max(255) }),
+    d.projectSchema,
+    true,
+  ),
+  publishReference: contract(
+    z.object({ workspaceId: id, projectId: id, snapshotId: id }),
+    d.snapshotSchema,
+    true,
+  ),
   removeWorkspaceMember: contract(
     z.object({ workspaceId: id, userId: id }),
     d.workspaceSchema,
@@ -411,20 +494,38 @@ export const contracts = {
       dueAt: z.string().datetime({ offset: true }).nullable(),
       requiredDiagramTypes: z.array(z.string()).max(10),
       requireRuntimeTrace: z.boolean(),
-      referenceModelId: id.optional(), clearReferenceSource: z.boolean().optional(),
+      referenceModelId: id.optional(),
+      clearReferenceSource: z.boolean().optional(),
     }),
     d.assignmentSchema,
     true,
   ),
   assignments: contract(z.object({ workspaceId: id }), z.array(d.assignmentSchema)),
-  updateAssignment: contract(z.object({workspaceId:id,assignmentId:id,title:z.string().trim().min(1).max(255),description:z.string().max(10000),dueAt:z.string().datetime({offset:true}).nullable(),requiredDiagramTypes:z.array(z.string()).max(10),requireRuntimeTrace:z.boolean(),referenceModelId:id.optional(),clearReferenceSource:z.boolean().optional()}),d.assignmentSchema,true),
-  deleteAssignment: contract(z.object({workspaceId:id,assignmentId:id}),ok,true),
+  updateAssignment: contract(
+    z.object({
+      workspaceId: id,
+      assignmentId: id,
+      title: z.string().trim().min(1).max(255),
+      description: z.string().max(10000),
+      dueAt: z.string().datetime({ offset: true }).nullable(),
+      requiredDiagramTypes: z.array(z.string()).max(10),
+      requireRuntimeTrace: z.boolean(),
+      referenceModelId: id.optional(),
+      clearReferenceSource: z.boolean().optional(),
+    }),
+    d.assignmentSchema,
+    true,
+  ),
+  deleteAssignment: contract(z.object({ workspaceId: id, assignmentId: id }), ok, true),
   referenceVersions: contract(
     z.object({ workspaceId: id }),
     z.array(z.object({ id, workspaceId: id, snapshot: d.snapshotSchema, model: d.modelSchema })),
   ),
   submissions: contract(nothing, z.array(d.submissionSchema)),
-  assignmentSubmissions: contract(z.object({ workspaceId: id, assignmentId: id }), z.array(d.submissionSchema)),
+  assignmentSubmissions: contract(
+    z.object({ workspaceId: id, assignmentId: id }),
+    z.array(d.submissionSchema),
+  ),
   submission: contract(z.object({ submissionId: id }), d.submissionSchema),
   submit: contract(
     z.object({
@@ -451,8 +552,16 @@ export const contracts = {
     d.submissionSchema,
     true,
   ),
-  updateFeedback: contract(z.object({submissionId:id,feedbackId:id,text:z.string().trim().min(1).max(5000)}),d.submissionSchema,true),
-  deleteFeedback: contract(z.object({submissionId:id,feedbackId:id}),d.submissionSchema,true),
+  updateFeedback: contract(
+    z.object({ submissionId: id, feedbackId: id, text: z.string().trim().min(1).max(5000) }),
+    d.submissionSchema,
+    true,
+  ),
+  deleteFeedback: contract(
+    z.object({ submissionId: id, feedbackId: id }),
+    d.submissionSchema,
+    true,
+  ),
   accounts: contract(nothing, z.array(d.accountSchema)),
   setAccountLock: contract(z.object({ accountId: id, locked: z.boolean() }), d.accountSchema, true),
   setAccountRole: contract(
@@ -485,6 +594,68 @@ export const contracts = {
   ),
   audit: contract(nothing, z.array(d.auditSchema)),
   adminJobs: contract(nothing, z.array(d.analysisJobSchema)),
+  adminAiUsage: contract(
+    nothing,
+    z.object({
+      status: z.enum(["AVAILABLE", "UNAVAILABLE"]),
+      updatedAt: z.string(),
+      message: z.string().nullable(),
+      providers: z.array(
+        z.object({
+          provider: z.enum(["openai", "gemini"]),
+          model: z.string().nullable(),
+          usage: z
+            .object({
+              inputTokens: z.number().int().nonnegative(),
+              outputTokens: z.number().int().nonnegative(),
+              requestCount: z.number().int().nonnegative(),
+            })
+            .nullable(),
+          geminiQuota: z.object({
+            scope: z.literal("project"),
+            samples: z.array(z.object({
+              model: z.string(), metric: z.string(), limitName: z.string(),
+              kind: z.enum(["limit", "usage"]), value: z.number(),
+              measuredAt: z.string(), startTime: z.string().optional(),
+            })),
+            partial: z.boolean(),
+          }).nullable().optional(),
+          providerDataMessage: z.string().nullable().optional(),
+          providerDataUpdatedAt: z.string().nullable().optional(),
+          providerUsage: z.object({
+            scope: z.literal("project"),
+            inputTokens: z.number().nonnegative(),
+            outputTokens: z.number().nonnegative(),
+            requestCount: z.number().nonnegative(),
+            startTime: z.string(),
+            endTime: z.string(),
+          }).nullable().optional(),
+          coverage: z.object({
+            java: z.enum(["OBSERVED", "UNKNOWN"]),
+            next: z.enum(["OBSERVED", "UNKNOWN"]),
+          }).optional(),
+          limits: z.object({
+            scope: z.literal("project"),
+            models: z.array(z.object({
+              model: z.string(),
+              requestsPerMinute: z.number().nullable(),
+              tokensPerMinute: z.number().nullable(),
+            })),
+          }).nullable(),
+          cost: z.object({
+            scope: z.literal("project"),
+            amount: z.number(),
+            currency: z.string(),
+            startTime: z.string(),
+            endTime: z.string(),
+          }).nullable(),
+          balance: z.unknown().nullable(),
+          status: z.enum(["AVAILABLE", "UNAVAILABLE"]),
+          message: z.string().nullable(),
+        }),
+      ),
+    }),
+  ),
   platformSummary: contract(
     nothing,
     z.object({

@@ -52,6 +52,14 @@ public class RuntimeSessionController {
         return ApiResponse.success("Phê duyệt và khởi chạy phiên thực nghiệm thành công", response);
     }
 
+    @PostMapping("/runtime/sessions/{sessionId}/dispatch")
+    @Operation(summary = "Kích hoạt điều phối thực thi phiên thực nghiệm ngay lập tức (J50-03, V15, N15)",
+            description = "Tự động kích hoạt MAVIS.Runner CLI hoặc Synthetic POC Trace và trả về kết quả đã cập nhật")
+    public ApiResponse<RuntimeSessionResponseDTO> dispatchSession(@PathVariable UUID sessionId) {
+        RuntimeSessionResponseDTO response = runtimeSessionService.dispatchSession(sessionId);
+        return ApiResponse.success("Kích hoạt điều phối phiên thực nghiệm thành công", response);
+    }
+
     @PostMapping("/runtime/sessions/{sessionId}/stop")
     @Operation(summary = "Dừng phiên chạy thực nghiệm",
             description = "Chuyển trạng thái sang CANCELLED và ghi nhận thời gian kết thúc")
@@ -66,6 +74,24 @@ public class RuntimeSessionController {
     public ApiResponse<List<RuntimeSessionResponseDTO>> getSessionsByProject(@PathVariable UUID projectId) {
         List<RuntimeSessionResponseDTO> sessions = runtimeSessionService.getSessionsByProject(projectId);
         return ApiResponse.success("Lấy danh sách phiên thực nghiệm thành công", sessions);
+    }
+
+    @GetMapping("/projects/{projectId}/runtime-config")
+    @Operation(summary = "Lấy cấu hình Runtime & điều kiện thực thi của dự án (FR-RT02, J50-01, V14, F13)",
+            description = "Trả về trạng thái tương thích, profile khuyến nghị, và đề xuất service mappings từ mô hình mới nhất")
+    public ApiResponse<com.mavis.analyzer.runtime.dto.RuntimeProjectConfigDTO> getProjectRuntimeConfig(@PathVariable UUID projectId) {
+        com.mavis.analyzer.runtime.dto.RuntimeProjectConfigDTO config = runtimeSessionService.getProjectRuntimeConfig(projectId);
+        return ApiResponse.success("Lấy cấu hình runtime dự án thành công", config);
+    }
+
+    @PutMapping("/projects/{projectId}/runtime-config")
+    @Operation(summary = "Lưu cập nhật cấu hình Runtime của dự án (FR-RT02, J50-01, V14, F13)",
+            description = "Cập nhật profileId và confirmedServiceMappings, tăng revision của cấu hình")
+    public ApiResponse<com.mavis.analyzer.runtime.dto.RuntimeProjectConfigDTO> updateProjectRuntimeConfig(
+            @PathVariable UUID projectId,
+            @RequestBody com.mavis.analyzer.runtime.dto.RuntimeProjectConfigRequestDTO request) {
+        com.mavis.analyzer.runtime.dto.RuntimeProjectConfigDTO updated = runtimeSessionService.updateProjectRuntimeConfig(projectId, request);
+        return ApiResponse.success("Cập nhật cấu hình runtime dự án thành công", updated);
     }
 
     @GetMapping("/runtime/sessions/{sessionId}")

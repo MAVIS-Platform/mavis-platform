@@ -74,6 +74,8 @@ public class GraphServiceImpl implements GraphService {
                         .protocol(extractTextProperty(el, "protocol"))
                         .transportAuthority(extractTextProperty(el, "transportAuthority"))
                         .resolutionIssue(extractTextProperty(el, "resolutionIssue"))
+                        .status(el.getStatus())
+                        .languageStack(el.getLanguageStack())
                         .build())
                 .collect(Collectors.toList());
 
@@ -85,7 +87,7 @@ public class GraphServiceImpl implements GraphService {
                             .sourceNodeId(rel.getSourceElement().getId())
                             .targetNodeId(rel.getTargetElement().getId())
                             .kind(rel.getRelationType())
-                            .originLayer(rel.getOriginLayer())
+                            .originLayer(rel.getOriginLayer() != null ? rel.getOriginLayer() : "STATIC")
                             .direction(rel.getDirection())
                             .resolutionStatus(rel.getProperties() == null ? "UNKNOWN" : rel.getProperties().path("resolutionStatus").asText("UNKNOWN"))
                             .description(extractDescription(rel))

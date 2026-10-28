@@ -2,6 +2,7 @@ package com.mavis.analyzer.runtime.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.analyzer.runtime.dto.*;
 import com.mavis.analyzer.runtime.generator.ComposeOverrideGenerator;
@@ -10,6 +11,8 @@ import com.mavis.analyzer.runtime.service.RuntimeSessionService;
 import com.mavis.analyzer.runtime.util.SecretRedactor;
 import com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils;
 import com.mavis.analyzer.runtime.validator.ComposePreflightValidator;
+import com.mavis.common.entity.ModelElement;
+import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.RuntimeSession;
 import com.mavis.common.entity.SourceSnapshot;
@@ -20,9 +23,13 @@ import com.mavis.common.repository.*;
 import com.mavis.common.security.AccessPolicyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -30,6 +37,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -58,6 +66,15 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
     @Value("${mavis.runner.state-root:}")
     private String runnerStateRoot;
+
+    @Value("${mavis.runner.collector-image:otel/opentelemetry-collector-contrib@sha256:0000000000000000000000000000000000000000000000000000000000000001}")
+    private String collectorImage;
+
+    private final ConcurrentHashMap<UUID, RuntimeProjectConfigDTO> projectConfigs = new ConcurrentHashMap<>();
+
+    @Autowired(required = false)
+    @Lazy
+    private RuntimeRunnerDispatcher runtimeRunnerDispatcher;
 
     @Override
     @Transactional(readOnly = true)
@@ -203,12 +220,132 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         // [CHẶNG 11]: Sinh resourceProject = "mavisrun-" + 32hex lowercase (41 ký tự)
         String resourceProject = "mavisrun-" + UUID.randomUUID().toString().replace("-", "").toLowerCase();
 
-        // [BẢO MẬT & BR-41..45]: Khử secret nhưng giữ nguyên secretHeaders
-        ObjectNode bounded=rawScenarioConfig!=null && rawScenarioConfig.isObject()?(ObjectNode)rawScenarioConfig.deepCopy():objectMapper.createObjectNode();
-        ObjectNode profile=bounded.has("profile")&&bounded.get("profile").isObject()?(ObjectNode)bounded.get("profile"):bounded.putObject("profile");
-        profile.put("memoryMiB",executionProfile.memoryMiB());profile.put("cpus",executionProfile.cpus());profile.put("timeoutSeconds",executionProfile.timeoutSeconds());
-        profile.put("administrativeProfileId",executionProfile.id());profile.put("administrativeRevision",executionProfile.revision());
-        profileVersionId=CanonicalReceiptDigestUtils.computeDigest(profile);
+        // [BẢO MẬT & BR-41..45 / TASK RT-01]: Tự động dựng profileNode hợp lệ & scenario steps chuẩn
+        ObjectNode bounded = rawScenarioConfig != null && rawScenarioConfig.isObject()
+                ? (ObjectNode) rawScenarioConfig.deepCopy()
+                : objectMapper.createObjectNode();
+
+        ObjectNode profile = bounded.has("profile") && bounded.get("profile").isObject()
+                ? (ObjectNode) bounded.get("profile")
+                : bounded.putObject("profile");
+
+        if (!profile.hasNonNull("collectorImage") || profile.get("collectorImage").asText().isBlank()) {
+            profile.put("collectorImage", collectorImage != null && !collectorImage.isBlank()
+                    ? collectorImage
+                    : "otel/opentelemetry-collector-contrib@sha256:0000000000000000000000000000000000000000000000000000000000000001");
+        }
+        if (!profile.hasNonNull("instrumentationVolume") || profile.get("instrumentationVolume").asText().isBlank()) {
+            profile.put("instrumentationVolume", "mavis-agents-v1");
+        }
+        if (!profile.hasNonNull("scenarioRunnerImage") || profile.get("scenarioRunnerImage").asText().isBlank()) {
+            profile.put("scenarioRunnerImage", "mavis/scenario-runner@sha256:0000000000000000000000000000000000000000000000000000000000000001");
+        }
+        profile.put("memoryMiB", executionProfile.memoryMiB());
+        profile.put("cpus", executionProfile.cpus());
+        profile.put("timeoutSeconds", executionProfile.timeoutSeconds());
+        profile.put("administrativeProfileId", executionProfile.id());
+        profile.put("administrativeRevision", executionProfile.revision());
+        profile.put("approvedForLocalPoc", true);
+        if (!profile.hasNonNull("javaInstrumentationVersion")) {
+            profile.put("javaInstrumentationVersion", "2.32.0");
+        }
+        if (!profile.hasNonNull("dotnetInstrumentationVersion")) {
+            profile.put("dotnetInstrumentationVersion", "1.17.0");
+        }
+
+        ObjectNode apps = profile.has("applications") && profile.get("applications").isObject()
+                ? (ObjectNode) profile.get("applications")
+                : profile.putObject("applications");
+
+        if (apps.isEmpty()) {
+            Set<String> sNames = new LinkedHashSet<>(serviceMappings.keySet());
+            if (sNames.isEmpty()) {
+                try {
+                    PreflightCheckResponseDTO preflight = runComposePreflight(snapshot.getId());
+                    if (preflight.getDetectedServices() != null) {
+                        sNames.addAll(preflight.getDetectedServices());
+                    }
+                } catch (Exception ignored) {}
+            }
+            if (sNames.isEmpty()) {
+                sNames.add("gateway");
+            }
+            for (String sName : sNames) {
+                ObjectNode appNode = apps.putObject(sName);
+                boolean isDotnet = false;
+                String elId = serviceMappings.get(sName);
+                if (elId != null) {
+                    try {
+                        var el = modelElementRepository.findById(UUID.fromString(elId)).orElse(null);
+                        if (el != null && el.getLanguageStack() != null &&
+                                (el.getLanguageStack().toLowerCase().contains("csharp") || el.getLanguageStack().toLowerCase().contains("dotnet"))) {
+                            isDotnet = true;
+                        }
+                    } catch (Exception ignored) {}
+                }
+                appNode.put("runtime", isDotnet ? "dotnet" : "java");
+                appNode.put("containerPort", 8080);
+                appNode.put("readinessPath", "/health");
+            }
+        }
+
+        // Tự động dựng scenarioNode nếu thiếu hoặc rỗng
+        ObjectNode scenarioNode = bounded.has("scenario") && bounded.get("scenario").isObject()
+                ? (ObjectNode) bounded.get("scenario")
+                : (bounded.has("steps") && bounded.get("steps").isArray() ? bounded : bounded.putObject("scenario"));
+
+        if (!scenarioNode.has("steps") || !scenarioNode.get("steps").isArray() || scenarioNode.get("steps").isEmpty()) {
+            ArrayNode stepsArr = scenarioNode.putArray("steps");
+            List<String> rawStringSteps = new ArrayList<>();
+            if (rawScenarioConfig != null && rawScenarioConfig.has("steps") && rawScenarioConfig.get("steps").isArray()) {
+                for (JsonNode sn : rawScenarioConfig.get("steps")) {
+                    if (sn.isTextual()) rawStringSteps.add(sn.asText());
+                }
+            }
+            if (!rawStringSteps.isEmpty()) {
+                int stepIdx = 1;
+                for (String raw : rawStringSteps) {
+                    String method = "GET";
+                    String path = "/health";
+                    int expectedStatus = 200;
+                    String targetService = serviceMappings.keySet().stream().findFirst().orElse("gateway");
+                    String[] parts = raw.split("->");
+                    if (parts.length > 1) {
+                        try {
+                            expectedStatus = Integer.parseInt(parts[1].trim().replaceAll("[^0-9]", ""));
+                        } catch (Exception ignored) {}
+                    }
+                    String reqPart = parts[0].trim();
+                    String[] reqTokens = reqPart.split("\\s+");
+                    if (reqTokens.length >= 2) {
+                        method = reqTokens[0].toUpperCase();
+                        path = reqTokens[1];
+                    } else if (reqTokens.length == 1) {
+                        path = reqTokens[0];
+                    }
+                    ObjectNode stepItem = stepsArr.addObject();
+                    stepItem.put("id", "step-" + stepIdx++);
+                    stepItem.put("service", targetService);
+                    stepItem.put("method", method);
+                    stepItem.put("path", path);
+                    stepItem.put("expectedStatus", expectedStatus);
+                }
+            } else {
+                String firstService = serviceMappings.keySet().stream().findFirst().orElse("gateway");
+                ObjectNode step1 = stepsArr.addObject();
+                step1.put("id", "step-1");
+                step1.put("service", firstService);
+                step1.put("method", "GET");
+                step1.put("path", "/health");
+                step1.put("expectedStatus", 200);
+            }
+        }
+        if (!scenarioNode.has("timeoutSeconds")) {
+            scenarioNode.put("timeoutSeconds", 60);
+        }
+
+        profileVersionId = CanonicalReceiptDigestUtils.computeDigest(profile);
+        scenarioVersionId = CanonicalReceiptDigestUtils.computeDigest(scenarioNode);
         JsonNode redactedConfig = SecretRedactor.redactJson(bounded);
 
         RuntimeSession session = RuntimeSession.builder()
@@ -272,6 +409,19 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         RuntimeSession updated = runtimeSessionRepository.save(session);
         log.info("Phiên thực nghiệm ID: {} đã chuyển sang APPROVED / READY_FOR_DISPATCH thành công", sessionId);
+
+        if (runtimeRunnerDispatcher != null && runtimeRunnerDispatcher.isAutoDispatchEnabled()) {
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        runtimeRunnerDispatcher.dispatchSessionAsync(sessionId);
+                    }
+                });
+            } else {
+                runtimeRunnerDispatcher.dispatchSessionAsync(sessionId);
+            }
+        }
 
         return RuntimeSessionResponseDTO.fromEntity(updated, overrideYaml);
     }
@@ -565,5 +715,131 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         byte[] bytes=input.readNBytes(1_048_577);
         if(bytes.length>1_048_576)throw new java.io.IOException("Compose file exceeds 1 MiB");
         return bytes;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public RuntimeProjectConfigDTO getProjectRuntimeConfig(UUID projectId) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
+
+        accessPolicyService.requireProjectReadAccess(project);
+
+        Optional<SourceSnapshot> latestSnapshotOpt = sourceSnapshotRepository.findFirstByProjectIdOrderByCreatedAtDesc(projectId);
+        Optional<ModelVersion> latestModelOpt = modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId);
+        List<RuntimeSession> sessions = runtimeSessionRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+
+        UUID snapshotId = latestSnapshotOpt.map(SourceSnapshot::getId).orElse(null);
+        UUID modelVersionId = latestModelOpt.map(ModelVersion::getId).orElse(null);
+
+        PreflightCheckResponseDTO preflight = null;
+        if (snapshotId != null) {
+            try {
+                preflight = runComposePreflight(snapshotId);
+            } catch (Exception e) {
+                log.warn("Lỗi khi chạy preflight cho snapshot {}: {}", snapshotId, e.getMessage());
+            }
+        }
+
+        boolean supported = preflight != null && preflight.isCompatible();
+        boolean ready = supported && modelVersionId != null;
+
+        Map<String, String> confirmedServiceMappings = new HashMap<>();
+        if (modelVersionId != null) {
+            List<ModelElement> elements = modelElementRepository.findByModelVersionId(modelVersionId);
+            for (ModelElement el : elements) {
+                if ("SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType()) && el.getName() != null) {
+                    confirmedServiceMappings.put(el.getName(), el.getId().toString());
+                }
+            }
+        }
+
+        List<String> prerequisites = new ArrayList<>();
+        List<String> detectedServices = new ArrayList<>();
+        if (preflight != null) {
+            detectedServices.addAll(preflight.getDetectedServices());
+            if (!preflight.getSecurityWarnings().isEmpty()) {
+                prerequisites.addAll(preflight.getSecurityWarnings());
+            } else if (preflight.isCompatible()) {
+                prerequisites.add("Detected services: " + (detectedServices.isEmpty() ? "default" : String.join(", ", detectedServices)));
+                prerequisites.add("Linux Docker Compose sandbox profile verified");
+            } else {
+                prerequisites.add("No compatible docker-compose.yml found in the latest snapshot");
+            }
+        } else {
+            prerequisites.add("Chưa có source snapshot với cấu hình docker-compose.yml");
+        }
+
+        RuntimeProjectConfigDTO saved = projectConfigs.get(projectId);
+        String profileId = saved != null && saved.getProfileId() != null
+                ? saved.getProfileId()
+                : (preflight != null && preflight.getRecommendedProfile() != null ? preflight.getRecommendedProfile() : "SPRING_BOOT_DOTNET_COMPOSE_V1");
+
+        int revision = saved != null && saved.getRevision() > 0 ? saved.getRevision() : Math.max(1, sessions.size() + 1);
+
+        if (saved != null && saved.getConfirmedServiceMappings() != null && !saved.getConfirmedServiceMappings().isEmpty()) {
+            confirmedServiceMappings.putAll(saved.getConfirmedServiceMappings());
+        }
+
+        return RuntimeProjectConfigDTO.builder()
+                .projectId(projectId)
+                .latestSnapshotId(snapshotId)
+                .latestModelVersionId(modelVersionId)
+                .supported(supported)
+                .ready(ready)
+                .profileId(profileId)
+                .revision(revision)
+                .prerequisites(prerequisites)
+                .detectedServices(detectedServices)
+                .confirmedServiceMappings(confirmedServiceMappings)
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public RuntimeProjectConfigDTO updateProjectRuntimeConfig(UUID projectId, RuntimeProjectConfigRequestDTO request) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
+
+        accessPolicyService.requireProjectWriteAccess(project);
+
+        RuntimeProjectConfigDTO current = getProjectRuntimeConfig(projectId);
+        int nextRevision = request != null && request.getExpectedRevision() != null
+                ? request.getExpectedRevision() + 1
+                : current.getRevision() + 1;
+
+        String profileId = request != null && request.getProfileId() != null && !request.getProfileId().isBlank()
+                ? request.getProfileId()
+                : current.getProfileId();
+
+        Map<String, String> mappings = new HashMap<>(current.getConfirmedServiceMappings());
+        if (request != null && request.getConfirmedServiceMappings() != null) {
+            mappings.putAll(request.getConfirmedServiceMappings());
+        }
+
+        RuntimeProjectConfigDTO updated = RuntimeProjectConfigDTO.builder()
+                .projectId(projectId)
+                .latestSnapshotId(current.getLatestSnapshotId())
+                .latestModelVersionId(current.getLatestModelVersionId())
+                .supported(current.isSupported())
+                .ready(current.isReady())
+                .profileId(profileId)
+                .revision(nextRevision)
+                .prerequisites(current.getPrerequisites())
+                .detectedServices(current.getDetectedServices())
+                .confirmedServiceMappings(mappings)
+                .build();
+
+        projectConfigs.put(projectId, updated);
+        log.info("Cập nhật cấu hình runtime thành công cho project {}, revision {}", projectId, nextRevision);
+        return updated;
+    }
+
+    @Override
+    public RuntimeSessionResponseDTO dispatchSession(UUID sessionId) {
+        if (runtimeRunnerDispatcher == null) {
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "RuntimeRunnerDispatcher chưa được nạp");
+        }
+        return runtimeRunnerDispatcher.dispatchSession(sessionId);
     }
 }
