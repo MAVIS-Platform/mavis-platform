@@ -198,3 +198,43 @@ export function projectGraphModel(
     internalRelationships,
   };
 }
+
+export const graphCategories = [
+  { id: "service", label: "Service", color: "#397ed7" },
+  { id: "database", label: "Data store", color: "#16815d" },
+  { id: "messaging", label: "Messaging", color: "#9455c9" },
+  { id: "component", label: "Component", color: "#d65370" },
+  { id: "external", label: "External System", color: "#b7791f" },
+  { id: "unknown", label: "Unknown", color: "#94a3b8" },
+] as const;
+
+export type GraphCategory = (typeof graphCategories)[number]["id"];
+
+export function graphCategory(type: string | undefined): GraphCategory {
+  switch (type) {
+    case "SERVICE_CONTAINER":
+      return "service";
+    case "DATABASE":
+      return "database";
+    case "QUEUE_BROKER":
+    case "MESSAGE_CHANNEL":
+      return "messaging";
+    case "COMPONENT":
+      return "component";
+    case "EXTERNAL_SYSTEM":
+      return "external";
+    default:
+      return "unknown";
+  }
+}
+
+// Filter the projected view without changing the canonical model or aggregated evidence.
+export function filterGraphCategories(model: ArchitecturalModel, hidden: readonly GraphCategory[]) {
+  if (!hidden.length) return model;
+  const elements = model.elements.filter(
+    (node) => !hidden.includes(graphCategory(node.elementType)),
+  );
+  const visible = new Set(elements.map((node) => node.id));
+  const edges = model.edges.filter((edge) => visible.has(edge.from) && visible.has(edge.to));
+  return { ...model, elements, edges };
+}
