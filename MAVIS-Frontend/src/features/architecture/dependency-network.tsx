@@ -14,6 +14,7 @@ import {
   type GraphCategory,
 } from "./graph-projection";
 import cytoscape, { type Core } from "cytoscape";
+import { networkConnections, type NetworkConnection } from "./network-connections";
 import { networkElements, networkFocus } from "./cytoscape-network";
 import { networkPositions } from "./network-layout";
 import { startNetworkPulse } from "./network-pulse";
@@ -41,7 +42,15 @@ export function DependencyNetwork({
   active = true,
   showPresentationOptions = true,
   relationshipScopeCount = 0,
+  connections: controlledConnections,
+  selectedConnectionKey = null,
+  onConnectionSelect,
+  onClearConnection,
 }: {
+  connections?: NetworkConnection[];
+  selectedConnectionKey?: string | null;
+  onConnectionSelect?: (key: string) => void;
+  onClearConnection?: () => void;
   active?: boolean;
   showPresentationOptions?: boolean;
   relationshipScopeCount?: number;
@@ -94,8 +103,20 @@ export function DependencyNetwork({
   const graph = useRef<Core | null>(null);
   const refreshTheme = useRef<() => void>(() => {});
   const presentMode = useRef<(mode: NetworkMode) => void>(() => {});
-  const selection = useRef({ selectedId, onSelect });
-  selection.current = { selectedId, onSelect };
+  const selection = useRef({
+    selectedId,
+    onSelect,
+    onConnectionSelect,
+    onClearConnection,
+    selectedConnectionKey,
+  });
+  selection.current = {
+    selectedId,
+    onSelect,
+    onConnectionSelect,
+    onClearConnection,
+    selectedConnectionKey,
+  };
   const rightDrag = useRef<{
     id: number;
     button: number;
@@ -119,7 +140,27 @@ export function DependencyNetwork({
   );
   const nodes = projection.model.elements;
   const edges = projection.model.edges;
-  const elements = useMemo(() => networkElements(projection.model), [projection.model]);
+  const internalConnections = useMemo(
+    () => networkConnections(model, projection.model),
+    [model, projection.model],
+  );
+  const connections = controlledConnections ?? internalConnections;
+  const elements = useMemo(
+    () => networkElements(projection.model, 2, connections),
+    [projection.model, connections],
+  );
+  const relationshipCount = connections.reduce(
+    (sum, connection) => sum + connection.relationshipIds.length,
+    0,
+  );
+  function inspectConnection(connection: NetworkConnection) {
+    if (onConnectionSelect) onConnectionSelect(connection.key);
+    else {
+      const original = connection.relationships.find((row) => row.metadataAvailable);
+      if (original) onSelect(original.id);
+    }
+  }
+
   const clusterLegend = useMemo(() => {
     const { seeds } = exploreClusters(projection.model);
     const appearance = exploreAppearance(projection.model);
@@ -132,7 +173,11 @@ export function DependencyNetwork({
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const search = query.trim().toLowerCase();
   const matchingNodes = nodes.filter((node) => !search || node.name.toLowerCase().includes(search));
-  const pageCount = Math.max(1, Math.ceil(matchingNodes.length / 30), Math.ceil(edges.length / 50));
+  const pageCount = Math.max(
+    1,
+    Math.ceil(matchingNodes.length / 30),
+    Math.ceil(connections.length / 50),
+  );
   const page = Math.min(elementPage, pageCount);
 
   function zoom(factor: number) {
@@ -213,12 +258,14 @@ export function DependencyNetwork({
           selector: "edge",
           style: {
             width: 1.5,
-            "curve-style": "bezier",
+            "curve-style": (edge) =>
+              edge.data("source") === edge.data("target") ? "bezier" : "straight",
             "control-point-step-size": 45,
             "line-color": "data(color)",
             "target-arrow-color": "data(color)",
-            "target-arrow-shape": "triangle",
-            "line-style": (edge) => edge.data("lineStyle"),
+            "target-arrow-shape": "none",
+            "source-arrow-shape": "none",
+            "line-style": "solid",
             "arrow-scale": 0.8,
             opacity: 0.65,
             "overlay-opacity": 0,
@@ -251,7 +298,7 @@ export function DependencyNetwork({
       setHovered(
         target.isNode()
           ? `${target.data("label")} · ${target.data("elementType") ?? "Element"} · ${target.degree()} connections`
-          : `${target.source().data("label")} → ${target.target().data("label")} · ${target.data("label")}`,
+          : `${target.source().data("label")} — ${target.target().data("label")} · ${target.data("label")}`,
       );
     });
     cy.on("mouseout", "node, edge", () => {
@@ -259,11 +306,24 @@ export function DependencyNetwork({
       setHovered(null);
     });
     cy.on("tap", "node, edge", (event) => {
-      const id = event.target.data("sourceId") as string;
-      selection.current.onSelect(selection.current.selectedId === id ? null : id);
+      const target = event.target;
+      if (target.isEdge() && selection.current.onConnectionSelect) {
+        const key = String(target.data("connectionKey"));
+        if (selection.current.selectedConnectionKey === key)
+          selection.current.onClearConnection?.();
+        else selection.current.onConnectionSelect(key);
+      } else {
+        const id = target.isNode()
+          ? String(target.data("sourceId"))
+          : (target.data("underlyingEdgeIds") as string[])[0];
+        if (id) selection.current.onSelect(selection.current.selectedId === id ? null : id);
+      }
     });
     cy.on("tap", (event) => {
-      if (event.target === cy) selection.current.onSelect(null);
+      if (event.target === cy) {
+        selection.current.onClearConnection?.();
+        selection.current.onSelect(null);
+      }
     });
     let detailShown: boolean | null = null;
     const updateCamera = () => {
@@ -361,6 +421,14 @@ export function DependencyNetwork({
     const cy = graph.current;
     if (!cy) return;
     const focus = networkFocus(model, projection.model, selectedId, highlightIds);
+    const selectedConnection = connections.find(
+      (connection) => connection.key === selectedConnectionKey,
+    );
+    if (selectedConnection && !selectedId && !highlightIds.length) {
+      focus.active = true;
+      selectedConnection.elementIds.forEach((id) => focus.nodes.add(id));
+      selectedConnection.projectedEdgeIds.forEach((id) => focus.edges.add(id));
+    }
     const search = query.trim().toLowerCase();
     cy.batch(() => {
       cy.elements().removeClass("muted focused search-match neighbor");
@@ -378,18 +446,33 @@ export function DependencyNetwork({
       cy.edges().forEach((edge) => {
         const id = edge.data("sourceId") as string;
         const underlying = edge.data("underlyingEdgeIds") as string[];
-        edge.toggleClass("muted", focus.active && !focus.edges.has(id));
+        const projectedIds = edge.data("projectedEdgeIds") as string[] | undefined;
+        const inFocus =
+          focus.edges.has(id) || (projectedIds ?? []).some((member) => focus.edges.has(member));
+        edge.toggleClass("muted", focus.active && !inFocus);
         edge.toggleClass(
           "focused",
           highlightIds.length > 0
-            ? focus.edges.has(id)
-            : (mode === "explore" && focus.edges.has(id)) ||
+            ? inFocus
+            : (mode === "explore" && inFocus) ||
+                selectedConnectionKey === edge.id() ||
                 selectedId === id ||
                 underlying.includes(selectedId ?? ""),
         );
       });
     });
-  }, [active, elements, model, projection.model, selectedId, highlightIds, query, mode]);
+  }, [
+    active,
+    elements,
+    model,
+    projection.model,
+    selectedId,
+    selectedConnectionKey,
+    connections,
+    highlightIds,
+    query,
+    mode,
+  ]);
   return (
     <section
       ref={section}
@@ -591,7 +674,10 @@ export function DependencyNetwork({
                 </p>
                 {mode === "explore" ? (
                   <ul className="mt-2 list-disc space-y-1 pl-4 text-muted-foreground">
-                    <li>Node size represents connection count.</li>
+                    <li>
+                      Node size reflects relationship connectivity before line grouping, not
+                      traffic.
+                    </li>
                     <li>
                       Color groups connected service clusters; gray means unclassified or
                       unconnected. Grouping does not establish ownership.
@@ -607,8 +693,9 @@ export function DependencyNetwork({
                   </ul>
                 ) : (
                   <p className="mt-2 text-muted-foreground">
-                    Colors and badges identify element types. Arrows show relationship direction;
-                    line styles and origins are explained in the legend below.
+                    Colors and badges identify element types. A plain line groups recorded
+                    relationships; select a line for its original directions, types, sources and
+                    evidence.
                   </p>
                 )}
               </div>
@@ -624,7 +711,7 @@ export function DependencyNetwork({
         </span>
         <span>
           <strong className="text-foreground">Displayed in view:</strong> {nodes.length} elements ·{" "}
-          {edges.length} visible connections
+          {connections.length} visible connections · {relationshipCount} underlying relationships
         </span>
         <span>
           <strong className="text-foreground">Filtered by origin:</strong>{" "}
@@ -678,18 +765,21 @@ export function DependencyNetwork({
               {node.name} · {node.elementType}
             </button>
           ))}
-          {edges.slice((page - 1) * 50, page * 50).map((edge) => (
+          {connections.slice((page - 1) * 50, page * 50).map((connection) => (
             <button
-              key={edge.id}
+              key={connection.key}
               type="button"
               className="block rounded px-2 py-1 text-left hover:bg-muted focus-visible:outline"
-              aria-label={`Inspect ${byId.get(edge.from)?.name} to ${byId.get(edge.to)?.name}: ${edge.protocol}`}
+              aria-label={`Inspect connection ${byId.get(connection.elementIds[0])?.name} and ${byId.get(connection.elementIds[1])?.name}`}
               aria-pressed={
-                selectedId === edge.id || edge.underlyingEdgeIds?.includes(selectedId ?? "")
+                selectedConnectionKey === connection.key ||
+                connection.relationshipIds.includes(selectedId ?? "")
               }
-              onClick={() => onSelect(selectedId === edge.id ? null : edge.id)}
+              onClick={() => inspectConnection(connection)}
             >
-              {byId.get(edge.from)?.name} → {byId.get(edge.to)?.name} · {edge.protocol}
+              {byId.get(connection.elementIds[0])?.name} —{" "}
+              {byId.get(connection.elementIds[1])?.name} · {connection.relationshipIds.length}{" "}
+              relationship(s)
             </button>
           ))}
         </div>
@@ -826,7 +916,7 @@ export function DependencyNetwork({
             <div>
               <p className="text-base font-semibold tracking-wide">Architecture Atlas</p>
               <p className="mt-1 text-xs text-slate-400">
-                {nodes.length} elements · {edges.length} connections in this view
+                {nodes.length} elements · {connections.length} connections in this view
               </p>
             </div>
           </div>
@@ -903,9 +993,7 @@ export function DependencyNetwork({
             })}
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]">
-          <span>─── Static</span>
-          <span>- - - Declared</span>
-          <span>··· Uncertain</span>
+          <span>One plain line per pair · select for direction, source &amp; evidence</span>
         </div>
       </div>
     </section>
