@@ -40,6 +40,7 @@ export function DependencyNetwork({
   hiddenCategories: controlledHiddenCategories,
   onHiddenCategoriesChange,
   active = true,
+  fillHeight = false,
   showPresentationOptions = true,
   relationshipScopeCount = 0,
   connections: controlledConnections,
@@ -52,6 +53,7 @@ export function DependencyNetwork({
   onConnectionSelect?: (key: string) => void;
   onClearConnection?: () => void;
   active?: boolean;
+  fillHeight?: boolean;
   showPresentationOptions?: boolean;
   relationshipScopeCount?: number;
   model: ArchitecturalModel;
@@ -67,6 +69,8 @@ export function DependencyNetwork({
   hiddenCategories?: GraphCategory[];
   onHiddenCategoriesChange?: (hidden: GraphCategory[]) => void;
 }) {
+  const fillHeightRef = useRef(fillHeight);
+  fillHeightRef.current = fillHeight;
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = controlledExpanded ?? internalExpanded;
   const toggleExpanded = onToggleExpanded ?? (() => setInternalExpanded((v) => !v));
@@ -84,6 +88,7 @@ export function DependencyNetwork({
   const hiddenCategories = controlledHiddenCategories ?? internalHiddenCategories;
   const changeHiddenCategories = onHiddenCategoriesChange ?? setInternalHiddenCategories;
   const [query, setQuery] = useState("");
+  const [dockToolsOpen, setDockToolsOpen] = useState(false);
   const [mode, setMode] = useState<NetworkMode>("analysis");
   const currentMode = useRef(mode);
   currentMode.current = mode;
@@ -355,7 +360,10 @@ export function DependencyNetwork({
       });
     };
     container.addEventListener("wheel", onWheel, { passive: false });
-    const resize = new ResizeObserver(() => cy.resize());
+    const resize = new ResizeObserver(() => {
+      cy.resize();
+      if (fillHeightRef.current && cy.width() > 0 && cy.height() > 0) cy.fit(cy.elements(), 20);
+    });
     resize.observe(container);
     const updateTheme = () => {
       // Tailwind themes use OKLCH; Cytoscape's colour parser expects RGB/hex.
@@ -404,6 +412,24 @@ export function DependencyNetwork({
       presentMode.current = () => {};
     };
   }, [active, elements, nodes.length, projection.model]);
+
+  useEffect(() => {
+    if (!fillHeight) return;
+    let fitFrame = 0;
+    const frame = requestAnimationFrame(() => {
+      fitFrame = requestAnimationFrame(() => {
+        const cy = graph.current;
+        if (cy) {
+          cy.resize();
+          cy.fit(cy.elements(), 32);
+        }
+      });
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      cancelAnimationFrame(fitFrame);
+    };
+  }, [fillHeight]);
 
   useEffect(() => {
     presentMode.current(mode);
@@ -476,7 +502,11 @@ export function DependencyNetwork({
   return (
     <section
       ref={section}
-      className="min-w-0 overflow-hidden rounded-xl border bg-card"
+      className={
+        fillHeight
+          ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border bg-card [&>details]:shrink-0 [&>details]:max-h-40 [&>details]:overflow-y-auto"
+          : "min-w-0 overflow-hidden rounded-xl border bg-card"
+      }
       aria-label="Dependency graph"
     >
       <Tooltip.Provider delayDuration={250}>
@@ -702,9 +732,22 @@ export function DependencyNetwork({
               <Popover.Arrow className="fill-popover" />
             </Popover.Content>
           </Popover.Root>
+          {fillHeight && (
+            <Button
+              size="sm"
+              variant="outline"
+              aria-pressed={dockToolsOpen}
+              onClick={() => setDockToolsOpen(!dockToolsOpen)}
+            >
+              Graph controls
+            </Button>
+          )}
         </div>
       </Tooltip.Provider>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+      <div
+        hidden={fillHeight && !dockToolsOpen}
+        className={`${fillHeight && !dockToolsOpen ? "!hidden" : ""} flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground`}
+      >
         <span>
           <strong className="text-foreground">Source model:</strong> {model.elements.length}{" "}
           elements · {model.edges.length} relationships
@@ -750,7 +793,7 @@ export function DependencyNetwork({
           </span>
         )}
       </div>
-      <details className="border-b p-3 text-sm">
+      <details hidden={fillHeight && !dockToolsOpen} className="border-b p-3 text-sm">
         <summary className="cursor-pointer">Graph elements (keyboard navigation)</summary>
         <div className="mt-3 max-h-64 space-y-2 overflow-auto">
           {matchingNodes.slice((page - 1) * 30, page * 30).map((node) => (
@@ -787,7 +830,7 @@ export function DependencyNetwork({
           <Pagination page={page} pageCount={pageCount} onPageChange={setElementPage} />
         )}
       </details>
-      <details className="border-b p-3 text-sm">
+      <details hidden={fillHeight && !dockToolsOpen} className="border-b p-3 text-sm">
         <summary className="cursor-pointer">Graph options</summary>
         <div className="mt-3 flex flex-wrap items-end gap-3">
           {showPresentationOptions && (
@@ -815,14 +858,14 @@ export function DependencyNetwork({
           </Button>
         </div>
       </details>
-      <div className="relative">
+      <div className={fillHeight ? "relative min-h-24 flex-1" : "relative"}>
         <div
           ref={viewport}
           role="region"
           aria-label="Service dependency network"
           aria-description="Drag nodes or background (or right-click drag to pan). Scroll or right-click to zoom. Use Graph elements above to inspect nodes and relationships with the keyboard."
           tabIndex={0}
-          className={`relative h-[620px] touch-none select-none overflow-hidden ${mode === "explore" ? "bg-[#080b16] text-slate-200" : "bg-background text-foreground"}`}
+          className={`relative ${fillHeight ? "h-full min-h-24" : "h-[620px]"} touch-none select-none overflow-hidden ${mode === "explore" ? "bg-[#080b16] text-slate-200" : "bg-background text-foreground"}`}
           data-renderer="cytoscape"
           data-mode={mode}
           data-zoom="1"

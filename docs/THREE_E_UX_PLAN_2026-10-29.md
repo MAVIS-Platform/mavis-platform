@@ -1,6 +1,8 @@
 # Plan cải thiện UI/UX Architecture Inspector · 3E
 
-Ngày: 2026-10-29. Trạng thái: đề xuất triển khai, chưa thay đổi giao diện.
+Ngày: 2026-10-29. Trạng thái: đã có bản thử dock dưới cho Graph; phần tổ chức nội dung tab còn theo plan.
+
+Bản thử theo phản hồi người dùng: Graph toàn chiều ngang, Inspector bên dưới có kéo chiều cao, thu gọn/mở rộng/đóng. Mobile mở Inspector gần toàn vùng làm việc. Header gọn, không footer cố định. Graph controls thu thông tin phụ khi dock mở; camera fit lại theo vùng canvas. Layout Diagram hiện giữ sidebar cũ. Kiểm thử bằng browser local với mock: ba tab, kéo chuột, bàn phím, Escape trả focus, connection details và mobile 390px. Không thay đổi production hay semantics evidence.
 
 ## 1. Vấn đề đã đối chiếu với ảnh và code
 
