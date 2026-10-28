@@ -941,3 +941,37 @@ test('FTGO and actual Java/CSharp pipeline fixtures retain all eligible source I
   assert.equal(new Set(overview.connections.map(c=>c.serviceIds.join('|'))).size,overview.connections.length);assert.equal(JSON.stringify(source),before);
  }
 });
+
+
+test('Single network keeps all projected resource and unknown nodes while grouping only parallel pair connections',()=>{
+ const {networkConnections}=require('../src/features/architecture/network-connections.ts');const {networkElements}=require('../src/features/architecture/cytoscape-network.ts');
+ const source=serviceOverviewFixture(),view=projectGraphModel(source,false,'all').model,before=JSON.stringify(source);
+ const groups=networkConnections(source,view),ab=groups.find(group=>group.elementIds.join(',')==='a,b');
+ assert.equal(groups.length,7);assert.deepEqual(ab.relationshipIds.sort(),['ab-code','ab-deploy','ab-http','ba-http']);assert.equal(ab.evidenceCount,4);
+ const rendered=networkElements(view,2,groups);assert.deepEqual(new Set(rendered.filter(e=>e.group==='nodes').map(e=>e.data.sourceId)),new Set(view.elements.map(n=>n.id)));
+ for(const id of ['db','q','isolated','same-name'])assert.ok(rendered.some(e=>e.group==='nodes'&&e.data.sourceId===id));
+ assert.equal(rendered.filter(e=>e.group==='edges').length,7);assert.ok(groups.some(g=>g.elementIds.includes('db')));assert.equal(JSON.stringify(source),before);
+});
+
+test('Network connections keep broker/database intermediates and never create transitive shortcuts',()=>{
+ const {networkConnections}=require('../src/features/architecture/network-connections.ts');const source=serviceOverviewFixture();
+ source.edges=source.edges.filter(e=>['aq','qb','adb','bdb','ac','cd'].includes(e.id));const view=projectGraphModel(source,false,'all').model;const groups=networkConnections(source,view);
+ assert.ok(!groups.some(g=>g.elementIds.join(',')==='a,b'));assert.ok(!groups.some(g=>g.elementIds.join(',')==='a,d'));
+ assert.ok(groups.some(g=>g.elementIds.includes('q')));assert.ok(groups.some(g=>g.elementIds.includes('db')));
+ const filtered=networkConnections(source,projectGraphModel(source,false,'deployment').model);assert.equal(filtered.length,0);
+});
+
+test('Grouped network retains original node appearance and Explore glow data; focused Explore lines have no arrowheads',()=>{
+ const {networkConnections}=require('../src/features/architecture/network-connections.ts');const {networkElements}=require('../src/features/architecture/cytoscape-network.ts');const {exploreStyles}=require('../src/features/architecture/network-presentation.ts');
+ const source=serviceOverviewFixture(),view=projectGraphModel(source,false,'all').model;
+ const original=networkElements(view),grouped=networkElements(view,2,networkConnections(source,view));
+ assert.deepEqual(grouped.filter(e=>e.group==='nodes'),original.filter(e=>e.group==='nodes'));
+ assert.ok(grouped.filter(e=>e.group==='nodes').every(e=>e.data.glowImage.startsWith('data:image/svg+xml')));
+ assert.ok(exploreStyles.every(rule=>rule.style['target-arrow-shape']!=='triangle'));
+ for(const edge of grouped.filter(e=>e.group==='edges'))assert.ok(edge.data.underlyingEdgeIds.every(id=>source.edges.some(original=>original.id===id)));
+});
+
+test('Resource self-connections remain a single loop with original IDs instead of duplicating endpoints',()=>{
+ const {networkConnections}=require('../src/features/architecture/network-connections.ts');const source=serviceOverviewFixture();source.edges=[{...source.edges[0],id:'self',from:'q',to:'q'}];
+ const groups=networkConnections(source,projectGraphModel(source,true,'all').model);assert.equal(groups.length,1);assert.deepEqual(groups[0].elementIds,['q','q']);assert.deepEqual(groups[0].relationshipIds,['self']);
+});

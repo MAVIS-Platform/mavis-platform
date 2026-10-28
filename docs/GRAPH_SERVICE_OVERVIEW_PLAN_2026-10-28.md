@@ -1,7 +1,7 @@
 # MAVIS — Plan cải thiện Graph tổng quan theo service
 
 Ngày: 2026-10-28.
-Trạng thái: ĐÃ TRIỂN KHAI; unit, browser và production build đã qua. Trạng thái phát hành được xác nhận bằng commit main và workflow deploy.
+Trạng thái: ĐÃ ĐƯỢC THAY THẾ theo phản hồi người dùng ngày 2026-10-29. Xem [Graph một màn hình](GRAPH_SINGLE_NETWORK_2026-10-29.md). Không tiếp tục triển khai Overview/Details riêng.
 
 ## 1. Mục tiêu và phạm vi
 

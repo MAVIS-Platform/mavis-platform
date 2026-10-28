@@ -65,7 +65,7 @@ export function includesGraphOrigin(edge: Relationship, origin: GraphOrigin): bo
   );
 }
 
-function summarizeEvidence(rows: ServiceRelationship[]) {
+export function summarizeEvidence(rows: { edge: Relationship }[]) {
   const facts = [...new Map(rows.map((row) => [row.edge.id, row.edge])).values()];
   const ids = new Set<string>();
   let complete = true;
