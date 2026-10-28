@@ -34,6 +34,9 @@ export const projectSchema = z.object({
 });
 export type Project = z.infer<typeof projectSchema>;
 export const snapshotSchema = z.object({
+  sourceType: z.string().nullish(),
+  branchName: z.string().nullish(),
+  commitSha: z.string().nullish(),
   id: z.string(),
   projectId: z.string(),
   name: z.string(),

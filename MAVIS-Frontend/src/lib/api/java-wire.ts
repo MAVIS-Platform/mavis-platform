@@ -121,6 +121,9 @@ export function snapshotView(raw: unknown) {
   return snapshotSchema.parse({
     id: s.id,
     projectId: s.projectId,
+    sourceType: s.sourceType,
+    branchName: s.branchName,
+    commitSha: s.commitSha,
     name: [s.sourceType ?? "Source", s.branchName, s.commitSha?.slice(0, 8)]
       .filter(Boolean)
       .join(" · "),
