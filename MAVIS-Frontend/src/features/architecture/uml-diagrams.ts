@@ -2513,6 +2513,7 @@ export function listActivityOperations(
       .map((e) => [e.id, e.name]),
   );
   const cfgOptions: UmlActivityOperationOption[] = [];
+  const apiClassifierIds = new Set<string>();
 
   for (const elem of model.elements) {
     const rawUml = elem.properties?.["umlClassifier"] as Record<string, unknown> | undefined;
@@ -2531,10 +2532,17 @@ export function listActivityOperations(
     if (
       typeKind === "ENUM" ||
       isDeclarativeClientElement(elem) ||
-      /(Repository|Dao|Application|Client)$/i.test(classifierName) ||
-      annotations.some((a) => /^(SpringBootApplication|Repository|FeignClient)$/i.test(a))
+      /(Repository|Dao|Application|Client|Builder|Mapper|Config|Configuration)$/i.test(classifierName) ||
+      annotations.some((a) => /^(SpringBootApplication|Repository|FeignClient|Configuration)$/i.test(a))
     ) {
       continue;
+    }
+
+    if (
+      /(Controller|Resource)$/i.test(classifierName) ||
+      annotations.some((a) => /^(RestController|Controller|RequestMapping|Path|ApiController)$/i.test(a))
+    ) {
+      apiClassifierIds.add(elem.id);
     }
 
     const isEntityOrDto =
@@ -2622,6 +2630,9 @@ export function listActivityOperations(
       }
     }
   }
+
+  // Prefer API entry points while retaining other source-backed operations.
+  cfgOptions.sort((a, b) => Number(apiClassifierIds.has(b.classifierId)) - Number(apiClassifierIds.has(a.classifierId)));
 
   // Discover Cross-Service Business Flows (Main Flows / Use Cases across Microservice Swimlanes)
   const discovered = discoverBusinessFlowActivities(model);

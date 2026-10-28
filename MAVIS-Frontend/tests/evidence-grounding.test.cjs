@@ -104,6 +104,25 @@ test('Activity prioritizes method CFG and labels graph-only candidates as unveri
  assert.ok(illustrative.nodes.some(node=>node.kind==='ACTIVITY_FINAL'));
  assert.ok(!illustrative.nodes.some(node=>/Receive request \/ message/.test(node.label)));
 });
+test('Activity prioritizes API entry points and hides technical builder and configuration methods',()=>{
+ const {listActivityOperations,projectUmlActivityDiagram}=require('../src/features/architecture/uml-diagrams.ts');
+ const model=fixture();
+ const add=(id,name,annotations,method)=>{
+  const item=element(id,'COMPONENT',name,'department');
+  item.properties.umlClassifier={name,typeKind:'CLASS',annotations,methodsCfg:[{methodName:method,signatureKey:method+'()',nodes:[{id:'start',kind:'INITIAL',label:'Start'},{id:'end',kind:'ACTIVITY_FINAL',label:'End'}],edges:[{id:'done',from:'start',to:'end',flowKind:'CONTROL_FLOW'}]}]};
+  model.elements.push(item);
+ };
+ add('builder','PetDetailsBuilder',[],'id');
+ add('config','MetricConfig',[],'metricsCommonTags');
+ add('service','OrderService',[],'createOrder');
+ add('api','OwnerResource',['RestController'],'createOwner');
+ const options=listActivityOperations(model);
+ assert.equal(options[0].operationId,'api::createOwner()');
+ assert.equal(projectUmlActivityDiagram(model).selectedOperationId,options[0].operationId);
+ assert.ok(options.some(option=>option.operationId==='service::createOrder()'));
+ assert.ok(!options.some(option=>['builder','config'].includes(option.classifierId)));
+ assert.ok(options.some(option=>option.methodName.includes('Unverified dependency illustration')));
+});
 test('Class and Package keep local clients and same-named models in their service scope',()=>{
  const {projectUmlClassDiagram,projectUmlPackageDiagram}=require('../src/features/architecture/uml-diagrams.ts');
  const model=fixture();
