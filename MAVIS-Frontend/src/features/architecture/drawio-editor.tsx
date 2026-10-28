@@ -590,7 +590,7 @@ export function DrawioEditor({
             {(
               [
                 ["zoomOut", "−", "Zoom diagram out"],
-                ["actualSize", "100%", "Read diagram at 100%"],
+                ["resetView", "100%", "Read diagram at 100%"],
                 ["zoomIn", "+", "Zoom diagram in"],
                 ["fitWindow", "Fit", "Fit entire diagram"],
               ] as const

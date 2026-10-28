@@ -59,3 +59,11 @@ Final local release: port 3000 runs .artifacts/complete-diagrams-ready. Browser 
 - Workflow IDs and authored overlays have separate scope from method diagrams. Save/hydrate validation recognizes only source-supported workflow entrypoints; authored nodes survive only in their own operation scope.
 - Component/Class use the shared viewer controls: 100%, zoom in/out and Fit. Resizing the iframe no longer automatically fits away the reader's chosen zoom. No component/class relations were invented or changed by the readability controls.
 - Verification: 263 frontend tests passed and TypeScript passed. Tests cover source guards, responsibility partitions, unique Feign endpoint expansion, ambiguity/recursion, authored overlay isolation and repeated XML save/hydrate. Browser checks verify three Activity perspectives, honest no-data states and zoom action messages. Docker Desktop was unavailable, so zoom was tested with an iframe protocol stub; live draw.io visual rendering and the production FTGO model still need post-deploy inspection.
+
+
+## Live draw.io verification before merge — 2026-10-28
+
+- Verified the real draw.io application at https://maviss.site/drawio in an iframe using a local synthetic source fixture. No production project data or saved documents were modified. Docker Desktop started but its local engine remained unavailable; the production-served editor was used instead of a stub.
+- Activity rendered two classifier-responsibility swimlanes and both valid/invalid guards. Sequence rendered its two lifelines and resolved source call; Component and Class rendered the fixture classifiers. Screenshots were visually inspected.
+- Live testing exposed an unsupported action name in the 100% toolbar button: actualSize did nothing. Replaced it with draw.io's resetView action. Verified actual editor zoom changes 36% -> 100% -> 120%, zoom out, Fit, and preservation of 100% through iframe resizing. This supersedes the earlier protocol-stub-only zoom check.
+- This verifies rendering and editor integration with synthetic source facts; it does not certify that every production FTGO method has complete extracted metadata.
