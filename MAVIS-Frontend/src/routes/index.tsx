@@ -170,6 +170,16 @@ function Projects() {
                         label: "Workspace",
                         render: (p) => (
                           <div className="flex flex-wrap items-center gap-2">
+                            {p.status !== "ready" && (
+                              <Button
+                                asChild
+                                size="sm"
+                                variant="default"
+                                onClick={() => selection.setProjectId(p.id)}
+                              >
+                                <Link href={`/snapshots?project=${p.id}`}>Analyze</Link>
+                              </Button>
+                            )}
                             <Button
                               asChild
                               size="sm"
@@ -241,30 +251,38 @@ function OverviewAnalysis({ projects }: { projects: Project[] }) {
         />
       )}
       {projectId ? (
-        <RequestState
-          query={query}
-          empty={!query.data?.length}
-          emptyMessage="No analysis jobs for the selected project."
-        >
-          <div className="divide-y rounded-lg border bg-background/40">
-            {recentJobs.map((job) => (
-              <div key={job.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                <div className="min-w-0 space-y-1">
-                  <AnalysisStatusIndicator job={job} compact />
-                  <p className="truncate font-mono text-[11px] text-muted-foreground">
-                    Snapshot {job.snapshotId.slice(0, 8)}
-                  </p>
+        <RequestState query={query}>
+          {recentJobs.length === 0 ? (
+            <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
+              <p className="text-sm font-medium">No analysis jobs yet</p>
+              <p className="text-xs text-muted-foreground">
+                This project has not been analyzed yet. Run snapshot analysis to extract architecture models and diagrams.
+              </p>
+              <Button asChild size="sm">
+                <Link href={`/snapshots?project=${projectId}`}>Analyze Project Source</Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="divide-y rounded-lg border bg-background/40">
+              {recentJobs.map((job) => (
+                <div key={job.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <div className="min-w-0 space-y-1">
+                    <AnalysisStatusIndicator job={job} compact />
+                    <p className="truncate font-mono text-[11px] text-muted-foreground">
+                      Snapshot {job.snapshotId.slice(0, 8)}
+                    </p>
+                  </div>
+                  {job.modelId && (
+                    <Button asChild size="sm" variant="ghost" className="shrink-0 text-xs">
+                      <Link href={`/diagrams?project=${projectId}&model=${job.modelId}`}>
+                        Inspect →
+                      </Link>
+                    </Button>
+                  )}
                 </div>
-                {job.modelId && (
-                  <Button asChild size="sm" variant="ghost" className="shrink-0 text-xs">
-                    <Link href={`/diagrams?project=${projectId}&model=${job.modelId}`}>
-                      Inspect →
-                    </Link>
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </RequestState>
       ) : (
         <p className="text-sm text-muted-foreground">
