@@ -56,14 +56,19 @@ export function ProjectOverview() {
             title={query.data.name}
             actions={
               <div className="flex flex-wrap items-center gap-2">
-                <Button asChild size="sm">
+                {models.length === 0 && (
+                  <Button asChild size="sm" variant="default">
+                    <Link href={`/snapshots?project=${projectId}`}>Analyze Source</Link>
+                  </Button>
+                )}
+                <Button asChild size="sm" variant={models.length > 0 ? "default" : "outline"}>
                   <Link href={`/diagrams?project=${projectId}`}>Architecture Diagrams</Link>
                 </Button>
                 <Button asChild size="sm" variant="outline">
                   <Link href={`/architecture?project=${projectId}`}>Graph Explorer</Link>
                 </Button>
                 <Button asChild size="sm" variant="outline">
-                  <Link href={`/model?project=${projectId}`}>Model Editor</Link>
+                  <Link href={`/snapshots?project=${projectId}`}>Source Snapshots</Link>
                 </Button>
                 <Button asChild size="sm" variant="secondary">
                   <Link href={`/import?project=${projectId}`}>Import Source</Link>
@@ -209,9 +214,18 @@ export function ProjectOverview() {
                   })}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  No analysis runs recorded yet.
-                </p>
+                <div className="space-y-3 rounded-lg border border-dashed p-4 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    {snapshotList.length > 0
+                      ? `Found ${snapshotList.length} snapshot(s) ready for analysis.`
+                      : "No source snapshots imported yet."}
+                  </p>
+                  <Button asChild size="sm">
+                    <Link href={`/snapshots?project=${projectId}`}>
+                      {snapshotList.length > 0 ? "Analyze Snapshot" : "Import Source"}
+                    </Link>
+                  </Button>
+                </div>
               )}
             </DetailPanel>
           </div>
