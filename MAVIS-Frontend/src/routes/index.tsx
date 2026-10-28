@@ -299,7 +299,7 @@ function ProjectActivity({ projectCount }: { projectCount: number }) {
                             : `/analysis-history?project=${encodeURIComponent(job.projectId)}`
                         }
                       >
-                        {job.modelId ? "Inspect" : "View history"}
+                        Inspect
                       </Link>
                     </Button>
                   ),
