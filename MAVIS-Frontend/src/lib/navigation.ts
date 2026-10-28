@@ -71,6 +71,20 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
   ],
   admin: [
     {
+      label: "Monitoring",
+      items: [
+        { id: "health", label: "System Health", icon: Activity, href: "/administration/health" },
+        { id: "jobs", label: "Analysis Jobs", icon: ListChecks, href: "/administration/jobs" },
+        { id: "usage", label: "Platform Usage", icon: LayoutGrid, href: "/administration/usage" },
+        {
+          id: "runtime-summary",
+          label: "Runtime Summary",
+          icon: Server,
+          href: "/administration/runtime-summary",
+        },
+      ],
+    },
+    {
       label: "User Management",
       items: [
         { id: "users", label: "User Account List", icon: Users, href: "/administration/users" },
@@ -84,20 +98,6 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
           label: "Integration Management",
           icon: Plug,
           href: "/administration/integrations",
-        },
-      ],
-    },
-    {
-      label: "Monitoring",
-      items: [
-        { id: "health", label: "System Health", icon: Activity, href: "/administration/health" },
-        { id: "jobs", label: "Analysis Jobs", icon: ListChecks, href: "/administration/jobs" },
-        { id: "usage", label: "Platform Usage", icon: LayoutGrid, href: "/administration/usage" },
-        {
-          id: "runtime-summary",
-          label: "Runtime Summary",
-          icon: Server,
-          href: "/administration/runtime-summary",
         },
       ],
     },
