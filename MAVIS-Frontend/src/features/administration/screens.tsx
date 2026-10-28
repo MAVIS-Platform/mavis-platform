@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
 import { RequestState, ErrorState } from "@/components/shared/request-state";
-import { ConfirmDialog, SearchInput } from "@/components/shared/forms";
+import { ConfirmDialog, SearchInput, SelectField } from "@/components/shared/forms";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
@@ -31,7 +31,11 @@ export function Accounts() {
               </div>
             ),
           },
-          { key: "role", label: "Role", render: (a) => <TeachingRoleControl account={a} /> },
+          {
+            key: "role",
+            label: "Role",
+            render: (a) => <AccountRoleControl key={`${a.id}:${a.role}`} account={a} />,
+          },
           {
             key: "status",
             label: "Status",
@@ -80,31 +84,39 @@ export function Accounts() {
     </RequestState>
   );
 }
-function TeachingRoleControl({ account }: { account: Response<"accounts">[number] }) {
+function AccountRoleControl({ account }: { account: Response<"accounts">[number] }) {
   const update = useApiMutation("setAccountRole");
+  const [role, setRole] = useState<"student" | "lecturer" | "admin">(account.role);
   if (account.role === "admin") return <span>Administrator</span>;
   return (
     <div className="space-y-2">
-      <span className="block text-xs capitalize">{account.role}</span>
+      <SelectField
+        label={`Role for ${account.name}`}
+        value={role}
+        onChange={(value) => {
+          if (value === "student" || value === "lecturer" || value === "admin") setRole(value);
+        }}
+        disabled={update.isPending}
+        options={[
+          { value: "student", label: "Student" },
+          { value: "lecturer", label: "Lecturer" },
+          { value: "admin", label: "System administrator" },
+        ]}
+      />
       <Button
         size="sm"
         variant="outline"
-        disabled={update.isPending}
+        disabled={update.isPending || role === account.role}
         onClick={() => {
-          const role = account.role === "lecturer" ? "student" : "lecturer";
           if (
             window.confirm(
-              `Change ${account.name} to ${role}? This changes their teaching permissions. They should sign in again to refresh their session.`,
+              `Change ${account.name} to ${role}? ${role === "admin" ? "This grants full system administration access." : "This changes their account permissions."} They should sign in again to refresh their session.`,
             )
           )
             update.mutate({ accountId: account.id, role });
         }}
       >
-        {update.isPending
-          ? "Updating…"
-          : account.role === "lecturer"
-            ? "Set as student"
-            : "Set as lecturer"}
+        {update.isPending ? "Updating…" : "Save role"}
       </Button>
       {update.error && <ErrorState error={update.error} />}
     </div>

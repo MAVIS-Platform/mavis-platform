@@ -124,7 +124,7 @@ class ModelVersionApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 1: GET /api/v1/analyzer/projects/{projectId}/models ---
         MvcResult getModelsResult = mockMvc.perform(get("/api/v1/analyzer/projects/{projectId}/models", project.getId())
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -179,7 +179,7 @@ class ModelVersionApiIntegrationTest extends ApiIntegrationContext {
         System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(revisionRequest));
 
         MvcResult createRevResult = mockMvc.perform(post("/api/v1/analyzer/models/{baseModelVersionId}/revisions", baseModelVersionId)
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(reqJson))
                 .andReturn();
@@ -202,7 +202,7 @@ class ModelVersionApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 3: GET /api/v1/analyzer/models/compare ---
         MvcResult compareResult = mockMvc.perform(get("/api/v1/analyzer/models/compare")
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .param("baseVersionId", baseModelVersionId.toString())
                         .param("targetVersionId", targetModelVersionId.toString())
                         .contentType(MediaType.APPLICATION_JSON))

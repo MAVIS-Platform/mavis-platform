@@ -182,7 +182,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
         // BƯỚC 1: GET /api/v1/analyzer/runtime/sessions/{sessionId}/run-definition
         // =========================================================================
         mockMvc.perform(get("/api/v1/analyzer/runtime/sessions/{sessionId}/run-definition", sessionId)
-                        .header("X-Test-User-Email", user.getEmail()))
+                        .header("Authorization", testAuthorization(user.getEmail())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.sessionId").value(sessionId.toString()))
@@ -202,7 +202,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(allocReq)))
                 .andExpect(status().isOk())
@@ -215,7 +215,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", sessionId)
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(runReq)))
                 .andExpect(status().isOk())
@@ -273,7 +273,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         MvcResult ackResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(receipt)))
                 .andExpect(status().isOk())
@@ -297,7 +297,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
         // BƯỚC 4: IDEMPOTENCY TEST: Replay cùng digest trả ALREADY_COMMITTED
         // =========================================================================
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(receipt)))
                 .andExpect(status().isOk())
@@ -320,7 +320,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(conflictingReceipt)))
                 .andExpect(status().isConflict())
@@ -340,7 +340,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", sessionId)
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .header("X-Mavis-Runner-Key", "mavis-runner-secret-key-test").contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(badProfileReceipt)))
                 .andExpect(status().isBadRequest())
@@ -410,7 +410,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
 
         // 1. User khác (otherUser) gọi /lifecycle-ack không có Runner-Key -> 403 FORBIDDEN
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/lifecycle-ack", session.getId())
-                        .header("X-Test-User-Email", otherUser.getEmail())
+                        .header("Authorization", testAuthorization(otherUser.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(ackReq)))
                 .andExpect(status().isForbidden());
@@ -445,7 +445,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-receipt-ack", session.getId())
-                        .header("X-Test-User-Email", otherUser.getEmail())
+                        .header("Authorization", testAuthorization(otherUser.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(receipt)))
                 .andExpect(status().isForbidden());

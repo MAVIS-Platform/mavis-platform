@@ -21,6 +21,7 @@ class Stage14EducationApiIntegrationTest extends ApiIntegrationContext {
  @Autowired WorkspaceMemberRepository members; @Autowired AssignmentRepository assignments; @Autowired ProjectRepository projects;
  @Autowired SourceSnapshotRepository snapshots; @Autowired ModelVersionRepository models; @Autowired DiagramVersionRepository diagrams;
  @Autowired SubmissionSnapshotRepository submissions;
+ @Autowired JobRepository jobs;
  User user(String role){return users.saveAndFlush(User.builder().email(UUID.randomUUID()+"@example.invalid").fullName(role).passwordHash("test-only").status("ACTIVE").role(roles.findByCode(role).orElseThrow()).build());}
  String auth(User u){return "Bearer "+jwt.generateToken(u.getEmail(),u.getId(),u.getRole().getCode());}
  @Test void educationAuthorizationAndImmutableSubmissionRoundTrip() throws Exception {
@@ -40,6 +41,17 @@ class Stage14EducationApiIntegrationTest extends ApiIntegrationContext {
   var diagram=diagrams.saveAndFlush(DiagramVersion.builder().modelVersion(model).notation("C4").level("CONTAINER").layoutJson(json.createObjectNode()).build());
   var peer=user("STUDENT");members.saveAndFlush(WorkspaceMember.builder().workspace(workspaces.findById(w).orElseThrow()).user(peer).memberRole("STUDENT").build());
   var privateProject=projects.saveAndFlush(Project.builder().workspace(workspaces.findById(w).orElseThrow()).owner(peer).name("Private peer project").build());
+  var analysisJob=jobs.saveAndFlush(Job.builder().project(project).sourceSnapshot(source).jobType("STATIC_ANALYSIS").status("COMPLETED").build());
+  for (var allowed : java.util.List.of(student, lecturer, admin)) {
+   mvc.perform(get("/api/v1/analyzer/jobs/"+analysisJob.getId()).header("Authorization",auth(allowed)))
+    .andExpect(status().isOk()).andExpect(jsonPath("$.data.jobId").value(analysisJob.getId().toString()));
+   mvc.perform(get("/api/v1/analyzer/projects/"+project.getId()+"/jobs").header("Authorization",auth(allowed)))
+    .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].jobId").value(analysisJob.getId().toString()));
+  }
+  for (var denied : java.util.List.of(peer, outsider)) {
+   mvc.perform(get("/api/v1/analyzer/jobs/"+analysisJob.getId()).header("Authorization",auth(denied))).andExpect(status().isForbidden());
+   mvc.perform(get("/api/v1/analyzer/projects/"+project.getId()+"/jobs").header("Authorization",auth(denied))).andExpect(status().isForbidden());
+  }
   mvc.perform(get("/api/v1/workspaces/"+w+"/projects").header("Authorization",auth(student))).andExpect(status().isOk()).andExpect(jsonPath("$.data").value(org.hamcrest.Matchers.hasSize(1))).andExpect(jsonPath("$.data[0].id").value(project.getId().toString()));
   String payload=json.writeValueAsString(java.util.Map.of("assignmentId",aid,"projectId",project.getId(),"modelVersionId",model.getId(),"diagramVersionId",diagram.getId()));
   var posted=mvc.perform(post("/api/v1/submissions").header("Authorization",auth(student)).contentType(MediaType.APPLICATION_JSON).content(payload)).andExpect(status().isOk()).andExpect(jsonPath("$.data.sourceSnapshotId").value(source.getId().toString())).andReturn();

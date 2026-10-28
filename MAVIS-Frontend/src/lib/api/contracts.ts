@@ -455,7 +455,11 @@ export const contracts = {
   deleteFeedback: contract(z.object({submissionId:id,feedbackId:id}),d.submissionSchema,true),
   accounts: contract(nothing, z.array(d.accountSchema)),
   setAccountLock: contract(z.object({ accountId: id, locked: z.boolean() }), d.accountSchema, true),
-  setAccountRole: contract(z.object({ accountId: id, role: z.enum(["student", "lecturer"]) }), d.accountSchema, true),
+  setAccountRole: contract(
+    z.object({ accountId: id, role: z.enum(["student", "lecturer", "admin"]) }),
+    d.accountSchema,
+    true,
+  ),
   integrations: contract(nothing, z.array(d.integrationSchema)),
   configureIntegration: contract(
     z.object({
