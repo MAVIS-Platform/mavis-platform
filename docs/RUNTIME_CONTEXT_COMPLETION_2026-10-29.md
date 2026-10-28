@@ -26,3 +26,21 @@ Runtime configuration/scenarios, session APIs, managed Docker runner, Java/.NET 
 ## Test boundaries
 
 Backend runtime unit/integration tests use mocks for portions of persistence/execution. Frontend regression tests do not prove live instrumentation. The opt-in real Docker test requires a prepared host; production deployment and that acceptance run remain outstanding.
+
+## Retest on 2026-10-29
+
+- Runtime Java regression: 41 passed, 0 failed.
+- Runner C# targeted regression: 39 passed, 0 failed, 1 skipped. The skipped case is the opt-in real Docker managed test. These numbers are not live execution acceptance evidence.
+- Both local Docker contexts (desktop-linux and default) failed to answer version probes within 15 seconds. Docker Desktop processes exist, but that does not demonstrate daemon readiness.
+- Executable sample projects are under MAVIS.Worker/samples/runtime-poc: orders (.NET) -> payment (Java), and gateway (Java) -> catalog (.NET). The sample driver also covers HTTP failure, startup failure, timeout and cancellation.
+- Existing POC_EVIDENCE.json is historical. It is not a fresh result from this retest.
+- User selected a separate runner host. Hostname/IP, SSH identity and port have not yet been supplied, so deployment and real execution on that host have not occurred.
+
+### Real-run acceptance checklist
+
+1. Initialize-Poc.ps1 must build/publish samples and runner, verify instrumentation checksums, validate collector config, and capture actual image digests in a newly generated manifest.
+2. Run Invoke-Poc.ps1 for Success, SecondProject, Failure, StartupFailure, Timeout and Cancel; retain fresh receipts and raw capture artifacts locally.
+3. Independently compare HTTP results, trace/span parentage and expected orders -> payment / gateway -> catalog interactions. A static model edge is not a substitute for an observed span.
+4. Check session-labeled containers/networks/volumes after cleanup. A successful scenario does not establish cleanup success.
+5. Run the managed test with MAVIS_MANAGED_DOCKER_TEST_ROOT pointing at the prepared sample directory. Its Java HTTP endpoint is mocked; it proves real Docker execution plus a simulated Java boundary, not full production end-to-end acceptance.
+6. Finally run the same workload through real MAVIS session export/lifecycle/receipt APIs and inspect the persisted revision/evidence. Do not label the system production-ready until this gate passes.
