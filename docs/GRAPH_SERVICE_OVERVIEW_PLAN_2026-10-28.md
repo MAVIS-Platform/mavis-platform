@@ -1,7 +1,7 @@
 # MAVIS — Plan cải thiện Graph tổng quan theo service
 
 Ngày: 2026-10-28.
-Trạng thái: ĐÃ TRIỂN KHAI P1–P4 và kiểm thử tích hợp P5 trên nhánh feat/graph-service-overview; chưa merge/deploy main.
+Trạng thái: ĐÃ TRIỂN KHAI; unit, browser và production build đã qua. Trạng thái phát hành được xác nhận bằng commit main và workflow deploy.
 
 ## 1. Mục tiêu và phạm vi
 
@@ -168,3 +168,15 @@ Không suy luận business flow, traffic, latency, health, ownership hoặc depe
 ### Hiệu chỉnh hình thức theo xác nhận người dùng
 
 Giữ phong cách network graph: node tròn màu service, tên bên dưới và một đường thẳng đơn giản cho mỗi cặp. Bỏ thẻ bo góc và routing gấp khúc. Các footprint hình chữ nhật trong test chỉ là vùng dành chỗ cho node + nhãn, không phải hình dạng node trên giao diện. Cách gom quan hệ, panel và canonical ID/evidence không đổi.
+
+
+## 11. Release verification trước merge — 2026-10-28
+
+- Chạy lại bản node tròn cuối cùng: 272/272 frontend tests qua; TypeScript qua; production Next.js build thành công với output riêng, không thay cấu hình build mặc định.
+- Chạy Next.js bằng production server thật và BackendAdapter thật. API fixture chỉ đọc dùng validateResponse/contract hiện có; không kết nối database production và không thực hiện mutation.
+- Fixture FTGO đã lưu hiển thị đúng 13 SERVICE_CONTAINER, 19 cặp kết nối và 23 quan hệ nguồn đủ điều kiện. Đây là số liệu fixture, không phải traffic hay benchmark production.
+- Kiểm tra trực tiếp Cytoscape: node ellipse có width = height; cạnh straight, không đầu mũi tên; click cạnh thật mở panel nhóm nhưng không gọi evidence API; drill-down trả HTTP 200 cho relationshipEvidence đúng modelId/relationshipId canonical.
+- Click node thật trả HTTP 200 cho elementEvidence và chỉ highlight node đó cùng hàng xóm một bước. Không có UI group key trong request API.
+- Kéo node, zoom/pan riêng của hai chế độ, bộ lọc Details, đổi revision qua URL, Dark mode, drawer mobile và Escape đều qua. Mobile document width và viewport cùng 390px.
+- Live AI được chủ động tắt bằng response fixture 503; lượt kiểm thử không xác minh provider AI thật. Các điều kiện contract/evidence ở trên đã kiểm tra HTTP 200 riêng, không bỏ qua lỗi request.
+- Ảnh nghiệm thu local được lưu ở MAVIS-Frontend/output/playwright/graph-release-ftgo-*.png, không đưa artifact tạm vào source commit.
