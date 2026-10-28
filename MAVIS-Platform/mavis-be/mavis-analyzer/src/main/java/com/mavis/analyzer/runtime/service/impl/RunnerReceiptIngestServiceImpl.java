@@ -446,6 +446,13 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 relByPairKey.put(pairKey, copyRel);
                 // Khóa phụ bằng tên
                 relByPairKey.put((newSrc.getName() + "->" + newTgt.getName()).toLowerCase(), copyRel);
+
+                ModelElement srcContainer = resolveContainer(newSrc);
+                ModelElement tgtContainer = resolveContainer(newTgt);
+                if (srcContainer != null && tgtContainer != null) {
+                    relByPairKey.put((srcContainer.getId().toString() + "->" + tgtContainer.getId().toString()).toLowerCase(), copyRel);
+                    relByPairKey.put((srcContainer.getName() + "->" + tgtContainer.getName()).toLowerCase(), copyRel);
+                }
             }
         }
 
@@ -897,5 +904,16 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             List<String> causalParentMessageIds) {}
 
     private record IngestResult(ModelVersion enrichedVersion, ReceiptIngestAckDTO ack) {}
+
+    private ModelElement resolveContainer(ModelElement element) {
+        if (element == null) return null;
+        Set<ModelElement> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (ModelElement cur = element; cur != null && visited.add(cur); cur = cur.getParentElement()) {
+            if ("SERVICE_CONTAINER".equalsIgnoreCase(cur.getElementType())) {
+                return cur;
+            }
+        }
+        return element;
+    }
 }
 

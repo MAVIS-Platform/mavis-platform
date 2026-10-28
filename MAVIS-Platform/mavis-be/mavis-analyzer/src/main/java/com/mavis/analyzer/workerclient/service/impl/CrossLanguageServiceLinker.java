@@ -55,7 +55,7 @@ public class CrossLanguageServiceLinker {
             if(p.from.size()>1 || p.to.size()>1 || p.from.stream().anyMatch(n->services.getOrDefault(n,List.of()).size()>1)||p.to.stream().anyMatch(n->services.getOrDefault(n,List.of()).size()>1)){ambiguous++;continue;}
             var from=unique(p.from,services);var to=unique(p.to,services);if(from==null||to==null||from==to){unresolved++;continue;}
             var properties=json.createObjectNode().put("mappingStatus","CONFIG_BOUND").put("bindingHash",bindings.hash()).put("mappingLocator","mavis.bindings.json:1")
-                    .put("sourceReference",p.id).put("requiresReview",true);
+                    .put("sourceReference",p.id).put("requiresReview",true).put("callerService",from.getName()).put("calleeService",to.getName()).put("transport","HTTP").put("resolutionStatus","RESOLVED");
             var relation=ModelRelationship.builder().modelVersion(version).sourceElement(from).targetElement(to).relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED").properties(properties).build();
             saved.add(relation);linked++;
             evs.add(Evidence.builder().modelVersion(version).sourceSnapshot(version.getSourceSnapshot()).relationship(relation).locator("mavis.bindings.json:1").sourceType("CONFIG_FILE").adapterVersion("service-bindings/1")

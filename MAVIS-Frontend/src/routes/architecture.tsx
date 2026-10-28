@@ -44,13 +44,24 @@ export function ArchitectureWorkspace({
             <ProjectSelector />
           </div>
           {state.projectId && state.model && (
-            <div className="w-full sm:w-80">
-              <ModelVersionSelector
-                models={state.models}
-                value={state.model.id}
-                onChange={state.selectModel}
-              />
-            </div>
+            <>
+              <div className="w-full sm:w-80">
+                <ModelVersionSelector
+                  models={state.models}
+                  value={state.model.id}
+                  onChange={state.selectModel}
+                />
+              </div>
+              <div className="ml-auto flex items-center gap-2">
+                <Button variant="outline" asChild className="border-rose-500/40 text-rose-600 hover:bg-rose-500/10 dark:text-rose-400 font-medium">
+                  <Link
+                    href={`/impact?project=${state.projectId}&model=${state.model.id}${id ? `&element=${id}` : ""}`}
+                  >
+                    💥 Phân tích Tác động (Change Impact)
+                  </Link>
+                </Button>
+              </div>
+            </>
           )}
         </div>
         {state.projectId &&
