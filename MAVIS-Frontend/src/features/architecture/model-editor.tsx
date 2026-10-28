@@ -1243,11 +1243,6 @@ function RevisionCompareBar({
   return (
     <div className="grid items-end gap-3 rounded-xl border bg-card p-3.5 md:grid-cols-[1fr_auto_1fr]">
       <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center rounded bg-red-500/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-red-700 dark:text-red-300">
-            − BASE (BEFORE)
-          </span>
-        </div>
         <ModelVersionSelector models={models} value={baseId} onChange={onBaseChange} />
       </div>
       <div className="flex justify-center pb-0.5">
@@ -1263,11 +1258,6 @@ function RevisionCompareBar({
         </Button>
       </div>
       <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center rounded bg-emerald-500/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
-            + TARGET (AFTER)
-          </span>
-        </div>
         <ModelVersionSelector models={models} value={targetId} onChange={onTargetChange} />
       </div>
     </div>
