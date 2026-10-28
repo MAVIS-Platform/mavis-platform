@@ -1,3 +1,4 @@
+import { includesGraphOrigin } from "./service-overview";
 import { modelSchema, type ArchitecturalModel, type Evidence } from "@/types/domain";
 // S2c aggregate contract: normalize a missing/blank edge resolutionStatus to UNKNOWN, then a
 // group keeps that single status only when every underlying edge agrees; with differing
@@ -118,13 +119,7 @@ export function projectGraphModel(
     internalRelationships = 0;
 
   for (const edge of model.edges) {
-    const deployment = edge.originLayer === "DEPLOYMENT" || edge.protocol === "DECLARED_COMPOSE",
-      runtime = edge.originLayer === "RUNTIME" || edge.originLayer === "STATIC_AND_RUNTIME";
-    const included =
-      origin === "all" ||
-      (origin === "deployment" && deployment) ||
-      (origin === "runtime" && runtime) ||
-      (origin === "source" && !deployment && edge.originLayer !== "RUNTIME");
+    const included = includesGraphOrigin(edge, origin);
     if (!included) {
       filteredRelationships++;
       continue;
