@@ -8,12 +8,18 @@ import { contextHref } from "@/lib/mainflow-api";
 import { useApi } from "@/hooks/use-api";
 import { ErrorNotice, panel } from "./shell";
 
-export function ImportFlow() {
+export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
   const adapter = useApi();
   const params = useSearchParams();
   const router = useRouter();
   const cache = useQueryClient();
-  const project = params.get("project") ?? "";
+  const [selectedProject, setSelectedProject] = useState("");
+  const project = embedded ? selectedProject : (params.get("project") ?? "");
+  const projects = useQuery({
+    queryKey: ["api", "projects", {}],
+    queryFn: ({ signal }) => adapter.execute("projects", {}, signal),
+    enabled: embedded,
+  });
   const [source, setSource] = useState<"zip" | "github">("zip");
   const [repository, setRepository] = useState("");
   const [branch, setBranch] = useState("");
@@ -29,7 +35,8 @@ export function ImportFlow() {
       setName("");
       cache.invalidateQueries({ queryKey: ["api", "projects"] });
       cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
-      router.push(contextHref("/import", p.id));
+      if (embedded) setSelectedProject(p.id);
+      else router.push(contextHref("/import", p.id));
     },
   });
 
@@ -102,14 +109,38 @@ export function ImportFlow() {
 
   return (
     <div className="max-w-3xl">
-      <section className={`${panel} space-y-4`}>
-        <div>
-          <h2 className="font-semibold">Import Project Source</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Import Java or C# source code from a ZIP archive or GitHub repository to create a new
-            snapshot.
-          </p>
-        </div>
+      <section className={embedded ? "space-y-4" : `${panel} space-y-4`}>
+        {!embedded && (
+          <div>
+            <h2 className="font-semibold">Import Project Source</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Import Java or C# source code from a ZIP archive or GitHub repository to create a new
+              snapshot.
+            </p>
+          </div>
+        )}
+        {embedded && (
+          <div className="space-y-2">
+            <label className="block text-sm">
+              Selected project
+              <select
+                className="mt-2 w-full rounded-md border bg-background p-2 text-sm"
+                value={project}
+                onChange={(event) => setSelectedProject(event.target.value)}
+                disabled={create.isPending || upload.isPending || github.isPending}
+              >
+                <option value="">Choose a project…</option>
+                {projects.data?.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {projects.isLoading && <p role="status">Loading projects…</p>}
+            {projects.isError && <ErrorNotice error={projects.error} />}
+          </div>
+        )}
         <form
           className="flex gap-2"
           onSubmit={(e) => {
@@ -275,4 +306,3 @@ export function ImportFlow() {
     </div>
   );
 }
-

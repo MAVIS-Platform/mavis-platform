@@ -637,3 +637,16 @@ test("Feign evidence boundary preserves only recognized saved communication role
  assert.equal(wire.evidenceView({...base,provenance:{communicationRole:"invented"}}).communicationRole,undefined);
  assert.equal(wire.evidenceView({...base,provenance:null}).communicationRole,undefined);
 });
+
+test("admin AI usage returns real scoped measurements and preserves unavailable fields", async t => {
+ environment(t);
+ const data={status:"AVAILABLE",updatedAt:"2026-10-28T00:00:00Z",message:null,providers:[{provider:"openai",model:"gpt-test",usage:{inputTokens:21,outputTokens:7,requestCount:2},coverage:{java:"OBSERVED",next:"UNKNOWN"},providerDataMessage:"Provider project data",providerUsage:{scope:"project",inputTokens:30,outputTokens:9,requestCount:3,startTime:"2026-10-01T00:00:00Z",endTime:"2026-10-28T00:00:00Z"},limits:{scope:"project",models:[{model:"gpt-test",requestsPerMinute:10,tokensPerMinute:300}]},cost:{scope:"project",amount:0.12,currency:"usd",startTime:"2026-10-01T00:00:00Z",endTime:"2026-10-28T00:00:00Z"},balance:null,status:"AVAILABLE",message:null},{provider:"gemini",model:"gemini-test",usage:null,limits:null,cost:null,balance:null,status:"UNAVAILABLE",message:null,geminiQuota:{scope:"project",partial:true,samples:[{model:"gemini-test",metric:"serviceruntime.googleapis.com/quota/rate/net_usage",limitName:"requests",kind:"usage",value:1,measuredAt:"2026-10-28T00:00:00Z",startTime:"2026-10-27T23:59:00Z"}]}}]};
+ let url,auth;
+ t.mock.method(globalThis,"fetch",async (u,options)=>{url=String(u);auth=new Headers(options.headers).get("Authorization");return Response.json({code:200,data});});
+ const result=validateResponse("adminAiUsage",{},await executeJava("adminAiUsage",{},"jwt",new AbortController().signal));
+ assert.match(url,/\/api\/v1\/admin\/ai-usage$/);assert.equal(auth,"Bearer jwt");assert.deepEqual(result,data);
+});
+test("admin AI usage denies access on backend authorization failure", async t => {
+ environment(t);t.mock.method(globalThis,"fetch",async()=>new Response(null,{status:403}));
+ await assert.rejects(()=>executeJava("adminAiUsage",{},"jwt",new AbortController().signal),error=>error.status===403);
+});

@@ -26,22 +26,23 @@ class MigrationUpgradeTest {
     }
     @Test void cleanInstallAndV15UpgradePreserveHistoryAndExistingData() throws Exception {
         try(var admin=DriverManager.getConnection(adminUrl,user,password);var commands=admin.createStatement()) {
-            for(boolean upgrade:List.of(false,true)) {
+            for(String baseline:Arrays.asList(null,"15","20")) {
+                boolean upgrade=baseline!=null;
                 String name="mavis_migration_"+UUID.randomUUID().toString().replace("-","");
                 commands.execute("CREATE DATABASE "+name);
                 String url=adminUrl.substring(0,adminUrl.lastIndexOf('/')+1)+name;
                 try {
                     if(upgrade) {
-                        flyway(url,"15").migrate();
+                        flyway(url,baseline).migrate();
                         try(var connection=DriverManager.getConnection(url,user,password);var sql=connection.createStatement()) {
-                            sql.execute(Files.readString(migrations.resolve("V20__Submission_Review.sql")));
+                            sql.execute(Files.readString(migrations.resolve("V21__Submission_Review.sql")));
                             sql.execute("INSERT INTO users(role_id,email,password_hash,full_name) SELECT id,'migration-preservation@example.invalid','fixture-only','Preserved learner' FROM roles WHERE code='STUDENT'");
                         }
                     }
                     var current=flyway(url,null);
                     current.migrate();
                     current.validate();
-                    assertEquals("20",current.info().current().getVersion().toString());
+                    assertEquals("21",current.info().current().getVersion().toString());
                     assertEquals(0,current.migrate().migrationsExecuted);
                     try(var connection=DriverManager.getConnection(url,user,password);var sql=connection.createStatement()) {
                         try(var rows=sql.executeQuery("SELECT version,script FROM flyway_schema_history WHERE version IN ('10','11') ORDER BY installed_rank")) {
@@ -53,6 +54,7 @@ class MigrationUpgradeTest {
                             assertTrue(rows.next());assertEquals("Preserved learner",rows.getString(1));
                         }
                         try(var rows=sql.executeQuery("SELECT to_regclass('submission_reviews')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
+                        try(var rows=sql.executeQuery("SELECT to_regclass('ai_usage_events')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
                     }
                 } finally { commands.execute("DROP DATABASE "+name+" WITH (FORCE)"); }
             }

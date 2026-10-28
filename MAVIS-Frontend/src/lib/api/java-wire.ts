@@ -246,6 +246,8 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
           protocol: z.unknown(),
           transportAuthority: z.unknown(),
           resolutionIssue: z.unknown(),
+            status: nullableText.optional(),
+            languageStack: nullableText.optional(),
         }),
       ),
       edges: z.array(
@@ -254,7 +256,7 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
           sourceNodeId: z.string().uuid(),
           targetNodeId: z.string().uuid(),
           kind: z.string(),
-          originLayer: z.string().optional(),
+          originLayer: z.string().nullish(),
           resolutionStatus: z.string().optional(),
           evidenceCount: z.number().int().nonnegative().nullable().optional(),
           evidenceIds: z.array(z.string().uuid()).optional(),
@@ -278,6 +280,9 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
     .parse(details);
   if (d.some((e) => e.modelVersionId !== summary.id)) throw new ApiError("contract");
   const byId = new Map(d.map((e) => [e.id, e]));
+  const nodeStatusById = new Map<string, string | null | undefined>(
+    g.nodes.map((n) => [n.id, n.status]),
+  );
   return modelSchema.parse({
     ...summary,
     elements: g.nodes.map((n) => {
@@ -301,7 +306,7 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
         name: n.name,
         elementType: n.type,
         parentId: detail?.parentElementId ?? null,
-        technology: detail?.languageStack ?? null,
+        technology: detail?.languageStack ?? n.languageStack ?? null,
         layer,
         description:
           typeof properties["description"] === "string"
@@ -313,19 +318,40 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
         evidence: [],
       };
     }),
-    edges: g.edges.map((e) => ({
-      id: e.id,
-      from: e.sourceNodeId,
-      to: e.targetNodeId,
-      protocol: e.kind,
-      uncertain: e.resolutionStatus !== "RESOLVED",
-      originLayer: e.originLayer,
-      resolutionStatus: e.resolutionStatus ?? "UNKNOWN",
-      evidenceCount: e.evidenceCount ?? null,
-      evidenceIds: e.evidenceIds,
-      properties: e.properties ?? undefined,
-      evidence: [],
-    })),
+    edges: g.edges.map((e) => {
+      const sourceStatus = nodeStatusById.get(e.sourceNodeId);
+      const targetStatus = nodeStatusById.get(e.targetNodeId);
+      const edgeProps = e.properties as Record<string, unknown> | null | undefined;
+      const isUncertain =
+        e.resolutionStatus !== "RESOLVED" ||
+        sourceStatus === "UNCERTAIN_MAPPING" ||
+        sourceStatus === "NEEDS_REVIEW" ||
+        targetStatus === "UNCERTAIN_MAPPING" ||
+        targetStatus === "NEEDS_REVIEW" ||
+        edgeProps?.["uncertain"] === true;
+
+      let protocol = e.kind;
+      const origin = (e.originLayer ?? "").toUpperCase();
+      if (origin === "RUNTIME") {
+        protocol = `${e.kind} · RUNTIME_OBSERVED`;
+      } else if (origin === "STATIC_AND_RUNTIME") {
+        protocol = `${e.kind} · VERIFIED_RUNTIME`;
+      }
+
+      return {
+        id: e.id,
+        from: e.sourceNodeId,
+        to: e.targetNodeId,
+        protocol,
+        uncertain: isUncertain,
+        originLayer: e.originLayer ?? "STATIC",
+        resolutionStatus: e.resolutionStatus ?? "UNKNOWN",
+        evidenceCount: e.evidenceCount ?? null,
+        evidenceIds: e.evidenceIds,
+        properties: e.properties ?? undefined,
+        evidence: [],
+      };
+    }),
   });
 }
 export function roleView(raw: string): "student" | "lecturer" | "admin" {

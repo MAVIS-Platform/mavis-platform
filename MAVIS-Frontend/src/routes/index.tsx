@@ -8,6 +8,15 @@ import { DataTable, DetailPanel, SummaryCard } from "@/components/shared/data";
 import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
 import { Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { ImportFlow } from "@/components/mainflow/import-flow";
 import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { ProjectStatusBadge } from "@/features/projects/components";
 import type { Project } from "@/types/domain";
@@ -59,9 +68,20 @@ function Projects() {
         <SectionHeader
           title="Overview"
           actions={
-            <Button asChild>
-              <Link href="/import">Import project source</Link>
-            </Button>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button>Import project source</Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-3xl">
+                <DialogHeader>
+                  <DialogTitle>Import Project Source</DialogTitle>
+                  <DialogDescription>
+                    Import Java or C# source code from a ZIP archive or GitHub repository.
+                  </DialogDescription>
+                </DialogHeader>
+                <ImportFlow embedded />
+              </DialogContent>
+            </Dialog>
           }
         />
         <RequestState query={projects}>

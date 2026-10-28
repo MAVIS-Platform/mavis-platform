@@ -352,6 +352,7 @@ class OtelTraceCorrelationServiceImplTest {
                 .origin("RUNTIME_ENRICHED")
                 .build();
 
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
         when(modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(sessionId))
                 .thenReturn(Optional.of(enrichedMv));
 
