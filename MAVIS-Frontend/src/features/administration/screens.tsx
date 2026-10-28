@@ -590,8 +590,7 @@ export function AdminAnalysisJobs() {
       (j.id + " " + j.projectId + " " + j.message).toLowerCase().includes(search.toLowerCase()) &&
       (status === "all" || j.status === status),
   );
-  const activePage = Math.min(page, Math.max(1, Math.ceil(rows.length / 10))),
-    job = q.data?.find((j) => j.id === selected);
+  const activePage = Math.min(page, Math.max(1, Math.ceil(rows.length / 10)));
   return (
     <div className="space-y-5">
       <AdminToolbar
@@ -656,6 +655,23 @@ export function AdminAnalysisJobs() {
           <DataTable
             emptyDescription="Try clearing the filters or refresh to check for new records."
             caption="Recent analysis jobs"
+            renderExpandedRow={(job) =>
+              job.id === selected ? (
+                <DetailPanel title="Selected job">
+                  <p className="break-all font-mono text-xs">{job.id}</p>
+                  <AnalysisStatusIndicator job={job} />
+                  {job.modelId && (
+                    <Button asChild variant="outline" size="sm">
+                      <Link
+                        href={`/architecture?project=${encodeURIComponent(job.projectId)}&model=${encodeURIComponent(job.modelId)}`}
+                      >
+                        Open architecture
+                      </Link>
+                    </Button>
+                  )}
+                </DetailPanel>
+              ) : null
+            }
             rows={rows.slice((activePage - 1) * 10, activePage * 10)}
             rowKey={(j) => j.id}
             columns={[
@@ -697,7 +713,8 @@ export function AdminAnalysisJobs() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setSelected(selected === j.id ? "" : j.id)}
+                    aria-expanded={selected === j.id}
+                    onClick={() => setSelected((current) => (current === j.id ? "" : j.id))}
                   >
                     {selected === j.id ? "Hide details" : "View details"}
                   </Button>
@@ -708,21 +725,6 @@ export function AdminAnalysisJobs() {
           <PageResults count={rows.length} page={activePage} onPage={setPage} />
         </div>
       </RequestState>
-      {job && (
-        <DetailPanel title="Selected job">
-          <p className="break-all font-mono text-xs">{job.id}</p>
-          <AnalysisStatusIndicator job={job} />
-          {job.modelId && (
-            <Button asChild variant="outline" size="sm">
-              <Link
-                href={`/architecture?project=${encodeURIComponent(job.projectId)}&model=${encodeURIComponent(job.modelId)}`}
-              >
-                Open architecture
-              </Link>
-            </Button>
-          )}
-        </DetailPanel>
-      )}
     </div>
   );
 }
