@@ -1168,6 +1168,8 @@ export async function executeJava(
       return projectView(
         await post("projects", {
           name: input["name"],
+          repositoryUrl: input["repositoryUrl"],
+          defaultBranch: input["defaultBranch"],
           projectType: workspaceId ? "STUDENT_WORKING" : "PERSONAL",
           workspaceId,
           assignmentId,

@@ -19,6 +19,7 @@ import com.mavis.platform.project.dto.ProjectResponseDTO;
 import com.mavis.platform.project.dto.ProjectUpdateRequest;
 import com.mavis.platform.project.dto.SourceSnapshotResponseDTO;
 import com.mavis.platform.project.service.ProjectService;
+import com.mavis.common.utils.GitHubRepositoryUrls;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -94,7 +95,7 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = Project.builder()
                 .name(request.getName().trim())
                 .description(request.getDescription())
-                .repositoryUrl(request.getRepositoryUrl())
+                .repositoryUrl(GitHubRepositoryUrls.normalize(request.getRepositoryUrl()))
                 .defaultBranch(request.getDefaultBranch() != null && !request.getDefaultBranch().isBlank()
                         ? request.getDefaultBranch().trim() : "main")
                 .workspace(workspace)
@@ -197,7 +198,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Transactional(rollbackFor = Exception.class)
     public ProjectResponseDTO updateProject(UUID id, ProjectUpdateRequest request) {
         log.info("Updating project with ID: {}", id);
-        Project project = projectRepository.findWithDetailsById(id)
+        Project project = projectRepository.findLockedById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + id));
 
         accessPolicyService.requireProjectWriteAccess(project);
@@ -209,7 +210,7 @@ public class ProjectServiceImpl implements ProjectService {
             project.setDescription(request.getDescription());
         }
         if (request.getRepositoryUrl() != null) {
-            project.setRepositoryUrl(request.getRepositoryUrl());
+            project.setRepositoryUrl(GitHubRepositoryUrls.requireSame(project.getRepositoryUrl(), request.getRepositoryUrl()));
         }
         if (request.getDefaultBranch() != null) {
             project.setDefaultBranch(request.getDefaultBranch().trim());

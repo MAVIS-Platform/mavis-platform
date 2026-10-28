@@ -262,7 +262,7 @@ export class MockAdapter implements ApiAdapter {
         const p=contracts.createProject.input.parse(raw);
         if(p.workspaceId) this.classroom(p.workspaceId);
         if(p.assignmentId) this.find(this.courseworkAssignments,a=>a.id===p.assignmentId&&a.workspaceId===p.workspaceId);
-        const project: Project={id:crypto.randomUUID(),name:p.name,repository:"",status:"unknown",services:null,runtimeSupported:null,workspaceId:p.workspaceId??null,assignmentId:p.assignmentId??null,projectType:p.workspaceId?"STUDENT_WORKING":"PERSONAL"};
+        const project: Project={id:crypto.randomUUID(),name:p.name,repository:p.repositoryUrl??"",defaultBranch:p.defaultBranch??null,status:"unknown",services:null,runtimeSupported:null,workspaceId:p.workspaceId??null,assignmentId:p.assignmentId??null,projectType:p.workspaceId?"STUDENT_WORKING":"PERSONAL"};
         this.projects.push(project);return project;
       }
       case "projectOverviews":
@@ -278,6 +278,14 @@ export class MockAdapter implements ApiAdapter {
           : this.snapshots.filter(
               (s) => s.projectId === contracts.snapshots.input.parse(raw).projectId,
             );
+      case "githubBranches": return {branches:["main","develop"],defaultBranch:"main",truncated:false};
+      case "importGithub": {
+        const input=contracts.importGithub.input.parse(raw);const project=this.find(this.projects,p=>p.id===input.projectId);
+        if(project.repository&&project.repository.toLowerCase().replace(/\.git$/,'')!==input.repositoryUrl.toLowerCase().replace(/\.git$/,''))throw new ApiError("invalid",400);
+        project.repository=input.repositoryUrl;project.defaultBranch=project.defaultBranch||input.branchName;
+        const snapshot:SourceSnapshot={id:crypto.randomUUID(),projectId:input.projectId,name:`GitHub ${input.branchName}`,createdAt:new Date().toISOString(),validation:'valid',evidenceComplete:null};
+        this.snapshots.push(snapshot);return snapshot;
+      }
       case "importSource": {
         const p = contracts.importSource.input.parse(raw);
         this.find(this.projects, (x) => x.id === p.projectId);

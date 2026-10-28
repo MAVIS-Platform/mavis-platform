@@ -1,308 +1,355 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useApi, useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { contextHref } from "@/lib/mainflow-api";
-import { useApi } from "@/hooks/use-api";
-import { ErrorNotice, panel } from "./shell";
+import { ErrorState } from "@/components/shared/request-state";
+import { githubImportRequest } from "@/lib/mainflow-api";
+import type { Response } from "@/lib/api/contracts";
 
-export function ImportFlow({ embedded = false }: { embedded?: boolean } = {}) {
-  const adapter = useApi();
-  const params = useSearchParams();
-  const router = useRouter();
-  const cache = useQueryClient();
-  const [selectedProject, setSelectedProject] = useState("");
-  const project = embedded ? selectedProject : (params.get("project") ?? "");
-  const projects = useQuery({
-    queryKey: ["api", "projects", {}],
-    queryFn: ({ signal }) => adapter.execute("projects", {}, signal),
-    enabled: embedded,
-  });
-  const [source, setSource] = useState<"zip" | "github">("zip");
-  const [repository, setRepository] = useState("");
-  const [branch, setBranch] = useState("");
-  const [commit, setCommit] = useState("");
-  const [name, setName] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [validation, setValidation] = useState("");
-  const inFlight = useRef(false);
-
-  const create = useMutation({
-    mutationFn: () => adapter.execute("createProject", { name }),
-    onSuccess: (p) => {
-      setName("");
-      cache.invalidateQueries({ queryKey: ["api", "projects"] });
-      cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
-      if (embedded) setSelectedProject(p.id);
-      else router.push(contextHref("/import", p.id));
-    },
-  });
-
-  const upload = useMutation({
-    mutationFn: async () => {
-      if (!file || !project) throw new Error("Choose project and ZIP first");
-      return adapter.execute("importSource", {
-        projectId: project,
-        name: file.name,
-        fileName: file.name,
-        size: file.size,
-        archive: file,
-      });
-    },
-    onSuccess: (s) => {
-      setFile(null);
-      cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
-      router.push(contextHref("/snapshots", project, "", { snapshot: s.id }));
-    },
-  });
-
-  const [branchRepository, setBranchRepository] = useState("");
-  const branches = useQuery({
-    queryKey: ["api", "githubBranches", branchRepository],
-    queryFn: ({ signal }) =>
-      adapter.execute("githubBranches", { repositoryUrl: branchRepository }, signal),
-    enabled: source === "github" && !!branchRepository,
+type ImportResult = { projectId: string; snapshotId: string };
+export function ImportFlow({
+  projectId = "",
+  onComplete,
+  onBusyChange,
+}: {
+  projectId?: string;
+  onComplete?: (result: ImportResult) => void;
+  onBusyChange?: (busy: boolean) => void;
+} = {}) {
+  const api = useApi(),
+    cache = useQueryClient();
+  const project = useApiQuery("project", { projectId }, { enabled: !!projectId });
+  const boundRepository = project.data?.repository?.trim() ?? "";
+  const [name, setName] = useState(""),
+    [repository, setRepository] = useState(""),
+    [branch, setBranch] = useState(""),
+    [commit, setCommit] = useState("");
+  const [source, setSource] = useState<"github" | "zip">("github"),
+    [file, setFile] = useState<File | null>(null),
+    [validation, setValidation] = useState(""),
+    [stage, setStage] = useState("");
+  const [created, setCreated] = useState<Response<"createProject"> | null>(null);
+  const inFlight = useRef(false),
+    createdRef = useRef<Response<"createProject"> | null>(null);
+  const sourceType = boundRepository || !projectId ? "github" : source;
+  let repositoryUrl = "";
+  try {
+    repositoryUrl = githubImportRequest(
+      "",
+      boundRepository || repository,
+      "main",
+      "",
+    ).repositoryUrl;
+  } catch {
+    /* Show input guidance below. */
+  }
+  const [lookup, setLookup] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setLookup(repositoryUrl), 400);
+    return () => clearTimeout(timer);
+  }, [repositoryUrl]);
+  const lookupUrl = boundRepository ? repositoryUrl : lookup;
+  const refs = useQuery({
+    queryKey: ["api", "githubBranches", { repositoryUrl: lookupUrl }],
+    queryFn: ({ signal }) => api.execute("githubBranches", { repositoryUrl: lookupUrl }, signal),
+    enabled: sourceType === "github" && !!lookupUrl,
     retry: false,
     staleTime: 60000,
   });
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setBranchRepository(repository.trim());
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [repository]);
-
-  const branchOptions = branches.data?.branches ?? [];
-  const selectedBranch = branchOptions.includes(branch)
-    ? branch
-    : (branches.data?.defaultBranch ?? "");
-  const branchesCurrent = repository.trim() === branchRepository && branches.isSuccess;
-
-  const github = useMutation({
-    mutationFn: () =>
-      adapter.execute("importGithub", {
-        projectId: project,
-        repositoryUrl: repository,
-        branchName: selectedBranch,
-        commitSha: commit,
-      }),
-    onSuccess: (s) => {
-      cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
-      router.push(contextHref("/snapshots", project, "", { snapshot: s.id }));
+  const branches = refs.data?.branches ?? [];
+  const selectedBranch = projectId
+    ? branches.includes(branch)
+      ? branch
+      : branches.includes(project.data?.defaultBranch ?? "")
+        ? project.data!.defaultBranch!
+        : (refs.data?.defaultBranch ?? "")
+    : created?.defaultBranch || refs.data?.defaultBranch || "";
+  const branchesCurrent = repositoryUrl === lookupUrl && refs.isSuccess;
+  const run = useMutation({
+    mutationFn: async () => {
+      if (projectId && !project.data)
+        throw new Error("Project details are unavailable. Refresh and try again.");
+      let target = projectId || createdRef.current?.id || "";
+      if (!target) {
+        if (!name.trim() || !repositoryUrl || !branchesCurrent || !selectedBranch)
+          throw new Error("Enter a project name and a valid public GitHub repository.");
+        setStage("Creating project…");
+        const next = await api.execute("createProject", {
+          name: name.trim(),
+          repositoryUrl,
+          defaultBranch: selectedBranch,
+        });
+        createdRef.current = next;
+        setCreated(next);
+        target = next.id;
+        cache.setQueryData(["api", "project", { projectId: target }], next);
+        void cache.invalidateQueries({ queryKey: ["api", "projects"] });
+        void cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
+      }
+      setStage("Importing snapshot…");
+      const snapshot =
+        sourceType === "github"
+          ? await api.execute("importGithub", {
+              projectId: target,
+              repositoryUrl,
+              branchName: selectedBranch || project.data?.defaultBranch || "main",
+              commitSha: projectId ? commit.trim() : "",
+            })
+          : await api.execute("importSource", {
+              projectId: target,
+              name: file!.name,
+              fileName: file!.name,
+              size: file!.size,
+              archive: file!,
+            });
+      void cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
+      void cache.invalidateQueries({ queryKey: ["api", "project", { projectId: target }] });
+      void cache.invalidateQueries({ queryKey: ["api", "projects"] });
+      void cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
+      return { projectId: target, snapshotId: snapshot.id };
     },
+    onSuccess: (result) => onComplete?.(result),
+    onSettled: () => setStage(""),
   });
-
-  async function submitUpload() {
-    if (inFlight.current) return;
+  const busy = run.isPending;
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+  const valid =
+    sourceType === "zip"
+      ? !!file && !validation
+      : !!repositoryUrl &&
+        (projectId
+          ? !!commit.trim() || (branchesCurrent && !!selectedBranch)
+          : !!name.trim() && !!selectedBranch && (branchesCurrent || !!created));
+  async function submit() {
+    if (inFlight.current || !valid) return;
     inFlight.current = true;
+    onBusyChange?.(true);
     try {
-      await upload.mutateAsync();
+      await run.mutateAsync();
     } catch {
-      /* mutation error shown below */
+      /* Keep the created project for retry. */
     } finally {
       inFlight.current = false;
+      onBusyChange?.(false);
     }
   }
-
+  if (projectId && project.isPending)
+    return (
+      <p role="status" className="text-sm text-muted-foreground">
+        Loading project…
+      </p>
+    );
+  if (projectId && project.isError)
+    return <ErrorState error={project.error} onRetry={() => void project.refetch()} />;
   return (
-    <div className="max-w-3xl">
-      <section className={embedded ? "space-y-4" : `${panel} space-y-4`}>
-        {!embedded && (
-          <div>
-            <h2 className="font-semibold">Import Project Source</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Import Java or C# source code from a ZIP archive or GitHub repository to create a new
-              snapshot.
+    <form
+      className="space-y-5"
+      aria-busy={busy}
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      {projectId ? (
+        <div className="space-y-2 rounded-lg border bg-muted/30 p-4">
+          <p className="font-semibold">{project.data?.name}</p>
+          {boundRepository ? (
+            <>
+              <p className="break-all text-sm text-muted-foreground">{boundRepository}</p>
+              <p className="text-xs text-muted-foreground">
+                Repository is fixed for this project. Choose a branch or commit for the new
+                snapshot.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              This older project has no repository saved. Link its original GitHub repository once,
+              or add a ZIP snapshot. Existing snapshots will be kept.
             </p>
-          </div>
-        )}
-        {embedded && (
-          <div className="space-y-2">
-            <label className="block text-sm">
-              Selected project
-              <select
-                className="mt-2 w-full rounded-md border bg-background p-2 text-sm"
-                value={project}
-                onChange={(event) => setSelectedProject(event.target.value)}
-                disabled={create.isPending || upload.isPending || github.isPending}
-              >
-                <option value="">Choose a project…</option>
-                {projects.data?.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {projects.isLoading && <p role="status">Loading projects…</p>}
-            {projects.isError && <ErrorNotice error={projects.error} />}
-          </div>
-        )}
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            create.mutate();
-          }}
-        >
+          )}
+        </div>
+      ) : (
+        <label className="block space-y-2 text-sm font-medium">
+          <span>Project name</span>
           <Input
-            aria-label="New project name"
-            placeholder="New personal project name"
-            maxLength={255}
+            aria-label="Project name"
             value={name}
-            required
             onChange={(e) => setName(e.target.value)}
+            placeholder="Name your project"
+            maxLength={255}
+            required
+            disabled={busy || !!created}
           />
-          <Button variant="outline" disabled={create.isPending}>
-            Create project
-          </Button>
-        </form>
-        <div className="flex gap-2" role="group" aria-label="Source type">
+        </label>
+      )}
+      {projectId && !boundRepository && (
+        <div className="flex gap-2" role="group" aria-label="Snapshot source">
           <Button
+            type="button"
+            size="sm"
+            variant={source === "github" ? "default" : "outline"}
+            disabled={busy}
+            onClick={() => setSource("github")}
+          >
+            GitHub repository
+          </Button>
+          <Button
+            type="button"
+            size="sm"
             variant={source === "zip" ? "default" : "outline"}
-            aria-pressed={source === "zip"}
-            disabled={upload.isPending || github.isPending}
+            disabled={busy}
             onClick={() => setSource("zip")}
           >
             Upload ZIP
           </Button>
-          <Button
-            variant={source === "github" ? "default" : "outline"}
-            aria-pressed={source === "github"}
-            disabled={upload.isPending || github.isPending}
-            onClick={() => setSource("github")}
-          >
-            GitHub URL
-          </Button>
         </div>
-        {source === "zip" ? (
-          <>
-            <label className="block rounded-lg border border-dashed p-6">
-              Source archive (.zip, up to 100 MB)
+      )}
+      {sourceType === "github" ? (
+        <>
+          {!boundRepository && (
+            <label className="block space-y-2 text-sm font-medium">
+              <span>{projectId ? "Link original GitHub repository" : "GitHub repository URL"}</span>
               <Input
-                className="mt-3"
-                type="file"
-                accept=".zip"
-                disabled={!project || upload.isPending}
-                onChange={(e) => {
-                  const f = e.target.files?.[0] ?? null;
-                  const error =
-                    f && (!f.name.toLowerCase().endsWith(".zip") || f.size > 100 * 1024 * 1024)
-                      ? "Choose a ZIP up to 100 MB"
-                      : "";
-                  setValidation(error);
-                  setFile(error ? null : f);
-                }}
-              />
-            </label>
-            {validation && <p role="alert">{validation}</p>}
-            <Button disabled={!project || !file || upload.isPending} onClick={submitUpload}>
-              {upload.isPending ? "Uploading…" : "Upload snapshot"}
-            </Button>
-          </>
-        ) : (
-          <form
-            className="space-y-4 rounded-lg border border-dashed p-5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (project && !github.isPending) github.mutate();
-            }}
-          >
-            <label className="block text-sm">
-              GitHub repository URL
-              <Input
-                className="mt-2"
+                aria-label="GitHub repository URL"
                 type="url"
-                placeholder="https://github.com/owner/repository"
-                required
                 value={repository}
                 onChange={(e) => {
                   setRepository(e.target.value);
                   setBranch("");
-                  github.reset();
                 }}
-                disabled={!project || github.isPending}
+                placeholder="https://github.com/owner/repository"
+                required
+                disabled={busy || !!created}
               />
             </label>
-            <label className="block text-sm">
-              Branch
-              <select
-                aria-label="Branch"
-                className="mt-2 w-full rounded-md border bg-background p-2 text-sm"
-                value={selectedBranch}
-                onChange={(e) => {
-                  setBranch(e.target.value);
-                  github.reset();
-                }}
-                disabled={github.isPending || !branchesCurrent || !!commit.trim()}
-              >
-                {!branchesCurrent && (
-                  <option value="">
-                    {branches.isFetching
-                      ? "Loading branches…"
-                      : "Enter a GitHub URL to select a branch"}
-                  </option>
-                )}
-                {branchOptions.map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                    {value === branches.data?.defaultBranch ? " (default)" : ""}
-                  </option>
-                ))}
-              </select>
-              {branches.data?.truncated && (
-                <p className="mt-1 text-xs">
-                  Loaded the first 1,000 branches. Use Commit SHA for branches not listed here.
-                </p>
-              )}
-              <ErrorNotice error={branches.error} />
-              {repository.trim() && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  disabled={branches.isFetching || github.isPending}
-                  onClick={() => {
-                    setBranchRepository(repository.trim());
-                    if (branchRepository === repository.trim()) void branches.refetch();
-                  }}
-                >
-                  Reload branches
-                </Button>
-              )}
-            </label>
-            <label className="block text-sm">
-              Commit SHA (optional)
-              <Input
-                className="mt-2"
-                placeholder="Full 40-character SHA; overrides branch"
-                value={commit}
-                onChange={(e) => setCommit(e.target.value)}
-                disabled={github.isPending}
-              />
-            </label>
-            <p className="text-xs text-muted-foreground">
-              Public repositories only. Use the repository root URL and its actual branch name. For
-              private repositories, upload a ZIP.
+          )}
+          {(boundRepository || repository.trim()) && !repositoryUrl && (
+            <p className="text-xs text-destructive">
+              Use a GitHub repository root URL: https://github.com/owner/repository
             </p>
-            <Button
-              disabled={
-                !project ||
-                !repository.trim() ||
-                github.isPending ||
-                (!commit.trim() && (!branchesCurrent || !selectedBranch))
-              }
-            >
-              {github.isPending ? "Importing from GitHub…" : "Import from GitHub"}
-            </Button>
-          </form>
+          )}
+          {projectId ? (
+            <>
+              <label className="block space-y-2 text-sm font-medium">
+                <span>Branch</span>
+                <select
+                  aria-label="Branch"
+                  className="h-10 w-full rounded-md border bg-card px-3 text-sm"
+                  value={selectedBranch}
+                  disabled={busy || !branchesCurrent || !!commit.trim()}
+                  onChange={(e) => setBranch(e.target.value)}
+                >
+                  {!branchesCurrent && (
+                    <option value="">
+                      {refs.isFetching ? "Loading branches…" : "Branches unavailable"}
+                    </option>
+                  )}
+                  {branches.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                      {b === refs.data?.defaultBranch ? " (default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block space-y-2 text-sm font-medium">
+                <span>Commit SHA (optional)</span>
+                <Input
+                  aria-label="Commit SHA"
+                  placeholder="Full 40-character SHA"
+                  value={commit}
+                  onChange={(e) => setCommit(e.target.value)}
+                  pattern="[a-fA-F0-9]{40}"
+                  disabled={busy}
+                />
+                <span className="block text-xs font-normal text-muted-foreground">
+                  Leave empty for the latest commit on the selected branch. A SHA overrides the
+                  branch selection.
+                </span>
+              </label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={busy || !repositoryUrl || refs.isFetching}
+                onClick={() => {
+                  setLookup(repositoryUrl);
+                  if (lookupUrl === repositoryUrl) void refs.refetch();
+                }}
+              >
+                Reload branches
+              </Button>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {refs.isFetching
+                ? "Checking repository…"
+                : branchesCurrent
+                  ? `The first snapshot will use the latest commit on ${selectedBranch}.`
+                  : "Enter a public GitHub repository. Its default branch will be used for the first snapshot."}
+            </p>
+          )}
+          {refs.error && <ErrorState error={refs.error} onRetry={() => void refs.refetch()} />}
+          {refs.data?.truncated && projectId && (
+            <p className="text-xs text-muted-foreground">
+              The branch list is truncated. You can pin a commit SHA for an unlisted branch.
+            </p>
+          )}
+        </>
+      ) : (
+        <label className="block space-y-2 text-sm font-medium">
+          <span>ZIP archive (up to 100 MB)</span>
+          <Input
+            aria-label="Source archive"
+            type="file"
+            accept=".zip"
+            required
+            disabled={busy}
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              const error =
+                f &&
+                (!f.name.toLowerCase().endsWith(".zip") || !f.size || f.size > 100 * 1024 * 1024)
+                  ? "Choose a non-empty ZIP up to 100 MB."
+                  : "";
+              setValidation(error);
+              setFile(error ? null : f);
+            }}
+          />
+        </label>
+      )}
+      {validation && (
+        <p role="alert" className="text-sm text-destructive">
+          {validation}
+        </p>
+      )}
+      {created && run.isError && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Project created. Retry will import into the same project; its name and repository are now
+          fixed.
+        </p>
+      )}
+      {run.error && <ErrorState error={run.error} />}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" disabled={busy || !valid}>
+          {busy
+            ? stage || "Working…"
+            : projectId
+              ? "Import snapshot"
+              : created
+                ? "Retry import"
+                : "Import project"}
+        </Button>
+        {busy && (
+          <p role="status" className="text-xs text-muted-foreground">
+            Keep this dialog open until the import finishes.
+          </p>
         )}
-        <ErrorNotice error={create.error || (source === "zip" ? upload.error : github.error)} />
-      </section>
-    </div>
+      </div>
+    </form>
   );
 }

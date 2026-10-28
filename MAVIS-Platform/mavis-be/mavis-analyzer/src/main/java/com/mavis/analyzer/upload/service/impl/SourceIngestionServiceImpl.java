@@ -14,6 +14,7 @@ import com.mavis.common.repository.JobRepository;
 import com.mavis.common.repository.ProjectRepository;
 import com.mavis.common.repository.SourceSnapshotRepository;
 import com.mavis.common.utils.HashUtils;
+import com.mavis.common.utils.GitHubRepositoryUrls;
 import com.mavis.common.utils.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -65,13 +66,16 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Chỉ chấp nhận file định dạng .zip");
         }
 
-        Project project = projectRepository.findById(projectId)
+        Project project = projectRepository.findLockedById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
 
         if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền tải lên cho dự án này");
         }
 
+        if (project.getRepositoryUrl() != null && !project.getRepositoryUrl().isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "This project is linked to GitHub. Import a branch or commit from its repository instead of uploading a ZIP.");
+        }
         String storagePath = storageService.store(file);
         String artifactHash = HashUtils.sha256Hex(Paths.get(storagePath));
 
@@ -104,20 +108,14 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Repository URL không được để trống");
         }
 
-        Project project = projectRepository.findById(request.getProjectId())
+        Project project = projectRepository.findLockedById(request.getProjectId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + request.getProjectId()));
 
         if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền nạp mã nguồn cho dự án này");
         }
 
-        String cleanRepoUrl = request.getRepositoryUrl().trim();
-        if (cleanRepoUrl.endsWith(".git")) {
-            cleanRepoUrl = cleanRepoUrl.substring(0, cleanRepoUrl.length() - 4);
-        }
-        if (cleanRepoUrl.endsWith("/")) {
-            cleanRepoUrl = cleanRepoUrl.substring(0, cleanRepoUrl.length() - 1);
-        }
+        String cleanRepoUrl = GitHubRepositoryUrls.requireSame(project.getRepositoryUrl(), request.getRepositoryUrl());
 
         String commitShaOrBranch;
         if (request.getCommitSha() != null && !request.getCommitSha().isBlank()) {
@@ -128,7 +126,11 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
             commitShaOrBranch = "main";
         }
 
-        String downloadUrl = cleanRepoUrl + "/archive/" + commitShaOrBranch + ".zip";
+        if (request.getCommitSha() != null && !request.getCommitSha().isBlank() && !commitShaOrBranch.matches("[a-fA-F0-9]{40}")) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Commit SHA must be 40 hexadecimal characters");
+        }
+        String archiveRef = java.net.URLEncoder.encode(commitShaOrBranch, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
+        String downloadUrl = cleanRepoUrl + "/archive/" + archiveRef + ".zip";
         log.info("Bắt đầu tải archive GitHub từ URL: {}", downloadUrl);
 
         HttpRequest httpRequest = HttpRequest.newBuilder()
@@ -164,6 +166,13 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
         String commitSha = (request.getCommitSha() != null && !request.getCommitSha().isBlank())
                 ? request.getCommitSha().trim()
                 : null;
+
+        if (project.getRepositoryUrl() == null || project.getRepositoryUrl().isBlank()) {
+            project.setRepositoryUrl(cleanRepoUrl);
+            project.setDefaultBranch(branchName);
+            project.setUpdatedAt(java.time.OffsetDateTime.now());
+            projectRepository.save(project);
+        }
 
         SourceSnapshot snapshot = SourceSnapshot.builder()
                 .project(project)

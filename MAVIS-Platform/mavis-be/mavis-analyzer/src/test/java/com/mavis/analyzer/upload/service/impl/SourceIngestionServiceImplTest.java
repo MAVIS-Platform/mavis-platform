@@ -119,7 +119,7 @@ class SourceIngestionServiceImplTest {
                 "file", "project.zip", "application/zip", "dummy-zip-data".getBytes()
         );
 
-        when(projectRepository.findById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
+        when(projectRepository.findLockedById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
         when(storageService.store(file)).thenReturn(sampleZipFile.toAbsolutePath().toString());
 
         UUID snapshotId = UUID.randomUUID();
@@ -178,7 +178,7 @@ class SourceIngestionServiceImplTest {
                 "file", "project.zip", "application/zip", "content".getBytes()
         );
         UUID nonExistentProjectId = UUID.randomUUID();
-        when(projectRepository.findById(nonExistentProjectId)).thenReturn(Optional.empty());
+        when(projectRepository.findLockedById(nonExistentProjectId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> sourceIngestionService.ingestZipUpload(nonExistentProjectId, file))
                 .isInstanceOf(BusinessException.class)
@@ -199,7 +199,7 @@ class SourceIngestionServiceImplTest {
                 .owner(anotherUser)
                 .build();
 
-        when(projectRepository.findById(anotherProject.getId())).thenReturn(Optional.of(anotherProject));
+        when(projectRepository.findLockedById(anotherProject.getId())).thenReturn(Optional.of(anotherProject));
 
         assertThatThrownBy(() -> sourceIngestionService.ingestZipUpload(anotherProject.getId(), file))
                 .isInstanceOf(BusinessException.class)
@@ -216,7 +216,7 @@ class SourceIngestionServiceImplTest {
                 .commitSha("7fd1a60b01f91b314f59955a4e4d4e80d8edf11d")
                 .build();
 
-        when(projectRepository.findById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
+        when(projectRepository.findLockedById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
 
         when(httpResponse.statusCode()).thenReturn(200);
         when(httpResponse.body()).thenReturn(new ByteArrayInputStream("fake-zip-data".getBytes()));
@@ -258,7 +258,7 @@ class SourceIngestionServiceImplTest {
                 .branchName("main")
                 .build();
 
-        when(projectRepository.findById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
+        when(projectRepository.findLockedById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
         when(httpResponse.statusCode()).thenReturn(404);
         doReturn(httpResponse).when(httpClient).send(any(HttpRequest.class), any());
 
@@ -282,4 +282,28 @@ class SourceIngestionServiceImplTest {
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.BAD_REQUEST);
     }
  @Test void disabledGitHubRejectsBeforeNetworkOrWrites(){doThrow(new BusinessException(ErrorCode.FORBIDDEN)).when(settings).requireIntegration("github");assertThatThrownBy(()->sourceIngestionService.ingestFromGitHub(null)).isInstanceOf(BusinessException.class);verifyNoInteractions(projectRepository,storageService,eventPublisher);}
+    @Test void boundRepositoryCannotBeReplaced() throws Exception {
+        sampleProject.setRepositoryUrl("https://github.com/example/original");
+        when(projectRepository.findLockedById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
+        var request=GitHubImportRequest.builder().projectId(sampleProject.getId()).repositoryUrl("https://github.com/example/other").branchName("main").build();
+        assertThatThrownBy(()->sourceIngestionService.ingestFromGitHub(request)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(httpClient);verifyNoInteractions(storageService);
+        assertThat(sampleProject.getRepositoryUrl()).isEqualTo("https://github.com/example/original");
+    }
+    @Test void boundGitHubProjectRejectsZipSnapshots() {
+        sampleProject.setRepositoryUrl("https://github.com/example/original");
+        when(projectRepository.findLockedById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
+        var file=new MockMultipartFile("file","source.zip","application/zip","test".getBytes());
+        assertThatThrownBy(()->sourceIngestionService.ingestZipUpload(sampleProject.getId(),file)).isInstanceOf(BusinessException.class);
+        verifyNoInteractions(storageService);
+    }
+    @Test void differentBranchKeepsRepositoryAndExistingDefault() throws Exception {
+        sampleProject.setRepositoryUrl("https://github.com/example/original");sampleProject.setDefaultBranch("main");
+        when(projectRepository.findLockedById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
+        when(httpResponse.statusCode()).thenReturn(200);when(httpResponse.body()).thenReturn(new ByteArrayInputStream("zip".getBytes()));
+        doReturn(httpResponse).when(httpClient).send(any(HttpRequest.class),any());when(storageService.store(any(InputStream.class),anyString())).thenReturn(sampleZipFile.toString());
+        when(sourceSnapshotRepository.save(any(SourceSnapshot.class))).thenAnswer(inv->{SourceSnapshot snap=inv.getArgument(0);snap.setId(UUID.randomUUID());assertThat(snap.getBranchName()).isEqualTo("develop");return snap;});
+        sourceIngestionService.ingestFromGitHub(GitHubImportRequest.builder().projectId(sampleProject.getId()).repositoryUrl("https://github.com/EXAMPLE/original.git").branchName("develop").build());
+        assertThat(sampleProject.getRepositoryUrl()).isEqualTo("https://github.com/example/original");assertThat(sampleProject.getDefaultBranch()).isEqualTo("main");verify(projectRepository,never()).save(any());
+    }
 }
