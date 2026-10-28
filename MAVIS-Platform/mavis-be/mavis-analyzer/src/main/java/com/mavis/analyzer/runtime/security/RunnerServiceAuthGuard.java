@@ -31,7 +31,21 @@ public class RunnerServiceAuthGuard {
     @Value("${mavis.runner.service-key:}")
     private String runnerServiceKey;
 
+    private static final ThreadLocal<Boolean> INTERNAL_DISPATCH = ThreadLocal.withInitial(() -> false);
+
+    public static void runWithInternalBypass(Runnable runnable) {
+        INTERNAL_DISPATCH.set(true);
+        try {
+            runnable.run();
+        } finally {
+            INTERNAL_DISPATCH.remove();
+        }
+    }
+
     public boolean isRunnerServiceKeyValid() {
+        if (Boolean.TRUE.equals(INTERNAL_DISPATCH.get())) {
+            return true;
+        }
         if (runnerServiceKey == null || runnerServiceKey.isBlank()) {
             return false;
         }

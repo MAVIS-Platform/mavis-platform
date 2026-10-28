@@ -21,4 +21,6 @@ public class RunnerCorrelatedSpanDTO {
     private String durationNanoseconds;
     private String spanStatus;
     private Integer httpStatusCode;
+    private String httpMethod;
+    private String route;
 }
