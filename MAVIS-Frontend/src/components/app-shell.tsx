@@ -489,8 +489,18 @@ function ShellChrome({
             </Sheet>
             <Breadcrumbs
               items={[
-                { label: "MAVIS", visibility: "sm" },
-                ...(scope !== "global" ? [{ label: context, visibility: "lg" as const }] : []),
+                { label: "MAVIS", href: "/", visibility: "sm" },
+                ...(scope !== "global"
+                  ? [{
+                      label: context,
+                      href: scope === "project"
+                        ? `/project-overview${navigationQuery}`
+                        : scope === "review"
+                          ? `/submissions${navigationQuery}`
+                          : `/workspaces${navigationQuery}`,
+                      visibility: "lg" as const,
+                    }]
+                  : []),
                 { label: title },
               ]}
             />
