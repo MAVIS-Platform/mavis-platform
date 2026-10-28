@@ -765,3 +765,37 @@ test("DependencyNetwork truthful statistics and search highlighting contract (H4
   const largeNodeList = Array.from({ length: 301 }, (_, i) => ({ id: `node-${i}`, name: `service-${i}` }));
   assert.equal(largeNodeList.length > 300, true, "301 nodes trigger grid layout mode (>300 elements active)");
 });
+
+
+test("graph type toggles hide nodes and incident edges, then restore the same evidence", () => {
+  const { filterGraphCategories, graphCategories } = require("../src/features/architecture/graph-projection.ts");
+  const types = ["SERVICE_CONTAINER", "DATABASE", "QUEUE_BROKER", "MESSAGE_CHANNEL", "COMPONENT", "EXTERNAL_SYSTEM", "OTHER"];
+  const elements = types.map((elementType, i) => ({ ...model.elements[0], id: `toggle-${i}`, elementType }));
+  const edges = elements.slice(1).map((node, i) => ({ ...model.edges[0], id: `toggle-edge-${i}`, from: elements[0].id, to: node.id }));
+  const source = { ...model, elements, edges };
+  const before = JSON.stringify(source);
+  for (const category of graphCategories) {
+    const hidden = filterGraphCategories(source, [category.id]);
+    const visibleIds = new Set(hidden.elements.map((node) => node.id));
+    assert.ok(hidden.elements.length < elements.length, `${category.label} must hide matching nodes`);
+    assert.ok(hidden.edges.every((edge) => visibleIds.has(edge.from) && visibleIds.has(edge.to)));
+  }
+  const messagingHidden = filterGraphCategories(source, ["messaging"]);
+  assert.ok(!messagingHidden.elements.some((node) => ["QUEUE_BROKER", "MESSAGE_CHANNEL"].includes(node.elementType)));
+  assert.equal(filterGraphCategories(source, []).edges, edges, "turning back on restores original relationship/evidence objects");
+  assert.equal(JSON.stringify(source), before, "canonical data is unchanged");
+  const empty = filterGraphCategories(source, graphCategories.map((category) => category.id));
+  assert.equal(empty.elements.length, 0);
+  assert.equal(empty.edges.length, 0);
+});
+
+test("type filtering composes with collapsed and expanded graph projections", () => {
+  const { filterGraphCategories, graphCategory } = require("../src/features/architecture/graph-projection.ts");
+  for (const expanded of [false, true]) {
+    const projected = projectGraphModel(model, expanded, "source");
+    const filtered = filterGraphCategories(projected.model, ["component", "messaging"]);
+    assert.ok(filtered.elements.every((node) => !["component", "messaging"].includes(graphCategory(node.elementType))));
+    assert.ok(filtered.edges.every((edge) => projected.model.edges.includes(edge)));
+    assert.deepEqual(filterGraphCategories(projected.model, []), projected.model);
+  }
+});

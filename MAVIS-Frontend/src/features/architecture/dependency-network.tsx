@@ -6,7 +6,13 @@ import { Button } from "@/components/ui/button";
 import * as Popover from "@radix-ui/react-popover";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { Pagination, SelectField } from "@/components/shared/forms";
-import { projectGraphModel } from "./graph-projection";
+import {
+  projectGraphModel,
+  filterGraphCategories,
+  graphCategories,
+  graphCategory,
+  type GraphCategory,
+} from "./graph-projection";
 import cytoscape, { type Core } from "cytoscape";
 import { networkElements, networkFocus } from "./cytoscape-network";
 import { networkPositions } from "./network-layout";
@@ -49,6 +55,7 @@ export function DependencyNetwork({
     else setInternalOrigin(v);
   };
 
+  const [hiddenCategories, setHiddenCategories] = useState<GraphCategory[]>([]);
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<NetworkMode>("analysis");
   const [fullscreen, setFullscreen] = useState(false);
@@ -81,7 +88,14 @@ export function DependencyNetwork({
     () => projectGraphModel(model, expanded, origin),
     [model, expanded, origin],
   );
-  const projection = controlledProjection ?? internalProjection;
+  const baseProjection = controlledProjection ?? internalProjection;
+  const projection = useMemo(
+    () => ({
+      ...baseProjection,
+      model: filterGraphCategories(baseProjection.model, hiddenCategories),
+    }),
+    [baseProjection, hiddenCategories],
+  );
   const nodes = projection.model.elements;
   const edges = projection.model.edges;
   const elements = useMemo(() => networkElements(projection.model), [projection.model]);
@@ -286,7 +300,7 @@ export function DependencyNetwork({
       refreshTheme.current = () => {};
       presentMode.current = () => {};
     };
-  }, [elements, nodes.length]);
+  }, [elements, nodes.length, projection.model]);
 
   useEffect(() => {
     presentMode.current(mode);
@@ -397,7 +411,7 @@ export function DependencyNetwork({
               sideOffset={6}
               className="z-50 rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md"
             >
-              Zoom in 
+              Zoom in
             </Tooltip.Content>
           </Tooltip.Root>
           <Tooltip.Root>
@@ -416,7 +430,7 @@ export function DependencyNetwork({
               sideOffset={6}
               className="z-50 rounded-md border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md"
             >
-              Zoom out 
+              Zoom out
             </Tooltip.Content>
           </Tooltip.Root>
           <Tooltip.Root>
@@ -785,42 +799,45 @@ export function DependencyNetwork({
             ))}
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                style={{ background: "#397ed7" }}
-                className="inline-block size-2.5 rounded-full"
-              />
-              Service
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                style={{ background: "#16815d" }}
-                className="inline-block size-2.5 rounded-full"
-              />
-              Data store
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                style={{ background: "#9455c9" }}
-                className="inline-block size-2.5 rounded-full"
-              />
-              Messaging
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                style={{ background: "#d65370" }}
-                className="inline-block size-2.5 rounded-full"
-              />
-              Component
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                style={{ background: "#b7791f" }}
-                className="inline-block size-2.5 rounded-full"
-              />
-              External System
-            </span>
+          <div
+            className="flex flex-wrap items-center gap-1"
+            role="group"
+            aria-label="Visible element types"
+          >
+            {graphCategories
+              .filter(
+                (category) =>
+                  category.id !== "unknown" ||
+                  baseProjection.model.elements.some(
+                    (node) => graphCategory(node.elementType) === "unknown",
+                  ),
+              )
+              .map((category) => {
+                const visible = !hiddenCategories.includes(category.id);
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    aria-pressed={visible}
+                    title={`${visible ? "Hide" : "Show"} ${category.label}`}
+                    onClick={() => {
+                      setElementPage(1);
+                      setHiddenCategories((current) =>
+                        current.includes(category.id)
+                          ? current.filter((id) => id !== category.id)
+                          : [...current, category.id],
+                      );
+                    }}
+                    className={`inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2 py-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${visible ? "border-transparent text-foreground" : "border-border text-muted-foreground line-through opacity-60"}`}
+                  >
+                    <span
+                      style={{ background: category.color }}
+                      className="inline-block size-2.5 rounded-full"
+                    />
+                    {category.label}
+                  </button>
+                );
+              })}
           </div>
         )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]">
