@@ -1,10 +1,12 @@
-import type { ArchitecturalModel } from "@/types/domain";
 export const NODE_WIDTH = 168;
 export const NODE_HEIGHT = 62;
 
 // Deterministic force layout: topology determines proximity, including when the
 // analyzer cannot classify layers. Coordinates are view state, never model data.
-export function layoutGraph(model: ArchitecturalModel) {
+export function layoutGraph<T extends { id: string }>(model: {
+  elements: readonly T[];
+  edges: readonly { from: string; to: string }[];
+}) {
   const elements = [...model.elements].sort((a, b) => a.id.localeCompare(b.id));
   if (!elements.length) return [];
   const columns = Math.ceil(Math.sqrt(elements.length));

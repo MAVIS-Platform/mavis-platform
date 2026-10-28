@@ -842,3 +842,102 @@ test("selection visibility follows the filtered view including canonical members
   assert.equal(graphSelectionVisible(hidden, "svc"), true);
   assert.equal(graphSelectionVisible(filterGraphCategories(projected, ["service"]), "class"), false);
 });
+
+
+function serviceOverviewFixture() {
+ const node=(id,type,parentId=null,name=id)=>({...model.elements[0],id,name,elementType:type,parentId});
+ const edge=(id,from,to,protocol='SERVICE_HTTP_CALL',originLayer='STATIC',evidenceIds=[])=>({...model.edges[0],id,from,to,protocol,originLayer,underlyingEdgeIds:undefined,uncertain:false,evidenceIds,evidenceCount:evidenceIds.length});
+ return {...model,elements:[node('a','SERVICE_CONTAINER'),node('b','SERVICE_CONTAINER'),node('c','SERVICE_CONTAINER'),node('d','SERVICE_CONTAINER'),node('isolated','SERVICE_CONTAINER'),node('same-name','SERVICE_CONTAINER',null,'a'),node('a1','COMPONENT','a'),node('b1','COMPONENT','b'),node('db','DATABASE','a'),node('q','MESSAGE_CHANNEL','a'),node('orphan','COMPONENT','missing'),node('cycle1','COMPONENT','cycle2'),node('cycle2','COMPONENT','cycle1')],edges:[
+ edge('ab-http','a1','b1','SERVICE_HTTP_CALL','STATIC',['ev1','shared']),edge('ba-http','b1','a1','SERVICE_HTTP_CALL','STATIC',['ev2','shared']),edge('ab-code','a','b','CODE_DEPENDENCY','STATIC',['ev3']),edge('ab-deploy','a','b','DECLARED_COMPOSE','DEPLOYMENT'),edge('ac','a','c'),edge('cd','c','d'),edge('aq','a','q','MESSAGE_PUBLISH'),edge('qb','q','b','MESSAGE_SUBSCRIBE'),edge('adb','a','db','DATABASE_ACCESS'),edge('bdb','b','db','DATABASE_ACCESS'),edge('orphan-call','orphan','b'),edge('cycle-call','cycle1','b'),edge('inside','a1','a')
+ ]};
+}
+
+test('Service overview groups both directions and protocols into one pair while preserving source identity and evidence',()=>{
+ const {projectServiceOverview}=require('../src/features/architecture/service-overview.ts');const source=serviceOverviewFixture(),before=JSON.stringify(source);
+ const projected=projectServiceOverview(source),ab=projected.connections.find(c=>c.serviceIds.join(',')==='a,b');
+ assert.equal(projected.services.length,6);assert.equal(projected.connections.length,3);assert.equal(projected.relationshipCount,6);
+ assert.deepEqual(ab.relationshipIds,['ab-code','ab-deploy','ab-http','ba-http']);
+ assert.deepEqual(new Set(ab.relationships.map(row=>row.fromServiceId)),new Set(['a','b']));
+ assert.equal(ab.evidenceCount,4);assert.deepEqual(ab.evidenceIds,['ev1','ev2','ev3','shared']);
+ assert.ok(projected.services.some(n=>n.id==='isolated'));assert.ok(projected.services.some(n=>n.id==='same-name'));
+ assert.ok(!source.edges.some(edge=>edge.id===ab.key));assert.equal(JSON.stringify(source),before);
+});
+
+test('Service overview never adds transitive, shared database or broker-mediated service links and rejects broken ownership',()=>{
+ const {projectServiceOverview}=require('../src/features/architecture/service-overview.ts');const source=serviceOverviewFixture();
+ const graph=projectServiceOverview(source);assert.ok(!graph.connections.some(c=>c.serviceIds.join(',')==='a,d'));
+ assert.equal(graph.owners.get('db'),null);assert.equal(graph.owners.get('q'),null);assert.equal(graph.owners.get('orphan'),null);assert.equal(graph.owners.get('cycle1'),null);
+ assert.equal(graph.unassignedElements,3);assert.equal(graph.internalRelationships,1);
+ const indirect=projectServiceOverview({...source,edges:source.edges.filter(e=>['aq','qb','adb','bdb','orphan-call','cycle-call'].includes(e.id))});
+ assert.equal(indirect.connections.length,0);assert.equal(indirect.services.length,6);
+});
+
+test('Overview filters are applied before grouping and unknown evidence is never promoted to zero',()=>{
+ const {projectServiceOverview,defaultOverviewFilters}=require('../src/features/architecture/service-overview.ts');const source=serviceOverviewFixture();
+ const deployed=projectServiceOverview(source,{...defaultOverviewFilters,origin:'deployment'});assert.equal(deployed.connections.length,1);assert.deepEqual(deployed.connections[0].relationshipIds,['ab-deploy']);assert.equal(deployed.connections[0].evidenceCount,0);
+ const http=projectServiceOverview(source,{...defaultOverviewFilters,protocol:'SERVICE_HTTP_CALL'});assert.equal(http.relationshipCount,4);assert.equal(http.connections.find(c=>c.serviceIds.join(',')==='a,b').relationships.length,2);
+ source.edges.find(e=>e.id==='ab-code').uncertain=true;source.edges.find(e=>e.id==='ab-code').evidenceCount=null;
+ const uncertain=projectServiceOverview(source,{...defaultOverviewFilters,uncertainty:'uncertain'});assert.equal(uncertain.relationshipCount,1);assert.equal(uncertain.connections[0].evidenceCount,null);
+ source.edges.find(e=>e.id==='ab-code').evidenceCount=0;
+ assert.equal(projectServiceOverview(source).connections.find(c=>c.serviceIds.join(',')==='a,b').evidenceCount,null,'inconsistent zero count with IDs is unknown');
+});
+
+test('Overview flattens older aggregate IDs once and does not invent per-member metadata',()=>{
+ const {projectServiceOverview}=require('../src/features/architecture/service-overview.ts');const source=serviceOverviewFixture();
+ const legacy={...source.edges[0],id:'legacy-group',underlyingEdgeIds:['ab-http','ab-code','not-loaded']};source.edges.unshift(legacy);
+ const graph=projectServiceOverview(source),ab=graph.connections.find(c=>c.serviceIds.join(',')==='a,b');
+ assert.equal(ab.relationshipIds.length,5);assert.equal(new Set(ab.relationshipIds).size,5);
+ assert.equal(ab.relationships.find(row=>row.id==='ab-code').edge.protocol,'CODE_DEPENDENCY');
+ assert.equal(ab.relationships.find(row=>row.id==='not-loaded').metadataAvailable,false);
+});
+
+test('Overview focus is one-hop only and virtual group keys cannot become canonical selections',()=>{
+ const {projectServiceOverview,overviewFocus,overviewSelectionVisible}=require('../src/features/architecture/service-overview.ts');const graph=projectServiceOverview(serviceOverviewFixture());
+ const focused=overviewFocus(graph,'a',null);assert.deepEqual(focused.nodes,new Set(['a','b','c']));assert.ok(!focused.nodes.has('d'));
+ const pair=graph.connections.find(c=>c.serviceIds.join(',')==='a,b');assert.deepEqual(overviewFocus(graph,null,pair.key).nodes,new Set(['a','b']));
+ assert.deepEqual(overviewFocus(graph,null,null,['a1']).nodes,new Set(['a']));
+ assert.equal(overviewSelectionVisible(graph,pair.key),false);assert.equal(overviewSelectionVisible(graph,'ab-http'),true);assert.equal(overviewSelectionVisible(graph,'orphan'),false);
+});
+
+
+test('Overview card layout is deterministic and leaves non-overlapping rectangles at small and large scales',()=>{
+ const {projectServiceOverview}=require('../src/features/architecture/service-overview.ts');
+ const {serviceOverviewPositions,SERVICE_WIDTH,SERVICE_HEIGHT}=require('../src/features/architecture/service-overview-layout.ts');
+ for(const count of [6,180]) {
+  const source=serviceOverviewFixture();if(count>6){source.elements=Array.from({length:count},(_,i)=>({...source.elements[0],id:'svc'+i,parentId:null}));source.edges=[];}
+  const projection=projectServiceOverview(source),points=serviceOverviewPositions(projection,2.4);
+  assert.deepEqual(points,serviceOverviewPositions(projection,2.4));assert.equal(points.size,count);
+  const entries=[...points.values()];for(let i=0;i<entries.length;i++)for(let j=i+1;j<entries.length;j++)assert.ok(Math.abs(entries[i].x-entries[j].x)>=SERVICE_WIDTH||Math.abs(entries[i].y-entries[j].y)>=SERVICE_HEIGHT,'service rectangles must not overlap');
+ }
+});
+
+test('Unknown relationship origin is visible in All but not mislabeled as source or runtime',()=>{
+ const {projectServiceOverview,defaultOverviewFilters}=require('../src/features/architecture/service-overview.ts');
+ const source=serviceOverviewFixture();source.edges=[{...source.edges[0],originLayer:undefined}];
+ assert.equal(projectServiceOverview(source).relationshipCount,1);
+ for(const origin of ['source','runtime','deployment'])assert.equal(projectServiceOverview(source,{...defaultOverviewFilters,origin}).relationshipCount,0);
+ assert.equal(projectGraphModel(source,false,'source').model.edges.length,0);
+});
+
+
+test('A legacy aggregate representative is not offered as individually loaded source metadata',()=>{
+ const {projectServiceOverview}=require('../src/features/architecture/service-overview.ts');const source=serviceOverviewFixture();
+ source.edges=[{...source.edges[0],underlyingEdgeIds:['ab-http','not-loaded']}];
+ const connection=projectServiceOverview(source).connections[0];
+ assert.deepEqual(connection.relationshipIds,['ab-http','not-loaded']);
+ assert.ok(connection.relationships.every(row=>!row.metadataAvailable));
+});
+
+
+test('FTGO and actual Java/CSharp pipeline fixtures retain all eligible source IDs in service overview',()=>{
+ const {projectServiceOverview}=require('../src/features/architecture/service-overview.ts');
+ const {modelView}=require('../src/lib/api/java-wire.ts');
+ const raw=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures/ftgo-component.json'),'utf8'));
+ const ftgo={id:raw.modelVersionId,projectId:'ftgo',snapshotId:'fixture',revision:1,label:'FTGO fixture',elements:raw.layoutJson.nodes.map(n=>({id:n.id,name:n.name,elementType:n.kind,parentId:n.parentId,description:n.description??'',layer:'unclassified',evidence:[],properties:n.properties})),edges:raw.layoutJson.edges.map(e=>({id:e.id,from:e.from,to:e.to,protocol:e.type,originLayer:e.originLayer,uncertain:true,evidence:[]}))};
+ const fixtures=[ftgo];for(const filename of ['source-pipeline-java-actual.json','source-pipeline-csharp-graph-actual.json']) {const fixture=JSON.parse(fs.readFileSync(path.join(__dirname,'fixtures',filename),'utf8'));fixtures.push(modelView(fixture.metadata,fixture.graph,fixture.details));}
+ for(const source of fixtures){const before=JSON.stringify(source),overview=projectServiceOverview(source);assert.deepEqual(new Set(overview.services.map(n=>n.id)),new Set(source.elements.filter(n=>n.elementType==="SERVICE_CONTAINER").map(n=>n.id)));
+  const expected=new Set(source.edges.filter(e=>overview.owners.get(e.from)&&overview.owners.get(e.to)&&overview.owners.get(e.from)!==overview.owners.get(e.to)).flatMap(e=>e.underlyingEdgeIds?.length?e.underlyingEdgeIds:[e.id]));
+  assert.equal(overview.relationshipCount,expected.size);assert.deepEqual(new Set(overview.connections.flatMap(c=>c.relationshipIds)),expected);
+  assert.equal(new Set(overview.connections.map(c=>c.serviceIds.join('|'))).size,overview.connections.length);assert.equal(JSON.stringify(source),before);
+ }
+});

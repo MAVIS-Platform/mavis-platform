@@ -1,7 +1,7 @@
 # MAVIS — Plan cải thiện Graph tổng quan theo service
 
 Ngày: 2026-10-28.
-Trạng thái: ĐỀ XUẤT TRIỂN KHAI; tài liệu này chưa thay đổi hành vi sản phẩm.
+Trạng thái: ĐÃ TRIỂN KHAI P1–P4 và kiểm thử tích hợp P5 trên nhánh feat/graph-service-overview; chưa merge/deploy main.
 
 ## 1. Mục tiêu và phạm vi
 
@@ -151,3 +151,15 @@ Các đường dẫn trên nằm trong MAVIS-Frontend. Không dự kiến migrat
 ## 9. Ngoài phạm vi lượt đầu
 
 Không suy luận business flow, traffic, latency, health, ownership hoặc dependency từ tên service. Không tự tạo edge xuyên broker/database. Không viết lại analyzer, thay schema model hay redesign các sơ đồ UML/C4. Không lưu bố cục cá nhân lên server nếu chưa có yêu cầu riêng.
+
+
+## 10. Kết quả triển khai và xác minh
+
+- Overview mặc định chỉ dùng service canonical, một đường không mũi tên cho mỗi cặp; Details giữ quan hệ có hướng, tài nguyên và nội bộ service. Bộ lọc quan hệ dùng chung và chỉnh được ở cả hai mức.
+- ServiceConnection là projection riêng, giữ ID và hướng gốc; nhóm không gọi API. Chỉ row có metadata cá nhân được tải mới có thể mở 3E. Metadata aggregate legacy không được trình bày như dữ kiện riêng của một cạnh.
+- Layout tái sử dụng solver topology hiện có với khoảng cách thẻ và grid cho tập service lớn, có test hình học không chồng thẻ. Không ép graph thành cây. Thẻ trùng tên được phân biệt thêm bằng ID ngắn.
+- Camera, vị trí kéo, search/focus, fullscreen, Escape, danh sách bàn phím và drawer mobile đã kiểm tra bằng Cytoscape thật trong browser; không dùng draw.io cho Graph.
+- 272 frontend tests, TypeScript và lint các module thay đổi đều qua. Regression bao gồm fixture FTGO, Java và CSharp đã trích xuất; fixture CSharp không khai báo SERVICE_CONTAINER được giữ trạng thái thiếu service, không đoán từ tên class.
+- Browser fixture có 6 service, 3 cặp, 6 quan hệ; bấm nhóm không có request backend, drill-down gửi canonical relationshipId. Test thêm 180 service và 900 quan hệ gốc, có 180 cặp, tìm/focus service ở mức đọc được. Đây là fixture kiểm thử, không phải số đo production hay cam kết benchmark.
+- Browser đã kiểm tra Overview/Details camera, kéo node, hai hướng, lọc làm panel cập nhật/đóng, đổi revision, Light/Dark, mobile 390px và fullscreen. API backend được giả lập để ghi lại ID request; chưa chứng nhận chất lượng metadata của mọi project production hoặc live AI explanation.
+- Không thay database, API contract hoặc các sơ đồ UML/C4. Chặng phát hành/kiểm tra production chờ merge theo yêu cầu người dùng.
