@@ -5,7 +5,7 @@ import { DependencyNetwork } from "./dependency-network";
 import { ArchitectureDiagrams } from "./architecture-diagrams";
 import { networkConnections } from "./network-connections";
 import { ConnectionDetailsPanel } from "./connection-details-panel";
-import { InspectorDock } from "./inspector-dock";
+import { InspectorSidebar } from "./inspector-sidebar";
 import { SelectionThreeE } from "./selection-three-e";
 import {
   projectGraphModel,
@@ -187,7 +187,7 @@ export function ArchitecturePresentation({
         style={dockOpen ? { height: workspaceHeight } : undefined}
         className={
           dockOpen
-            ? "relative flex min-w-0 flex-col gap-2"
+            ? "relative flex min-w-0 flex-row gap-2"
             : selectedId || connection
               ? "grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,440px)] 2xl:grid-cols-[minmax(0,1fr)_480px]"
               : "min-w-0"
@@ -320,9 +320,9 @@ function InspectorPanelWrapper({
   label: string;
 }) {
   return docked ? (
-    <InspectorDock onClose={onClose} label={label}>
+    <InspectorSidebar onClose={onClose} label={label}>
       {children}
-    </InspectorDock>
+    </InspectorSidebar>
   ) : (
     <>{children}</>
   );
