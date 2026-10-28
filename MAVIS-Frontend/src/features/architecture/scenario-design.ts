@@ -3365,7 +3365,41 @@ export function buildAutoSequenceInteraction(
           provenance: "STATIC",
         }) as SequenceParticipant,
     );
-  const declarations = flow.steps.map(
+  const groupedSteps = new Map<string, DetectedSequenceStepSpec>();
+  for (const step of flow.steps) {
+    const protocols = [
+      ...new Set(
+        step.sourceRelationshipIds.map((id) => {
+          const edge = model.edges.find((edge) => edge.id === id);
+          return edge ? JSON.stringify([edge.protocol, edge.originLayer ?? null]) : id;
+        }),
+      ),
+    ].sort();
+    const key = JSON.stringify([
+      step.fromElementId,
+      step.toElementId,
+      step.messageSort,
+      protocols.length ? protocols : [step.label],
+    ]);
+    const previous = groupedSteps.get(key);
+    groupedSteps.set(
+      key,
+      previous
+        ? {
+            ...previous,
+            sourceRelationshipIds: [
+              ...new Set([...previous.sourceRelationshipIds, ...step.sourceRelationshipIds]),
+            ],
+            evidenceIds: [...new Set([...previous.evidenceIds, ...step.evidenceIds])],
+          }
+        : {
+            ...step,
+            sourceRelationshipIds: [...step.sourceRelationshipIds],
+            evidenceIds: [...step.evidenceIds],
+          },
+    );
+  }
+  const declarations = [...groupedSteps.values()].map(
     (step, index) =>
       ({
         messageId: "dependency-" + index,
@@ -3373,11 +3407,14 @@ export function buildAutoSequenceInteraction(
         fromParticipantId: "part:" + step.fromElementId,
         toParticipantId: "part:" + step.toElementId,
         label:
-          step.sourceRelationshipIds
-            .map((id) => model.edges.find((edge) => edge.id === id))
-            .filter((edge): edge is ArchitecturalModel["edges"][number] => !!edge)
-            .map((edge) => relationLabel({ id: edge.id, type: edge.protocol }))
-            .join(" / ") || "Declared dependency",
+          [
+            ...new Set(
+              step.sourceRelationshipIds
+                .map((id) => model.edges.find((edge) => edge.id === id))
+                .filter((edge): edge is ArchitecturalModel["edges"][number] => !!edge)
+                .map((edge) => relationLabel({ id: edge.id, type: edge.protocol })),
+            ),
+          ].join(" / ") || "Declared dependency",
         messageSort: step.messageSort,
         endpointKind: "COMPLETE",
         sourceRelationshipIds: step.sourceRelationshipIds,

@@ -368,7 +368,9 @@ export function DrawioEditor({
         setReady(true);
         setError("");
         send({ action: "invokeAction", actionName: "fitWindow" });
-        setStatus((prev) => (prev.includes("Unsaved") || prev.includes("applied") ? prev : "Ready to edit"));
+        setStatus((prev) =>
+          prev.includes("Unsaved") || prev.includes("applied") ? prev : "Ready to edit",
+        );
       } else if (data.event === "layout") {
         send({ action: "export", format: "xml" });
       } else if (data.event === "save" || data.event === "autosave") {
@@ -546,15 +548,6 @@ export function DrawioEditor({
     }, 350);
   }
 
-  useEffect(() => {
-    if (!ready || !frame.current) return;
-    const observer = new ResizeObserver(() =>
-      send({ action: "invokeAction", actionName: "fitWindow" }),
-    );
-    observer.observe(frame.current);
-    return () => observer.disconnect();
-  }, [ready]);
-
   return (
     <section
       ref={container}
@@ -593,6 +586,29 @@ export function DrawioEditor({
               ))}
             </select>
           </label>
+          <div role="group" aria-label="Diagram zoom" className="flex items-center gap-1">
+            {(
+              [
+                ["zoomOut", "−", "Zoom diagram out"],
+                ["resetView", "100%", "Read diagram at 100%"],
+                ["zoomIn", "+", "Zoom diagram in"],
+                ["fitWindow", "Fit", "Fit entire diagram"],
+              ] as const
+            ).map(([actionName, label, description]) => (
+              <Button
+                key={actionName}
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-label={description}
+                title={description}
+                disabled={!ready || processing}
+                onClick={() => send({ action: "invokeAction", actionName })}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
           <Button
             size="sm"
             variant="outline"
@@ -655,4 +671,3 @@ export function DrawioEditor({
     </section>
   );
 }
-
