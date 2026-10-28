@@ -352,6 +352,7 @@ class OtelTraceCorrelationServiceImplTest {
                 .origin("RUNTIME_ENRICHED")
                 .build();
 
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
         when(modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(sessionId))
                 .thenReturn(Optional.of(enrichedMv));
 
@@ -395,13 +396,25 @@ class OtelTraceCorrelationServiceImplTest {
     }
 
     @Test
-    @DisplayName("Ném lỗi NOT_FOUND khi phiên chạy chưa có ModelVersion RUNTIME_ENRICHED")
-    void testGetSequenceDiagramBySession_NotFound() {
-        when(modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(sessionId))
+    @DisplayName("Ném lỗi NOT_FOUND khi không tìm thấy RuntimeSession")
+    void testGetSequenceDiagramBySession_SessionNotFound() {
+        when(runtimeSessionRepository.findById(sessionId))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> otelTraceCorrelationService.getSequenceDiagramBySession(sessionId))
                 .isInstanceOf(BusinessException.class);
+    }
+
+    @Test
+    @DisplayName("Trả về steps rỗng khi phiên chạy chưa có ModelVersion RUNTIME_ENRICHED")
+    void testGetSequenceDiagramBySession_NoEnrichedModelReturnsEmpty() {
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(sessionId))
+                .thenReturn(Optional.empty());
+
+        SequenceDiagramResponseDTO result = otelTraceCorrelationService.getSequenceDiagramBySession(sessionId);
+        assertThat(result).isNotNull();
+        assertThat(result.getSteps()).isEmpty();
     }
     @Test void rejectsModelFromAnotherProjectBeforePublication() {
         when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
