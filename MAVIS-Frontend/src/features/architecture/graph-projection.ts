@@ -154,12 +154,19 @@ export function projectGraphModel(
       previous.underlyingEdgeIds!.push(edge.id);
       previous.uncertain ||= edge.uncertain;
       if (previous.resolutionStatus !== status) previous.resolutionStatus = "UNKNOWN";
+      if (edge.properties) {
+        previous.properties = {
+          ...edge.properties,
+          ...(previous.properties ?? {}),
+        };
+      }
     } else {
       groups.set(key, {
         ...edge,
         resolutionStatus: status,
         from,
         to,
+        properties: edge.properties ? { ...edge.properties } : undefined,
         underlyingEdgeIds: [edge.id],
       });
     }
