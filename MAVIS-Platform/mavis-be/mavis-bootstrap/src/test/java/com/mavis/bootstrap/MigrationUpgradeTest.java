@@ -44,7 +44,13 @@ class MigrationUpgradeTest {
                     var current=flyway(url,null);
                     current.migrate();
                     current.validate();
-                    assertEquals("22",current.info().current().getVersion().toString());
+                    MigrationVersion expected;
+                    try(var files=Files.list(migrations)) {
+                        expected=files.map(path->path.getFileName().toString()).filter(migrationName->migrationName.matches("V[0-9]+__.*\\.sql"))
+                                .map(migrationName->MigrationVersion.fromVersion(migrationName.substring(1,migrationName.indexOf("__"))))
+                                .max(MigrationVersion::compareTo).orElseThrow();
+                    }
+                    assertEquals(expected,current.info().current().getVersion());
                     assertEquals(0,current.migrate().migrationsExecuted);
                     try(var connection=DriverManager.getConnection(url,user,password);var sql=connection.createStatement()) {
                         try(var rows=sql.executeQuery("SELECT version,script FROM flyway_schema_history WHERE version IN ('10','11') ORDER BY installed_rank")) {
