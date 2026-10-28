@@ -14,3 +14,20 @@ test('different revision creates a new snapshot and a new analysis request',asyn
 test('mismatched analysis job is rejected instead of navigating to another snapshot',async()=>{const h=harness(),original=h.api.execute;h.api.execute=async(op,input)=>op==='startAnalysis'?{id:'wrong-job',projectId:'other',snapshotId:'other'}:original(op,input);await assert.rejects(()=>importAndAnalyze(h.api,{projectId:'existing',source:github()},{}),/does not match/);});
 
 for(const branch of ['main','trunk'])test('default branch '+branch+' is not replaced by a hard-coded main/master',async()=>{const h=harness();await importAndAnalyze(h.api,{name:'Default',source:github(branch)},{});assert.equal(h.calls[0].input.defaultBranch,branch);assert.equal(h.calls[1].input.branchName,branch);});
+
+const {analysisInProgress,snapshotAnalysisLabel,startSnapshotAnalysis}=require('../src/features/projects/snapshot-analysis.ts');
+test('snapshot actions reflect latest attempt even when an older revision exists',()=>{
+ for(const status of ['failed','cancelled','timed-out'])assert.equal(snapshotAnalysisLabel({status},true),'Retry');
+ assert.equal(snapshotAnalysisLabel({status:'completed'},true),'Re-analyze');assert.equal(snapshotAnalysisLabel(undefined,false),'Analyze');
+ for(const status of ['queued','processing','cancelling'])assert.equal(analysisInProgress({status}),true);
+ assert.equal(analysisInProgress({status:'completed'}),false);
+});
+test('reanalysis reuses pinned snapshot and request key after a network retry',async()=>{
+ const calls=[],request={projectId:'project',snapshotId:'pinned',idempotencyKey:'stable'};
+ const api={execute:async(op,input)=>{calls.push({op,input:{...input}});if(calls.length===1)throw Error('network');return {id:'job',projectId:input.projectId,snapshotId:input.snapshotId};}};
+ await assert.rejects(()=>startSnapshotAnalysis(api,request),/network/);await startSnapshotAnalysis(api,request);
+ assert.deepEqual(calls,[{op:'startAnalysis',input:request},{op:'startAnalysis',input:request}]);
+});
+test('reanalysis rejects unrelated job responses',async()=>{
+ await assert.rejects(()=>startSnapshotAnalysis({execute:async()=>({projectId:'other',snapshotId:'other'})},{projectId:'project',snapshotId:'pinned',idempotencyKey:'key'}),/does not match/);
+});
