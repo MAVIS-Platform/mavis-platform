@@ -1,9 +1,9 @@
 "use client";
 export function RuntimeStepperBanner({ currentStep, projectId }: { currentStep: 1 | 2 | 3; projectId?: string }) {
   const steps = [
-    { num: 1, title: "Bước 1: Cấu hình Sandbox", path: "/runtime-config", desc: "Giới hạn tài nguyên, phát hiện service" },
-    { num: 2, title: "Bước 2: Kịch bản Kiểm thử", path: "/scenarios", desc: "Thiết lập các bước gọi API" },
-    { num: 3, title: "Bước 3: Chạy & Trace", path: "/sessions", desc: "Theo dõi thực thi & Sequence Diagram" },
+    { num: 1, title: "Step 1: Configure Sandbox", path: "/runtime-config", desc: "Set resource limits and discover services" },
+    { num: 2, title: "Step 2: Test Scenarios", path: "/scenarios", desc: "Define API request steps" },
+    { num: 3, title: "Step 3: Run & Trace", path: "/sessions", desc: "Monitor execution and sequence diagrams" },
   ];
   return (
     <div className="rounded-xl border bg-card p-4 shadow-sm mb-5">
@@ -382,7 +382,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       {
         onSuccess: (session) => {
           setRunMessage(
-            `Session ${session.id.slice(0, 8)} created successfully! Status: ${session.executionStatus || session.status}. Đang chuyển hướng sang trang Sessions...`,
+            `Session ${session.id.slice(0, 8)} created successfully! Status: ${session.executionStatus || session.status}. Redirecting to Sessions...`,
           );
           setTimeout(() => {
             router.push(`/sessions?project=${projectId}&session=${session.id}`);

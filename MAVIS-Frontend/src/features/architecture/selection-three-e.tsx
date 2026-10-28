@@ -540,7 +540,7 @@ export function SelectionThreeE({
             />
             <details className="rounded-xl border bg-card/60 p-3">
               <summary className="cursor-pointer text-xs font-semibold text-muted-foreground hover:text-foreground">
-                Bằng chứng khai báo nội bộ của Node ({subject.title})
+                Internal declaration evidence ({subject.title})
               </summary>
               <div className="mt-3">
                 <ThreeEEvidence

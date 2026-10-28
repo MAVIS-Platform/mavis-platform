@@ -351,25 +351,25 @@ function BlastRadiusVisualMap({
           </div>
           <div>
             <h3 className="text-sm font-bold tracking-tight text-foreground flex items-center gap-2">
-              Sơ đồ Bán kính Tác động Sự cố (Outage Blast Radius Map)
+              Outage Blast Radius Map
             </h3>
             <p className="text-[11px] text-muted-foreground">
-              Mô phỏng đường lan truyền lỗi khi <strong className="text-rose-400 font-mono">{impact.targetName}</strong> sập hoàn toàn
+              Potential failure propagation if <strong className="text-rose-400 font-mono">{impact.targetName}</strong> becomes unavailable
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
           <span className="flex items-center gap-1 rounded bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 font-medium text-rose-400">
-            🔴 Sập / Crashed
+            🔴 Unavailable
           </span>
           <span className="flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 font-medium text-amber-400">
-            🟠 Lỗi trực tiếp (1-Hop)
+            🟠 Direct impact (1 hop)
           </span>
           <span className="flex items-center gap-1 rounded bg-yellow-500/15 border border-yellow-500/30 px-2 py-0.5 font-medium text-yellow-400">
-            🟡 Lỗi dây chuyền (2+ Hops)
+            🟡 Indirect impact (2+ hops)
           </span>
           <span className="flex items-center gap-1 rounded bg-sky-500/15 border border-sky-500/30 px-2 py-0.5 font-medium text-sky-400">
-            🔵 Hạ nguồn
+            🔵 Downstream dependencies
           </span>
         </div>
       </div>
@@ -379,7 +379,7 @@ function BlastRadiusVisualMap({
           <div className="flex items-center justify-between border-b border-yellow-500/20 pb-1.5">
             <span className="text-[11px] font-bold text-yellow-400 uppercase tracking-wider flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" />
-              Lỗi Dây Chuyền ({cascadingList.length})
+              Indirect Impact ({cascadingList.length})
             </span>
             <span className="text-[10px] text-yellow-300 font-mono">2+ Hops</span>
           </div>
@@ -403,7 +403,7 @@ function BlastRadiusVisualMap({
               ))
             ) : (
               <p className="text-[11px] text-muted-foreground italic p-2 text-center my-auto">
-                Không có service nào bị lỗi dây chuyền
+                No indirect service impact identified
               </p>
             )}
           </div>
@@ -413,7 +413,7 @@ function BlastRadiusVisualMap({
           <div className="flex items-center justify-between border-b border-amber-500/20 pb-1.5">
             <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
               <Zap className="h-3 w-3" />
-              Lỗi Trực Tiếp ({directList.length})
+              Direct Impact ({directList.length})
             </span>
             <span className="text-[10px] text-amber-300 font-mono">1 Hop</span>
           </div>
@@ -431,13 +431,13 @@ function BlastRadiusVisualMap({
                     <span className="text-[10px] text-amber-400 font-mono font-bold">503 / Conn Refused</span>
                   </div>
                   <div className="text-[10px] text-muted-foreground truncate mt-0.5 font-mono">
-                    Giao thức: {node.protocols.join(", ") || "HTTP"}
+                    Protocol: {node.protocols.join(", ") || "HTTP"}
                   </div>
                 </button>
               ))
             ) : (
               <p className="text-[11px] text-muted-foreground italic p-2 text-center my-auto">
-                Không có service nào gọi trực tiếp vào đây
+                No directly dependent services identified
               </p>
             )}
           </div>
@@ -452,7 +452,7 @@ function BlastRadiusVisualMap({
           </div>
           <div>
             <span className="text-[10px] uppercase tracking-wider font-bold text-rose-400">
-              Điểm Giả Lập Sập
+              Simulated Outage Target
             </span>
             <h4 className="text-base font-bold text-foreground font-mono mt-0.5">
               {impact.targetName}
@@ -462,7 +462,7 @@ function BlastRadiusVisualMap({
             </span>
           </div>
           <p className="text-[11px] text-muted-foreground mt-1">
-            Tổng {impact.blastRadiusCount} thành phần nằm trong bán kính ảnh hưởng
+            {impact.blastRadiusCount} elements within the potential blast radius
           </p>
         </div>
 
@@ -470,7 +470,7 @@ function BlastRadiusVisualMap({
           <div className="flex items-center justify-between border-b border-sky-500/20 pb-1.5">
             <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1">
               <Layers className="h-3 w-3" />
-              Hạ Nguồn ({downstreamList.length})
+              Downstream Dependencies ({downstreamList.length})
             </span>
             <span className="text-[10px] text-sky-300 font-mono">DB / Queues</span>
           </div>
@@ -494,7 +494,7 @@ function BlastRadiusVisualMap({
               ))
             ) : (
               <p className="text-[11px] text-muted-foreground italic p-2 text-center my-auto">
-                Không có hạ nguồn nào
+                No downstream dependencies identified
               </p>
             )}
           </div>

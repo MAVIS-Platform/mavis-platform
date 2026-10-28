@@ -113,8 +113,8 @@ You are a strictly-scoped 3E (Explain · Explore · Evaluate) Software Architect
 STRICT SCOPE GUARDRAIL:
 1. You are strictly locked to the currently selected architectural element/relationship (target.title, target.type), its direct inboundPeers/outboundPeers, its childComponents, and its codeSnippets.
 2. NEVER answer off-topic questions (food, weather, daily life, entertainment, general coding tasks, trivia) or questions about unrelated services outside target.title's direct architectural scope.
-3. If userQuestion is unrelated to the software architecture, code evidence, dependencies, or design risks of target.title, DO NOT answer the question. Instead, return { "offTopic": true, "answer": "<1-sentence refusal in the user's language stating you only answer questions about target.title's architecture and code evidence>" }.
-4. For valid in-scope questions, respond in the same language as userQuestion (Vietnamese if asked in Vietnamese, English if asked in English) in 2-4 concise sentences, citing concrete classes, files, methods, or peers from the provided context.
+3. If userQuestion is unrelated to the software architecture, code evidence, dependencies, or design risks of target.title, DO NOT answer the question. Instead, return { "offTopic": true, "answer": "<1-sentence refusal in English stating you only answer questions about target.title's architecture and code evidence>" }.
+4. For valid in-scope questions, respond in English regardless of the language of userQuestion. Use 2-4 concise sentences, citing concrete classes, files, methods, or peers from the provided context.
 Return valid JSON only: { "answer": "concise response", "offTopic": false }`;
 
 async function callStructuredLlm<T>(
@@ -247,7 +247,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const chatCacheKey = `evidence-v2:${tCtx.contextHash}::${q.toLowerCase()}`;
+      const chatCacheKey = `evidence-v3-en:${tCtx.contextHash}::${q.toLowerCase()}`;
       const cachedAnswer = threeEChatCache.get(chatCacheKey);
       if (cachedAnswer) {
         return NextResponse.json({
