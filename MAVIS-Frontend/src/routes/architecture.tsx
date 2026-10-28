@@ -1,6 +1,8 @@
 "use client";
 import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { useState } from "react";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer } from "@/components/layout/page";
 import { RequestState } from "@/components/shared/request-state";
@@ -51,22 +53,35 @@ export function ArchitectureWorkspace({
             </div>
           )}
         </div>
-        {state.projectId && (
-          <RequestState query={state.query} empty={state.models.length === 0}>
-            {state.model && (
-              <ArchitecturePresentation
-                model={state.model}
-                mode={resolvedMode}
-                selectedId={id}
-                systemName={project.data?.name}
-                onSelect={(elementId) => {
-                  if (state.model)
-                    setSelected(elementId ? { modelId: state.model.id, elementId } : null);
-                }}
-              />
-            )}
-          </RequestState>
-        )}
+        {state.projectId &&
+          (state.models.length === 0 ? (
+            <div className="space-y-4 rounded-xl border bg-card p-8 text-center">
+              <h2 className="text-base font-semibold">Project Not Analyzed Yet</h2>
+              <p className="mx-auto max-w-md text-sm text-muted-foreground">
+                No architecture model has been generated for this project yet. Run snapshot analysis to extract architecture models, components, and diagrams.
+              </p>
+              <Button asChild>
+                <Link href={`/snapshots?project=${state.projectId}`}>
+                  Analyze Source Snapshot
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <RequestState query={state.query}>
+              {state.model && (
+                <ArchitecturePresentation
+                  model={state.model}
+                  mode={resolvedMode}
+                  selectedId={id}
+                  systemName={project.data?.name}
+                  onSelect={(elementId) => {
+                    if (state.model)
+                      setSelected(elementId ? { modelId: state.model.id, elementId } : null);
+                  }}
+                />
+              )}
+            </RequestState>
+          ))}
       </div>
     </PageContainer>
   );
