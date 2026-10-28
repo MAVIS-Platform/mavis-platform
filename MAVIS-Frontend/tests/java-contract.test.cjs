@@ -681,3 +681,10 @@ test("notification contracts reject unsafe redirects and invalid filters",()=>{
  assert.equal(contracts.notifications.output.safeParse(data).success,false);
  const {mutationInvalidations}=require('../src/lib/api/cache-policy.ts');assert.ok(mutationInvalidations.readNotification.includes('notifications'));assert.ok(mutationInvalidations.readAllNotifications.includes('notifications'));
 });
+
+
+test("project activity maps true job times and project names without per-project requests",async t=>{
+ environment(t);let calls=0;
+ t.mock.method(globalThis,"fetch",async(url,options)=>{calls++;assert.ok(url.endsWith('/api/v1/activity/analysis?page=0&size=10'));assert.equal(options.headers.get('Authorization'),'Bearer jwt');return Response.json({code:200,data:{items:[{projectName:'Example',job:{jobId:job,projectId:project,sourceSnapshotId:snapshot,status:'FAILED',startedAt:'2026-10-28T10:00:00Z',completedAt:'2026-10-28T10:01:00Z'}}],total:1,page:0,size:10}});});
+ const result=await executeJava('projectAnalysisActivity',{page:0,size:10},'jwt');assert.equal(calls,1);assert.equal(result.items[0].projectName,'Example');assert.equal(result.items[0].completedAt,'2026-10-28T10:01:00Z');assert.equal(result.items[0].status,'failed');const {terminalSignature}=require('../src/lib/api/cache-policy.ts');assert.equal(terminalSignature('projectAnalysisActivity',result),job+':failed');
+});

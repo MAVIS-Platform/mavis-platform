@@ -19,9 +19,10 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
   importSource: ["snapshots"],
   importGithub: ["snapshots"],
   createProject: ["projects", "projectOverviews"],
-  cancelAnalysis: ["analysisJobs", "analysisJob", "projectOverviews"],
+  cancelAnalysis: ["projectAnalysisActivity", "analysisJobs", "analysisJob", "projectOverviews"],
   evaluateModel: ["evaluations"],
   startAnalysis: [
+    "projectAnalysisActivity",
     "analysisJobs",
     "analysisJob",
     "adminJobs",
@@ -104,12 +105,14 @@ export function queryMatchesScope(queryKey: readonly unknown[], scope: Record<st
 
 export function terminalSignature(operation: Operation, data: unknown): string {
   if (
-    !["analysisJob", "analysisJobs", "adminJobs", "runtimeSession", "runtimeSessions"].includes(
+    !["analysisJob", "analysisJobs", "projectAnalysisActivity", "adminJobs", "runtimeSession", "runtimeSessions"].includes(
       operation,
     )
   )
     return "";
-  return (Array.isArray(data) ? data : [data])
+  const rows = operation === "projectAnalysisActivity" && data && typeof data === "object" && "items" in data
+    ? data.items : data;
+  return (Array.isArray(rows) ? rows : [rows])
     .flatMap((value: unknown) => {
       if (
         !value ||

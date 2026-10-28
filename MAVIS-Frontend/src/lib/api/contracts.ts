@@ -324,6 +324,7 @@ export const contracts = {
     d.snapshotSchema,
     true,
   ),
+  projectAnalysisActivity: contract(z.object({page:z.number().int().min(0).max(10000),size:z.number().int().min(1).max(50)}),z.object({items:z.array(d.analysisJobSchema.extend({projectName:z.string(),startedAt:z.string().nullable(),completedAt:z.string().nullable()})),total:z.number().int().nonnegative(),page:z.number().int(),size:z.number().int()})),
   analysisJobs: contract(project, z.array(d.analysisJobSchema)),
   startAnalysis: contract(
     project.extend({ snapshotId: id, idempotencyKey: z.string().min(1).optional() }),

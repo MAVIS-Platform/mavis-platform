@@ -92,7 +92,7 @@ function Projects() {
             <SummaryCard label="Ready projects" value={readySummary(projects.data)} />
             <SummaryCard label="Runtime capable" value={runtimeSummary(projects.data)} />
           </div>
-          <div className="mt-6 grid min-w-0 items-start gap-5 @min-[1100px]/mavis-content:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="mt-6 min-w-0 space-y-5">
             <section className="min-w-0">
               <DetailPanel title="Recent projects">
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
@@ -232,84 +232,127 @@ function Projects() {
                 )}
               </DetailPanel>
             </section>
-            <OverviewAnalysis projects={projects.data ?? []} />
+            <ProjectActivity projectCount={projects.data?.length ?? 0} />
           </div>
         </RequestState>
       </PageContainer>
     </div>
   );
 }
-function OverviewAnalysis({ projects }: { projects: Project[] }) {
-  const selection = useSelection();
-  const activeProject = projects.find((p) => p.id === selection.projectId) ?? projects[0];
-  const projectId = activeProject?.id ?? "";
-  const query = useApiQuery(
-    "analysisJobs",
-    { projectId },
-    { enabled: Boolean(projectId), poll: true },
+function ProjectActivity({ projectCount }: { projectCount: number }) {
+  const [page, setPage] = useState(0);
+  const q = useApiQuery(
+    "projectAnalysisActivity",
+    { page, size: 10 },
+    { enabled: projectCount > 0, refreshMs: 30000 },
   );
-  const recentJobs = (query.data ?? []).slice(0, 3);
   return (
     <DetailPanel
-      title="Recent analysis"
+      title="Recent activity"
       actions={
-        projectId ? (
-          <Link
-            href={`/analysis-history?project=${projectId}`}
-            className="text-xs font-medium text-primary hover:underline"
-          >
-            View all ({query.data?.length ?? 0})
-          </Link>
-        ) : undefined
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!projectCount || q.isFetching}
+          onClick={() => void q.refetch()}
+        >
+          {q.isFetching ? "Refreshing…" : "Refresh"}
+        </Button>
       }
     >
-      {projects.length > 0 && (
-        <SelectField
-          label="Analysis project"
-          value={projectId}
-          onChange={selection.setProjectId}
-          options={projects.map((p) => ({ value: p.id, label: p.name }))}
-        />
-      )}
-      {projectId ? (
-        <RequestState query={query}>
-          {recentJobs.length === 0 ? (
-            <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
-              <p className="text-sm font-medium">No analysis jobs yet</p>
-              <p className="text-xs text-muted-foreground">
-                This project has not been analyzed yet. Run snapshot analysis to extract
-                architecture models and diagrams.
-              </p>
-              <Button asChild size="sm">
-                <Link href={`/snapshots?project=${projectId}`}>Analyze Project Source</Link>
-              </Button>
-            </div>
-          ) : (
-            <div className="divide-y rounded-lg border bg-background/40">
-              {recentJobs.map((job) => (
-                <div key={job.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                  <div className="min-w-0 space-y-1">
-                    <AnalysisStatusIndicator job={job} compact />
-                    <p className="truncate font-mono text-[11px] text-muted-foreground">
-                      Snapshot {job.snapshotId.slice(0, 8)}
-                    </p>
-                  </div>
-                  {job.modelId && (
-                    <Button asChild size="sm" variant="ghost" className="shrink-0 text-xs">
-                      <Link href={`/diagrams?project=${projectId}&model=${job.modelId}`}>
-                        Inspect →
+      <p className="text-xs text-muted-foreground">
+        Analysis history across your projects · newest activity first
+      </p>
+      {!projectCount ? (
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          Your project activity will appear here after importing and analyzing source.
+        </p>
+      ) : (
+        <RequestState query={q}>
+          <div className="space-y-4">
+            <DataTable
+              caption="Analysis activity across all your projects"
+              emptyDescription="No analysis runs yet. Open a project to analyze its source."
+              rows={q.data?.items ?? []}
+              rowKey={(job) => job.id}
+              columns={[
+                {
+                  key: "time",
+                  label: "Time",
+                  render: (job) => {
+                    const value = job.completedAt ?? job.startedAt;
+                    const date = value ? new Date(value) : null;
+                    return date && !Number.isNaN(date.getTime()) ? (
+                      <time
+                        dateTime={value!}
+                        title={date.toLocaleString()}
+                        className="whitespace-nowrap text-xs"
+                      >
+                        {date.toLocaleDateString()}
+                        <span className="mt-1 block text-muted-foreground">
+                          {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </time>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">Not available</span>
+                    );
+                  },
+                },
+                {
+                  key: "project",
+                  label: "Project",
+                  render: (job) => (
+                    <Link
+                      href={`/project-overview?project=${encodeURIComponent(job.projectId)}`}
+                      className="font-medium text-primary hover:underline"
+                    >
+                      {job.projectName}
+                    </Link>
+                  ),
+                },
+                {
+                  key: "activity",
+                  label: "Analysis activity",
+                  render: (job) => (
+                    <div className="space-y-1">
+                      <AnalysisStatusIndicator job={job} compact />
+                      <p className="text-xs text-muted-foreground">
+                        Run {job.id.slice(0, 8)} · Snapshot {job.snapshotId.slice(0, 8)}
+                      </p>
+                    </div>
+                  ),
+                },
+                {
+                  key: "open",
+                  label: "Details",
+                  render: (job) => (
+                    <Button asChild size="sm" variant="ghost">
+                      <Link
+                        href={
+                          job.modelId
+                            ? `/architecture?project=${encodeURIComponent(job.projectId)}&model=${encodeURIComponent(job.modelId)}`
+                            : `/analysis-history?project=${encodeURIComponent(job.projectId)}`
+                        }
+                      >
+                        {job.modelId ? "Inspect" : "View history"}
                       </Link>
                     </Button>
-                  )}
-                </div>
-              ))}
+                  ),
+                },
+              ]}
+            />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">{q.data?.total ?? 0} analysis runs</p>
+              {(q.data?.total ?? 0) > 10 && (
+                <Pagination
+                  page={page + 1}
+                  pageCount={Math.ceil((q.data?.total ?? 0) / 10)}
+                  onPageChange={(n) => setPage(n - 1)}
+                />
+              )}
             </div>
-          )}
+          </div>
         </RequestState>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Select a project to inspect its recent analysis runs.
-        </p>
       )}
     </DetailPanel>
   );
