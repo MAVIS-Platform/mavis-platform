@@ -111,7 +111,7 @@ export function Accounts() {
           }}
           options={[
             { value: "all", label: "All statuses" },
-            ...["ACTIVE", "LOCKED", "INACTIVE", "PENDING_VERIFICATION"].map((value) => ({
+            ...["ACTIVE", "LOCKED", "PENDING_VERIFICATION"].map((value) => ({
               value,
               label: value.replaceAll("_", " ").toLowerCase(),
             })),

@@ -39,7 +39,7 @@ public class AdminPortalServiceImpl implements AdminPortalService {
     private final AuditLogService auditLogService;
     private final com.mavis.common.security.AccessPolicyService accessPolicyService;
 
-    private static final Set<String> ALLOWED_STATUSES = Set.of("ACTIVE", "LOCKED", "INACTIVE");
+    private static final Set<String> ALLOWED_STATUSES = Set.of("ACTIVE", "LOCKED");
 
     @Override
     @Transactional(readOnly = true)

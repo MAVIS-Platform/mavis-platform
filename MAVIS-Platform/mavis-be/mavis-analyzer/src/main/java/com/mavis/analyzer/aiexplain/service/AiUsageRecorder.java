@@ -34,7 +34,7 @@ public class AiUsageRecorder {
             p.setString(4, model); p.setLong(5, input); p.setLong(6, output); p.setObject(7, userId); p.executeUpdate();
             return true;
         } catch (SQLException e) {
-            log.warn("AI usage storage unavailable (check migration V20 and database connectivity)");
+            log.warn("AI usage storage unavailable (check migrations V20/V23 and database connectivity); SQL state: {}", e.getSQLState());
             return false;
         }
     }
