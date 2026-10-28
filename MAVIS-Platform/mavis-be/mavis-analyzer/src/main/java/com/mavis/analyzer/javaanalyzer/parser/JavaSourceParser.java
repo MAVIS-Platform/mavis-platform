@@ -67,7 +67,7 @@ public class JavaSourceParser {
             if("BEAN_COMPONENT".equals(evidence.getElementType())) {
                 var matches=evidence.getSymbolCandidates().stream().filter(localTypes::contains).distinct().toList();
                 if(matches.size()==1) {evidence.setElementType("GENERAL_COMPONENT");evidence.setQualifiedName(matches.get(0));}
-            } else if("CODE_DEPENDENCY".equals(evidence.getElementType()) || "UML_RELATIONSHIP".equals(evidence.getElementType())) {
+            } else if("CODE_DEPENDENCY".equals(evidence.getElementType()) || "UML_RELATIONSHIP".equals(evidence.getElementType()) || "FEIGN_INVOCATION".equals(evidence.getElementType())) {
                 var scope = typeScopes.get(evidence.getFilePath());
                 evidence.setTargetComponent(scope == null ? null : scope.resolve(evidence.getTargetComponent(), localTypes));
                 evidence.setSourceComponent(evidence.getQualifiedName());
@@ -95,7 +95,9 @@ public class JavaSourceParser {
                 meta.put("ownershipEvidence", "OWNED_VALUE_COLLECTION");
             }
         }
-        allEvidences.removeIf(e->"BEAN_COMPONENT".equals(e.getElementType())
+        var feignTypes=allEvidences.stream().filter(e->"FEIGN_CLIENT".equals(e.getElementType()))
+                .map(CodeEvidenceDTO::getQualifiedName).collect(java.util.stream.Collectors.toSet());
+        allEvidences.removeIf(e->("FEIGN_INVOCATION".equals(e.getElementType()) && !feignTypes.contains(e.getTargetComponent())) || "BEAN_COMPONENT".equals(e.getElementType())
                 || (("UML_RELATIONSHIP".equals(e.getElementType()) || "CODE_DEPENDENCY".equals(e.getElementType())) && (e.getTargetComponent() == null || e.getTargetComponent().isBlank())));
         log.info("Đã hoàn tất phân tích AST. Tổng số code evidences trích xuất được: {}", allEvidences.size());
         return allEvidences;
@@ -145,6 +147,7 @@ public class JavaSourceParser {
             new BeanMessagingVisitor(currentFilePath).visit(cu, allEvidences);
             new ControllerVisitor(currentFilePath).visit(cu, allEvidences);
             new HttpClientVisitor(currentFilePath).visit(cu, allEvidences);
+            new com.mavis.analyzer.javaanalyzer.visitor.FeignInvocationVisitor(currentFilePath).visit(cu, allEvidences);
             new CodeDependencyVisitor(currentFilePath).visit(cu, allEvidences);
             new DatabaseAccessVisitor(currentFilePath).visit(cu, allEvidences);
             new UmlClassifierVisitor(currentFilePath).visit(cu, allEvidences);

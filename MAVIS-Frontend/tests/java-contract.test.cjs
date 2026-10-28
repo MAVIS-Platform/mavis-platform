@@ -630,3 +630,10 @@ test("audit: admin role selection maps all three UI roles to canonical backend c
  }
  assert.equal(contracts.setAccountRole.input.safeParse({accountId:node,role:"superuser"}).success,false);
 });
+
+test("Feign evidence boundary preserves only recognized saved communication roles",()=>{
+ const base={id:node,sourceType:"STATIC_CODE",locator:"order/CatalogFeignClient.java:17",excerpt:"@PostMapping(\"/deduct\")",provenance:{communicationRole:"CLIENT_CONTRACT",privateField:"not exposed"}};
+ const mapped=wire.evidenceView(base);assert.equal(mapped.communicationRole,"CLIENT_CONTRACT");assert.equal(mapped.origin,"persisted");assert.ok(!JSON.stringify(mapped).includes("privateField"));
+ assert.equal(wire.evidenceView({...base,provenance:{communicationRole:"invented"}}).communicationRole,undefined);
+ assert.equal(wire.evidenceView({...base,provenance:null}).communicationRole,undefined);
+});

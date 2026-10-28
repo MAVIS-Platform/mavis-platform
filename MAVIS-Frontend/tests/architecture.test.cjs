@@ -1774,3 +1774,30 @@ test("archify + diagram-design geometry upgrades: snap4, port rhythm, sliding la
   assert.ok(report.borderRides >= 1);
 });
 
+
+test("Feign communication inspector shows HTTP contract, missing-proof limitations and saved evidence roles",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {CommunicationPanel}=require("../src/features/architecture/communication-panel.tsx");
+ const {ThreeEEvidence}=require("../src/features/architecture/three-e-evidence.tsx");
+ const model={elements:[{id:"order",name:"order-service",elementType:"SERVICE_CONTAINER"},{id:"client",name:"CatalogFeignClient",parentId:"order",elementType:"COMPONENT"},{id:"catalog",name:"catalog-service",elementType:"SERVICE_CONTAINER"}],edges:[{id:"http",from:"client",to:"catalog",protocol:"SERVICE_HTTP_CALL",properties:{clientFramework:"OPENFEIGN",clientInterface:"shop.order.CatalogFeignClient",clientMethod:"deductInventory",httpMethod:"POST",httpPath:"/api/catalog/inventory/deduct",callSiteCount:1,serverMatch:"MATCHED_METHOD_PATH",targetSelector:"SERVICE_NAME",invocationResolution:"TYPED_SOURCE_CALL"}}]};
+ const node=renderToStaticMarkup(React.createElement(CommunicationPanel,{model,selectedId:"order",onSelect(){}}));
+ assert.ok(node.includes("CatalogFeignClient"));assert.ok(node.includes("POST /api/catalog/inventory/deduct"));assert.ok(node.includes("Inspect relationship evidence"));
+ const edge=renderToStaticMarkup(React.createElement(CommunicationPanel,{model,selectedId:"http",onSelect(){}}));
+ assert.ok(edge.includes("Matching method + path"));assert.ok(edge.includes("1 typed call site"));assert.ok(edge.includes("does not prove"));
+ model.edges[0].properties.callSiteCount=0;model.edges[0].properties.serverMatch="AMBIGUOUS_ENDPOINT";
+ const uncertain=renderToStaticMarkup(React.createElement(CommunicationPanel,{model,selectedId:"http",onSelect(){}}));
+ assert.ok(uncertain.includes("no unique receiver"));assert.ok(uncertain.includes("No unique call site"));
+ const proof=role=>({id:role,origin:"persisted",kind:"source",sourceType:"STATIC_CODE",communicationRole:role,location:role==="SERVER_ENDPOINT"?"catalog/CatalogController.java:20":"order/CatalogFeignClient.java:14",snippet:"<script>not executable source</script>",complete:null});
+ const html=renderToStaticMarkup(React.createElement(ThreeEEvidence,{evidence:[proof("CLIENT_CONTRACT"),proof("CALL_SITE"),proof("SERVER_ENDPOINT")]}));
+ assert.ok(html.includes("Caller · HTTP method contract"));assert.ok(html.includes("Caller · invocation in source"));assert.ok(html.includes("Receiver · matching HTTP endpoint"));assert.ok(html.includes("CatalogController.java:20"));assert.ok(!html.includes("<script>"));assert.ok(!html.includes("Metadata preview"));
+});
+
+test("communications include descendants and messaging channels without inventing direct HTTP or runtime delivery",()=>{
+ const {nodeCommunications,communicationDescription,communicationTitle}=require("../src/features/architecture/communication-evidence.ts");
+ const elements=[{id:"a",name:"A",parentId:"child"},{id:"child",name:"Publisher",parentId:"a"},{id:"topic",name:"order.created"},{id:"b",name:"B"},{id:"db",name:"DB"}];
+ const edges=[{id:"pub",from:"child",to:"topic",protocol:"MESSAGE_PUBLISH"},{id:"sub",from:"topic",to:"b",protocol:"MESSAGE_SUBSCRIBE"},{id:"docker",from:"a",to:"db",protocol:"DECLARED_COMPOSE"}];
+ assert.deepEqual(nodeCommunications({elements,edges},"a").map(e=>e.id),["pub","docker"]);
+ assert.deepEqual(nodeCommunications({elements,edges},"topic").map(e=>e.id),["pub","sub"]);
+ assert.ok(communicationDescription(edges[0]).includes("does not prove runtime"));assert.ok(communicationDescription(edges[2]).includes("does not prove HTTP"));
+ assert.ok(communicationTitle(edges[0]).includes("Messaging"));assert.ok(!nodeCommunications({elements,edges},"a").some(e=>e.from==="a"&&e.to==="b"));
+});

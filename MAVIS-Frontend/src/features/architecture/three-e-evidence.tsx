@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { Evidence } from "@/types/domain";
 import { sourceLabel, shortLocator, explainEvidenceSnippetSimply } from "./three-e-content";
 import { Button } from "@/components/ui/button";
+import { communicationEvidenceRole } from "./communication-evidence";
 
 export function ThreeEEvidence({
   evidence,
@@ -32,7 +33,7 @@ export function ThreeEEvidence({
           <article key={item.id || idx} className="min-w-0 rounded-lg border bg-background p-3 shadow-xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="rounded bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                {item.origin === "preview" ? "Metadata preview" : "Code Evidence"} #{idx + 1} · {item.origin === "preview" ? "Reconstructed structure" : sourceLabel(item)}
+                {item.origin === "preview" ? "Metadata preview" : "Code Evidence"} #{idx + 1} · {item.origin === "preview" ? "Reconstructed structure" : communicationEvidenceRole(item) ?? sourceLabel(item)}
               </span>
               <span className="font-mono text-[11px] text-muted-foreground break-all">
                 {shortLocator(item.location)}
