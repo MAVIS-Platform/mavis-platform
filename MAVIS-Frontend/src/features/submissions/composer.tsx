@@ -194,9 +194,7 @@ export function SubmissionComposer({
                   diagrams.isError ||
                   !choice ||
                   choice.documents.length + choice.diagramVersionIds.length === 0 ||
-                  (requirements?.requireRuntimeTrace && !selectedRuntime) ||
-                  sessions.isError ||
-                  sessions.isPending
+                  (requirements?.requireRuntimeTrace && (!selectedRuntime || sessions.isError || sessions.isPending))
                 }
                 onClick={async () => {
                   if (!state.model || !choice) return;
