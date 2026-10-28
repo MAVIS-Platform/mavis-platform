@@ -180,3 +180,13 @@ Giữ phong cách network graph: node tròn màu service, tên bên dưới và 
 - Kéo node, zoom/pan riêng của hai chế độ, bộ lọc Details, đổi revision qua URL, Dark mode, drawer mobile và Escape đều qua. Mobile document width và viewport cùng 390px.
 - Live AI được chủ động tắt bằng response fixture 503; lượt kiểm thử không xác minh provider AI thật. Các điều kiện contract/evidence ở trên đã kiểm tra HTTP 200 riêng, không bỏ qua lỗi request.
 - Ảnh nghiệm thu local được lưu ở MAVIS-Frontend/output/playwright/graph-release-ftgo-*.png, không đưa artifact tạm vào source commit.
+
+
+## 12. Xác minh tích hợp main mới — 2026-10-29
+
+- Đã tích hợp bản evidence tree A↔B từ main 8092cbb, giữ đủ thay đổi Graph và cây bằng chứng.
+- Lượt chạy sau merge phát hiện regression của inspector Feign. Không xóa assertion cũ: bổ sung mục contract/resolution gọn, giữ cảnh báo thiếu unique caller/receiver và đường inspect theo relationship ID thật.
+- Cây caller/server dùng communicationRole, không dùng thứ tự mảng để gán snippet. File/dòng đi cùng snippet từ cùng một nguồn; proof chưa có role không tự gán sang một phía; metadata preview không được nâng thành source proof.
+- 275/275 frontend tests qua sau sửa tích hợp; TypeScript và production build qua. Thêm regression cho đảo thứ tự proof, metadata đường dẫn cũ, hai phía khi chọn receiver và preview/unscoped proof.
+- Kiểm thử trên production Next.js server thật với API fixture chỉ đọc, validateResponse thật: evidence HTTP 200 đúng canonical scope; click node chỉ highlight một bước; camera/drag/filter/revision/mobile đều qua.
+- Fixture Feign dương tính có server proof đứng trước caller nhưng UI vẫn đặt file/snippet đúng A/B. Fixture thiếu callsite/endpoint vẫn hiện các limitation, không tuyên bố đã có file/endpoint xác minh. Live AI không chạy trong lượt kiểm thử.

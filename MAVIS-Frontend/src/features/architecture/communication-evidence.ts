@@ -151,6 +151,16 @@ function asNum(val: unknown): number | undefined {
   return undefined;
 }
 
+// File/line and snippet must describe the same proof, not unrelated metadata.
+function sourceSide(props: Record<string, unknown>, prefix: "caller" | "callee", proof: Evidence | undefined, node: ArchitectureElement | undefined) {
+  const snippet = asStr(props[prefix + "Snippet"]);
+  if (snippet) return { file: asStr(props[prefix + "File"]) ?? "", line: asNum(props[prefix + "Line"]), snippet };
+  const proofFile = asStr(proof?.location) ?? asStr((proof as (Evidence & { locator?: unknown }) | undefined)?.locator);
+  const proofSnippet = asStr(proof?.snippet);
+  if (proofSnippet) return { file: proofFile ?? "", line: undefined, snippet: proofSnippet };
+  return { file: asStr(props[prefix + "File"]) ?? proofFile ?? asStr(node?.properties?.["sourceFile"]) ?? "", line: asNum(props[prefix + "Line"]), snippet: undefined };
+}
+
 /**
  * Builds the exact hierarchical A ↔ B, A ↔ C groups for a selected node or edge.
  * Subject A ALWAYS stands first on the left.
@@ -242,8 +252,6 @@ export function buildPeerConnectionGroups(
     const firstEv = evList[0];
     const firstEvLoc = (firstEv as any)?.location ?? (firstEv as any)?.locator ?? "";
     const firstEvSnip = (firstEv as any)?.snippet ?? (firstEv as any)?.excerpt ?? "";
-    const secondEvLoc = (evList[1] as any)?.location ?? (evList[1] as any)?.locator ?? "";
-    const secondEvSnip = (evList[1] as any)?.snippet ?? (evList[1] as any)?.excerpt ?? "";
 
     const relName = (edge as any).relationship ?? edge.protocol;
     const tech =
@@ -313,28 +321,24 @@ export function buildPeerConnectionGroups(
       }
     }
 
+    // Evidence array order does not identify which service owns a snippet.
+    const sourceProofs = evList.filter(item => item.origin !== "preview" && item.sourceType !== "MODEL_METADATA_PREVIEW");
+    const callerProof = sourceProofs.find(item => item.communicationRole === "CALL_SITE") ??
+      sourceProofs.find(item => item.communicationRole === "CLIENT_CONTRACT") ??
+      sourceProofs.find(item => item.communicationRole === "CLIENT_DECLARATION");
+    const calleeProof = sourceProofs.find(item => item.communicationRole === "SERVER_ENDPOINT");
     // 2. Extract Caller & Callee code evidence and assign strictly to "+ A:" (subjectCodeItems) and "+ B:" (peerCodeItems)
     const callerComponent =
       asStr(props.callerComponent) ??
-      (rawFrom && rawFrom.id !== ownerFrom.id ? rawFrom.name : ownerFrom.name);
-    const callerFile =
-      asStr(props.callerFile) ??
-      asStr((rawFrom?.properties as any)?.sourceFile) ??
-      firstEvLoc ??
-      "";
-    const callerLine = asNum(props.callerLine);
-    const callerSnippet = asStr(props.callerSnippet) ?? (firstEvSnip || undefined);
+      (rawFrom && rawFrom.id !== ownerFrom.id ? rawFrom.name : asStr(props.clientInterface)?.split(".").at(-1) ?? "Chưa xác định class phía gọi");
+    const callerSource = sourceSide(props, "caller", callerProof, rawFrom);
+    const callerFile = callerSource.file, callerLine = callerSource.line, callerSnippet = callerSource.snippet;
 
     const calleeController =
       asStr(props.calleeController) ??
-      (rawTo && rawTo.id !== ownerTo.id ? rawTo.name : ownerTo.name);
-    const calleeFile =
-      asStr(props.calleeFile) ??
-      asStr((rawTo?.properties as any)?.sourceFile) ??
-      secondEvLoc ??
-      "";
-    const calleeLine = asNum(props.calleeLine);
-    const calleeSnippet = asStr(props.calleeSnippet) ?? (secondEvSnip || undefined);
+      (rawTo && rawTo.id !== ownerTo.id ? rawTo.name : "Chưa xác định class/endpoint đích");
+    const calleeSource = sourceSide(props, "callee", calleeProof, rawTo);
+    const calleeFile = calleeSource.file, calleeLine = calleeSource.line, calleeSnippet = calleeSource.snippet;
 
     const httpMethod = asStr(props.httpMethod) ?? ( edge.protocol?.startsWith("HTTP") ? "HTTP" : undefined );
     const httpPath =

@@ -2,6 +2,7 @@
 
 import {
   buildPeerConnectionGroups,
+  feignContract,
   type DockerOrInfraItem,
   type PeerServiceConnectionGroup,
   type SideCodeEvidenceItem,
@@ -159,8 +160,7 @@ function ServiceCodeSubtree({
                 </div>
               ) : (
                 <p className="text-[11px] italic text-muted-foreground">
-                  (Đã xác định vị trí Class/Endpoint tại {serviceName}, xem file{" "}
-                  <span className="font-mono">{item.file}</span>)
+                  {item.file.startsWith("(") ? "Chưa ghi nhận file hoặc snippet nguồn cho điểm chạm này." : <>Đã ghi nhận vị trí khai báo <span className="font-mono">{item.file}</span>; chưa có snippet nguồn.</>}
                 </p>
               )}
             </div>
@@ -178,9 +178,11 @@ function ServiceCodeSubtree({
 function PeerPairAccordionItem({
   group,
   defaultOpen,
+  onSelect,
 }: {
   group: PeerServiceConnectionGroup;
   defaultOpen: boolean;
+  onSelect?: (id: string) => void;
 }) {
   return (
     <details
@@ -198,7 +200,7 @@ function PeerPairAccordionItem({
           </span>
           <span
             className="inline-flex items-center font-mono text-sm font-bold text-primary"
-            title="Kết nối hai chiều / tương tác giữa 2 thành phần"
+            title="Nhóm quan hệ giữa hai thành phần; không mặc định có lời gọi ở cả hai chiều"
           >
             <ArrowLeftRight className="size-4 mx-0.5" />
           </span>
@@ -221,6 +223,19 @@ function PeerPairAccordionItem({
       </summary>
 
       <div className="border-t border-border/60 px-3.5 py-3.5 space-y-3.5">
+        {group.edges.some(edge => feignContract(edge)) && <details className="rounded-md border bg-muted/20 p-3 text-xs">
+          <summary className="cursor-pointer font-semibold">Contract &amp; resolution details</summary>
+          <div className="mt-3 space-y-3">{group.edges.map(edge => {
+            const contract = feignContract(edge); if (!contract) return null;
+            return <div key={edge.id} className="space-y-1.5 break-words">
+              <p className="font-medium">{contract.title}</p>
+              <p>Recorded source resolution: {contract.serverMatch === "MATCHED_METHOD_PATH" ? "Matching method + path" : contract.serverMatch === "AMBIGUOUS_ENDPOINT" ? "Ambiguous endpoint — no unique receiver established" : contract.serverMatch}.</p>
+              <p>{contract.callSiteCount === null ? "Call-site count not established." : contract.callSiteCount > 0 ? `${contract.callSiteCount} typed call site${contract.callSiteCount === 1 ? "" : "s"} recorded in source metadata.` : "No unique call site recorded in source metadata."}</p>
+              <p className="text-muted-foreground">{contract.limitation}</p>
+              {onSelect && <button type="button" className="min-h-10 text-primary underline" onClick={() => onSelect(edge.id)}>Inspect relationship evidence</button>}
+            </div>;
+          })}</div>
+        </details>}
         {/* MỤC CON 1: - Docker... */}
         <DockerInfraSection items={group.dockerAndInfraItems} />
 
@@ -258,7 +273,7 @@ export function CommunicationPanel({
   model,
   selectedId,
   projectId: _projectId,
-  onSelect: _onSelect,
+  onSelect,
 }: CommunicationPanelProps) {
   if (!selectedId) {
     return null;
@@ -299,6 +314,7 @@ export function CommunicationPanel({
             key={group.pairKey}
             group={group}
             defaultOpen={isDirectEdge || groups.length === 1}
+            {...(onSelect ? {onSelect} : {})}
           />
         ))}
       </div>
