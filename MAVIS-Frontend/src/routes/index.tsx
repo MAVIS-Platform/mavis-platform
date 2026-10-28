@@ -118,14 +118,6 @@ function Projects() {
                                 aria-hidden="true"
                               />
                             </Link>
-                            {p.repository && (
-                              <p
-                                className="truncate font-mono text-xs text-muted-foreground"
-                                title={p.repository}
-                              >
-                                {p.repository}
-                              </p>
-                            )}
                           </div>
                         ),
                       },
