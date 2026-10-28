@@ -727,13 +727,32 @@ export async function executeJava(
       } catch {
         const snapshotId = id(input, "snapshotId");
         const scenarioId = id(input, "scenarioId");
+        let modelVersionId = input["modelId"] as string | undefined;
+        if (!modelVersionId) {
+          try {
+            const models = list.parse(await get(`analyzer/projects/${projectId}/models`)) as any[];
+            const latest = models.find((m: any) => m["isLatest"] || m["isLatestValid"]) ?? models[0];
+            modelVersionId = latest ? String((latest as any)["id"]) : undefined;
+          } catch {
+            // fallback
+          }
+        }
+
+        const rawScenarioName = input["scenarioName"] as string | undefined;
+        const scenarioName = rawScenarioName?.trim() || ("Scenario " + scenarioId.slice(0, 8));
+        const steps = (input["steps"] as unknown[]) ?? [];
 
         const created = object.parse(
           await post("analyzer/runtime/sessions", {
             projectId,
             sourceSnapshotId: snapshotId,
-            scenarioName: "Scenario " + scenarioId.slice(0, 8),
+            modelVersionId,
+            scenarioName,
             profileName: "SPRING_BOOT_DOTNET_COMPOSE_V1",
+            scenarioConfig: {
+              scenarioId,
+              steps,
+            },
           }),
         );
         const sessionId = String(created["id"]);

@@ -623,6 +623,48 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                             sourceElement = findComponentOrContainer(allElements, ev.getSourceComponent(), ev.getFilePath());
                         }
 
+                        String method = ev.getMetadata() != null && ev.getMetadata().get("httpMethod") != null 
+                                ? String.valueOf(ev.getMetadata().get("httpMethod")) : "";
+                        if (method.isBlank()) {
+                            String snip = ev.getCodeSnippet() != null ? ev.getCodeSnippet().toLowerCase(Locale.ROOT) : "";
+                            if (snip.contains("getfor") || snip.contains(".get()")) method = "GET";
+                            else if (snip.contains("postfor") || snip.contains(".post()")) method = "POST";
+                            else if (snip.contains("put(") || snip.contains(".put()")) method = "PUT";
+                            else if (snip.contains("delete(") || snip.contains(".delete()")) method = "DELETE";
+                            else method = "HTTP";
+                        }
+                        String extractedPath = extractPathFromUrl(ev.getIdentifier());
+                        String httpPath = !extractedPath.isBlank() ? extractedPath : ev.getIdentifier();
+
+                        ModelElement callerSvc = resolveOwningServiceContainer(sourceElement);
+                        ModelElement calleeSvc = resolveOwningServiceContainer(targetElement);
+
+                        ObjectNode relProps = objectMapper.createObjectNode()
+                                .put("clientFramework", "REST_TEMPLATE_CALL".equalsIgnoreCase(type) ? "REST_TEMPLATE" : "WEB_CLIENT")
+                                .put("transport", "HTTP")
+                                .put("callerService", callerSvc != null ? callerSvc.getName() : "")
+                                .put("callerComponent", sourceElement != null ? sourceElement.getName() : "")
+                                .put("callerFile", ev.getFilePath() != null ? ev.getFilePath() : "")
+                                .put("callerLine", ev.getLineNumber() != null ? ev.getLineNumber() : 0)
+                                .put("callerSnippet", ev.getCodeSnippet() != null ? ev.getCodeSnippet() : "")
+                                .put("httpMethod", method)
+                                .put("httpPath", httpPath)
+                                .put("calleeService", calleeSvc != null ? calleeSvc.getName() : targetElement.getName())
+                                .put("resolutionStatus", "RESOLVED");
+
+                        List<CodeEvidenceDTO> matchedEndpoints = findMatchingServerEndpoints(targetElement, method, ev.getIdentifier(), evidences, allElements);
+                        if (!matchedEndpoints.isEmpty()) {
+                            CodeEvidenceDTO ep = matchedEndpoints.get(0);
+                            relProps.put("calleeController", ep.getSourceComponent() != null ? ep.getSourceComponent() : "");
+                            relProps.put("calleeFile", ep.getFilePath() != null ? ep.getFilePath() : "");
+                            relProps.put("calleeLine", ep.getLineNumber() != null ? ep.getLineNumber() : 0);
+                            relProps.put("calleeRoute", ep.getIdentifier() != null ? ep.getIdentifier() : httpPath);
+                            relProps.put("calleeSnippet", ep.getCodeSnippet() != null ? ep.getCodeSnippet() : "");
+                            relProps.put("serverMatch", "MATCHED_ENDPOINT");
+                        } else {
+                            relProps.put("serverMatch", "NOT_FOUND_IN_IMPORTED_SOURCE");
+                        }
+
                         ModelRelationship relationship = ModelRelationship.builder()
                                 .modelVersion(modelVersion)
                                 .sourceElement(sourceElement)
@@ -630,11 +672,17 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                                 .relationType("SERVICE_HTTP_CALL")
                                 .originLayer("STATIC")
                                 .direction("DIRECTED")
+                                .properties(relProps)
                                 .build();
                         relationshipsToSave.add(relationship);
 
                         String locator = (ev.getFilePath() != null ? ev.getFilePath() : "") + ":" + ev.getLineNumber();
-                        relEvidenceContexts.add(new RelEvidenceContext(relationship, locator, "STATIC_CODE", ev.getCodeSnippet(), "JAVAPARSER_3.25"));
+                        relEvidenceContexts.add(new RelEvidenceContext(relationship, locator, "STATIC_CODE", ev.getCodeSnippet(), "JAVAPARSER_3.25", "CALL_SITE"));
+
+                        for (CodeEvidenceDTO matchedEp : matchedEndpoints) {
+                            String epLoc = (matchedEp.getFilePath() != null ? matchedEp.getFilePath() : "") + ":" + matchedEp.getLineNumber();
+                            relEvidenceContexts.add(new RelEvidenceContext(relationship, epLoc, "STATIC_CODE", matchedEp.getCodeSnippet(), "JAVAPARSER_3.25", "SERVER_ENDPOINT"));
+                        }
                     }
                 }
             }
@@ -665,20 +713,56 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                         if (sourceContainer != null && targetContainer != null
                                 && !containsConfiguredRelationship(relationshipsToSave, sourceContainer, targetContainer, relationType, targetUrlDto.getProfile())) {
 
+                            ModelElement callerSvc = resolveOwningServiceContainer(sourceContainer);
+                            ModelElement calleeSvc = resolveOwningServiceContainer(targetContainer);
+                            String extractedCfgPath = extractPathFromUrl(targetUrlDto.getTargetUrl());
+                            String httpPath = !extractedCfgPath.isBlank() ? extractedCfgPath : targetUrlDto.getTargetUrl();
+
+                            ObjectNode cfgProps = objectMapper.createObjectNode()
+                                    .put("resolutionStatus", "RESOLVED")
+                                    .put("evidenceBasis", "CONFIGURATION_DECLARATION")
+                                    .put("configKey", targetUrlDto.getConfigKey())
+                                    .put("profile", targetUrlDto.getProfile())
+                                    .put("callerService", callerSvc != null ? callerSvc.getName() : sourceContainer.getName())
+                                    .put("callerComponent", sourceContainer.getName())
+                                    .put("callerFile", cfg.getConfigFilePath())
+                                    .put("callerLine", targetUrlDto.getLineNumber())
+                                    .put("callerSnippet", targetUrlDto.getConfigKey() + "=" + targetUrlDto.getTargetUrl() + (targetUrlDto.getProfile() == null ? "" : " [profile=" + targetUrlDto.getProfile() + "]"))
+                                    .put("httpMethod", "HTTP")
+                                    .put("httpPath", httpPath)
+                                    .put("calleeService", calleeSvc != null ? calleeSvc.getName() : targetContainer.getName());
+
+                            List<CodeEvidenceDTO> matchedEndpoints = findMatchingServerEndpoints(targetContainer, "ANY", targetUrlDto.getTargetUrl(), evidences, allElements);
+                            if (!matchedEndpoints.isEmpty()) {
+                                CodeEvidenceDTO ep = matchedEndpoints.get(0);
+                                cfgProps.put("calleeController", ep.getSourceComponent() != null ? ep.getSourceComponent() : "");
+                                cfgProps.put("calleeFile", ep.getFilePath() != null ? ep.getFilePath() : "");
+                                cfgProps.put("calleeLine", ep.getLineNumber() != null ? ep.getLineNumber() : 0);
+                                cfgProps.put("calleeRoute", ep.getIdentifier() != null ? ep.getIdentifier() : httpPath);
+                                cfgProps.put("calleeSnippet", ep.getCodeSnippet() != null ? ep.getCodeSnippet() : "");
+                                cfgProps.put("serverMatch", "MATCHED_ENDPOINT");
+                            } else {
+                                cfgProps.put("serverMatch", "NOT_FOUND_IN_IMPORTED_SOURCE");
+                            }
+
                             ModelRelationship relationship = ModelRelationship.builder()
                                     .modelVersion(modelVersion)
                                     .sourceElement(sourceContainer)
                                     .targetElement(targetContainer)
                                     .relationType(relationType)
-                                    .properties(objectMapper.createObjectNode().put("resolutionStatus", "RESOLVED").put("evidenceBasis", "CONFIGURATION_DECLARATION")
-                                            .put("configKey", targetUrlDto.getConfigKey()).put("profile", targetUrlDto.getProfile()))
+                                    .properties(cfgProps)
                                     .originLayer("CONFIG")
                                     .direction("DIRECTED")
                                     .build();
                             relationshipsToSave.add(relationship);
 
                             String loc = cfg.getConfigFilePath() + ":" + targetUrlDto.getLineNumber();
-                            relEvidenceContexts.add(new RelEvidenceContext(relationship, loc, "CONFIG_FILE", targetUrlDto.getConfigKey() + "=" + targetUrlDto.getTargetUrl() + (targetUrlDto.getProfile() == null ? "" : " [profile=" + targetUrlDto.getProfile() + "]"), "SPRING_CONFIG"));
+                            relEvidenceContexts.add(new RelEvidenceContext(relationship, loc, "CONFIG_FILE", targetUrlDto.getConfigKey() + "=" + targetUrlDto.getTargetUrl() + (targetUrlDto.getProfile() == null ? "" : " [profile=" + targetUrlDto.getProfile() + "]"), "SPRING_CONFIG", "CLIENT_CONFIGURATION"));
+
+                            for (CodeEvidenceDTO matchedEp : matchedEndpoints) {
+                                String epLoc = (matchedEp.getFilePath() != null ? matchedEp.getFilePath() : "") + ":" + matchedEp.getLineNumber();
+                                relEvidenceContexts.add(new RelEvidenceContext(relationship, epLoc, "STATIC_CODE", matchedEp.getCodeSnippet(), "SPRING_CONFIG", "SERVER_ENDPOINT"));
+                            }
                         }
                     }
                 }
@@ -1160,6 +1244,95 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             }
         }
         return false;
+    }
+
+    private ModelElement resolveOwningServiceContainer(ModelElement element) {
+        if (element == null) return null;
+        Set<ModelElement> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (ModelElement cur = element; cur != null && visited.add(cur); cur = cur.getParentElement()) {
+            if ("SERVICE_CONTAINER".equalsIgnoreCase(cur.getElementType())) {
+                return cur;
+            }
+        }
+        return element;
+    }
+
+    private List<CodeEvidenceDTO> findMatchingServerEndpoints(
+            ModelElement targetElement,
+            String httpMethod,
+            String rawUrlOrPath,
+            List<CodeEvidenceDTO> allEvidences,
+            List<ModelElement> allSavedElements) {
+        if (targetElement == null || allEvidences == null) {
+            return List.of();
+        }
+        ModelElement targetService = resolveOwningServiceContainer(targetElement);
+        if (targetService == null || !"SERVICE_CONTAINER".equalsIgnoreCase(targetService.getElementType())) {
+            return List.of();
+        }
+
+        List<CodeEvidenceDTO> targetServiceApis = allEvidences.stream()
+                .filter(ev -> "REST_API".equalsIgnoreCase(ev.getElementType()))
+                .filter(ev -> {
+                    ModelElement owner = ArchitectureResolver.owner(allSavedElements, ev.getFilePath());
+                    return owner != null && ArchitectureResolver.same(targetService, owner);
+                })
+                .toList();
+
+        if (targetServiceApis.isEmpty()) {
+            return List.of();
+        }
+
+        String extractedPath = extractPathFromUrl(rawUrlOrPath);
+        String normalizedTargetRoute = com.mavis.analyzer.javaanalyzer.visitor.SpringHttpMappings.routeKey(extractedPath);
+        String verb = httpMethod != null ? httpMethod.trim().toUpperCase(Locale.ROOT) : "";
+
+        if (!normalizedTargetRoute.isBlank() && !"/".equals(normalizedTargetRoute)) {
+            List<CodeEvidenceDTO> exactMatches = targetServiceApis.stream()
+                    .filter(api -> {
+                        String apiRoute = com.mavis.analyzer.javaanalyzer.visitor.SpringHttpMappings.routeKey(api.getIdentifier());
+                        if (!apiRoute.equals(normalizedTargetRoute) && !apiRoute.endsWith(normalizedTargetRoute) && !normalizedTargetRoute.endsWith(apiRoute)) {
+                            return false;
+                        }
+                        String apiVerb = api.getMetadata() != null ? String.valueOf(api.getMetadata().getOrDefault("httpMethod", "ANY")).toUpperCase(Locale.ROOT) : "ANY";
+                        return verb.isBlank() || "ANY".equals(verb) || "ANY".equals(apiVerb) || verb.equals(apiVerb);
+                    })
+                    .toList();
+            if (!exactMatches.isEmpty()) {
+                return exactMatches;
+            }
+
+            String firstSegment = Arrays.stream(extractedPath.split("/"))
+                    .filter(s -> !s.isBlank() && !s.startsWith("{") && !s.equalsIgnoreCase("api") && !s.equalsIgnoreCase("v1"))
+                    .findFirst()
+                    .orElse("");
+            if (!firstSegment.isBlank()) {
+                List<CodeEvidenceDTO> prefixMatches = targetServiceApis.stream()
+                        .filter(api -> api.getIdentifier() != null && api.getIdentifier().toLowerCase(Locale.ROOT).contains(firstSegment.toLowerCase(Locale.ROOT)))
+                        .limit(2)
+                        .toList();
+                if (!prefixMatches.isEmpty()) {
+                    return prefixMatches;
+                }
+            }
+        }
+
+        return targetServiceApis.stream().limit(2).toList();
+    }
+
+    private String extractPathFromUrl(String rawUrl) {
+        if (rawUrl == null || rawUrl.isBlank()) return "";
+        String cleaned = rawUrl.trim();
+        cleaned = cleaned.replaceAll("\\$\\{[^}]+\\}", "");
+        if (cleaned.contains("://")) {
+            int slashAfterHost = cleaned.indexOf('/', cleaned.indexOf("://") + 3);
+            return slashAfterHost >= 0 ? cleaned.substring(slashAfterHost) : "";
+        }
+        if (cleaned.startsWith("/")) {
+            return cleaned;
+        }
+        int firstSlash = cleaned.indexOf('/');
+        return firstSlash >= 0 ? cleaned.substring(firstSlash) : "";
     }
 
     private static class RelEvidenceContext {
