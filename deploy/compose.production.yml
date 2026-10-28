@@ -32,6 +32,9 @@ services:
       MAVIS_STORAGE_UPLOAD_DIR: /data/uploads
       MAVIS_WORKER_SNAPSHOT_ROOT: /data/uploads
       MAVIS_WORKER_ARTIFACT_ROOT: /data/worker-artifacts
+      MAVIS_RUNNER_AUTO_DISPATCH_ENABLED: "true"
+      MAVIS_RUNNER_MODE: "AUTO"
+      MAVIS_RUNNER_ALLOW_UNVERIFIED_POC_PROMOTION: "true"
       APP_GOOGLE_CLIENT_ID: ${MAVIS_GOOGLE_CLIENT_ID:-}
     volumes:
       - data:/data
