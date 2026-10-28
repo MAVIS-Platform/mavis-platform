@@ -1,9 +1,11 @@
 "use client";
+import Link from "next/link";
+import { AdminToolbar, PageResults, Notice } from "./operations";
 import { useState } from "react";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
 import { RequestState, ErrorState } from "@/components/shared/request-state";
-import { ConfirmDialog, SearchInput } from "@/components/shared/forms";
+import { ConfirmDialog, SearchInput, SelectField } from "@/components/shared/forms";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
@@ -13,100 +15,177 @@ export function Accounts() {
   const lock = useApiMutation("setAccountLock");
   const [selected, setSelected] = useState<Response<"accounts">[number] | null>(null);
   const [search, setSearch] = useState("");
+  const [role, setRole] = useState("all"),
+    [state, setState] = useState("all"),
+    [page, setPage] = useState(1);
+  const rows = (query.data ?? []).filter(
+    (a) =>
+      (a.name + " " + (a.email ?? "")).toLowerCase().includes(search.toLowerCase()) &&
+      (role === "all" || a.role === role) &&
+      (state === "all" || (a.status ?? (a.locked ? "LOCKED" : "ACTIVE")) === state),
+  );
+  const activePage = Math.min(page, Math.max(1, Math.ceil(rows.length / 10)));
   return (
-    <RequestState query={query} empty={!query.data?.length}>
-      <SearchInput value={search} onChange={setSearch} label="Search accounts" />
-      <DataTable
-        rows={(query.data ?? []).filter((a) => a.name.toLowerCase().includes(search.toLowerCase()))}
-        rowKey={(a) => a.id}
-        caption="User accounts"
-        columns={[
-          {
-            key: "name",
-            label: "Account",
-            render: (a) => (
-              <div>
-                {a.name}
-                {a.email && <p className="text-xs text-muted-foreground">{a.email}</p>}
-              </div>
-            ),
-          },
-          { key: "role", label: "Role", render: (a) => <TeachingRoleControl account={a} /> },
-          {
-            key: "status",
-            label: "Status",
-            render: (a) => (
-              <StatusBadge
-                status={a.status ?? (a.locked ? "Locked" : "Active")}
-                variant={a.locked ? "warning" : "success"}
-              />
-            ),
-          },
-          {
-            key: "action",
-            label: "Action",
-            render: (a) => (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  lock.reset();
-                  setSelected(a);
-                }}
-              >
-                {a.locked ? "Unlock" : "Lock"}
-              </Button>
-            ),
-          },
-        ]}
-      />
-      <ConfirmDialog
-        open={Boolean(selected)}
-        onOpenChange={(open) => {
-          if (!open) setSelected(null);
-        }}
-        title={`${selected?.locked ? "Unlock" : "Lock"} this account?`}
-        description={`This changes account access for ${selected?.name}. Backend permission checks remain mandatory.`}
-        pending={lock.isPending}
-        error={lock.isError ? <ErrorState error={lock.error} /> : undefined}
-        onConfirm={() => {
-          if (selected)
-            lock.mutate(
-              { accountId: selected.id, locked: !selected.locked },
-              { onSuccess: () => setSelected(null) },
-            );
-        }}
-      />
-    </RequestState>
+    <div className="space-y-5">
+      <AdminToolbar
+        fetching={query.isFetching}
+        updatedAt={query.dataUpdatedAt}
+        refresh={() => void query.refetch()}
+      >
+        <p className="text-sm text-muted-foreground">
+          Manage access and teaching roles. Changes require confirmation.
+        </p>
+      </AdminToolbar>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <SummaryCard label="Accounts" value={query.data?.length ?? "—"} />
+        <SummaryCard label="Locked" value={query.data?.filter((a) => a.locked).length ?? "—"} />
+        <SummaryCard
+          label="Pending verification"
+          value={query.data?.filter((a) => a.status === "PENDING_VERIFICATION").length ?? "—"}
+        />
+      </div>
+      <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr_1fr]">
+        <SearchInput
+          value={search}
+          onChange={(v) => {
+            setSearch(v);
+            setPage(1);
+          }}
+          label="Search name or email"
+        />
+        <SelectField
+          label="Role"
+          value={role}
+          onChange={(v) => {
+            setRole(v);
+            setPage(1);
+          }}
+          options={[
+            { value: "all", label: "All roles" },
+            ...["admin", "lecturer", "student"].map((value) => ({ value, label: value })),
+          ]}
+        />
+        <SelectField
+          label="Account status"
+          value={state}
+          onChange={(v) => {
+            setState(v);
+            setPage(1);
+          }}
+          options={[
+            { value: "all", label: "All statuses" },
+            ...["ACTIVE", "LOCKED", "INACTIVE", "PENDING_VERIFICATION"].map((value) => ({
+              value,
+              label: value.replaceAll("_", " ").toLowerCase(),
+            })),
+          ]}
+        />
+      </div>
+      <RequestState query={query}>
+        <div className="space-y-4">
+          <DataTable
+            emptyDescription="Try clearing the filters or refresh to check for new records."
+            rows={rows.slice((activePage - 1) * 10, activePage * 10)}
+            rowKey={(a) => a.id}
+            caption="User accounts"
+            columns={[
+              {
+                key: "name",
+                label: "Account",
+                render: (a) => (
+                  <div>
+                    {a.name}
+                    {a.email && <p className="text-xs text-muted-foreground">{a.email}</p>}
+                  </div>
+                ),
+              },
+              { key: "role", label: "Role", render: (a) => <TeachingRoleControl account={a} /> },
+              {
+                key: "status",
+                label: "Status",
+                render: (a) => (
+                  <StatusBadge
+                    status={a.status ?? (a.locked ? "Locked" : "Active")}
+                    variant={
+                      a.locked
+                        ? "warning"
+                        : a.status && a.status !== "ACTIVE"
+                          ? "outline"
+                          : "success"
+                    }
+                  />
+                ),
+              },
+              {
+                key: "action",
+                label: "Action",
+                render: (a) => (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      lock.reset();
+                      setSelected(a);
+                    }}
+                  >
+                    {a.locked ? "Unlock" : "Lock"}
+                  </Button>
+                ),
+              },
+            ]}
+          />
+          <ConfirmDialog
+            open={Boolean(selected)}
+            onOpenChange={(open) => {
+              if (!open) setSelected(null);
+            }}
+            title={`${selected?.locked ? "Unlock" : "Lock"} this account?`}
+            description={`This changes sign-in access for ${selected?.name} (${selected?.email ?? "no email"}). Review the account before confirming.`}
+            pending={lock.isPending}
+            error={lock.isError ? <ErrorState error={lock.error} /> : undefined}
+            onConfirm={() => {
+              if (selected)
+                lock.mutate(
+                  { accountId: selected.id, locked: !selected.locked },
+                  { onSuccess: () => setSelected(null) },
+                );
+            }}
+          />
+          <PageResults count={rows.length} page={activePage} onPage={setPage} />
+        </div>
+      </RequestState>
+    </div>
   );
 }
 function TeachingRoleControl({ account }: { account: Response<"accounts">[number] }) {
   const update = useApiMutation("setAccountRole");
-  if (account.role === "admin") return <span>Administrator</span>;
+  const [open, setOpen] = useState(false);
+  if (account.role === "admin") return <StatusBadge status="Administrator" />;
+  const role = account.role === "lecturer" ? "student" : "lecturer";
   return (
     <div className="space-y-2">
       <span className="block text-xs capitalize">{account.role}</span>
       <Button
         size="sm"
         variant="outline"
-        disabled={update.isPending}
         onClick={() => {
-          const role = account.role === "lecturer" ? "student" : "lecturer";
-          if (
-            window.confirm(
-              `Change ${account.name} to ${role}? This changes their teaching permissions. They should sign in again to refresh their session.`,
-            )
-          )
-            update.mutate({ accountId: account.id, role });
+          update.reset();
+          setOpen(true);
         }}
       >
-        {update.isPending
-          ? "Updating…"
-          : account.role === "lecturer"
-            ? "Set as student"
-            : "Set as lecturer"}
+        Set as {role}
       </Button>
-      {update.error && <ErrorState error={update.error} />}
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Change role to ${role}?`}
+        description={`${account.name} will receive ${role} permissions. They should sign in again after this change.`}
+        pending={update.isPending}
+        error={update.isError ? <ErrorState error={update.error} /> : undefined}
+        onConfirm={() =>
+          update.mutate({ accountId: account.id, role }, { onSuccess: () => setOpen(false) })
+        }
+      />
     </div>
   );
 }
@@ -115,57 +194,92 @@ export function Integrations() {
   const mutation = useApiMutation("configureIntegration");
   const [selected, setSelected] = useState<Response<"integrations">[number] | null>(null);
   return (
-    <RequestState query={query} empty={!query.data?.length}>
-      {query.data?.map((item) => (
-        <DetailPanel key={item.id} title={item.name}>
-          <StatusBadge status={item.enabled ? "Enabled" : "Disabled"} />
-          <p className="text-xs text-muted-foreground">
-            Revision {item.revision} · {item.status ?? "Unverified"}. Process-local settings reset
-            on restart. Connection has not been probed. Credentials remain server-side.
-          </p>
-          <Button
-            variant="outline"
-            onClick={() => {
-              mutation.reset();
-              setSelected(item);
-            }}
-          >
-            {item.enabled ? "Disable" : "Enable"} integration
-          </Button>
-        </DetailPanel>
-      ))}
-      <ConfirmDialog
-        open={Boolean(selected)}
-        onOpenChange={(open) => {
-          if (!open) setSelected(null);
-        }}
-        title="Change integration configuration?"
-        description={`${selected?.name} will be ${selected?.enabled ? "disabled" : "enabled"}. Based on revision ${selected?.revision}.`}
-        pending={mutation.isPending}
-        error={mutation.isError ? <ErrorState error={mutation.error} /> : undefined}
-        onConfirm={() => {
-          if (selected)
-            mutation.mutate(
-              {
-                integrationId: selected.id,
-                enabled: !selected.enabled,
-                expectedRevision: selected.revision,
-              },
-              { onSuccess: () => setSelected(null) },
-            );
-        }}
-      />
-    </RequestState>
+    <div className="space-y-5">
+      <AdminToolbar
+        fetching={query.isFetching}
+        updatedAt={query.dataUpdatedAt}
+        refresh={() => void query.refetch()}
+      >
+        <Button asChild size="sm" variant="outline">
+          <Link href="/administration/usage">View AI usage</Link>
+        </Button>
+      </AdminToolbar>
+      <Notice>
+        Enabled does not mean connected. Connection verification is shown separately; changes to
+        these switches currently reset when the server restarts.
+      </Notice>
+      <RequestState query={query} empty={!query.data?.length}>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {query.data?.map((item) => (
+            <DetailPanel key={item.id} title={item.name}>
+              <StatusBadge status={item.enabled ? "Enabled" : "Disabled"} />
+              <p className="text-xs text-muted-foreground">
+                Revision {item.revision} ·{" "}
+                {item.status === "CONFIGURED"
+                  ? "Credentials configured"
+                  : item.status === "PUBLIC_ONLY"
+                    ? "Public repositories only"
+                    : "Configuration unavailable"}
+                .{item.connectionVerified ? " Connection verified." : " Connection not verified."}
+              </p>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  mutation.reset();
+                  setSelected(item);
+                }}
+              >
+                {item.enabled ? "Disable" : "Enable"} integration
+              </Button>
+            </DetailPanel>
+          ))}
+        </div>
+        <ConfirmDialog
+          open={Boolean(selected)}
+          onOpenChange={(open) => {
+            if (!open) setSelected(null);
+          }}
+          title="Change integration configuration?"
+          description={`${selected?.name} will be ${selected?.enabled ? "disabled" : "enabled"}. Based on revision ${selected?.revision}.`}
+          pending={mutation.isPending}
+          error={mutation.isError ? <ErrorState error={mutation.error} /> : undefined}
+          onConfirm={() => {
+            if (selected)
+              mutation.mutate(
+                {
+                  integrationId: selected.id,
+                  enabled: !selected.enabled,
+                  expectedRevision: selected.revision,
+                },
+                { onSuccess: () => setSelected(null) },
+              );
+          }}
+        />
+      </RequestState>
+    </div>
   );
 }
 export function RuntimeProfiles() {
   const q = useApiQuery("profiles", {});
   return (
-    <RequestState query={q} empty={!q.data?.length}>
-      {q.data?.map((p) => (
-        <ProfileForm key={p.id + ":" + p.revision} item={p} />
-      ))}
-    </RequestState>
+    <div className="space-y-5">
+      <AdminToolbar
+        fetching={q.isFetching}
+        updatedAt={q.dataUpdatedAt}
+        refresh={() => void q.refetch()}
+      />
+      <Notice>
+        Profile changes affect new runtime sessions. Settings currently reset on restart; review
+        limits before enabling a profile.
+      </Notice>
+      <RequestState query={q} empty={!q.data?.length}>
+        <div className="grid items-start gap-4 lg:grid-cols-2">
+          {q.data?.map((p) => (
+            <ProfileForm key={p.id + ":" + p.revision} item={p} />
+          ))}
+        </div>
+      </RequestState>
+    </div>
   );
 }
 function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
@@ -191,14 +305,14 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
         }}
       >
         <p className="text-xs text-muted-foreground">
-          Revision {item.revision}. Process-local settings reset on restart. Limits apply to new
-          sessions; existing pinned sessions cannot exceed current limits.
+          Revision {item.revision} · {item.enabled ? "Enabled" : "Disabled"}. Review resource limits
+          before saving.
         </p>
         <label className="flex gap-2">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
           Enabled
         </label>
-        <label>
+        <label className="block space-y-2 text-sm">
           Memory (MiB)
           <Input
             type="number"
@@ -209,7 +323,7 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
             onChange={(e) => setMemory(Number(e.target.value))}
           />
         </label>
-        <label>
+        <label className="block space-y-2 text-sm">
           CPU cores
           <Input
             type="number"
@@ -221,7 +335,7 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
             onChange={(e) => setCpus(Number(e.target.value))}
           />
         </label>
-        <label>
+        <label className="block space-y-2 text-sm">
           Timeout (seconds)
           <Input
             type="number"
@@ -232,205 +346,477 @@ function ProfileForm({ item }: { item: Response<"profiles">[number] }) {
             onChange={(e) => setTimeout(Number(e.target.value))}
           />
         </label>
-        <Button disabled={save.isPending}>Save execution profile</Button>
+        <Button
+          disabled={
+            save.isPending ||
+            (enabled === item.enabled &&
+              memory === (item.memoryMiB ?? 256) &&
+              cpus === (item.cpus ?? 1) &&
+              timeout === (item.timeoutSeconds ?? 120))
+          }
+        >
+          {save.isPending ? "Saving…" : "Save changes"}
+        </Button>
+        {save.isSuccess && (
+          <p role="status" className="text-sm text-emerald-500">
+            Profile saved.
+          </p>
+        )}
         {save.error && <ErrorState error={save.error} />}
       </form>
     </DetailPanel>
   );
 }
-export function PlatformSummary() {
-  const query = useApiQuery("platformSummary", {});
-  return (
-    <RequestState query={query}>
-      {query.data && (
-        <>
-          <DetailPanel title="Service status">
-            <StatusBadge status={query.data.health} variant="info" />
-            <p className="text-sm text-muted-foreground">{query.data.message}</p>
-          </DetailPanel>
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard label="Projects" value={query.data.projects} />
-            <SummaryCard label="Accounts" value={query.data.users} />
-            <SummaryCard label="Analysis jobs" value={query.data.analysisJobs} />
-            <SummaryCard label="Running sessions" value={query.data.runningSessions} />
-          </div>
-        </>
-      )}
-    </RequestState>
-  );
-}
 export function PlatformUsage() {
-  const query = useApiQuery("adminAiUsage", {}, { refreshMs: 60000 });
+  const q = useApiQuery("adminAiUsage", {}, { refreshMs: 60000 });
+  const rows = q.data?.providers ?? [],
+    measured = rows.filter((r) => r.usage);
+  const providers = rows.filter((r, i) => rows.findIndex((x) => x.provider === r.provider) === i);
   return (
     <div className="space-y-5">
-      <PlatformSummary />
-      <DetailPanel
-        title="AI model usage and quota"
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => void query.refetch()}
-            disabled={query.isFetching}
-          >
-            {query.isFetching ? "Refreshing…" : "Refresh"}
-          </Button>
-        }
+      <AdminToolbar
+        fetching={q.isFetching}
+        updatedAt={q.dataUpdatedAt}
+        refresh={() => void q.refetch()}
       >
-        <p className="text-sm text-muted-foreground">
-          Token counts come from provider responses recorded by MAVIS. They do not include requests
-          made outside this application. Provider limits, spend and balance are shown only when
-          verified.
-        </p>
-        <RequestState query={query}>
-          {query.data && (
-            <div className="space-y-4">
-              <p className="text-xs text-muted-foreground">
-                Last checked: {new Date(query.data.updatedAt).toLocaleString()} ·{" "}
-                {query.data.status === "AVAILABLE" ? "Available" : "Unavailable"}
-              </p>
-              {query.data.message && <p className="text-sm">{query.data.message}</p>}
-              {query.data.providers.length === 0 && (
-                <p className="text-sm text-muted-foreground">No provider data available.</p>
-              )}
-              {query.data.providers.map((provider, index) => (
-                <div
-                  key={`${provider.provider}:${provider.model ?? "unknown"}:${index}`}
-                  className="space-y-3 rounded-lg border p-4"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-medium">
-                      {provider.provider === "openai" ? "OpenAI" : "Gemini"} ·{" "}
-                      {provider.model ?? "Model unavailable"}
-                    </h3>
-                    <StatusBadge
-                      status={provider.status === "AVAILABLE" ? "Usage available" : "Unavailable"}
-                      variant={provider.status === "AVAILABLE" ? "success" : "outline"}
-                    />
-                  </div>
-                  {provider.message && (
-                    <p className="text-sm text-muted-foreground">{provider.message}</p>
-                  )}
-                  {query.data?.providers.findIndex((item) => item.provider === provider.provider) === index && provider.providerDataMessage && <p className="text-sm text-muted-foreground">{provider.providerDataMessage}</p>}
-                  {query.data?.providers.findIndex((item) => item.provider === provider.provider) === index && provider.providerDataUpdatedAt && (
-                    <p className="text-xs text-muted-foreground">Provider data checked: {new Date(provider.providerDataUpdatedAt).toLocaleString()}</p>
-                  )}
-                  {provider.coverage && (
-                    <p className="text-xs text-muted-foreground">Usage recorded in Java: {provider.coverage.java === "OBSERVED" ? "observed" : "unknown"} · Next.js: {provider.coverage.next === "OBSERVED" ? "observed" : "unknown"}</p>
-                  )}
-                  {query.data?.providers.findIndex((item) => item.provider === provider.provider) === index && provider.geminiQuota && (
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-medium">Google project quota measurements</h4>
-                      <p className="text-xs text-muted-foreground">Provider metrics are shown as reported; usage samples are measurements over their stated interval, not a remaining balance. {provider.geminiQuota.partial ? "Some metrics are unavailable." : ""}</p>
-                      {provider.geminiQuota.samples.length ? <DataTable
-                        caption="Google project quota measurements"
-                        rows={provider.geminiQuota.samples}
-                        rowKey={(row) => `${row.model}:${row.metric}:${row.limitName}:${row.kind}:${row.measuredAt}`}
-                        columns={[
-                          { key: "model", label: "Model", render: (row) => row.model },
-                          { key: "metric", label: "Metric", render: (row) => row.metric },
-                          { key: "limit", label: "Limit name", render: (row) => row.limitName },
-                          { key: "kind", label: "Kind", render: (row) => row.kind },
-                          { key: "value", label: "Value", render: (row) => row.value.toLocaleString() },
-                          { key: "time", label: "Interval / observed", render: (row) => `${row.startTime ? new Date(row.startTime).toLocaleString() + " – " : ""}${new Date(row.measuredAt).toLocaleString()}` },
-                        ]}
-                      /> : <p className="text-sm text-muted-foreground">No quota measurements available.</p>}
+        <span className="text-sm text-muted-foreground">
+          Recorded MAVIS requests · all time since tracking began
+        </span>
+      </AdminToolbar>
+      <RequestState query={q}>
+        <div className="space-y-5">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <SummaryCard
+              label="Input tokens"
+              value={
+                measured.length
+                  ? measured.reduce((n, r) => n + r.usage!.inputTokens, 0).toLocaleString()
+                  : "Not recorded"
+              }
+            />
+            <SummaryCard
+              label="Output tokens"
+              value={
+                measured.length
+                  ? measured.reduce((n, r) => n + r.usage!.outputTokens, 0).toLocaleString()
+                  : "Not recorded"
+              }
+            />
+            <SummaryCard
+              label="Recorded requests"
+              value={
+                measured.length
+                  ? measured.reduce((n, r) => n + r.usage!.requestCount, 0).toLocaleString()
+                  : "Not recorded"
+              }
+            />
+          </div>
+          <Notice>
+            Only requests with provider-reported token counts saved by MAVIS are included. Earlier
+            usage and requests made outside MAVIS are not included. Missing data is not zero.
+          </Notice>
+          <DetailPanel title="Usage by model">
+            <DataTable
+              emptyDescription="Try clearing the filters or refresh to check for new records."
+              caption="Recorded model usage"
+              rows={rows}
+              rowKey={(r) => r.provider + ":" + (r.model ?? "unknown")}
+              columns={[
+                {
+                  key: "model",
+                  label: "Provider / model",
+                  render: (r) => (
+                    <div>
+                      <p className="font-medium">{r.provider === "openai" ? "OpenAI" : "Gemini"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {r.model ?? "No recorded model"}
+                      </p>
                     </div>
-                  )}
-                  {query.data?.providers.findIndex((item) => item.provider === provider.provider) === index && provider.providerUsage && (
-                    <div className="space-y-2">
-                      <h4 className="text-sm font-medium">Provider project usage · current UTC month</h4>
-                      <p className="text-xs text-muted-foreground">Includes the project scope reported by the provider, which may include requests outside MAVIS. {new Date(provider.providerUsage.startTime).toLocaleString()} – {new Date(provider.providerUsage.endTime).toLocaleString()}</p>
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <SummaryCard label="Provider input tokens" value={provider.providerUsage.inputTokens.toLocaleString()} />
-                        <SummaryCard label="Provider output tokens" value={provider.providerUsage.outputTokens.toLocaleString()} />
-                        <SummaryCard label="Provider requests" value={provider.providerUsage.requestCount.toLocaleString()} />
-                      </div>
-                    </div>
-                  )}
-                  {provider.usage ? (
-                    <div className="grid gap-3 sm:grid-cols-3">
-                      <SummaryCard
-                        label="Input tokens"
-                        value={provider.usage.inputTokens.toLocaleString()}
-                      />
-                      <SummaryCard
-                        label="Output tokens"
-                        value={provider.usage.outputTokens.toLocaleString()}
-                      />
-                      <SummaryCard
-                        label="Recorded requests"
-                        value={provider.usage.requestCount.toLocaleString()}
-                      />
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Token usage unavailable.</p>
-                  )}
-                  {query.data?.providers.findIndex((item) => item.provider === provider.provider) === index && <>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <SummaryCard
-                      label="Provider spend · current UTC month"
-                      value={provider.cost ? `${provider.cost.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${provider.cost.currency.toUpperCase()}` : "Unavailable"}
-                      description={provider.cost ? `Provider project, ${new Date(provider.cost.startTime).toLocaleString()} – ${new Date(provider.cost.endTime).toLocaleString()}` : "No verified billing data."}
-                    />
-                    <SummaryCard
-                      label="Provider balance"
-                      value="Unavailable"
-                      description="No verified balance data."
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-medium">Project model rate limits</h4>
-                    {provider.limits?.models.length ? (
+                  ),
+                },
+                {
+                  key: "in",
+                  label: "Input tokens",
+                  render: (r) => r.usage?.inputTokens.toLocaleString() ?? "Not recorded",
+                },
+                {
+                  key: "out",
+                  label: "Output tokens",
+                  render: (r) => r.usage?.outputTokens.toLocaleString() ?? "Not recorded",
+                },
+                {
+                  key: "req",
+                  label: "Requests",
+                  render: (r) => r.usage?.requestCount.toLocaleString() ?? "Not recorded",
+                },
+                {
+                  key: "coverage",
+                  label: "Observed sources",
+                  render: (r) => (
+                    <span className="text-xs">
+                      {[
+                        r.coverage?.java === "OBSERVED" ? "Java" : null,
+                        r.coverage?.next === "OBSERVED" ? "Next.js" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "Not observed"}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          </DetailPanel>
+          <DetailPanel
+            title="Provider account data"
+            actions={
+              <Button asChild size="sm" variant="ghost">
+                <Link href="/administration/integrations">Manage integrations</Link>
+              </Button>
+            }
+          >
+            <p className="text-sm text-muted-foreground">
+              Optional project-wide usage and limits are separate from MAVIS token tracking.
+            </p>
+            <div className="space-y-3">
+              {providers.map((r) => (
+                <details key={r.provider} className="rounded-lg border p-4">
+                  <summary className="cursor-pointer text-sm font-medium">
+                    {r.provider === "openai" ? "OpenAI" : "Gemini"} ·{" "}
+                    {r.providerUsage || r.cost || r.limits || r.geminiQuota
+                      ? "Project data connected"
+                      : "Project data not connected"}
+                  </summary>
+                  <div className="mt-4 space-y-4 text-sm">
+                    {r.providerDataUpdatedAt && (
+                      <p className="text-xs text-muted-foreground">
+                        Checked {new Date(r.providerDataUpdatedAt).toLocaleString()}
+                      </p>
+                    )}
+                    {!r.providerUsage && !r.cost && !r.limits && !r.geminiQuota && (
+                      <p className="text-muted-foreground">
+                        Account-level access has not been connected. Recorded token usage above
+                        remains available independently.
+                      </p>
+                    )}
+                    {r.providerUsage && (
+                      <p>
+                        Current UTC month: {r.providerUsage.inputTokens.toLocaleString()} input
+                        tokens · {r.providerUsage.outputTokens.toLocaleString()} output tokens ·{" "}
+                        {r.providerUsage.requestCount.toLocaleString()} requests across this
+                        provider project.
+                      </p>
+                    )}
+                    {r.cost && (
+                      <p>
+                        Project spend:{" "}
+                        {r.cost.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })}{" "}
+                        {r.cost.currency.toUpperCase()} ·{" "}
+                        {new Date(r.cost.startTime).toLocaleDateString()} –{" "}
+                        {new Date(r.cost.endTime).toLocaleDateString()}
+                      </p>
+                    )}
+                    {r.limits && (
                       <DataTable
-                        caption="Provider project model rate limits"
-                        rows={provider.limits.models}
-                        rowKey={(row) => row.model}
+                        emptyDescription="Try clearing the filters or refresh to check for new records."
+                        caption="Project model rate limits"
+                        rows={r.limits.models}
+                        rowKey={(x) => x.model}
                         columns={[
-                          { key: "model", label: "Model", render: (row) => row.model },
-                          { key: "rpm", label: "Requests/min", render: (row) => row.requestsPerMinute?.toLocaleString() ?? "Unavailable" },
-                          { key: "tpm", label: "Tokens/min", render: (row) => row.tokensPerMinute?.toLocaleString() ?? "Unavailable" },
+                          { key: "m", label: "Model", render: (x) => x.model },
+                          {
+                            key: "r",
+                            label: "Requests / minute",
+                            render: (x) => x.requestsPerMinute ?? "Unknown",
+                          },
+                          {
+                            key: "t",
+                            label: "Tokens / minute",
+                            render: (x) => x.tokensPerMinute ?? "Unknown",
+                          },
                         ]}
                       />
-                    ) : <p className="text-sm text-muted-foreground">Provider limits are unavailable.</p>}
+                    )}
+                    {r.geminiQuota && (
+                      <>
+                        <p className="text-muted-foreground">
+                          Cloud Monitoring samples may be delayed. Usage samples are interval
+                          deltas, not a remaining balance.{" "}
+                          {r.geminiQuota.partial ? "Some measurements are unavailable." : ""}
+                        </p>
+                        <DataTable
+                          emptyDescription="Try clearing the filters or refresh to check for new records."
+                          caption="Google quota measurements"
+                          rows={r.geminiQuota.samples}
+                          rowKey={(x) => x.model + x.metric + x.limitName + x.measuredAt}
+                          columns={[
+                            { key: "m", label: "Model", render: (x) => x.model },
+                            {
+                              key: "n",
+                              label: "Limit",
+                              render: (x) => <span className="break-all">{x.limitName}</span>,
+                            },
+                            { key: "k", label: "Measurement", render: (x) => x.kind },
+                            { key: "v", label: "Value", render: (x) => x.value.toLocaleString() },
+                            {
+                              key: "d",
+                              label: "Observed",
+                              render: (x) => new Date(x.measuredAt).toLocaleString(),
+                            },
+                          ]}
+                        />
+                      </>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      No verified remaining credit balance is available.
+                    </p>
                   </div>
-                  </>}
-                </div>
+                </details>
               ))}
             </div>
-          )}
-        </RequestState>
-      </DetailPanel>
+          </DetailPanel>
+        </div>
+      </RequestState>
     </div>
   );
 }
 export function AdminAnalysisJobs() {
-  const query = useApiQuery("adminJobs", {}, { poll: true });
+  const q = useApiQuery("adminJobs", {}, { refreshMs: 30000 });
+  const [search, setSearch] = useState(""),
+    [status, setStatus] = useState("all"),
+    [page, setPage] = useState(1),
+    [selected, setSelected] = useState("");
+  const rows = (q.data ?? []).filter(
+    (j) =>
+      (j.id + " " + j.projectId + " " + j.message).toLowerCase().includes(search.toLowerCase()) &&
+      (status === "all" || j.status === status),
+  );
+  const activePage = Math.min(page, Math.max(1, Math.ceil(rows.length / 10))),
+    job = q.data?.find((j) => j.id === selected);
   return (
-    <RequestState query={query} empty={!query.data?.length}>
-      {query.data?.map((job) => (
-        <DetailPanel key={job.id} title={`${job.projectId} · ${job.id}`}>
+    <div className="space-y-5">
+      <AdminToolbar
+        fetching={q.isFetching}
+        updatedAt={q.dataUpdatedAt}
+        refresh={() => void q.refetch()}
+      >
+        <span className="text-sm text-muted-foreground">
+          Latest 50 analysis jobs · refresh every 30 seconds
+        </span>
+      </AdminToolbar>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <SummaryCard
+          label="In progress"
+          value={
+            q.data?.filter((j) => ["queued", "processing", "cancelling"].includes(j.status))
+              .length ?? "—"
+          }
+        />
+        <SummaryCard
+          label="Failed / timed out"
+          value={q.data?.filter((j) => ["failed", "timed-out"].includes(j.status)).length ?? "—"}
+        />
+        <SummaryCard
+          label="Completed"
+          value={q.data?.filter((j) => j.status === "completed").length ?? "—"}
+        />
+      </div>
+      <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr]">
+        <SearchInput
+          label="Search job, project or message"
+          value={search}
+          onChange={(v) => {
+            setSearch(v);
+            setPage(1);
+          }}
+        />
+        <SelectField
+          label="Job status"
+          value={status}
+          onChange={(v) => {
+            setStatus(v);
+            setPage(1);
+          }}
+          options={[
+            { value: "all", label: "All statuses" },
+            ...[
+              "queued",
+              "processing",
+              "completed",
+              "failed",
+              "partial",
+              "cancelling",
+              "cancelled",
+              "timed-out",
+            ].map((value) => ({ value, label: value })),
+          ]}
+        />
+      </div>
+      <RequestState query={q}>
+        <div className="space-y-5">
+          <DataTable
+            emptyDescription="Try clearing the filters or refresh to check for new records."
+            caption="Recent analysis jobs"
+            rows={rows.slice((activePage - 1) * 10, activePage * 10)}
+            rowKey={(j) => j.id}
+            columns={[
+              {
+                key: "id",
+                label: "Job / project",
+                render: (j) => (
+                  <div className="max-w-64 break-all">
+                    <p className="font-mono text-xs">{j.id}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Project {j.projectId}</p>
+                  </div>
+                ),
+              },
+              {
+                key: "state",
+                label: "Status",
+                render: (j) => (
+                  <StatusBadge
+                    status={j.status}
+                    variant={
+                      ["failed", "timed-out"].includes(j.status)
+                        ? "destructive"
+                        : j.status === "completed"
+                          ? "success"
+                          : "outline"
+                    }
+                  />
+                ),
+              },
+              {
+                key: "progress",
+                label: "Progress",
+                render: (j) => (j.progress === null ? "Not reported" : `${j.progress}%`),
+              },
+              {
+                key: "action",
+                label: "Inspect",
+                render: (j) => (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setSelected(selected === j.id ? "" : j.id)}
+                  >
+                    {selected === j.id ? "Hide details" : "View details"}
+                  </Button>
+                ),
+              },
+            ]}
+          />
+          <PageResults count={rows.length} page={activePage} onPage={setPage} />
+        </div>
+      </RequestState>
+      {job && (
+        <DetailPanel title="Selected job">
+          <p className="break-all font-mono text-xs">{job.id}</p>
           <AnalysisStatusIndicator job={job} />
+          {job.modelId && (
+            <Button asChild variant="outline" size="sm">
+              <Link
+                href={`/architecture?project=${encodeURIComponent(job.projectId)}&model=${encodeURIComponent(job.modelId)}`}
+              >
+                Open architecture
+              </Link>
+            </Button>
+          )}
         </DetailPanel>
-      ))}
-    </RequestState>
+      )}
+    </div>
   );
 }
 export function AuditRecords() {
-  const query = useApiQuery("audit", {});
+  const q = useApiQuery("audit", {});
+  const [search, setSearch] = useState(""),
+    [action, setAction] = useState("all"),
+    [page, setPage] = useState(1);
+  const rows = (q.data ?? []).filter(
+    (a) =>
+      (a.action + " " + a.actorId + " " + a.resourceId)
+        .toLowerCase()
+        .includes(search.toLowerCase()) &&
+      (action === "all" || a.action === action),
+  );
+  const activePage = Math.min(page, Math.max(1, Math.ceil(rows.length / 10)));
   return (
-    <RequestState query={query} empty={!query.data?.length}>
-      <DataTable
-        rows={query.data ?? []}
-        rowKey={(a) => a.id}
-        caption="Administrative audit records"
-        columns={[
-          { key: "at", label: "Time", render: (a) => a.at },
-          { key: "action", label: "Action", render: (a) => a.action },
-          { key: "actor", label: "Actor", render: (a) => a.actorId },
-          { key: "resource", label: "Resource", render: (a) => a.resourceId },
-        ]}
-      />
-    </RequestState>
+    <div className="space-y-5">
+      <AdminToolbar
+        fetching={q.isFetching}
+        updatedAt={q.dataUpdatedAt}
+        refresh={() => void q.refetch()}
+      >
+        <span className="text-sm text-muted-foreground">Read-only · latest 100 audit records</span>
+      </AdminToolbar>
+      <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr]">
+        <SearchInput
+          label="Search action, actor or resource"
+          value={search}
+          onChange={(v) => {
+            setSearch(v);
+            setPage(1);
+          }}
+        />
+        <SelectField
+          label="Action"
+          value={action}
+          onChange={(v) => {
+            setAction(v);
+            setPage(1);
+          }}
+          options={[
+            { value: "all", label: "All actions" },
+            ...Array.from(new Set((q.data ?? []).map((a) => a.action)))
+              .sort()
+              .map((value) => ({ value, label: value.replaceAll("_", " ").toLowerCase() })),
+          ]}
+        />
+      </div>
+      <RequestState query={q}>
+        <div className="space-y-5">
+          <DataTable
+            emptyDescription="Try clearing the filters or refresh to check for new records."
+            caption="Administrative audit trail"
+            rows={rows.slice((activePage - 1) * 10, activePage * 10)}
+            rowKey={(a) => a.id}
+            columns={[
+              {
+                key: "at",
+                label: "Time",
+                render: (a) => (
+                  <span className="whitespace-nowrap text-xs" title={a.at}>
+                    {new Date(a.at).toLocaleString()}
+                  </span>
+                ),
+              },
+              {
+                key: "action",
+                label: "Action",
+                render: (a) => <span className="text-xs">{a.action.replaceAll("_", " ")}</span>,
+              },
+              {
+                key: "actor",
+                label: "Actor",
+                render: (a) => (
+                  <span className="block max-w-52 break-all font-mono text-xs">
+                    {a.actorId || "System"}
+                  </span>
+                ),
+              },
+              {
+                key: "resource",
+                label: "Resource",
+                render: (a) => (
+                  <span className="block max-w-52 break-all font-mono text-xs">
+                    {a.resourceId || "Not recorded"}
+                  </span>
+                ),
+              },
+            ]}
+          />
+          <PageResults count={rows.length} page={activePage} onPage={setPage} />
+        </div>
+      </RequestState>
+    </div>
   );
 }

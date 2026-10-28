@@ -53,17 +53,19 @@ export function DataTable<T>({
   columns,
   rowKey,
   caption,
+  emptyDescription,
 }: {
   rows: readonly T[];
   columns: readonly TableColumn<T>[];
   rowKey: (row: T) => string;
   caption: string;
+  emptyDescription?: string;
 }) {
   if (!rows.length)
     return (
       <EmptyState
         title="No matching records"
-        description="Try another filter or create your first record."
+        description={emptyDescription ?? "Try another filter or create your first record."}
       />
     );
   return (
