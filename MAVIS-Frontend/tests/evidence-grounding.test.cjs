@@ -123,6 +123,18 @@ test('Activity prioritizes API entry points and hides technical builder and conf
  assert.ok(!options.some(option=>['builder','config'].includes(option.classifierId)));
  assert.ok(options.some(option=>option.methodName.includes('Unverified dependency illustration')));
 });
+test('Deployment selects a populated environment and falls back safely when selection disappears',()=>{
+ const {projectUmlDeploymentDiagram}=require('../src/features/architecture/uml-diagrams.ts');
+ const model=fixture();
+ model.elements[0].properties={deploymentMetadata:{environment:'prod',image:'example:latest'}};
+ const prod=projectUmlDeploymentDiagram(model);
+ assert.equal(prod.environment,'prod');
+ assert.ok(prod.nodes.some(node=>node.modelElementId===model.elements[0].id));
+ assert.deepEqual(prod.availableEnvironments,['prod']);
+ assert.equal(projectUmlDeploymentDiagram(model,{environment:'missing'}).environment,'prod');
+ const empty=projectUmlDeploymentDiagram({...model,elements:[]});
+ assert.equal(empty.environment,'default');
+});
 test('Class and Package keep local clients and same-named models in their service scope',()=>{
  const {projectUmlClassDiagram,projectUmlPackageDiagram}=require('../src/features/architecture/uml-diagrams.ts');
  const model=fixture();

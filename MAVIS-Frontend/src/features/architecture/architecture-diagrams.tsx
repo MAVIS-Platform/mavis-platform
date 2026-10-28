@@ -83,8 +83,7 @@ export function ArchitectureDiagrams({
       count: model.elements.filter((child) => child.parentId === node.id).length,
     }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  const populatedContainers = allContainers.filter((node) => node.count > 0);
-  const containers = populatedContainers.length > 0 ? populatedContainers : allContainers;
+  const containers = allContainers;
   const container = containers.find((node) => node.id === service) ?? containers[0];
   const isUmlWorkspaceKind = [
     "UML_CLASS",

@@ -933,29 +933,30 @@ export function projectUmlDeploymentDiagram(
     overlay?: UmlDeploymentOverlay | undefined;
   },
 ): UmlDeploymentDiagramProjection {
-  const envs = new Set<string>(["default"]);
-  for (const elem of model.elements) {
-    const depMeta = (elem.properties?.["deploymentMetadata"] ?? {}) as Record<string, unknown>;
-    if (typeof depMeta["environment"] === "string" && depMeta["environment"].trim()) {
-      envs.add(depMeta["environment"].trim());
-    }
-  }
-  for (const dNode of options?.overlay?.designedNodes ?? []) {
-    if (dNode.environment) envs.add(dNode.environment);
-  }
-
-  const activeEnv = options?.environment ?? [...envs][0] ?? "default";
-  const nodes: UmlDeploymentNode[] = [];
-  const edges: UmlDeploymentEdge[] = [];
-  const serviceToExecEnvId = new Map<string, string>();
-  const serviceToArtifactId = new Map<string, string>();
-
   const deployableElements = model.elements.filter(
     (e) =>
       ["SERVICE_CONTAINER", "DATABASE", "QUEUE_BROKER", "EXTERNAL_SYSTEM"].includes(
         e.elementType ?? "",
       ) && hasExplicitDeploymentEvidence(e),
   );
+  const envs = new Set<string>();
+  for (const elem of deployableElements) {
+    const depMeta = (elem.properties?.["deploymentMetadata"] ?? {}) as Record<string, unknown>;
+    const env = typeof depMeta["environment"] === "string" ? depMeta["environment"].trim() : "";
+    envs.add(env || "default");
+  }
+  for (const dNode of options?.overlay?.designedNodes ?? []) {
+    envs.add(dNode.environment?.trim() || "default");
+  }
+  if (envs.size === 0) envs.add("default");
+
+  const activeEnv = options?.environment && envs.has(options.environment)
+    ? options.environment
+    : ([...envs][0] ?? "default");
+  const nodes: UmlDeploymentNode[] = [];
+  const edges: UmlDeploymentEdge[] = [];
+  const serviceToExecEnvId = new Map<string, string>();
+  const serviceToArtifactId = new Map<string, string>();
 
   const deploymentArtifactIssues: UmlValidationIssue[] = [];
 

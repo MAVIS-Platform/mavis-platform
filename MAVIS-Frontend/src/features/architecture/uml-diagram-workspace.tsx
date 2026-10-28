@@ -66,9 +66,33 @@ export function UmlDiagramWorkspace({
   };
 
   const [packageFilter, setPackageFilter] = useState<string>("");
-  const [environmentFilter, setEnvironmentFilter] = useState<string>("default");
+  const [environmentSelection, setEnvironmentSelection] = useState<{ modelKey: string; value: string } | null>(null);
   const [selectedOperationId, setSelectedOperationId] = useState<string>("");
   const [selectedStateTargetId, setSelectedStateTargetId] = useState<string>("");
+
+  const availablePackages = useMemo(
+    () => kind === "UML_CLASS"
+      ? Array.from(new Set(projectUmlClassDiagram(model, { serviceId: serviceId || null }).classifiers.map((c) => c.packageName)))
+      : [],
+    [model, serviceId, kind],
+  );
+  const activePackageFilter = kind === "UML_CLASS" && availablePackages.includes(packageFilter)
+    ? packageFilter
+    : "";
+  useEffect(() => {
+    if (kind === "UML_CLASS" && packageFilter && !availablePackages.includes(packageFilter)) {
+      setPackageFilter("");
+    }
+  }, [kind, packageFilter, availablePackages]);
+
+  const modelKey = `${model.id}:${model.revision}`;
+  const availableSourceEnvironments = useMemo(
+    () => kind === "UML_DEPLOYMENT" ? projectUmlDeploymentDiagram(model).availableEnvironments : [],
+    [model, kind],
+  );
+  const activeEnvironment = environmentSelection?.modelKey === modelKey
+    ? environmentSelection.value
+    : (availableSourceEnvironments[0] ?? "default");
 
   const activityOps = useMemo(() => listActivityOperations(model), [model]);
   const stateTargets = useMemo(() => listStateTargets(model), [model]);
@@ -77,12 +101,12 @@ export function UmlDiagramWorkspace({
   const activeStateTargetId = selectedStateTargetId || stateTargets[0]?.targetId || "";
 
   const viewKey = useMemo(() => {
-    if (kind === "UML_CLASS") return `uml-class:${serviceId || "all"}:${packageFilter || "all"}`;
+    if (kind === "UML_CLASS") return `uml-class:${serviceId || "all"}:${activePackageFilter || "all"}`;
     if (kind === "UML_PACKAGE") return `uml-package:${serviceId || "all"}`;
-    if (kind === "UML_DEPLOYMENT") return `uml-deployment:${environmentFilter || "default"}`;
+    if (kind === "UML_DEPLOYMENT") return `uml-deployment:${activeEnvironment || "default"}`;
     if (kind === "UML_ACTIVITY") return `uml-activity:${activeOpId || "default"}`;
     return `uml-state:${activeStateTargetId || "default"}`;
-  }, [kind, serviceId, packageFilter, environmentFilter, activeOpId, activeStateTargetId]);
+  }, [kind, serviceId, activePackageFilter, activeEnvironment, activeOpId, activeStateTargetId]);
 
   const documentScope = `${model.id}:${viewKey}`;
 
@@ -141,7 +165,7 @@ export function UmlDiagramWorkspace({
     if (kind === "UML_CLASS") {
       const liveProj = projectUmlClassDiagram(model, {
         serviceId: serviceId || null,
-        packageName: packageFilter || null,
+        packageName: activePackageFilter || null,
       });
       const liveHasMembers = liveProj.classifiers.some(
         (c) => c.attributes.length > 0 || c.operations.length > 0,
@@ -160,8 +184,8 @@ export function UmlDiagramWorkspace({
     const hydrated = hydrateUmlWorkspaceFromXml(xml, model, {
       diagramKind: kind,
       selectedServiceId: serviceId || null,
-      selectedPackageName: packageFilter || null,
-      selectedEnvironment: environmentFilter || "default",
+      selectedPackageName: activePackageFilter || null,
+      selectedEnvironment: activeEnvironment || "default",
       selectedOperationId: activeOpId || null,
       selectedTargetId: activeStateTargetId || null,
     });
@@ -218,8 +242,8 @@ export function UmlDiagramWorkspace({
     viewKey,
     kind,
     serviceId,
-    packageFilter,
-    environmentFilter,
+    activePackageFilter,
+    activeEnvironment,
     activeOpId,
     activeStateTargetId,
   ]);
@@ -234,7 +258,7 @@ export function UmlDiagramWorkspace({
       case "UML_CLASS":
         return projectUmlClassDiagram(model, {
           serviceId: serviceId || null,
-          packageName: packageFilter || null,
+          packageName: activePackageFilter || null,
           overlay: classOverlay,
         });
       case "UML_PACKAGE":
@@ -244,7 +268,7 @@ export function UmlDiagramWorkspace({
         });
       case "UML_DEPLOYMENT":
         return projectUmlDeploymentDiagram(model, {
-          environment: environmentFilter || "default",
+          environment: activeEnvironment || "default",
           overlay: deploymentOverlay,
         });
       case "UML_ACTIVITY":
@@ -262,8 +286,8 @@ export function UmlDiagramWorkspace({
     kind,
     model,
     serviceId,
-    packageFilter,
-    environmentFilter,
+    activePackageFilter,
+    activeEnvironment,
     activeOpId,
     activeStateTargetId,
     classOverlay,
@@ -321,8 +345,8 @@ export function UmlDiagramWorkspace({
         {},
         {
           selectedServiceId: serviceId || null,
-          selectedPackageName: packageFilter || null,
-          selectedEnvironment: environmentFilter || "default",
+          selectedPackageName: activePackageFilter || null,
+          selectedEnvironment: activeEnvironment || "default",
           selectedOperationId: activeOpId || null,
           selectedTargetId: activeStateTargetId || null,
           classOverlay,
@@ -336,8 +360,8 @@ export function UmlDiagramWorkspace({
     [
       projection,
       serviceId,
-      packageFilter,
-      environmentFilter,
+      activePackageFilter,
+      activeEnvironment,
       activeOpId,
       activeStateTargetId,
       classOverlay,
@@ -353,8 +377,8 @@ export function UmlDiagramWorkspace({
     () =>
       buildUmlDrawioXml(projection, preservedLayout, {
         selectedServiceId: serviceId || null,
-        selectedPackageName: packageFilter || null,
-        selectedEnvironment: environmentFilter || "default",
+        selectedPackageName: activePackageFilter || null,
+        selectedEnvironment: activeEnvironment || "default",
         selectedOperationId: activeOpId || null,
         selectedTargetId: activeStateTargetId || null,
         classOverlay,
@@ -368,8 +392,8 @@ export function UmlDiagramWorkspace({
       projection,
       preservedLayout,
       serviceId,
-      packageFilter,
-      environmentFilter,
+      activePackageFilter,
+      activeEnvironment,
       activeOpId,
       activeStateTargetId,
       classOverlay,
@@ -388,8 +412,8 @@ export function UmlDiagramWorkspace({
     const hydrated = hydrateUmlWorkspaceFromXml(xmlToSave, model, {
       diagramKind: kind,
       selectedServiceId: serviceId || null,
-      selectedPackageName: packageFilter || null,
-      selectedEnvironment: environmentFilter || "default",
+      selectedPackageName: activePackageFilter || null,
+      selectedEnvironment: activeEnvironment || "default",
       selectedOperationId: activeOpId || null,
       selectedTargetId: activeStateTargetId || null,
       aiEnrichment: umlAiEnrichment,
@@ -452,20 +476,14 @@ export function UmlDiagramWorkspace({
         {projection.diagramKind === "UML_CLASS" && (
           <SelectField
             label="Package"
-            value={packageFilter}
+            value={activePackageFilter}
             onChange={(v) => {
               clearDraftConflictState();
               setPackageFilter(v);
             }}
             options={[
               { value: "", label: "All packages" },
-              ...Array.from(
-                new Set(
-                  projectUmlClassDiagram(model, { serviceId: serviceId || null }).classifiers.map(
-                    (c) => c.packageName,
-                  ),
-                ),
-              ).map((pkg) => ({ value: pkg, label: pkg })),
+              ...availablePackages.map((pkg) => ({ value: pkg, label: pkg })),
             ]}
           />
         )}
@@ -478,7 +496,7 @@ export function UmlDiagramWorkspace({
                 value={projection.environment}
                 onChange={(v) => {
                   clearDraftConflictState();
-                  setEnvironmentFilter(v);
+                  setEnvironmentSelection({ modelKey, value: v });
                 }}
                 options={projection.availableEnvironments.map((env) => ({
                   value: env,
