@@ -1,5 +1,5 @@
 -- In-app inbox. Event delivery is transactional: rolled-back business changes emit nothing.
-CREATE TABLE user_notifications (
+CREATE TABLE IF NOT EXISTS user_notifications (
  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
  recipient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
  event_key VARCHAR(240) NOT NULL,
@@ -9,26 +9,26 @@ CREATE TABLE user_notifications (
  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), read_at TIMESTAMPTZ,
  UNIQUE(recipient_id,event_key)
 );
-CREATE INDEX idx_notifications_inbox ON user_notifications(recipient_id,created_at DESC,id DESC);
-CREATE INDEX idx_notifications_unread ON user_notifications(recipient_id,created_at DESC) WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notifications_inbox ON user_notifications(recipient_id,created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_unread ON user_notifications(recipient_id,created_at DESC) WHERE read_at IS NULL;
 
-CREATE FUNCTION mavis_notify(who UUID, event TEXT, cat TEXT, heading TEXT, detail TEXT, link TEXT) RETURNS void LANGUAGE sql AS $$
+CREATE OR REPLACE FUNCTION mavis_notify(who UUID, event TEXT, cat TEXT, heading TEXT, detail TEXT, link TEXT) RETURNS void LANGUAGE sql AS $$
  INSERT INTO user_notifications(recipient_id,event_key,category,title,body,target_path)
  SELECT u.id,left(event,240),cat,left(heading,160),left(detail,500),left(link,500)
  FROM users u WHERE u.id=who AND u.status='ACTIVE'
  ON CONFLICT(recipient_id,event_key) DO NOTHING;
 $$;
-CREATE FUNCTION mavis_notify_admins(event TEXT, heading TEXT, detail TEXT, link TEXT, excluded UUID DEFAULT NULL) RETURNS void LANGUAGE sql AS $$
+CREATE OR REPLACE FUNCTION mavis_notify_admins(event TEXT, heading TEXT, detail TEXT, link TEXT, excluded UUID DEFAULT NULL) RETURNS void LANGUAGE sql AS $$
  SELECT mavis_notify(u.id,event,'SYSTEM',heading,detail,link) FROM users u JOIN roles r ON r.id=u.role_id
  WHERE r.code='SYSTEM_ADMIN' AND u.status='ACTIVE' AND (excluded IS NULL OR u.id<>excluded);
 $$;
-CREATE FUNCTION mavis_notify_workspace(workspace UUID, event TEXT, cat TEXT, heading TEXT, detail TEXT, link TEXT, only_teachers BOOLEAN DEFAULT false, excluded UUID DEFAULT NULL) RETURNS void LANGUAGE sql AS $$
+CREATE OR REPLACE FUNCTION mavis_notify_workspace(workspace UUID, event TEXT, cat TEXT, heading TEXT, detail TEXT, link TEXT, only_teachers BOOLEAN DEFAULT false, excluded UUID DEFAULT NULL) RETURNS void LANGUAGE sql AS $$
  SELECT mavis_notify(w.user_id,event,cat,heading,detail,link) FROM (
  SELECT wm.user_id FROM workspace_members wm WHERE wm.workspace_id=workspace AND (NOT only_teachers OR wm.member_role IN ('LECTURER','OWNER'))
  UNION SELECT ws.created_by FROM workspaces ws WHERE ws.id=workspace
  ) w WHERE excluded IS NULL OR w.user_id<>excluded;
 $$;
-CREATE FUNCTION mavis_business_notifications() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION mavis_business_notifications() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE n JSONB; o JSONB; eid UUID; pid UUID; wid UUID; recipient UUID; actor UUID; label TEXT; key TEXT; link TEXT; status TEXT;
 BEGIN
  n:=CASE WHEN TG_OP='DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;
@@ -108,11 +108,12 @@ END;
 $$;
 DO $$ DECLARE t TEXT; BEGIN
  FOREACH t IN ARRAY ARRAY['assignments','workspace_members','workspaces','submission_snapshots','feedback_comments','submission_reviews','users','audit_logs','jobs','runtime_sessions','source_snapshots','model_versions','evaluation_runs','projects'] LOOP
+  EXECUTE format('DROP TRIGGER IF EXISTS mavis_notifications_%I ON %I',t,t);
   EXECUTE format('CREATE TRIGGER mavis_notifications_%I AFTER INSERT OR UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION mavis_business_notifications()',t,t);
  END LOOP;
 END $$;
 -- Reminders are deduplicated per assignment/deadline/window and exclude submitted students.
-CREATE FUNCTION mavis_assignment_reminders() RETURNS void LANGUAGE sql AS $$
+CREATE OR REPLACE FUNCTION mavis_assignment_reminders() RETURNS void LANGUAGE sql AS $$
  INSERT INTO user_notifications(recipient_id,event_key,category,title,body,target_path)
  SELECT DISTINCT wm.user_id,'due:'||a.id||':'||extract(epoch FROM a.due_at)::text||':'||due_window.hours,'ASSIGNMENT',
   'Assignment due soon',left(a.title||CASE WHEN due_window.hours=1 THEN ' is due within one hour.' ELSE ' is due within 24 hours.' END,500),'/assignments?workspace='||a.workspace_id
@@ -127,8 +128,8 @@ CREATE FUNCTION mavis_assignment_reminders() RETURNS void LANGUAGE sql AS $$
 $$;
 
 -- Last observed health state prevents repeated alerts while an outage is unchanged.
-CREATE TABLE notification_health_states(service_id VARCHAR(80) PRIMARY KEY,status VARCHAR(16) NOT NULL,checked_at TIMESTAMPTZ NOT NULL DEFAULT now());
-CREATE FUNCTION mavis_observe_health(service TEXT, current_status TEXT) RETURNS void LANGUAGE plpgsql AS $$
+CREATE TABLE IF NOT EXISTS notification_health_states(service_id VARCHAR(80) PRIMARY KEY,status VARCHAR(16) NOT NULL,checked_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE OR REPLACE FUNCTION mavis_observe_health(service TEXT, current_status TEXT) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE previous TEXT;
 BEGIN
  IF service NOT IN ('backend','database','worker','storage') OR current_status NOT IN ('UP','DOWN','WARNING','UNKNOWN','DISABLED') THEN RETURN; END IF;

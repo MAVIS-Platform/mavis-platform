@@ -37,6 +37,8 @@ class MigrationUpgradeTest {
                         try(var connection=DriverManager.getConnection(url,user,password);var sql=connection.createStatement()) {
                             sql.execute(Files.readString(migrations.resolve("V21__Submission_Review.sql")));
                             sql.execute("INSERT INTO users(role_id,email,password_hash,full_name) SELECT id,'migration-preservation@example.invalid','fixture-only','Preserved learner' FROM roles WHERE code='STUDENT'");
+                            sql.execute(Files.readString(migrations.resolve("V22__User_Notifications.sql")));
+                            sql.execute("INSERT INTO user_notifications(recipient_id,event_key,category,title,body,target_path) SELECT id,'migration-preservation','ACCOUNT','Preserved notice','Fixture only','/profile' FROM users WHERE email='migration-preservation@example.invalid'");
                         }
                     }
                     var current=flyway(url,null);
@@ -53,6 +55,7 @@ class MigrationUpgradeTest {
                         if(upgrade) try(var rows=sql.executeQuery("SELECT full_name FROM users WHERE email='migration-preservation@example.invalid'")) {
                             assertTrue(rows.next());assertEquals("Preserved learner",rows.getString(1));
                         }
+                        if(upgrade) try(var rows=sql.executeQuery("SELECT count(*) FROM user_notifications WHERE event_key='migration-preservation'")) { assertTrue(rows.next());assertEquals(1,rows.getInt(1)); }
                         try(var rows=sql.executeQuery("SELECT to_regclass('submission_reviews')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
                         try(var rows=sql.executeQuery("SELECT to_regclass('ai_usage_events')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
                         try(var rows=sql.executeQuery("SELECT to_regclass('user_notifications')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
