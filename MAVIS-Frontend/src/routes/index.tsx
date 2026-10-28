@@ -9,17 +9,8 @@ import { DataTable, DetailPanel, SummaryCard } from "@/components/shared/data";
 import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
 import { Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { ImportFlow } from "@/components/mainflow/import-flow";
 import { useApiQuery, useSelection } from "@/hooks/use-api";
-import { ProjectStatusBadge } from "@/features/projects/components";
+import { ProjectStatusBadge, CreateProjectAction } from "@/features/projects/components";
 import type { Project } from "@/types/domain";
 export default function Index() {
   return (
@@ -66,25 +57,7 @@ function Projects() {
   return (
     <div className="mx-auto w-full max-w-[1600px]">
       <PageContainer>
-        <SectionHeader
-          title="Overview"
-          actions={
-            <Dialog>
-              <DialogTrigger asChild>
-                <Button>Import project source</Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl">
-                <DialogHeader>
-                  <DialogTitle>Import Project Source</DialogTitle>
-                  <DialogDescription>
-                    Import Java or C# source code from a ZIP archive or GitHub repository.
-                  </DialogDescription>
-                </DialogHeader>
-                <ImportFlow embedded />
-              </DialogContent>
-            </Dialog>
-          }
-        />
+        <SectionHeader title="Overview" actions={<CreateProjectAction />} />
         <RequestState query={projects}>
           <div className="grid grid-cols-2 gap-3 [&>article>div]:text-xl sm:gap-4 sm:[&>article>div]:text-2xl xl:grid-cols-4">
             <SummaryCard label="Projects" value={projects.data?.length ?? 0} />

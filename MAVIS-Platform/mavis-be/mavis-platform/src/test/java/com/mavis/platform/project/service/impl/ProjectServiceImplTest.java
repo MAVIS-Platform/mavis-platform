@@ -427,4 +427,11 @@ class ProjectServiceImplTest {
         assertThat(results.get(0).getArtifactHash()).isEqualTo("hash999");
         assertThat(results.get(0).getIsPublished()).isTrue();
     }
+    @Test void updateCannotChangeBoundRepository() {
+        UUID id=UUID.randomUUID();var project=Project.builder().id(id).name("Bound").owner(currentUser).repositoryUrl("https://github.com/example/original").build();
+        when(projectRepository.findLockedById(id)).thenReturn(Optional.of(project));
+        var request=new com.mavis.platform.project.dto.ProjectUpdateRequest();request.setRepositoryUrl("https://github.com/example/other");
+        assertThatThrownBy(()->projectService.updateProject(id,request)).isInstanceOf(BusinessException.class);
+        assertThat(project.getRepositoryUrl()).isEqualTo("https://github.com/example/original");verify(projectRepository,never()).save(any());
+    }
 }

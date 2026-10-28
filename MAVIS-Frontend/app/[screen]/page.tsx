@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
-import { ProjectSelector } from "@/features/projects/components";
+import { ProjectSelector, ImportSnapshotAction } from "@/features/projects/components";
 import { ProjectOverview, SourceSnapshots, AnalysisHistory } from "@/features/projects/screens";
 import { ModelEditor, CompareModels } from "@/features/architecture/model-editor";
 import { ArchitectureWorkspace } from "@/routes/architecture";
@@ -123,7 +123,10 @@ export default async function FeaturePage({ params }: { params: Promise<{ screen
   return (
     <AppShell scope={config.scope} activeId={screen} pageTitle={config.title}>
       <PageContainer>
-        <SectionHeader title={config.title} />
+        <SectionHeader
+          title={config.title}
+          actions={screen === "snapshots" ? <ImportSnapshotAction /> : undefined}
+        />
         {config.selector === "project" && <ProjectSelector />}
         {config.selector === "workspace" && <WorkspaceSelector />}
         <Screen />

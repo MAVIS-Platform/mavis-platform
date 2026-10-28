@@ -133,6 +133,8 @@ export const contracts = {
     z
       .object({
         name: z.string().trim().min(1).max(255),
+        repositoryUrl: z.string().url().optional(),
+        defaultBranch: z.string().trim().min(1).max(255).optional(),
         workspaceId: id.optional(),
         assignmentId: id.optional(),
       })

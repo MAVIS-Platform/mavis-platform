@@ -14,7 +14,7 @@ import {
   AnalysisStatusIndicator,
   formatAnalysisJobMessage,
 } from "@/features/source-analysis/components";
-import { ProjectStatusBadge } from "./components";
+import { ProjectStatusBadge, ImportSnapshotAction } from "./components";
 
 function formatShortTimestamp(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -70,9 +70,7 @@ export function ProjectOverview() {
                 <Button asChild size="sm" variant="outline">
                   <Link href={`/snapshots?project=${projectId}`}>Source Snapshots</Link>
                 </Button>
-                <Button asChild size="sm" variant="secondary">
-                  <Link href={`/import?project=${projectId}`}>Import Source</Link>
-                </Button>
+                <ImportSnapshotAction />
               </div>
             }
           >
@@ -357,18 +355,7 @@ export function SourceSnapshots() {
   return (
     <RequestState query={query} empty={!snapshotList.length}>
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {analysisError ? (
-            <p role="alert" className="text-xs font-medium text-destructive">
-              {analysisError}
-            </p>
-          ) : (
-            <span />
-          )}
-          <Button asChild size="sm">
-            <Link href={`/import?project=${projectId}`}>Import new snapshot</Link>
-          </Button>
-        </div>
+        {analysisError && <p role="alert" className="text-xs font-medium text-destructive">{analysisError}</p>}
 
         <DataTable
           rows={snapshotList}
