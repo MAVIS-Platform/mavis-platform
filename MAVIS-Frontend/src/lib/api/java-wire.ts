@@ -4,6 +4,7 @@ import {
   snapshotSchema,
   analysisJobSchema,
   evidenceSchema,
+  communicationRoleSchema,
   modelSchema,
   modelSummarySchema,
   type Project,
@@ -194,15 +195,18 @@ export function evidenceView(raw: unknown) {
     .object({
       id: z.string().uuid(),
       sourceType: z.string(),
+      provenance: z.object({ communicationRole: z.string().optional() }).nullish(),
       locator: nullableText,
       excerpt: nullableText,
     })
     .parse(raw);
+  const role = communicationRoleSchema.safeParse(e.provenance?.communicationRole);
   return evidenceSchema.parse({
     id: e.id,
     origin: "persisted",
     kind: e.sourceType.startsWith("RUNTIME") ? "runtime" : "source",
     sourceType: e.sourceType,
+    ...(role.success ? { communicationRole: role.data } : {}),
     location: e.locator ?? "",
     snippet: e.excerpt ?? "",
     complete: null,

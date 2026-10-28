@@ -580,6 +580,7 @@ class GraphBuilderServiceTest {
     }
 
     @Test void configurationProfilesProduceTypedEvidenceRatherThanBusinessHttpCalls() {
+        when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         var source = ModelElement.builder().id(UUID.randomUUID()).name("employee-service").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
         var config = ModelElement.builder().id(UUID.randomUUID()).name("config-service").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
         var tracing = ModelElement.builder().id(UUID.randomUUID()).name("zipkin").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
@@ -599,6 +600,7 @@ class GraphBuilderServiceTest {
     }
 
     @Test void composeLinksRemainDeploymentDeclarationsAndNeverBecomeHttpCalls() {
+        when(modelRelationshipRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
         var source = ModelElement.builder().id(UUID.randomUUID()).name("employee-service").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
         var target = ModelElement.builder().id(UUID.randomUUID()).name("discovery-service").elementType("SERVICE_CONTAINER").modelVersion(sampleModelVersion).build();
         var compose = DetectedContainerDTO.builder().serviceName("employee-service").composeFilePath("docker-compose.yml").lineNumber(3).build();

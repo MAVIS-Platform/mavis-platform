@@ -565,9 +565,31 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         }
 
         // (2) SERVICE_HTTP_CALL: Từ @FeignClient, RestTemplate, WebClient và Spring Config URLs
+        var sourceConfigurations=springConfigDetectorService!=null && sourcePath!=null?springConfigDetectorService.detectConfigs(sourcePath):List.<DetectedSpringConfigDTO>of();
+        if(sourceConfigurations==null) sourceConfigurations=List.of();
         if (evidences != null) {
+            var feignConnections=new FeignCommunicationResolver(objectMapper,allElements,evidences,sourceConfigurations).resolve(modelVersion,evidences);
+            Map<ModelElement,ModelElement> savedTargets=new IdentityHashMap<>();
+            for(var connection:feignConnections) {
+                ModelElement target=connection.target();
+                if(!allElements.contains(target)) {
+                    var original=target;
+                    target=savedTargets.computeIfAbsent(original,key->modelElementRepository.save(key));
+                    if(!allElements.contains(target)) allElements.add(target);
+                }
+                var relationship=ModelRelationship.builder().modelVersion(modelVersion).sourceElement(connection.source())
+                        .targetElement(target).relationType("SERVICE_HTTP_CALL").originLayer("STATIC").direction("DIRECTED")
+                        .properties(connection.properties()).build();
+                relationshipsToSave.add(relationship);
+                for(var proof:connection.proofs()) {
+                    var fact=proof.fact();
+                    relEvidenceContexts.add(new RelEvidenceContext(relationship,fact.getFilePath()+":"+fact.getLineNumber(),
+                            "CLIENT_CONFIGURATION".equals(proof.role())?"CONFIG_FILE":"STATIC_CODE",fact.getCodeSnippet(),"OPENFEIGN_SOURCE_1",proof.role()));
+                }
+            }
             for (CodeEvidenceDTO ev : evidences) {
                 String type = ev.getElementType();
+                if("FEIGN_CLIENT".equals(type) && "OPENFEIGN".equals(ev.getMetadata().get("clientFramework"))) continue;
                 if ("FEIGN_CLIENT".equalsIgnoreCase(type) || "REST_TEMPLATE_CALL".equalsIgnoreCase(type)
                         || "WEB_CLIENT_CALL".equalsIgnoreCase(type)) {
 
@@ -621,8 +643,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         // Bổ sung quan hệ SERVICE_HTTP_CALL từ cấu hình Spring *.service-url
         if (springConfigDetectorService != null && sourcePath != null) {
             try {
-                List<DetectedSpringConfigDTO> configs = springConfigDetectorService.detectConfigs(sourcePath);
-                for (DetectedSpringConfigDTO cfg : configs) {
+                for (DetectedSpringConfigDTO cfg : sourceConfigurations) {
                     String sourceName = cfg.getApplicationName() != null ? cfg.getApplicationName() : cfg.getServiceName();
                     if (sourceName == null || sourceName.contains("${")) continue;
                     ModelElement sourceContainer = elementByNameMap.get(sourceName.toLowerCase().trim());
@@ -845,7 +866,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         // =========================================================================
         for (ModelRelationship relationship : relationshipsToSave) {
             ObjectNode properties = relationship.getProperties() instanceof ObjectNode existing ? existing.deepCopy() : objectMapper.createObjectNode();
-            properties.put("resolutionStatus", "RESOLVED");
+            if(!properties.hasNonNull("resolutionStatus")) properties.put("resolutionStatus", "RESOLVED");
             properties.put("resolverVersion", "architecture-2");
             relationship.setProperties(properties);
         }
@@ -854,9 +875,12 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             log.info("Successfully batch saved {} model relationships (DECLARED_COMPOSE, SERVICE_HTTP_CALL, CODE_DEPENDENCY, DATABASE_ACCESS)",
                     savedRelationships.size());
 
-            for (int i = 0; i < savedRelationships.size() && i < relEvidenceContexts.size(); i++) {
-                ModelRelationship savedRel = savedRelationships.get(i);
-                RelEvidenceContext ctx = relEvidenceContexts.get(i);
+            if(savedRelationships.size()!=relationshipsToSave.size()) throw new IllegalStateException("Incomplete relationship persistence");
+            Map<ModelRelationship,ModelRelationship> savedByOriginal=new IdentityHashMap<>();
+            for(int i=0;i<savedRelationships.size();i++) savedByOriginal.put(relationshipsToSave.get(i),savedRelationships.get(i));
+            for (RelEvidenceContext ctx : relEvidenceContexts) {
+                ModelRelationship savedRel = savedByOriginal.get(ctx.relationship);
+                if(savedRel==null) throw new IllegalStateException("Evidence has no persisted relationship");
 
                 Evidence relEvidence = Evidence.builder()
                         .sourceSnapshot(sourceSnapshot)
@@ -866,6 +890,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                         .locator(ctx.locator)
                         .adapterVersion(ctx.adapterVersion)
                         .sourceType(ctx.sourceType)
+                        .provenance(ctx.communicationRole==null?null:objectMapper.createObjectNode().put("communicationRole",ctx.communicationRole))
                         .excerpt(ctx.excerpt)
                         .build();
                 allEvidencesToSave.add(relEvidence);
@@ -1143,13 +1168,18 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         final String sourceType;
         final String excerpt;
         final String adapterVersion;
+        final String communicationRole;
 
         RelEvidenceContext(ModelRelationship relationship, String locator, String sourceType, String excerpt, String adapterVersion) {
+            this(relationship,locator,sourceType,excerpt,adapterVersion,null);
+        }
+        RelEvidenceContext(ModelRelationship relationship, String locator, String sourceType, String excerpt, String adapterVersion,String communicationRole) {
             this.relationship = relationship;
             this.locator = locator;
             this.sourceType = sourceType;
             this.excerpt = excerpt;
             this.adapterVersion = adapterVersion;
+            this.communicationRole = communicationRole;
         }
     }
 }

@@ -7,6 +7,7 @@ import { useApi, useApiQuery } from "@/hooks/use-api";
 import { api as backend } from "@/lib/mainflow-api";
 import { Button } from "@/components/ui/button";
 import { ThreeEEvidence } from "./three-e-evidence";
+import { CommunicationPanel } from "./communication-panel";
 import {
   buildThreeESubjectContext,
   collectConcreteThreeEEvidences,
@@ -299,6 +300,12 @@ export function SelectionThreeE({
       </header>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-sm leading-6">
         <p className="text-sm leading-6">{subject.summary}</p>
+        <CommunicationPanel
+          key={edge?.id ?? node?.id ?? selectedId}
+          model={model}
+          selectedId={edge?.id ?? node?.id ?? selectedId}
+          onSelect={onSelect}
+        />
 
         {/* AI 3E Summary + Expandable Source Evidence + Interactive Follow-up Q&A Chat */}
         <div
