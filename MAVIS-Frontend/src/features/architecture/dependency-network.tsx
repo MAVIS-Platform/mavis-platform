@@ -38,7 +38,13 @@ export function DependencyNetwork({
   projection: controlledProjection,
   hiddenCategories: controlledHiddenCategories,
   onHiddenCategoriesChange,
+  active = true,
+  showPresentationOptions = true,
+  relationshipScopeCount = 0,
 }: {
+  active?: boolean;
+  showPresentationOptions?: boolean;
+  relationshipScopeCount?: number;
   model: ArchitecturalModel;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -143,7 +149,7 @@ export function DependencyNetwork({
 
   useEffect(() => {
     const container = viewport.current;
-    if (!container) return;
+    if (!container || !active) return;
     const positions = networkPositions(
       projection.model,
       container.clientWidth / Math.max(1, container.clientHeight),
@@ -293,7 +299,9 @@ export function DependencyNetwork({
     resize.observe(container);
     const updateTheme = () => {
       // Tailwind themes use OKLCH; Cytoscape's colour parser expects RGB/hex.
-      const context = document.createElement("canvas").getContext("2d");
+      const context = document
+        .createElement("canvas")
+        .getContext("2d", { willReadFrequently: true });
       let foreground = "#64748b";
       let labelBackground = "#0f172a";
       if (context) {
@@ -307,7 +315,7 @@ export function DependencyNetwork({
         labelBackground = `rgb(${br}, ${bg}, ${bb})`;
       }
       cy.style()
-        .selector("node:not(.explore)")
+        .selector("node.analysis")
         .style({
           color: foreground,
           "border-color": foreground,
@@ -335,19 +343,19 @@ export function DependencyNetwork({
       refreshTheme.current = () => {};
       presentMode.current = () => {};
     };
-  }, [elements, nodes.length, projection.model]);
+  }, [active, elements, nodes.length, projection.model]);
 
   useEffect(() => {
     presentMode.current(mode);
     refreshTheme.current();
-  }, [elements, mode]);
+  }, [active, elements, mode]);
 
   useEffect(() => {
     const cy = graph.current,
       canvas = pulseCanvas.current;
     if (mode !== "explore" || !selectedId || !cy || !canvas) return;
     return startNetworkPulse(cy, selectedId, canvas);
-  }, [elements, mode, selectedId]);
+  }, [active, elements, mode, selectedId]);
 
   useEffect(() => {
     const cy = graph.current;
@@ -381,7 +389,7 @@ export function DependencyNetwork({
         );
       });
     });
-  }, [elements, model, projection.model, selectedId, highlightIds, query, mode]);
+  }, [active, elements, model, projection.model, selectedId, highlightIds, query, mode]);
   return (
     <section
       ref={section}
@@ -390,28 +398,30 @@ export function DependencyNetwork({
     >
       <Tooltip.Provider delayDuration={250}>
         <div className="flex flex-wrap items-center gap-2 border-b p-3">
-          <div
-            role="group"
-            aria-label="Graph presentation"
-            className="flex gap-1 rounded-lg border p-1"
-          >
-            <Button
-              size="sm"
-              variant={mode === "analysis" ? "secondary" : "ghost"}
-              aria-pressed={mode === "analysis"}
-              onClick={() => setMode("analysis")}
+          {showPresentationOptions && (
+            <div
+              role="group"
+              aria-label="Graph presentation"
+              className="flex gap-1 rounded-lg border p-1"
             >
-              Analysis
-            </Button>
-            <Button
-              size="sm"
-              variant={mode === "explore" ? "secondary" : "ghost"}
-              aria-pressed={mode === "explore"}
-              onClick={() => setMode("explore")}
-            >
-              ✦ Explore
-            </Button>
-          </div>
+              <Button
+                size="sm"
+                variant={mode === "analysis" ? "secondary" : "ghost"}
+                aria-pressed={mode === "analysis"}
+                onClick={() => setMode("analysis")}
+              >
+                Analysis
+              </Button>
+              <Button
+                size="sm"
+                variant={mode === "explore" ? "secondary" : "ghost"}
+                aria-pressed={mode === "explore"}
+                onClick={() => setMode("explore")}
+              >
+                ✦ Explore
+              </Button>
+            </div>
+          )}
           <label className="mr-auto text-sm">
             <span className="sr-only">Search graph</span>
             <input
@@ -624,6 +634,9 @@ export function DependencyNetwork({
           <strong className="text-foreground">Internal:</strong> {projection.internalRelationships}{" "}
           hidden within collapsed containers
         </span>
+        {relationshipScopeCount > 0 && (
+          <span>{relationshipScopeCount} relationships hidden by type/uncertainty filters.</span>
+        )}
         {projection.unassignedElements > 0 && (
           <span>
             {projection.unassignedElements} unassigned internal elements and{" "}
@@ -687,19 +700,21 @@ export function DependencyNetwork({
       <details className="border-b p-3 text-sm">
         <summary className="cursor-pointer">Graph options</summary>
         <div className="mt-3 flex flex-wrap items-end gap-3">
-          <SelectField
-            label="Relationship origin"
-            value={origin}
-            onChange={(v) => {
-              changeOrigin(v as typeof origin);
-            }}
-            options={[
-              { value: "all", label: "All relationships" },
-              { value: "source", label: "Source and configuration" },
-              { value: "deployment", label: "Deployment dependencies" },
-              { value: "runtime", label: "Runtime observations" },
-            ]}
-          />
+          {showPresentationOptions && (
+            <SelectField
+              label="Relationship origin"
+              value={origin}
+              onChange={(v) => {
+                changeOrigin(v as typeof origin);
+              }}
+              options={[
+                { value: "all", label: "All relationships" },
+                { value: "source", label: "Source and configuration" },
+                { value: "deployment", label: "Deployment dependencies" },
+                { value: "runtime", label: "Runtime observations" },
+              ]}
+            />
+          )}
           <Button
             variant="outline"
             onClick={() => {

@@ -69,6 +69,7 @@ export const exploreStyles: StylesheetStyle[] = [
 export function applyNetworkMode(cy: Core, mode: NetworkMode) {
   cy.batch(() => {
     cy.elements().toggleClass("explore", mode === "explore");
+    cy.nodes().toggleClass("analysis", mode === "analysis");
     cy.nodes().toggleClass("detail", mode === "explore" && cy.zoom() >= 1.1);
   });
 }
