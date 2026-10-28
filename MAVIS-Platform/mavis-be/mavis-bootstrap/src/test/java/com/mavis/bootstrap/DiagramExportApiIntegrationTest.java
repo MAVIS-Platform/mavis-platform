@@ -198,7 +198,7 @@ class DiagramExportApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 1: GET /api/v1/analyzer/diagrams/{diagramId}/export?format=MERMAID ---
         MvcResult mermaidResult = mockMvc.perform(get("/api/v1/analyzer/diagrams/{diagramId}/export", diagram.getId())
-                        .header("X-Test-User-Email", student.getEmail())
+                        .header("Authorization", testAuthorization(student.getEmail()))
                         .param("format", "MERMAID"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -215,7 +215,7 @@ class DiagramExportApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 2: GET /api/v1/analyzer/diagrams/{diagramId}/export?format=PLANTUML ---
         MvcResult plantUmlResult = mockMvc.perform(get("/api/v1/analyzer/diagrams/{diagramId}/export", diagram.getId())
-                        .header("X-Test-User-Email", student.getEmail())
+                        .header("Authorization", testAuthorization(student.getEmail()))
                         .param("format", "PLANTUML"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.format").value("PLANTUML"))
@@ -230,7 +230,7 @@ class DiagramExportApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 3: GET /api/v1/analyzer/diagrams/{diagramId}/export?format=DRAWIO_XML ---
         MvcResult drawioResult = mockMvc.perform(get("/api/v1/analyzer/diagrams/{diagramId}/export", diagram.getId())
-                        .header("X-Test-User-Email", student.getEmail())
+                        .header("Authorization", testAuthorization(student.getEmail()))
                         .param("format", "DRAWIO_XML"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.format").value("DRAWIO_XML"))
@@ -244,7 +244,7 @@ class DiagramExportApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 4: GET /api/v1/analyzer/diagrams/{diagramId}/export?format=JSON ---
         MvcResult jsonExportResult = mockMvc.perform(get("/api/v1/analyzer/diagrams/{diagramId}/export", diagram.getId())
-                        .header("X-Test-User-Email", student.getEmail())
+                        .header("Authorization", testAuthorization(student.getEmail()))
                         .param("format", "JSON"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.format").value("JSON"))
@@ -257,7 +257,7 @@ class DiagramExportApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 5: POST /api/v1/analyzer/models/{modelVersionId}/diagrams/deployment (VIEW_4_PLUS_1 DEPLOYMENT) ---
         mockMvc.perform(post("/api/v1/analyzer/models/{modelVersionId}/diagrams/deployment", modelVersion.getId())
-                        .header("X-Test-User-Email", student.getEmail()))
+                        .header("Authorization", testAuthorization(student.getEmail())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.notation").value("VIEW_4_PLUS_1"))
@@ -301,7 +301,7 @@ class DiagramExportApiIntegrationTest extends ApiIntegrationContext {
                 .build());
 
         MvcResult bundleResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}/export", submission.getId())
-                        .header("X-Test-User-Email", student.getEmail()))
+                        .header("Authorization", testAuthorization(student.getEmail())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.submissionId").value(submission.getId().toString()))

@@ -1,4 +1,4 @@
-import { ApiError, fromStatus } from "@/lib/errors/api-error";
+import { ApiError, fromStatus, backendErrorCode } from "@/lib/errors/api-error";
 export async function javaRequest(
   path: string,
   token: string | undefined,
@@ -28,6 +28,18 @@ export async function javaRequest(
     throw new ApiError("network", 502);
   }
   if (!response.ok) {
+    const rawError: unknown = await response
+      .clone()
+      .json()
+      .catch(() => null);
+    const code = backendErrorCode(
+      path,
+      response.status,
+      rawError && typeof rawError === "object" && "message" in rawError
+        ? rawError.message
+        : undefined,
+    );
+    if (code) throw new ApiError(fromStatus(response.status).kind, response.status, code);
     // Only expose this exact, known profile error; never forward arbitrary
     // upstream messages or validation bodies that could contain credentials.
     if (

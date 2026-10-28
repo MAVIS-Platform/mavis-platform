@@ -61,7 +61,7 @@ class UploadWorkerApiIntegrationTest {
         @Bean com.mavis.analyzer.graph.service.GraphService graphRead(ModelElementRepository e,ModelRelationshipRepository r,ModelVersionRepository m,EvidenceRepository v,com.mavis.analyzer.impact.WorkerImpactService impact,com.mavis.common.security.AccessPolicyService policy){return new com.mavis.analyzer.graph.service.impl.GraphServiceImpl(e,r,m,v,impact,policy);}
         @Bean(name="mavisAnalysisExecutor") public org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor executor(){return new AnalysisLifecycleConfiguration().analysisExecutor();}
         @Bean JobControlService controls(JobRepository j,AnalysisAttemptRepository a,AnalysisExecutionRegistry x,ApplicationEventPublisher e,ObjectMapper json){return new JobControlService(j,a,x,e,json);}
-        @Bean JobServiceImpl jobs(JobRepository j,ProjectRepository p){return new JobServiceImpl(j,p);}
+        @Bean JobServiceImpl jobs(JobRepository j,ProjectRepository p,com.mavis.common.security.AccessPolicyService policy){return new JobServiceImpl(j,p,policy);}
         @Bean AnalysisRequestService analysisRequests(SourceSnapshotRepository s,ProjectRepository p,JobRepository j,ApplicationEventPublisher e){return new AnalysisRequestService(s,p,j,e);}
     }
     private void start(boolean validKey)throws Exception {

@@ -35,6 +35,8 @@ class JobServiceImplTest {
 
     @Mock
     private ProjectRepository projectRepository;
+    @Mock
+    private com.mavis.common.security.AccessPolicyService accessPolicyService;
 
     @InjectMocks
     private JobServiceImpl jobService;
@@ -90,6 +92,7 @@ class JobServiceImplTest {
 
         assertThat(response).isNotNull();
         assertThat(response.getJobId()).isEqualTo(sampleJob.getId());
+        org.mockito.Mockito.verify(accessPolicyService).requireProjectReadAccess(sampleProject);
         assertThat(response.getProjectId()).isEqualTo(sampleProject.getId());
         assertThat(response.getSourceSnapshotId()).isEqualTo(sampleSnapshot.getId());
         assertThat(response.getStatus()).isEqualTo("COMPLETED");
@@ -132,6 +135,14 @@ class JobServiceImplTest {
         assertThatThrownBy(() -> jobService.getJobsByProjectId(nonExistentProjectId))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.NOT_FOUND);
+    }
+    @Test void deniedReaderCannotReadJobOrListJobs() {
+        when(jobRepository.findById(sampleJob.getId())).thenReturn(Optional.of(sampleJob));
+        when(projectRepository.findById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
+        org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.FORBIDDEN)).when(accessPolicyService).requireProjectReadAccess(sampleProject);
+        assertThatThrownBy(() -> jobService.getJobById(sampleJob.getId())).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> jobService.getJobsByProjectId(sampleProject.getId())).isInstanceOf(BusinessException.class);
+        org.mockito.Mockito.verify(jobRepository, org.mockito.Mockito.never()).findByProjectIdOrderByStartedAtDesc(sampleProject.getId());
     }
     @org.junit.jupiter.api.AfterEach void clearAuth(){org.springframework.security.core.context.SecurityContextHolder.clearContext();}
 }

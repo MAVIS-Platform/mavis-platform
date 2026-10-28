@@ -384,6 +384,7 @@ class OtelTraceCorrelationServiceImplTest {
         when(diagramVersionRepository.findByModelVersionIdAndNotation(mvId, "UML_SEQUENCE"))
                 .thenReturn(List.of(dv));
 
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
         SequenceDiagramResponseDTO result = otelTraceCorrelationService.getSequenceDiagramBySession(sessionId);
 
         assertThat(result).isNotNull();
@@ -397,11 +398,27 @@ class OtelTraceCorrelationServiceImplTest {
     @Test
     @DisplayName("Ném lỗi NOT_FOUND khi phiên chạy chưa có ModelVersion RUNTIME_ENRICHED")
     void testGetSequenceDiagramBySession_NotFound() {
-        when(modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(sessionId))
-                .thenReturn(Optional.empty());
-
         assertThatThrownBy(() -> otelTraceCorrelationService.getSequenceDiagramBySession(sessionId))
                 .isInstanceOf(BusinessException.class);
+    }
+    @Test void authorizedSessionWithoutObservedSequenceReturnsEmptyWithoutInventingDiagram() {
+        session.setModelVersion(baseVersion);
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        var result = otelTraceCorrelationService.getSequenceDiagramBySession(sessionId);
+        assertThat(result.getSteps()).isEmpty();
+        assertThat(result.getDiagramId()).isNull();
+        assertThat(result.getModelVersionId()).isEqualTo(baseModelVersionId);
+        assertThat(result.getLimitations()).contains("NO_OBSERVED_SEQUENCE_AVAILABLE");
+        verify(accessPolicyService).requireProjectReadAccess(project);
+        verifyNoInteractions(diagramVersionRepository);
+    }
+    @Test void emptySequenceNeverBypassesProjectAuthorization() {
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN))
+                .when(accessPolicyService).requireProjectReadAccess(project);
+        assertThatThrownBy(() -> otelTraceCorrelationService.getSequenceDiagramBySession(sessionId))
+                .isInstanceOf(BusinessException.class);
+        verifyNoInteractions(modelVersionRepository, diagramVersionRepository);
     }
     @Test void rejectsModelFromAnotherProjectBeforePublication() {
         when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
@@ -759,6 +776,7 @@ class OtelTraceCorrelationServiceImplTest {
         when(diagramVersionRepository.findByModelVersionIdAndNotation(savedMv[0].getId(), "UML_SEQUENCE"))
                 .thenReturn(List.of(savedDv[0]));
 
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
         SequenceDiagramResponseDTO res = otelTraceCorrelationService.getSequenceDiagramBySession(sessionId);
         assertThat(res.getTraceStatus()).isEqualTo("PARTIAL");
         assertThat(res.getSteps()).hasSize(2);
@@ -838,7 +856,8 @@ class OtelTraceCorrelationServiceImplTest {
             when(diagramVersionRepository.findByModelVersionIdAndNotation(savedMv[0].getId(), "UML_SEQUENCE"))
                     .thenReturn(List.of(savedDv[0]));
 
-            SequenceDiagramResponseDTO res = otelTraceCorrelationService.getSequenceDiagramBySession(sessionId);
+            when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        SequenceDiagramResponseDTO res = otelTraceCorrelationService.getSequenceDiagramBySession(sessionId);
             assertThat(res.getLimitations()).contains("AMBIGUOUS_STATIC_RELATIONSHIP_CANDIDATES");
             assertThat(res.getSteps()).hasSize(1);
             var step = res.getSteps().get(0);

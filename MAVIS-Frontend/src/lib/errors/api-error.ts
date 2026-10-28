@@ -1,4 +1,11 @@
 export const publicErrors = {
+  LOGIN_CREDENTIALS: "Email or password is incorrect.",
+  LOGIN_VERIFICATION: "Verify your email before signing in.",
+  LOGIN_LOCKED: "This account is locked or inactive. Contact your administrator.",
+  SUBMISSION_DEADLINE: "The assignment deadline has passed. Ask your lecturer to extend it.",
+  SUBMISSION_SCOPE: "Use a project created for this assignment's workspace.",
+  SUBMISSION_OWNER: "Only the project owner can submit this work.",
+  SUBMISSION_PARTIAL: "Complete or confirm this partial analysis before submitting.",
   PROFILE_CURRENT_PASSWORD: "Current password is incorrect. Please try again.",
   SUBMISSION_DIAGRAM: "Save a diagram for this exact model version before submitting.",
   REFERENCE_MODEL:
@@ -6,9 +13,11 @@ export const publicErrors = {
   GITHUB_URL: "Invalid GitHub URL. Use https://github.com/owner/repository.",
   GITHUB_REPOSITORY:
     "Public GitHub repository not found. Check the URL; private repositories require uploading a ZIP archive.",
-  GITHUB_BRANCH: "The selected branch does not exist or has been deleted. Reload the branch list and select again.",
+  GITHUB_BRANCH:
+    "The selected branch does not exist or has been deleted. Reload the branch list and select again.",
   GITHUB_LIMIT: "GitHub rate limit reached. Please try again later.",
-  GITHUB_CONNECTION: "Unable to connect to GitHub or GitHub is experiencing an outage. Please try again.",
+  GITHUB_CONNECTION:
+    "Unable to connect to GitHub or GitHub is experiencing an outage. Please try again.",
   GITHUB_EMPTY: "This repository has no branches or source files to import.",
   GITHUB_COMMIT_MISSING:
     "Commit not found in this public repository. Verify the repository URL and Commit SHA.",
@@ -17,6 +26,35 @@ export const publicErrors = {
     "Unable to download or process the GitHub archive. Verify the commit SHA, archive size limits, and Java/C# source files, or upload a ZIP instead.",
 } as const;
 export type PublicErrorCode = keyof typeof publicErrors;
+// Match only reviewed business messages. Arbitrary upstream text can contain secrets.
+export function backendErrorCode(
+  path: string,
+  status: number,
+  message: unknown,
+): PublicErrorCode | undefined {
+  if (typeof message !== "string") return undefined;
+  if (["auth/login", "auth/google"].includes(path)) {
+    if (status === 401 && message === "Sai email hoặc mật khẩu") return "LOGIN_CREDENTIALS";
+    if (status === 403 && message === "Vui lòng xác thực Email trước khi đăng nhập")
+      return "LOGIN_VERIFICATION";
+    if (status === 403 && message === "Tài khoản của bạn đã bị khóa") return "LOGIN_LOCKED";
+  }
+  if (path === "submissions") {
+    if (status === 400 && message === "Đã quá hạn nộp bài cho đề bài này")
+      return "SUBMISSION_DEADLINE";
+    if (status === 400 && message === "Dự án không thuộc về không gian làm việc của đề bài")
+      return "SUBMISSION_SCOPE";
+    if (status === 403 && message === "Chỉ chủ sở hữu của dự án mới có quyền nộp bài")
+      return "SUBMISSION_OWNER";
+    if (
+      status === 400 &&
+      message ===
+        "Không thể nộp phiên bản mô hình chưa hoàn thiện (PARTIAL) trừ khi đã được xác nhận"
+    )
+      return "SUBMISSION_PARTIAL";
+  }
+  return undefined;
+}
 export function publicErrorCode(value: unknown): PublicErrorCode | undefined {
   return typeof value === "string" && Object.hasOwn(publicErrors, value)
     ? (value as PublicErrorCode)

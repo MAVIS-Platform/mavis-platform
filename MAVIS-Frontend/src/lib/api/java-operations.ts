@@ -101,7 +101,19 @@ export function runtimeSequence(raw: unknown, expectedSessionId?: string) {
     startedAt: value.startedAt ?? null,
     completedAt: value.completedAt ?? null,
     limitations: value.limitations ?? [],
-    steps: value.steps,
+    steps: value.steps.map((step) => {
+      const normalized = { ...step };
+      for (const field of ["httpMethod", "traceId", "spanId", "parentSpanId"]) {
+        const text = step[field];
+        normalized[field] = typeof text === "string" && text.trim() ? text.trim() : null;
+      }
+      const status = step["httpStatusCode"];
+      normalized["httpStatusCode"] =
+        typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599
+          ? status
+          : null;
+      return normalized;
+    }),
   };
 }
 export async function executeJava(
@@ -471,9 +483,13 @@ export async function executeJava(
         }),
       );
     case "setAccountRole":
-      return account(await patch(`admin/users/${id(input, "accountId")}/role`, {
-        newRoleCode: input["role"] === "lecturer" ? "LECTURER" : "STUDENT",
-      }));
+      return account(
+        await patch(`admin/users/${id(input, "accountId")}/role`, {
+          newRoleCode: { student: "STUDENT", lecturer: "LECTURER", admin: "SYSTEM_ADMIN" }[
+            z.enum(["student", "lecturer", "admin"]).parse(input["role"])
+          ],
+        }),
+      );
     case "integrations":
       return get("admin/integrations");
     case "profiles":

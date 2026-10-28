@@ -211,7 +211,7 @@ class OtelTraceApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         MvcResult ingestResult = mockMvc.perform(post("/api/v1/analyzer/runtime/sessions/{sessionId}/ingest-traces", session.getId())
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .param("baseModelVersionId", baseVersion.getId().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(ingestRequest)))
@@ -278,7 +278,7 @@ class OtelTraceApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 2: GET /sequence ---
         MvcResult sequenceResult = mockMvc.perform(get("/api/v1/analyzer/runtime/sessions/{sessionId}/sequence", session.getId())
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))

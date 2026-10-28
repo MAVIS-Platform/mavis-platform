@@ -219,6 +219,13 @@ function resolveNodeMetadata(graphValue: unknown, detailValue: unknown): string 
     return detailValue;
   return null;
 }
+function inferredLayer(type: string, name: string) {
+  if (type === "DATABASE") return "data";
+  if (["QUEUE_BROKER", "MESSAGE_CHANNEL", "EXTERNAL_SYSTEM"].includes(type)) return "platform";
+  if (/(?:gateway|bff|controller|ingress)/i.test(name)) return "edge";
+  if (["SERVICE_CONTAINER", "COMPONENT", "CLASS_INTERFACE"].includes(type)) return "domain";
+  return "unclassified";
+}
 export function modelView(metadata: unknown, graph: unknown, details: unknown) {
   const summary = modelSummary(metadata);
   const g = z
@@ -284,7 +291,7 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
       };
       const layer = ["edge", "domain", "platform", "data"].includes(String(properties["layer"]))
         ? properties["layer"]
-        : "unclassified";
+        : inferredLayer(n.type, n.name);
       return {
         id: n.id,
         name: n.name,

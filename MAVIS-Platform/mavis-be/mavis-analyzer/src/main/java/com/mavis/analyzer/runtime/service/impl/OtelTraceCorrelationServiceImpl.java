@@ -557,11 +557,13 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
     @Transactional(readOnly = true)
     public SequenceDiagramResponseDTO getSequenceDiagramBySession(UUID sessionId) {
         log.info("Lấy biểu đồ tuần tự UML Sequence cho sessionId: {}", sessionId);
+        RuntimeSession requestedSession = runtimeSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Runtime session not found"));
+        accessPolicyService.requireProjectReadAccess(requestedSession.getProject());
 
         Optional<ModelVersion> mvOpt = modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(sessionId);
         if (mvOpt.isEmpty()) {
-            throw new BusinessException(ErrorCode.NOT_FOUND,
-                    "Chưa có phiên bản mô hình RUNTIME_ENRICHED cho phiên thực nghiệm: " + sessionId);
+            return emptySequence(requestedSession, requestedSession.getModelVersion());
         }
 
         ModelVersion mv = mvOpt.get();
@@ -569,8 +571,7 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
 
         List<DiagramVersion> diagrams = diagramVersionRepository.findByModelVersionIdAndNotation(mv.getId(), "UML_SEQUENCE");
         if (diagrams.isEmpty()) {
-            throw new BusinessException(ErrorCode.NOT_FOUND,
-                    "Không tìm thấy sơ đồ UML_SEQUENCE cho modelVersion: " + mv.getId());
+            return emptySequence(requestedSession, mv);
         }
 
         DiagramVersion diagram = diagrams.get(0);
@@ -655,7 +656,7 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                         .operation(textOrNull(node, "operation"))
                         .messageSort(messageSort)
                         .httpMethod(textOrNull(node, "httpMethod"))
-                        .httpStatusCode(intOrNull(node, "httpStatusCode"))
+                        .httpStatusCode(httpStatusOrNull(node))
                         .durationMs(longOrNull(node, "durationMs"))
                         .traceId(textOrNull(node, "traceId"))
                         .spanId(textOrNull(node, "spanId"))
@@ -957,6 +958,29 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
             return b;
         }
         return null;
+    }
+
+    private SequenceDiagramResponseDTO emptySequence(RuntimeSession session, ModelVersion model) {
+        if (model == null) throw new BusinessException(ErrorCode.CONFLICT, "Runtime session has no model version");
+        ObjectNode layout = objectMapper.createObjectNode();
+        layout.put("notation", "UML_SEQUENCE");
+        layout.putArray("steps");
+        return SequenceDiagramResponseDTO.builder()
+                .runtimeSessionId(session.getId()).modelVersionId(model.getId())
+                .baseModelVersionId(session.getModelVersion() != null ? session.getModelVersion().getId() : null)
+                .sourceSnapshotId(session.getSourceSnapshot() != null ? session.getSourceSnapshot().getId() : null)
+                .modelRevision(model.getRevision()).modelOrigin(model.getOrigin())
+                .notation("UML_SEQUENCE").level("RUNTIME_PROCESS")
+                .traceStatus(session.getTraceStatus()).mappingStatus(session.getMappingStatus())
+                .startedAt(session.getStartedAt()).completedAt(session.getCompletedAt())
+                .limitations(List.of("NO_OBSERVED_SEQUENCE_AVAILABLE"))
+                .layoutJson(layout).steps(Collections.emptyList()).build();
+    }
+
+    private static Integer httpStatusOrNull(com.fasterxml.jackson.databind.JsonNode node) {
+        if (!node.path("httpStatusCode").isIntegralNumber()) return null;
+        Integer status = intOrNull(node, "httpStatusCode");
+        return status != null && status >= 100 && status <= 599 ? status : null;
     }
 
     private static String textOrNull(com.fasterxml.jackson.databind.JsonNode node, String field) {
