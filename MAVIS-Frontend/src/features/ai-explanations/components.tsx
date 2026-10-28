@@ -89,9 +89,9 @@ export function renderFormattedExplanation(text: string): ReactNode {
 }
 
 const QUICK_QUESTIONS = [
-  "Vai trò chính và trách nhiệm kiến trúc của phần tử này là gì?",
-  "Nếu thay đổi phần tử này thì những thành phần nào bị ảnh hưởng?",
-  "Rủi ro phụ thuộc (coupling) và điểm cần kiểm chứng thêm?",
+  "What is the main architectural role and responsibility of this element?",
+  "Which components could be affected if this element changes?",
+  "What coupling risks and assumptions need further verification?",
 ];
 
 export function AIExplanationPanel({
@@ -257,14 +257,14 @@ export function AIExplanationPanel({
           </div>
 
           <div className="space-y-1.5 rounded-md border bg-background/80 p-2.5">
-            <p className="font-semibold text-foreground">1. Explain (Vai trò &amp; Trách nhiệm)</p>
+            <p className="font-semibold text-foreground">1. Explain (Role &amp; Responsibilities)</p>
             <p className="text-muted-foreground">{active3E.explainSimple}</p>
           </div>
 
           <div className="space-y-2 rounded-md border bg-background/80 p-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-semibold text-foreground">
-                2. Explore (Bằng chứng Source Code &amp; Config · {concreteEvidences.length})
+                2. Explore (Source Code &amp; Configuration Evidence · {concreteEvidences.length})
               </p>
             </div>
             <p className="text-muted-foreground">{active3E.exploreSimple}</p>
@@ -286,7 +286,7 @@ export function AIExplanationPanel({
 
           <div className="space-y-1.5 rounded-md border bg-background/80 p-2.5">
             <p className="font-semibold text-foreground">
-              3. Evaluate (Đánh giá Liên kết &amp; Rủi ro Kiến trúc)
+              3. Evaluate (Dependencies &amp; Architectural Risks)
             </p>
             <p className="text-muted-foreground">{active3E.evaluateSimple}</p>
           </div>
