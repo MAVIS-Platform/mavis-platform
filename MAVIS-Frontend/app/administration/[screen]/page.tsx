@@ -6,6 +6,7 @@ import {
   Integrations,
   RuntimeProfiles,
   PlatformSummary,
+  PlatformUsage,
   AdminAnalysisJobs,
   AuditRecords,
 } from "@/features/administration/screens";
@@ -16,7 +17,7 @@ const screens: Record<string, { title: string; component: ComponentType }> = {
   integrations: { title: "Integration Management", component: Integrations },
   health: { title: "System Health", component: PlatformSummary },
   jobs: { title: "Analysis Jobs", component: AdminAnalysisJobs },
-  usage: { title: "Platform Usage", component: PlatformSummary },
+  usage: { title: "Platform Usage", component: PlatformUsage },
   "runtime-summary": { title: "Runtime Summary", component: PlatformSummary },
   audit: { title: "Audit Records", component: AuditRecords },
   profiles: { title: "Runtime Execution Profiles", component: RuntimeProfiles },
