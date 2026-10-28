@@ -232,7 +232,7 @@ class ImpactApiIntegrationTest extends ApiIntegrationContext {
 
         // --- 2. THỰC THI API CALL ---
         MvcResult result = mockMvc.perform(get("/api/v1/analyzer/impact")
-                        .header("X-Test-User-Email", user.getEmail())
+                        .header("Authorization", testAuthorization(user.getEmail()))
                         .param("sessionId", modelVersion.getId().toString())
                         .param("nodeId", paymentNode.getId().toString())
                         .contentType(MediaType.APPLICATION_JSON))

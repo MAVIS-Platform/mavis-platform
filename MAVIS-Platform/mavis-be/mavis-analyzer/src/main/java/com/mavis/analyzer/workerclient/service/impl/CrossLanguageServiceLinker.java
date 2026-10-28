@@ -44,6 +44,8 @@ public class CrossLanguageServiceLinker {
         }
         Path root=Path.of(source).toAbsolutePath().normalize();
         for(var finding:javaFindings)if(Set.of("FEIGN_CLIENT","REST_TEMPLATE_CALL","WEB_CLIENT_CALL").contains(finding.getElementType())&&finding.getFilePath()!=null){
+            // Method-level OpenFeign relationships and their proofs are already published by the graph builder.
+            if ("OPENFEIGN".equals(finding.getMetadata().get("clientFramework"))) continue;
             Path path=Path.of(finding.getFilePath()).toAbsolutePath().normalize();if(!path.startsWith(root))continue;
             String relative=root.relativize(path).toString().replace('\\','/');
             proposals.add(new Proposal(bindings.source(relative),bindings.endpoint(finding.getEndpointAlias()),List.of(),List.of(finding),"java:"+relative+":"+finding.getLineNumber()));

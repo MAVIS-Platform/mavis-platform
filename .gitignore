@@ -17,3 +17,5 @@ API_KEY.txt
 .env.production*
 /mavis-images.tar
 /drawio-static.tar.gz
+
+.vscode/

@@ -55,7 +55,7 @@ public class AdminHealthController {
         try {
             Path path=Path.of(storagePath).toAbsolutePath();
             if(!Files.isDirectory(path)) throw new IllegalStateException();
-            var store=Files.getFileStore(path);
+            var store=storageStore(path);
             long total=store.getTotalSpace(), free=store.getUsableSpace();
             boolean low=total>0 && (double)free/total<0.1;
             storage.put("totalBytes",total); storage.put("freeBytes",free);
@@ -71,6 +71,9 @@ public class AdminHealthController {
     protected int workerStatus() throws Exception {
         var request=HttpRequest.newBuilder(URI.create(workerUrl.replaceAll("/+$","")+"/api/health/ready")).timeout(Duration.ofSeconds(3)).GET().build();
         return http.send(request,HttpResponse.BodyHandlers.discarding()).statusCode();
+    }
+    protected java.nio.file.FileStore storageStore(Path path) throws java.io.IOException {
+        return Files.getFileStore(path);
     }
     private static long elapsed(long start){return (System.nanoTime()-start)/1000000;}
     private static Map<String,Object> check(String id,String name,String status,Long latency,String message,String action){

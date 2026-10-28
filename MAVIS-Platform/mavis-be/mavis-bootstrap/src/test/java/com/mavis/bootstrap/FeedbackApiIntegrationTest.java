@@ -183,7 +183,7 @@ class FeedbackApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         MvcResult nodeFeedbackResult = mockMvc.perform(post("/api/v1/submissions/{submissionId}/feedbacks", submission.getId())
-                        .header("X-Test-User-Email", lecturer.getEmail())
+                        .header("Authorization", testAuthorization(lecturer.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(nodeReq)))
                 .andExpect(status().isOk())
@@ -211,7 +211,7 @@ class FeedbackApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         MvcResult edgeFeedbackResult = mockMvc.perform(post("/api/v1/submissions/{submissionId}/feedbacks", submission.getId())
-                        .header("X-Test-User-Email", lecturer.getEmail())
+                        .header("Authorization", testAuthorization(lecturer.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(edgeReq)))
                 .andExpect(status().isOk())
@@ -231,7 +231,7 @@ class FeedbackApiIntegrationTest extends ApiIntegrationContext {
         System.out.println("================================================================================");
 
         // --- BƯỚC 3: GET Feedbacks by Submission ---
-        MvcResult listResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}/feedbacks", submission.getId()).header("X-Test-User-Email",student.getEmail())
+        MvcResult listResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}/feedbacks", submission.getId()).header("Authorization", testAuthorization(student.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
@@ -256,7 +256,7 @@ class FeedbackApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         MvcResult updateResult = mockMvc.perform(put("/api/v1/feedbacks/{feedbackId}", firstFeedbackId)
-                        .header("X-Test-User-Email", lecturer.getEmail())
+                        .header("Authorization", testAuthorization(lecturer.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(updateReq)))
                 .andExpect(status().isOk())
@@ -276,13 +276,13 @@ class FeedbackApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 5: DELETE /api/v1/feedbacks/{feedbackId} ---
         mockMvc.perform(delete("/api/v1/feedbacks/{feedbackId}", firstFeedbackId)
-                        .header("X-Test-User-Email", lecturer.getEmail())
+                        .header("Authorization", testAuthorization(lecturer.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
 
         // Xác minh chỉ còn 1 nhận xét
-        MvcResult remainingResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}/feedbacks", submission.getId()).header("X-Test-User-Email",student.getEmail())
+        MvcResult remainingResult = mockMvc.perform(get("/api/v1/submissions/{submissionId}/feedbacks", submission.getId()).header("Authorization", testAuthorization(student.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isArray())

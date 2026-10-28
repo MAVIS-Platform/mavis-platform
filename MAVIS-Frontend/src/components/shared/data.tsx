@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { EmptyState } from "./request-state";
 
@@ -54,12 +54,14 @@ export function DataTable<T>({
   rowKey,
   caption,
   emptyDescription,
+  renderExpandedRow,
 }: {
   rows: readonly T[];
   columns: readonly TableColumn<T>[];
   rowKey: (row: T) => string;
   caption: string;
   emptyDescription?: string;
+  renderExpandedRow?: (row: T) => ReactNode;
 }) {
   if (!rows.length)
     return (
@@ -82,15 +84,27 @@ export function DataTable<T>({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => (
-            <tr key={rowKey(row)} className="border-b last:border-0 hover:bg-accent/40">
-              {columns.map((c) => (
-                <td key={c.key} className="px-5 py-3.5">
-                  {c.render(row)}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {rows.map((row) => {
+            const expanded = renderExpandedRow?.(row);
+            return (
+              <Fragment key={rowKey(row)}>
+                <tr className="border-b last:border-0 hover:bg-accent/40">
+                  {columns.map((c) => (
+                    <td key={c.key} className="px-5 py-3.5">
+                      {c.render(row)}
+                    </td>
+                  ))}
+                </tr>
+                {expanded && (
+                  <tr className="border-b last:border-0">
+                    <td colSpan={columns.length} className="px-5 py-4">
+                      {expanded}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>

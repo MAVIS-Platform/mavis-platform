@@ -1,5 +1,7 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { explainUrlTarget } from "@/features/ai-explanations/target";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
 import { RequestState } from "@/components/shared/request-state";
@@ -67,8 +69,7 @@ function elementBadge(type?: string | null) {
 }
 
 export function selectDefaultExplainTarget(model: ArchitecturalModel): string {
-  const connCount = (id: string) =>
-    model.edges.filter((e) => e.from === id || e.to === id).length;
+  const connCount = (id: string) => model.edges.filter((e) => e.from === id || e.to === id).length;
   const services = model.elements.filter(
     (e) =>
       e.elementType === "SERVICE_CONTAINER" &&
@@ -85,8 +86,20 @@ export function selectDefaultExplainTarget(model: ArchitecturalModel): string {
 }
 
 function Explanation({ model }: { model: ArchitecturalModel }) {
-  const [targetId, setTargetId] = useState(() => selectDefaultExplainTarget(model));
-  const [targetKind, setTargetKind] = useState<"elements" | "relationships">("elements");
+  const params = useSearchParams();
+  const target = explainUrlTarget(model, params.get("target"), params.get("kind"));
+  const [targetId, setTargetId] = useState(() => target?.id ?? selectDefaultExplainTarget(model));
+  const [targetKind, setTargetKind] = useState<"elements" | "relationships">(
+    target?.kind ?? "elements",
+  );
+  const urlTargetId = target?.id;
+  const urlTargetKind = target?.kind;
+  useEffect(() => {
+    if (urlTargetId && urlTargetKind) {
+      setTargetId(urlTargetId);
+      setTargetKind(urlTargetKind);
+    }
+  }, [urlTargetId, urlTargetKind]);
   const [category, setCategory] = useState<
     "all" | "services" | "data" | "components" | "classifiers"
   >("all");
@@ -236,7 +249,9 @@ function Explanation({ model }: { model: ArchitecturalModel }) {
         <div className="grid gap-3 md:grid-cols-2">
           <SearchInput
             label={
-              targetKind === "elements" ? "Filter elements by name or stack" : "Filter relationships"
+              targetKind === "elements"
+                ? "Filter elements by name or stack"
+                : "Filter relationships"
             }
             value={search}
             onChange={(val) => {
@@ -289,4 +304,3 @@ function Explanation({ model }: { model: ArchitecturalModel }) {
     </div>
   );
 }
-

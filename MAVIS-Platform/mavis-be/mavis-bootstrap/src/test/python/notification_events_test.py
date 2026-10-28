@@ -16,7 +16,7 @@ class NotificationEvents(unittest.TestCase):
   migration=Path(__file__).resolve().parents[2]/"main/resources/db/migration"
   with cls.c:
    with cls.c.cursor() as q:
-    for name in ["V1__Init_Database.sql","V7__Runtime_Versioned_Contract_And_Receipts.sql","V11__Submission_Review.sql","V21__User_Notifications.sql"]:q.execute((migration/name).read_text(encoding="utf-8-sig"))
+    for name in ["V1__Init_Database.sql","V7__Runtime_Versioned_Contract_And_Receipts.sql","V21__Submission_Review.sql","V22__User_Notifications.sql"]:q.execute((migration/name).read_text(encoding="utf-8-sig"))
  @classmethod
  def tearDownClass(cls):
   cls.c.close()

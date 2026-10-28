@@ -126,7 +126,7 @@ test("job mapping keeps review/cancellation separate from success and has no fab
 });
 test("model mapping retains UUIDs, properties and unclassified types without pretending evidence is complete",()=>{
  const m=wire.modelView(metadata,{nodes:[{id:node,name:"Service",type:"SERVICE_CONTAINER"}],edges:[]},[{id:node,modelVersionId:model,name:"Service",elementType:"SERVICE_CONTAINER",properties:{description:"Saved",logicalKey:"keep-me"}}]);
- assert.equal(m.elements[0].layer,"unclassified");assert.equal(m.elements[0].elementType,"SERVICE_CONTAINER");assert.equal(m.elements[0].properties.logicalKey,"keep-me");assert.deepEqual(m.elements[0].evidence,[]);
+ assert.equal(m.elements[0].layer,"domain");assert.equal(m.elements[0].elementType,"SERVICE_CONTAINER");assert.equal(m.elements[0].properties.logicalKey,"keep-me");assert.deepEqual(m.elements[0].evidence,[]);
  assert.throws(()=>wire.modelView(metadata,{nodes:[],edges:[{id:node,sourceNodeId:node,targetNodeId:node,kind:"HTTP"}]},[]));
  assert.throws(()=>wire.modelView(metadata,{nodes:[],edges:[]},[{id:node,modelVersionId:job,name:"foreign",elementType:"COMPONENT"}]));
  assert.equal(wire.modelView(metadata,{nodes:[],edges:[]},[]).elements.length,0);
@@ -548,6 +548,94 @@ test("workspaces with embedded members and feedback mutations skip redundant rou
  const fb=await executeJava("feedback",{submissionId:job,modelId:model,text:"Fast"},"jwt",new AbortController().signal);
  assert.equal(fb.feedback[0].text,"Fast");
  assert.equal(paths.filter(p=>p===`GET submissions/${job}`).length,1);
+});
+
+test("audit: reviewed business errors survive Java and BFF without forwarding arbitrary upstream text", async t => {
+ environment(t);
+ const {javaRequest}=require("../src/lib/api/java-client.ts");
+ const {BackendAdapter}=require("../src/lib/api/backend-adapter.ts");
+ let message="Sai email hoặc mật khẩu";
+ t.mock.method(globalThis,"fetch",async()=>Response.json({message},{status:401}));
+ await assert.rejects(javaRequest("auth/login",undefined,{method:"POST"}),e=>e.code==="LOGIN_CREDENTIALS");
+ const response=await route.POST(new NextRequest("http://127.0.0.1:3000/api/mavis/signIn",{method:"POST",headers:{host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000","content-type":"application/json"},body:JSON.stringify({email:"u@example.org",password:"wrong"})}),{params:Promise.resolve({operation:"signIn"})});
+ assert.equal(response.status,401);
+ const body=await response.json();assert.equal(body.code,"LOGIN_CREDENTIALS");
+ t.mock.method(globalThis,"fetch",async()=>Response.json(body,{status:401}));
+ await assert.rejects(new BackendAdapter().execute("signIn",{email:"u@example.org",password:"wrong"}),e=>e.code==="LOGIN_CREDENTIALS" && e.message.includes("password"));
+ t.mock.method(globalThis,"fetch",async()=>Response.json({message:"password=secret jdbc:postgresql://private SQL error"},{status:500}));
+ await assert.rejects(javaRequest("projects","jwt"),e=>!e.code && !e.message.includes("secret") && !e.message.includes("jdbc"));
+});
+
+test("audit: sequence normalizes optional transport fields without inventing calls",()=>{
+ const {runtimeSequence}=require("../src/lib/api/java-operations.ts");
+ const raw={runtimeSessionId:job,modelVersionId:model,steps:[{stepOrder:1,httpMethod:"  ",traceId:"",spanId:"  ",parentSpanId:null,httpStatusCode:0,operation:"actual operation"},{httpMethod:" GET ",traceId:" trace ",httpStatusCode:200},{httpStatusCode:600},{httpStatusCode:200.5}]};
+ const value=runtimeSequence(raw,job);
+ assert.equal(value.steps.length,4);assert.equal(value.steps[0].httpMethod,null);assert.equal(value.steps[0].httpStatusCode,null);assert.equal(value.steps[0].traceId,null);assert.equal(value.steps[0].spanId,null);assert.equal(value.steps[0].operation,"actual operation");
+ assert.equal(value.steps[1].httpMethod,"GET");assert.equal(value.steps[1].traceId,"trace");assert.equal(value.steps[1].httpStatusCode,200);assert.equal(value.steps[2].httpStatusCode,null);assert.equal(value.steps[3].httpStatusCode,null);
+ assert.deepEqual(runtimeSequence({...raw,steps:[]},job).steps,[]);
+ assert.throws(()=>runtimeSequence(raw,project));
+});
+
+test("audit: graph layers retain explicit classification and resolved certainty",()=>{
+ for(const [type,name,layer] of [["DATABASE","orders","data"],["QUEUE_BROKER","events","platform"],["SERVICE_CONTAINER","api-gateway","edge"],["COMPONENT","Orders","domain"],["UNKNOWN","unknown","unclassified"]]) {
+  const graph={nodes:[{id:node,name,type}],edges:[{id:job,sourceNodeId:node,targetNodeId:node,kind:"HTTP",resolutionStatus:"RESOLVED"}]};
+  const detail={id:node,modelVersionId:model,name,elementType:type,properties:{}};
+  const mapped=wire.modelView(metadata,graph,[detail]);assert.equal(mapped.elements[0].layer,layer);assert.equal(mapped.edges[0].uncertain,false);
+  detail.properties.layer="edge";assert.equal(wire.modelView(metadata,graph,[detail]).elements[0].layer,"edge");
+  graph.edges[0].resolutionStatus="AMBIGUOUS";assert.equal(wire.modelView(metadata,graph,[detail]).edges[0].uncertain,true);
+ }
+});
+
+test("audit: legacy proxy permits documented reads/evaluation while excluding internal and arbitrary paths",()=>{
+ const {allowedBackendPath}=require("../src/lib/api/backend-path.ts");
+ for(const p of [`projects/${project}/snapshots`,`projects/${project}/jobs`,`analyzer/snapshots/${snapshot}`,`analyzer/models/${model}/elements`,`analyzer/models/${model}/elements/${node}`,`analyzer/models/${model}/evaluate`,`analyzer/evaluations/${job}/findings`,`assignments/${job}/reference-source`]) assert.equal(allowedBackendPath(p),true,p);
+ for(const p of ["admin/users",`analyzer/runtime/sessions/${job}/recovery-result`,"../admin/users",`projects/${project}/snapshots/extra`,"https://private",`analyzer/models/${model}/evaluate/extra`]) assert.equal(allowedBackendPath(p),false,p);
+});
+
+test("audit: optional runtime failure cannot block submission; required runtime remains gated",()=>{
+ const {runtimeEvidenceBlocked}=require("../src/features/submissions/submission-readiness.ts");
+ for(const pending of [true,false])for(const failed of [true,false])assert.equal(runtimeEvidenceBlocked(false,pending,failed),false);
+ assert.equal(runtimeEvidenceBlocked(true,true,false),true);assert.equal(runtimeEvidenceBlocked(true,false,true),true);assert.equal(runtimeEvidenceBlocked(true,false,false),false);
+});
+
+test("audit: explain selection accepts only a target in the current revision and correct kind",()=>{
+ const {explainUrlTarget}=require("../src/features/ai-explanations/target.ts");
+ const value={elements:[{id:node}],edges:[{id:job}]};
+ assert.deepEqual(explainUrlTarget(value,job,"relationship"),{id:job,kind:"relationships"});
+ assert.deepEqual(explainUrlTarget(value,node,"element"),{id:node,kind:"elements"});
+ assert.equal(explainUrlTarget(value,project,"element"),null);assert.equal(explainUrlTarget(value,node,"relationship"),null);
+});
+
+test("audit: every backend operation has a Java adapter case or an explicit BFF auth handler",()=>{
+ const {contracts}=require("../src/lib/api/contracts.ts");
+ const source=fs.readFileSync(path.join(root,"src/lib/api/java-operations.ts"),"utf8");
+ const routeSource=fs.readFileSync(path.join(root,"app/api/mavis/[operation]/route.ts"),"utf8");
+ const cases=new Set([...source.matchAll(/case "([^"]+)":/g)].map(match=>match[1]));
+ const bff=["session","signIn","googleSignIn","signOut","mockLogin","register","verifyEmail","resendOtp","forgotPassword","resetPassword"];
+ for(const name of Object.keys(contracts)) {
+  assert.ok(cases.has(name)||bff.includes(name),`Missing backend operation: ${name}`);
+  if(bff.includes(name))assert.ok(routeSource.includes(`"${name}"`)||routeSource.includes(`${name}:`),name);
+ }
+});
+
+test("audit: admin role selection maps all three UI roles to canonical backend codes",async t=>{
+ environment(t);const {contracts}=require("../src/lib/api/contracts.ts");
+ for(const [role,code] of [["student","STUDENT"],["lecturer","LECTURER"],["admin","SYSTEM_ADMIN"]]) {
+  assert.equal(contracts.setAccountRole.input.safeParse({accountId:node,role}).success,true);
+  t.mock.method(globalThis,"fetch",async(url,options)=>{
+   assert.ok(url.endsWith(`/admin/users/${node}/role`));assert.equal(options.method,"PATCH");assert.equal(options.headers.get("Authorization"),"Bearer jwt");assert.deepEqual(JSON.parse(options.body),{newRoleCode:code});
+   return Response.json({code:200,data:{id:node,email:"role@example.org",fullName:"Role test",roleCode:code,status:"ACTIVE"}});
+  });
+  assert.equal((await executeJava("setAccountRole",{accountId:node,role},"jwt",new AbortController().signal)).role,role);
+ }
+ assert.equal(contracts.setAccountRole.input.safeParse({accountId:node,role:"superuser"}).success,false);
+});
+
+test("Feign evidence boundary preserves only recognized saved communication roles",()=>{
+ const base={id:node,sourceType:"STATIC_CODE",locator:"order/CatalogFeignClient.java:17",excerpt:"@PostMapping(\"/deduct\")",provenance:{communicationRole:"CLIENT_CONTRACT",privateField:"not exposed"}};
+ const mapped=wire.evidenceView(base);assert.equal(mapped.communicationRole,"CLIENT_CONTRACT");assert.equal(mapped.origin,"persisted");assert.ok(!JSON.stringify(mapped).includes("privateField"));
+ assert.equal(wire.evidenceView({...base,provenance:{communicationRole:"invented"}}).communicationRole,undefined);
+ assert.equal(wire.evidenceView({...base,provenance:null}).communicationRole,undefined);
 });
 
 test("admin AI usage returns real scoped measurements and preserves unavailable fields", async t => {

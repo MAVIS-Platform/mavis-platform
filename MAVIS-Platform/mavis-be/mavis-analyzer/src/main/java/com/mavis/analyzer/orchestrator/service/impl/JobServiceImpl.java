@@ -7,6 +7,7 @@ import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.JobRepository;
 import com.mavis.common.repository.ProjectRepository;
+import com.mavis.common.security.AccessPolicyService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,20 +23,21 @@ public class JobServiceImpl implements JobService {
 
     private final JobRepository jobRepository;
     private final ProjectRepository projectRepository;
+    private final AccessPolicyService accessPolicyService;
 
     @Override
     @Transactional(readOnly = true)
     public JobResponseDTO getJobById(UUID jobId) {
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy tiến trình phân tích với ID: " + jobId));
-        owner(job.getProject());
+        accessPolicyService.requireProjectReadAccess(job.getProject());
         return toResponseDTO(job);
     }
 
     @Override
     @Transactional(readOnly = true)
     public List<JobResponseDTO> getJobsByProjectId(UUID projectId) {
-        owner(projectRepository.findById(projectId).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND,"Project not found")));
+        accessPolicyService.requireProjectReadAccess(projectRepository.findById(projectId).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND,"Project not found")));
 
         List<Job> jobs = jobRepository.findByProjectIdOrderByStartedAtDesc(projectId);
         return jobs.stream()
@@ -56,5 +58,4 @@ public class JobServiceImpl implements JobService {
                 .completedAt(job.getCompletedAt())
                 .build();
     }
-    private void owner(com.mavis.common.entity.Project project){if(!project.getOwner().getId().equals(com.mavis.common.utils.SecurityUtils.getCurrentUserId()))throw new BusinessException(ErrorCode.FORBIDDEN,"Job access denied");}
 }

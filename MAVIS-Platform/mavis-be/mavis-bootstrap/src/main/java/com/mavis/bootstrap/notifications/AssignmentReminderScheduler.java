@@ -14,5 +14,5 @@ public class AssignmentReminderScheduler {
  private final JdbcTemplate jdbc;
  public AssignmentReminderScheduler(JdbcTemplate jdbc){this.jdbc=jdbc;}
  @Scheduled(fixedDelayString="${mavis.notifications.reminder-interval-ms:60000}",initialDelay=60000)
- public void remind(){try{jdbc.execute("SELECT mavis_assignment_reminders()");}catch(org.springframework.dao.DataAccessException e){log.warn("Notification reminder storage unavailable; check migration V21.");}}
+ public void remind(){try{jdbc.execute("SELECT mavis_assignment_reminders()");}catch(org.springframework.dao.DataAccessException e){log.warn("Notification reminder storage unavailable; check migration V22.");}}
 }
