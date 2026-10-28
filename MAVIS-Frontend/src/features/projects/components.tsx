@@ -134,7 +134,7 @@ function ProjectImportDialog({
           <DialogTitle>{create ? "Import new project" : "Import new snapshot"}</DialogTitle>
           <DialogDescription>
             {create
-              ? "Enter a project name and its public GitHub repository. The first snapshot uses the default branch."
+              ? "Enter a project name and its public GitHub repository, then choose a branch or pin a commit for the first snapshot."
               : "Add a new snapshot to this project. Its linked GitHub repository stays the same."}
           </DialogDescription>
         </DialogHeader>
