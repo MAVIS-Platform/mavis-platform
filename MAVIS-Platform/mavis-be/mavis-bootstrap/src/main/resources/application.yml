@@ -71,4 +71,4 @@ mavis:
     service-key: ${MAVIS_RUNNER_SERVICE_KEY:mavis-local-runner-secret-key}
     collector-config-path: ${MAVIS_RUNNER_COLLECTOR_CONFIG:samples/runtime-poc/collector.yaml}
     runner-project-path: ${MAVIS_RUNNER_PROJECT_PATH:../MAVIS.Worker/src/MAVIS.Runner/MAVIS.Runner.csproj}
-    allow-unverified-poc-promotion: true
+    allow-unverified-poc-promotion: false

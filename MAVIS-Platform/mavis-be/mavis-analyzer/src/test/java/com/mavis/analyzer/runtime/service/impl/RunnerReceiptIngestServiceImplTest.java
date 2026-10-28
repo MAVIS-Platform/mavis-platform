@@ -237,7 +237,7 @@ class RunnerReceiptIngestServiceImplTest {
                 .trace(trace)
                 .build();
 
-        RunnerReceiptIngestRequestDTO receipt = createValidReceiptBuilder()
+        RunnerReceiptIngestRequestDTO receipt = createValidReceiptBuilder().imageSourceCorrespondence("Verified")
                 .outcome(outcome)
                 .build();
 
@@ -247,6 +247,59 @@ class RunnerReceiptIngestServiceImplTest {
         assertThat(session.getReceiptDigest()).isNotNull();
         assertThat(session.getReceiptDigest()).startsWith("sha256:");
         assertThat(session.getPublicationGateStatus()).isEqualTo("PROMOTED");
+        assertThat(session.getTraceStatus()).isEqualTo("COMPLETE");
+    }
+
+    @Test
+    @DisplayName("CHẶNG 11: Tiếp nhận RunnerReceipt thành công và lưu receiptDigest 64-hex")
+    void testUnverifiedReceiptCannotPromoteEvenWithLegacyBypass() {
+        RunnerCorrelatedSpanDTO spanA = RunnerCorrelatedSpanDTO.builder()
+                .traceId("4bf92f3577b34da6a3ce929d0e0e4736")
+                .spanId("00f067aa0ba902b7")
+                .runtimeService("order-service")
+                .modelServiceId(serviceAId.toString())
+                .durationNanoseconds("15000000")
+                .httpStatusCode(200)
+                .build();
+
+        RunnerCorrelatedSpanDTO spanB = RunnerCorrelatedSpanDTO.builder()
+                .traceId("4bf92f3577b34da6a3ce929d0e0e4736")
+                .spanId("5fb397be34d23b0f")
+                .parentSpanId("00f067aa0ba902b7")
+                .runtimeService("payment-service")
+                .modelServiceId(serviceBId.toString())
+                .durationNanoseconds("82500000")
+                .httpStatusCode(200)
+                .build();
+
+        RunnerTraceCorrelationDTO trace = RunnerTraceCorrelationDTO.builder()
+                .sessionId(sessionId.toString())
+                .modelVersionId(modelVersionId.toString())
+                .spans(List.of(spanA, spanB))
+                .causalEdges(List.of(new RunnerCausalEdgeDTO("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "5fb397be34d23b0f")))
+                .warnings(List.of())
+                .build();
+
+        RunnerOutcomeDTO outcome = RunnerOutcomeDTO.builder()
+                .executionStatus("Completed")
+                .scenarioStatus("Passed")
+                .evidenceStatus("Available")
+                .cleanupStatus("Confirmed")
+                .traceQuality("CompleteForCapturedData")
+                .mappingStatus("Mapped")
+                .trace(trace)
+                .build();
+
+        RunnerReceiptIngestRequestDTO receipt = createValidReceiptBuilder()
+                .imageSourceCorrespondence("Unverified").outcome(outcome)
+                .build();
+
+        ModelVersionResponseDTO response = runnerReceiptIngestService.ingestRunnerReceipt(sessionId, receipt);
+
+        assertThat(response).isNotNull();
+        assertThat(session.getReceiptDigest()).isNotNull();
+        assertThat(session.getReceiptDigest()).startsWith("sha256:");
+        assertThat(session.getPublicationGateStatus()).isEqualTo("HELD_NON_PROMOTED");
         assertThat(session.getTraceStatus()).isEqualTo("COMPLETE");
     }
 
@@ -368,7 +421,7 @@ class RunnerReceiptIngestServiceImplTest {
                 .trace(trace)
                 .build();
 
-        RunnerReceiptIngestRequestDTO receipt = createValidReceiptBuilder()
+        RunnerReceiptIngestRequestDTO receipt = createValidReceiptBuilder().imageSourceCorrespondence("Verified")
                 .outcome(outcome)
                 .build();
 
