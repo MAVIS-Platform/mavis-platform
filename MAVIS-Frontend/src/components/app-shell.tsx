@@ -664,7 +664,7 @@ function ShellChrome({
                 Inspect the Student, Lecturer, and Admin navigation against the supplied screen
                 flows.
               </li>
-              <li>Compare Light and Dark specimens, then try Appearance → System.</li>
+              <li>Use the appearance button to switch between Light and Dark in one click.</li>
               <li>Check sidebar collapse, narrow layouts, keyboard focus, and evidence labels.</li>
             </ul>
             <p className="mt-6 text-xs text-muted-foreground">
