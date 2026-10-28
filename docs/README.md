@@ -11,4 +11,4 @@ Cập nhật: 21/10/2026; baseline main c0121fe.
 
 `mavis-context.md` cũ là proposal trước Review 1 theo hướng Developer SaaS/subscription. Nội dung đó đã được thay thế bằng bối cảnh giáo dục hiện hành; lịch sử cũ vẫn tra được trong Git. Không dùng billing/payment/subscription của proposal cũ làm backlog mặc định.
 
-Tài liệu nghiệp vụ gốc nằm ở `.doc_review/main/` trên máy nhóm, không được track trong Git hiện tại. Các trang Markdown này tóm tắt bối cảnh cần thiết để agent từ checkout sạch vẫn làm việc được; không giả định agent có các file DOCX/PNG riêng.
+Tài liệu gốc, hướng dẫn Word/PDF và ví dụ sơ đồ được tổng hợp trong [Tài liệu tham khảo](references/README.md). Đây là tài liệu theo thời điểm, cần đối chiếu với source hiện tại. Các trang Markdown hiện có vẫn giữ nguyên đường dẫn để không làm hỏng liên kết.
