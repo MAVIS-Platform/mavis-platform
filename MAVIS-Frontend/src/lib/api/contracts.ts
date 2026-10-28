@@ -12,7 +12,12 @@ function contract<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
 ) {
   return { input, output, mutation };
 }
+const notificationCategory = z.enum(["WORKSPACE","ASSIGNMENT","SUBMISSION","ANALYSIS","RUNTIME","ACCOUNT","SYSTEM"]);
+const notificationItem = z.object({ id:z.string().uuid(),category:notificationCategory,title:z.string(),body:z.string(),targetPath:z.string().refine(p=>/^\/(?!\/)/.test(p)&&!p.includes("\\")),createdAt:z.string().datetime(),readAt:z.string().datetime().nullable() });
 export const contracts = {
+  notifications: contract(z.object({page:z.number().int().min(0).max(10000),size:z.number().int().min(1).max(50),unreadOnly:z.boolean(),category:notificationCategory.optional()}),z.object({items:z.array(notificationItem),total:z.number().int().nonnegative(),unreadCount:z.number().int().nonnegative(),page:z.number().int(),size:z.number().int(),asOf:z.string().datetime()})),
+  readNotification: contract(z.object({notificationId:z.string().uuid()}),ok,true),
+  readAllNotifications: contract(z.object({before:z.string().datetime()}),ok,true),
   updateProfile: contract(
     z
       .object({

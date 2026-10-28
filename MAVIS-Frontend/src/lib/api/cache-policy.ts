@@ -38,6 +38,8 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
   stopRuntime: ["runtimeSessions", "runtimeSession", "platformSummary", "audit"],
   submit: ["submissions", "submission", "assignmentSubmissions"],
   feedback: ["submissions", "submission", "assignmentSubmissions"],
+  readNotification: ["notifications"],
+  readAllNotifications: ["notifications"],
   setAccountRole: ["accounts", "audit", "workspaces"],
   setAccountLock: ["accounts", "audit"],
   configureIntegration: ["integrations", "audit"],

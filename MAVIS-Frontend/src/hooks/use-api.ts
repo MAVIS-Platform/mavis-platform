@@ -101,9 +101,13 @@ export function useApiMutation<K extends Operation>(operation: K) {
       const scope = mutationScope(operation, input, data);
       const upsertRow = (rows: unknown[] | undefined, next: unknown) => {
         if (!rows || !next || typeof next !== "object" || !("id" in next)) return rows;
-        const exists = rows.some((r) => r && typeof r === "object" && "id" in r && r.id === next.id);
+        const exists = rows.some(
+          (r) => r && typeof r === "object" && "id" in r && r.id === next.id,
+        );
         return exists
-          ? rows.map((r) => (r && typeof r === "object" && "id" in r && r.id === next.id ? next : r))
+          ? rows.map((r) =>
+              r && typeof r === "object" && "id" in r && r.id === next.id ? next : r,
+            )
           : [...rows, next];
       };
       const submissionUpdated = ["submit", "feedback", "updateFeedback", "deleteFeedback"].includes(
@@ -221,17 +225,18 @@ export function useApiMutation<K extends Operation>(operation: K) {
           return operation !== "gradeSubmission" || queryOperation !== "submissionReview";
         },
       });
-      toast.success(
-        operation === "signOut"
-          ? "Signed out"
-          : ["mockLogin", "signIn"].includes(operation)
-            ? api.mode === "mock"
-              ? "Sample account selected"
-              : "Signed in"
-            : api.mode === "mock"
-              ? "Sample change saved for this browser session"
-              : "Change saved",
-      );
+      if (!["readNotification", "readAllNotifications"].includes(operation))
+        toast.success(
+          operation === "signOut"
+            ? "Signed out"
+            : ["mockLogin", "signIn"].includes(operation)
+              ? api.mode === "mock"
+                ? "Sample account selected"
+                : "Signed in"
+              : api.mode === "mock"
+                ? "Sample change saved for this browser session"
+                : "Change saved",
+        );
     },
     onError: (error) => {
       toast.error(normalizeError(error).message);

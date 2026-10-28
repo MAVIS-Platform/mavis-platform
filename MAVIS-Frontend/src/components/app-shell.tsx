@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
-  Bell,
   BookOpen,
   ChevronDown,
   Info,
@@ -16,6 +15,7 @@ import {
   Palette,
   UserRound,
 } from "lucide-react";
+import { NotificationBell } from "@/features/notifications/inbox";
 import { AppearanceSelector } from "@/components/appearance-selector";
 import { MavisLogo } from "@/components/mavis-logo";
 import { Button } from "@/components/ui/button";
@@ -77,7 +77,7 @@ export function AppShell(props: AppShellProps) {
   if (props.live) return <ShellChrome {...props} />;
   const preview = Boolean(props.onPreviewNavigate);
   const permission: Permission | undefined =
-    preview || ["/design-system", "/profile"].includes(pathname)
+    preview || ["/design-system", "/profile", "/notifications"].includes(pathname)
       ? undefined
       : pathname.startsWith("/administration")
         ? "admin:manage"
@@ -340,9 +340,7 @@ function ShellChrome({
             <MavisLogo compact={isCollapsed} className={isCollapsed ? "h-10 w-10" : "h-12 w-12"} />
             {!isCollapsed && (
               <span className="min-w-0">
-                <span className="block text-base tracking-widest text-foreground">
-                  MAVIS
-                </span>
+                <span className="block text-base tracking-widest text-foreground">MAVIS</span>
               </span>
             )}
           </Link>
@@ -489,38 +487,33 @@ function ShellChrome({
             </Sheet>
             <Breadcrumbs
               items={[
-                { label: "MAVIS", href: role === "admin" ? "/administration/health" : "/", visibility: "sm" },
+                {
+                  label: "MAVIS",
+                  href: role === "admin" ? "/administration/health" : "/",
+                  visibility: "sm",
+                },
                 ...(scope !== "global"
-                  ? [{
-                      label: context,
-                      href: scope === "project"
-                        ? `/project-overview${navigationQuery}`
-                        : scope === "review"
-                          ? `/submissions${navigationQuery}`
-                          : `/workspaces${navigationQuery}`,
-                      visibility: "lg" as const,
-                    }]
+                  ? [
+                      {
+                        label: context,
+                        href:
+                          scope === "project"
+                            ? `/project-overview${navigationQuery}`
+                            : scope === "review"
+                              ? `/submissions${navigationQuery}`
+                              : `/workspaces${navigationQuery}`,
+                        visibility: "lg" as const,
+                      },
+                    ]
                   : []),
                 { label: title },
               ]}
             />
             <div className="flex shrink-0 items-center gap-1">
               <AppearanceSelector />
+              <NotificationBell />
               {!live && (
                 <>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" aria-label="Notifications">
-                        <Bell />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-72 p-4">
-                      <DropdownMenuLabel className="px-0">Notifications</DropdownMenuLabel>
-                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                        Notifications are unavailable. No notification service has been configured.
-                      </p>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
                   <div className="mx-2 h-6 border-l" />
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -590,9 +583,7 @@ function ShellChrome({
             <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-info-subtle px-(--page-gutter) py-2 text-xs text-info">
               <span className="flex items-center gap-2">
                 <Info className="size-3.5 shrink-0" aria-hidden="true" />
-                <span>
-                  Design preview · All content is illustrative. No live system data.
-                </span>
+                <span>Design preview · All content is illustrative. No live system data.</span>
               </span>
               <button
                 onClick={() => setFeedbackOpen(true)}
@@ -751,7 +742,9 @@ function NavigationEntry({
   const className = cn(
     "flex min-h-9 w-full items-center gap-2.5 rounded-md px-2 text-left text-xs leading-5 transition-colors",
     collapsed && "justify-center px-0",
-    !collapsed && item.id.startsWith("workspace:") && "ml-2 w-[calc(100%-0.5rem)] border-l border-border/60 pl-4",
+    !collapsed &&
+      item.id.startsWith("workspace:") &&
+      "ml-2 w-[calc(100%-0.5rem)] border-l border-border/60 pl-4",
     active
       ? "bg-sidebar-accent font-semibold text-sidebar-accent-foreground ring-1 ring-inset ring-primary/20"
       : "text-muted-foreground hover:bg-accent hover:text-foreground",

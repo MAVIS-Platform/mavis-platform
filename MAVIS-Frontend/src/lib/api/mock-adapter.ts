@@ -724,6 +724,9 @@ export class MockAdapter implements ApiAdapter {
         return { status:"UNKNOWN", checkedAt:new Date().toISOString(), scope:"Preview data. No live health probes have been performed.", checks:[{id:"backend",name:"Application API",status:"UNKNOWN",latencyMs:null,message:"Live checks are unavailable in preview mode.",action:"Connect to the backend to run health checks."}], jvm:{usedBytes:0,maxBytes:0,uptimeSeconds:0},storage:{} };
       case "adminAiUsage":
         return {status:"UNAVAILABLE",updatedAt:new Date().toISOString(),message:"Token tracking is not available in preview mode.",providers:[]};
+      case "notifications": return {items:[],total:0,unreadCount:0,page:0,size:20,asOf:new Date().toISOString()};
+      case "readNotification": throw new ApiError("not-found",404);
+      case "readAllNotifications": return {ok:true};
       case "platformSummary":
         return {
           health: "unknown",
