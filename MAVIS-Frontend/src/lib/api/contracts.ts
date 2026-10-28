@@ -605,6 +605,12 @@ export const contracts = {
   adminAiUsage: contract(
     nothing,
     z.object({
+      eventsAvailable: z.boolean().optional(),
+      events: z.array(z.object({
+        requestId: z.string(), recordedAt: z.string(), source: z.string(),
+        provider: z.string(), model: z.string(), inputTokens: z.number(), outputTokens: z.number(),
+        userId: z.string().nullable(), userName: z.string().nullable(), userEmail: z.string().nullable(),
+      })).optional(),
       status: z.enum(["AVAILABLE", "UNAVAILABLE"]),
       updatedAt: z.string(),
       message: z.string().nullable(),

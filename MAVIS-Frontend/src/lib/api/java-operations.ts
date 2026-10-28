@@ -483,6 +483,7 @@ export async function executeJava(
       .object({
         id: z.string().uuid(),
         fullName: z.string(),
+        createdAt: z.string().nullish(),
         roleCode: z.string(),
         email: z.string().nullish(),
         status: z.string(),
@@ -491,6 +492,7 @@ export async function executeJava(
     return {
       id: a.id,
       name: a.fullName,
+      createdAt: a.createdAt ?? null,
       email: a.email ?? "",
       role: roleView(a.roleCode),
       locked: a.status === "LOCKED",

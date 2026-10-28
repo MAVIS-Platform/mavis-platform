@@ -119,6 +119,7 @@ Return valid JSON only: { "answer": "concise response", "offTopic": false }`;
 
 async function callStructuredLlm<T>(
   resolved: { key: string; provider: "openai" | "gemini" },
+  userId: string,
   systemPrompt: string,
   userPayload: string,
   maxTokens?: number,
@@ -156,7 +157,7 @@ async function callStructuredLlm<T>(
         choices?: Array<{ message?: { content?: string } }>;
         usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
-      await reportAiUsage("openai", modelName, data.usage?.prompt_tokens, data.usage?.completion_tokens);
+      await reportAiUsage("openai", modelName, data.usage?.prompt_tokens, data.usage?.completion_tokens, userId);
       const content = data.choices?.[0]?.message?.content?.trim();
       if (content) return JSON.parse(content) as Partial<T>;
     }
@@ -185,7 +186,7 @@ async function callStructuredLlm<T>(
     const outputTokens = typeof data.usageMetadata?.candidatesTokenCount === "number"
       ? data.usageMetadata.candidatesTokenCount + (data.usageMetadata.thoughtsTokenCount ?? 0)
       : undefined;
-    await reportAiUsage("gemini", "gemini-2.5-flash", data.usageMetadata?.promptTokenCount, outputTokens);
+    await reportAiUsage("gemini", "gemini-2.5-flash", data.usageMetadata?.promptTokenCount, outputTokens, userId);
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (content) return JSON.parse(content) as Partial<T>;
   }
@@ -202,9 +203,11 @@ export async function POST(request: NextRequest) {
   }
   const token = request.cookies.get("mavis_session")?.value;
   if (!token) return fail(401);
+  let userId: string;
   try {
     const session = await currentSession(token, request.signal);
     if (!session.user) return fail(401);
+    userId = session.user.id;
   } catch {
     return fail(503);
   }
@@ -288,6 +291,7 @@ export async function POST(request: NextRequest) {
 
       const parsedChat = await callStructuredLlm<{ answer?: string; offTopic?: boolean }>(
         resolved,
+        userId,
         THREE_E_CHAT_SYSTEM_PROMPT,
         JSON.stringify({
           target: {
@@ -361,6 +365,7 @@ export async function POST(request: NextRequest) {
       });
       const parsed3E = await callStructuredLlm<ThreeEAiSimplifiedExplanation>(
         resolved,
+        userId,
         THREE_E_SYSTEM_PROMPT,
         userPayload,
       );
@@ -400,6 +405,7 @@ export async function POST(request: NextRequest) {
       });
       const parsedUml = await callStructuredLlm<UmlAiDiagramEnrichment>(
         resolved,
+        userId,
         UML_SYSTEM_PROMPT,
         userPayload,
       );
@@ -482,6 +488,7 @@ export async function POST(request: NextRequest) {
       });
       const parsedC4 = await callStructuredLlm<C4AiDiagramEnrichment>(
         resolved,
+        userId,
         C4_SYSTEM_PROMPT,
         userPayload,
       );
@@ -528,6 +535,7 @@ export async function POST(request: NextRequest) {
 
     const parsedAi = await callStructuredLlm<SequenceAiEnrichment>(
       resolved,
+        userId,
       SEQUENCE_SYSTEM_PROMPT,
       userPayload,
     );
