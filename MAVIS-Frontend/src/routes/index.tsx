@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { ArrowUpRight, Network } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
 import { RequestState } from "@/components/shared/request-state";
@@ -131,18 +132,28 @@ function Projects() {
                         key: "project",
                         label: "Project",
                         render: (p) => (
-                          <Link
-                            href={`/project-overview?project=${p.id}`}
-                            onClick={() => selection.setProjectId(p.id)}
-                            className="font-medium text-primary hover:underline"
-                          >
-                            {p.name}
+                          <div className="min-w-40 max-w-72 space-y-2">
+                            <Link
+                              href={`/project-overview?project=${encodeURIComponent(p.id)}`}
+                              onClick={() => selection.setProjectId(p.id)}
+                              className="group inline-flex max-w-full items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 font-semibold text-primary shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                              title="Open project overview"
+                            >
+                              <span className="min-w-0 break-words">{p.name}</span>
+                              <ArrowUpRight
+                                className="size-4 shrink-0 opacity-60 transition-opacity group-hover:opacity-100"
+                                aria-hidden="true"
+                              />
+                            </Link>
                             {p.repository && (
-                              <span className="mt-1 block font-mono text-xs text-muted-foreground">
+                              <p
+                                className="truncate font-mono text-xs text-muted-foreground"
+                                title={p.repository}
+                              >
                                 {p.repository}
-                              </span>
+                              </p>
                             )}
-                          </Link>
+                          </div>
                         ),
                       },
                       {
@@ -166,37 +177,47 @@ function Projects() {
                               : "Unavailable",
                       },
                       {
+                        key: "time",
+                        label: "Updated",
+                        render: (p) => {
+                          const value = p.updatedAt ?? p.createdAt;
+                          const date = value ? new Date(value) : null;
+                          if (!date || Number.isNaN(date.getTime()))
+                            return (
+                              <span className="text-xs text-muted-foreground">Not available</span>
+                            );
+                          return (
+                            <div className="whitespace-nowrap text-xs">
+                              <time dateTime={value!} title={date.toLocaleString()}>
+                                {date.toLocaleDateString()}
+                                <span className="mt-1 block text-muted-foreground">
+                                  {date.toLocaleTimeString([], {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                              </time>
+                              {!p.updatedAt && (
+                                <span className="mt-1 block text-muted-foreground">Created</span>
+                              )}
+                            </div>
+                          );
+                        },
+                      },
+                      {
                         key: "actions",
                         label: "Workspace",
                         render: (p) => (
-                          <div className="flex flex-wrap items-center gap-2">
-                            {p.status !== "ready" && (
-                              <Button
-                                asChild
-                                size="sm"
-                                variant="default"
-                                onClick={() => selection.setProjectId(p.id)}
-                              >
-                                <Link href={`/snapshots?project=${p.id}`}>Analyze</Link>
-                              </Button>
-                            )}
-                            <Button
-                              asChild
-                              size="sm"
-                              variant="outline"
+                          <Button asChild size="sm" variant="outline">
+                            <Link
+                              href={`/architecture?project=${encodeURIComponent(p.id)}`}
                               onClick={() => selection.setProjectId(p.id)}
+                              aria-label={`View graph of ${p.name}`}
                             >
-                              <Link href={`/diagrams?project=${p.id}`}>Diagrams</Link>
-                            </Button>
-                            <Button
-                              asChild
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => selection.setProjectId(p.id)}
-                            >
-                              <Link href={`/architecture?project=${p.id}`}>Graph</Link>
-                            </Button>
-                          </div>
+                              <Network className="size-4" aria-hidden="true" />
+                              View
+                            </Link>
+                          </Button>
                         ),
                       },
                     ]}
@@ -256,7 +277,8 @@ function OverviewAnalysis({ projects }: { projects: Project[] }) {
             <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
               <p className="text-sm font-medium">No analysis jobs yet</p>
               <p className="text-xs text-muted-foreground">
-                This project has not been analyzed yet. Run snapshot analysis to extract architecture models and diagrams.
+                This project has not been analyzed yet. Run snapshot analysis to extract
+                architecture models and diagrams.
               </p>
               <Button asChild size="sm">
                 <Link href={`/snapshots?project=${projectId}`}>Analyze Project Source</Link>
