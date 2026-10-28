@@ -6,7 +6,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -25,4 +27,10 @@ public class PreflightCheckResponseDTO {
 
     @Builder.Default
     private String recommendedProfile = "SPRING_BOOT_DOTNET_COMPOSE_V1";
+
+    @Builder.Default
+    private Map<String, Integer> servicePorts = new HashMap<>();
+
+    @Builder.Default
+    private Map<String, String> serviceStacks = new HashMap<>();
 }

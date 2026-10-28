@@ -21,7 +21,7 @@ public class RuntimeRecoveryController {
     private final ObjectMapper json;
     public record Result(String sessionId, String modelVersionId, String sourceSnapshotId, String profileVersionId,
         String runConfigurationVersionId, String scenarioVersionId, String resourceProject,
-        String recoveryId, String cleanupStatus, OffsetDateTime recoveredAt) {}
+        String recoveryId, String cleanupStatus, String recoveredAt) {}
     public record Ack(UUID sessionId, String resourceProject, String recoveryId, String recoveryDigest, String persistenceStatus) {}
 
     @PostMapping("/{id}/recovery-result")
@@ -37,8 +37,13 @@ public class RuntimeRecoveryController {
             !java.util.Objects.equals(session.getScenarioVersionId(),result.scenarioVersionId()) ||
             !java.util.Objects.equals(session.getResourceProject(),result.resourceProject()) ||
             result.recoveryId()==null || !result.recoveryId().matches("[0-9a-f]{32}") ||
-            !"Confirmed".equals(result.cleanupStatus()) || result.recoveredAt()==null)
+            !"Confirmed".equals(result.cleanupStatus()) || result.recoveredAt()==null || result.recoveredAt().isBlank())
             throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid recovery scope/result");
+        try {
+            OffsetDateTime.parse(result.recoveredAt().trim());
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid recoveredAt timestamp: " + result.recoveredAt());
+        }
         var incoming=json.valueToTree(result);
         String digest=CanonicalReceiptDigestUtils.computeDigest(incoming);
         if(session.getRecoveryResultJson()!=null) {
