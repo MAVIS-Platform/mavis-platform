@@ -66,14 +66,25 @@ test('C4 AI cannot create actors, invent a business purpose, or annotate unsuppo
 });
 test('AI routes do not call an LLM without literal source evidence',async t=>{
  const {NextRequest}=require('next/server');const {POST}=require('../app/api/ai-diagram-semantics/route.ts');let calls=0;
- t.mock.method(globalThis,'fetch',async()=>{calls++;throw Error('Unexpected LLM request');});
+ t.mock.method(globalThis,'fetch',async url=>{if(String(url).endsWith('/api/v1/auth/me')) return Response.json({code:200,data:{id:'11111111-1111-4111-8111-111111111111',fullName:'Test User',role:'STUDENT'}});calls++;throw Error('Unexpected LLM request');});
  const context=buildThreeEAiContext(fixture(),subject(fixture()),[],[]);
- const response=await POST(new NextRequest('http://local/api/ai-diagram-semantics',{method:'POST',body:JSON.stringify({threeEContext:context,threeEFallback:{explainSimple:'Invented behavior'}})}));
+ const response=await POST(new NextRequest('http://local/api/ai-diagram-semantics',{method:'POST',headers:{host:'local',origin:'http://local',cookie:'mavis_session=valid'},body:JSON.stringify({threeEContext:context,threeEFallback:{explainSimple:'Invented behavior'}})}));
  const data=await response.json();assert.equal(data.threeEEnrichment.grounding.status,'MODEL_ONLY');assert.doesNotMatch(data.threeEEnrichment.explainSimple,/Invented behavior/);
- const c4=await POST(new NextRequest('http://local/api/ai-diagram-semantics',{method:'POST',body:JSON.stringify({c4Context:{contextHash:'empty-evidence',astSkeleton:'',nodes:[]}})}));
+ const c4=await POST(new NextRequest('http://local/api/ai-diagram-semantics',{method:'POST',headers:{host:'local',origin:'http://local',cookie:'mavis_session=valid'},body:JSON.stringify({c4Context:{contextHash:'empty-evidence',astSkeleton:'',nodes:[]}})}));
  assert.deepEqual((await c4.json()).c4Enrichment,{});assert.equal(calls,0);
 });
 
+test('AI route rejects unauthenticated sessions and cross-origin requests before provider access',async t=>{
+ const {NextRequest}=require('next/server');const {POST}=require('../app/api/ai-diagram-semantics/route.ts');let fetches=0;
+ t.mock.method(globalThis,'fetch',async()=>{fetches++;return new Response(null,{status:401});});
+ const req=(headers)=>new NextRequest('http://local/api/ai-diagram-semantics',{method:'POST',headers,body:'{}'});
+ assert.equal((await POST(req({host:'local',origin:'http://local'}))).status,401);
+ assert.equal((await POST(req({host:'local',origin:'http://evil.example',cookie:'mavis_session=valid'}))).status,403);
+ assert.equal((await POST(req({host:'local',cookie:'mavis_session=valid'}))).status,403);
+ assert.equal(fetches,0);
+ assert.equal((await POST(req({host:'local',origin:'http://local',cookie:'mavis_session=invalid'}))).status,401);
+ assert.equal(fetches,1);
+});
 test('Sequence dependency edges cannot establish guards returns causality or business order',()=>{
  const {detectSequenceFlows,buildAutoSequenceInteraction,synthesizeAiSequenceEnrichment,interactionDocumentSchema}=require('../src/features/architecture/scenario-design.ts');
  const model=fixture();

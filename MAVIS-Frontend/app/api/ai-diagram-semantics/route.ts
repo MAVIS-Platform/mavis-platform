@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
+import { reportAiUsage } from "@/lib/ai/usage-report";
+import { currentSession } from "@/lib/api/java-operations";
 import { literalSourceContext, normalizeThreeE, normalizeC4 } from "@/lib/ai/evidence-grounding";
 import type { CompactFlowAiContext, SequenceAiEnrichment } from "@/features/architecture/scenario-design";
 import type { C4AiDiagramEnrichment, CompactC4AiContext } from "@/features/architecture/diagram-projections";
@@ -152,7 +154,9 @@ async function callStructuredLlm<T>(
     if (res.ok) {
       const data = (await res.json()) as {
         choices?: Array<{ message?: { content?: string } }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
+      await reportAiUsage("openai", modelName, data.usage?.prompt_tokens, data.usage?.completion_tokens);
       const content = data.choices?.[0]?.message?.content?.trim();
       if (content) return JSON.parse(content) as Partial<T>;
     }
@@ -176,7 +180,12 @@ async function callStructuredLlm<T>(
   if (res.ok) {
     const data = (await res.json()) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
     };
+    const outputTokens = typeof data.usageMetadata?.candidatesTokenCount === "number"
+      ? data.usageMetadata.candidatesTokenCount + (data.usageMetadata.thoughtsTokenCount ?? 0)
+      : undefined;
+    await reportAiUsage("gemini", "gemini-2.5-flash", data.usageMetadata?.promptTokenCount, outputTokens);
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (content) return JSON.parse(content) as Partial<T>;
   }
@@ -184,6 +193,21 @@ async function callStructuredLlm<T>(
 }
 
 export async function POST(request: NextRequest) {
+  const fail = (status: number) => NextResponse.json(
+    { error: "Request unavailable" },
+    { status, headers: { "Cache-Control": "no-store" } },
+  );
+  if (request.headers.get("origin") !== `${request.nextUrl.protocol}//${request.headers.get("host")}`) {
+    return fail(403);
+  }
+  const token = request.cookies.get("mavis_session")?.value;
+  if (!token) return fail(401);
+  try {
+    const session = await currentSession(token, request.signal);
+    if (!session.user) return fail(401);
+  } catch {
+    return fail(503);
+  }
   try {
     const body = (await request.json()) as {
       context?: CompactFlowAiContext;
