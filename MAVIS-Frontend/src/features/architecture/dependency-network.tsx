@@ -18,7 +18,13 @@ import { networkElements, networkFocus } from "./cytoscape-network";
 import { networkPositions } from "./network-layout";
 import { startNetworkPulse } from "./network-pulse";
 import { exploreAppearance, exploreClusters } from "./explore-layout";
-import { createNetworkPresentation, exploreStyles, type NetworkMode } from "./network-presentation";
+import {
+  createNetworkPresentation,
+  captureNetworkSnapshot,
+  exploreStyles,
+  type NetworkMode,
+  type NetworkSnapshot,
+} from "./network-presentation";
 export function DependencyNetwork({
   model,
   selectedId,
@@ -30,6 +36,8 @@ export function DependencyNetwork({
   origin: controlledOrigin,
   onOriginChange,
   projection: controlledProjection,
+  hiddenCategories: controlledHiddenCategories,
+  onHiddenCategoriesChange,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
@@ -41,6 +49,8 @@ export function DependencyNetwork({
   origin?: ("all" | "source" | "deployment" | "runtime") | undefined;
   onOriginChange?: ((origin: "all" | "source" | "deployment" | "runtime") => void) | undefined;
   projection?: ReturnType<typeof projectGraphModel> | undefined;
+  hiddenCategories?: GraphCategory[];
+  onHiddenCategoriesChange?: (hidden: GraphCategory[]) => void;
 }) {
   const [internalExpanded, setInternalExpanded] = useState(false);
   const expanded = controlledExpanded ?? internalExpanded;
@@ -55,9 +65,14 @@ export function DependencyNetwork({
     else setInternalOrigin(v);
   };
 
-  const [hiddenCategories, setHiddenCategories] = useState<GraphCategory[]>([]);
+  const [internalHiddenCategories, setInternalHiddenCategories] = useState<GraphCategory[]>([]);
+  const hiddenCategories = controlledHiddenCategories ?? internalHiddenCategories;
+  const changeHiddenCategories = onHiddenCategoriesChange ?? setInternalHiddenCategories;
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<NetworkMode>("analysis");
+  const currentMode = useRef(mode);
+  currentMode.current = mode;
+  const cameraSnapshots = useRef(new Map<NetworkMode, NetworkSnapshot>());
   const [fullscreen, setFullscreen] = useState(false);
   useEffect(() => {
     const update = () => setFullscreen(Boolean(document.fullscreenElement));
@@ -133,11 +148,18 @@ export function DependencyNetwork({
       projection.model,
       container.clientWidth / Math.max(1, container.clientHeight),
     );
+    const snapshots = cameraSnapshots.current;
+    const saved = snapshots.get(currentMode.current);
     const cy = cytoscape({
       container,
       elements: elements.map((element) =>
         element.group === "nodes"
-          ? { ...element, position: positions.get(element.data["sourceId"])! }
+          ? {
+              ...element,
+              position:
+                saved?.positions.get(element.data["id"] ?? "") ??
+                positions.get(element.data["sourceId"])!,
+            }
           : element,
       ),
       minZoom: 0.05,
@@ -147,7 +169,7 @@ export function DependencyNetwork({
       autounselectify: true,
       boxSelectionEnabled: false,
       layout:
-        nodes.length > 300
+        !saved && nodes.length > 300
           ? {
               name: "grid",
               padding: 48,
@@ -158,7 +180,7 @@ export function DependencyNetwork({
           : {
               name: "preset",
               padding: 28,
-              fit: true,
+              fit: !saved,
             },
       style: [
         {
@@ -203,8 +225,17 @@ export function DependencyNetwork({
         ...exploreStyles,
       ],
     });
+    if (saved) {
+      cy.zoom(saved.zoom);
+      cy.pan(saved.pan);
+    }
     graph.current = cy;
-    presentMode.current = createNetworkPresentation(cy, projection.model);
+    presentMode.current = createNetworkPresentation(
+      cy,
+      projection.model,
+      snapshots,
+      currentMode.current,
+    );
     setHovered(null);
     cy.on("mouseover", "node, edge", (event) => {
       const target = event.target;
@@ -295,6 +326,10 @@ export function DependencyNetwork({
       container.removeEventListener("wheel", onWheel);
       resize.disconnect();
       theme.disconnect();
+      snapshots.set(
+        currentMode.current,
+        captureNetworkSnapshot(cy, snapshots.get(currentMode.current)),
+      );
       cy.destroy();
       graph.current = null;
       refreshTheme.current = () => {};
@@ -589,6 +624,19 @@ export function DependencyNetwork({
           <strong className="text-foreground">Internal:</strong> {projection.internalRelationships}{" "}
           hidden within collapsed containers
         </span>
+        {projection.unassignedElements > 0 && (
+          <span>
+            {projection.unassignedElements} unassigned internal elements and{" "}
+            {projection.unassignedRelationships} related connections hidden. Expand service
+            internals to inspect; ownership is unknown.
+          </span>
+        )}
+        {hiddenCategories.length > 0 && (
+          <span>
+            {baseProjection.model.elements.length - nodes.length} elements and{" "}
+            {baseProjection.model.edges.length - edges.length} connections hidden by type.
+          </span>
+        )}
         {query.trim() !== "" && (
           <span>
             <strong className="text-foreground">Search:</strong>{" "}
@@ -783,7 +831,7 @@ export function DependencyNetwork({
         )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t px-4 py-2.5 text-xs text-muted-foreground">
-        {mode === "explore" ? (
+        {mode === "explore" && (
           <div
             className="flex flex-wrap items-center gap-x-3 gap-y-1"
             aria-label="Explore cluster legend"
@@ -798,48 +846,47 @@ export function DependencyNetwork({
               </span>
             ))}
           </div>
-        ) : (
-          <div
-            className="flex flex-wrap items-center gap-1"
-            role="group"
-            aria-label="Visible element types"
-          >
-            {graphCategories
-              .filter(
-                (category) =>
-                  category.id !== "unknown" ||
-                  baseProjection.model.elements.some(
-                    (node) => graphCategory(node.elementType) === "unknown",
-                  ),
-              )
-              .map((category) => {
-                const visible = !hiddenCategories.includes(category.id);
-                return (
-                  <button
-                    key={category.id}
-                    type="button"
-                    aria-pressed={visible}
-                    title={`${visible ? "Hide" : "Show"} ${category.label}`}
-                    onClick={() => {
-                      setElementPage(1);
-                      setHiddenCategories((current) =>
-                        current.includes(category.id)
-                          ? current.filter((id) => id !== category.id)
-                          : [...current, category.id],
-                      );
-                    }}
-                    className={`inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2 py-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${visible ? "border-transparent text-foreground" : "border-border text-muted-foreground line-through opacity-60"}`}
-                  >
-                    <span
-                      style={{ background: category.color }}
-                      className="inline-block size-2.5 rounded-full"
-                    />
-                    {category.label}
-                  </button>
-                );
-              })}
-          </div>
         )}
+        <div
+          className="flex flex-wrap items-center gap-1"
+          role="group"
+          aria-label="Visible element types"
+        >
+          {graphCategories
+            .filter(
+              (category) =>
+                category.id !== "unknown" ||
+                baseProjection.model.elements.some(
+                  (node) => graphCategory(node.elementType) === "unknown",
+                ),
+            )
+            .map((category) => {
+              const visible = !hiddenCategories.includes(category.id);
+              return (
+                <button
+                  key={category.id}
+                  type="button"
+                  aria-pressed={visible}
+                  title={`${visible ? "Hide" : "Show"} ${category.label}`}
+                  onClick={() => {
+                    setElementPage(1);
+                    changeHiddenCategories(
+                      hiddenCategories.includes(category.id)
+                        ? hiddenCategories.filter((id) => id !== category.id)
+                        : [...hiddenCategories, category.id],
+                    );
+                  }}
+                  className={`inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2 py-1 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${visible ? "border-transparent text-foreground" : "border-border text-muted-foreground line-through opacity-60"}`}
+                >
+                  <span
+                    style={{ background: category.color }}
+                    className="inline-block size-2.5 rounded-full"
+                  />
+                  {category.label}
+                </button>
+              );
+            })}
+        </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]">
           <span>─── Static</span>
           <span>- - - Declared</span>

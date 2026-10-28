@@ -60,22 +60,47 @@ export function projectGraphModel(
   origin: "all" | "source" | "deployment" | "runtime",
 ) {
   const byId = new Map(model.elements.map((node) => [node.id, node]));
-  const representative = (id: string) => {
+  const architectureTypes = new Set([
+    "SERVICE_CONTAINER",
+    "DATABASE",
+    "QUEUE_BROKER",
+    "MESSAGE_CHANNEL",
+    "EXTERNAL_SYSTEM",
+  ]);
+  const implementationTypes = new Set([
+    "COMPONENT",
+    "CLASS",
+    "INTERFACE",
+    "ENUM",
+    "METHOD",
+    "FIELD",
+  ]);
+  const representative = (id: string): string | null => {
+    const node = byId.get(id);
+    if (!node) return null;
+    if (showComponents || architectureTypes.has(node.elementType ?? "")) return id;
     const seen = new Set<string>();
-    while (
-      !showComponents &&
-      byId.get(id)?.parentId &&
-      byId.has(byId.get(id)!.parentId!) &&
-      !seen.has(id)
-    ) {
-      seen.add(id);
-      id = byId.get(id)!.parentId!;
+    let current = node;
+    while (current.parentId && !seen.has(current.id)) {
+      seen.add(current.id);
+      const parent = byId.get(current.parentId);
+      if (!parent) break;
+      if (parent.elementType === "SERVICE_CONTAINER") return parent.id;
+      current = parent;
     }
-    return id;
+    // Do not guess ownership from names or connectivity. Unassigned internals
+    // remain available when expanded; unknown top-level resources stay explicit.
+    return implementationTypes.has(node.elementType ?? "") ? null : id;
   };
+  let unassignedElements = 0,
+    unassignedRelationships = 0;
   const members = new Map<string, string[]>();
   for (const node of model.elements) {
     const id = representative(node.id);
+    if (id === null) {
+      unassignedElements++;
+      continue;
+    }
     if (!members.has(id)) members.set(id, []);
     members.get(id)!.push(node.id);
   }
@@ -106,6 +131,10 @@ export function projectGraphModel(
     }
     const from = representative(edge.from),
       to = representative(edge.to);
+    if (from === null || to === null) {
+      unassignedRelationships++;
+      continue;
+    }
     if (!showComponents && from === to && edge.from !== edge.to) {
       internalRelationships++;
       continue;
@@ -196,6 +225,8 @@ export function projectGraphModel(
     model: modelSchema.parse({ ...model, elements, edges: projectedEdges }),
     filteredRelationships,
     internalRelationships,
+    unassignedElements,
+    unassignedRelationships,
   };
 }
 
@@ -237,4 +268,15 @@ export function filterGraphCategories(model: ArchitecturalModel, hidden: readonl
   const visible = new Set(elements.map((node) => node.id));
   const edges = model.edges.filter((edge) => visible.has(edge.from) && visible.has(edge.to));
   return { ...model, elements, edges };
+}
+
+export function graphSelectionVisible(model: ArchitecturalModel, id: string): boolean {
+  return (
+    model.elements.some(
+      (node) =>
+        node.id === id ||
+        (Array.isArray(node.properties?.["memberElementIds"]) &&
+          node.properties["memberElementIds"].includes(id)),
+    ) || model.edges.some((edge) => edge.id === id || edge.underlyingEdgeIds?.includes(id))
+  );
 }

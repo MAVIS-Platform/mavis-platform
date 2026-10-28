@@ -30,3 +30,13 @@ Reference semantics: [C4 System Context](https://c4model.com/diagrams/system-con
 
 
 Final local release: port 3000 runs .artifacts/complete-diagrams-ready. Browser reload restored saved sequence revision 1; Context (AccountsController), Process (ftgo-order-service), and sequence participants opened canonical 3E. Downloaded SVG and draw.io documents parsed successfully. Mobile viewport/page width both measured 390px.
+
+
+## Graph scope and filter update — 2026-10-28
+
+- Collapsed overview preserves service containers, databases, brokers/channels and external systems, including resources with a service parent. Internal components/classes are grouped only through a valid parent chain to a service; names or connectivity do not establish ownership.
+- Unassigned internal elements (missing parent, absent parent, or parent cycles) and their related connections are hidden with explicit counts in the overview. Expand service internals to inspect their original IDs and evidence. Unclassified top-level nodes remain visibly Unknown; this UI update does not manufacture missing analyzer metadata.
+- Type toggles remain available in Analysis and Explore. Hidden node types remove incident connections and update visible counts; canonical source data and aggregated evidence remain unchanged.
+- The 3E inspector shares the filtered projection. Hiding the selected node or relationship clears selection, drill-down and highlight; restoring visibility does not silently restore the old selection.
+- Each presentation retains its camera and dragged positions across filtering, including hiding every node and switching between presentations. Returning nodes recover cached positions; changing model revision creates a new view cache.
+- Verification: 252 frontend tests pass, including ownership/cycle/resource preservation, canonical selection visibility and camera cache regressions. TypeScript and changed-file lint pass. Local mock browser checks verify Analysis/Explore filter parity, exact zoom/pan restoration, empty-state recovery and 3E closing on hidden selection. The mock session receives HTTP 401 from the authenticated AI semantics endpoint; this check does not validate live AI generation or production analyzer ownership completeness.

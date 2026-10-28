@@ -799,3 +799,46 @@ test("type filtering composes with collapsed and expanded graph projections", ()
     assert.deepEqual(filterGraphCategories(projected.model, []), projected.model);
   }
 });
+
+
+test("overview preserves architecture resources, groups owned internals and discloses unassigned internals", () => {
+  const node = (id, elementType, parentId = null) => ({ ...model.elements[0], id, name: id, elementType, parentId });
+  const elements = [node("svc", "SERVICE_CONTAINER"), node("db", "DATABASE", "svc"),
+    node("channel", "MESSAGE_CHANNEL", "svc"), node("external", "EXTERNAL_SYSTEM", "svc"),
+    node("owned", "COMPONENT", "svc"), node("nested", "CLASS", "owned"),
+    node("orphan", "COMPONENT"), node("missing", "CLASS", "absent"),
+    node("cycle-a", "COMPONENT", "cycle-b"), node("cycle-b", "COMPONENT", "cycle-a"),
+    node("unknown", "UNKNOWN")];
+  const edge = (id, from, to) => ({ ...model.edges[0], id, from, to });
+  const source = { ...model, elements, edges: [edge("db-access", "nested", "db"), edge("orphan-call", "orphan", "svc"), edge("inside", "owned", "nested")] };
+  const before = JSON.stringify(source);
+  const collapsed = projectGraphModel(source, false, "all");
+  assert.deepEqual(collapsed.model.elements.map((n) => n.id).sort(), ["svc", "db", "channel", "external", "unknown"].sort());
+  assert.equal(collapsed.unassignedElements, 4);
+  assert.equal(collapsed.unassignedRelationships, 1);
+  assert.equal(collapsed.internalRelationships, 1);
+  assert.deepEqual(collapsed.model.elements.find((n) => n.id === "svc").properties.memberElementIds.sort(), ["svc", "owned", "nested"].sort());
+  assert.equal(collapsed.model.edges[0].from, "svc");
+  assert.equal(collapsed.model.edges[0].to, "db");
+  assert.deepEqual(collapsed.model.edges[0].underlyingEdgeIds, ["db-access"]);
+  const expanded = projectGraphModel(source, true, "all");
+  assert.equal(expanded.model.elements.length, elements.length);
+  assert.equal(expanded.model.edges.length, source.edges.length);
+  assert.equal(expanded.unassignedElements, 0);
+  assert.equal(JSON.stringify(source), before);
+});
+
+test("selection visibility follows the filtered view including canonical members and underlying edges", () => {
+  const { filterGraphCategories, graphSelectionVisible } = require("../src/features/architecture/graph-projection.ts");
+  const node = (id, elementType, parentId = null) => ({ ...model.elements[0], id, name: id, elementType, parentId });
+  const source = { ...model, elements: [node("svc", "SERVICE_CONTAINER"), node("class", "COMPONENT", "svc"), node("db", "DATABASE")],
+    edges: [{ ...model.edges[0], id: "call", from: "class", to: "db" }] };
+  const projected = projectGraphModel(source, false, "all").model;
+  assert.equal(graphSelectionVisible(projected, "class"), true);
+  assert.equal(graphSelectionVisible(projected, "call"), true);
+  const hidden = filterGraphCategories(projected, ["database"]);
+  assert.equal(graphSelectionVisible(hidden, "db"), false);
+  assert.equal(graphSelectionVisible(hidden, "call"), false);
+  assert.equal(graphSelectionVisible(hidden, "svc"), true);
+  assert.equal(graphSelectionVisible(filterGraphCategories(projected, ["service"]), "class"), false);
+});
