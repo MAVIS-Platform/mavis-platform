@@ -159,32 +159,43 @@ export function Accounts() {
 }
 function TeachingRoleControl({ account }: { account: Response<"accounts">[number] }) {
   const update = useApiMutation("setAccountRole");
-  const [open, setOpen] = useState(false);
-  if (account.role === "admin") return <StatusBadge status="Administrator" />;
-  const role = account.role === "lecturer" ? "student" : "lecturer";
+  const [role, setRole] = useState<"student" | "lecturer" | null>(null);
   return (
-    <div className="space-y-2">
-      <span className="block text-xs capitalize">{account.role}</span>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => {
-          update.reset();
-          setOpen(true);
+    <div className="min-w-36">
+      <select
+        aria-label={`Role for ${account.name}${account.email ? ` (${account.email})` : ""}`}
+        value={account.role}
+        disabled={account.role === "admin" || update.isPending}
+        className="h-9 w-full rounded-md border bg-card px-3 text-sm disabled:opacity-60"
+        onChange={(event) => {
+          const nextRole = event.target.value;
+          if (nextRole !== account.role && (nextRole === "student" || nextRole === "lecturer")) {
+            update.reset();
+            setRole(nextRole);
+          }
         }}
       >
-        Set as {role}
-      </Button>
+        {account.role === "admin" && <option value="admin">Administrator</option>}
+        {account.role !== "admin" && (
+          <>
+            <option value="student">Student</option>
+            <option value="lecturer">Lecturer</option>
+          </>
+        )}
+      </select>
       <ConfirmDialog
-        open={open}
-        onOpenChange={setOpen}
+        open={role !== null}
+        onOpenChange={(open) => {
+          if (!open) setRole(null);
+        }}
         title={`Change role to ${role}?`}
         description={`${account.name} will receive ${role} permissions. They should sign in again after this change.`}
         pending={update.isPending}
         error={update.isError ? <ErrorState error={update.error} /> : undefined}
-        onConfirm={() =>
-          update.mutate({ accountId: account.id, role }, { onSuccess: () => setOpen(false) })
-        }
+        onConfirm={() => {
+          if (role)
+            update.mutate({ accountId: account.id, role }, { onSuccess: () => setRole(null) });
+        }}
       />
     </div>
   );
