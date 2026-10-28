@@ -75,24 +75,36 @@ export function applyNetworkMode(cy: Core, mode: NetworkMode) {
 
 // Each presentation keeps its own dragged positions and camera. The first visit
 // to Explore uses actual connectivity/parent ownership for a compact atlas.
-export function createNetworkPresentation(cy: Core, model: ArchitecturalModel) {
-  type Snapshot = {
-    positions: Map<string, { x: number; y: number }>;
-    zoom: number;
-    pan: { x: number; y: number };
+export type NetworkSnapshot = {
+  positions: Map<string, { x: number; y: number }>;
+  zoom: number;
+  pan: { x: number; y: number };
+};
+
+export function captureNetworkSnapshot(cy: Core, previous?: NetworkSnapshot): NetworkSnapshot {
+  return {
+    positions: new Map([
+      ...(previous?.positions ?? []),
+      ...cy.nodes().map((n) => [n.id(), { ...n.position() }] as const),
+    ]),
+    zoom: cy.zoom(),
+    pan: { ...cy.pan() },
   };
-  const snapshots = new Map<NetworkMode, Snapshot>();
-  let current: NetworkMode = "analysis";
+}
+
+export function createNetworkPresentation(
+  cy: Core,
+  model: ArchitecturalModel,
+  snapshots = new Map<NetworkMode, NetworkSnapshot>(),
+  initialMode: NetworkMode = "analysis",
+) {
+  let current = initialMode;
   return (mode: NetworkMode) => {
     if (mode === current) {
       applyNetworkMode(cy, mode);
       return;
     }
-    snapshots.set(current, {
-      positions: new Map(cy.nodes().map((n) => [n.id(), { ...n.position() }])),
-      zoom: cy.zoom(),
-      pan: { ...cy.pan() },
-    });
+    snapshots.set(current, captureNetworkSnapshot(cy, snapshots.get(current)));
     applyNetworkMode(cy, mode);
     const saved = snapshots.get(mode);
     cy.batch(() => {

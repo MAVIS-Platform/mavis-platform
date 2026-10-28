@@ -4,7 +4,12 @@ import type { ArchitecturalModel } from "@/types/domain";
 import { DependencyNetwork } from "./dependency-network";
 import { ArchitectureDiagrams } from "./architecture-diagrams";
 import { SelectionThreeE } from "./selection-three-e";
-import { projectGraphModel } from "./graph-projection";
+import {
+  projectGraphModel,
+  filterGraphCategories,
+  graphSelectionVisible,
+  type GraphCategory,
+} from "./graph-projection";
 import { computeSelectionScopeKey, type SequenceSelectionContext } from "./three-e-content";
 
 type Props = {
@@ -23,16 +28,40 @@ export function ArchitecturePresentation({
   mode = "graph",
 }: Props) {
   const [highlight, setHighlight] = useState<{ modelId: string; ids: string[] } | null>(null);
+  const [typeFilter, setTypeFilter] = useState<{ modelId: string; hidden: GraphCategory[] }>({
+    modelId: model.id,
+    hidden: [],
+  });
+  const hiddenCategories = useMemo(
+    () => (typeFilter.modelId === model.id ? typeFilter.hidden : []),
+    [typeFilter, model.id],
+  );
   const [expanded, setExpanded] = useState(false);
   const [origin, setOrigin] = useState<"all" | "source" | "deployment" | "runtime">("all");
   const [drilledSourceEdgeId, setDrilledSourceEdgeId] = useState<string | null>(null);
   const [sequenceContext, setSequenceContext] = useState<SequenceSelectionContext | null>(null);
 
   // Unified projection shared between DependencyNetwork (canvas) and SelectionThreeE (panel)
-  const projection = useMemo(
+  const baseProjection = useMemo(
     () => projectGraphModel(model, expanded, origin),
     [model, expanded, origin],
   );
+
+  const projection = useMemo(
+    () => ({
+      ...baseProjection,
+      model: filterGraphCategories(baseProjection.model, hiddenCategories),
+    }),
+    [baseProjection, hiddenCategories],
+  );
+
+  useEffect(() => {
+    if (mode === "graph" && selectedId && !graphSelectionVisible(projection.model, selectedId)) {
+      setHighlight(null);
+      setDrilledSourceEdgeId(null);
+      onSelect(null);
+    }
+  }, [mode, selectedId, projection.model, onSelect]);
 
   // Reset drill-down when selection changes from outside, or when mode/model/origin/expanded changes
   useEffect(() => {
@@ -89,7 +118,13 @@ export function ArchitecturePresentation({
                 setOrigin(newOrigin);
                 setDrilledSourceEdgeId(null);
               }}
-              projection={projection}
+              projection={baseProjection}
+              hiddenCategories={hiddenCategories}
+              onHiddenCategoriesChange={(hidden) => {
+                setTypeFilter({ modelId: model.id, hidden });
+                setHighlight(null);
+                setDrilledSourceEdgeId(null);
+              }}
             />
           ) : (
             <ArchitectureDiagrams

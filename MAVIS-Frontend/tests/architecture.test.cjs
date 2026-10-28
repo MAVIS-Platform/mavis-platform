@@ -1816,3 +1816,40 @@ test("3E evidence empty state explains next action and source snippets start col
   assert.doesNotMatch(html, /<details[^>]*open/);
   assert.match(html, /tabindex="0"/);
 });
+
+
+test("graph camera cache survives filtering, restores hidden dragged nodes and keeps mode cameras separate", () => {
+  const cytoscape = require("cytoscape");
+  const { networkElements } = require("../src/features/architecture/cytoscape-network.ts");
+  const { createNetworkPresentation, captureNetworkSnapshot } = require("../src/features/architecture/network-presentation.ts");
+  const model = { elements: [{id:"a",name:"Service",elementType:"SERVICE_CONTAINER"}, {id:"db",name:"DB",elementType:"DATABASE"}], edges:[{id:"e",from:"a",to:"db",protocol:"HTTP"}] };
+  const snapshots = new Map();
+  let cy = cytoscape({headless:true,elements:networkElements(model),layout:{name:"preset"}});
+  try {
+    const present = createNetworkPresentation(cy, model, snapshots);
+    cy.getElementById("node:a").position({x:101,y:202});
+    cy.getElementById("node:db").position({x:505,y:606});
+    cy.zoom(0.8);cy.pan({x:12,y:34});
+    present("explore");
+    cy.getElementById("node:a").position({x:303,y:404});
+    cy.zoom(1.4);cy.pan({x:45,y:67});
+    snapshots.set("explore", captureNetworkSnapshot(cy,snapshots.get("explore")));
+  } finally { cy.destroy(); }
+  const filtered = { ...model, elements:[model.elements[0]], edges:[] };
+  cy = cytoscape({headless:true,elements:networkElements(filtered),layout:{name:"preset"}});
+  try {
+    const saved = snapshots.get("explore");
+    cy.nodes().positions((n) => saved.positions.get(n.id()));cy.zoom(saved.zoom);cy.pan(saved.pan);
+    const present = createNetworkPresentation(cy,filtered,snapshots,"explore");
+    present("explore");
+    assert.deepEqual(cy.getElementById("node:a").position(),{x:303,y:404});
+    assert.equal(cy.zoom(),1.4);assert.deepEqual(cy.pan(),{x:45,y:67});
+    present("analysis");
+    assert.deepEqual(cy.getElementById("node:a").position(),{x:101,y:202});
+    assert.equal(cy.zoom(),0.8);assert.deepEqual(cy.pan(),{x:12,y:34});
+    assert.deepEqual(snapshots.get("analysis").positions.get("node:db"),{x:505,y:606});
+    cy.remove(cy.nodes());
+    const empty = captureNetworkSnapshot(cy,snapshots.get("analysis"));
+    assert.deepEqual(empty.positions.get("node:db"),{x:505,y:606});
+  } finally {cy.destroy();}
+});
