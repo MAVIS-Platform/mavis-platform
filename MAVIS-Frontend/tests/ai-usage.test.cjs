@@ -22,6 +22,8 @@ test("reports real tokens safely, and handles missing data and outages", async (
   const body=JSON.parse(call[1].body);
   assert.equal(body.inputTokens,12); assert.equal(body.outputTokens,5); assert.equal(body.provider,"openai");
   assert.deepEqual(Object.keys(body).sort(),["inputTokens","model","outputTokens","provider","requestId"].sort());
+  await reportAiUsage("openai","test-model",12,5,"a9a756a7-2175-4ded-99e7-053f986bc786");
+  assert.equal(JSON.parse(call[1].body).userId,"a9a756a7-2175-4ded-99e7-053f986bc786");
   call=undefined; await reportAiUsage("gemini","test-model",undefined,4); assert.equal(call,undefined);
   global.fetch=async ()=>{throw new Error("offline");};
   await assert.doesNotReject(reportAiUsage("gemini","test-model",3,4));

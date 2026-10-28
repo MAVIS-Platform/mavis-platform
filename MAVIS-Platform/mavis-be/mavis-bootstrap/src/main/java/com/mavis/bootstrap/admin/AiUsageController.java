@@ -42,7 +42,7 @@ public class AiUsageController {
                          @NotBlank @Size(max=128) String model,
                          @NotNull UUID requestId,
                          @NotNull @Min(0) @Max(100000000) Long inputTokens,
-                         @NotNull @Min(0) @Max(100000000) Long outputTokens) {}
+                         @NotNull @Min(0) @Max(100000000) Long outputTokens, UUID userId) {}
 
     @PostMapping("/api/v1/internal/ai-usage")
     public ApiResponse<?> ingest(@RequestHeader(value="X-MAVIS-AI-USAGE-KEY", required=false) String key,
@@ -51,7 +51,7 @@ public class AiUsageController {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Usage ingest is not configured");
         if (key == null || !MessageDigest.isEqual(ingestKey.getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8)))
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
-        if (!recorder.record("next", event.provider(), event.model(), event.requestId(), event.inputTokens(), event.outputTokens()))
+        if (!recorder.record("next", event.provider(), event.model(), event.requestId(), event.inputTokens(), event.outputTokens(), event.userId()))
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Usage storage unavailable");
         return ApiResponse.success(Map.of("recorded", true));
     }
@@ -92,6 +92,13 @@ public class AiUsageController {
         out.put("updatedAt", Instant.now().toString());
         out.put("message", storageAvailable ? "Usage covers recorded MAVIS requests only." : "Usage storage unavailable; apply migration V20.");
         out.put("providers", providers);
+        try {
+            out.put("events", recorder.recentEvents(200));
+            out.put("eventsAvailable", true);
+        } catch (SQLException ignored) {
+            out.put("events", List.of());
+            out.put("eventsAvailable", false);
+        }
         return ApiResponse.success(out);
     }
 
