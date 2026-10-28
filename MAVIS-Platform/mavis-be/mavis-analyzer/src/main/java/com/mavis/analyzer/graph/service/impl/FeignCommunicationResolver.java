@@ -88,15 +88,37 @@ final class FeignCommunicationResolver {
                 if(operation.has("sourceLine")) proofs.add(new Proof("CLIENT_CONTRACT",CodeEvidenceDTO.builder()
                         .filePath(client.getFilePath()).lineNumber(operation.path("sourceLine").asInt())
                         .codeSnippet(operation.path("snippet").asText()).build()));
+                props.put("callerService", serviceName(source));
+                props.put("callerComponent", source.getName());
+                props.put("callerFile", client.getFilePath());
+                if (operation.has("sourceLine")) {
+                    props.put("callerLine", operation.path("sourceLine").asInt());
+                    props.put("callerSnippet", operation.path("snippet").asText(""));
+                }
+                props.put("calleeService", target.getName());
+                if (matchingEndpoints.size() == 1) {
+                    var ep = matchingEndpoints.get(0);
+                    props.put("calleeController", ep.getSourceComponent() != null ? ep.getSourceComponent() : "");
+                    props.put("calleeFile", ep.getFilePath() != null ? ep.getFilePath() : "");
+                    props.put("calleeLine", ep.getLineNumber() != null ? ep.getLineNumber() : 0);
+                    props.put("calleeRoute", ep.getIdentifier() != null ? ep.getIdentifier() : path);
+                    props.put("calleeSnippet", ep.getCodeSnippet() != null ? ep.getCodeSnippet() : "");
+                }
                 Set<Integer> overloads=new HashSet<>();
                 for(var alternative:operations) if(alternative.path("javaMethod").equals(operation.path("javaMethod"))
                         && alternative.path("parameterCount").equals(operation.path("parameterCount"))) overloads.add(alternative.path("sourceLine").asInt());
                 int count=0;
                 if(overloads.size()==1) for(var call:invocations) if(Objects.equals(call.getIdentifier(),operation.path("javaMethod").asText())
                         && Objects.equals(call.getMetadata().get("argumentCount"),operation.path("parameterCount").asInt(-1))
-                        && entry.getKey().equals(key(owner(call.getFilePath())))) { proofs.add(new Proof("CALL_SITE",call));count++; }
+                        && entry.getKey().equals(key(owner(call.getFilePath())))) {
+                    proofs.add(new Proof("CALL_SITE",call));
+                    count++;
+                    props.put("callerFile", call.getFilePath());
+                    props.put("callerLine", call.getLineNumber());
+                    props.put("callerSnippet", call.getCodeSnippet());
+                }
                 props.put("callSiteCount",count).put("invocationResolution",!uniqueType?"AMBIGUOUS_CLIENT_TYPE":overloads.size()>1?"AMBIGUOUS_OVERLOAD":count>0?"TYPED_SOURCE_CALL":"DECLARATION_ONLY");
-                if(matchingEndpoints.size()==1) proofs.add(new Proof("SERVER_ENDPOINT",matchingEndpoints.get(0)));
+                if (matchingEndpoints.size() == 1) proofs.add(new Proof("SERVER_ENDPOINT", matchingEndpoints.get(0)));
                 result.add(new Connection(source,target,props,proofs));
             }
         }

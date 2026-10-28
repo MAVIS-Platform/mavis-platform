@@ -38,9 +38,14 @@ export default function LoginPage() {
     await client.cancelQueries();
     client.clear();
     client.setQueryData(["api", "session", {}], session);
+    const next = params.get("next");
+    if (next && next !== "/" && next !== "/login") {
+      router.replace(next);
+      return;
+    }
     router.replace(
       session.user?.role === "admin"
-        ? "/administration/users"
+        ? "/administration/health"
         : session.user?.role === "lecturer"
           ? "/workspaces"
           : "/",
