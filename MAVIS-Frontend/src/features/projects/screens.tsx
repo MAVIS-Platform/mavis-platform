@@ -423,8 +423,16 @@ export function SourceSnapshots() {
             },
             {
               key: "name",
-              label: "Source / Commit",
-              render: (s) => <span className="font-mono text-xs">{s.name}</span>,
+              label: "Branch / Commit",
+              render: (s) => (
+                <span className="font-mono text-xs" title={s.commitSha ?? undefined}>
+                  {s.sourceType === "GITHUB_COMMIT" || s.branchName || s.commitSha
+                    ? `${s.branchName || "—"} / ${s.commitSha?.slice(0, 8) || "—"}`
+                    : s.sourceType === "ZIP_UPLOAD"
+                      ? "ZIP upload"
+                      : s.name}
+                </span>
+              ),
             },
             {
               key: "status",
