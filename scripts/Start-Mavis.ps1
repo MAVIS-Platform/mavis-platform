@@ -56,7 +56,15 @@ foreach($entry in $values.GetEnumerator()) { if ($entry.Key -match '^(MAVIS_|MAI
 $environment.SPRING_PROFILES_ACTIVE='cloud'
 if ($values.MAVIS_GOOGLE_CLIENT_ID) { $environment.APP_GOOGLE_CLIENT_ID=$values.MAVIS_GOOGLE_CLIENT_ID }
 $environment.SERVER_PORT=[string]$javaPort
-$environment.MAVIS_DB_MIGRATIONS_ENABLED='false'
+# Shared databases remain opt-in; honor an explicit migration setting.
+if (-not $environment.ContainsKey('MAVIS_DB_MIGRATIONS_ENABLED')) { $environment.MAVIS_DB_MIGRATIONS_ENABLED='false' }
+if ($environment.MAVIS_DB_MIGRATIONS_ENABLED -notin @('true','false')) { throw 'MAVIS_DB_MIGRATIONS_ENABLED must be true or false.' }
+if ($environment.MAVIS_DB_MIGRATIONS_ENABLED -eq 'true') {
+    $migrationRoot=Join-Path $repo 'MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration'
+    $duplicates=Get-ChildItem -LiteralPath $migrationRoot -Filter 'V*__*.sql' |
+        Group-Object { ($_.BaseName -split '__',2)[0] } | Where-Object Count -gt 1
+    if ($duplicates) { throw 'Duplicate Flyway versions detected. Reconcile them with the database migration history before enabling migrations; no database changes were made by this launcher.' }
+}
 $environment.MAVIS_WORKER_ENABLED='true'
 $environment.MAVIS_WORKER_DOTNET_URL="http://127.0.0.1:$workerPort"
 $environment.MAVIS_WORKER_GRANT_KEY_ID=if($values.MAVIS_WORKER_GRANT_KEY_ID){$values.MAVIS_WORKER_GRANT_KEY_ID}else{'local'}

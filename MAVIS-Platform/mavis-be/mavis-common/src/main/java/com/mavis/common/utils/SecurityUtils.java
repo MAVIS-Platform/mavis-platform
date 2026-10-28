@@ -21,10 +21,10 @@ import java.util.UUID;
 public class SecurityUtils {
 
     private static UserRepository staticUserRepository;
-    private static boolean staticDevBypassEnabled = true;
+    private static boolean staticDevBypassEnabled = false;
 
     public SecurityUtils(UserRepository userRepository,
-                         @Value("${mavis.security.dev-bypass-enabled:true}") boolean devBypassEnabled) {
+                         @Value("${mavis.security.dev-bypass-enabled:false}") boolean devBypassEnabled) {
         SecurityUtils.staticUserRepository = userRepository;
         SecurityUtils.staticDevBypassEnabled = devBypassEnabled;
     }

@@ -2,11 +2,10 @@ import { currentSession } from "@/lib/api/java-operations";
 import { NextRequest, NextResponse } from "next/server";
 import { githubImportRequest } from "@/lib/mainflow-api";
 import { cookies } from "next/headers";
+import { allowedBackendPath } from "@/lib/api/backend-path";
 
 export const runtime = "nodejs";
 const cookieName = "mavis_session";
-const allowed =
-  /^(assignments\/[a-f0-9-]+\/reference-source|auth\/login|projects(?:\/[a-f0-9-]+)?|analyzer\/(?:upload|import\/github|snapshots\/[a-f0-9-]+\/analyze|jobs\/[a-f0-9-]+(?:\/cancel)?|projects\/[a-f0-9-]+\/models|models\/[a-f0-9-]+(?:\/(?:graph|impact|diagrams))?|evidences\/(?:element|relationship)\/[a-f0-9-]+|ai\/explain|diagrams\/[a-f0-9-]+\/export))$/;
 async function handler(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const path = (await context.params).path.join("/");
   const jar = await cookies();
@@ -33,7 +32,7 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
       return NextResponse.json({ message: "Session service unavailable" }, { status: 503 });
     }
   }
-  if (!allowed.test(path))
+  if (!allowedBackendPath(path))
     return NextResponse.json({ message: "Unsupported API path" }, { status: 404 });
   const login = path === "auth/login" && request.method === "POST";
   const token = jar.get(cookieName)?.value;
@@ -109,7 +108,9 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
       headers: {
         "Content-Type": upstream.headers.get("content-type") ?? "application/json",
         "Cache-Control": "no-store",
-        ...(upstream.headers.get("content-disposition") ? { "Content-Disposition": upstream.headers.get("content-disposition")! } : {}),
+        ...(upstream.headers.get("content-disposition")
+          ? { "Content-Disposition": upstream.headers.get("content-disposition")! }
+          : {}),
       },
     });
     if (upstream.status === 401) response.cookies.delete(cookieName);

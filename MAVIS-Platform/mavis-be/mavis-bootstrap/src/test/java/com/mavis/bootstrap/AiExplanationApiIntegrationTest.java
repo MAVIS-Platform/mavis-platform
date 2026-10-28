@@ -118,7 +118,7 @@ class AiExplanationApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         MvcResult result = mockMvc.perform(post("/api/v1/analyzer/ai/explain")
-                        .header("X-Test-User-Email", student.getEmail())
+                        .header("Authorization", testAuthorization(student.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
@@ -145,7 +145,7 @@ class AiExplanationApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         mockMvc.perform(post("/api/v1/analyzer/ai/explain")
-                        .header("X-Test-User-Email", student.getEmail())
+                        .header("Authorization", testAuthorization(student.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(cacheReq)))
                 .andExpect(status().isOk())
@@ -155,7 +155,7 @@ class AiExplanationApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 3: GET /api/v1/analyzer/models/{modelVersionId}/ai-explanations ---
         mockMvc.perform(get("/api/v1/analyzer/models/{modelVersionId}/ai-explanations", modelVersion.getId())
-                        .header("X-Test-User-Email", student.getEmail()))
+                        .header("Authorization", testAuthorization(student.getEmail())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").isArray())
@@ -163,7 +163,7 @@ class AiExplanationApiIntegrationTest extends ApiIntegrationContext {
 
         // --- BƯỚC 4: GET /api/v1/analyzer/ai/explanations/{explanationId} ---
         mockMvc.perform(get("/api/v1/analyzer/ai/explanations/{explanationId}", explanationId)
-                        .header("X-Test-User-Email", student.getEmail()))
+                        .header("Authorization", testAuthorization(student.getEmail())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.id").value(explanationId.toString()))
@@ -184,7 +184,7 @@ class AiExplanationApiIntegrationTest extends ApiIntegrationContext {
                 .build();
 
         mockMvc.perform(post("/api/v1/analyzer/ai/explain")
-                        .header("X-Test-User-Email", student.getEmail())
+                        .header("Authorization", testAuthorization(student.getEmail()))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(foreignReq)))
                 .andExpect(status().isBadRequest())

@@ -557,56 +557,22 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
     @Transactional(readOnly = true)
     public SequenceDiagramResponseDTO getSequenceDiagramBySession(UUID sessionId) {
         log.info("Lấy biểu đồ tuần tự UML Sequence cho sessionId: {}", sessionId);
+        RuntimeSession requestedSession = runtimeSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Runtime session not found"));
+        accessPolicyService.requireProjectReadAccess(requestedSession.getProject());
 
-        RuntimeSession session = runtimeSessionRepository.findById(sessionId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
-                        "Không tìm thấy runtime session: " + sessionId));
-        accessPolicyService.requireProjectReadAccess(session.getProject());
+        RuntimeSession session = requestedSession;
 
         Optional<ModelVersion> mvOpt = modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(sessionId);
         if (mvOpt.isEmpty()) {
-            UUID mvId = session.getModelVersion() != null ? session.getModelVersion().getId() : session.getId();
-            return SequenceDiagramResponseDTO.builder()
-                    .diagramId(UUID.randomUUID())
-                    .modelVersionId(mvId)
-                    .baseModelVersionId(session.getModelVersion() != null ? session.getModelVersion().getId() : null)
-                    .sourceSnapshotId(session.getSourceSnapshot() != null ? session.getSourceSnapshot().getId() : null)
-                    .modelRevision(session.getModelVersion() != null ? session.getModelVersion().getRevision() : 1)
-                    .modelOrigin("RUNTIME_ENRICHED")
-                    .runtimeSessionId(session.getId())
-                    .notation("UML_SEQUENCE")
-                    .level("RUNTIME_PROCESS")
-                    .traceStatus(session.getTraceStatus() != null ? session.getTraceStatus() : "NOT_AVAILABLE")
-                    .mappingStatus(session.getMappingStatus())
-                    .startedAt(session.getStartedAt())
-                    .completedAt(session.getCompletedAt())
-                    .limitations(List.of("NO_TRACES_CAPTURED"))
-                    .steps(Collections.emptyList())
-                    .build();
+            return emptySequence(requestedSession, requestedSession.getModelVersion());
         }
 
         ModelVersion mv = mvOpt.get();
 
         List<DiagramVersion> diagrams = diagramVersionRepository.findByModelVersionIdAndNotation(mv.getId(), "UML_SEQUENCE");
         if (diagrams.isEmpty()) {
-            return SequenceDiagramResponseDTO.builder()
-                    .diagramId(UUID.randomUUID())
-                    .modelVersionId(mv.getId())
-                    .baseModelVersionId(mv.getBaseModelVersion() != null ? mv.getBaseModelVersion().getId() : (session.getModelVersion() != null ? session.getModelVersion().getId() : null))
-                    .sourceSnapshotId(mv.getSourceSnapshot() != null ? mv.getSourceSnapshot().getId() : (session.getSourceSnapshot() != null ? session.getSourceSnapshot().getId() : null))
-                    .modelRevision(mv.getRevision())
-                    .baseModelRevision(mv.getBaseModelVersion() != null ? mv.getBaseModelVersion().getRevision() : null)
-                    .modelOrigin(mv.getOrigin())
-                    .runtimeSessionId(session.getId())
-                    .notation("UML_SEQUENCE")
-                    .level("RUNTIME_PROCESS")
-                    .traceStatus(session.getTraceStatus() != null ? session.getTraceStatus() : "NOT_AVAILABLE")
-                    .mappingStatus(session.getMappingStatus())
-                    .startedAt(session.getStartedAt())
-                    .completedAt(session.getCompletedAt())
-                    .limitations(List.of("NO_SEQUENCE_DIAGRAM"))
-                    .steps(Collections.emptyList())
-                    .build();
+            return emptySequence(requestedSession, mv);
         }
 
         DiagramVersion diagram = diagrams.get(0);
@@ -695,8 +661,8 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                         .calleeResolutionStatus(calleeResolutionStatus)
                         .operation(nonBlankOrNull(node, "operation"))
                         .messageSort(messageSort)
-                        .httpMethod(nonBlankOrNull(node, "httpMethod"))
-                        .httpStatusCode(httpStatusCode)
+                        .httpMethod(textOrNull(node, "httpMethod"))
+                        .httpStatusCode(httpStatusOrNull(node))
                         .durationMs(longOrNull(node, "durationMs"))
                         .traceId(nonBlankOrNull(node, "traceId"))
                         .spanId(nonBlankOrNull(node, "spanId"))
@@ -1000,6 +966,29 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
             return b;
         }
         return null;
+    }
+
+    private SequenceDiagramResponseDTO emptySequence(RuntimeSession session, ModelVersion model) {
+        if (model == null) throw new BusinessException(ErrorCode.CONFLICT, "Runtime session has no model version");
+        ObjectNode layout = objectMapper.createObjectNode();
+        layout.put("notation", "UML_SEQUENCE");
+        layout.putArray("steps");
+        return SequenceDiagramResponseDTO.builder()
+                .runtimeSessionId(session.getId()).modelVersionId(model.getId())
+                .baseModelVersionId(session.getModelVersion() != null ? session.getModelVersion().getId() : null)
+                .sourceSnapshotId(session.getSourceSnapshot() != null ? session.getSourceSnapshot().getId() : null)
+                .modelRevision(model.getRevision()).modelOrigin(model.getOrigin())
+                .notation("UML_SEQUENCE").level("RUNTIME_PROCESS")
+                .traceStatus(session.getTraceStatus()).mappingStatus(session.getMappingStatus())
+                .startedAt(session.getStartedAt()).completedAt(session.getCompletedAt())
+                .limitations(List.of("NO_OBSERVED_SEQUENCE_AVAILABLE"))
+                .layoutJson(layout).steps(Collections.emptyList()).build();
+    }
+
+    private static Integer httpStatusOrNull(com.fasterxml.jackson.databind.JsonNode node) {
+        if (!node.path("httpStatusCode").isIntegralNumber()) return null;
+        Integer status = intOrNull(node, "httpStatusCode");
+        return status != null && status >= 100 && status <= 599 ? status : null;
     }
 
     private static String textOrNull(com.fasterxml.jackson.databind.JsonNode node, String field) {

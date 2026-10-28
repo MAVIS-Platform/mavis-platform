@@ -66,5 +66,26 @@
     },
     "canonical": "{\"actualImageIds\":{},\"declaredInstrumentationVersions\":{},\"imageSourceCorrespondence\":\"Unverified\",\"modelVersionId\":\"fixture-model\",\"outcome\":{\"cleanupStatus\":\"Confirmed\",\"diagnostics\":[\"SESSION_EXECUTION_FAILED_AT_DOCKER_INFO\"],\"evidenceStatus\":\"Unavailable\",\"executionStatus\":\"Failed\",\"mappingStatus\":\"Unavailable\",\"persistenceStatus\":\"CallerOwned\",\"scenarioStatus\":\"NotRun\",\"traceQuality\":\"Unavailable\"},\"profileAcceptance\":\"Unverified\",\"profileVersionId\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"resourceProject\":\"mavisrun-0123456789abcdef0123456789abcdef\",\"runConfigurationVersionId\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sandboxEnforcementConfirmed\":false,\"scenarioVersionId\":\"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"sessionId\":\"fixture-session\",\"sourceSnapshotId\":\"fixture-source\"}",
     "digest": "sha256:10ef6514212cc9449f970eab9e776a58d22ee32528f6860b3c097f4794d292ac"
+  },
+  {
+    "input": {
+      "recoveredAt": "2026-10-28T01:02:03.120Z"
+    },
+    "canonical": "{\"recoveredAt\":\"2026-10-28T01:02:03.120Z\"}",
+    "digest": "sha256:a11759cb9337679aeeeeb790986673150cacc4d9009c9220b5a4c75b13e32e96"
+  },
+  {
+    "input": {
+      "recoveredAt": "2026-10-28T01:02:03.000Z"
+    },
+    "canonical": "{\"recoveredAt\":\"2026-10-28T01:02:03.000Z\"}",
+    "digest": "sha256:7f94dcfaaced7c477ffae4c9db32af61b5df292a9309031d73bd7464080fc7a8"
+  },
+  {
+    "input": {
+      "recoveredAt": "2026-10-28T01:02:03.450Z"
+    },
+    "canonical": "{\"recoveredAt\":\"2026-10-28T01:02:03.450Z\"}",
+    "digest": "sha256:498c69fca50e095294a1a3613e4b6915d36cd33ecca35046f2396cd20d2d913a"
   }
 ]

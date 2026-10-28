@@ -29,6 +29,12 @@ public class RuntimeRecoveryController {
     public ApiResponse<Ack> recover(@PathVariable UUID id, @RequestBody Result result) {
         var session=sessions.findLockedById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND,"Session not found"));
         access.requireRunnerService();
+        boolean validTimestamp = false;
+        try {
+            validTimestamp = result != null && result.recoveredAt() != null && OffsetDateTime.parse(result.recoveredAt()) != null;
+        } catch (java.time.format.DateTimeParseException ignored) {
+            // Preserve the original timestamp string for the cross-language digest.
+        }
         if(result==null || !id.toString().equals(result.sessionId()) || session.getModelVersion()==null ||
             !session.getModelVersion().getId().toString().equals(result.modelVersionId()) ||
             !session.getSourceSnapshot().getId().toString().equals(result.sourceSnapshotId()) ||
@@ -37,13 +43,8 @@ public class RuntimeRecoveryController {
             !java.util.Objects.equals(session.getScenarioVersionId(),result.scenarioVersionId()) ||
             !java.util.Objects.equals(session.getResourceProject(),result.resourceProject()) ||
             result.recoveryId()==null || !result.recoveryId().matches("[0-9a-f]{32}") ||
-            !"Confirmed".equals(result.cleanupStatus()) || result.recoveredAt()==null || result.recoveredAt().isBlank())
+            !"Confirmed".equals(result.cleanupStatus()) || !validTimestamp)
             throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid recovery scope/result");
-        try {
-            OffsetDateTime.parse(result.recoveredAt().trim());
-        } catch (Exception e) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid recoveredAt timestamp: " + result.recoveredAt());
-        }
         var incoming=json.valueToTree(result);
         String digest=CanonicalReceiptDigestUtils.computeDigest(incoming);
         if(session.getRecoveryResultJson()!=null) {
