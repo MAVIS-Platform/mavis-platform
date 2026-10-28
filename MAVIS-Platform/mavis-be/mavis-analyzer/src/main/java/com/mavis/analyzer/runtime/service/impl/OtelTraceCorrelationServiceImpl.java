@@ -558,19 +558,55 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
     public SequenceDiagramResponseDTO getSequenceDiagramBySession(UUID sessionId) {
         log.info("Lấy biểu đồ tuần tự UML Sequence cho sessionId: {}", sessionId);
 
+        RuntimeSession session = runtimeSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "Không tìm thấy runtime session: " + sessionId));
+        accessPolicyService.requireProjectReadAccess(session.getProject());
+
         Optional<ModelVersion> mvOpt = modelVersionRepository.findFirstByRuntimeSessionIdOrderByRevisionDesc(sessionId);
         if (mvOpt.isEmpty()) {
-            throw new BusinessException(ErrorCode.NOT_FOUND,
-                    "Chưa có phiên bản mô hình RUNTIME_ENRICHED cho phiên thực nghiệm: " + sessionId);
+            UUID mvId = session.getModelVersion() != null ? session.getModelVersion().getId() : session.getId();
+            return SequenceDiagramResponseDTO.builder()
+                    .diagramId(UUID.randomUUID())
+                    .modelVersionId(mvId)
+                    .baseModelVersionId(session.getModelVersion() != null ? session.getModelVersion().getId() : null)
+                    .sourceSnapshotId(session.getSourceSnapshot() != null ? session.getSourceSnapshot().getId() : null)
+                    .modelRevision(session.getModelVersion() != null ? session.getModelVersion().getRevision() : 1)
+                    .modelOrigin("RUNTIME_ENRICHED")
+                    .runtimeSessionId(session.getId())
+                    .notation("UML_SEQUENCE")
+                    .level("RUNTIME_PROCESS")
+                    .traceStatus(session.getTraceStatus() != null ? session.getTraceStatus() : "NOT_AVAILABLE")
+                    .mappingStatus(session.getMappingStatus())
+                    .startedAt(session.getStartedAt())
+                    .completedAt(session.getCompletedAt())
+                    .limitations(List.of("NO_TRACES_CAPTURED"))
+                    .steps(Collections.emptyList())
+                    .build();
         }
 
         ModelVersion mv = mvOpt.get();
-        accessPolicyService.requireProjectReadAccess(mv.getProject());
 
         List<DiagramVersion> diagrams = diagramVersionRepository.findByModelVersionIdAndNotation(mv.getId(), "UML_SEQUENCE");
         if (diagrams.isEmpty()) {
-            throw new BusinessException(ErrorCode.NOT_FOUND,
-                    "Không tìm thấy sơ đồ UML_SEQUENCE cho modelVersion: " + mv.getId());
+            return SequenceDiagramResponseDTO.builder()
+                    .diagramId(UUID.randomUUID())
+                    .modelVersionId(mv.getId())
+                    .baseModelVersionId(mv.getBaseModelVersion() != null ? mv.getBaseModelVersion().getId() : (session.getModelVersion() != null ? session.getModelVersion().getId() : null))
+                    .sourceSnapshotId(mv.getSourceSnapshot() != null ? mv.getSourceSnapshot().getId() : (session.getSourceSnapshot() != null ? session.getSourceSnapshot().getId() : null))
+                    .modelRevision(mv.getRevision())
+                    .baseModelRevision(mv.getBaseModelVersion() != null ? mv.getBaseModelVersion().getRevision() : null)
+                    .modelOrigin(mv.getOrigin())
+                    .runtimeSessionId(session.getId())
+                    .notation("UML_SEQUENCE")
+                    .level("RUNTIME_PROCESS")
+                    .traceStatus(session.getTraceStatus() != null ? session.getTraceStatus() : "NOT_AVAILABLE")
+                    .mappingStatus(session.getMappingStatus())
+                    .startedAt(session.getStartedAt())
+                    .completedAt(session.getCompletedAt())
+                    .limitations(List.of("NO_SEQUENCE_DIAGRAM"))
+                    .steps(Collections.emptyList())
+                    .build();
         }
 
         DiagramVersion diagram = diagrams.get(0);
@@ -580,40 +616,40 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
             int fallbackOrder = 1;
             for (var node : diagram.getLayoutJson().get("steps")) {
                 int stepOrder = node.path("stepOrder").asInt(fallbackOrder++);
-                String messageId = textOrNull(node, "messageId");
+                String messageId = nonBlankOrNull(node, "messageId");
                 if (messageId == null) {
                     messageId = "msg-obs-" + stepOrder;
                 }
-                String callerService = textOrNull(node, "callerService");
-                String calleeService = textOrNull(node, "calleeService");
+                String callerService = nonBlankOrNull(node, "callerService");
+                String calleeService = nonBlankOrNull(node, "calleeService");
                 UUID callerElementId = uuidOrNull(node, "callerElementId");
                 UUID calleeElementId = uuidOrNull(node, "calleeElementId");
                 UUID callerBaseElementId = uuidOrNull(node, "callerBaseElementId");
                 UUID calleeBaseElementId = uuidOrNull(node, "calleeBaseElementId");
 
-                String callerResolutionStatus = textOrNull(node, "callerResolutionStatus");
+                String callerResolutionStatus = nonBlankOrNull(node, "callerResolutionStatus");
                 if (callerResolutionStatus == null) {
                     callerResolutionStatus = (callerElementId != null || callerBaseElementId != null) ? "RESOLVED" : "UNMAPPED";
                 }
-                String calleeResolutionStatus = textOrNull(node, "calleeResolutionStatus");
+                String calleeResolutionStatus = nonBlankOrNull(node, "calleeResolutionStatus");
                 if (calleeResolutionStatus == null) {
                     calleeResolutionStatus = (calleeElementId != null || calleeBaseElementId != null) ? "RESOLVED" : "UNMAPPED";
                 }
 
-                String callerParticipantId = textOrNull(node, "callerParticipantId");
+                String callerParticipantId = nonBlankOrNull(node, "callerParticipantId");
                 if (callerParticipantId == null) {
                     callerParticipantId = buildParticipantId(null, callerBaseElementId, callerElementId, callerService, callerResolutionStatus);
                 }
-                String calleeParticipantId = textOrNull(node, "calleeParticipantId");
+                String calleeParticipantId = nonBlankOrNull(node, "calleeParticipantId");
                 if (calleeParticipantId == null) {
                     calleeParticipantId = buildParticipantId(null, calleeBaseElementId, calleeElementId, calleeService, calleeResolutionStatus);
                 }
 
-                String messageSort = textOrNull(node, "messageSort");
+                String messageSort = nonBlankOrNull(node, "messageSort");
                 if (messageSort == null) {
                     messageSort = "UNKNOWN";
                 }
-                String provenanceType = textOrNull(node, "provenanceType");
+                String provenanceType = nonBlankOrNull(node, "provenanceType");
                 if (provenanceType == null) {
                     provenanceType = "OBSERVED";
                 }
@@ -639,6 +675,11 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                     }
                 }
 
+                Integer httpStatusCode = intOrNull(node, "httpStatusCode");
+                if (httpStatusCode != null && (httpStatusCode < 100 || httpStatusCode > 599)) {
+                    httpStatusCode = null;
+                }
+
                 steps.add(SequenceStepDTO.builder()
                         .stepOrder(stepOrder)
                         .messageId(messageId)
@@ -652,14 +693,14 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                         .calleeBaseElementId(calleeBaseElementId)
                         .callerResolutionStatus(callerResolutionStatus)
                         .calleeResolutionStatus(calleeResolutionStatus)
-                        .operation(textOrNull(node, "operation"))
+                        .operation(nonBlankOrNull(node, "operation"))
                         .messageSort(messageSort)
-                        .httpMethod(textOrNull(node, "httpMethod"))
-                        .httpStatusCode(intOrNull(node, "httpStatusCode"))
+                        .httpMethod(nonBlankOrNull(node, "httpMethod"))
+                        .httpStatusCode(httpStatusCode)
                         .durationMs(longOrNull(node, "durationMs"))
-                        .traceId(textOrNull(node, "traceId"))
-                        .spanId(textOrNull(node, "spanId"))
-                        .parentSpanId(textOrNull(node, "parentSpanId"))
+                        .traceId(nonBlankOrNull(node, "traceId"))
+                        .spanId(nonBlankOrNull(node, "spanId"))
+                        .parentSpanId(nonBlankOrNull(node, "parentSpanId"))
                         .relationshipId(uuidOrNull(node, "relationshipId"))
                         .baseRelationshipId(uuidOrNull(node, "baseRelationshipId"))
                         .candidateRelationshipIds(candidateRelIds)
@@ -671,7 +712,9 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         }
 
         ModelVersion baseMv = mv.getBaseModelVersion();
-        RuntimeSession session = mv.getRuntimeSession();
+        if (mv.getRuntimeSession() != null) {
+            session = mv.getRuntimeSession();
+        }
         UUID baseModelVersionId = baseMv != null
                 ? baseMv.getId()
                 : (session != null && session.getModelVersion() != null
@@ -965,6 +1008,14 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         }
         String text = node.get(field).asText();
         return (text == null || text.isBlank() || "null".equalsIgnoreCase(text)) ? null : text;
+    }
+
+    private static String nonBlankOrNull(com.fasterxml.jackson.databind.JsonNode node, String field) {
+        if (node == null || !node.hasNonNull(field)) {
+            return null;
+        }
+        String text = node.get(field).asText();
+        return (text == null || text.isBlank() || "null".equalsIgnoreCase(text)) ? null : text.trim();
     }
 
     private static Integer intOrNull(com.fasterxml.jackson.databind.JsonNode node, String field) {

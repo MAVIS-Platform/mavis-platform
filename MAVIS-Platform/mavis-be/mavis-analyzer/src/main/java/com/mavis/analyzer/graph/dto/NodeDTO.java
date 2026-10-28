@@ -21,4 +21,6 @@ public class NodeDTO {
     private String protocol;
     private String transportAuthority;
     private String resolutionIssue;
+    private String status;
+    private String languageStack;
 }

@@ -630,14 +630,19 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             if (calleeBaseId != null) stepNode.put("calleeBaseElementId", calleeBaseId.toString()); else stepNode.putNull("calleeBaseElementId");
             stepNode.put("callerResolutionStatus", callerStatus);
             stepNode.put("calleeResolutionStatus", calleeStatus);
-            stepNode.put("operation", "Call " + step.childSpan.getRuntimeService());
+            String operation = (step.childSpan.getRoute() != null && !step.childSpan.getRoute().isBlank())
+                    ? "HTTP -> " + step.childSpan.getRuntimeService()
+                    : "Call " + step.childSpan.getRuntimeService();
+            stepNode.put("operation", operation);
             stepNode.put("messageSort", "UNKNOWN");
-            stepNode.putNull("httpMethod");
-            if (step.childSpan.getHttpStatusCode() != null) {
-                stepNode.put("httpStatusCode", step.childSpan.getHttpStatusCode());
-            } else {
-                stepNode.putNull("httpStatusCode");
-            }
+            String httpMethod = step.childSpan.getHttpMethod() != null && !step.childSpan.getHttpMethod().isBlank()
+                    ? step.childSpan.getHttpMethod()
+                    : "POST";
+            stepNode.put("httpMethod", httpMethod);
+            int httpStatusCode = (step.childSpan.getHttpStatusCode() == null || step.childSpan.getHttpStatusCode() < 100)
+                    ? 200
+                    : step.childSpan.getHttpStatusCode();
+            stepNode.put("httpStatusCode", httpStatusCode);
             if (step.durationMs != null) {
                 stepNode.put("durationMs", step.durationMs);
             } else {

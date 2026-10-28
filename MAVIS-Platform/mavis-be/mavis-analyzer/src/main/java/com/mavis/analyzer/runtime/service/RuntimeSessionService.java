@@ -78,4 +78,31 @@ public interface RuntimeSessionService {
     com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckDTO acknowledgeLifecycle(
             UUID sessionId,
             com.mavis.analyzer.runtime.dto.RuntimeSessionLifecycleAckRequestDTO request);
+
+    /**
+     * Lấy cấu hình Runtime & điều kiện thực thi theo Project (J50-01, V14, F13).
+     *
+     * @param projectId ID của dự án
+     * @return RuntimeProjectConfigDTO
+     */
+    com.mavis.analyzer.runtime.dto.RuntimeProjectConfigDTO getProjectRuntimeConfig(UUID projectId);
+
+    /**
+     * Cập nhật cấu hình Runtime (profileId, confirmedServiceMappings) cho Project (J50-01, V14, F13).
+     *
+     * @param projectId ID của dự án
+     * @param request Cấu hình cập nhật
+     * @return RuntimeProjectConfigDTO với revision tăng lên
+     */
+    com.mavis.analyzer.runtime.dto.RuntimeProjectConfigDTO updateProjectRuntimeConfig(
+            UUID projectId,
+            com.mavis.analyzer.runtime.dto.RuntimeProjectConfigRequestDTO request);
+
+    /**
+     * Kích hoạt điều phối thực thi phiên thực nghiệm (CLI MAVIS.Runner hoặc Synthetic POC Trace).
+     *
+     * @param sessionId ID phiên thực nghiệm
+     * @return RuntimeSessionResponseDTO sau khi điều phối
+     */
+    RuntimeSessionResponseDTO dispatchSession(UUID sessionId);
 }
