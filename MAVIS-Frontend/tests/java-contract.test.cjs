@@ -570,3 +570,17 @@ test("admin health uses protected backend probes and preserves degraded states",
  const result=await executeJava("adminHealth",{},"jwt");assert.equal(result.status,"DEGRADED");
  const {operationPermission}=require("../src/lib/auth/permissions.ts");assert.equal(operationPermission("adminHealth"),"admin:manage");
 });
+
+
+test("locked account login exposes only the allowlisted public error",async t=>{
+ environment(t);const {javaRequest}=require("../src/lib/api/java-client.ts");
+ const {ApiError}=require("../src/lib/errors/api-error.ts");
+ t.mock.method(globalThis,"fetch",async()=>Response.json({code:403,message:"ACCOUNT_LOCKED"},{status:403}));
+ for(const path of ["auth/login","auth/google"]) await assert.rejects(()=>javaRequest(path,undefined,{method:"POST"}),e=>e instanceof ApiError&&e.code==="ACCOUNT_LOCKED"&&e.message.includes("vi phạm"));
+ await assert.rejects(()=>javaRequest("admin/users","jwt"),e=>e.code===undefined);
+});
+test("other forbidden login responses do not become account-lock notices",async t=>{
+ environment(t);const {javaRequest}=require("../src/lib/api/java-client.ts");
+ t.mock.method(globalThis,"fetch",async()=>Response.json({code:403,message:"private upstream diagnostic"},{status:403}));
+ await assert.rejects(()=>javaRequest("auth/login",undefined,{method:"POST"}),e=>e.code===undefined&&!e.message.includes("private upstream"));
+});

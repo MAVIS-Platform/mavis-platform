@@ -28,6 +28,12 @@ export async function javaRequest(
     throw new ApiError("network", 502);
   }
   if (!response.ok) {
+    if (["auth/login", "auth/google"].includes(path) && response.status === 403) {
+      const error: unknown = await response.clone().json().catch(() => null);
+      if (error && typeof error === "object" && "message" in error && error.message === "ACCOUNT_LOCKED") {
+        throw new ApiError("forbidden", 403, "ACCOUNT_LOCKED");
+      }
+    }
     // Only expose this exact, known profile error; never forward arbitrary
     // upstream messages or validation bodies that could contain credentials.
     if (

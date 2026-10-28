@@ -28,4 +28,14 @@ class AuthVerificationTest {
     @Test void expiredCodeCannotActivateUser(){var r=request();otp("EMAIL_VERIFICATION",OffsetDateTime.now(ZoneOffset.UTC).minusSeconds(1));assertThrows(BusinessException.class,()->service.verifyEmail(r));verify(users,never()).save(any());}
     @Test void usedOrUnknownCodeIsRejected(){var r=request();when(otps.findFirstByUserAndOtpCodeAndIsUsedFalseOrderByCreatedAtDesc(user,"123456")).thenReturn(Optional.empty());assertThrows(BusinessException.class,()->service.verifyEmail(r));verify(users,never()).save(any());}
     @Test void validVerificationConsumesCodeAndActivatesUser(){var r=request();var o=otp("EMAIL_VERIFICATION",OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(5));service.verifyEmail(r);assertTrue(o.isUsed());assertEquals("ACTIVE",user.getStatus());verify(otps).save(o);verify(users).save(user);}
+    @Test void lockedLoginReturnsDistinctReasonWithoutIssuingToken() {
+        user.setStatus("LOCKED"); when(users.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+        var exception=assertThrows(BusinessException.class,()->service.login(new com.mavis.platform.auth.dto.LoginRequest(user.getEmail(),"password")));
+        assertEquals("ACCOUNT_LOCKED",exception.getMessage());
+    }
+    @Test void inactiveLoginIsNotLabeledAsPolicyViolation() {
+        user.setStatus("INACTIVE"); when(users.findByEmail(user.getEmail())).thenReturn(Optional.of(user));
+        var exception=assertThrows(BusinessException.class,()->service.login(new com.mavis.platform.auth.dto.LoginRequest(user.getEmail(),"password")));
+        assertNotEquals("ACCOUNT_LOCKED",exception.getMessage());
+    }
 }

@@ -1,4 +1,5 @@
 export const publicErrors = {
+  ACCOUNT_LOCKED: "Tài khoản của bạn đã bị khóa do vi phạm chính sách sử dụng. Vui lòng liên hệ quản trị viên để được hỗ trợ.",
   PROFILE_CURRENT_PASSWORD: "Current password is incorrect. Please try again.",
   SUBMISSION_DIAGRAM: "Save a diagram for this exact model version before submitting.",
   REFERENCE_MODEL:

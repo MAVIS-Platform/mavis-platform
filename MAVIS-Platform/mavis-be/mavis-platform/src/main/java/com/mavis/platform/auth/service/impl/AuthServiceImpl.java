@@ -135,8 +135,11 @@ public class AuthServiceImpl implements AuthService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Vui lòng xác thực Email trước khi đăng nhập");
         }
 
-        if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa");
+        if ("LOCKED".equals(user.getStatus())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "ACCOUNT_LOCKED");
+        }
+        if ("INACTIVE".equals(user.getStatus())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn hiện không hoạt động");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
@@ -181,8 +184,11 @@ public class AuthServiceImpl implements AuthService {
 
             if (optionalUser.isPresent()) {
                 user = optionalUser.get();
-                if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
-                    throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa");
+                if ("LOCKED".equals(user.getStatus())) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN, "ACCOUNT_LOCKED");
+                }
+                if ("INACTIVE".equals(user.getStatus())) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn hiện không hoạt động");
                 }
                 // Có thể update status thành ACTIVE nếu trước đó PENDING_VERIFICATION vì Google đã verify mail
                 if ("PENDING_VERIFICATION".equals(user.getStatus())) {
