@@ -59,13 +59,12 @@ export function ImportFlow({
     staleTime: 60000,
   });
   const branches = refs.data?.branches ?? [];
-  const selectedBranch = projectId
-    ? branches.includes(branch)
-      ? branch
-      : branches.includes(project.data?.defaultBranch ?? "")
-        ? project.data!.defaultBranch!
-        : (refs.data?.defaultBranch ?? "")
-    : created?.defaultBranch || refs.data?.defaultBranch || "";
+  const preferredBranch = project.data?.defaultBranch || created?.defaultBranch || "";
+  const selectedBranch = branches.includes(branch)
+    ? branch
+    : branches.includes(preferredBranch)
+      ? preferredBranch
+      : refs.data?.defaultBranch || created?.defaultBranch || "";
   const branchesCurrent = repositoryUrl === lookupUrl && refs.isSuccess;
   const run = useMutation({
     mutationFn: async () => {
@@ -95,7 +94,7 @@ export function ImportFlow({
               projectId: target,
               repositoryUrl,
               branchName: selectedBranch || project.data?.defaultBranch || "main",
-              commitSha: projectId ? commit.trim() : "",
+              commitSha: commit.trim(),
             })
           : await api.execute("importSource", {
               projectId: target,
@@ -232,69 +231,63 @@ export function ImportFlow({
               Use a GitHub repository root URL: https://github.com/owner/repository
             </p>
           )}
-          {projectId ? (
-            <>
-              <label className="block space-y-2 text-sm font-medium">
-                <span>Branch</span>
-                <select
-                  aria-label="Branch"
-                  className="h-10 w-full rounded-md border bg-card px-3 text-sm"
-                  value={selectedBranch}
-                  disabled={busy || !branchesCurrent || !!commit.trim()}
-                  onChange={(e) => setBranch(e.target.value)}
-                >
-                  {!branchesCurrent && (
-                    <option value="">
-                      {refs.isFetching ? "Loading branches…" : "Branches unavailable"}
-                    </option>
-                  )}
-                  {branches.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                      {b === refs.data?.defaultBranch ? " (default)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block space-y-2 text-sm font-medium">
-                <span>Commit SHA (optional)</span>
-                <Input
-                  aria-label="Commit SHA"
-                  placeholder="Full 40-character SHA"
-                  value={commit}
-                  onChange={(e) => setCommit(e.target.value)}
-                  pattern="[a-fA-F0-9]{40}"
-                  disabled={busy}
-                />
-                <span className="block text-xs font-normal text-muted-foreground">
-                  Leave empty for the latest commit on the selected branch. A SHA overrides the
-                  branch selection.
-                </span>
-              </label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={busy || !repositoryUrl || refs.isFetching}
-                onClick={() => {
-                  setLookup(repositoryUrl);
-                  if (lookupUrl === repositoryUrl) void refs.refetch();
-                }}
+          <>
+            <label className="block space-y-2 text-sm font-medium">
+              <span>Branch</span>
+              <select
+                aria-label="Branch"
+                className="h-10 w-full rounded-md border bg-card px-3 text-sm"
+                value={selectedBranch}
+                disabled={busy || !branchesCurrent || !!commit.trim()}
+                onChange={(e) => setBranch(e.target.value)}
               >
-                Reload branches
-              </Button>
-            </>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              {refs.isFetching
-                ? "Checking repository…"
-                : branchesCurrent
-                  ? `The first snapshot will use the latest commit on ${selectedBranch}.`
-                  : "Enter a public GitHub repository. Its default branch will be used for the first snapshot."}
-            </p>
-          )}
+                {!branchesCurrent && (
+                  <option value="">
+                    {refs.isFetching
+                      ? "Loading branches…"
+                      : repositoryUrl
+                        ? "Branches unavailable"
+                        : "Enter a repository URL first"}
+                  </option>
+                )}
+                {branches.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                    {b === refs.data?.defaultBranch ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block space-y-2 text-sm font-medium">
+              <span>Commit SHA (optional)</span>
+              <Input
+                aria-label="Commit SHA"
+                placeholder="Full 40-character SHA"
+                value={commit}
+                onChange={(e) => setCommit(e.target.value)}
+                pattern="[a-fA-F0-9]{40}"
+                disabled={busy}
+              />
+              <span className="block text-xs font-normal text-muted-foreground">
+                Leave empty for the latest commit on the selected branch. A SHA overrides the branch
+                selection.
+              </span>
+            </label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy || !repositoryUrl || refs.isFetching}
+              onClick={() => {
+                setLookup(repositoryUrl);
+                if (lookupUrl === repositoryUrl) void refs.refetch();
+              }}
+            >
+              Reload branches
+            </Button>
+          </>
           {refs.error && <ErrorState error={refs.error} onRetry={() => void refs.refetch()} />}
-          {refs.data?.truncated && projectId && (
+          {refs.data?.truncated && (
             <p className="text-xs text-muted-foreground">
               The branch list is truncated. You can pin a commit SHA for an unlisted branch.
             </p>
