@@ -60,7 +60,7 @@ export const exploreStyles: StylesheetStyle[] = [
   },
   {
     selector: "edge.explore.focused, edge.explore.hover-neighbor",
-    style: { opacity: 0.95, width: 1.8, "arrow-scale": 0.7, "target-arrow-shape": "triangle" },
+    style: { opacity: 0.95, width: 1.8, "arrow-scale": 0.7, "target-arrow-shape": "none" },
   },
   { selector: "node.explore.muted", style: { opacity: 0.18, "overlay-opacity": 0 } },
   { selector: "edge.explore.muted", style: { opacity: 0.04 } },
