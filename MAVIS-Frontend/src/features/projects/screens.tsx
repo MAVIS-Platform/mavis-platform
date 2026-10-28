@@ -122,18 +122,11 @@ export function ProjectOverview() {
                               : ""}
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`/diagrams?project=${projectId}&model=${rev.id}`}>
-                              Diagrams
-                            </Link>
-                          </Button>
-                          <Button asChild size="sm" variant="ghost">
-                            <Link href={`/architecture?project=${projectId}&model=${rev.id}`}>
-                              Graph
-                            </Link>
-                          </Button>
-                        </div>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/architecture?project=${projectId}&model=${rev.id}`}>
+                            View
+                          </Link>
+                        </Button>
                       </div>
                     );
                   })}
