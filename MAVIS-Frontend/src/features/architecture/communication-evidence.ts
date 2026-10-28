@@ -289,7 +289,7 @@ export function buildPeerConnectionGroups(
         category: isDocker ? "DOCKER_COMPOSE" : "CONFIG_BINDING",
         label: isDocker
           ? `Docker Compose (${relName === "DECLARED_COMPOSE" ? "depends_on / service link" : "environment link"})`
-          : `Cấu hình liên kết (${tech})`,
+          : `Connection configuration (${tech})`,
         detail:
           configKey && configVal
             ? `${configKey} = ${configVal}`
@@ -303,7 +303,7 @@ export function buildPeerConnectionGroups(
     } else {
       // Also record the transport technology in Docker/Infra summary so "- Docker / Công nghệ..." is always informative
       const isValidated = Boolean((edge as any).Validated || (edge as any).validated || edge.originLayer === "RUNTIME" || edge.originLayer === "STATIC_AND_RUNTIME");
-      const techLabel = `${tech}${isValidated ? " (Đã xác thực Runtime OTel)" : ""}`;
+      const techLabel = `${tech}${isValidated ? " (observed in OTel runtime evidence)" : ""}`;
       const existingTech = group.dockerAndInfraItems.some(
         (item) => item.category === "PROTOCOL_TECH" && item.label === techLabel,
       );
@@ -315,7 +315,7 @@ export function buildPeerConnectionGroups(
           detail:
             asStr(props.configKey) && asStr(props.configValue)
               ? `Binding: ${asStr(props.configKey)} = ${asStr(props.configValue)}`
-              : `Giao thức kết nối giữa ${group.subjectName} và ${group.peerName} qua ${tech}`,
+              : `Connection between ${group.subjectName} and ${group.peerName} using ${tech}`,
           file: asStr(props.configFile),
         });
       }
@@ -330,13 +330,13 @@ export function buildPeerConnectionGroups(
     // 2. Extract Caller & Callee code evidence and assign strictly to "+ A:" (subjectCodeItems) and "+ B:" (peerCodeItems)
     const callerComponent =
       asStr(props.callerComponent) ??
-      (rawFrom && rawFrom.id !== ownerFrom.id ? rawFrom.name : asStr(props.clientInterface)?.split(".").at(-1) ?? "Chưa xác định class phía gọi");
+      (rawFrom && rawFrom.id !== ownerFrom.id ? rawFrom.name : asStr(props.clientInterface)?.split(".").at(-1) ?? "Caller class not identified");
     const callerSource = sourceSide(props, "caller", callerProof, rawFrom);
     const callerFile = callerSource.file, callerLine = callerSource.line, callerSnippet = callerSource.snippet;
 
     const calleeController =
       asStr(props.calleeController) ??
-      (rawTo && rawTo.id !== ownerTo.id ? rawTo.name : "Chưa xác định class/endpoint đích");
+      (rawTo && rawTo.id !== ownerTo.id ? rawTo.name : "Target class/endpoint not identified");
     const calleeSource = sourceSide(props, "callee", calleeProof, rawTo);
     const calleeFile = calleeSource.file, calleeLine = calleeSource.line, calleeSnippet = calleeSource.snippet;
 
@@ -359,7 +359,7 @@ export function buildPeerConnectionGroups(
       group.subjectCodeItems.push({
         id: `${edge.id}-A-out`,
         direction: "OUTBOUND_TO_PEER",
-        roleLabel: `Gọi sang ${group.peerName}`,
+        roleLabel: `Calls ${group.peerName}`,
         componentName: callerComponent,
         file: callerFile || `(Trong service ${group.subjectName})`,
         line: callerLine,
@@ -372,9 +372,9 @@ export function buildPeerConnectionGroups(
       group.peerCodeItems.push({
         id: `${edge.id}-B-in`,
         direction: "INBOUND_FROM_PEER",
-        roleLabel: `Đón request từ ${group.subjectName}`,
+        roleLabel: `Receives requests from ${group.subjectName}`,
         componentName: calleeController,
-        file: calleeFile || `(Endpoint tại ${group.peerName})`,
+        file: calleeFile || `(Endpoint in ${group.peerName})`,
         line: calleeLine,
         httpMethod,
         apiPath: calleeRoute,
@@ -386,9 +386,9 @@ export function buildPeerConnectionGroups(
       group.subjectCodeItems.push({
         id: `${edge.id}-A-in`,
         direction: "INBOUND_FROM_PEER",
-        roleLabel: `Đón request từ ${group.peerName}`,
+        roleLabel: `Receives requests from ${group.peerName}`,
         componentName: calleeController,
-        file: calleeFile || `(Endpoint tại ${group.subjectName})`,
+        file: calleeFile || `(Endpoint in ${group.subjectName})`,
         line: calleeLine,
         httpMethod,
         apiPath: calleeRoute,
@@ -399,7 +399,7 @@ export function buildPeerConnectionGroups(
       group.peerCodeItems.push({
         id: `${edge.id}-B-out`,
         direction: "OUTBOUND_TO_PEER",
-        roleLabel: `Gọi sang ${group.subjectName}`,
+        roleLabel: `Calls ${group.subjectName}`,
         componentName: callerComponent,
         file: callerFile || `(Trong service ${group.peerName})`,
         line: callerLine,

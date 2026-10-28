@@ -30,7 +30,7 @@ function DockerInfraSection({ items }: { items: DockerOrInfraItem[] }) {
     <div className="space-y-2 rounded-lg border border-sky-500/25 bg-sky-500/5 p-3">
       <div className="flex items-center gap-2 text-xs font-bold text-sky-400">
         <Container className="size-3.5 shrink-0" />
-        <span>- Docker / Hạ tầng &amp; Công nghệ kết nối:</span>
+        <span>- Docker / Infrastructure &amp; Connectivity:</span>
       </div>
 
       {items.length > 0 ? (
@@ -62,7 +62,7 @@ function DockerInfraSection({ items }: { items: DockerOrInfraItem[] }) {
         </ul>
       ) : (
         <p className="pl-4 text-[11px] italic text-muted-foreground">
-          Không có khai báo Docker Compose trực tiếp (kết nối qua mức Code / API).
+          No direct Docker Compose declaration is available; this connection is recorded at code or API level.
         </p>
       )}
     </div>
@@ -89,10 +89,10 @@ function ServiceCodeSubtree({
     <div className={`rounded-lg border p-3 space-y-2.5 ${borderClass}`}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-1.5">
         <span className={`font-mono text-xs font-bold ${titleClass}`}>
-          {prefixLabel} ({isSubject ? "Chủ thể đang chọn" : "Service kết nối"}):
+          {prefixLabel} ({isSubject ? "Selected service" : "Connected service"}):
         </span>
         <Badge variant="outline" className="font-mono text-[10px]">
-          {items.length} điểm chạm code
+          {items.length} code reference(s)
         </Badge>
       </div>
 
@@ -134,17 +134,17 @@ function ServiceCodeSubtree({
               <div className="grid gap-1 text-[11px] text-muted-foreground">
                 <div className="flex items-center gap-1.5">
                   <Box className="size-3 shrink-0 text-foreground/70" />
-                  <span>Class / Component tại {serviceName}:</span>
+                  <span>Class / Component in {serviceName}:</span>
                   <strong className="font-mono text-foreground">
                     {item.componentName}
                   </strong>
                 </div>
                 <div className="flex items-center gap-1.5 break-all">
                   <FileCode className="size-3 shrink-0 text-foreground/70" />
-                  <span>File &amp; Dòng:</span>
+                  <span>File &amp; Line:</span>
                   <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
                     {item.file}
-                    {item.line ? ` : dòng ${item.line}` : ""}
+                    {item.line ? ` : line ${item.line}` : ""}
                   </code>
                 </div>
               </div>
@@ -152,7 +152,7 @@ function ServiceCodeSubtree({
               {item.snippet ? (
                 <div className="pt-1">
                   <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Code dẫn chứng tại {serviceName}:
+                    Source evidence in {serviceName}:
                   </div>
                   <pre className="max-h-40 overflow-x-auto rounded-md border border-slate-800 bg-slate-950 p-2.5 font-mono text-[11px] leading-relaxed text-slate-100">
                     <code>{item.snippet}</code>
@@ -160,7 +160,7 @@ function ServiceCodeSubtree({
                 </div>
               ) : (
                 <p className="text-[11px] italic text-muted-foreground">
-                  {item.file.startsWith("(") ? "Chưa ghi nhận file hoặc snippet nguồn cho điểm chạm này." : <>Đã ghi nhận vị trí khai báo <span className="font-mono">{item.file}</span>; chưa có snippet nguồn.</>}
+                  {item.file.startsWith("(") ? "No source file or snippet is recorded for this reference." : <>Declaration location recorded: <span className="font-mono">{item.file}</span>; no source snippet is available.</>}
                 </p>
               )}
             </div>
@@ -168,7 +168,7 @@ function ServiceCodeSubtree({
         </div>
       ) : (
         <p className="text-[11px] italic text-muted-foreground">
-          Chưa ghi nhận snippet code trực tiếp phía {serviceName} (kết nối khai báo qua cấu hình/Docker).
+          No direct code snippet is recorded for {serviceName}; this connection is declared through configuration or Docker.
         </p>
       )}
     </div>
@@ -200,7 +200,7 @@ function PeerPairAccordionItem({
           </span>
           <span
             className="inline-flex items-center font-mono text-sm font-bold text-primary"
-            title="Nhóm quan hệ giữa hai thành phần; không mặc định có lời gọi ở cả hai chiều"
+            title="Grouped relationships between two elements; calls in both directions are not implied"
           >
             <ArrowLeftRight className="size-4 mx-0.5" />
           </span>
@@ -217,7 +217,7 @@ function PeerPairAccordionItem({
             </Badge>
           ))}
           <Badge variant="secondary" className="font-mono text-[10px]">
-            {group.edgeCount} kết nối
+            {group.edgeCount} relationship(s)
           </Badge>
         </div>
       </summary>
@@ -243,7 +243,7 @@ function PeerPairAccordionItem({
         <div className="space-y-2.5 rounded-lg border border-border/70 bg-background/40 p-3">
           <div className="flex items-center gap-2 text-xs font-bold text-foreground">
             <Code2 className="size-4 text-primary shrink-0" />
-            <span>- Code dẫn chứng 2 đầu ({group.subjectName} ↔ {group.peerName}):</span>
+            <span>Source evidence for both sides ({group.subjectName} ↔ {group.peerName}):</span>
           </div>
 
           <div className="space-y-3 pl-2">
@@ -284,12 +284,12 @@ export function CommunicationPanel({
   if (groups.length === 0) {
     return (
       <div className="rounded-xl border border-dashed bg-muted/20 p-4 text-xs text-muted-foreground">
-        Thành phần này hiện không có kết nối ngoại vi (HTTP / Feign / Docker / Message Queue) sang các Service khác.
+        No external HTTP, Feign, Docker or messaging connections to other services are recorded for this element.
       </div>
     );
   }
 
-  const subjectName = groups[0]?.subjectName ?? "Service đang chọn";
+  const subjectName = groups[0]?.subjectName ?? "Selected service";
   const isDirectEdge = model.edges.some((e) => e.id === selectedId);
 
   return (
@@ -298,13 +298,13 @@ export function CommunicationPanel({
         <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
           <FolderGit2 className="size-4 text-primary shrink-0" />
           <span>
-            Dẫn chứng kết nối của chủ thể{" "}
+            Connection evidence for{" "}
             <strong className="font-mono text-amber-400">{subjectName}</strong>{" "}
-            ({groups.length} đối tác)
+            ({groups.length} peer(s))
           </span>
         </div>
         <span className="text-[11px] text-muted-foreground">
-          Bấm vào từng cặp <strong>{subjectName} ↔ ...</strong> để mở Docker &amp; Code
+          Select a pair <strong>{subjectName} ↔ ...</strong> to inspect infrastructure and source evidence
         </span>
       </div>
 

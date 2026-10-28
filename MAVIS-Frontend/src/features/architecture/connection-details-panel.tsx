@@ -8,11 +8,13 @@ const elementName = (elements: ArchitectureElement[], id: string) =>
   elements.find((element) => element.id === id)?.name ?? id;
 export function ConnectionDetailsPanel({
   connection,
+  docked = false,
   elements,
   onInspect,
   onClose,
 }: {
   connection: NetworkConnection;
+  docked?: boolean;
   elements: ArchitectureElement[];
   onInspect: (id: string) => void;
   onClose: () => void;
@@ -34,7 +36,11 @@ export function ConnectionDetailsPanel({
   return (
     <aside
       aria-label="Connection details"
-      className="[&_button]:min-h-11 fixed inset-x-2 bottom-2 z-40 flex max-h-[86dvh] min-w-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-lg xl:sticky xl:inset-auto xl:top-20 xl:z-auto xl:max-h-[calc(100dvh-6rem)] xl:self-start xl:shadow-none"
+      className={
+        docked
+          ? "flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-card"
+          : "[&_button]:min-h-11 fixed inset-x-2 bottom-2 z-40 flex max-h-[86dvh] min-w-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-lg xl:sticky xl:inset-auto xl:top-20 xl:z-auto xl:max-h-[calc(100dvh-6rem)] xl:self-start xl:shadow-none"
+      }
     >
       <header className="space-y-3 border-b p-4">
         <div className="flex items-start justify-between gap-2">
@@ -46,9 +52,16 @@ export function ConnectionDetailsPanel({
               {names[0]} — {names[1]}
             </h2>
           </div>
-          <Button size="sm" variant="ghost" aria-label="Close connection details" onClick={onClose}>
-            ×
-          </Button>
+          {!docked && (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Close connection details"
+              onClick={onClose}
+            >
+              ×
+            </Button>
+          )}
         </div>
         <p className="text-sm">
           {connection.relationshipIds.length} recorded relationship(s) ·{" "}

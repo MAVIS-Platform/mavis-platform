@@ -29,6 +29,9 @@ public class AnalysisRequestService {
             var job=previous.get();if(!job.getSourceSnapshot().getId().equals(snapshotId))throw new BusinessException(ErrorCode.CONFLICT,"Idempotency key belongs to another snapshot");
             return new Accepted(job.getId(),snapshotId,job.getStatus(),true);
         }
+        // The project lock serializes requests with different idempotency keys as well.
+        if(jobs.existsByProjectIdAndJobTypeAndStatusIn(project.getId(), "STATIC_ANALYSIS", java.util.List.of("PENDING", "RUNNING", "CANCELLING")))
+            throw new BusinessException(ErrorCode.CONFLICT,"This project already has an analysis in progress. Wait for it to finish before starting another analysis.");
         if(snapshot.getStoragePath()==null)throw new BusinessException(ErrorCode.BAD_REQUEST,"Snapshot artifact unavailable");
         var job=jobs.save(Job.builder().project(project).sourceSnapshot(snapshot).jobType("STATIC_ANALYSIS").status("PENDING").analysisRequestKey(key).build());
         events.publishEvent(new AnalyzeRequestEvent(project.getId(),snapshotId,job.getId(),snapshot.getStoragePath()));

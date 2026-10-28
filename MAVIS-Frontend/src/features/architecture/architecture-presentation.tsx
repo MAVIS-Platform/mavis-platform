@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArchitecturalModel } from "@/types/domain";
 import { DependencyNetwork } from "./dependency-network";
 import { ArchitectureDiagrams } from "./architecture-diagrams";
 import { networkConnections } from "./network-connections";
 import { ConnectionDetailsPanel } from "./connection-details-panel";
+import { InspectorDock } from "./inspector-dock";
 import { SelectionThreeE } from "./selection-three-e";
 import {
   projectGraphModel,
@@ -140,29 +141,63 @@ export function ArchitecturePresentation({
   }, [model, projection, selectedId, mode, connection]);
 
   const activeSequenceContext = mode === "diagram" ? sequenceContext : null;
+  const workspace = useRef<HTMLDivElement>(null);
+  const dockOpen = mode === "graph" && Boolean(selectedId || connection);
+  const [workspaceHeight, setWorkspaceHeight] = useState(700);
+  useEffect(() => {
+    if (!dockOpen) return;
+    const update = () =>
+      setWorkspaceHeight(
+        Math.max(
+          540,
+          window.innerHeight -
+            Math.max(0, workspace.current?.getBoundingClientRect().top ?? 0) -
+            16,
+        ),
+      );
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, [dockOpen]);
+  const closeInspector = () => {
+    setHighlight(null);
+    setDrilledSourceEdgeId(null);
+    setSequenceContext(null);
+    setConnectionSelection(null);
+    onSelect(null);
+    requestAnimationFrame(() =>
+      workspace.current
+        ?.querySelector<HTMLElement>('[data-renderer="cytoscape"]')
+        ?.focus({ preventScroll: true }),
+    );
+  };
 
   return (
     <div
       data-architecture-workspace
       onKeyDown={(event) => {
         if (mode === "graph" && event.key === "Escape" && !event.defaultPrevented) {
-          setConnectionSelection(null);
-          handleSelect(null);
+          closeInspector();
         }
       }}
       className="space-y-2.5 [&:fullscreen]:m-0 [&:fullscreen]:overflow-y-auto [&:fullscreen]:bg-background [&:fullscreen]:p-4"
     >
       <div
+        ref={workspace}
+        style={dockOpen ? { height: workspaceHeight } : undefined}
         className={
-          selectedId || connection
-            ? "grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,440px)] 2xl:grid-cols-[minmax(0,1fr)_480px]"
-            : "min-w-0"
+          dockOpen
+            ? "relative flex min-w-0 flex-col gap-2"
+            : selectedId || connection
+              ? "grid min-w-0 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,440px)] 2xl:grid-cols-[minmax(0,1fr)_480px]"
+              : "min-w-0"
         }
       >
-        <div className="min-w-0">
+        <div className={dockOpen ? "min-h-0 min-w-0 flex-1 overflow-hidden" : "min-w-0"}>
           {mode === "graph" ? (
             <DependencyNetwork
               key={model.id}
+              fillHeight={dockOpen}
               model={model}
               selectedId={activeRelationshipId}
               onSelect={(id) => {
@@ -217,50 +252,78 @@ export function ArchitecturePresentation({
             />
           )}
         </div>
-        {connection && !selectedId && (
-          <ConnectionDetailsPanel
-            key={connection.key}
-            connection={connection}
-            elements={projection.model.elements}
-            onInspect={(id) => {
-              setDrilledSourceEdgeId(null);
-              onSelect(id);
-            }}
-            onClose={() => {
-              setConnectionSelection(null);
-              handleSelect(null);
-            }}
-          />
-        )}
-        {selectedId && (
-          <SelectionThreeE
-            projectId={model.projectId}
-            key={computeSelectionScopeKey({
-              model,
-              selectedId,
-              projectedEdge,
-              drilledSourceEdgeId,
-              sequenceContext: activeSequenceContext,
-            })}
-            model={model}
-            selectedId={selectedId}
-            projectedEdge={projectedEdge}
-            drilledSourceEdgeId={drilledSourceEdgeId}
-            sequenceContext={activeSequenceContext}
-            onDrilldown={setDrilledSourceEdgeId}
-            onSelect={handleSelect}
-            onClose={() => {
-              setHighlight(null);
-              setDrilledSourceEdgeId(null);
-              setSequenceContext(null);
-              onSelect(null);
-            }}
-            {...(mode === "graph"
-              ? { onHighlight: (ids: string[]) => setHighlight({ modelId: model.id, ids }) }
-              : {})}
-          />
-        )}
+        <InspectorPanelWrapper
+          docked={dockOpen}
+          onClose={closeInspector}
+          label={connection && !selectedId ? "Connection details" : "Architecture Inspector · 3E"}
+        >
+          {connection && !selectedId && (
+            <ConnectionDetailsPanel
+              key={connection.key}
+              docked={mode === "graph"}
+              connection={connection}
+              elements={projection.model.elements}
+              onInspect={(id) => {
+                setDrilledSourceEdgeId(null);
+                onSelect(id);
+              }}
+              onClose={() => {
+                setConnectionSelection(null);
+                handleSelect(null);
+              }}
+            />
+          )}
+          {selectedId && (
+            <SelectionThreeE
+              docked={mode === "graph"}
+              projectId={model.projectId}
+              key={computeSelectionScopeKey({
+                model,
+                selectedId,
+                projectedEdge,
+                drilledSourceEdgeId,
+                sequenceContext: activeSequenceContext,
+              })}
+              model={model}
+              selectedId={selectedId}
+              projectedEdge={projectedEdge}
+              drilledSourceEdgeId={drilledSourceEdgeId}
+              sequenceContext={activeSequenceContext}
+              onDrilldown={setDrilledSourceEdgeId}
+              onSelect={handleSelect}
+              onClose={() => {
+                setHighlight(null);
+                setDrilledSourceEdgeId(null);
+                setSequenceContext(null);
+                onSelect(null);
+              }}
+              {...(mode === "graph"
+                ? { onHighlight: (ids: string[]) => setHighlight({ modelId: model.id, ids }) }
+                : {})}
+            />
+          )}
+        </InspectorPanelWrapper>
       </div>
     </div>
+  );
+}
+
+function InspectorPanelWrapper({
+  docked,
+  children,
+  onClose,
+  label,
+}: {
+  docked: boolean;
+  children: React.ReactNode;
+  onClose: () => void;
+  label: string;
+}) {
+  return docked ? (
+    <InspectorDock onClose={onClose} label={label}>
+      {children}
+    </InspectorDock>
+  ) : (
+    <>{children}</>
   );
 }

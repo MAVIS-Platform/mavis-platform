@@ -1357,10 +1357,7 @@ export function checkThreeEScopeGuardrail(
   >,
 ): { allowed: boolean; reason?: "off-topic" | "wrong-service"; refusalMessage?: string } {
   const q = question.trim();
-  const isVi = /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(q);
-  const defaultRefusal = isVi
-    ? `Chỉ hỗ trợ giải đáp các vấn đề về kiến trúc, mã nguồn (code evidence), luồng gọi và rủi ro thiết kế của "${tCtx.title}" (${tCtx.type}). Vui lòng đặt câu hỏi bám sát phần tử đang chọn.`
-    : `I only answer questions about the software architecture, code evidence, dependencies, and design trade-offs of "${tCtx.title}" (${tCtx.type}). Please ask a question scoped to this selected element.`;
+  const defaultRefusal = `I only answer questions about the software architecture, code evidence, dependencies, and design trade-offs of "${tCtx.title}" (${tCtx.type}). Please ask a question scoped to this selected element.`;
 
   if (q.length < 2 || CHITCHAT_ONLY_REGEX.test(q) || OFF_TOPIC_GUARDRAIL_REGEX.test(q)) {
     return { allowed: false, reason: "off-topic", refusalMessage: defaultRefusal };
@@ -1391,9 +1388,7 @@ export function checkThreeEScopeGuardrail(
       return {
         allowed: false,
         reason: "wrong-service",
-        refusalMessage: isVi
-          ? `Bạn đang chọn "${tCtx.title}", nhưng câu hỏi lại đề cập đến "${foreignMatch}" (nằm ngoài phạm vi trực tiếp của "${tCtx.title}"). Vui lòng chọn "${foreignMatch}" trên sơ đồ để phân tích hoặc chỉ hỏi về "${tCtx.title}".`
-          : `You currently have "${tCtx.title}" selected, but your question asks about "${foreignMatch}" (which is outside "${tCtx.title}"'s direct scope). Please select "${foreignMatch}" on the diagram or ask about "${tCtx.title}".`,
+        refusalMessage: `You currently have "${tCtx.title}" selected, but your question asks about "${foreignMatch}" (which is outside "${tCtx.title}"'s direct scope). Please select "${foreignMatch}" on the diagram or ask about "${tCtx.title}".`,
       };
     }
   }
