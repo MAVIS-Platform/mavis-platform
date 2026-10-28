@@ -27,8 +27,8 @@ export interface CommunicationPanelProps {
 
 function DockerInfraSection({ items }: { items: DockerOrInfraItem[] }) {
   return (
-    <div className="space-y-2 rounded-lg border border-sky-500/25 bg-sky-500/5 p-3">
-      <div className="flex items-center gap-2 text-xs font-bold text-sky-400">
+    <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+      <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
         <Container className="size-3.5 shrink-0" />
         <span>- Docker / Infrastructure &amp; Connectivity:</span>
       </div>
@@ -43,7 +43,7 @@ function DockerInfraSection({ items }: { items: DockerOrInfraItem[] }) {
               <div className="flex flex-wrap items-center justify-between gap-1.5">
                 <span className="font-semibold text-foreground">{item.label}</span>
                 {item.file && (
-                  <span className="font-mono text-[10px] text-sky-400">
+                  <span className="font-mono text-[10px] text-muted-foreground">
                     {item.file}
                     {item.line ? `:${item.line}` : ""}
                   </span>
@@ -81,14 +81,14 @@ function ServiceCodeSubtree({
   items: SideCodeEvidenceItem[];
 }) {
   const borderClass = isSubject
-    ? "border-amber-500/30 bg-amber-500/5"
-    : "border-emerald-500/30 bg-emerald-500/5";
-  const titleClass = isSubject ? "text-amber-400" : "text-emerald-400";
+    ? "border-border border-l-2 border-l-primary/40 bg-muted/20"
+    : "border-border bg-muted/20";
+  const titleClass = "text-foreground";
 
   return (
     <div className={`rounded-lg border p-3 space-y-2.5 ${borderClass}`}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-1.5">
-        <span className={`font-mono text-xs font-bold ${titleClass}`}>
+        <span className={`font-mono text-xs font-semibold ${titleClass}`}>
           {prefixLabel} ({isSubject ? "Selected service" : "Connected service"}):
         </span>
         <Badge variant="outline" className="font-mono text-[10px]">
@@ -106,9 +106,7 @@ function ServiceCodeSubtree({
               <div className="flex flex-wrap items-center justify-between gap-1.5">
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Badge
-                    variant={
-                      item.direction === "OUTBOUND_TO_PEER" ? "warning" : "source"
-                    }
+                    variant="outline"
                     className="text-[10px]"
                   >
                     {item.roleLabel}
@@ -187,7 +185,7 @@ function PeerPairAccordionItem({
   return (
     <details
       open={defaultOpen}
-      className="group rounded-xl border border-border bg-card/60 transition-all open:border-primary/40 open:bg-card open:shadow-sm"
+      className="group rounded-xl border border-border bg-card transition-colors open:bg-card"
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3.5 py-3 select-none hover:bg-muted/40 rounded-xl">
         <div className="flex flex-wrap items-center gap-2 min-w-0">
@@ -195,17 +193,17 @@ function PeerPairAccordionItem({
             ▶
           </span>
           {/* CHỦ THỂ A LUÔN ĐỨNG TRƯỚC Ở BÊN TRÁI */}
-          <span className="rounded-md bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 font-mono text-xs font-bold text-amber-300">
+          <span className="rounded-md border border-primary/15 bg-primary/5 px-2 py-0.5 font-mono text-xs font-medium text-foreground">
             {group.subjectName}
           </span>
           <span
-            className="inline-flex items-center font-mono text-sm font-bold text-primary"
+            className="inline-flex items-center font-mono text-sm text-muted-foreground"
             title="Grouped relationships between two elements; calls in both directions are not implied"
           >
             <ArrowLeftRight className="size-4 mx-0.5" />
           </span>
           {/* ĐỐI TÁC B, C ĐỨNG SAU Ở BÊN PHẢI */}
-          <span className="rounded-md bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 font-mono text-xs font-bold text-emerald-300">
+          <span className="rounded-md border border-border bg-muted/40 px-2 py-0.5 font-mono text-xs font-medium text-foreground">
             {group.peerName}
           </span>
         </div>
@@ -294,12 +292,12 @@ export function CommunicationPanel({
 
   return (
     <div className="space-y-3" data-testid="communication-panel">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
         <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
           <FolderGit2 className="size-4 text-primary shrink-0" />
           <span>
             Connection evidence for{" "}
-            <strong className="font-mono text-amber-400">{subjectName}</strong>{" "}
+            <strong className="font-mono text-foreground">{subjectName}</strong>{" "}
             ({groups.length} peer(s))
           </span>
         </div>

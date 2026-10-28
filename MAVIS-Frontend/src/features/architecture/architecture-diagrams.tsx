@@ -320,6 +320,16 @@ export function ArchitectureDiagrams({
           </div>
         )}
       </div>
+      {kind === "CONTEXT" && deriveC4ContextModel(model).persons.length === 0 && (
+        <div role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">
+          <p className="font-medium">Context incomplete · external callers require review</p>
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            No confirmed actor interaction is recorded in this revision. HTTP endpoints identify interfaces, not human roles.
+            Runtime traces can support service interactions but do not establish business actors or system ownership.
+            Review and document the system boundary and confirmed actors before treating this as a complete context diagram.
+          </p>
+        </div>
+      )}
       {selection.notice && !isUmlWorkspaceKind && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">{selection.notice}</p>}
       {kind === "CONTAINER" && document && (
         <p role="status" className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
