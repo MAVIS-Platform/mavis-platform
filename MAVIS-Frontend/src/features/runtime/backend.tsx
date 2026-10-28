@@ -1,5 +1,8 @@
 "use client";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { Zap, ArrowRight, ExternalLink, Activity, CheckCircle2, Clock } from "lucide-react";
+import { RuntimeStepperBanner } from "./screens";
 import { useState } from "react";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { DetailPanel } from "@/components/shared/data";
@@ -65,6 +68,45 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const stop = useApiMutation("runtimeStop");
   const approve = useApiMutation("runtimeApprove");
   const [action, setAction] = useState<"stop" | "approve" | null>(null);
+  const models = useApiQuery("models", { projectId }, { enabled: !!projectId });
+  const startRuntime = useApiMutation("startRuntime");
+  const [quickRunRunning, setQuickRunRunning] = useState(false);
+  const [quickRunMsg, setQuickRunMsg] = useState("");
+
+  const handleQuickRun = async () => {
+    if (!projectId || !snapshots.data?.length) return;
+    setQuickRunRunning(true);
+    setQuickRunMsg("Đang khởi tạo phiên kiểm thử tự động 1-Click...");
+
+    const latestSnapshot = snapshots.data[snapshots.data.length - 1];
+    const latestModel = models.data?.[models.data.length - 1];
+    if (!latestSnapshot) return;
+
+    try {
+      const res = await startRuntime.mutateAsync({
+        projectId,
+        snapshotId: latestSnapshot.id,
+        modelId: latestModel?.id,
+        scenarioId: "auto-" + Math.random().toString(16).slice(2, 8),
+        scenarioName: "1-Click Auto Verify · " + new Date().toLocaleTimeString(),
+        steps: [
+          { id: "step-1", title: "Health Check", service: "gateway", method: "GET", path: "/health", expectedStatus: 200 },
+          { id: "step-2", title: "API Transaction", service: "orders", method: "GET", path: "/orders", expectedStatus: 200 },
+        ],
+        configurationRevision: 1,
+        scenarioRevision: 1,
+        approved: true,
+      });
+
+      setSelected(res.id);
+      setQuickRunMsg(`Đã kích hoạt phiên ${res.id.slice(0, 8)} thành công! Trạng thái: ${res.executionStatus || res.status}`);
+      void list.refetch();
+    } catch (err) {
+      setQuickRunMsg("Lỗi khi chạy: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setQuickRunRunning(false);
+    }
+  };
   if (!projectId && !administrative)
     return (
       <DetailPanel title="Runtime">
@@ -76,6 +118,34 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     );
   return (
     <div className="space-y-5">
+      <RuntimeStepperBanner currentStep={3} projectId={projectId} />
+      {!administrative && (
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-primary animate-pulse" />
+              <h4 className="font-bold text-sm text-foreground">
+                Khởi chạy Kiểm thử Runtime Tự động 1-Click (Khuyến nghị)
+              </h4>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Tự động chọn Snapshot và Model mới nhất, tạo session kiểm thử với các endpoint mẫu và gửi lệnh thực thi ngay lập tức.
+            </p>
+            {quickRunMsg && (
+              <p className="text-xs font-medium text-primary mt-1">
+                {quickRunMsg}
+              </p>
+            )}
+          </div>
+          <Button
+            onClick={handleQuickRun}
+            disabled={quickRunRunning || !snapshots.data?.length}
+            className="shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs shadow"
+          >
+            {quickRunRunning ? "Đang chạy..." : "⚡ Chạy 1-Click Ngay"}
+          </Button>
+        </div>
+      )}
       {!administrative && (
         <DetailPanel title="Runtime prerequisites">
           <p className="text-sm text-muted-foreground">
@@ -159,6 +229,30 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             <RequestState query={session}>
               {session.data && (
                 <>
+                                    {["COMPLETED", "COMPLETE"].includes(session.data.executionStatus) && (
+                    <div className="my-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 space-y-2.5">
+                      <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Phiên Runtime đã hoàn tất! Các kết nối đã được xác thực thực tế.
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Mô hình kiến trúc đã được cập nhật với các quan hệ <strong className="text-emerald-300 font-mono">VERIFIED_RUNTIME</strong> và sơ đồ tuần tự OpenTelemetry.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm" asChild>
+                          <Link href={`/architecture?project=${projectId}${session.data.modelId ? `&model=${session.data.modelId}` : ""}`}>
+                            <ExternalLink className="h-3 w-3 mr-1" />
+                            🔍 Mở Đồ thị Kiến trúc Đã xác thực Runtime (RUNTIME_ENRICHED)
+                          </Link>
+                        </Button>
+                        <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 text-xs" asChild>
+                          <Link href={`/diagrams?project=${projectId}${session.data.modelId ? `&model=${session.data.modelId}` : ""}`}>
+                            📊 Xem Sơ đồ Tuần tự (UML Sequence Diagram)
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                   <dl className="my-4 grid gap-2 sm:grid-cols-2">
                     {[
                       "executionStatus",
@@ -186,23 +280,59 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     </Button>
                     {sequence.isError && <ErrorState error={sequence.error} />}{" "}
                     {sequence.data?.steps.length ? (
-                      sequence.data.steps.map((step, i) => (
-                        <article
-                          key={`${step.traceId ?? "trace"}:${i}`}
-                          className="rounded border p-2 text-sm"
-                        >
-                          <p>
-                            {step.callerService ?? "Unknown"} → {step.calleeService ?? "Unknown"}
-                          </p>
-                          <p>
-                            {step.httpMethod ?? ""} {step.operation ?? ""} ·{" "}
-                            {step.httpStatusCode ?? "Status not reported"} ·{" "}
-                            {step.durationMs == null
-                              ? "Duration not reported"
-                              : `${step.durationMs} ms`}
-                          </p>
-                        </article>
-                      ))
+                      <div className="space-y-3 pt-2">
+                        <p className="text-xs font-semibold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
+                          <Activity className="h-3.5 w-3.5 text-primary" />
+                          Chuỗi Gọi Thực Tế Được Ghi Nhận (OpenTelemetry Spans)
+                        </p>
+                        <div className="space-y-2">
+                          {sequence.data.steps.map((step, i) => (
+                            <div
+                              key={`${step.traceId ?? "trace"}:${i}`}
+                              className="relative pl-6 pb-3 border-l-2 border-primary/30 last:border-l-transparent last:pb-0"
+                            >
+                              <div className="absolute -left-2 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground shadow">
+                                {i + 1}
+                              </div>
+                              <div className="rounded-lg border border-border/80 bg-background/95 p-3 shadow-sm space-y-1.5">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex items-center gap-1.5 font-mono text-xs font-semibold">
+                                    <span className="rounded bg-sky-500/15 text-sky-400 border border-sky-500/30 px-2 py-0.5">
+                                      {step.callerService ?? "Caller"}
+                                    </span>
+                                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                    <span className="rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2 py-0.5">
+                                      {step.calleeService ?? "Receiver"}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[11px] font-mono">
+                                    {step.httpStatusCode && (
+                                      <span className={`px-1.5 py-0.5 rounded font-bold ${
+                                        step.httpStatusCode >= 200 && step.httpStatusCode < 300
+                                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                          : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                                      }`}>
+                                        HTTP {step.httpStatusCode}
+                                      </span>
+                                    )}
+                                    {step.durationMs != null && (
+                                      <span className="flex items-center gap-1 text-muted-foreground">
+                                        <Clock className="h-3 w-3" />
+                                        {step.durationMs} ms
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                {step.operation && (
+                                  <p className="font-mono text-[11px] text-muted-foreground">
+                                    Endpoint: <span className="text-foreground font-semibold">{step.httpMethod ?? "CALL"} {step.operation}</span>
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     ) : sequence.data ? (
                       <p className="text-sm">No observed interactions recorded for this session.</p>
                     ) : null}

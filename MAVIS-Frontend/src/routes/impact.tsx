@@ -1,7 +1,8 @@
 "use client";
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { ArrowRight, Flame, AlertTriangle, ShieldAlert, Zap, Layers } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
 import { DetailPanel, SummaryCard } from "@/components/shared/data";
@@ -329,8 +330,184 @@ function ImpactWorkspace() {
   );
 }
 
+
+function BlastRadiusVisualMap({
+  impact,
+  onSelectNode,
+}: {
+  impact: ComputedArchitectureImpact;
+  onSelectNode: (id: string) => void;
+}) {
+  const directList = impact.upstreamImpacted.filter((u) => u.distance === 1);
+  const cascadingList = impact.upstreamImpacted.filter((u) => u.distance > 1);
+  const downstreamList = impact.downstreamDependencies;
+
+  return (
+    <div className="rounded-xl border-2 border-rose-500/30 bg-card/95 p-4 shadow-sm space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-3">
+        <div className="flex items-center gap-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-500/15 text-rose-500 border border-rose-500/30">
+            <Flame className="h-4 w-4 animate-pulse" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold tracking-tight text-foreground flex items-center gap-2">
+              Sơ đồ Bán kính Tác động Sự cố (Outage Blast Radius Map)
+            </h3>
+            <p className="text-[11px] text-muted-foreground">
+              Mô phỏng đường lan truyền lỗi khi <strong className="text-rose-400 font-mono">{impact.targetName}</strong> sập hoàn toàn
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+          <span className="flex items-center gap-1 rounded bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 font-medium text-rose-400">
+            🔴 Sập / Crashed
+          </span>
+          <span className="flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 font-medium text-amber-400">
+            🟠 Lỗi trực tiếp (1-Hop)
+          </span>
+          <span className="flex items-center gap-1 rounded bg-yellow-500/15 border border-yellow-500/30 px-2 py-0.5 font-medium text-yellow-400">
+            🟡 Lỗi dây chuyền (2+ Hops)
+          </span>
+          <span className="flex items-center gap-1 rounded bg-sky-500/15 border border-sky-500/30 px-2 py-0.5 font-medium text-sky-400">
+            🔵 Hạ nguồn
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-stretch">
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-2 flex flex-col">
+          <div className="flex items-center justify-between border-b border-yellow-500/20 pb-1.5">
+            <span className="text-[11px] font-bold text-yellow-400 uppercase tracking-wider flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              Lỗi Dây Chuyền ({cascadingList.length})
+            </span>
+            <span className="text-[10px] text-yellow-300 font-mono">2+ Hops</span>
+          </div>
+          <div className="space-y-1.5 flex-1 overflow-y-auto max-h-48">
+            {cascadingList.length > 0 ? (
+              cascadingList.map((node) => (
+                <button
+                  key={node.elementId}
+                  type="button"
+                  onClick={() => onSelectNode(node.elementId)}
+                  className="w-full text-left rounded border border-yellow-500/20 bg-background/80 hover:bg-yellow-500/10 p-2 text-xs transition"
+                >
+                  <div className="font-semibold text-foreground flex items-center justify-between">
+                    <span>{node.name}</span>
+                    <span className="text-[10px] text-yellow-400 font-mono">-{node.distance} hops</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground truncate mt-0.5 font-mono">
+                    {node.hops.join(" ➔ ")}
+                  </div>
+                </button>
+              ))
+            ) : (
+              <p className="text-[11px] text-muted-foreground italic p-2 text-center my-auto">
+                Không có service nào bị lỗi dây chuyền
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2 flex flex-col">
+          <div className="flex items-center justify-between border-b border-amber-500/20 pb-1.5">
+            <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
+              <Zap className="h-3 w-3" />
+              Lỗi Trực Tiếp ({directList.length})
+            </span>
+            <span className="text-[10px] text-amber-300 font-mono">1 Hop</span>
+          </div>
+          <div className="space-y-1.5 flex-1 overflow-y-auto max-h-48">
+            {directList.length > 0 ? (
+              directList.map((node) => (
+                <button
+                  key={node.elementId}
+                  type="button"
+                  onClick={() => onSelectNode(node.elementId)}
+                  className="w-full text-left rounded border border-amber-500/30 bg-background/80 hover:bg-amber-500/10 p-2 text-xs transition"
+                >
+                  <div className="font-semibold text-foreground flex items-center justify-between">
+                    <span>{node.name}</span>
+                    <span className="text-[10px] text-amber-400 font-mono font-bold">503 / Conn Refused</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground truncate mt-0.5 font-mono">
+                    Giao thức: {node.protocols.join(", ") || "HTTP"}
+                  </div>
+                </button>
+              ))
+            ) : (
+              <p className="text-[11px] text-muted-foreground italic p-2 text-center my-auto">
+                Không có service nào gọi trực tiếp vào đây
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="rounded-lg border-2 border-rose-500 bg-rose-500/10 p-3 space-y-2 flex flex-col justify-center items-center text-center shadow-lg relative overflow-hidden">
+          <div className="absolute top-1.5 right-2 text-[10px] font-mono text-rose-300 animate-pulse">
+            💥 OUTAGE
+          </div>
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/40">
+            <ShieldAlert className="h-6 w-6" />
+          </div>
+          <div>
+            <span className="text-[10px] uppercase tracking-wider font-bold text-rose-400">
+              Điểm Giả Lập Sập
+            </span>
+            <h4 className="text-base font-bold text-foreground font-mono mt-0.5">
+              {impact.targetName}
+            </h4>
+            <span className="inline-block mt-1 rounded bg-rose-500/20 text-rose-300 text-[10px] font-mono px-2 py-0.5 border border-rose-500/30">
+              {impact.targetType}
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground mt-1">
+            Tổng {impact.blastRadiusCount} thành phần nằm trong bán kính ảnh hưởng
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 space-y-2 flex flex-col">
+          <div className="flex items-center justify-between border-b border-sky-500/20 pb-1.5">
+            <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1">
+              <Layers className="h-3 w-3" />
+              Hạ Nguồn ({downstreamList.length})
+            </span>
+            <span className="text-[10px] text-sky-300 font-mono">DB / Queues</span>
+          </div>
+          <div className="space-y-1.5 flex-1 overflow-y-auto max-h-48">
+            {downstreamList.length > 0 ? (
+              downstreamList.map((node) => (
+                <button
+                  key={node.elementId}
+                  type="button"
+                  onClick={() => onSelectNode(node.elementId)}
+                  className="w-full text-left rounded border border-sky-500/20 bg-background/80 hover:bg-sky-500/10 p-2 text-xs transition"
+                >
+                  <div className="font-semibold text-foreground flex items-center justify-between">
+                    <span>{node.name}</span>
+                    <span className="text-[10px] text-sky-400 font-mono">{node.elementType}</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground truncate mt-0.5 font-mono">
+                    {node.hops.join(" ➔ ")}
+                  </div>
+                </button>
+              ))
+            ) : (
+              <p className="text-[11px] text-muted-foreground italic p-2 text-center my-auto">
+                Không có hạ nguồn nào
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ImpactResults({ model }: { model: ArchitecturalModel }) {
   const api = useApi();
+  const searchParams = useSearchParams();
+  const elementParam = searchParams.get("element");
   const [scope, setScope] = useState<ImpactScopeMode>("all");
 
   // Prioritize elements that participate in edges so the default selection immediately shows meaningful paths
@@ -365,7 +542,9 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
   }, [model, scope]);
 
   const defaultTargetId =
-    candidateElements.find((c) => c.incoming > 0)?.element.id ??
+    (elementParam && model.elements.some((e) => e.id === elementParam))
+      ? elementParam
+      : candidateElements.find((c) => c.incoming > 0)?.element.id ??
     candidateElements[0]?.element.id ??
     model.elements[0]?.id ??
     "";
@@ -430,6 +609,8 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
           options={SCOPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
         />
       </div>
+
+      <BlastRadiusVisualMap impact={impact} onSelectNode={handleSelectTarget} />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard label="Direct impact (1 hop)" value={impact.directImpactCount} />

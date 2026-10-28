@@ -13,6 +13,7 @@ import {
 import { computeSelectionScopeKey, type SequenceSelectionContext } from "./three-e-content";
 
 type Props = {
+  projectId?: string;
   model: ArchitecturalModel;
   selectedId: string | null;
   onSelect: (id: string | null) => void;
@@ -73,6 +74,30 @@ export function ArchitecturePresentation({
 
   const activeRelationshipId = drilledSourceEdgeId ?? selectedId;
 
+  const handleSelect = (id: string | null) => {
+    setHighlight(null);
+    setSequenceContext(null);
+    if (!id) {
+      setDrilledSourceEdgeId(null);
+      onSelect(null);
+      return;
+    }
+    const matchingProjectedEdge = projection.model.edges.find(
+      (e) => e.id === id || e.underlyingEdgeIds?.includes(id),
+    );
+    if (
+      matchingProjectedEdge &&
+      matchingProjectedEdge.id !== id &&
+      matchingProjectedEdge.underlyingEdgeIds?.includes(id)
+    ) {
+      onSelect(matchingProjectedEdge.id);
+      setDrilledSourceEdgeId(id);
+    } else {
+      onSelect(id);
+      setDrilledSourceEdgeId(null);
+    }
+  };
+
   const projectedEdge = useMemo(() => {
     if (!selectedId || mode !== "graph") return undefined;
     return projection.model.edges.find(
@@ -100,12 +125,7 @@ export function ArchitecturePresentation({
               key={model.id}
               model={model}
               selectedId={activeRelationshipId}
-              onSelect={(id) => {
-                setHighlight(null);
-                setDrilledSourceEdgeId(null);
-                setSequenceContext(null);
-                onSelect(id);
-              }}
+              onSelect={handleSelect}
               highlightIds={highlight?.modelId === model.id ? highlight.ids : []}
               onClearHighlight={() => setHighlight(null)}
               expanded={expanded}
@@ -132,12 +152,7 @@ export function ArchitecturePresentation({
               model={model}
               selectedId={selectedId}
               systemName={systemName}
-              onSelect={(id) => {
-                setHighlight(null);
-                setDrilledSourceEdgeId(null);
-                setSequenceContext(null);
-                onSelect(id);
-              }}
+              onSelect={handleSelect}
               onSelectSequence={(id, seqCtx) => {
                 setHighlight(null);
                 setDrilledSourceEdgeId(null);
@@ -149,6 +164,7 @@ export function ArchitecturePresentation({
         </div>
         {selectedId && (
           <SelectionThreeE
+            projectId={model.projectId}
             key={computeSelectionScopeKey({
               model,
               selectedId,
@@ -162,12 +178,7 @@ export function ArchitecturePresentation({
             drilledSourceEdgeId={drilledSourceEdgeId}
             sequenceContext={activeSequenceContext}
             onDrilldown={setDrilledSourceEdgeId}
-            onSelect={(id) => {
-              setHighlight(null);
-              setDrilledSourceEdgeId(null);
-              setSequenceContext(null);
-              onSelect(id);
-            }}
+            onSelect={handleSelect}
             onClose={() => {
               setHighlight(null);
               setDrilledSourceEdgeId(null);

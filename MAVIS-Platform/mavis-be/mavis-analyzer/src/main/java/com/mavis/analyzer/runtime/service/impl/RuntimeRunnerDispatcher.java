@@ -239,17 +239,25 @@ public class RuntimeRunnerDispatcher {
 
                 if (!httpCalls.isEmpty()) {
                     int stepIdx = 2;
+                    Set<String> seenPairs = new HashSet<>();
                     for (ModelRelationship rel : httpCalls) {
-                        ModelElement caller = rel.getSourceElement();
-                        ModelElement callee = rel.getTargetElement();
+                        ModelElement caller = resolveServiceContainer(rel.getSourceElement());
+                        ModelElement callee = resolveServiceContainer(rel.getTargetElement());
+                        if (caller == null || callee == null || caller.getId().equals(callee.getId())) {
+                            continue;
+                        }
+                        String pairKey = caller.getId() + "->" + callee.getId();
+                        if (!seenPairs.add(pairKey)) {
+                            continue;
+                        }
                         String childSpanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16).toLowerCase();
 
                         spans.add(RunnerCorrelatedSpanDTO.builder()
                                 .traceId(traceId)
                                 .spanId(childSpanId)
                                 .parentSpanId(parentSpan)
-                                .runtimeService(callee != null ? callee.getName() : "downstream-service")
-                                .modelServiceId(callee != null ? callee.getId().toString() : null)
+                                .runtimeService(callee.getName())
+                                .modelServiceId(callee.getId().toString())
                                 .kind("SERVER")
                                 .scenarioStepId("step-" + stepIdx++)
                                 .startTimeUnixNano("1700000000025000000")
@@ -266,10 +274,10 @@ public class RuntimeRunnerDispatcher {
 
                         interactions.add(RunnerObservedInteractionDTO.builder()
                                 .traceId(traceId)
-                                .fromService(caller != null ? caller.getName() : parentElement.getName())
-                                .toService(callee != null ? callee.getName() : "downstream-service")
-                                .fromModelServiceId(caller != null ? caller.getId().toString() : parentElement.getId().toString())
-                                .toModelServiceId(callee != null ? callee.getId().toString() : null)
+                                .fromService(caller.getName())
+                                .toService(callee.getName())
+                                .fromModelServiceId(caller.getId().toString())
+                                .toModelServiceId(callee.getId().toString())
                                 .parentSpanId(parentSpan)
                                 .childSpanId(childSpanId)
                                 .build());
@@ -368,5 +376,16 @@ public class RuntimeRunnerDispatcher {
             log.error("Lỗi khi chạy Synthetic POC Trace cho session {}: {}", sessionId, e.getMessage(), e);
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Lỗi điều phối runtime: " + e.getMessage());
         }
+    }
+
+    private ModelElement resolveServiceContainer(ModelElement el) {
+        if (el == null) return null;
+        Set<ModelElement> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (ModelElement cur = el; cur != null && visited.add(cur); cur = cur.getParentElement()) {
+            if ("SERVICE_CONTAINER".equalsIgnoreCase(cur.getElementType())) {
+                return cur;
+            }
+        }
+        return el;
     }
 }
