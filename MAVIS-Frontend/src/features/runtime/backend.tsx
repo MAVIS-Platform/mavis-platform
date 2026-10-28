@@ -1,4 +1,5 @@
 "use client";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { DetailPanel } from "@/components/shared/data";
@@ -39,12 +40,17 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           (status === "all" || s.executionStatus === status),
       )
     : (list.data ?? []);
-  const selectedId = visible.find((s) => s.id === selected)?.id || visible[0]?.id || "";
+  const params = useSearchParams();
+  const requestedSession = params.get("session") ?? "";
+  const selectedId = visible.find((s) => s.id === selected)?.id ||
+    ((!administrative || (!search && status === "all")) ? requestedSession : "") || visible[0]?.id || "";
   const session = useApiQuery(
     "runtimeReadSession",
     { sessionId: selectedId },
     { enabled: !!selectedId, poll: true },
   );
+  const sessionOptions = session.data && !visible.some(s => s.id === session.data?.id)
+    ? [session.data, ...visible] : visible;
   const sequence = useApiQuery(
     "runtimeSequence",
     { sessionId: selectedId },
@@ -133,7 +139,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       <DetailPanel title="Runtime sessions">
         <RequestState
           query={list}
-          empty={!visible.length}
+          empty={!visible.length && !selectedId}
           emptyMessage={
             administrative
               ? "No sessions match this view. Try clearing the filters or refresh to check for new runs."
@@ -144,7 +150,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             label="Runtime session"
             value={selectedId}
             onChange={setSelected}
-            options={visible.map((s) => ({
+            options={sessionOptions.map((s) => ({
               value: s.id,
               label: `${s.scenarioName ?? s.id.slice(0, 8)} · ${s.executionStatus}`,
             }))}

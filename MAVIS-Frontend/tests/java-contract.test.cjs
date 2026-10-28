@@ -570,3 +570,26 @@ test("admin health uses protected backend probes and preserves degraded states",
  const result=await executeJava("adminHealth",{},"jwt");assert.equal(result.status,"DEGRADED");
  const {operationPermission}=require("../src/lib/auth/permissions.ts");assert.equal(operationPermission("adminHealth"),"admin:manage");
 });
+
+
+test("notification requests use only signed-in inbox and safe read endpoints",async t=>{
+ environment(t);const calls=[];
+ t.mock.method(globalThis,"fetch",async(url,options)=>{
+  const parsed=new URL(url);calls.push({path:parsed.pathname,search:parsed.search,method:options.method,auth:options.headers.get("Authorization")});
+  if(parsed.pathname.endsWith('/read')||parsed.pathname.endsWith('/read-all'))return Response.json({code:200,data:{ok:true}});
+  return Response.json({code:200,data:{items:[],total:0,unreadCount:0,page:0,size:5,asOf:"2026-10-28T00:00:00Z"}});
+ });
+ await executeJava("notifications",{page:0,size:5,unreadOnly:true,category:"ASSIGNMENT"},"jwt");
+ await executeJava("readNotification",{notificationId:node},"jwt");
+ await executeJava("readAllNotifications",{before:"2026-10-28T00:00:00Z"},"jwt");
+ assert.equal(calls[0].path,'/api/v1/notifications');assert.ok(calls[0].search.includes('category=ASSIGNMENT'));assert.ok(!calls[0].search.includes('recipient'));
+ assert.equal(calls[1].method,'PATCH');assert.equal(calls[1].path,`/api/v1/notifications/${node}/read`);assert.equal(calls[2].method,'POST');assert.ok(calls.every(c=>c.auth==='Bearer jwt'));
+});
+test("notification contracts reject unsafe redirects and invalid filters",()=>{
+ const {contracts}=require('../src/lib/api/contracts.ts');
+ assert.equal(contracts.notifications.input.safeParse({page:-1,size:5,unreadOnly:false}).success,false);
+ assert.equal(contracts.notifications.input.safeParse({page:0,size:51,unreadOnly:false}).success,false);
+ const data={items:[{id:node,title:'Test',body:'Body',category:'ACCOUNT',targetPath:'//evil.example',createdAt:'2026-10-28T00:00:00Z',readAt:null}],total:1,unreadCount:1,page:0,size:20,asOf:'2026-10-28T00:00:00Z'};
+ assert.equal(contracts.notifications.output.safeParse(data).success,false);
+ const {mutationInvalidations}=require('../src/lib/api/cache-policy.ts');assert.ok(mutationInvalidations.readNotification.includes('notifications'));assert.ok(mutationInvalidations.readAllNotifications.includes('notifications'));
+});

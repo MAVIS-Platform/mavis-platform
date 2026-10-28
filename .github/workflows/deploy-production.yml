@@ -15,6 +15,18 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    services:
+      notification-db:
+        image: postgres:18
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 55439:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v6
       - name: Deployment and rollback tests
@@ -27,6 +39,14 @@ jobs:
       - name: Backend regression tests
         working-directory: MAVIS-Platform/mavis-be
         run: bash mvnw -B -ntp -pl mavis-analyzer -am -Dtest=JavaSourceParserTest,GraphBuilderServiceTest -Dsurefire.failIfNoSpecifiedTests=false test
+      - name: Notification API authorization tests
+        working-directory: MAVIS-Platform/mavis-be
+        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=NotificationControllerTest -Dsurefire.failIfNoSpecifiedTests=false test
+      - name: Transactional notification delivery tests
+        run: >-
+          docker run --rm --network host -v "$PWD:/source:ro" -w /source
+          python:3.12-slim sh -c
+          "pip install --quiet psycopg2-binary==2.9.10 && python MAVIS-Platform/mavis-be/mavis-bootstrap/src/test/python/notification_events_test.py"
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: MAVIS.Worker/global.json

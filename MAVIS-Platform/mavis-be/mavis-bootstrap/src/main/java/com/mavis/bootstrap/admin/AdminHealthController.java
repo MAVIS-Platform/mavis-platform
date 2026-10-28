@@ -32,7 +32,7 @@ public class AdminHealthController {
         policy.requireSystemAdmin();
         return ApiResponse.success(snapshot());
     }
-    private synchronized Map<String,Object> snapshot() {
+    public synchronized Map<String,Object> snapshot() {
         if(cached!=null && System.currentTimeMillis()<validUntil) return cached;
         List<Map<String,Object>> checks=new ArrayList<>();
         checks.add(check("backend","Application API","UP",null,"Responding to authenticated requests.",null));

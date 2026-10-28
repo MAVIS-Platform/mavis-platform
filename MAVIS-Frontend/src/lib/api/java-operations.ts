@@ -758,6 +758,13 @@ export async function executeJava(
       const stopped = await post(`analyzer/runtime/sessions/${sessionId}/stop`, {});
       return courseworkRuntime(stopped);
     }
+    case "notifications": {
+      const params = new URLSearchParams({page:String(input["page"]),size:String(input["size"]),unreadOnly:String(input["unreadOnly"])});
+      if (input["category"]) params.set("category",String(input["category"]));
+      return get(`notifications?${params}`);
+    }
+    case "readNotification": return patch(`notifications/${id(input,"notificationId")}/read`,{});
+    case "readAllNotifications": return post("notifications/read-all",{before:input["before"]});
     case "accounts":
       return list.parse(await get("admin/users")).map(account);
     case "setAccountLock":
