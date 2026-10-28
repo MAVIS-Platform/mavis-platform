@@ -134,8 +134,8 @@ function ProjectImportDialog({
           <DialogTitle>{create ? "Import new project" : "Import new snapshot"}</DialogTitle>
           <DialogDescription>
             {create
-              ? "Enter a project name and its public GitHub repository, then choose a branch or pin a commit for the first snapshot."
-              : "Add a new snapshot to this project. Its linked GitHub repository stays the same."}
+              ? "Enter a project name and its public GitHub repository, then choose a branch or pin a commit. The first snapshot will be imported and analyzed."
+              : "Add a new snapshot to this project. Its linked GitHub repository stays the same. Analysis starts after import."}
           </DialogDescription>
         </DialogHeader>
         {open && (
@@ -148,6 +148,7 @@ function ProjectImportDialog({
               setOpen(false);
               const target = contextHref("/snapshots", result.projectId, "", {
                 snapshot: result.snapshotId,
+                job: result.jobId,
               });
               if (create) router.push(target);
               else router.replace(target, { scroll: false });

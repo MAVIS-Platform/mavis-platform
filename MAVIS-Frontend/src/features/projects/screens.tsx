@@ -148,9 +148,7 @@ export function ProjectOverview() {
                   })}
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">
-                  No architecture revisions yet.
-                </p>
+                <p className="text-sm text-muted-foreground">No architecture revisions yet.</p>
               )}
             </DetailPanel>
 
@@ -202,7 +200,9 @@ export function ProjectOverview() {
                           </Button>
                         ) : (
                           <Button asChild size="sm" variant="ghost">
-                            <Link href={`/snapshots?project=${projectId}&snapshot=${job.snapshotId}`}>
+                            <Link
+                              href={`/snapshots?project=${projectId}&snapshot=${job.snapshotId}`}
+                            >
                               Retry
                             </Link>
                           </Button>
@@ -240,10 +240,11 @@ export function SourceSnapshots() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const highlightedSnapshotId = searchParams.get("snapshot") ?? "";
+  const requestedJobId = searchParams.get("job") ?? "";
 
   const [analyzingSnapshotId, setAnalyzingSnapshotId] = useState<string | null>(null);
   const [activeJobId, setActiveJobId] = useState<string>("");
-  const [progressPct, setProgressPct] = useState<number>(0);
+  const [progressPct, setProgressPct] = useState<number | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const navigatingRef = useRef(false);
 
@@ -260,26 +261,29 @@ export function SourceSnapshots() {
   );
   const { models } = useModel();
 
-  // Smooth progress counter while analysis is in flight
   useEffect(() => {
-    if (!analyzingSnapshotId) return;
-    const interval = setInterval(() => {
-      setProgressPct((prev) => {
-        if (prev >= 94) return prev;
-        const step = prev < 40 ? 7 : prev < 75 ? 4 : 2;
-        return Math.min(94, prev + step);
-      });
-    }, 350);
-    return () => clearInterval(interval);
-  }, [analyzingSnapshotId]);
+    if (!projectId || !requestedJobId || !highlightedSnapshotId) return;
+    navigatingRef.current = false;
+    setAnalyzingSnapshotId(highlightedSnapshotId);
+    setActiveJobId(requestedJobId);
+    setProgressPct(null);
+    setAnalysisError(null);
+  }, [projectId, requestedJobId, highlightedSnapshotId]);
 
   // Sync with backend reported progress & auto-navigate to Architecture Graph Explorer on completion
   useEffect(() => {
     const job = activeJobQuery.data;
     if (!job || !analyzingSnapshotId || !projectId) return;
+    if (job.projectId !== projectId || job.snapshotId !== analyzingSnapshotId) {
+      setAnalysisError("Analysis job does not match this project snapshot.");
+      setAnalyzingSnapshotId(null);
+      setActiveJobId("");
+      setProgressPct(null);
+      return;
+    }
 
-    if (typeof job.progress === "number" && job.progress > 0) {
-      setProgressPct((prev) => Math.max(prev, Math.min(99, job.progress!)));
+    if (typeof job.progress === "number" && job.progress >= 0) {
+      setProgressPct(Math.min(99, job.progress));
     }
 
     const isCompleted = job.status === "completed" || job.status === "partial";
@@ -303,32 +307,54 @@ export function SourceSnapshots() {
                 ? await adapter.execute("modelVersions", { projectId })
                 : await adapter.execute("models", { projectId });
             const sorted = [...refreshedModels].sort((a, b) => b.revision - a.revision);
-            const matched =
-              sorted.find((m) => m.snapshotId === analyzingSnapshotId) ?? sorted[0];
+            const matched = sorted.find((m) => m.snapshotId === analyzingSnapshotId);
             if (matched) resolvedModelId = matched.id;
           } catch {
             // fallback to project-level graph navigation
           }
         }
+        if (!resolvedModelId) {
+          setAnalysisError(
+            "Analysis finished, but no model revision for this snapshot is available yet. Refresh to retry loading the result.",
+          );
+          setAnalyzingSnapshotId(null);
+          setActiveJobId("");
+          setProgressPct(null);
+          return;
+        }
         const targetHref = resolvedModelId
           ? `/architecture?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(resolvedModelId)}`
           : `/architecture?project=${encodeURIComponent(projectId)}`;
-        router.push(targetHref);
+        (requestedJobId === job.id ? router.replace : router.push)(targetHref);
       })();
     } else if (isFailed) {
       setAnalysisError(formatAnalysisJobMessage(job));
       setAnalyzingSnapshotId(null);
       setActiveJobId("");
-      setProgressPct(0);
+      setProgressPct(null);
     }
-  }, [activeJobQuery.data, analyzingSnapshotId, projectId, adapter, queryClient, router]);
+  }, [
+    activeJobQuery.data,
+    analyzingSnapshotId,
+    projectId,
+    adapter,
+    queryClient,
+    router,
+    requestedJobId,
+  ]);
 
   async function handleStartAnalysis(snapshotId: string) {
     if (!projectId || analyzingSnapshotId) return;
+    if (requestedJobId) {
+      const next = new URLSearchParams(searchParams.toString());
+      next.delete("job");
+      next.set("snapshot", snapshotId);
+      router.replace(`/snapshots?${next}`, { scroll: false });
+    }
     navigatingRef.current = false;
     setAnalysisError(null);
     setAnalyzingSnapshotId(snapshotId);
-    setProgressPct(12);
+    setProgressPct(null);
     try {
       const idempotencyKey = crypto.randomUUID();
       const startedJob = await adapter.execute("startAnalysis", {
@@ -337,13 +363,13 @@ export function SourceSnapshots() {
         idempotencyKey,
       });
       setActiveJobId(startedJob.id);
-      setProgressPct((prev) => Math.max(prev, 24));
+      setProgressPct(startedJob.progress);
       void queryClient.invalidateQueries({ queryKey: ["api", "analysisJobs"] });
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : "Failed to start snapshot analysis.");
       setAnalyzingSnapshotId(null);
       setActiveJobId("");
-      setProgressPct(0);
+      setProgressPct(null);
     }
   }
 
@@ -355,7 +381,11 @@ export function SourceSnapshots() {
   return (
     <RequestState query={query} empty={!snapshotList.length}>
       <div className="space-y-4">
-        {analysisError && <p role="alert" className="text-xs font-medium text-destructive">{analysisError}</p>}
+        {analysisError && (
+          <p role="alert" className="text-xs font-medium text-destructive">
+            {analysisError}
+          </p>
+        )}
 
         <DataTable
           rows={snapshotList}
@@ -404,12 +434,15 @@ export function SourceSnapshots() {
                           <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                           Analyzing…
                         </span>
-                        <span className="font-mono font-semibold">{progressPct}%</span>
+                        {progressPct !== null && (
+                          <span className="font-mono font-semibold">{progressPct}%</span>
+                        )}
                       </div>
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
                         <div
-                          className="h-full rounded-full bg-primary transition-all duration-300"
-                          style={{ width: `${progressPct}%` }}
+                          className={`h-full rounded-full bg-primary transition-all duration-300 ${progressPct === null ? "motion-safe:animate-pulse" : ""}`}
+                          style={{ width: `${progressPct ?? 33}%` }}
+                          aria-hidden="true"
                         />
                       </div>
                     </div>
@@ -493,9 +526,11 @@ export function SourceSnapshots() {
                       {isAnalyzingThis ? (
                         <span className="inline-flex items-center gap-1.5">
                           <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                          {progressPct >= 100
-                            ? "Completed 100% · Opening Graph…"
-                            : `Analyzing... ${progressPct}%`}
+                          {progressPct === null
+                            ? "Analyzing…"
+                            : progressPct >= 100
+                              ? "Opening Graph…"
+                              : `Analyzing… ${progressPct}%`}
                         </span>
                       ) : (
                         "Analyze snapshot"
@@ -521,7 +556,6 @@ export function AnalysisHistory() {
   );
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: Boolean(projectId) });
   const { models } = useModel();
-
 
   if (!projectId) return null;
 
@@ -641,4 +675,3 @@ export function AnalysisHistory() {
     </RequestState>
   );
 }
-
