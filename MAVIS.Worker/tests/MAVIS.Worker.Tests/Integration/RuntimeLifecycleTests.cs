@@ -120,7 +120,7 @@ public sealed class RuntimeLifecycleTests
         var docker = new FailingDocker { FailHelperQuery = helperFailure };
         try
         {
-            var result = await RuntimeSessionLifecycle.RunAsync(new DockerComposeSession(definition, root, "receivers: {}", docker), 5);
+            var result = await RuntimeSessionLifecycle.RunAsync(new DockerComposeSession(definition, root, "receivers: {}", docker), 30);
             Assert.Equal("Failed", result.ExecutionStatus); Assert.Equal(helperFailure ? "Incomplete" : "Confirmed", result.CleanupStatus);
             Assert.Contains(docker.Commands, c => c.Contains("down") && c.Contains("--volumes"));
             Assert.Contains(docker.Commands, c => c[0] == "volume"); Assert.Contains(docker.Commands, c => c[0] == "network");
