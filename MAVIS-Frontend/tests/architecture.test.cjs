@@ -1517,7 +1517,7 @@ test("themeDrawioXml applies all 5 themes across C4 Context, UML Sequence, and U
  }
 });
 
-test("3E simplified AI explanation and concrete code evidence collector always provide plain-Vietnamese 3E pillars and real code snippets",()=>{
+test("3E simplified AI explanation and concrete code evidence collector always provide plain-English 3E pillars and real code snippets",()=>{
  const {buildThreeESubjectContext,collectConcreteThreeEEvidences,buildDeterministicThreeESimplified,buildThreeEAiContext,explainEvidenceSnippetSimply}=require("../src/features/architecture/three-e-content.ts");
  const model={
   id:"m1",projectId:"p1",snapshotId:"s1",revision:1,label:"Rev 1",
@@ -1871,7 +1871,7 @@ test("Unscoped relationship snippets are not guessed into caller or receiver cod
  const {buildPeerConnectionGroups}=require("../src/features/architecture/communication-evidence.ts");
  const source={elements:[{id:"a",name:"A",elementType:"SERVICE_CONTAINER"},{id:"b",name:"B",elementType:"SERVICE_CONTAINER"}],edges:[{id:"http",from:"a",to:"b",protocol:"SERVICE_HTTP_CALL",properties:{clientFramework:"OPENFEIGN"},evidence:[{id:"unassigned",kind:"source",origin:"persisted",location:"unknown/Source.java",snippet:"unscoped source",complete:true}]}]};
  const group=buildPeerConnectionGroups(source,"a")[0];assert.equal(group.subjectCodeItems[0].snippet,undefined);assert.equal(group.peerCodeItems[0].snippet,undefined);
- assert.ok(group.subjectCodeItems[0].componentName.includes("Chưa xác định"));assert.ok(group.peerCodeItems[0].componentName.includes("Chưa xác định"));
+ assert.ok(group.subjectCodeItems[0].componentName.includes("not identified"));assert.ok(group.peerCodeItems[0].componentName.includes("not identified"));
  assert.equal(source.edges[0].evidence[0].snippet,"unscoped source");
 });
 
@@ -1880,4 +1880,25 @@ test("Communication tree never promotes metadata previews into caller or server 
  const {buildPeerConnectionGroups}=require("../src/features/architecture/communication-evidence.ts");
  const source={elements:[{id:"a",name:"A",elementType:"SERVICE_CONTAINER"},{id:"b",name:"B",elementType:"SERVICE_CONTAINER"}],edges:[{id:"http",from:"a",to:"b",protocol:"SERVICE_HTTP_CALL",properties:{},evidence:[{id:"preview",origin:"preview",kind:"source",communicationRole:"CALL_SITE",sourceType:"MODEL_METADATA_PREVIEW",location:"model metadata",snippet:"illustrative source",complete:false}]}]};
  const group=buildPeerConnectionGroups(source,"a")[0];assert.equal(group.subjectCodeItems[0].snippet,undefined);assert.equal(group.peerCodeItems[0].snippet,undefined);
+});
+
+
+test("English UI labels remain English across 3E, Runtime and Change Impact", () => {
+ const files=["src/features/architecture/communication-panel.tsx","src/features/architecture/communication-evidence.ts","src/features/architecture/selection-three-e.tsx","src/features/architecture/three-e-content.ts","src/features/runtime/screens.tsx","src/features/runtime/backend.tsx","src/features/ai-explanations/components.tsx","src/routes/impact.tsx"];
+ const vietnamese=/[\u0102-\u0103\u0110-\u0111\u0128-\u0129\u0168-\u0169\u01A0-\u01A1\u01AF-\u01B0\u1EA0-\u1EF9]/;
+ for(const file of files){
+  const source=ts.createSourceFile(file,fs.readFileSync(path.join(root,file),"utf8"),ts.ScriptTarget.Latest,true,file.endsWith("tsx")?ts.ScriptKind.TSX:ts.ScriptKind.TS);
+  const visit=node=>{
+   if(ts.isStringLiteral(node)||ts.isNoSubstitutionTemplateLiteral(node)||ts.isTemplateHead(node)||ts.isTemplateMiddle(node)||ts.isTemplateTail(node)||ts.isJsxText(node))assert.equal(vietnamese.test(node.text),false,`${file}: ${node.text}`);
+   ts.forEachChild(node,visit);
+  };visit(source);
+ }
+});
+test("Vietnamese input keeps scope guardrails but returns an English refusal",()=>{
+ const {checkThreeEScopeGuardrail}=require("../src/features/architecture/three-e-content.ts");
+ const context={title:"order-service",type:"Service",inboundPeers:[],outboundPeers:[],childComponents:[],codeSnippets:[],otherElementNames:["billing-engine"]};
+ const result=checkThreeEScopeGuardrail("ăn gì hôm nay",context);
+ assert.equal(result.allowed,false);assert.match(result.refusalMessage,/I only answer/);
+ const wrong=checkThreeEScopeGuardrail("billing-engine có chức năng gì",context);
+ assert.equal(wrong.allowed,false);assert.match(wrong.refusalMessage,/You currently have/);
 });

@@ -76,7 +76,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const handleQuickRun = async () => {
     if (!projectId || !snapshots.data?.length) return;
     setQuickRunRunning(true);
-    setQuickRunMsg("Đang khởi tạo phiên kiểm thử tự động 1-Click...");
+    setQuickRunMsg("Starting an automated runtime test session...");
 
     const latestSnapshot = snapshots.data[0];
     const staticModels = (models.data ?? []).filter((m) => !("source" in m) || (m as any).source !== "RUNTIME_ENRICHED");
@@ -99,10 +99,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       });
 
       setSelected(res.id);
-      setQuickRunMsg(`Đã kích hoạt phiên ${res.id.slice(0, 8)} thành công! Trạng thái: ${res.executionStatus || res.status}`);
+      setQuickRunMsg(`Session ${res.id.slice(0, 8)} started successfully. Status: ${res.executionStatus || res.status}`);
       void list.refetch();
     } catch (err) {
-      setQuickRunMsg("Lỗi khi chạy: " + (err instanceof Error ? err.message : String(err)));
+      setQuickRunMsg("Runtime execution failed: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setQuickRunRunning(false);
     }
@@ -125,11 +125,11 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-primary animate-pulse" />
               <h4 className="font-bold text-sm text-foreground">
-                Khởi chạy Kiểm thử Runtime Tự động 1-Click (Khuyến nghị)
+                Start an Automated Runtime Test (Recommended)
               </h4>
             </div>
             <p className="text-xs text-muted-foreground">
-              Tự động chọn Snapshot và Model mới nhất, tạo session kiểm thử với các endpoint mẫu và gửi lệnh thực thi ngay lập tức.
+              Use the latest snapshot and model, create a test session with sample endpoints, and submit it for execution.
             </p>
             {quickRunMsg && (
               <p className="text-xs font-medium text-primary mt-1">
@@ -142,7 +142,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             disabled={quickRunRunning || !snapshots.data?.length}
             className="shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs shadow"
           >
-            {quickRunRunning ? "Đang chạy..." : "⚡ Chạy 1-Click Ngay"}
+            {quickRunRunning ? "Running..." : "⚡ Run Now"}
           </Button>
         </div>
       )}
@@ -200,10 +200,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     <div className="my-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 space-y-2.5">
                       <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
                         <CheckCircle2 className="h-4 w-4" />
-                        Phiên Runtime đã hoàn tất! Các kết nối đã được xác thực thực tế.
+                        Runtime session completed. Recorded connections are available for inspection.
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Mô hình kiến trúc đã được cập nhật với các quan hệ <strong className="text-emerald-300 font-mono">VERIFIED_RUNTIME</strong> và sơ đồ tuần tự OpenTelemetry.
+                        The architecture model has been updated with <strong className="text-emerald-300 font-mono">VERIFIED_RUNTIME</strong> relationships and OpenTelemetry sequence diagrams.
                       </p>
                       <div className="flex flex-wrap items-center gap-2 pt-1">
                         {(() => {
@@ -213,12 +213,12 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                               <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm" asChild>
                                 <Link href={`/architecture?project=${projectId}${targetGraphModelId ? `&model=${targetGraphModelId}` : ""}`}>
                                   <ExternalLink className="h-3 w-3 mr-1" />
-                                  🔍 Mở Đồ thị Kiến trúc Đã xác thực Runtime (RUNTIME_ENRICHED)
+                                  🔍 Open Runtime-Enriched Graph (RUNTIME_ENRICHED)
                                 </Link>
                               </Button>
                               <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 text-xs" asChild>
                                 <Link href={`/diagrams?project=${projectId}${targetGraphModelId ? `&model=${targetGraphModelId}` : ""}`}>
-                                  📊 Xem Sơ đồ Tuần tự (UML Sequence Diagram)
+                                  📊 View Sequence Diagram
                                 </Link>
                               </Button>
                             </>
@@ -257,7 +257,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                       <div className="space-y-3 pt-2">
                         <p className="text-xs font-semibold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
                           <Activity className="h-3.5 w-3.5 text-primary" />
-                          Chuỗi Gọi Thực Tế Được Ghi Nhận (OpenTelemetry Spans)
+                          Recorded Runtime Calls (OpenTelemetry Spans)
                         </p>
                         <div className="space-y-2">
                           {sequence.data.steps.map((step, i) => (

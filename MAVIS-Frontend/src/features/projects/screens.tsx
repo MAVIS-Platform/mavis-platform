@@ -15,6 +15,12 @@ import {
   formatAnalysisJobMessage,
 } from "@/features/source-analysis/components";
 import { ProjectStatusBadge, ImportSnapshotAction } from "./components";
+import {
+  analysisInProgress,
+  snapshotAnalysisLabel,
+  startSnapshotAnalysis,
+  type SnapshotAnalysisRequest,
+} from "./snapshot-analysis";
 
 function formatShortTimestamp(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -61,15 +67,6 @@ export function ProjectOverview() {
                     <Link href={`/snapshots?project=${projectId}`}>Analyze Source</Link>
                   </Button>
                 )}
-                <Button asChild size="sm" variant={models.length > 0 ? "default" : "outline"}>
-                  <Link href={`/diagrams?project=${projectId}`}>Architecture Diagrams</Link>
-                </Button>
-                <Button asChild size="sm" variant="outline">
-                  <Link href={`/architecture?project=${projectId}`}>Graph Explorer</Link>
-                </Button>
-                <Button asChild size="sm" variant="outline">
-                  <Link href={`/snapshots?project=${projectId}`}>Source Snapshots</Link>
-                </Button>
                 <ImportSnapshotAction />
               </div>
             }
@@ -131,18 +128,11 @@ export function ProjectOverview() {
                               : ""}
                           </p>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <Button asChild size="sm" variant="outline">
-                            <Link href={`/diagrams?project=${projectId}&model=${rev.id}`}>
-                              Diagrams
-                            </Link>
-                          </Button>
-                          <Button asChild size="sm" variant="ghost">
-                            <Link href={`/architecture?project=${projectId}&model=${rev.id}`}>
-                              Graph
-                            </Link>
-                          </Button>
-                        </div>
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/architecture?project=${projectId}&model=${rev.id}`}>
+                            View
+                          </Link>
+                        </Button>
                       </div>
                     );
                   })}
@@ -247,12 +237,14 @@ export function SourceSnapshots() {
   const [progressPct, setProgressPct] = useState<number | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const navigatingRef = useRef(false);
+  const startingRef = useRef(false);
+  const analysisRequestRef = useRef<SnapshotAnalysisRequest | null>(null);
 
   const query = useApiQuery("snapshots", { projectId }, { enabled: Boolean(projectId) });
   const jobs = useApiQuery(
     "analysisJobs",
     { projectId },
-    { enabled: Boolean(projectId), poll: Boolean(analyzingSnapshotId) },
+    { enabled: Boolean(projectId), poll: true },
   );
   const activeJobQuery = useApiQuery(
     "analysisJob",
@@ -344,7 +336,14 @@ export function SourceSnapshots() {
   ]);
 
   async function handleStartAnalysis(snapshotId: string) {
-    if (!projectId || analyzingSnapshotId) return;
+    if (
+      !projectId ||
+      analyzingSnapshotId ||
+      startingRef.current ||
+      jobs.data?.some(analysisInProgress)
+    )
+      return;
+    startingRef.current = true;
     if (requestedJobId) {
       const next = new URLSearchParams(searchParams.toString());
       next.delete("job");
@@ -356,12 +355,14 @@ export function SourceSnapshots() {
     setAnalyzingSnapshotId(snapshotId);
     setProgressPct(null);
     try {
-      const idempotencyKey = crypto.randomUUID();
-      const startedJob = await adapter.execute("startAnalysis", {
-        projectId,
-        snapshotId,
-        idempotencyKey,
-      });
+      if (
+        analysisRequestRef.current?.projectId !== projectId ||
+        analysisRequestRef.current?.snapshotId !== snapshotId
+      ) {
+        analysisRequestRef.current = { projectId, snapshotId, idempotencyKey: crypto.randomUUID() };
+      }
+      const startedJob = await startSnapshotAnalysis(adapter, analysisRequestRef.current);
+      analysisRequestRef.current = null;
       setActiveJobId(startedJob.id);
       setProgressPct(startedJob.progress);
       void queryClient.invalidateQueries({ queryKey: ["api", "analysisJobs"] });
@@ -370,6 +371,9 @@ export function SourceSnapshots() {
       setAnalyzingSnapshotId(null);
       setActiveJobId("");
       setProgressPct(null);
+      void queryClient.invalidateQueries({ queryKey: ["api", "analysisJobs"] });
+    } finally {
+      startingRef.current = false;
     }
   }
 
@@ -449,8 +453,7 @@ export function SourceSnapshots() {
                   );
                 }
                 const snapJobs = jobList.filter((j) => j.snapshotId === s.id);
-                const latestJob =
-                  snapJobs.find((j) => j.status === "completed") ?? snapJobs[0] ?? null;
+                const latestJob = snapJobs[0] ?? null;
                 if (!latestJob) {
                   return <StatusBadge status="not analyzed" variant="outline" />;
                 }
@@ -497,28 +500,26 @@ export function SourceSnapshots() {
               label: "Actions",
               render: (s) => {
                 const latestModel = models.find((m) => m.snapshotId === s.id);
+                const latestJob = jobList.find((job) => job.snapshotId === s.id);
                 const isAnalyzingThis = analyzingSnapshotId === s.id;
-                const isAnalyzingAny = Boolean(analyzingSnapshotId);
+                const isAnalyzingAny =
+                  Boolean(analyzingSnapshotId) ||
+                  jobs.isPending ||
+                  jobList.some(analysisInProgress);
                 return (
                   <div className="flex flex-wrap items-center gap-2">
-                    {latestModel && !isAnalyzingThis && (
-                      <>
-                        <Button asChild size="sm" variant="outline">
-                          <Link href={`/architecture?project=${projectId}&model=${latestModel.id}`}>
-                            Open Graph
-                          </Link>
-                        </Button>
-                        <Button asChild size="sm" variant="ghost">
-                          <Link href={`/diagrams?project=${projectId}&model=${latestModel.id}`}>
-                            Open Diagrams
-                          </Link>
-                        </Button>
-                      </>
+                    {latestModel && (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/architecture?project=${projectId}&model=${latestModel.id}`}>
+                          View
+                        </Link>
+                      </Button>
                     )}
                     <Button
                       size="sm"
                       variant={latestModel && !isAnalyzingThis ? "ghost" : "default"}
                       disabled={isAnalyzingAny}
+                      title="Analyze the same stored source and commit. A successful run creates a new revision; previous revisions are kept."
                       onClick={() => {
                         void handleStartAnalysis(s.id);
                       }}
@@ -533,7 +534,7 @@ export function SourceSnapshots() {
                               : `Analyzing… ${progressPct}%`}
                         </span>
                       ) : (
-                        "Analyze snapshot"
+                        snapshotAnalysisLabel(latestJob, Boolean(latestModel))
                       )}
                     </Button>
                   </div>
