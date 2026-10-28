@@ -76,12 +76,6 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
         { id: "health", label: "System Health", icon: Activity, href: "/administration/health" },
         { id: "jobs", label: "Analysis Jobs", icon: ListChecks, href: "/administration/jobs" },
         { id: "usage", label: "Platform Usage", icon: LayoutGrid, href: "/administration/usage" },
-        {
-          id: "runtime-summary",
-          label: "Runtime Summary",
-          icon: Server,
-          href: "/administration/runtime-summary",
-        },
       ],
     },
     {
@@ -110,6 +104,12 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
     {
       label: "Runtime Administration",
       items: [
+        {
+          id: "runtime-summary",
+          label: "Runtime Summary",
+          icon: Server,
+          href: "/administration/runtime-summary",
+        },
         {
           id: "profiles",
           label: "Runtime Execution Profiles",

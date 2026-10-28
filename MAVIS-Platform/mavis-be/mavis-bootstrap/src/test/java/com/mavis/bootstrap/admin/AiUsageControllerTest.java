@@ -27,13 +27,13 @@ class AiUsageControllerTest {
         verifyNoInteractions(recorder);
     }
     @Test void ingestRejectsMissingOrWrongSecretAndDoesNotWrite() {
-        var event = new AiUsageController.Ingest("openai", "gpt-5-mini", UUID.randomUUID(), 10L, 4L);
+        var event = new AiUsageController.Ingest("openai", "gpt-5-mini", UUID.randomUUID(), 10L, 4L, null);
         assertThatThrownBy(() -> controller.ingest(null, event)).isInstanceOf(ResponseStatusException.class).hasMessageContaining("401");
         assertThatThrownBy(() -> controller.ingest("wrong", event)).isInstanceOf(ResponseStatusException.class).hasMessageContaining("401");
         verifyNoInteractions(recorder);
     }
     @Test void ingestReportsUnavailableWhenKeyOrDatabaseMissing() {
-        var event = new AiUsageController.Ingest("openai", "gpt-5-mini", UUID.randomUUID(), 10L, 4L);
+        var event = new AiUsageController.Ingest("openai", "gpt-5-mini", UUID.randomUUID(), 10L, 4L, null);
         ReflectionTestUtils.setField(controller, "ingestKey", "");
         assertThatThrownBy(() -> controller.ingest("", event)).isInstanceOf(ResponseStatusException.class).hasMessageContaining("503");
         ReflectionTestUtils.setField(controller, "ingestKey", "01234567890123456789012345678901");
@@ -59,5 +59,22 @@ class AiUsageControllerTest {
         assertThat(((Map<?,?>) a.get("coverage")).get("next")).isEqualTo("OBSERVED");
         assertThat(b.get("model")).isEqualTo("model-b");
         assertThat(((Map<?,?>) b.get("coverage")).get("next")).isEqualTo("UNKNOWN");
+    }
+    @Test void includesLogsAndReportsStorageFailure() throws SQLException {
+        var event = new AiUsageRecorder.Event(UUID.randomUUID(), "2026-10-28T10:00:00Z", "next", "openai", "model", 5, 2, UUID.randomUUID(), "Test User", "test@example.com");
+        when(recorder.recentEvents(200)).thenReturn(List.of(event));
+        Map<?,?> data = (Map<?,?>) controller.usage().getData();
+        assertThat(data.get("eventsAvailable")).isEqualTo(true);
+        assertThat(data.get("events")).isEqualTo(List.of(event));
+        when(recorder.recentEvents(200)).thenThrow(new SQLException());
+        data = (Map<?,?>) controller.usage().getData();
+        assertThat(data.get("eventsAvailable")).isEqualTo(false);
+    }
+
+    @Test void trustedIngestPreservesUserIdentity() {
+        UUID userId = UUID.randomUUID(), requestId = UUID.randomUUID();
+        when(recorder.record("next", "openai", "model", requestId, 5L, 2L, userId)).thenReturn(true);
+        controller.ingest("01234567890123456789012345678901", new AiUsageController.Ingest("openai", "model", requestId, 5L, 2L, userId));
+        verify(recorder).record("next", "openai", "model", requestId, 5L, 2L, userId);
     }
 }

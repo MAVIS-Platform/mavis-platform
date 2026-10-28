@@ -289,6 +289,7 @@ export const submissionSchema = z
   });
 export type Submission = z.infer<typeof submissionSchema>;
 export const accountSchema = z.object({
+  createdAt: z.string().nullish(),
   email: z.string().optional(),
   status: z.string().optional(),
   id: z.string(),
