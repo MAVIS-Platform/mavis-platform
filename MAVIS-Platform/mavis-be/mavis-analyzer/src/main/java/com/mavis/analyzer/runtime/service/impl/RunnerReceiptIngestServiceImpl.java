@@ -47,7 +47,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
     @Value("${mavis.runner.state-root:}")
     private String runnerStateRoot;
 
-    @Value("${mavis.runner.allow-unverified-poc-promotion:true}")
+    @Value("${mavis.runner.allow-unverified-poc-promotion:false}")
     private boolean allowUnverifiedPocPromotion;
 
     @Override
@@ -266,7 +266,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         session.setCompletedAt(OffsetDateTime.now());
 
         // [CHẶNG 11 & 12]: Đánh giá điều kiện Publication Gate
-        boolean correspondenceOk = "Verified".equalsIgnoreCase(receipt.getImageSourceCorrespondence()) || allowUnverifiedPocPromotion;
+        boolean correspondenceOk = "Verified".equalsIgnoreCase(receipt.getImageSourceCorrespondence());
         boolean canPromoteLatest = "Completed".equalsIgnoreCase(outcome.getExecutionStatus())
                 && "Passed".equalsIgnoreCase(outcome.getScenarioStatus())
                 && "Available".equalsIgnoreCase(outcome.getEvidenceStatus())
