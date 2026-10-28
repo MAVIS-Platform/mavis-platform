@@ -320,7 +320,7 @@ export function RuntimeScenarios() {
 function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const router = useRouter();
   const snapshots = useApiQuery("snapshots", { projectId });
-  const models = useApiQuery("models", { projectId });
+  const models = useApiQuery("modelVersions", { projectId });
   const scenarios = useApiQuery("scenarios", { projectId });
   const config = useApiQuery("runtimeConfiguration", { projectId });
   const start = useApiMutation("startRuntime");
@@ -336,15 +336,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     if (!snapshotId && snapshots.data?.length) {
-      const last = snapshots.data[snapshots.data.length - 1];
-      if (last) setSnapshotId(last.id);
+      const newest = snapshots.data[0];
+      if (newest) setSnapshotId(newest.id);
     }
   }, [snapshots.data, snapshotId]);
 
   useEffect(() => {
     if (!modelId && models.data?.length) {
-      const last = models.data[models.data.length - 1];
-      if (last) setModelId(last.id);
+      const newest = models.data[0];
+      if (newest) setModelId(newest.id);
     }
   }, [models.data, modelId]);
 
@@ -422,7 +422,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               onChange={setModelId}
               options={(models.data ?? []).map((m) => ({
                 value: m.id,
-                label: `Revision ${m.revision} · ${m.id.slice(0, 8)}`,
+                label: `${"label" in m && m.label ? m.label : `Revision ${m.revision}`} · ${m.id.slice(0, 8)}`,
               }))}
             />
           </div>

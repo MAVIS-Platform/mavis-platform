@@ -399,13 +399,6 @@ export function SelectionThreeE({
                 <span aria-hidden="true">→</span>
               </Button>
             </section>
-            <CommunicationPanel
-              key={edge?.id ?? node?.id ?? selectedId}
-              projectId={projectId ?? model.projectId}
-              model={model}
-              selectedId={edge?.id ?? node?.id ?? selectedId}
-              onSelect={onSelect}
-            />
             
             <details className="group rounded-xl border bg-background">
               <summary className="flex cursor-pointer list-none items-center gap-2 p-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -493,6 +486,13 @@ export function SelectionThreeE({
                 </div>
               </div>
             </details>
+            <CommunicationPanel
+              key={`explain-panel-${edge?.id ?? node?.id ?? selectedId}`}
+              projectId={projectId ?? model.projectId}
+              model={model}
+              selectedId={edge?.id ?? node?.id ?? selectedId}
+              onSelect={onSelect}
+            />
           </TabsContent>
           <TabsContent value="evidence" className="m-0 space-y-5">
             <section className="space-y-2">
@@ -538,12 +538,6 @@ export function SelectionThreeE({
                 </Button>
               </div>
             )}
-            <ThreeEEvidence
-              evidence={concreteEvidences}
-              subjectTitle={subject.title}
-              snippetNotes={active3E.snippetNotes}
-              defaultOpen={false}
-            />
             <CommunicationPanel
               key={`evidence-panel-${edge?.id ?? node?.id ?? selectedId}`}
               projectId={projectId ?? model.projectId}
@@ -551,6 +545,19 @@ export function SelectionThreeE({
               selectedId={edge?.id ?? node?.id ?? selectedId}
               onSelect={onSelect}
             />
+            <details className="rounded-xl border bg-card/60 p-3">
+              <summary className="cursor-pointer text-xs font-semibold text-muted-foreground hover:text-foreground">
+                Bằng chứng khai báo nội bộ của Node ({subject.title})
+              </summary>
+              <div className="mt-3">
+                <ThreeEEvidence
+                  evidence={concreteEvidences}
+                  subjectTitle={subject.title}
+                  snippetNotes={active3E.snippetNotes}
+                  defaultOpen={false}
+                />
+              </div>
+            </details>
             <details open={isGroup} className="rounded-xl border bg-muted/20 p-4">
               <summary className="cursor-pointer text-sm font-semibold">
                 Selection details &amp; relationships
@@ -796,33 +803,6 @@ export function SelectionThreeE({
                       </div>
                     )}
                   </dl>
-                )}
-                {subject.connections.length > 0 && (
-                  <details className="rounded-md border bg-muted/20 p-2.5 text-xs">
-                    <summary className="cursor-pointer font-medium text-primary">
-                      Related relationships ({subject.connections.length})
-                    </summary>
-                    <ul className="mt-2 space-y-1.5">
-                      {subject.connections
-                        .slice(0, 20)
-                        .map((e: ArchitecturalModel["edges"][number]) => (
-                          <li key={e.id}>
-                            <button
-                              className="break-words text-left text-xs underline"
-                              onClick={() => onSelect(e.id)}
-                            >
-                              {model.elements.find((n) => n.id === e.from)?.name} →{" "}
-                              {model.elements.find((n) => n.id === e.to)?.name}
-                            </button>
-                          </li>
-                        ))}
-                    </ul>
-                    {subject.connections.length > 20 && (
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Showing first 20 relationships; view all on graph.
-                      </p>
-                    )}
-                  </details>
                 )}
               </div>
             </details>

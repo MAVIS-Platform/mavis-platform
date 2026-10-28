@@ -506,7 +506,25 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             boolean publish="MESSAGE_PUBLISH".equals(ev.getElementType());
             ModelElement from=publish?endpoint:channel,to=publish?channel:endpoint;
             if(containsRelationship(relationshipsToSave,from,to,ev.getElementType()))continue;
-            var relationship=ModelRelationship.builder().modelVersion(modelVersion).sourceElement(from).targetElement(to).relationType(ev.getElementType()).originLayer("STATIC").direction("DIRECTED").build();
+
+            ModelElement ownerSvc = resolveOwningServiceContainer(endpoint);
+            String svcName = ownerSvc != null ? ownerSvc.getName() : endpoint.getName();
+            String compName = ev.getSourceComponent() != null ? ev.getSourceComponent() : endpoint.getName();
+            String brokerType = ev.getEndpointAlias() != null && !ev.getEndpointAlias().isBlank() ? ev.getEndpointAlias() : "MessageBroker";
+
+            ObjectNode props = objectMapper.createObjectNode();
+            props.put("technology", brokerType);
+            props.put("callerService", svcName);
+            props.put("callerComponent", compName);
+            props.put("callerFile", ev.getFilePath() != null ? ev.getFilePath() : "");
+            props.put("callerLine", ev.getLineNumber() != null ? ev.getLineNumber() : 1);
+            props.put("callerSnippet", ev.getCodeSnippet() != null ? ev.getCodeSnippet() : "");
+            props.put("httpMethod", publish ? "PUBLISH" : "SUBSCRIBE");
+            props.put("httpPath", ev.getIdentifier() != null ? ev.getIdentifier() : channel.getName());
+            props.put("channelName", ev.getIdentifier() != null ? ev.getIdentifier() : channel.getName());
+            props.put("resolutionStatus", "RESOLVED");
+
+            var relationship=ModelRelationship.builder().modelVersion(modelVersion).sourceElement(from).targetElement(to).relationType(ev.getElementType()).originLayer("STATIC").direction("DIRECTED").properties(props).build();
             relationshipsToSave.add(relationship);
             relEvidenceContexts.add(new RelEvidenceContext(relationship,ev.getFilePath()+":"+ev.getLineNumber(),"STATIC_CODE",ev.getCodeSnippet(),"JAVA_MESSAGING_1"));
         }
@@ -922,6 +940,86 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                 if (srcEl != null && tgtEl != null) {
                     String relType = relDto.getRelationType() != null ? relDto.getRelationType() : "SERVICE_HTTP_CALL";
                     if (!containsRelationship(relationshipsToSave, srcEl, tgtEl, relType)) {
+                        DotnetEvidenceDTO matchedEv = findEvidenceForRel(dotnetAnalysis.getEvidences(), relDto);
+                        ModelElement callerSvc = resolveOwningServiceContainer(srcEl);
+                        ModelElement calleeSvc = resolveOwningServiceContainer(tgtEl);
+
+                        ObjectNode relProps = objectMapper.createObjectNode();
+                        if (relDto.getProperties() != null) {
+                            JsonNode node = convertPropertiesNode(relDto.getProperties(), null);
+                            if (node instanceof ObjectNode on) {
+                                relProps.setAll(on);
+                            }
+                        }
+
+                        String callerFile = "";
+                        int callerLine = 1;
+                        if (matchedEv != null && matchedEv.getLocator() != null) {
+                            String loc = matchedEv.getLocator();
+                            int colon = loc.lastIndexOf(':');
+                            if (colon > 0) {
+                                callerFile = loc.substring(0, colon);
+                                try {
+                                    callerLine = Integer.parseInt(loc.substring(colon + 1));
+                                } catch (NumberFormatException ignored) {}
+                            } else {
+                                callerFile = loc;
+                            }
+                        }
+
+                        String calleeFile = "";
+                        int calleeLine = 1;
+                        String calleeSnippet = "";
+                        if (tgtEl.getProperties() != null) {
+                            if (tgtEl.getProperties().hasNonNull("sourceFile")) {
+                                calleeFile = tgtEl.getProperties().path("sourceFile").asText();
+                            }
+                            if (tgtEl.getProperties().hasNonNull("startLine")) {
+                                calleeLine = tgtEl.getProperties().path("startLine").asInt(1);
+                            }
+                            if (tgtEl.getProperties().hasNonNull("codeSnippet")) {
+                                calleeSnippet = tgtEl.getProperties().path("codeSnippet").asText();
+                            }
+                        }
+
+                        if (!relProps.hasNonNull("callerService")) {
+                            relProps.put("callerService", callerSvc != null ? callerSvc.getName() : srcEl.getName());
+                        }
+                        if (!relProps.hasNonNull("callerComponent")) {
+                            relProps.put("callerComponent", srcEl.getName());
+                        }
+                        if (!relProps.hasNonNull("callerFile")) {
+                            relProps.put("callerFile", callerFile);
+                        }
+                        if (!relProps.hasNonNull("callerLine")) {
+                            relProps.put("callerLine", callerLine);
+                        }
+                        if (!relProps.hasNonNull("callerSnippet")) {
+                            relProps.put("callerSnippet", matchedEv != null && matchedEv.getExcerpt() != null ? matchedEv.getExcerpt() : "");
+                        }
+
+                        if (!relProps.hasNonNull("calleeService")) {
+                            relProps.put("calleeService", calleeSvc != null ? calleeSvc.getName() : tgtEl.getName());
+                        }
+                        if (!relProps.hasNonNull("calleeController")) {
+                            relProps.put("calleeController", tgtEl.getName());
+                        }
+                        if (!relProps.hasNonNull("calleeFile")) {
+                            relProps.put("calleeFile", calleeFile);
+                        }
+                        if (!relProps.hasNonNull("calleeLine")) {
+                            relProps.put("calleeLine", calleeLine);
+                        }
+                        if (!relProps.hasNonNull("calleeSnippet")) {
+                            relProps.put("calleeSnippet", calleeSnippet);
+                        }
+                        if (!relProps.hasNonNull("technology")) {
+                            relProps.put("technology", "C# HttpClient / .NET");
+                        }
+                        if (!relProps.hasNonNull("resolutionStatus")) {
+                            relProps.put("resolutionStatus", "RESOLVED");
+                        }
+
                         ModelRelationship rel = ModelRelationship.builder()
                                 .modelVersion(modelVersion)
                                 .sourceElement(srcEl)
@@ -929,11 +1027,10 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                                 .relationType(relType)
                                 .originLayer(relDto.getOriginLayer() != null ? relDto.getOriginLayer() : "STATIC")
                                 .direction(relDto.getDirection() != null ? relDto.getDirection() : "DIRECTED")
-                                .properties(convertPropertiesNode(relDto.getProperties(), null))
+                                .properties(relProps)
                                 .build();
                         relationshipsToSave.add(rel);
 
-                        DotnetEvidenceDTO matchedEv = findEvidenceForRel(dotnetAnalysis.getEvidences(), relDto);
                         String locator = matchedEv != null ? matchedEv.getLocator() : "RoslynWorker";
                         String excerpt = matchedEv != null ? matchedEv.getExcerpt() : (relDto.getSourceElementName() + " -> " + relDto.getTargetElementName());
                         String adapter = matchedEv != null && matchedEv.getAdapterVersion() != null ? matchedEv.getAdapterVersion() : "ROSLYN_4.8";

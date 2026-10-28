@@ -68,7 +68,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const stop = useApiMutation("runtimeStop");
   const approve = useApiMutation("runtimeApprove");
   const [action, setAction] = useState<"stop" | "approve" | null>(null);
-  const models = useApiQuery("models", { projectId }, { enabled: !!projectId });
+  const models = useApiQuery("modelVersions", { projectId }, { enabled: !!projectId });
   const startRuntime = useApiMutation("startRuntime");
   const [quickRunRunning, setQuickRunRunning] = useState(false);
   const [quickRunMsg, setQuickRunMsg] = useState("");
@@ -78,8 +78,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     setQuickRunRunning(true);
     setQuickRunMsg("Đang khởi tạo phiên kiểm thử tự động 1-Click...");
 
-    const latestSnapshot = snapshots.data[snapshots.data.length - 1];
-    const latestModel = models.data?.[models.data.length - 1];
+    const latestSnapshot = snapshots.data[0];
+    const staticModels = (models.data ?? []).filter((m) => !("source" in m) || (m as any).source !== "RUNTIME_ENRICHED");
+    const latestModel = staticModels[0] ?? models.data?.[0];
     if (!latestSnapshot) return;
 
     try {
@@ -90,8 +91,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         scenarioId: "auto-" + Math.random().toString(16).slice(2, 8),
         scenarioName: "1-Click Auto Verify · " + new Date().toLocaleTimeString(),
         steps: [
-          { id: "step-1", title: "Health Check", service: "gateway", method: "GET", path: "/health", expectedStatus: 200 },
-          { id: "step-2", title: "API Transaction", service: "orders", method: "GET", path: "/orders", expectedStatus: 200 },
+          { id: "step-auto", title: "Auto-Verify All Service Connections", service: "auto", method: "POST", path: "/api/auto-verify", expectedStatus: 200 },
         ],
         configurationRevision: 1,
         scenarioRevision: 1,
@@ -145,39 +145,6 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             {quickRunRunning ? "Đang chạy..." : "⚡ Chạy 1-Click Ngay"}
           </Button>
         </div>
-      )}
-      {!administrative && (
-        <DetailPanel title="Runtime prerequisites">
-          <p className="text-sm text-muted-foreground">
-            Execution profiles and scenario versions are provisioned by the operator. Approval
-            queues an existing session; it does not prove that a workload is running. Automatic
-            launch is not connected in this interface.
-          </p>
-          <RequestState query={snapshots} empty={!snapshots.data?.length}>
-            <SelectField
-              disabled={preflight.isPending}
-              label="Runtime source snapshot"
-              value={snapshot}
-              onChange={(value) => {
-                setSnapshot(value);
-                preflight.reset();
-              }}
-              options={(snapshots.data ?? []).map((s) => ({
-                value: s.id,
-                label: `${s.name} · ${s.id.slice(0, 8)}`,
-              }))}
-            />
-            <Button
-              className="mt-3"
-              disabled={!snapshot || preflight.isPending}
-              onClick={() => preflight.mutate({ projectId, snapshotId: snapshot })}
-            >
-              Check runtime eligibility
-            </Button>
-            {preflight.isError && <ErrorState error={preflight.error} />}
-            <PreflightResult result={preflight.data} />
-          </RequestState>
-        </DetailPanel>
       )}
       {administrative && (
         <>
@@ -239,17 +206,24 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                         Mô hình kiến trúc đã được cập nhật với các quan hệ <strong className="text-emerald-300 font-mono">VERIFIED_RUNTIME</strong> và sơ đồ tuần tự OpenTelemetry.
                       </p>
                       <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm" asChild>
-                          <Link href={`/architecture?project=${projectId}${session.data.modelId ? `&model=${session.data.modelId}` : ""}`}>
-                            <ExternalLink className="h-3 w-3 mr-1" />
-                            🔍 Mở Đồ thị Kiến trúc Đã xác thực Runtime (RUNTIME_ENRICHED)
-                          </Link>
-                        </Button>
-                        <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 text-xs" asChild>
-                          <Link href={`/diagrams?project=${projectId}${session.data.modelId ? `&model=${session.data.modelId}` : ""}`}>
-                            📊 Xem Sơ đồ Tuần tự (UML Sequence Diagram)
-                          </Link>
-                        </Button>
+                        {(() => {
+                          const targetGraphModelId = session.data.enrichedModelId ?? session.data.modelId;
+                          return (
+                            <>
+                              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs shadow-sm" asChild>
+                                <Link href={`/architecture?project=${projectId}${targetGraphModelId ? `&model=${targetGraphModelId}` : ""}`}>
+                                  <ExternalLink className="h-3 w-3 mr-1" />
+                                  🔍 Mở Đồ thị Kiến trúc Đã xác thực Runtime (RUNTIME_ENRICHED)
+                                </Link>
+                              </Button>
+                              <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 text-xs" asChild>
+                                <Link href={`/diagrams?project=${projectId}${targetGraphModelId ? `&model=${targetGraphModelId}` : ""}`}>
+                                  📊 Xem Sơ đồ Tuần tự (UML Sequence Diagram)
+                                </Link>
+                              </Button>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}

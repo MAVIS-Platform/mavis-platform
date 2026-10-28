@@ -154,6 +154,8 @@ export const runtimeSessionSchema = z.object({
   projectId: z.string(),
   snapshotId: z.string(),
   scenarioId: z.string().nullable(),
+  modelId: z.string().nullable().optional(),
+  enrichedModelId: z.string().nullable().optional(),
   configurationRevision: z.number().int().positive().nullable(),
   scenarioRevision: z.number().int().positive().nullable(),
   executionStatus: z.string().optional(),

@@ -50,21 +50,21 @@ public class ImpactGraphLoader {
 
         record ResolvedRel(ModelRelationship rel, ModelElement sourceContainer, ModelElement targetContainer) {}
         List<ResolvedRel> selected = new ArrayList<>();
+        Set<String> impactRelTypes = Set.of(
+            "SERVICE_HTTP_CALL",
+            "GATEWAY_ROUTE",
+            "MESSAGE_PUBLISH",
+            "MESSAGE_SUBSCRIBE",
+            "DECLARED_COMPOSE",
+            "DECLARED_LINK"
+        );
         for (var r : relationships.findByModelVersionId(modelId)) {
-            if (!"SERVICE_HTTP_CALL".equals(r.getRelationType())) continue;
+            if (!impactRelTypes.contains(r.getRelationType())) continue;
             var src = resolveContainer(r.getSourceElement());
             var tgt = resolveContainer(r.getTargetElement());
             if (src == null || tgt == null || src.getId().equals(tgt.getId())) continue;
             if (!names.containsKey(src.getId().toString()) || !names.containsKey(tgt.getId().toString())) continue;
-            if (r.getProperties() != null && (
-                    "CONFIG_BOUND".equals(r.getProperties().path("mappingStatus").asText()) ||
-                    r.getProperties().path("userConfirmed").asBoolean(false) ||
-                    "RESOLVED".equals(r.getProperties().path("resolutionStatus").asText()) ||
-                    r.getProperties().hasNonNull("callerService") ||
-                    r.getProperties().hasNonNull("clientFramework")
-            )) {
-                selected.add(new ResolvedRel(r, src, tgt));
-            }
+            selected.add(new ResolvedRel(r, src, tgt));
         }
         if (selected.size() > 50000) throw invalid();
         selected.sort(Comparator.comparing(sr -> sr.rel().getId().toString()));

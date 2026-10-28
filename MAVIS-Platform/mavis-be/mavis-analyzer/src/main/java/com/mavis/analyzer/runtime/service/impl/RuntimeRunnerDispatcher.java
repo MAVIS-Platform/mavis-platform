@@ -227,6 +227,8 @@ public class RuntimeRunnerDispatcher {
                         .durationNanoseconds("25000000")
                         .spanStatus("OK")
                         .httpStatusCode(200)
+                        .httpMethod("GET")
+                        .route("/health")
                         .build());
 
                 String parentSpan = rootSpanId;
@@ -234,7 +236,8 @@ public class RuntimeRunnerDispatcher {
 
                 // Tạo chuỗi quan sát theo relationships hoặc các services kế tiếp
                 List<ModelRelationship> httpCalls = relationships.stream()
-                        .filter(r -> "SERVICE_HTTP_CALL".equalsIgnoreCase(r.getRelationType()))
+                        .filter(r -> "SERVICE_HTTP_CALL".equalsIgnoreCase(r.getRelationType())
+                                || "GATEWAY_ROUTE".equalsIgnoreCase(r.getRelationType()))
                         .toList();
 
                 if (!httpCalls.isEmpty()) {
@@ -252,6 +255,19 @@ public class RuntimeRunnerDispatcher {
                         }
                         String childSpanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16).toLowerCase();
 
+                        String httpMethod = "POST";
+                        String httpPath = "/api/invoke";
+                        if (rel.getProperties() != null) {
+                            if (rel.getProperties().hasNonNull("httpMethod")) {
+                                httpMethod = rel.getProperties().path("httpMethod").asText();
+                            }
+                            if (rel.getProperties().hasNonNull("httpPath")) {
+                                httpPath = rel.getProperties().path("httpPath").asText();
+                            } else if (rel.getProperties().hasNonNull("calleeRoute")) {
+                                httpPath = rel.getProperties().path("calleeRoute").asText();
+                            }
+                        }
+
                         spans.add(RunnerCorrelatedSpanDTO.builder()
                                 .traceId(traceId)
                                 .spanId(childSpanId)
@@ -260,10 +276,12 @@ public class RuntimeRunnerDispatcher {
                                 .modelServiceId(callee.getId().toString())
                                 .kind("SERVER")
                                 .scenarioStepId("step-" + stepIdx++)
-                                .startTimeUnixNano("1700000000025000000")
+                                .startTimeUnixNano(String.valueOf(1700000000000000000L + (stepIdx * 25000000L)))
                                 .durationNanoseconds("18000000")
                                 .spanStatus("OK")
                                 .httpStatusCode(200)
+                                .httpMethod(httpMethod)
+                                .route(httpPath)
                                 .build());
 
                         causalEdges.add(RunnerCausalEdgeDTO.builder()
