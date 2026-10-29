@@ -32,7 +32,7 @@ class ResourceDeletionPostgresTest {
     sql.update("INSERT INTO model_versions(id,project_id,source_snapshot_id,revision,is_latest_valid) VALUES (?,?,?,1,false)",m1,pid,s1);
     sql.update("INSERT INTO model_versions(id,project_id,source_snapshot_id,revision,origin,is_latest_valid) VALUES (?,?,?,2,'USER_CONFIRMED',false)",m2,pid,s2);
     sql.update("INSERT INTO model_versions(id,project_id,source_snapshot_id,revision,base_model_version_id,is_latest_valid) VALUES (?,?,?,3,?,true)",m3,pid,s1,m1);
-    var projects=mock(ProjectRepository.class);var snapshots=mock(SourceSnapshotRepository.class);var project=Project.builder().id(pid).name("Deletion fixture").owner(User.builder().id(uid).build()).status("READY").build();
+    var projects=mock(ProjectRepository.class);var snapshots=mock(SourceSnapshotRepository.class);var project=Project.builder().id(pid).name("Deletion fixture").owner(User.builder().id(uid).build()).status("ACTIVE").build();
     when(projects.findLockedById(pid)).thenReturn(Optional.of(project));when(snapshots.findById(s1)).thenReturn(Optional.of(SourceSnapshot.builder().id(s1).project(project).build()));
     org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(uid.toString(),null,List.of()));
     when(projects.save(any())).thenAnswer(call->{Project value=call.getArgument(0);sql.update("UPDATE projects SET status=? WHERE id=?",value.getStatus(),value.getId());return value;});
