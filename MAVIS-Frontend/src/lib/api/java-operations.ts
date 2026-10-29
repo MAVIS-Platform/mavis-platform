@@ -726,7 +726,11 @@ export async function executeJava(
         );
       } catch {
         const snapshotId = id(input, "snapshotId");
-        const scenarioId = id(input, "scenarioId");
+        const scenarioId =
+          typeof input["scenarioId"] === "string" &&
+          z.string().uuid().safeParse(input["scenarioId"]).success
+            ? (input["scenarioId"] as string)
+            : crypto.randomUUID();
         let modelVersionId = input["modelId"] as string | undefined;
         if (!modelVersionId) {
           try {
