@@ -19,10 +19,10 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
   importSource: ["snapshots"],
   importGithub: ["snapshots"],
   createProject: ["projects", "projectOverviews"],
-  cancelAnalysis: ["projectAnalysisActivity", "analysisJobs", "analysisJob", "projectOverviews"],
+  cancelAnalysis: ["projectAnalysisActivity", "projectActivity", "analysisJobs", "analysisJob", "projectOverviews"],
   evaluateModel: ["evaluations"],
   startAnalysis: [
-    "projectAnalysisActivity",
+    "projectAnalysisActivity", "projectActivity",
     "analysisJobs",
     "analysisJob",
     "adminJobs",
@@ -32,8 +32,8 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
     "platformSummary",
   ],
   reviewContext: ["models", "modelVersions", "model", "compareModels"],
-  deleteProject: ["projects","projectOverviews","project","snapshots","models","modelVersions","analysisJobs","projectAnalysisActivity","platformSummary"],
-  deleteSnapshot: ["snapshots","models","modelVersions","model","analysisJobs","projectOverviews","project","projectAnalysisActivity","platformSummary"],
+  deleteProject: ["audit","projects","projectOverviews","project","snapshots","models","modelVersions","analysisJobs","projectAnalysisActivity", "projectActivity","platformSummary"],
+  deleteSnapshot: ["audit","snapshots","models","modelVersions","model","analysisJobs","projectOverviews","project","projectAnalysisActivity", "projectActivity","platformSummary"],
   saveModel: ["models", "modelVersions", "model", "compareModels"],
   saveRuntimeConfiguration: ["runtimeConfiguration"],
   createScenario: ["scenarios"],
@@ -108,13 +108,13 @@ export function queryMatchesScope(queryKey: readonly unknown[], scope: Record<st
 
 export function terminalSignature(operation: Operation, data: unknown): string {
   if (
-    !["analysisJob", "analysisJobs", "projectAnalysisActivity", "adminJobs", "runtimeSession", "runtimeSessions"].includes(
+    !["analysisJob", "analysisJobs", "projectAnalysisActivity", "projectActivity", "adminJobs", "runtimeSession", "runtimeSessions"].includes(
       operation,
     )
   )
     return "";
-  const rows = operation === "projectAnalysisActivity" && data && typeof data === "object" && "items" in data
-    ? data.items : data;
+  const items = ["projectAnalysisActivity","projectActivity"].includes(operation) && data && typeof data === "object" && "items" in data ? data.items : data;
+  const rows = operation === "projectActivity" && Array.isArray(items) ? items.map(item=>item && typeof item === "object" && "job" in item ? item.job : null) : items;
   return (Array.isArray(rows) ? rows : [rows])
     .flatMap((value: unknown) => {
       if (
