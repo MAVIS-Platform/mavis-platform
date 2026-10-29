@@ -11,6 +11,14 @@ final class SecurityRoleSource {
   var rules=RULE.matcher(code);while(rules.find()){if(!accessRule(code,rules.start()))continue;String args=rules.group(1);if(!LITERAL.matcher(args).replaceAll("").replaceAll("[\\s,{}]", "").isEmpty())continue;var literals=LITERAL.matcher(args);while(literals.find()&&result.size()<32)result.add(literals.group(1));}return result;
  }
 
+
+ static String excerpt(String source,String role){
+  String code=withoutComments(source);var rules=RULE.matcher(code);
+  while(rules.find()){
+   if(!accessRule(code,rules.start()))continue;String args=rules.group(1);if(!LITERAL.matcher(args).replaceAll("").replaceAll("[\\s,{}]", "").isEmpty())continue;
+   var literal=LITERAL.matcher(args);while(literal.find())if(role.equals(literal.group(1))){int at=rules.start(1)+literal.start();return source.substring(Math.max(0,at-200),Math.min(source.length(),at+900));}
+  }return "";
+ }
  static boolean inLiteral(String source,int end){
   boolean string=false,character=false,escape=false;
   for(int i=0;i<end;i++){char c=source.charAt(i);if(escape){escape=false;continue;}if((string||character)&&c=='\\'){escape=true;continue;}if(c=='"'&&!character)string=!string;if(c=='\''&&!string)character=!character;}return string||character;
