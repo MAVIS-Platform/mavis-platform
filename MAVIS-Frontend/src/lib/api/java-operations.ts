@@ -1551,12 +1551,12 @@ export async function executeJava(
           adapterWarnings: z.array(z.string()),
         })
         .parse(await get(`analyzer/models/${modelId}/impact?targetServiceId=${targetId}`));
-      if (raw.impact.modelVersionId !== modelId || raw.impact.targetServiceId !== targetId)
+      if (raw.impact.modelVersionId !== modelId || !raw.impact.targetServiceId)
         throw new ApiError("contract", 502);
       const names = raw.serviceNames ?? {};
       return {
         modelId,
-        targetId,
+        targetId: raw.impact.targetServiceId,
         paths: raw.impact.affectedServices.map((p) => p.hops.map((h) => names[h] ?? h)),
         limitations: [
           ...raw.impact.warnings,

@@ -327,10 +327,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   const [snapshotId, setSnapshotId] = useState("");
   const [modelId, setModelId] = useState("");
+  const modelDetail = useApiQuery("model", { modelId }, { enabled: Boolean(modelId) });
+  const realServices = (modelDetail.data?.elements ?? []).filter((e) => e.elementType === "SERVICE_CONTAINER");
+  const detectedServiceNames = realServices.map((s) => s.name);
+  const defaultSvc = detectedServiceNames[0] ?? "api-gateway";
+
   const [scenarioName, setScenarioName] = useState("Order & Payment Checkout Flow");
   const [steps, setSteps] = useState([
-    { service: "gateway", method: "GET", path: "/health", status: "200" },
-    { service: "orders", method: "GET", path: "/orders", status: "200" },
+    { service: "api-gateway", method: "GET", path: "/health", status: "200" },
+    { service: "order-service", method: "GET", path: "/orders", status: "200" },
   ]);
   const [runMessage, setRunMessage] = useState("");
 
@@ -348,8 +353,40 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     }
   }, [models.data, modelId]);
 
+  useEffect(() => {
+    if (scenarios.data && scenarios.data.length > 0) {
+      const first = scenarios.data[0];
+      if (first?.steps && first.steps.length > 0) {
+        const parsed = first.steps.map((st, i) => {
+          const raw = typeof st === "string" ? st : "";
+          const match = raw.match(/^(GET|POST|PUT|DELETE|PATCH)\s+(?:https?:\/\/([^\/:]+)(?::\d+)?)?(\/[^\s]*)?(?:\s*->\s*(\d+))?/i);
+          const method = match?.[1] ? match[1].toUpperCase() : "GET";
+          const svcFromUrl = match?.[2];
+          const svc = svcFromUrl || detectedServiceNames[i % Math.max(1, detectedServiceNames.length)] || defaultSvc;
+          const path = match?.[3] || (raw.startsWith("/") ? raw : "/health");
+          const status = match?.[4] || "200";
+          return { service: svc, method, path, status };
+        });
+        if (parsed.length > 0) {
+          setSteps(parsed);
+          return;
+        }
+      }
+    }
+    if (detectedServiceNames.length > 0) {
+      setSteps(
+        detectedServiceNames.slice(0, 3).map((svcName, idx) => ({
+          service: svcName,
+          method: idx === 1 ? "GET" : idx === 2 ? "POST" : "GET",
+          path: idx === 1 ? "/orders" : idx === 2 ? "/payments/process" : "/health",
+          status: "200",
+        }))
+      );
+    }
+  }, [scenarios.data, modelDetail.data?.id]);
+
   const addStep = () => {
-    setSteps((s) => [...s, { service: "gateway", method: "GET", path: "/health", status: "200" }]);
+    setSteps((s) => [...s, { service: defaultSvc, method: "GET", path: "/health", status: "200" }]);
   };
 
   const removeStep = (index: number) => {
@@ -446,11 +483,18 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   size="sm"
                   variant="outline"
                   onClick={() => {
-                    setSteps([
-                      { service: "gateway", method: "GET", path: "/health", status: "200" },
-                      { service: "orders", method: "GET", path: "/orders", status: "200" },
-                      { service: "payment", method: "POST", path: "/payments/process", status: "200" },
-                    ]);
+                    const sampleServices =
+                      detectedServiceNames.length > 0
+                        ? detectedServiceNames.slice(0, 3)
+                        : ["api-gateway", "order-service", "catalog-service"];
+                    setSteps(
+                      sampleServices.map((svc, idx) => ({
+                        service: svc,
+                        method: idx === 1 ? "GET" : idx === 2 ? "POST" : "GET",
+                        path: idx === 1 ? "/orders" : idx === 2 ? "/payments/process" : "/health",
+                        status: "200",
+                      })),
+                    );
                   }}
                 >
                   ⚡ Fill Sample Steps

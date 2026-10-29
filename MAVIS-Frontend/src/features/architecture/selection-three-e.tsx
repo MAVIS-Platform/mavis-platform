@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { BookOpen, FileCode2, ShieldCheck, X, MessageSquare, Info, Loader2 } from "lucide-react";
 import { ThreeEEvidence } from "./three-e-evidence";
 import { CommunicationPanel } from "./communication-panel";
+import { useLocale } from "@/lib/i18n/locale-context";
 import {
   buildThreeESubjectContext,
   collectConcreteThreeEEvidences,
@@ -95,6 +96,7 @@ export function SelectionThreeE({
   sequenceContext?: Parameters<typeof buildThreeESubjectContext>[0]["sequenceContext"];
 }) {
   const api = useApi();
+  const { locale } = useLocale();
   const [activeTab, setActiveTab] = useState("explain");
   const [ai3E, setAi3E] = useState<ThreeEAiSimplifiedExplanation | null>(null),
     [ai3ELoading, setAi3ELoading] = useState(false),
@@ -218,6 +220,7 @@ export function SelectionThreeE({
             },
             history: prevHistory,
             question: q,
+            locale,
           },
         }),
       });
@@ -261,6 +264,7 @@ export function SelectionThreeE({
       body: JSON.stringify({
         threeEContext: threeEAiCtx,
         threeEFallback: deterministic3E,
+        locale,
       }),
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -278,7 +282,7 @@ export function SelectionThreeE({
     return () => {
       cancelled = true;
     };
-  }, [threeEAiCtx.contextHash]);
+  }, [threeEAiCtx.contextHash, locale]);
 
   const savedEvidenceCount = concreteEvidences.filter((item) => item.origin !== "preview").length;
   const previewCount = concreteEvidences.length - savedEvidenceCount;
