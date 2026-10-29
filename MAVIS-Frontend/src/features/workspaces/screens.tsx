@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,7 @@ export function Workspaces() {
 }
 export function WorkspaceOverview() {
   const { workspaceId } = useSelection();
+  const session = useSession();
   const query = useApiQuery("workspaces", {});
   const assignments = useApiQuery(
     "assignments",
@@ -44,6 +46,8 @@ export function WorkspaceOverview() {
     { enabled: Boolean(workspaceId) },
   );
   const workspace = query.data?.find((w) => w.id === workspaceId);
+  const canManage =
+    workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const members = workspace?.members ?? [];
   const studentCount = members.filter((m) => m.role.toUpperCase() === "STUDENT").length;
   const lecturerCount = members.filter((m) => m.role.toUpperCase() === "LECTURER").length;
@@ -69,6 +73,18 @@ export function WorkspaceOverview() {
               <p className="text-sm text-muted-foreground">
                 {workspace.description || "No class description added yet."}
               </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button asChild size="sm">
+                <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}`}>
+                  {canManage ? "Manage Assignments" : `Open Assignments & Submit (${assignmentList.length})`}
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/members?workspace=${encodeURIComponent(workspace.id)}`}>
+                  Members ({members.length})
+                </Link>
+              </Button>
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -100,7 +116,18 @@ export function WorkspaceOverview() {
                 rowKey={(a) => a.id}
                 caption="Class assignments"
                 columns={[
-                  { key: "title", label: "Assignment", render: (a) => a.title },
+                  {
+                    key: "title",
+                    label: "Assignment",
+                    render: (a) => (
+                      <Link
+                        className="font-semibold text-primary hover:underline"
+                        href={`/assignments?workspace=${encodeURIComponent(workspace.id)}#assignment-${a.id}`}
+                      >
+                        {a.title}
+                      </Link>
+                    ),
+                  },
                   { key: "due", label: "Deadline", render: (a) => a.dueAt },
                   {
                     key: "diagrams",
@@ -112,12 +139,74 @@ export function WorkspaceOverview() {
                     label: "Reference source",
                     render: (a) => (a.referenceSource ? "Attached" : "Student project"),
                   },
+                  {
+                    key: "action",
+                    label: "Action",
+                    render: (a) => (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}#assignment-${a.id}`}>
+                          {canManage ? "Review" : "Open & Submit →"}
+                        </Link>
+                      </Button>
+                    ),
+                  },
                 ]}
               />
             </DetailPanel>
-            <DetailPanel title="Class settings">
-              <WorkspaceControls key={workspace.id} workspace={workspace} mode="overview" />
-            </DetailPanel>
+            {canManage ? (
+              <DetailPanel title="Class settings">
+                <WorkspaceControls key={workspace.id} workspace={workspace} mode="overview" />
+              </DetailPanel>
+            ) : (
+              <DetailPanel title="How to complete & submit coursework">
+                <div className="space-y-4 text-sm">
+                  <div className="flex gap-3">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                      1
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">Open Assignment</p>
+                      <p className="text-muted-foreground">
+                        Click <strong>Open & Submit →</strong> on an assignment to read instructions, required diagram types, and any attached reference source.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                      2
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">Create & Analyze Coursework Project</p>
+                      <p className="text-muted-foreground">
+                        Create a project for the assignment, import your GitHub repository or ZIP (or clone the Lecturer&apos;s reference source), and run static analysis.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                      3
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">Review Architecture & Save Diagrams</p>
+                      <p className="text-muted-foreground">
+                        Inspect the Architecture Graph, C4/UML Diagrams, 3E Inspector, and Change Impact. Save your required diagram views.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                      4
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground">Freeze & Submit</p>
+                      <p className="text-muted-foreground">
+                        Return to the assignment, select your Model Version and diagrams, and submit before the deadline.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </DetailPanel>
+            )}
           </div>
         </div>
       )}

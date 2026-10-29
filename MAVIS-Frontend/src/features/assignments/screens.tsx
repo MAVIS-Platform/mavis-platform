@@ -1,4 +1,6 @@
 "use client";
+import { isDeadlinePassed } from "@/features/submissions/submission-readiness";
+import { Badge } from "@/components/ui/badge";
 import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
 import { AssignmentSourceDetails } from "./source-picker";
 import { useState } from "react";
@@ -47,14 +49,46 @@ export function Assignments() {
         }
       >
         <div className="space-y-4">
-          {query.data?.map((assignment) => (
-            <DetailPanel key={assignment.id} title={assignment.title}>
-              <p className="text-sm text-muted-foreground">{assignment.instructions}</p>
-              <p className="text-xs text-muted-foreground">Due {assignment.dueAt}</p>
-              <AssignmentSourceDetails
-                source={assignment.referenceSource}
-                assignmentId={assignment.id}
-              />
+          {query.data?.map((assignment) => {
+            const overdue = isDeadlinePassed(assignment.dueAt);
+            return (
+              <div
+                key={assignment.id}
+                id={`assignment-${assignment.id}`}
+                className="scroll-mt-20"
+              >
+                <DetailPanel
+                  title={assignment.title}
+                  actions={
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant={overdue ? "destructive" : "outline"}>
+                        Due {assignment.dueAt}
+                      </Badge>
+                      {assignment.requireRuntimeTrace ? (
+                        <Badge variant="warning">Runtime Trace Required</Badge>
+                      ) : (
+                        <Badge variant="outline">Runtime Trace Optional</Badge>
+                      )}
+                    </div>
+                  }
+                >
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-medium text-muted-foreground">Required diagrams:</span>
+                    {assignment.requiredDiagramTypes && assignment.requiredDiagramTypes.length > 0 ? (
+                      assignment.requiredDiagramTypes.map((t) => (
+                        <Badge key={t} variant="secondary">
+                          {diagramTypeLabel(t)}
+                        </Badge>
+                      ))
+                    ) : (
+                      <Badge variant="outline">Any saved diagram</Badge>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">{assignment.instructions}</p>
+                  <AssignmentSourceDetails
+                    source={assignment.referenceSource}
+                    assignmentId={assignment.id}
+                  />
               {canManage && (
                 <div className="flex flex-wrap items-center gap-3">
                   <Link
@@ -115,8 +149,10 @@ export function Assignments() {
                   workspaceId={workspaceId}
                 />
               )}
-            </DetailPanel>
-          ))}
+                </DetailPanel>
+              </div>
+            );
+          })}
         </div>
       </RequestState>
     </div>

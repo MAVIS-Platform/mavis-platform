@@ -114,13 +114,18 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
         }
 
-        // 7. Kiểm tra EvaluationRun (nếu có đính kèm)
+        // 7. Kiểm tra EvaluationRun (nếu có đính kèm hoặc tự động lấy lượt đánh giá mới nhất)
         EvaluationRun evaluationRun = null;
         if (request.getEvaluationRunId() != null) {
             evaluationRun = evaluationRunRepository.findById(request.getEvaluationRunId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy kết quả đánh giá quy tắc với ID: " + request.getEvaluationRunId()));
             if (!evaluationRun.getModelVersion().getId().equals(modelVersion.getId())) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Kết quả chấm quy tắc kiến trúc không thuộc về phiên bản mô hình đã chọn");
+            }
+        } else {
+            List<EvaluationRun> existingRuns = evaluationRunRepository.findByModelVersionIdOrderByCreatedAtDesc(modelVersion.getId());
+            if (existingRuns != null && !existingRuns.isEmpty()) {
+                evaluationRun = existingRuns.get(0);
             }
         }
 

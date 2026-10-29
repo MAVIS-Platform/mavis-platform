@@ -194,6 +194,15 @@ export function ArchitecturePresentation({
         }
       >
         <div className={dockOpen ? "min-h-0 min-w-0 flex-1 overflow-hidden" : "min-w-0"}>
+          {mode === "graph" && !selectedId && !connection && (
+            <div className="mb-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+              💡 <strong className="text-foreground">Interactive Guide:</strong> Click any{" "}
+              <strong className="text-foreground">Service node</strong> on the graph to open the{" "}
+              <strong className="text-foreground">3E Inspector (Explain · Explore · Evaluate)</strong> and{" "}
+              <strong className="text-foreground">Connection Evidence Tree (A ↔ B)</strong>. Click any{" "}
+              <strong className="text-foreground">connection line</strong> to inspect directional relationships.
+            </div>
+          )}
           {mode === "graph" ? (
             <DependencyNetwork
               key={model.id}
