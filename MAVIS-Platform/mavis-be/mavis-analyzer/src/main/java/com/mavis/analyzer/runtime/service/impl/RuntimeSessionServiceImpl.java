@@ -135,7 +135,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     public RuntimeSessionResponseDTO createRuntimeSession(RuntimeSessionCreateRequest request) {
         log.info("Tạo RuntimeSession mới cho projectId: {}, snapshotId: {}", request.getProjectId(), request.getSourceSnapshotId());
 
-        Project project = projectRepository.findById(request.getProjectId())
+        Project project = projectRepository.findLockedById(request.getProjectId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + request.getProjectId()));
 
         accessPolicyService.requireProjectWriteAccess(project);

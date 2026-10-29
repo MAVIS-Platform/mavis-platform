@@ -152,6 +152,7 @@ export function ConfirmDialog({
   description,
   onConfirm,
   pending = false,
+  confirmDisabled = false,
   error,
   children,
 }: {
@@ -161,6 +162,7 @@ export function ConfirmDialog({
   description: string;
   onConfirm: () => void;
   pending?: boolean;
+  confirmDisabled?: boolean;
   error?: ReactNode;
   children?: ReactNode;
 }) {
@@ -181,7 +183,7 @@ export function ConfirmDialog({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            disabled={pending}
+            disabled={pending || confirmDisabled}
             onClick={(event) => {
               event.preventDefault();
               onConfirm();

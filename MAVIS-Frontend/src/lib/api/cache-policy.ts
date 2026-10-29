@@ -32,6 +32,8 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
     "platformSummary",
   ],
   reviewContext: ["models", "modelVersions", "model", "compareModels"],
+  deleteProject: ["projects","projectOverviews","project","snapshots","models","modelVersions","analysisJobs","projectAnalysisActivity","platformSummary"],
+  deleteSnapshot: ["snapshots","models","modelVersions","model","analysisJobs","projectOverviews","project","projectAnalysisActivity","platformSummary"],
   saveModel: ["models", "modelVersions", "model", "compareModels"],
   saveRuntimeConfiguration: ["runtimeConfiguration"],
   createScenario: ["scenarios"],

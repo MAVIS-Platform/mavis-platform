@@ -94,6 +94,7 @@ class RuntimeEndToEndIntegrationTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        org.mockito.Mockito.lenient().when(projectRepository.findLockedById(org.mockito.ArgumentMatchers.any(UUID.class))).thenAnswer(call -> projectRepository.findById(call.getArgument(0)));
         projectId = UUID.randomUUID();
         snapshotId = UUID.randomUUID();
         modelVersionId = UUID.randomUUID();

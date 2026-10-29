@@ -80,6 +80,7 @@ class ProjectServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        when(projectRepository.findLockedById(any())).thenAnswer(call -> projectRepository.findWithDetailsById(call.getArgument(0)));
         currentUserId = UUID.randomUUID();
         currentUser = User.builder()
                 .id(currentUserId)
