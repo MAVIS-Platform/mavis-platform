@@ -1902,3 +1902,23 @@ test("Vietnamese input keeps scope guardrails but returns an English refusal",()
  const wrong=checkThreeEScopeGuardrail("billing-engine có chức năng gì",context);
  assert.equal(wrong.allowed,false);assert.match(wrong.refusalMessage,/You currently have/);
 });
+
+test("context review metadata never creates actors until confirmed and AI cannot rewrite confirmed claims",()=>{
+ const {deriveC4ContextModel,buildContextDiagramDrawioXml}=require("../src/features/architecture/diagram-projections.ts");
+ const internal={id:"svc",name:"API",elementType:"SERVICE_CONTAINER",properties:{contextReview:{entries:[{id:"draft",name:"Imagined Customer",state:"PROPOSED",kind:"PERSON"}]}}};
+ const base={id:"context-revision",projectId:"project",revision:1,elements:[internal],edges:[]};
+ assert.equal(deriveC4ContextModel(base).persons.length,0);
+ const actor={id:"person",name:"Confirmed Operator",elementType:"PERSON",description:"User-confirmed operator role",properties:{contextReviewState:"CONFIRMED",contextFactOrigin:"USER_CONFIRMED"}};
+ const confirmed={...base,elements:[internal,actor],edges:[{id:"interaction",from:"person",to:"svc",protocol:"CODE_DEPENDENCY",originLayer:"STATIC",properties:{origin:"USER_CONFIRMED"}}]};
+ assert.equal(deriveC4ContextModel(confirmed).persons.length,1);
+ const xml=buildContextDiagramDrawioXml(confirmed,"Test System","clean",{systemDescription:"Invented description",persons:{person:{name:"Fake Customer",description:"Invented business role",actionLabel:"Invented payment"}}});
+ assert.ok(xml.includes("Confirmed Operator"));assert.ok(!xml.includes("Fake Customer"));assert.ok(!xml.includes("Invented business role"));assert.ok(!xml.includes("Invented description"));
+ assert.equal(deriveC4ContextModel({...confirmed,elements:[internal,{...actor,properties:{contextReviewState:"REJECTED"}}]}).persons.length,0);
+});
+test("unresolved external dependencies require a boundary decision before C4 context includes them",()=>{
+ const {deriveC4ContextModel}=require("../src/features/architecture/diagram-projections.ts");
+ const svc={id:"svc",name:"API",elementType:"SERVICE_CONTAINER"},ext={id:"ext",name:"Unresolved client",elementType:"EXTERNAL_SYSTEM",properties:{resolutionIssue:"UNRESOLVED_FEIGN_TARGET"}};
+ const model={id:"m",projectId:"p",revision:1,elements:[svc,ext],edges:[{id:"e",from:"svc",to:"ext",protocol:"SERVICE_HTTP_CALL",originLayer:"STATIC"}]};
+ assert.equal(deriveC4ContextModel(model).externals.length,0);
+ assert.equal(deriveC4ContextModel({...model,elements:[svc,{...ext,properties:{...ext.properties,contextReviewState:"CONFIRMED",contextFactOrigin:"USER_CONFIRMED"}}]}).externals.length,1);
+});

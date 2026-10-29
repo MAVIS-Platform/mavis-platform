@@ -62,6 +62,12 @@ class MigrationUpgradeTest {
                             assertTrue(rows.next());assertEquals("Preserved learner",rows.getString(1));
                         }
                         if(upgrade) try(var rows=sql.executeQuery("SELECT count(*) FROM user_notifications WHERE event_key='migration-preservation'")) { assertTrue(rows.next());assertEquals(1,rows.getInt(1)); }
+                        // Copy constraints/defaults without foreign keys; probe the actual migrated PostgreSQL constraint.
+                        sql.execute("CREATE TEMP TABLE context_person_probe (LIKE model_elements INCLUDING CONSTRAINTS INCLUDING DEFAULTS)");
+                        assertEquals(1,sql.executeUpdate("INSERT INTO context_person_probe(model_version_id,element_type,name,properties) VALUES (uuid_generate_v4(),'PERSON','Reviewed actor','{\"contextFactOrigin\":\"USER_CONFIRMED\"}'::jsonb)"));
+                        try(var rows=sql.executeQuery("SELECT properties->>'contextFactOrigin' FROM context_person_probe")){assertTrue(rows.next());assertEquals("USER_CONFIRMED",rows.getString(1));}
+                        SQLException unsupported=assertThrows(SQLException.class,()->sql.execute("INSERT INTO context_person_probe(model_version_id,element_type,name) VALUES (uuid_generate_v4(),'INVENTED_TYPE','Invalid')"));
+                        assertEquals("23514",unsupported.getSQLState());
                         try(var rows=sql.executeQuery("SELECT to_regclass('submission_reviews')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
                         try(var rows=sql.executeQuery("SELECT to_regclass('ai_usage_events')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
                         try(var rows=sql.executeQuery("SELECT to_regclass('user_notifications')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }

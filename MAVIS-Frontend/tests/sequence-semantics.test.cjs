@@ -1580,7 +1580,7 @@ test("compressCodeToAstSkeleton strips comments/imports/boilerplate and dependen
   const enrichedContextXml = buildContextDiagramDrawioXml(model, "OrderSystem", "clean", {
     systemDescription: "Distributed order and payment processing platform.",
   });
-  assert.match(enrichedContextXml, /Distributed order and payment processing platform\./);
+  assert.doesNotMatch(enrichedContextXml, /Distributed order and payment processing platform\./);
 });
 
 

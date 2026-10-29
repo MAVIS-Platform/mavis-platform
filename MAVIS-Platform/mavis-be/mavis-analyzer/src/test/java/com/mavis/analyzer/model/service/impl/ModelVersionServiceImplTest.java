@@ -55,4 +55,13 @@ class ModelVersionServiceImplTest {
   doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN)).when(policy).requireProjectWriteAccess(project);
   assertThrows(BusinessException.class,()->service.createControlledRevision(base.getId(),ModelRevisionRequestDTO.builder().build()));verify(models,never()).save(any());
  }
+ @Test void contextConfirmationPersistsPersonButDoesNotFabricateSourceEvidence(){
+  var props=json.createObjectNode().put("contextFactOrigin","USER_CONFIRMED").put("contextReviewState","CONFIRMED");
+  var added=new com.mavis.analyzer.model.service.ModelVersionService.ElementEdit("actor1","ADD","Confirmed Operator","PERSON",null,null,null,null,props);
+  var link=new com.mavis.analyzer.model.service.ModelVersionService.RelationshipEdit("context-link","ADD","actor1",node.getId().toString(),"CODE_DEPENDENCY",true,props);
+  var response=service.revise(base.getId(),new com.mavis.analyzer.model.service.ModelVersionService.RevisionRequest(List.of(added),List.of(link)));
+  assertEquals("USER_CONFIRMED",response.origin());
+  verify(elements).saveAll(argThat(values->{for(var value:values)if("PERSON".equals(value.getElementType()))return "USER_CONFIRMED".equals(value.getProperties().path("contextFactOrigin").asText());return false;}));
+  verify(evidence).saveAll(argThat(values->!values.iterator().hasNext()));
+ }
 }
