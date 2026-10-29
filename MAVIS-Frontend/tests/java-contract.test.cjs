@@ -706,3 +706,8 @@ test("delete mutations use scoped DELETE endpoints and never send repository del
   assert.equal(calls.length,2);assert.ok(calls.every(c=>c.method==="DELETE"));assert.ok(calls[0].url.endsWith('/projects/'+project));assert.ok(calls[1].url.endsWith('/projects/'+project+'/snapshots/'+snapshot));
  }finally{global.fetch=original;}
 });
+
+test("project activity adapter retains deletion identity when job/actor names are omitted",async()=>{
+ const previous=global.fetch;global.fetch=async()=>Response.json({code:200,data:{items:[{id:job,kind:"SNAPSHOT_DELETED",projectId:project,projectName:"Archived project",occurredAt:"2026-10-29T09:00:00Z",projectDeleted:true,targetId:snapshot,targetName:"main / abc12345",actorId:node}],total:1,page:0,size:10}});
+ try{const result=await executeJava("projectActivity",{page:0,size:10},"jwt",new AbortController().signal);assert.equal(result.items[0].kind,"SNAPSHOT_DELETED");assert.equal(result.items[0].targetId,snapshot);assert.equal(result.items[0].job,null);assert.equal(result.items[0].actorName,null);}finally{global.fetch=previous;}
+});

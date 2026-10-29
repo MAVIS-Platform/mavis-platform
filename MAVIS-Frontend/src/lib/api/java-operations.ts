@@ -1427,6 +1427,10 @@ export async function executeJava(
       const result = z.object({ snapshotId: z.string().uuid() }).parse(imported);
       return snapshotView(await get(`analyzer/snapshots/${result.snapshotId}`));
     }
+    case "projectActivity": {
+      const result=z.object({items:z.array(z.object({id:z.string(),kind:z.string(),projectId:z.string(),projectName:z.string(),occurredAt:z.string().nullable(),projectDeleted:z.boolean(),targetId:z.string().nullish().transform(value=>value??null),targetName:z.string().nullish().transform(value=>value??null),actorId:z.string().nullish().transform(value=>value??null),actorName:z.string().nullish().transform(value=>value??null),job:z.record(z.string(),z.unknown()).nullish()})),total:z.number(),page:z.number(),size:z.number()}).parse(await get(`activity/projects?page=${input["page"]}&size=${input["size"]}`));
+      return {...result,items:result.items.map(row=>({...row,job:row.job?jobView(row.job):null}))};
+    }
     case "projectAnalysisActivity": {
       const result = z.object({items:z.array(z.object({job:z.record(z.string(),z.unknown()),projectName:z.string()})),total:z.number(),page:z.number(),size:z.number()}).parse(await get(`activity/analysis?page=${input["page"]}&size=${input["size"]}`));
       return {...result,items:result.items.map(row=>({...jobView(row.job),projectName:row.projectName,startedAt:row.job["startedAt"]??null,completedAt:row.job["completedAt"]??null}))};
