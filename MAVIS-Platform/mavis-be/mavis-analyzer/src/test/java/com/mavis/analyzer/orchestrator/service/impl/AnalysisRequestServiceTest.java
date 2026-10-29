@@ -3,7 +3,9 @@ package com.mavis.analyzer.orchestrator.service.impl;
 import com.mavis.common.contract.AnalyzeRequestEvent;
 import com.mavis.common.entity.*;
 import com.mavis.common.exception.BusinessException;
+import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.*;
+import com.mavis.common.security.AccessPolicyService;
 import org.junit.jupiter.api.*;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -17,8 +19,9 @@ class AnalysisRequestServiceTest {
     final SourceSnapshotRepository snapshots=mock(SourceSnapshotRepository.class);
     final ProjectRepository projects=mock(ProjectRepository.class);
     final JobRepository jobs=mock(JobRepository.class);
+    final AccessPolicyService accessPolicy=mock(AccessPolicyService.class);
     final ApplicationEventPublisher events=mock(ApplicationEventPublisher.class);
-    final AnalysisRequestService service=new AnalysisRequestService(snapshots,projects,jobs,events);
+    final AnalysisRequestService service=new AnalysisRequestService(snapshots,projects,jobs,accessPolicy,events);
     final UUID owner=UUID.randomUUID();
     final Project project=Project.builder().id(UUID.randomUUID()).owner(User.builder().id(owner).build()).build();
     final SourceSnapshot snapshot=SourceSnapshot.builder().id(UUID.randomUUID()).project(project).storagePath("stored/pinned.zip").artifactHash("immutable-digest").build();
@@ -58,7 +61,7 @@ class AnalysisRequestServiceTest {
         verify(jobs,never()).save(any());verifyNoInteractions(events);
     }
     @Test void otherUserCannotStart(){
-        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(UUID.randomUUID().toString(),null,List.of()));
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN, "access denied")).when(accessPolicy).requireProjectWriteAccess(project);
         assertThatThrownBy(()->service.start(snapshot.getId(),"forbidden")).isInstanceOf(BusinessException.class).hasMessageContaining("access denied");
         verify(jobs,never()).save(any());verifyNoInteractions(events);
     }

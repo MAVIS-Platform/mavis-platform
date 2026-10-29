@@ -1,21 +1,30 @@
 "use client";
 import { useState } from "react";
-import type { ArchitectureElement } from "@/types/domain";
+import type { ArchitecturalModel, ArchitectureElement } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { relationLabel } from "@/lib/drawio/rules";
 import type { NetworkConnection } from "./network-connections";
-const elementName = (elements: ArchitectureElement[], id: string) =>
-  elements.find((element) => element.id === id)?.name ?? id;
+import { CommunicationPanel } from "./communication-panel";
+
+const elementName = (elements: ArchitectureElement[], id: string, fullModelElements?: ArchitectureElement[]) =>
+  elements.find((element) => element.id === id)?.name ??
+  fullModelElements?.find((element) => element.id === id)?.name ??
+  id;
+
 export function ConnectionDetailsPanel({
   connection,
   docked = false,
   elements,
+  model,
+  projectId,
   onInspect,
   onClose,
 }: {
   connection: NetworkConnection;
   docked?: boolean;
   elements: ArchitectureElement[];
+  model?: ArchitecturalModel | undefined;
+  projectId?: string | undefined;
   onInspect: (id: string) => void;
   onClose: () => void;
 }) {
@@ -32,7 +41,7 @@ export function ConnectionDetailsPanel({
   );
   const pages = Math.max(1, Math.ceil(rows.length / 20));
   const current = Math.min(page, pages - 1);
-  const names = connection.elementIds.map((id) => elementName(elements, id));
+  const names = connection.elementIds.map((id) => elementName(elements, id, model?.elements));
   return (
     <aside
       aria-label="Connection details"
@@ -78,6 +87,17 @@ export function ConnectionDetailsPanel({
         </p>
       </header>
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4">
+        {model && (
+          <div className="mb-4">
+            <CommunicationPanel
+              projectId={projectId}
+              model={model}
+              selectedId={connection.elementIds[0]}
+              peerFilterId={connection.elementIds[1]}
+              onSelect={onInspect}
+            />
+          </div>
+        )}
         <label className="block text-xs font-medium">
           Find a relationship
           <input
@@ -105,7 +125,7 @@ export function ConnectionDetailsPanel({
             <option value="all">Both directions</option>
             {[...new Set(connection.elementIds)].map((id) => (
               <option key={id} value={id}>
-                From {elementName(elements, id)}
+                From {elementName(elements, id, model?.elements)}
               </option>
             ))}
           </select>
@@ -113,7 +133,7 @@ export function ConnectionDetailsPanel({
         {rows.slice(current * 20, current * 20 + 20).map((row) => (
           <article key={row.id} className="space-y-2 rounded-lg border p-3">
             <p className="break-words text-sm font-medium">
-              {elementName(elements, row.fromElementId)} → {elementName(elements, row.toElementId)}
+              {elementName(elements, row.fromElementId, model?.elements)} → {elementName(elements, row.toElementId, model?.elements)}
             </p>
             <p className="text-sm">{relationLabel({ id: row.id, type: row.edge.protocol })}</p>
             <p className="text-xs text-muted-foreground">
@@ -131,7 +151,7 @@ export function ConnectionDetailsPanel({
                 not inferred from the group.
               </p>
             )}
-            <code className="block break-all text-[11px] text-muted-foreground">{row.id}</code>
+            <span className="block text-[10px] text-muted-foreground/60 font-mono" title={row.id}>ID: {row.id.slice(0, 8)}...</span>
             <Button
               variant="outline"
               size="sm"
