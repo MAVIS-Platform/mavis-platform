@@ -1,3 +1,4 @@
+import type { QueryClient } from "@tanstack/react-query";
 import type { ApiAdapter, Response } from "@/lib/api/contracts";
 import { githubImportRequest } from "@/lib/mainflow-api";
 
@@ -84,4 +85,14 @@ export async function importAndAnalyze(
   if (job.projectId !== projectId || job.snapshotId !== state.snapshot.snapshotId)
     throw new Error("Analysis job does not match the imported snapshot.");
   return { projectId, snapshotId: state.snapshot.snapshotId, jobId: job.id };
+}
+
+
+/** Refresh both current selectors and legacy mainflow project lists after import. */
+export function refreshImportProjectLists(cache: QueryClient) {
+  return Promise.all([
+    cache.invalidateQueries({ queryKey: ["api", "projects"] }),
+    cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] }),
+    cache.invalidateQueries({ queryKey: ["projects"] }),
+  ]);
 }

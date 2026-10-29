@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorState } from "@/components/shared/request-state";
 import { githubImportRequest } from "@/lib/mainflow-api";
-import { importAndAnalyze, type ImportWorkflowState } from "@/features/projects/import-workflow";
+import { importAndAnalyze, refreshImportProjectLists, type ImportWorkflowState } from "@/features/projects/import-workflow";
 import type { Response } from "@/lib/api/contracts";
 import { GuidedTarget } from "@/components/shared/guided-target";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -123,15 +123,13 @@ export function ImportFlow({
         created: (next) => {
           setCreated(next);
           cache.setQueryData(["api", "project", { projectId: next.id }], next);
-          void cache.invalidateQueries({ queryKey: ["api", "projects"] });
-          void cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
+          void refreshImportProjectLists(cache);
         },
         imported: (target, snapshotId) => {
           setImportedSnapshot(snapshotId);
           void cache.invalidateQueries({ queryKey: ["api", "snapshots"] });
           void cache.invalidateQueries({ queryKey: ["api", "project", { projectId: target }] });
-          void cache.invalidateQueries({ queryKey: ["api", "projects"] });
-          void cache.invalidateQueries({ queryKey: ["api", "projectOverviews"] });
+          void refreshImportProjectLists(cache);
         },
       });
     },

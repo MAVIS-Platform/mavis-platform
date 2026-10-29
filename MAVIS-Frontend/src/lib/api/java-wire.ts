@@ -229,9 +229,15 @@ function resolveNodeMetadata(graphValue: unknown, detailValue: unknown): string 
     return detailValue;
   return null;
 }
-function inferredLayer(type: string, name: string) {
+function inferredLayer(type: string, name: string, technology?: string | null, image?: unknown) {
   if (type === "DATABASE") return "data";
   if (["QUEUE_BROKER", "MESSAGE_CHANNEL", "EXTERNAL_SYSTEM"].includes(type)) return "platform";
+  const imageName = typeof image === "string"
+    ? image.split("@")[0]?.split("/").pop()?.split(":")[0]
+    : undefined;
+  if (type === "SERVICE_CONTAINER" && [name, technology, imageName].some(
+    (value) => typeof value === "string" && /^(?:zipkin|zipkin-server)$/i.test(value.trim()),
+  )) return "platform";
   if (/(?:gateway|bff|controller|ingress)/i.test(name)) return "edge";
   if (["SERVICE_CONTAINER", "COMPONENT", "CLASS_INTERFACE"].includes(type)) return "domain";
   return "unclassified";
@@ -306,7 +312,7 @@ export function modelView(metadata: unknown, graph: unknown, details: unknown) {
       };
       const layer = ["edge", "domain", "platform", "data"].includes(String(properties["layer"]))
         ? properties["layer"]
-        : inferredLayer(n.type, n.name);
+        : inferredLayer(n.type, n.name, detail?.languageStack ?? n.languageStack, properties["image"]);
       return {
         id: n.id,
         name: n.name,

@@ -31,3 +31,24 @@ test('reanalysis reuses pinned snapshot and request key after a network retry',a
 test('reanalysis rejects unrelated job responses',async()=>{
  await assert.rejects(()=>startSnapshotAnalysis({execute:async()=>({projectId:'other',snapshotId:'other'})},{projectId:'project',snapshotId:'pinned',idempotencyKey:'key'}),/does not match/);
 });
+
+
+test('import refresh invalidates current and legacy project lists without touching unrelated model data',async()=>{
+ const {QueryClient,QueryObserver}=require('@tanstack/react-query');
+ const {refreshImportProjectLists}=require('../src/features/projects/import-workflow.ts');
+ const cache=new QueryClient({defaultOptions:{queries:{retry:false,staleTime:Infinity}}});
+ const keys=[["api","projects",{}],["api","projectOverviews",{}],["projects"]];
+ const observers=[];const stops=[];let reads=0;
+ try {
+  for(const queryKey of keys){
+   cache.setQueryData(queryKey,[{id:'existing'}]);
+   const observer=new QueryObserver(cache,{queryKey,queryFn:async()=>{reads++;return [{id:'existing'},{id:'created'}];},staleTime:Infinity});
+   observers.push(observer);stops.push(observer.subscribe(()=>{}));
+  }
+  cache.setQueryData(['api','model',{modelId:'unrelated'}],{id:'unrelated'});
+  await refreshImportProjectLists(cache);
+  assert.equal(reads,3);
+  for(const key of keys)assert.deepEqual(cache.getQueryData(key).map(p=>p.id),['existing','created']);
+  assert.equal(cache.getQueryState(['api','model',{modelId:'unrelated'}]).isInvalidated,false);
+ } finally {stops.forEach(stop=>stop());observers.forEach(observer=>observer.destroy());cache.clear();}
+});
