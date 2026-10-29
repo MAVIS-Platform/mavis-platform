@@ -58,8 +58,10 @@ export function contextProjection(
   raw: DiagramDocument,
   options?: { systemName?: string | undefined },
 ) {
+  const established = deriveC4ContextModel(model);
+  const allowedContextIds = new Set([...established.persons, ...established.externals].map(item => item.id));
   const external = raw.layoutJson.nodes.filter((node) =>
-    ["EXTERNAL_SYSTEM", "PERSON"].includes(node.kind ?? ""),
+    ["EXTERNAL_SYSTEM", "PERSON"].includes(node.kind ?? "") && allowedContextIds.has(node.id),
   );
   const inside = new Set(
     raw.layoutJson.nodes
@@ -256,7 +258,7 @@ export function deriveC4ContextModel(model: ArchitecturalModel): {
     edge.originLayer !== "DEPLOYMENT" &&
     !["DECLARED_COMPOSE", "DECLARED_LINK", "STARTUP_DEPENDENCY"].includes(edge.protocol);
   const persons: C4ContextPersonSpec[] = model.elements
-    .filter((element) => element.elementType === "PERSON")
+    .filter((element) => element.elementType === "PERSON" && !["PROPOSED", "REJECTED"].includes(String(element.properties?.["contextReviewState"] ?? "")))
     .flatMap((element) => {
       const incoming = model.edges.filter(
         (edge) => ((edge.from === element.id && internalIds.has(edge.to)) || (edge.to === element.id && internalIds.has(edge.from))) && isInteraction(edge),
@@ -284,6 +286,9 @@ export function deriveC4ContextModel(model: ArchitecturalModel): {
   const externals: C4ContextExternalSpec[] = [];
   for (const el of model.elements) {
     if (el.elementType !== "EXTERNAL_SYSTEM") continue;
+    const reviewState = String(el.properties?.["contextReviewState"] ?? "");
+    if (["PROPOSED", "REJECTED"].includes(reviewState)) continue;
+    if ((el.properties?.["resolutionIssue"] || el.properties?.["status"] === "UNCERTAIN_MAPPING") && reviewState !== "CONFIRMED") continue;
     const relatedEdges = model.edges.filter(
       (edge) =>
         isInteraction(edge) &&
@@ -311,7 +316,8 @@ export function deriveC4ContextModel(model: ArchitecturalModel): {
     const methods = Array.isArray(classifier?.["methodsCfg"]) ? classifier["methodsCfg"] as Record<string, unknown>[] : [];
     return methods.some(method => Array.isArray(method["endpointDeclarations"]) && method["endpointDeclarations"].length > 0);
   }).map(element => element.name);
-  const systemDescription = declaredApiOwners.length
+  const hasConfirmedContext = persons.some(person => model.elements.find(n => n.id === person.id)?.properties?.["contextFactOrigin"] === "USER_CONFIRMED") || externals.some(ext => model.elements.find(n => n.id === ext.id)?.properties?.["contextFactOrigin"] === "USER_CONFIRMED");
+  const systemDescription = hasConfirmedContext ? "Software system under analysis. Context roles and boundaries include explicit user-confirmed assertions; this is not proof of runtime behavior." : declaredApiOwners.length
     ? "HTTP APIs declared by " + [...new Set(declaredApiOwners)].slice(0, 4).join(", ") + ". External caller roles are not established."
     : "Software system under analysis. API purpose and external caller roles are not established by this revision.";
 
@@ -511,29 +517,14 @@ export function buildContextDiagramDrawioXml(
   theme: DrawioTheme = "clean",
   aiEnrichment?: C4AiDiagramEnrichment | null,
 ): string {
+  // Accepted for API compatibility only; context assertions are never AI rewrites.
+  void aiEnrichment;
   const baseContext = deriveC4ContextModel(model);
   const internalNodeIds = baseContext.internalNodeIds;
-  const systemDescription =
-    aiEnrichment?.systemDescription?.trim() || baseContext.systemDescription;
-  const persons = baseContext.persons.map((person) => {
-    const ov = aiEnrichment?.persons?.[person.id];
-    if (!ov) return person;
-    return {
-      ...person,
-      name: person.name,
-      description: ov.description?.trim() || person.description,
-      actionLabel: ov.actionLabel?.trim() || person.actionLabel,
-    };
-  });
-  const externals = baseContext.externals.map((ext) => {
-    const ov = aiEnrichment?.externals?.[ext.id];
-    if (!ov) return ext;
-    return {
-      ...ext,
-      description: ov.description?.trim() || ext.description,
-      actionLabel: ov.actionLabel?.trim() || ext.actionLabel,
-    };
-  });
+  // Context assertions come from the reviewed model. AI wording cannot replace them.
+  const systemDescription = baseContext.systemDescription;
+  const persons = baseContext.persons;
+  const externals = baseContext.externals;
   const resolvedSystemName = systemName?.trim() || "System under analysis";
   const basePalette = palette(theme);
   const p =

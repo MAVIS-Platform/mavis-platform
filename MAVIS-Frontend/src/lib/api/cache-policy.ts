@@ -31,6 +31,7 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
     "project",
     "platformSummary",
   ],
+  reviewContext: ["models", "modelVersions", "model", "compareModels"],
   saveModel: ["models", "modelVersions", "model", "compareModels"],
   saveRuntimeConfiguration: ["runtimeConfiguration"],
   createScenario: ["scenarios"],
