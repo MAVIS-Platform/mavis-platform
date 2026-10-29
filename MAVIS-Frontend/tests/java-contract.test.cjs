@@ -720,3 +720,23 @@ test("login redirect accepts internal destinations and rejects external or disgu
   assert.equal(safeLoginRedirect(value),value);
  }
 });
+
+
+test("Zipkin containers infer platform from technology or image while preserving explicit layers",()=>{
+ for(const [name,technology,image,expected] of [
+  ["zipkin",null,null,"platform"],
+  ["trace-collector","Zipkin",null,"platform"],
+  ["trace-collector",null,"registry:5000/openzipkin/zipkin:latest@sha256:abc","platform"],
+  ["zipkin-business-service",null,"acme/orders:latest","domain"],
+  ["orders",null,null,"domain"],
+ ]){
+  const graph={nodes:[{id:node,name,type:"SERVICE_CONTAINER"}],edges:[]};
+  const detail={id:node,modelVersionId:model,name,elementType:"SERVICE_CONTAINER",languageStack:technology,properties:{image}};
+  const mapped=wire.modelView(metadata,graph,[detail]);
+  assert.equal(mapped.elements[0].layer,expected,name);
+  assert.equal(mapped.elements[0].elementType,"SERVICE_CONTAINER");
+  assert.equal(mapped.elements[0].id,node);
+  detail.properties.layer="domain";
+  assert.equal(wire.modelView(metadata,graph,[detail]).elements[0].layer,"domain");
+ }
+});
