@@ -2,14 +2,23 @@
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Network } from "lucide-react";
+import { ArrowUpRight, CircleHelp, Network } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
-import { PageContainer, SectionHeader } from "@/components/layout/page";
+import { PageContainer } from "@/components/layout/page";
 import { RequestState } from "@/components/shared/request-state";
 import { DataTable, DetailPanel, SummaryCard } from "@/components/shared/data";
 import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
 import { Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { useLocale } from "@/lib/i18n/locale-context";
 import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { ProjectStatusBadge, CreateProjectAction } from "@/features/projects/components";
 import { ResourceDeleteAction } from "@/features/projects/resource-delete-action";
@@ -44,6 +53,62 @@ function runtimeSummary(projects: Project[] | undefined): string | number {
   if (unchecked === projects.length) return "Not checked";
   return `${projects.filter((p) => p.runtimeSupported).length} of ${projects.length}`;
 }
+function OverviewHelp() {
+  const { t } = useLocale();
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-9 rounded-full text-muted-foreground hover:text-foreground"
+          aria-label={t("Overview help", "Hướng dẫn tổng quan")}
+          title={t("Overview help", "Hướng dẫn tổng quan")}
+        >
+          <CircleHelp className="size-5" aria-hidden="true" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{t("Quick Start Guides", "Hướng dẫn bắt đầu")}</DialogTitle>
+          <DialogDescription>
+            {t(
+              "Choose a workflow to get started with MAVIS.",
+              "Chọn quy trình phù hợp để bắt đầu sử dụng MAVIS.",
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 text-sm sm:grid-cols-2">
+          <div className="space-y-2 rounded-lg border bg-card p-3">
+            <p className="flex items-center gap-1.5 font-semibold text-foreground">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
+                1
+              </span>
+              Personal Architecture Exploration
+            </p>
+            <p className="leading-6 text-muted-foreground">
+              Click <strong>Import project source</strong> (top right) → Enter GitHub URL or upload
+              ZIP → Explore Architecture Graph, C4/UML Diagrams, 3E Inspector &amp; Change Impact.
+            </p>
+          </div>
+          <div className="space-y-2 rounded-lg border bg-card p-3">
+            <p className="flex items-center gap-1.5 font-semibold text-foreground">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
+                2
+              </span>
+              Class Coursework &amp; Assignments
+            </p>
+            <p className="leading-6 text-muted-foreground">
+              Open <strong>My Workspaces</strong> in sidebar → Select your class → Open{" "}
+              <strong>Assignments &amp; Submit</strong> → Create coursework project and submit your
+              model.
+            </p>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 function Projects() {
   const projects = useApiQuery("projectOverviews", {});
   const selection = useSelection();
@@ -59,7 +124,13 @@ function Projects() {
   return (
     <div className="mx-auto w-full max-w-[1600px]">
       <PageContainer>
-        <SectionHeader title="Overview" actions={<CreateProjectAction />} />
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
+            <OverviewHelp />
+          </div>
+          <CreateProjectAction />
+        </div>
         <RequestState query={projects}>
           <div className="grid grid-cols-2 gap-3 [&>article>div]:text-xl sm:gap-4 sm:[&>article>div]:text-2xl xl:grid-cols-4">
             <SummaryCard label="Projects" value={projects.data?.length ?? 0} />
@@ -68,39 +139,6 @@ function Projects() {
             <SummaryCard label="Runtime capable" value={runtimeSummary(projects.data)} />
           </div>
 
-          <div className="mt-4 rounded-xl border bg-muted/20 p-4">
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Quick Start Guides
-            </h3>
-            <div className="grid gap-3 text-xs md:grid-cols-2">
-              <div className="space-y-1 rounded-lg border bg-card p-3">
-                <p className="flex items-center gap-1.5 font-semibold text-foreground">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
-                    1
-                  </span>
-                  Personal Architecture Exploration
-                </p>
-                <p className="text-muted-foreground">
-                  Click <strong>Import project source</strong> (top right) → Enter GitHub URL or
-                  upload ZIP → Explore Architecture Graph, C4/UML Diagrams, 3E Inspector &amp; Change
-                  Impact.
-                </p>
-              </div>
-              <div className="space-y-1 rounded-lg border bg-card p-3">
-                <p className="flex items-center gap-1.5 font-semibold text-foreground">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
-                    2
-                  </span>
-                  Class Coursework &amp; Assignments
-                </p>
-                <p className="text-muted-foreground">
-                  Open <strong>My Workspaces</strong> in sidebar → Select your class → Open{" "}
-                  <strong>Assignments &amp; Submit</strong> → Create coursework project and submit
-                  your model.
-                </p>
-              </div>
-            </div>
-          </div>
           <div className="mt-6 min-w-0 space-y-5">
             <section className="min-w-0">
               <DetailPanel title="Recent projects">
