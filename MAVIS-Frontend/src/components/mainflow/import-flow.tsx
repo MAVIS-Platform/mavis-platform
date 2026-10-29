@@ -16,12 +16,14 @@ export function ImportFlow({
   projectId = "",
   onComplete,
   onBusyChange,
+  onCancel,
   tourStep = null,
   onTourStepChange,
 }: {
   projectId?: string;
   onComplete?: (result: ImportResult) => void;
   onBusyChange?: (busy: boolean) => void;
+  onCancel?: () => void;
   tourStep?: number | null;
   onTourStepChange?: (step: number | null) => void;
 } = {}) {
@@ -436,6 +438,11 @@ export function ImportFlow({
                   : "Import & analyze"}
           </Button>
         </GuidedTarget>
+        {onCancel && (
+          <Button type="button" variant="outline" disabled={busy} onClick={onCancel}>
+            {t("Cancel", "Hủy")}
+          </Button>
+        )}
         {busy && (
           <p role="status" className="text-xs text-muted-foreground">
             Keep this dialog open until the import finishes.

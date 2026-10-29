@@ -175,6 +175,11 @@ function ProjectImportDialog({
               if (step === 0) setOpen(false);
               onTourStepChange?.(step);
             }}
+            onCancel={() => {
+              if (busy) return;
+              onTourStepChange?.(null);
+              setOpen(false);
+            }}
             onBusyChange={setBusy}
             onComplete={(result) => {
               setBusy(false);
