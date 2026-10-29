@@ -12,7 +12,7 @@ Confirmed data is an assertion made by the reviewer, not proof that source or ru
 
 ## Automatic suggestions in this implementation
 
-- Saved STATIC_CODE evidence containing literal hasRole, hasAnyRole, @RolesAllowed or @Secured access rules can suggest a security principal. Comments and dynamic role expressions are excluded. Human identity and business role remain unverified.
+- Saved STATIC_CODE evidence containing literal hasRole, hasAnyRole, @RolesAllowed or @Secured access rules can suggest a security principal. Comments, quoted examples and dynamic role expressions are excluded. Human identity and business role remain unverified.
 - Extracted EXTERNAL_SYSTEM dependencies can be proposed for boundary review. Unresolved targets are withheld from the main context until confirmed. Their source topology cannot be silently rewritten by editing a proposal.
 - No business actors are generated from controller/entity names, runtime logs or a generic User placeholder.
 - AI cannot rewrite the System Context description, actors or interaction labels in the exported diagram. Existing Container/Component enrichment remains independent.
@@ -39,6 +39,6 @@ Generated XML labels provisional nodes as `SECURITY_PRINCIPAL`, uses dashed node
 
 The read-only endpoint avoids the previous heavy SUGGEST revision-generation path for source discovery. The mutation response timeout is aligned with full model loading; an ambiguous save timeout instructs users to reload the latest revision instead of assuming the write failed. Source discovery errors are displayed as unavailable, never as a verified zero-actor result.
 
-Local verification: 26 backend tests across ContextReviewServiceTest and ModelVersionServiceImplTest; 291 frontend regressions; production build; browser fixture exercises automatic discovery, evidence display, no automatic model writes, error handling and retry. Local draw.io was unavailable, so generated XML checks are not a claim of visual verification inside the real editor. CI integration results are recorded on the pull request.
+Local verification: 27 backend tests across ContextReviewServiceTest and ModelVersionServiceImplTest; 291 frontend regressions; production build; browser fixture exercises automatic discovery, evidence display, no automatic model writes, error handling and retry. Local draw.io was unavailable, so generated XML checks are not a claim of visual verification inside the real editor. CI integration results are recorded on the pull request.
 
 PR-Agent provider logs identified the retired model explicitly. The workflow uses gemini/gemini-3.8-flash with gemini/gemini-3.6-flash fallback; provider success is verified on CI rather than inferred from configuration.
