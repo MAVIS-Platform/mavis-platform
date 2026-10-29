@@ -136,17 +136,17 @@ function ServiceCodeSubtree({
               </div>
 
               <div className="grid gap-1 text-[11px] text-muted-foreground">
-                <div className="flex items-center gap-1.5">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                   <Box className="size-3 shrink-0 text-foreground/70" />
                   <span>Class / Component in {serviceName}:</span>
-                  <strong className="font-mono text-foreground">
+                  <strong className="max-w-full break-words font-mono text-foreground">
                     {item.componentName}
                   </strong>
                 </div>
-                <div className="flex items-center gap-1.5 break-all">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5 break-all">
                   <FileCode className="size-3 shrink-0 text-foreground/70" />
                   <span>File &amp; Line:</span>
-                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
+                  <code className="max-w-full whitespace-normal break-all rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">
                     {item.file}
                     {item.line ? ` : line ${item.line}` : ""}
                   </code>
@@ -194,13 +194,13 @@ function PeerPairAccordionItem({
       open={defaultOpen}
       className="group rounded-xl border border-border bg-card transition-colors open:bg-card"
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3.5 py-3 select-none hover:bg-muted/40 rounded-xl">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
+      <summary className="flex min-w-0 cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-3.5 py-3 select-none hover:bg-muted/40 rounded-xl">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
           <span className="inline-block text-xs text-muted-foreground transition-transform group-open:rotate-90">
             ▶
           </span>
           {/* CHỦ THỂ A LUÔN ĐỨNG TRƯỚC Ở BÊN TRÁI */}
-          <span className="rounded-md border border-primary/15 bg-primary/5 px-2 py-0.5 font-mono text-xs font-medium text-foreground">
+          <span className="max-w-full shrink-0 break-words rounded-md border border-primary/15 bg-primary/5 px-2 py-0.5 font-mono text-xs font-medium text-foreground">
             {group.subjectName}
           </span>
           <span
@@ -210,12 +210,12 @@ function PeerPairAccordionItem({
             <ArrowLeftRight className="size-4 mx-0.5" />
           </span>
           {/* ĐỐI TÁC B, C ĐỨNG SAU Ở BÊN PHẢI */}
-          <span className="rounded-md border border-border bg-muted/40 px-2 py-0.5 font-mono text-xs font-medium text-foreground">
+          <span className="max-w-full shrink-0 break-words rounded-md border border-border bg-muted/40 px-2 py-0.5 font-mono text-xs font-medium text-foreground">
             {group.peerName}
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
           {group.protocols.slice(0, 3).map((proto) => (
             <Badge key={proto} variant="outline" className="font-mono text-[10px]">
               {proto}

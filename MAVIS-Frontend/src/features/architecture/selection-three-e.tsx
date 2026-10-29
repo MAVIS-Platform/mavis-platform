@@ -349,26 +349,26 @@ export function SelectionThreeE({
         <div className="shrink-0 border-b bg-muted/20 px-4 py-2">
           <TabsList
             aria-label="3E sections"
-            className="grid h-11 w-full grid-cols-3 rounded-xl bg-muted/70"
+            className="grid h-auto min-h-11 w-full grid-cols-3 items-stretch rounded-xl bg-muted/70"
           >
-            <TabsTrigger value="explain" className="gap-1.5 rounded-lg px-2">
-              <BookOpen className="hidden h-4 w-4 sm:block" aria-hidden="true" />
-              Explain
+            <TabsTrigger value="explain" className="min-w-0 gap-1.5 whitespace-normal rounded-lg px-2 py-2 text-xs leading-4">
+              <BookOpen className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
+              <span className="min-w-0">Explain</span>
             </TabsTrigger>
-            <TabsTrigger value="evidence" className="gap-1.5 rounded-lg px-2">
-              <FileCode2 className="hidden h-4 w-4 sm:block" aria-hidden="true" />
-              Evidence
-              <span className="rounded bg-background/80 px-1.5 text-[11px]">
+            <TabsTrigger value="evidence" className="min-w-0 gap-1.5 whitespace-normal rounded-lg px-2 py-2 text-xs leading-4">
+              <FileCode2 className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
+              <span className="min-w-0">Evidence</span>
+              <span className="shrink-0 rounded bg-background/80 px-1.5 text-[11px]">
                 {concreteEvidences.length}
               </span>
             </TabsTrigger>
-            <TabsTrigger value="evaluate" className="gap-1.5 rounded-lg px-2">
-              <ShieldCheck className="hidden h-4 w-4 sm:block" aria-hidden="true" />
-              Evaluate
+            <TabsTrigger value="evaluate" className="min-w-0 gap-1.5 whitespace-normal rounded-lg px-2 py-2 text-xs leading-4">
+              <ShieldCheck className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
+              <span className="min-w-0">Evaluate</span>
             </TabsTrigger>
           </TabsList>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 text-sm leading-6 [scrollbar-gutter:stable]">
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 py-5 text-sm leading-6 [scrollbar-gutter:stable]">
           <TabsContent value="explain" className="m-0 space-y-5">
             <section data-ai-three-e-simplified aria-label="Explanation" className="space-y-3">
               <div className="flex items-center justify-between gap-3">
@@ -392,11 +392,11 @@ export function SelectionThreeE({
               </p>
               <Button
                 variant="outline"
-                className="w-full justify-between rounded-lg text-sm"
+                className="h-auto min-h-10 w-full justify-between whitespace-normal rounded-lg text-left text-sm"
                 onClick={() => setActiveTab("evidence")}
               >
-                <span>Inspect source evidence</span>
-                <span aria-hidden="true">→</span>
+                <span className="min-w-0">Inspect source evidence</span>
+                <span className="shrink-0" aria-hidden="true">→</span>
               </Button>
             </section>
 
