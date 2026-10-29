@@ -23,17 +23,29 @@ import {createRoot} from 'react-dom/client';
 import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
 import {ApiContext} from '@/providers/app-context';
 import {SelectionThreeE} from '@/features/architecture/selection-three-e';
+import {InspectorSidebar} from '@/features/architecture/inspector-sidebar';
+import {LocaleProvider} from '@/lib/i18n/locale-context';
 const scenario=new URLSearchParams(location.search).get('scenario');
 const source=(id,role,location,snippet)=>({id,origin:'persisted',kind:'source',sourceType:'STATIC_CODE',communicationRole:role,location,snippet,complete:true});
 const proofs=[source('contract','CLIENT_CONTRACT','order-service/src/main/java/shop/order/CatalogFeignClient.java:14','@PostMapping("/api/catalog/inventory/deduct")\\nDeductResult deductInventory(DeductRequest request);'),source('call','CALL_SITE','order-service/src/main/java/shop/order/OrderService.java:42','catalog.deductInventory(request);'),source('server','SERVER_ENDPOINT','catalog-service/src/main/java/shop/catalog/InventoryController.java:23','@PostMapping("/api/catalog/inventory/deduct")\\npublic DeductResult deductInventory(DeductRequest request) { return inventory.deduct(request); }')];
 const missing=scenario==='missing';
 const relationship={id:'http',from:'order',to:'catalog',protocol:'SERVICE_HTTP_CALL',originLayer:'STATIC',resolutionStatus:'RESOLVED',evidenceCount:missing?0:3,uncertain:false,evidence:missing?[]:proofs,properties:missing?{}:{clientFramework:'OPENFEIGN',sourceService:'order-service',targetService:'catalog-service',clientInterface:'shop.order.CatalogFeignClient',clientMethod:'deductInventory',httpMethod:'POST',httpPath:'/api/catalog/inventory/deduct',callSiteCount:1,serverMatch:'MATCHED_METHOD_PATH',targetSelector:'SERVICE_NAME',invocationResolution:'TYPED_SOURCE_CALL'}};
 const model={id:'fixture-model',projectId:'fixture-project',snapshotId:'fixture-source',revision:3,label:'Local UI fixture',elements:[{id:'order',name:'order-service',elementType:'SERVICE_CONTAINER',evidence:[]},{id:'catalog',name:'catalog-service',elementType:'SERVICE_CONTAINER',evidence:[]}],edges:[relationship,{...relationship,id:'http2'}]};
+if(scenario==='diagram'){
+ model.elements[0].name='department-service';model.elements[1].name='employee-service';
+ model.elements.push({id:'repository',name:'DepartmentRepository',elementType:'COMPONENT',parentId:'order',evidence:[source('repo','CALL_SITE','department-service/src/main/java/demo/DepartmentRepository.java:13','department.setId(departments.size() + 1);')]});
+ model.edges.push({...relationship,id:'infra',protocol:'DECLARED_LINK',originLayer:'DEPLOYMENT',evidence:[]});
+}
 const aggregate={...relationship,id:'aggregate',underlyingEdgeIds:['http','http2'],evidenceCount:3};
 const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
 const adapter={mode:scenario==='error'?'backend':'mock',async execute(operation){if(operation==='relationshipEvidence'){window.evidenceAttempts=(window.evidenceAttempts||0)+1;throw Error('Synthetic evidence failure');}return [];}};
 window.fetch=async()=>new Response('{}',{status:200,headers:{'Content-Type':'application/json'}});
-function Fixture(){const[selected,setSelected]=useState(scenario==='group'?'aggregate':'http');const[drilled,setDrilled]=useState(null);return <QueryClientProvider client={client}><ApiContext.Provider value={adapter}><main className="p-5"><div className="mb-5 border-b pb-4 text-sm font-semibold text-primary">MAVIS <span className="ml-3 font-normal text-muted-foreground">Architecture workspace · Local synthetic fixture</span></div><div className="fixture-workspace"><section className="rounded-2xl border bg-card p-8"><h1 className="text-xl font-semibold">Architecture Graph Explorer</h1><p className="mt-2 text-sm text-muted-foreground">Select a relationship to trace its source evidence.</p><div className="mt-20 flex items-center justify-center gap-6 text-sm"><span className="rounded-xl border bg-primary/5 p-4">order-service</span><span className="text-primary">HTTP POST →</span><span className="rounded-xl border bg-primary/5 p-4">catalog-service</span></div></section>{selected?<SelectionThreeE key={selected+drilled} model={model} selectedId={selected} projectedEdge={scenario==='group'?aggregate:undefined} drilledSourceEdgeId={drilled} onDrilldown={setDrilled} onSelect={setSelected} onClose={()=>setSelected(null)}/>:<p role="status">Inspector closed</p>}</div></main></ApiContext.Provider></QueryClientProvider>};
+function Fixture(){
+ const[selected,setSelected]=useState(scenario==='diagram'?'repository':scenario==='group'?'aggregate':'http');
+ const[drilled,setDrilled]=useState(null);
+ const inspector=<SelectionThreeE key={selected+drilled} docked={scenario==='diagram'} model={model} selectedId={selected} projectedEdge={scenario==='group'?aggregate:undefined} drilledSourceEdgeId={drilled} onDrilldown={setDrilled} onSelect={setSelected} onClose={()=>setSelected(null)}/>;
+ return <LocaleProvider><QueryClientProvider client={client}><ApiContext.Provider value={adapter}><main className="p-5"><div className="mb-5 border-b pb-4 text-sm font-semibold text-primary">MAVIS <span className="ml-3 font-normal text-muted-foreground">Architecture workspace · Local synthetic fixture</span></div><div style={scenario==='diagram'?{height:760}:undefined} className={scenario==='diagram'?'relative flex min-w-0 gap-2':'fixture-workspace'}><section className="min-w-0 flex-1 rounded-2xl border bg-card p-8"><h1 className="text-xl font-semibold">{scenario==='diagram'?'Sequence diagram fixture':'Architecture Graph Explorer'}</h1><p className="mt-2 text-sm text-muted-foreground">Select a relationship to trace its source evidence.</p><div className="mt-20 flex items-center justify-center gap-6 text-sm"><span className="rounded-xl border bg-primary/5 p-4">department-service</span><span className="text-primary">HTTP POST →</span><span className="rounded-xl border bg-primary/5 p-4">employee-service</span></div></section>{selected?(scenario==='diagram'?<InspectorSidebar onClose={()=>setSelected(null)}>{inspector}</InspectorSidebar>:inspector):<p role="status">Inspector closed</p>}</div></main></ApiContext.Provider></QueryClientProvider></LocaleProvider>;
+};
 createRoot(document.getElementById('root')).render(<Fixture/>);
 `,
 );
@@ -114,6 +126,7 @@ async function main() {
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
+    if (!process.env.MAVIS_UI_DIAGRAM_ONLY) {
     await page.goto(base);
     await page.getByRole("heading", { name: "Understand this selection" }).waitFor();
     assert.equal(
@@ -186,9 +199,44 @@ async function main() {
     await page
       .getByText("Choose one member relationship", { exact: true })
       .waitFor({ state: "detached" });
+    }
+    await page.goto(base + '?scenario=diagram');
+    await page.getByRole('heading', {name:'DepartmentRepository',exact:true}).waitFor();
+    const dock=page.getByRole('region',{name:'Inspector sidebar'});
+    const separator=page.getByRole('separator',{name:'Resize inspector'});
+    await separator.waitFor();
+    const beforeResize=Number(await separator.getAttribute('aria-valuenow'));
+    await separator.focus();await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction(previous=>Number(document.querySelector('[aria-label="Resize inspector"]').getAttribute('aria-valuenow'))>previous,beforeResize);
+    await page.getByRole('button',{name:'Expand inspector',exact:true}).click();
+    await page.getByRole('button',{name:'Restore inspector size',exact:true}).waitFor();
+    await page.getByRole('button',{name:'Restore inspector size',exact:true}).click();
+    await page.evaluate(()=>localStorage.setItem('mavis.locale','vi'));await page.reload();
+    await page.getByRole('heading',{name:'DepartmentRepository',exact:true}).waitFor();
+    await page.getByRole('tab',{name:/Giải thích/}).waitFor();
+    await page.getByRole('separator',{name:'Resize inspector'}).focus();
+    for(let i=0;i<8;i++)await page.keyboard.press('ArrowRight');
+    const body=page.locator('[aria-label="3E details"] [scrollbar-gutter]');
+    for(const width of [1440,1024,390,320]){
+      await page.setViewportSize({width,height:960});
+      await page.screenshot({animations:'disabled',path:path.join(output,'diagram-3e-vi-'+width+'.png'),fullPage:true});
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Diagram viewport overflow at '+width);
+      const panelHeight=await page.locator('[aria-label="Inspector sidebar"]').evaluate(e=>e.getBoundingClientRect().height);
+      assert.ok(panelHeight<=960,'Diagram dock must keep scrolling inside the viewport');
+      const tabs=await page.getByRole('tab').evaluateAll(items=>items.map(e=>({left:e.getBoundingClientRect().left,right:e.getBoundingClientRect().right})));
+      assert.ok(tabs.every((tab,i)=>i===0||tab.left>=tabs[i-1].right-1),'Diagram tabs overlap at '+width);
+      const names=page.locator('[data-testid="communication-panel"] details summary span').filter({hasText:'department-service'});
+      if(await names.count()){
+        const size=await names.first().boundingBox();
+        assert.ok(size.width>=80 && size.height<60,'Service name squeezed into a vertical column at '+width);
+      }
+      assert.ok(await page.locator('[aria-label="3E details"]').evaluate(e=>e.scrollWidth<=e.clientWidth),'Diagram inspector horizontal overflow at '+width);
+    }
     assert.deepEqual(errors, []);
     console.log(
-      "PASS: actual 3E component — tabs, keyboard, copy, collapsed code, group drilldown, missing/error/retry, close, desktop/390/320 layout; synthetic API only.",
+      process.env.MAVIS_UI_DIAGRAM_ONLY
+        ? "PASS: diagram 3E dock resize/expand, Vietnamese tabs, peer names and no horizontal overflow at 1440/1024/390/320; synthetic API only."
+        : "PASS: full 3E browser suite plus diagram dock regression; synthetic API only.",
     );
   } finally {
     if (browser) await browser.close();
