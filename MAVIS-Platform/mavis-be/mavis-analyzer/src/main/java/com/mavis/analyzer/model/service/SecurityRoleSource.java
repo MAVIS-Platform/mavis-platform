@@ -8,7 +8,20 @@ final class SecurityRoleSource {
  static Set<String> roles(String code){
   var result=new LinkedHashSet<String>();
   if(!code.contains("@PreAuthorize")&&!code.contains(".hasRole")&&!code.contains(".hasAnyRole")&&!code.contains("@RolesAllowed")&&!code.contains("@Secured"))return result;
-  var rules=RULE.matcher(code);while(rules.find()){String args=rules.group(1);if(!LITERAL.matcher(args).replaceAll("").replaceAll("[\\s,{}]", "").isEmpty())continue;var literals=LITERAL.matcher(args);while(literals.find()&&result.size()<32)result.add(literals.group(1));}return result;
+  var rules=RULE.matcher(code);while(rules.find()){if(!accessRule(code,rules.start()))continue;String args=rules.group(1);if(!LITERAL.matcher(args).replaceAll("").replaceAll("[\\s,{}]", "").isEmpty())continue;var literals=LITERAL.matcher(args);while(literals.find()&&result.size()<32)result.add(literals.group(1));}return result;
+ }
+
+ static boolean inLiteral(String source,int end){
+  boolean string=false,character=false,escape=false;
+  for(int i=0;i<end;i++){char c=source.charAt(i);if(escape){escape=false;continue;}if((string||character)&&c=='\\'){escape=true;continue;}if(c=='"'&&!character)string=!string;if(c=='\''&&!string)character=!character;}return string||character;
+ }
+ static boolean accessRule(String source,int at){
+  if(!inLiteral(source,at))return source.charAt(at)=='@'||(at>0&&source.charAt(at-1)=='.');
+  int annotation=source.lastIndexOf("@PreAuthorize",at);if(annotation<0||inLiteral(source,annotation))return false;
+  int open=annotation+"@PreAuthorize".length();while(open<source.length()&&Character.isWhitespace(source.charAt(open)))open++;
+  if(open>=source.length()||source.charAt(open)!='(')return false;
+  int depth=0;boolean string=false,character=false,escape=false;
+  for(int i=open;i<source.length();i++){char c=source.charAt(i);if(escape){escape=false;continue;}if((string||character)&&c=='\\'){escape=true;continue;}if(c=='"'&&!character){string=!string;continue;}if(c=='\''&&!string){character=!character;continue;}if(!string&&!character){if(c=='(')depth++;if(c==')'&&--depth==0)return at>open&&at<i;}}return false;
  }
  static String withoutComments(String source){
   var out=new StringBuilder();boolean line=false,block=false,string=false,character=false,escape=false;

@@ -66,4 +66,6 @@ class ContextReviewServiceTest {
   assertThat((List<?>)service.candidates(model.getId()).get("entries")).isEmpty();
   ev.setExcerpt("@RolesAllowed(\"STAFF\")");assertThat((List<?>)service.candidates(model.getId()).get("entries")).hasSize(1);
  }
+
+ @Test void quotedExamplesAreNotAccessRules(){assertThat(SecurityRoleSource.roles("String example=\".hasRole('ADMIN')\";")).isEmpty();assertThat(SecurityRoleSource.roles("String example=\"@PreAuthorize(hasRole('ADMIN'))\";")).isEmpty();}
 }
