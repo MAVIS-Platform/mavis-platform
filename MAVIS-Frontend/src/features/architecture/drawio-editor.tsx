@@ -15,7 +15,7 @@ import {
 } from "./drawio-protocol";
 
 // Self-hosted only. Offline mode disables cloud storage; dark=0 prevents browser dark-mode color inversion so MAVIS themes render exact hex colors.
-const editorUrl = `${DRAWIO_URL}/?embed=1&proto=json&spin=1&ui=atlas&dark=0&libraries=1&noExitBtn=1&saveAndExit=0&plugins=0&offline=1`;
+const editorUrl = `${DRAWIO_URL}/?embed=1&configure=1&proto=json&spin=1&ui=atlas&dark=0&libraries=1&noExitBtn=1&saveAndExit=0&plugins=0&offline=1`;
 const VALID_THEMES = new Set<string>(DRAWIO_THEME_OPTIONS.map((t) => t.value));
 
 function validXml(xml: string) {
@@ -322,6 +322,16 @@ export function DrawioEditor({
     async function receive(message: MessageEvent) {
       const data = readDrawioEvent(message, frame.current?.contentWindow);
       if (!data) return;
+      if (data.event === "configure") {
+        const logoUrl = new URL("/mavis-logo.png", window.location.origin).href;
+        send({
+          action: "configure",
+          config: {
+            css: `.geSmallAppIcon { content: url(${JSON.stringify(logoUrl)}) !important; width: 24px !important; height: 24px !important; object-fit: contain; }`,
+          },
+        });
+        return;
+      }
       window.clearTimeout(timeout);
       if (data.error) {
         setError("Draw.io could not complete this operation.");
