@@ -1629,6 +1629,7 @@ export async function executeJava(
             ...(scope === "RELATIONSHIP" ? { relationshipId } : { elementId }),
             ...(userQuestion ? { userQuestion } : {}),
             forceRefresh: input["forceRefresh"] === true,
+            ...(typeof input["locale"] === "string" ? { locale: input["locale"] } : {}),
           }),
         );
       if (
