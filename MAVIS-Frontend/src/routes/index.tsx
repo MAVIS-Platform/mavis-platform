@@ -1,6 +1,6 @@
 "use client";
 import { Badge } from "@/components/ui/badge";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, CircleHelp, Network } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -53,10 +53,12 @@ function runtimeSummary(projects: Project[] | undefined): string | number {
   if (unchecked === projects.length) return "Not checked";
   return `${projects.filter((p) => p.runtimeSupported).length} of ${projects.length}`;
 }
-function OverviewHelp() {
+function OverviewHelp({ onStart }: { onStart: () => void }) {
   const { t } = useLocale();
+  const [open, setOpen] = useState(false);
+  const startingTour = useRef(false);
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button
           variant="ghost"
@@ -68,7 +70,16 @@ function OverviewHelp() {
           <CircleHelp className="size-5" aria-hidden="true" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent
+        className="sm:max-w-2xl"
+        onCloseAutoFocus={(event) => {
+          if (startingTour.current) {
+            event.preventDefault();
+            startingTour.current = false;
+            onStart();
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t("Quick Start Guides", "Hướng dẫn bắt đầu")}</DialogTitle>
           <DialogDescription>
@@ -90,6 +101,14 @@ function OverviewHelp() {
               Click <strong>Import project source</strong> (top right) → Enter GitHub URL or upload
               ZIP → Explore Architecture Graph, C4/UML Diagrams, 3E Inspector &amp; Change Impact.
             </p>
+            <Button
+              onClick={() => {
+                startingTour.current = true;
+                setOpen(false);
+              }}
+            >
+              {t("Start guided tour", "Bắt đầu hướng dẫn")}
+            </Button>
           </div>
           <div className="space-y-2 rounded-lg border bg-card p-3">
             <p className="flex items-center gap-1.5 font-semibold text-foreground">
@@ -115,6 +134,7 @@ function Projects() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
+  const [tourStep, setTourStep] = useState<number | null>(null);
   const filtered = (projects.data ?? []).filter(
     (p) =>
       p.name.toLowerCase().includes(search.toLowerCase()) &&
@@ -127,9 +147,9 @@ function Projects() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
-            <OverviewHelp />
+            <OverviewHelp onStart={() => setTourStep(0)} />
           </div>
-          <CreateProjectAction />
+          <CreateProjectAction tourStep={tourStep} onTourStepChange={setTourStep} />
         </div>
         <RequestState query={projects}>
           <div className="grid grid-cols-2 gap-3 [&>article>div]:text-xl sm:gap-4 sm:[&>article>div]:text-2xl xl:grid-cols-4">
