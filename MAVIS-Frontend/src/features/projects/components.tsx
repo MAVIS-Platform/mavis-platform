@@ -19,6 +19,8 @@ import { SelectField } from "@/components/shared/forms";
 import { RequestState } from "@/components/shared/request-state";
 import { StatusBadge } from "@/components/shared/data";
 import type { Project } from "@/types/domain";
+import { GuidedTarget } from "@/components/shared/guided-target";
+import { useLocale } from "@/lib/i18n/locale-context";
 export function ProjectStatusBadge({ status }: { status: Project["status"] }) {
   return (
     <StatusBadge
@@ -82,8 +84,12 @@ export function ProjectSelector({
   );
 }
 
-export function CreateProjectAction() {
-  return <ProjectImportDialog create projectId="" />;
+type ImportTourProps = {
+  tourStep?: number | null;
+  onTourStepChange?: (step: number | null) => void;
+};
+export function CreateProjectAction(props: ImportTourProps = {}) {
+  return <ProjectImportDialog create projectId="" {...props} />;
 }
 export function ImportSnapshotAction() {
   const { projectId } = useSelection();
@@ -92,10 +98,13 @@ export function ImportSnapshotAction() {
 function ProjectImportDialog({
   projectId,
   create = false,
+  tourStep = null,
+  onTourStepChange,
 }: {
   projectId: string;
   create?: boolean;
-}) {
+} & ImportTourProps) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false);
   const router = useRouter(),
@@ -113,14 +122,33 @@ function ProjectImportDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!busy) setOpen(next);
+        if (!busy) {
+          setOpen(next);
+          if (!next) onTourStepChange?.(null);
+          else if (tourStep === 0) onTourStepChange?.(1);
+        }
       }}
     >
-      <DialogTrigger asChild>
-        <Button size={create ? "default" : "sm"} disabled={!create && !projectId}>
-          {create ? "Import project source" : "Import new snapshot"}
-        </Button>
-      </DialogTrigger>
+      <GuidedTarget
+        active={tourStep === 0}
+        step={0}
+        title={t("Import your first project", "Nhập dự án đầu tiên")}
+        description={t(
+          "Click the highlighted button to import a public GitHub repository. We will guide you through each field.",
+          "Bấm nút được làm nổi bật để nhập repository GitHub công khai. Bạn sẽ được hướng dẫn từng ô thông tin.",
+        )}
+        onNext={() => {
+          setOpen(true);
+          onTourStepChange?.(1);
+        }}
+        onSkip={() => onTourStepChange?.(null)}
+      >
+        <DialogTrigger asChild>
+          <Button size={create ? "default" : "sm"} disabled={!create && !projectId}>
+            {create ? "Import project source" : "Import new snapshot"}
+          </Button>
+        </DialogTrigger>
+      </GuidedTarget>
       <DialogContent
         className={busy ? "max-w-2xl [&>button]:hidden" : "max-w-2xl"}
         onEscapeKeyDown={(e) => {
@@ -142,6 +170,11 @@ function ProjectImportDialog({
           <ImportFlow
             key={projectId || "new-project"}
             projectId={create ? "" : projectId}
+            tourStep={tourStep}
+            onTourStepChange={(step) => {
+              if (step === 0) setOpen(false);
+              onTourStepChange?.(step);
+            }}
             onBusyChange={setBusy}
             onComplete={(result) => {
               setBusy(false);
