@@ -1182,6 +1182,9 @@ export async function executeJava(
     case "createProject": {
       const workspaceId = input["workspaceId"] ? id(input, "workspaceId") : undefined;
       const assignmentId = input["assignmentId"] ? id(input, "assignmentId") : undefined;
+      const referenceSnapshotId = input["referenceSnapshotId"]
+        ? id(input, "referenceSnapshotId")
+        : undefined;
       if (assignmentId) {
         const current = assignment(await get(`assignments/${assignmentId}`));
         if (current.workspaceId !== workspaceId) throw new ApiError("not-found", 404);
@@ -1194,6 +1197,7 @@ export async function executeJava(
           projectType: workspaceId ? "STUDENT_WORKING" : "PERSONAL",
           workspaceId,
           assignmentId,
+          ...(referenceSnapshotId ? { referenceSnapshotId } : {}),
         }),
       );
     }

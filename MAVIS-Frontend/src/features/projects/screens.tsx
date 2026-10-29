@@ -41,6 +41,12 @@ export function ProjectOverview() {
   const query = useApiQuery("project", { projectId }, { enabled: Boolean(projectId) });
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: Boolean(projectId) });
   const jobs = useApiQuery("analysisJobs", { projectId }, { enabled: Boolean(projectId) });
+  const workspaces = useApiQuery(
+    "workspaces",
+    {},
+    { enabled: Boolean(query.data?.workspaceId) },
+  );
+  const currentWorkspace = workspaces.data?.find((w) => w.id === query.data?.workspaceId);
   const { models, model } = useModel();
 
   if (!projectId) return null;
@@ -59,6 +65,72 @@ export function ProjectOverview() {
     <RequestState query={query}>
       {query.data && (
         <div className="space-y-6">
+          {query.data.workspaceId && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-primary/5 p-4 shadow-sm">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">Coursework Project</Badge>
+                  <span className="text-sm font-semibold text-foreground">
+                    {currentWorkspace?.name || "Class Workspace"}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Assignment coursework project in this class workspace
+                </p>
+              </div>
+              <Button asChild size="sm">
+                <Link
+                  href={`/assignments?workspace=${encodeURIComponent(query.data.workspaceId)}${query.data.assignmentId ? `#assignment-${query.data.assignmentId}` : ""}`}
+                >
+                  Return to Assignment &amp; Submit Work →
+                </Link>
+              </Button>
+            </div>
+          )}
+
+          {/* 5-Step Architecture Workflow Bar */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <Link
+              href={`/snapshots?project=${projectId}`}
+              className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
+            >
+              <span className="text-xs font-semibold text-foreground">1. Source Snapshots</span>
+              <span className="mt-1 text-xs text-muted-foreground">
+                {snapshotList.length} imported →
+              </span>
+            </Link>
+            <Link
+              href={`/snapshots?project=${projectId}`}
+              className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
+            >
+              <span className="text-xs font-semibold text-foreground">2. Static Analysis</span>
+              <span className="mt-1 text-xs text-muted-foreground">
+                {models.length} revision(s) →
+              </span>
+            </Link>
+            <Link
+              href={`/architecture?project=${projectId}${model ? `&model=${model.id}` : ""}`}
+              className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
+            >
+              <span className="text-xs font-semibold text-foreground">3. Graph &amp; 3E</span>
+              <span className="mt-1 text-xs text-muted-foreground">Explore network →</span>
+            </Link>
+            <Link
+              href={`/diagrams?project=${projectId}${model ? `&model=${model.id}` : ""}`}
+              className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
+            >
+              <span className="text-xs font-semibold text-foreground">4. C4 &amp; UML Diagrams</span>
+              <span className="mt-1 text-xs text-muted-foreground">Save views →</span>
+            </Link>
+            <Link
+              href={`/impact?project=${projectId}${model ? `&model=${model.id}` : ""}`}
+              className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
+            >
+              <span className="text-xs font-semibold text-foreground">5. Impact &amp; Runtime</span>
+              <span className="mt-1 text-xs text-muted-foreground">Verify changes →</span>
+            </Link>
+          </div>
+
           <DetailPanel
             title={query.data.name}
             actions={

@@ -1,4 +1,5 @@
 "use client";
+import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Network } from "lucide-react";
@@ -66,6 +67,40 @@ function Projects() {
             <SummaryCard label="Ready projects" value={readySummary(projects.data)} />
             <SummaryCard label="Runtime capable" value={runtimeSummary(projects.data)} />
           </div>
+
+          <div className="mt-4 rounded-xl border bg-muted/20 p-4">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Quick Start Guides
+            </h3>
+            <div className="grid gap-3 text-xs md:grid-cols-2">
+              <div className="space-y-1 rounded-lg border bg-card p-3">
+                <p className="flex items-center gap-1.5 font-semibold text-foreground">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
+                    1
+                  </span>
+                  Personal Architecture Exploration
+                </p>
+                <p className="text-muted-foreground">
+                  Click <strong>Import project source</strong> (top right) → Enter GitHub URL or
+                  upload ZIP → Explore Architecture Graph, C4/UML Diagrams, 3E Inspector &amp; Change
+                  Impact.
+                </p>
+              </div>
+              <div className="space-y-1 rounded-lg border bg-card p-3">
+                <p className="flex items-center gap-1.5 font-semibold text-foreground">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
+                    2
+                  </span>
+                  Class Coursework &amp; Assignments
+                </p>
+                <p className="text-muted-foreground">
+                  Open <strong>My Workspaces</strong> in sidebar → Select your class → Open{" "}
+                  <strong>Assignments &amp; Submit</strong> → Create coursework project and submit
+                  your model.
+                </p>
+              </div>
+            </div>
+          </div>
           <div className="mt-6 min-w-0 space-y-5">
             <section className="min-w-0">
               <DetailPanel title="Recent projects">
@@ -107,18 +142,23 @@ function Projects() {
                         label: "Project",
                         render: (p) => (
                           <div className="min-w-40 max-w-72 space-y-2">
-                            <Link
-                              href={`/project-overview?project=${encodeURIComponent(p.id)}`}
-                              onClick={() => selection.setProjectId(p.id)}
-                              className="group inline-flex max-w-full items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 font-semibold text-primary shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                              title="Open project overview"
-                            >
-                              <span className="min-w-0 break-words">{p.name}</span>
-                              <ArrowUpRight
-                                className="size-4 shrink-0 opacity-60 transition-opacity group-hover:opacity-100"
-                                aria-hidden="true"
-                              />
-                            </Link>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Link
+                                href={`/project-overview?project=${encodeURIComponent(p.id)}`}
+                                onClick={() => selection.setProjectId(p.id)}
+                                className="group inline-flex max-w-full items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 font-semibold text-primary shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                title="Open project overview"
+                              >
+                                <span className="min-w-0 break-words">{p.name}</span>
+                                <ArrowUpRight
+                                  className="size-4 shrink-0 opacity-60 transition-opacity group-hover:opacity-100"
+                                  aria-hidden="true"
+                                />
+                              </Link>
+                              {(p.workspaceId || p.projectType === "STUDENT_WORKING") && (
+                                <Badge variant="secondary">Coursework</Badge>
+                              )}
+                            </div>
                             {p.repository && (
                               <p
                                 className="truncate font-mono text-xs text-muted-foreground"

@@ -120,6 +120,27 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.error(ErrorCode.BAD_REQUEST, "Archive exceeds the 100 MB upload limit"));
     }
 
+    @ExceptionHandler({
+            org.springframework.dao.DataIntegrityViolationException.class,
+            org.springframework.dao.OptimisticLockingFailureException.class,
+            jakarta.persistence.OptimisticLockException.class
+    })
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiResponse<Void> handleDataConflictException(Exception ex) {
+        log.warn("Data Conflict / Optimistic Lock Exception: {}", ex.getMessage());
+        return ApiResponse.error(ErrorCode.CONFLICT, "Dữ liệu đang được cập nhật hoặc có ràng buộc liên quan. Vui lòng tải lại và thử lại.");
+    }
+
+    @ExceptionHandler({
+            IllegalArgumentException.class,
+            jakarta.validation.ConstraintViolationException.class
+    })
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ApiResponse<Void> handleBadArgumentException(Exception ex) {
+        log.warn("Bad Argument / Constraint Violation: {}", ex.getMessage());
+        return ApiResponse.error(ErrorCode.BAD_REQUEST, ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleGlobalException(Exception ex) {

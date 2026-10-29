@@ -9,6 +9,13 @@ export const publicErrors = {
   SUBMISSION_SCOPE: "Use a project created for this assignment's workspace.",
   SUBMISSION_OWNER: "Only the project owner can submit this work.",
   SUBMISSION_PARTIAL: "Complete or confirm this partial analysis before submitting.",
+  SUBMISSION_MODEL_MISMATCH: "The selected model version does not belong to this project.",
+  SUBMISSION_SNAPSHOT_MISSING: "The selected model version is missing an immutable source snapshot.",
+  SUBMISSION_DIAGRAM_MISMATCH: "The selected diagram bundle does not belong to this model version.",
+  SUBMISSION_REQUIRED_DIAGRAM: "One or more required diagram types are missing from your selection. Save or select the required diagrams first.",
+  SUBMISSION_EVALUATION_MISMATCH: "The selected evaluation run does not belong to this model version.",
+  SUBMISSION_RUNTIME_MISMATCH: "The selected runtime session does not match this project and source snapshot.",
+  SUBMISSION_RUNTIME_REQUIRED: "This assignment requires a completed (PASSED) Runtime Trace session on the same source snapshot.",
   PROFILE_CURRENT_PASSWORD: "Current password is incorrect. Please try again.",
   SUBMISSION_DIAGRAM: "Save a diagram for this exact model version before submitting.",
   REFERENCE_MODEL:
@@ -60,6 +67,33 @@ export function backendErrorCode(
         "Không thể nộp phiên bản mô hình chưa hoàn thiện (PARTIAL) trừ khi đã được xác nhận"
     )
       return "SUBMISSION_PARTIAL";
+    if (status === 400 && message === "Phiên bản mô hình không thuộc về dự án đã chọn")
+      return "SUBMISSION_MODEL_MISMATCH";
+    if (status === 400 && message === "ModelVersion không gắn với SourceSnapshot bất biến hợp lệ")
+      return "SUBMISSION_SNAPSHOT_MISSING";
+    if (status === 400 && message === "Bản vẽ sơ đồ không thuộc về phiên bản mô hình đã chọn")
+      return "SUBMISSION_DIAGRAM_MISMATCH";
+    if (status === 400 && message.startsWith("Missing required diagram type:"))
+      return "SUBMISSION_REQUIRED_DIAGRAM";
+    if (
+      status === 400 &&
+      message === "Kết quả chấm quy tắc kiến trúc không thuộc về phiên bản mô hình đã chọn"
+    )
+      return "SUBMISSION_EVALUATION_MISMATCH";
+    if (
+      status === 400 &&
+      (message === "Phiên thực nghiệm không thuộc về dự án đã chọn" ||
+        message === "Phiên thực nghiệm không chạy trên cùng SourceSnapshot với ModelVersion" ||
+        message === "Phiên thực nghiệm không khớp với phiên thực nghiệm gắn trên ModelVersion")
+    )
+      return "SUBMISSION_RUNTIME_MISMATCH";
+    if (
+      status === 400 &&
+      (message === "Đề bài này bắt buộc đính kèm phiên chạy thực nghiệm Runtime Trace" ||
+        message ===
+          "Đề bài yêu cầu Runtime Trace hợp lệ đã hoàn tất (PASSED) trên đúng SourceSnapshot của mô hình")
+    )
+      return "SUBMISSION_RUNTIME_REQUIRED";
   }
   return undefined;
 }
