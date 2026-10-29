@@ -55,11 +55,13 @@ class ResourceDeletionPostgresTest {
     assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->tx.executeWithoutResult(status->service.deleteSnapshot(pid,s1)));
     assertEquals(1,sql.queryForObject("SELECT count(*) FROM source_snapshots WHERE id=?",Integer.class,s1));assertEquals(1,sql.queryForObject("SELECT count(*) FROM audit_logs",Integer.class));
     sql.execute("DROP TRIGGER reject_audit ON audit_logs");
+    sql.update("INSERT INTO jobs(project_id,source_snapshot_id,job_type,status) VALUES (?,?,'STATIC_ANALYSIS','COMPLETED')",pid,s2);
+    sql.update("INSERT INTO jobs(project_id,source_snapshot_id,job_type,status) VALUES (?,?,'EVALUATION','COMPLETED')",pid,s2);
     tx.executeWithoutResult(status->service.deleteProject(pid));
     assertEquals(2,sql.queryForObject("SELECT count(*) FROM audit_logs",Integer.class));
     var policy=mock(AccessPolicyService.class);when(policy.requireCurrentActiveUser()).thenReturn(User.builder().id(uid).build());
     var activity=new com.mavis.bootstrap.activity.ResourceActivityController(policy,sql,new com.fasterxml.jackson.databind.ObjectMapper());
-    var dataPage=(Map<?,?>)activity.feed(0,10).getData();assertEquals(2L,dataPage.get("total"));
+    var dataPage=(Map<?,?>)activity.feed(0,10).getData();assertEquals(3L,dataPage.get("total"));
     var feed=(List<com.mavis.bootstrap.activity.ResourceActivityController.Item>)dataPage.get("items");assertTrue(feed.stream().allMatch(row->row.projectDeleted()));assertTrue(feed.stream().anyMatch(row->row.kind().equals("PROJECT_DELETED")&&row.projectName().equals("Deletion fixture")));assertTrue(feed.stream().anyMatch(row->row.kind().equals("SNAPSHOT_DELETED")));
     when(policy.requireCurrentActiveUser()).thenReturn(User.builder().id(UUID.randomUUID()).build());
     assertEquals(0L,((Map<?,?>)activity.feed(0,10).getData()).get("total"));

@@ -19,7 +19,7 @@ public class ResourceActivityController {
  COALESCE(j.completed_at,j.started_at) AS occurred_at,COALESCE(p.status='DELETED',false) AS project_deleted,
  j.source_snapshot_id::text AS target_id,NULL::text AS target_name,NULL::text AS actor_id,NULL::text AS actor_name,
  jsonb_build_object('jobId',j.id,'projectId',j.project_id,'sourceSnapshotId',j.source_snapshot_id,'status',j.status,'modelVersionId',j.result_manifest->>'modelVersionId','errorDiagnostics',j.error_diagnostics,'analysisState',j.result_manifest->>'analysisState','dotnetStatus',j.result_manifest#>>'{dotnetAdapter,status}') AS job
- FROM jobs j JOIN projects p ON p.id=j.project_id WHERE p.owner_id=?
+ FROM jobs j JOIN projects p ON p.id=j.project_id WHERE p.owner_id=? AND j.job_type='STATIC_ANALYSIS'
  UNION ALL
  SELECT a.id::text,a.action,a.details->>'projectId',a.details->>'projectName',a.created_at,
  COALESCE(p.status='DELETED',true),a.target_id::text,a.details->>'targetName',a.details->>'actorId',u.full_name,NULL::jsonb
