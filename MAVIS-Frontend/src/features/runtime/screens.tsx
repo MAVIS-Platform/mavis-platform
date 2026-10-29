@@ -402,7 +402,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         projectId,
         snapshotId,
         modelId: modelId || undefined,
-        scenarioId: "scen-" + Math.random().toString(16).slice(2, 8),
+        scenarioId: crypto.randomUUID(),
         scenarioName: scenarioName?.trim() || "Scenario " + new Date().toLocaleTimeString(),
         steps: steps.map((st, i) => ({
           id: `step-${i + 1}`,

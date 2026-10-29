@@ -128,7 +128,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         projectId,
         snapshotId: latestSnapshot.id,
         modelId: latestModel?.id,
-        scenarioId: "auto-" + Math.random().toString(16).slice(2, 8),
+        scenarioId: crypto.randomUUID(),
         scenarioName: "1-Click Auto Verify · " + new Date().toLocaleTimeString(),
         steps,
         configurationRevision: 1,
