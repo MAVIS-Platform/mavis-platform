@@ -44,6 +44,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class AiExplanationServiceImpl implements AiExplanationService {
+    private boolean isVietnamese(AiExplainRequestDTO request) {
+        return request != null && "vi".equalsIgnoreCase(request.getLocale());
+    }
 
     private final AiExplanationRepository aiExplanationRepository;
     private final ModelVersionRepository modelVersionRepository;
@@ -136,7 +139,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
                     .anyMatch(e -> com.mavis.analyzer.diagram.service.ElementEvidenceScope.includes(e, cachedTargetElement));
             if (cached.isPresent() && !missingNewContext) {
                 log.info("Trả về kết quả giải thích AI từ cache cho modelVersionId={}, scope={}", modelVersion.getId(), scope);
-                return mapToResponseDTO(cached.get(), true, "CACHE");
+                return mapToResponseDTO(cached.get(), true, "CACHE", isVietnamese(request));
             }
         }
 
@@ -174,7 +177,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         if (maybeApiKey.isPresent()) {
             try {
                 genResult = callLiveLlm(maybeApiKey.get(), scope, targetElement, targetRelationship, targetSession,
-                        sanitizedEvidenceSummaries, sanitizedQuestion);
+                        sanitizedEvidenceSummaries, sanitizedQuestion, isVietnamese(request));
             } catch (Exception e) {
                 log.warn("Gọi LLM API thất bại (Lỗi: {}). Tự động kích hoạt Deterministic Grounded Synthesis.", e.getMessage());
             }
@@ -182,7 +185,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
 
         if (genResult == null) {
             genResult = synthesizeDeterministicExplanation(scope, targetElement, targetRelationship, targetSession,
-                    modelVersion, relevantEvidences, sanitizedQuestion);
+                    modelVersion, relevantEvidences, sanitizedQuestion, isVietnamese(request));
         }
 
         // 8. HẬU KIỂM CHỐNG ẢO GIÁC (Citation Allowlist Validation - D2)
@@ -222,7 +225,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         log.info("Lưu thành công lời giải thích AI ID: {}, providerMode: {}, trích dẫn: {} bằng chứng",
                 entity.getId(), genResult.providerMode, validatedCitedIds.size());
 
-        return mapToResponseDTO(entity, false, genResult.providerMode);
+        return mapToResponseDTO(entity, false, genResult.providerMode, isVietnamese(request));
     }
 
     @Override
@@ -290,11 +293,15 @@ public class AiExplanationServiceImpl implements AiExplanationService {
 
     private ExplanationGenerationResult callLiveLlm(String apiKey, String scope, ModelElement element,
                                                     ModelRelationship relationship, RuntimeSession session,
-                                                    List<EvidenceSummaryDTO> evidences, String userQuestion) throws Exception {
+                                                    List<EvidenceSummaryDTO> evidences, String userQuestion,
+                                                    boolean isVi) throws Exception {
 
         String systemPrompt = "You are the MAVIS AI Software Architecture Expert. "
                 + "Your responsibility is to explain software architecture structure, service responsibilities, dependency relationships, or runtime telemetry traces. "
                 + "CORE RULE: You MUST base all claims strictly on the provided evidence list. Relationship evidence establishes only the identified incoming/outgoing connection, not the element's internal behavior. Keep direct element facts separate from related relationship context. "
+                + (isVi
+                    ? "Write explanationText in natural, professional VIETNAMESE (Tiếng Việt) for Software Engineering students and lecturers. Keep technical identifiers, service names, class names, endpoints, and standard IT terms (Service, Component, Controller, Repository, Endpoint, HTTP, REST, Docker Compose, Database, Queue, Trace, Span) in English. Do NOT use any medical terminology. "
+                    : "")
                 + "Return ONLY a valid JSON object with two fields: "
                 + "{\"explanationText\": \"...detailed explanation in clear Software Engineering English...\", \"citedEvidenceIds\": [\"uuid-1\", \"uuid-2\"]}";
 
@@ -427,10 +434,80 @@ public class AiExplanationServiceImpl implements AiExplanationService {
                                                                           RuntimeSession session,
                                                                           ModelVersion modelVersion,
                                                                           List<Evidence> relevantEvidences,
-                                                                          String userQuestion) {
+                                                                          String userQuestion,
+                                                                          boolean isVi) {
 
         StringBuilder sb = new StringBuilder();
         List<UUID> citedIds = new ArrayList<>();
+
+        if (isVi) {
+            sb.append("### Giải thích Kiến trúc Dựa trên Bằng chứng (Grounded Synthesis)\n\n");
+
+            if ("ELEMENT".equals(scope) && element != null) {
+                sb.append("Phần tử **").append(element.getName()).append("** là một Component kiến trúc được phân loại là `")
+                        .append(element.getElementType()).append("`");
+                if (element.getLanguageStack() != null) {
+                    sb.append(" phát triển trên nền tảng `").append(element.getLanguageStack()).append("`");
+                }
+                sb.append(".\n\n");
+                sb.append("- **Trạng thái mô hình**: Đã lập chỉ mục với trạng thái xác minh `").append(element.getStatus()).append("`.\n");
+                sb.append(relevantEvidences.isEmpty()
+                    ? "- **Cơ sở đối chiếu**: Chưa có bằng chứng mã nguồn nào được lưu cho phần tử này hoặc các kết nối liên quan; nội dung sau đây chỉ dựa trên ngữ cảnh mô hình.\n"
+                    : "- **Cơ sở đối chiếu**: Các bằng chứng về phần tử và mối quan hệ liên quan được trích dẫn bên dưới. Bằng chứng mối quan hệ chỉ xác nhận kết nối, không chứng minh hành vi nội bộ chưa được quan sát.\n");
+            } else if ("RELATIONSHIP".equals(scope) && relationship != null) {
+                sb.append("Mối quan hệ phụ thuộc giữa **").append(relationship.getSourceElement().getName())
+                        .append("** và **").append(relationship.getTargetElement().getName())
+                        .append("** được phân loại là `").append(relationship.getRelationType()).append("`");
+                sb.append(" ghi nhận tại tầng `").append(relationship.getOriginLayer()).append("`.\n\n");
+                sb.append("- **Chiều tương tác**: ").append(relationship.getDirection() != null ? relationship.getDirection() : "DIRECTED").append(".\n");
+                sb.append("- **Ý nghĩa kiến trúc**: Component nguồn thiết lập phụ thuộc có hướng tới đích để thực hiện các tương tác luồng công việc phân tán.\n");
+            } else if ("RUNTIME_TRACE".equals(scope)) {
+                sb.append("Phiên kiểm thử Runtime động trong môi trường Docker Sandbox");
+                if (session != null) {
+                    sb.append(" (Kịch bản: `").append(session.getScenarioName() != null ? session.getScenarioName() : "Default").append("`)");
+                    sb.append(" ghi nhận trạng thái: **").append(session.getScenarioStatus() != null ? session.getScenarioStatus() : "COMPLETED").append("**.\n\n");
+                    sb.append("- **Trạng thái Trace**: `").append(session.getTraceStatus() != null ? session.getTraceStatus() : "AVAILABLE").append("`.\n");
+                    sb.append("- **Độ tin cậy quan sát**: Dữ liệu OpenTelemetry trace span chứng thực các lệnh gọi HTTP/gRPC lúc chạy giữa các Container đang hoạt động.\n");
+                } else {
+                    sb.append(" ghi nhận dữ liệu trace tương tác lúc chạy giữa các Microservice.\n\n");
+                }
+            } else if ("CHANGE_IMPACT".equals(scope) && element != null) {
+                sb.append("Phân tích tác động thay đổi đối với phần tử **").append(element.getName()).append("**:\n\n");
+                sb.append("- Việc sửa đổi giao diện hoặc hợp đồng (contract) của `").append(element.getName()).append("` sẽ lan truyền tác động tới các phần tử tầng trên (upstream) trực tiếp phụ thuộc vào nó.\n");
+                sb.append("- Cần thực hiện kiểm thử hồi quy trên các cạnh giao tiếp lân cận để ngăn ngừa việc phá vỡ hợp đồng kết nối.\n");
+            } else {
+                sb.append("Phiên bản mô hình kiến trúc (Bản sửa đổi ").append(modelVersion.getRevision()).append(") ");
+                sb.append("ánh xạ các phụ thuộc cấu trúc tĩnh và trace telemetry lúc chạy để đảm bảo khả năng truy xuất nguồn gốc của hệ thống.\n\n");
+            }
+
+            if (userQuestion != null && !userQuestion.isBlank()) {
+                sb.append("\n**Trả lời câu hỏi trọng tâm**: Đối với câu hỏi \"_").append(userQuestion).append("_\", ");
+                sb.append("phân tích được đối chiếu dựa trên các bằng chứng mã nguồn đã xác minh bên dưới.\n");
+            }
+
+            if (!relevantEvidences.isEmpty()) {
+                sb.append("\n**Bằng chứng kiến trúc được trích dẫn:**\n");
+                for (int i = 0; i < Math.min(relevantEvidences.size(), 5); i++) {
+                    Evidence ev = relevantEvidences.get(i);
+                    citedIds.add(ev.getId());
+                    sb.append("- [`").append(ev.getSourceType()).append("`]: ");
+                    if (ev.getLocator() != null && !ev.getLocator().isBlank()) {
+                        sb.append("Tại `").append(SecretRedactor.redactString(ev.getLocator())).append("`");
+                    }
+                    if (ev.getExcerpt() != null && !ev.getExcerpt().isBlank()) {
+                        sb.append(" — _\"").append(SecretRedactor.redactString(ev.getExcerpt())).append("\"_");
+                    }
+                    sb.append("\n");
+                }
+            }
+
+            return new ExplanationGenerationResult(
+                    sb.toString(),
+                    citedIds,
+                    "deterministic-evidence-grounded-synthesizer",
+                    "DETERMINISTIC_EVIDENCE_SYNTHESIS"
+            );
+        }
 
         sb.append("### Evidence-Grounded Architectural Explanation (Grounded Synthesis)\n\n");
 
@@ -501,6 +578,10 @@ public class AiExplanationServiceImpl implements AiExplanationService {
     }
 
     private AiExplanationResponseDTO mapToResponseDTO(AiExplanation entity, boolean cached, String providerMode) {
+        return mapToResponseDTO(entity, cached, providerMode, false);
+    }
+
+    private AiExplanationResponseDTO mapToResponseDTO(AiExplanation entity, boolean cached, String providerMode, boolean isVi) {
         List<UUID> citedIds = new ArrayList<>();
         if (entity.getCitedEvidenceIds() != null && entity.getCitedEvidenceIds().isArray()) {
             for (JsonNode n : entity.getCitedEvidenceIds()) {
@@ -539,7 +620,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
                 .aiModelName(entity.getAiModelName())
                 .cached(cached)
                 .providerMode(providerMode)
-                .epistemicBadge(citedIds.isEmpty() ? "AI-Assisted Interpretation (Model Context Only — No Saved Evidence Cited)" : "AI-Assisted Explanation (Grounded in Saved Model Evidence)")
+                .epistemicBadge(isVi ? (citedIds.isEmpty() ? "Tổng hợp từ Mô hình Kiến trúc (Chưa có Bằng chứng Trực tiếp)" : "Tổng hợp từ Bằng chứng Mã nguồn (Đã Xác minh)") : (citedIds.isEmpty() ? "AI-Assisted Interpretation (Model Context Only — No Saved Evidence Cited)" : "AI-Assisted Explanation (Grounded in Saved Model Evidence)"))
                 .createdAt(entity.getCreatedAt())
                 .build();
     }

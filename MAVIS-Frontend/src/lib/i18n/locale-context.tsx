@@ -9,11 +9,134 @@ interface LocaleContextValue {
   setLocale: (next: Locale) => void;
   toggleLocale: () => void;
   t: (enText: string, viText?: string) => string;
+  tr: (text: string) => string;
 }
 
 const STORAGE_KEY = "mavis.locale";
 
 export const EXACT_VI_DICTIONARY: Record<string, string> = {
+  ").": ").",
+  ". New revisions must branch from the latest revision (": ". Các bản sửa đổi mới phải được tạo từ bản mới nhất (",
+  "Displayed in view:": "Đang hiển thị trong góc nhìn:",
+  "Filtered by origin:": "Lọc theo nguồn gốc:",
+  "Internal:": "Nội bộ:",
+  "Switch to Revision": "Chuyển sang Bản sửa đổi",
+  "You are inspecting historical": "Bạn đang xem Bản sửa đổi lịch sử",
+  "hidden within collapsed containers": "ẩn bên trong container thu gọn",
+  "1 Hop": "1 Hop",
+  "2+ Hops": "2+ Hops",
+  "503 / Conn Refused": "503 / Từ chối kết nối",
+  "Account access": "Truy cập tài khoản",
+  "Add Connection": "Thêm kết nối",
+  "Add Element": "Thêm phần tử",
+  "Add Step": "Thêm bước",
+  "All activity": "Tất cả hoạt động",
+  "All layers": "Tất cả các tầng",
+  "All packages": "Tất cả Package",
+  "All roles": "Tất cả vai trò",
+  "All services": "Tất cả Service",
+  "All types": "Tất cả các loại",
+  "Analysis & models": "Phân tích & mô hình",
+  "Assignment to review": "Bài tập cần chấm",
+  "Attached": "Đã đính kèm",
+  "Class / Interface": "Class / Interface",
+  "Classifier to explore": "Lớp / Định danh (Classifier) cần khám phá",
+  "Clear filters": "Xóa bộ lọc",
+  "Code": "Mã nguồn",
+  "Code Dependency": "Phụ thuộc mã nguồn (Code Dependency)",
+  "Connection evidence for": "Bằng chứng kết nối của",
+  "DB / Queues": "DB / Hàng đợi (Queues)",
+  "Data Persistence": "Tầng lưu trữ dữ liệu (Data Persistence)",
+  "Database / Data Store": "Database / Kho dữ liệu",
+  "Database Access (Read / Write)": "Truy cập Database (Đọc / Ghi)",
+  "Delete Step": "Xóa bước",
+  "Discard Changes": "Hủy các thay đổi",
+  "Displayed:": "Đang hiển thị:",
+  "Docker & Configuration Evidence": "Bằng chứng Docker & Cấu hình",
+  "Docker/Config": "Docker/Cấu hình",
+  "Domain Service": "Tầng nghiệp vụ (Domain Service)",
+  "Edge / Gateway": "Tầng biên / API Gateway",
+  "Edit Element": "Sửa phần tử",
+  "Edit Step": "Sửa bước",
+  "Element to explore": "Phần tử cần khám phá",
+  "Environment": "Môi trường",
+  "Flagged uncertain — verify the evidence.": "Được đánh dấu chưa chắc chắn — cần kiểm tra lại bằng chứng.",
+  "Frozen model": "Mô hình đã chốt",
+  "Historical Revision": "Bản sửa đổi lịch sử",
+  "Inbox unavailable": "Hộp thư tạm thời không khả dụng",
+  "Inspect 3E": "Xem 3E",
+  "Internal Component": "Component nội bộ",
+  "Just now": "Vừa xong",
+  "Latest Revision": "Bản sửa đổi mới nhất",
+  "Loading notifications…": "Đang tải thông báo…",
+  "New elements and connections can only be added to the latest revision.": "Phần tử và kết nối mới chỉ có thể được thêm vào bản sửa đổi mới nhất.",
+  "No assignments in this workspace. Create an assignment before reviewing submissions.": "Chưa có bài tập nào trong lớp học này. Hãy tạo bài tập trước khi chấm bài nộp.",
+  "No class description added yet.": "Chưa có mô tả cho lớp học này.",
+  "No confirmed actor interaction is recorded in this revision. HTTP endpoints identify interfaces, not human roles. Runtime traces can support service interactions but do not establish business actors or system ownership. Review and document the system boundary and confirmed actors before treating this as a complete context diagram.": "Chưa ghi nhận tương tác từ tác nhân (Actor) xác thực trong bản sửa đổi này. Các HTTP Endpoint chỉ xác định giao diện kết nối chứ không xác định vai trò người dùng. Dữ liệu Runtime Trace hỗ trợ xác minh giao tiếp giữa các Service nhưng không xác lập tác nhân nghiệp vụ. Hãy rà soát ranh giới hệ thống trước khi xem đây là sơ đồ Context hoàn chỉnh.",
+  "No direct AST code line recorded in this service (inferred from peer or configuration).": "Chưa ghi nhận dòng mã AST trực tiếp tại Service này (được suy ra từ Service đối tác hoặc tệp cấu hình).",
+  "No editable elements": "Không có phần tử nào có thể chỉnh sửa",
+  "No matching connections.": "Không có kết nối nào khớp bộ lọc.",
+  "No notifications yet": "Chưa có thông báo nào",
+  "No relationships match these connection filters.": "Không có mối quan hệ nào khớp bộ lọc kết nối này.",
+  "No students have submitted work for this assignment yet.": "Chưa có sinh viên nào nộp bài cho bài tập này.",
+  "No submitted work yet. Open an assignment in your workspace to submit a model version.": "Chưa có bài nộp nào. Hãy mở một bài tập trong lớp học của bạn để nộp phiên bản mô hình.",
+  "No visible connections": "Không có kết nối hiển thị",
+  "Only grouped metadata is loaded for this relationship. Its individual evidence is not inferred from the group.": "Chỉ có siêu dữ liệu gom nhóm cho mối quan hệ này. Bằng chứng riêng lẻ không được suy diễn tự động từ nhóm.",
+  "Open in 3E": "Mở trong 3E",
+  "Package": "Package",
+  "Peer": "Đối tác kết nối",
+  "Platform / Messaging": "Tầng nền tảng / Messaging",
+  "Preparing diagram…": "Đang chuẩn bị sơ đồ…",
+  "Queue / Message Broker": "Hàng đợi / Message Broker",
+  "Reference architecture elements": "Các phần tử thuộc kiến trúc mẫu",
+  "Reference source": "Nguồn kiến trúc mẫu",
+  "Relationship to explore": "Mối quan hệ cần khám phá",
+  "Remove Item": "Xóa mục",
+  "Required views": "Các góc nhìn sơ đồ yêu cầu",
+  "Review & Save Revision": "Xem lại & Lưu bản sửa đổi",
+  "Review result": "Kết quả chấm",
+  "Review unavailable": "Chưa có kết quả chấm",
+  "Runtime evidence not submitted": "Chưa đính kèm bằng chứng Runtime",
+  "Runtime sessions": "Phiên chạy Runtime",
+  "Save as New Revision": "Lưu thành Bản sửa đổi mới",
+  "Search connections…": "Tìm kiếm kết nối…",
+  "Search elements…": "Tìm kiếm phần tử…",
+  "Search submissions": "Tìm kiếm bài nộp",
+  "Select a class to review its assignments and student submissions.": "Chọn một lớp học để xem danh sách bài tập và bài nộp của sinh viên.",
+  "Select a class under My Workspaces in the left sidebar to view class information.": "Hãy chọn một lớp học trong mục Lớp học của tôi ở thanh bên trái để xem thông tin chi tiết.",
+  "Select or search classifiers…": "Chọn hoặc tìm kiếm Classifier…",
+  "Select or search connections…": "Chọn hoặc tìm kiếm kết nối…",
+  "Select or search elements…": "Chọn hoặc tìm kiếm phần tử…",
+  "Select or search relationships…": "Chọn hoặc tìm kiếm mối quan hệ…",
+  "Service Container (Microservice)": "Service Container (Microservice)",
+  "Service HTTP Call (REST / gRPC)": "Lệnh gọi HTTP giữa các Service (REST / gRPC)",
+  "Source Code Evidence (Class / Controller / Client)": "Bằng chứng Mã nguồn (Class / Controller / Client)",
+  "Student project": "Dự án của sinh viên",
+  "Submissions & feedback": "Bài nộp & nhận xét",
+  "Submitted": "Thời gian nộp",
+  "Submitted result versions": "Danh sách phiên bản bài nộp",
+  "System alerts": "Cảnh báo hệ thống",
+  "The saved version could not load. Retry before saving.": "Không thể tải phiên bản đã lưu. Vui lòng thử lại trước khi lưu.",
+  "There are no unread updates in this view.": "Không có thông báo chưa đọc nào trong chế độ xem này.",
+  "This frozen submission does not contain a runtime session.": "Bản chốt bài nộp này không bao gồm phiên chạy thử Runtime.",
+  "This line groups source relationships, not a single call or observed traffic. Choose an individual relationship for its source evidence and 3E.": "Đường nối này gom nhóm các mối quan hệ trong mã nguồn, không đại diện cho một lệnh gọi đơn lẻ hay lưu lượng thực tế. Hãy chọn từng mối quan hệ bên dưới để xem bằng chứng mã nguồn và phân tích 3E.",
+  "Type, source, resolution or ID": "Loại giao thức, nguồn, trạng thái hoặc ID",
+  "Unclassified": "Chưa phân tầng",
+  "Updates about your work and account will appear here.": "Các cập nhật về công việc và tài khoản của bạn sẽ hiển thị tại đây.",
+  "Workspace members": "Thành viên lớp học",
+  "You have no teaching workspaces yet. Create a class above, then add students by their registered email.": "Bạn chưa có lớp học (Workspace) giảng dạy nào. Hãy tạo lớp học ở phía trên, sau đó thêm sinh viên bằng email đã đăng ký.",
+  "You have not been added to a class yet. Ask your lecturer to add your registered account email. Students can view assignments and submit work after joining a class.": "Bạn chưa được thêm vào lớp học nào. Vui lòng nhờ giảng viên thêm email tài khoản của bạn vào lớp. Sinh viên có thể xem bài tập và nộp bài sau khi tham gia lớp học.",
+  "Your activity inbox": "Hộp thư hoạt động của bạn",
+  "You’re all caught up": "Bạn đã xem hết thông báo",
+  "code reference(s)": "tham chiếu mã nguồn",
+  "elements ·": "phần tử ·",
+  "peer(s)": "phần tử kết nối",
+  "relationship(s)": "mối quan hệ",
+  "relationships": "mối quan hệ",
+  "to inspect infrastructure and source evidence": "để kiểm tra bằng chứng cấu hình hạ tầng và mã nguồn",
+  "underlying relationships": "mối quan hệ cơ sở",
+  "visible connections ·": "kết nối hiển thị ·",
+  "💥 OUTAGE": "💥 GIÁN ĐOẠN",
   "+ Add Step": "+ Thêm bước",
   "- Docker / Infrastructure & Connectivity:": "- Docker / Hạ tầng & Kết nối mạng:",
   "1-Click Run Verification": "⚡ Chạy xác thực nhanh (1-Click Run)",
@@ -700,6 +823,11 @@ export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/^Downstream dependencies of (.+) \((\d+)\)$/i, "Các phần tử hạ nguồn mà $1 phụ thuộc vào ($2)"],
 ];
 
+export function translateText(text: string, locale: Locale): string {
+  if (locale === "en") return text;
+  return translateStringToVi(text);
+}
+
 export function translateStringToVi(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return raw;
@@ -754,6 +882,7 @@ const LocaleContext = createContext<LocaleContextValue>({
   setLocale: () => {},
   toggleLocale: () => {},
   t: (en) => en,
+  tr: (text) => text,
 });
 
 export function LocaleProvider({ children }: { children: React.ReactNode }) {
@@ -791,6 +920,10 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
         if (locale === "en") return enText;
         return viText ?? translateStringToVi(enText);
       },
+      tr: (text: string) => {
+        if (locale === "en") return text;
+        return translateStringToVi(text);
+      },
     }),
     [locale],
   );
@@ -807,76 +940,91 @@ export function useLocale() {
   return useContext(LocaleContext);
 }
 
-const originalTextMap = new WeakMap<Text, string>();
-const originalAttrMap = new WeakMap<Element, Record<string, string>>();
+interface TrackedTextRecord {
+  original: string;
+  lastRendered: string;
+}
+const originalTextMap = new WeakMap<Node, TrackedTextRecord>();
+const originalAttrMap = new WeakMap<Element, Map<string, TrackedTextRecord>>();
+let isApplyingDomTranslation = false;
 
 function shouldSkipElement(el: Element | null): boolean {
   if (!el) return true;
   const tag = el.tagName;
   if (
-    tag === "CODE" ||
-    tag === "PRE" ||
     tag === "SCRIPT" ||
     tag === "STYLE" ||
+    tag === "CODE" ||
+    tag === "PRE" ||
     tag === "TEXTAREA" ||
     tag === "SVG" ||
     tag === "PATH"
   ) {
     return true;
   }
-  if (el.closest("code, pre, [data-no-translate], .font-mono")) {
+  if (el.closest("code, pre, script, style, textarea, [data-no-translate]")) {
     return true;
   }
   return false;
 }
 
 function applyDomTranslation(root: Node, locale: Locale) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  let current = walker.nextNode() as Text | null;
-  while (current) {
-    const parent = current.parentElement;
-    if (!shouldSkipElement(parent)) {
-      const currentVal = current.nodeValue ?? "";
-      if (locale === "vi") {
-        const orig = originalTextMap.get(current) ?? currentVal;
-        const translated = translateStringToVi(orig);
-        if (translated !== orig && currentVal !== translated) {
-          originalTextMap.set(current, orig);
-          current.nodeValue = translated;
+  if (typeof document === "undefined" || isApplyingDomTranslation) return;
+  isApplyingDomTranslation = true;
+  try {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let current: Node | null = walker.nextNode();
+    while (current) {
+      const parent = current.parentElement;
+      if (!shouldSkipElement(parent)) {
+        const currentVal = current.nodeValue ?? "";
+        let record = originalTextMap.get(current);
+        if (!record) {
+          record = { original: currentVal, lastRendered: currentVal };
+          originalTextMap.set(current, record);
+        } else if (currentVal !== record.lastRendered && currentVal !== record.original) {
+          // React dynamically updated this text node! Update the baseline original text.
+          record.original = currentVal;
         }
-      } else {
-        const orig = originalTextMap.get(current);
-        if (orig !== undefined && currentVal !== orig) {
-          current.nodeValue = orig;
+        const nextVal = locale === "vi" ? translateStringToVi(record.original) : record.original;
+        if (currentVal !== nextVal) {
+          current.nodeValue = nextVal;
         }
+        record.lastRendered = nextVal;
       }
+      current = walker.nextNode();
     }
-    current = walker.nextNode() as Text | null;
-  }
 
-  if (root instanceof Element || root instanceof Document) {
-    const elements = (root instanceof Document ? root.body : root)?.querySelectorAll(
-      "[placeholder], [title], [aria-label]",
-    );
-    elements?.forEach((el) => {
-      if (shouldSkipElement(el)) return;
-      const saved = originalAttrMap.get(el) ?? {};
-      for (const attr of ["placeholder", "title", "aria-label"] as const) {
-        const val = el.getAttribute(attr);
-        if (!val) continue;
-        if (locale === "vi") {
-          const orig = saved[attr] ?? val;
-          const translated = translateStringToVi(orig);
-          if (translated !== orig && val !== translated) {
-            saved[attr] = orig;
-            originalAttrMap.set(el, saved);
-            el.setAttribute(attr, translated);
-          }
-        } else if (saved[attr] !== undefined && val !== saved[attr]) {
-          el.setAttribute(attr, saved[attr]);
+    if (root instanceof Element || root instanceof Document) {
+      const container = root instanceof Document ? root.body : root;
+      const elements = container?.querySelectorAll?.("[placeholder], [title], [aria-label]");
+      elements?.forEach((el) => {
+        if (shouldSkipElement(el)) return;
+        let attrMap = originalAttrMap.get(el);
+        if (!attrMap) {
+          attrMap = new Map();
+          originalAttrMap.set(el, attrMap);
         }
-      }
-    });
+        for (const attr of ["placeholder", "title", "aria-label"]) {
+          const val = el.getAttribute(attr);
+          if (!val) continue;
+          let rec = attrMap.get(attr);
+          if (!rec) {
+            rec = { original: val, lastRendered: val };
+            attrMap.set(attr, rec);
+          } else if (val !== rec.lastRendered && val !== rec.original) {
+            rec.original = val;
+          }
+          const nextVal = locale === "vi" ? translateStringToVi(rec.original) : rec.original;
+          if (val !== nextVal) {
+            el.setAttribute(attr, nextVal);
+          }
+          rec.lastRendered = nextVal;
+        }
+      });
+    }
+  } finally {
+    isApplyingDomTranslation = false;
   }
 }
 
@@ -896,6 +1044,7 @@ function AutoDomTranslator({ locale }: { locale: Locale }) {
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      characterData: true,
     });
     return () => {
       if (rafId) cancelAnimationFrame(rafId);

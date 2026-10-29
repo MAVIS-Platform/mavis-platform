@@ -450,6 +450,7 @@ export const contracts = {
       explanationScope: z.enum(["ELEMENT", "RELATIONSHIP", "CHANGE_IMPACT"]).optional(),
       userQuestion: z.string().trim().max(1000).optional(),
       forceRefresh: z.boolean().optional(),
+      locale: z.enum(["en", "vi"]).optional(),
     }),
     d.explanationSchema,
     true,
