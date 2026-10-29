@@ -1851,6 +1851,7 @@ export async function executeJava(
       await javaRequest(`projects/${id(input,"projectId")}/snapshots/${id(input,"snapshotId")}`,token,{method:"DELETE",signal});
       return {ok:true};
     }
+    case "contextCandidates": return get(`analyzer/models/${id(input,"modelId")}/context-review/candidates`);
     case "reviewContext": {
       const result = z.object({ id: z.string().uuid() }).parse(await post(`analyzer/models/${id(input,"modelId")}/context-review`, input));
       return model(result.id);
