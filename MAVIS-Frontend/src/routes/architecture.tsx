@@ -56,39 +56,43 @@ export function ArchitectureWorkspace({
           </div>
           {state.projectId && state.model && (
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
-              <Button asChild size="sm" variant={resolvedMode === "graph" ? "default" : "outline"}>
-                <Link
-                  href={`/architecture?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                >
-                  Graph Explorer
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant={resolvedMode === "diagram" ? "default" : "outline"}>
-                <Link
-                  href={`/diagrams?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                >
-                  C4 &amp; UML Diagrams
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link
-                  href={`/impact?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                >
-                  Change Impact
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link
-                  href={`/model?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                >
-                  Model Editor
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/sessions?project=${encodeURIComponent(state.projectId)}`}>
-                  Runtime
-                </Link>
-              </Button>
+              {resolvedMode !== "graph" && (
+                <>
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/architecture?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                    >
+                      Graph Explorer
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="default">
+                    <Link
+                      href={`/diagrams?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                    >
+                      C4 &amp; UML Diagrams
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/impact?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                    >
+                      Change Impact
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/model?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                    >
+                      Model Editor
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/sessions?project=${encodeURIComponent(state.projectId)}`}>
+                      Runtime
+                    </Link>
+                  </Button>
+                </>
+              )}
               {project.data?.workspaceId && (
                 <Button asChild size="sm" className="bg-primary font-semibold text-primary-foreground">
                   <Link
