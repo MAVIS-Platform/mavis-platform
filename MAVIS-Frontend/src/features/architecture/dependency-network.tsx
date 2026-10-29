@@ -84,6 +84,17 @@ export function DependencyNetwork({
     else setInternalOrigin(v);
   };
 
+  const runtimeEdgeCount = useMemo(
+    () =>
+      model.edges.filter(
+        (e) =>
+          e.originLayer === "RUNTIME" ||
+          e.originLayer === "STATIC_AND_RUNTIME" ||
+          e.protocol.includes("RUNTIME"),
+      ).length,
+    [model.edges],
+  );
+
   const [internalHiddenCategories, setInternalHiddenCategories] = useState<GraphCategory[]>([]);
   const hiddenCategories = controlledHiddenCategories ?? internalHiddenCategories;
   const changeHiddenCategories = onHiddenCategoriesChange ?? setInternalHiddenCategories;
@@ -274,6 +285,17 @@ export function DependencyNetwork({
             "arrow-scale": 0.8,
             opacity: 0.65,
             "overlay-opacity": 0,
+          },
+        },
+        {
+          selector: "edge.runtime-verified",
+          style: {
+            width: 3,
+            opacity: 0.95,
+            "line-color": "#10b981",
+            "target-arrow-color": "#10b981",
+            "target-arrow-shape": "triangle",
+            "arrow-scale": 1.1,
           },
         },
         { selector: ".muted", style: { opacity: 0.15 } },
@@ -744,6 +766,36 @@ export function DependencyNetwork({
           )}
         </div>
       </Tooltip.Provider>
+      {runtimeEdgeCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs">
+          <div className="flex items-center gap-2 text-emerald-300 font-medium">
+            <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span>
+              <strong>Runtime-Enriched Model Active:</strong> {runtimeEdgeCount} relationship(s) verified via OpenTelemetry traces (highlighted in <strong className="text-emerald-400">emerald green →</strong> on the graph).
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={origin === "all" ? "secondary" : "outline"}
+              className="h-7 px-2.5 text-[11px]"
+              onClick={() => changeOrigin("all")}
+            >
+              All Relationships ({model.edges.length})
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={origin === "runtime" ? "default" : "outline"}
+              className="h-7 px-2.5 text-[11px] border-emerald-500/40"
+              onClick={() => changeOrigin(origin === "runtime" ? "all" : "runtime")}
+            >
+              ⚡ {origin === "runtime" ? "Showing Only Runtime Calls" : `Filter Runtime Calls Only (${runtimeEdgeCount})`}
+            </Button>
+          </div>
+        </div>
+      )}
       <div
         hidden={fillHeight && !dockToolsOpen}
         className={`${fillHeight && !dockToolsOpen ? "!hidden" : ""} flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground`}

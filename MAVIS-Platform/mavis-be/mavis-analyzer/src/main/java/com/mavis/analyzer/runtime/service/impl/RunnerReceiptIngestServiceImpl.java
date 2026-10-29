@@ -643,9 +643,20 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             if (calleeBaseId != null) stepNode.put("calleeBaseElementId", calleeBaseId.toString()); else stepNode.putNull("calleeBaseElementId");
             stepNode.put("callerResolutionStatus", callerStatus);
             stepNode.put("calleeResolutionStatus", calleeStatus);
-            String operation = (step.childSpan.getRoute() != null && !step.childSpan.getRoute().isBlank())
-                    ? step.childSpan.getRoute()
-                    : ("/api/v1/" + Objects.toString(resolvedCalleeName, "service").toLowerCase(Locale.ROOT));
+            String rawRoute = step.childSpan.getRoute() != null ? step.childSpan.getRoute().trim() : "";
+            String operation;
+            if (rawRoute.startsWith("/")) {
+                operation = rawRoute;
+            } else if (!rawRoute.isBlank()) {
+                String cleanSlug = rawRoute.replaceFirst("(?i)^fruit[-_]", "").replaceFirst("(?i)[-_]service$", "").toLowerCase(Locale.ROOT);
+                operation = "/api/" + cleanSlug;
+            } else {
+                String cleanSlug = Objects.toString(step.childSpan.getRuntimeService(), "service")
+                        .replaceFirst("(?i)^fruit[-_]", "")
+                        .replaceFirst("(?i)[-_]service$", "")
+                        .toLowerCase(Locale.ROOT);
+                operation = "/api/" + cleanSlug;
+            }
             stepNode.put("operation", operation);
             stepNode.put("messageSort", "UNKNOWN");
             String httpMethod = step.childSpan.getHttpMethod() != null && !step.childSpan.getHttpMethod().isBlank()
