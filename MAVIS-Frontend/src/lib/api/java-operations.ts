@@ -8,7 +8,6 @@ import { javaRequest } from "./java-client";
 import {
   projectView,
   projectOverviewView,
-  latestModelSummaryId,
   javaProject,
   snapshotView,
   modelSummary,
@@ -1329,22 +1328,12 @@ export async function executeJava(
       const enrich = async (raw: unknown) => {
         const projectId = javaProject.parse(raw).id;
         const jobsRequest = get(`analyzer/projects/${projectId}/jobs`).catch(() => null);
-        const modelsRequest = get(`analyzer/projects/${projectId}/models`).catch(() => null);
         const sessionsRequest = get(`analyzer/projects/${projectId}/runtime-sessions`).catch(
           () => null,
         );
-        // Graph depends only on models, not on jobs or runtime sessions.
-        const graphRequest = modelsRequest.then((models) => {
-          const modelId = Array.isArray(models) ? latestModelSummaryId(models) : null;
-          return modelId ? get(`analyzer/models/${modelId}/graph`).catch(() => null) : null;
-        });
-        const [jobs, , sessions, graph] = await Promise.all([
-          jobsRequest,
-          modelsRequest,
-          sessionsRequest,
-          graphRequest,
-        ]);
-        return projectOverviewView(raw, jobs, graph, sessions);
+        // Overview cards must not wait for full architecture graphs just to count services.
+        const [jobs, sessions] = await Promise.all([jobsRequest, sessionsRequest]);
+        return projectOverviewView(raw, jobs, null, sessions);
       };
       return Promise.all(rows.map(enrich));
     }
