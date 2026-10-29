@@ -141,11 +141,14 @@ export function SelectionThreeE({
     mutationFn: async (input: { finding?: Record<string, unknown>; refresh?: boolean }) => {
       const requestScopeKey = ctx.scopeKey;
       const f = input.finding;
-      const payload = ctx.buildExplainRequest({
-        finding: f,
-        runId,
-        forceRefresh: !!input.refresh,
-      });
+      const payload = {
+        ...ctx.buildExplainRequest({
+          finding: f,
+          runId,
+          forceRefresh: !!input.refresh,
+        }),
+        locale,
+      };
       const raw = await backend<unknown>("analyzer/ai/explain", {
         method: "POST",
         body: JSON.stringify(payload),
@@ -173,8 +176,8 @@ export function SelectionThreeE({
     [model, ctx.scopeKey, evidence.data, refs.length],
   );
   const deterministic3E = useMemo(
-    () => buildDeterministicThreeESimplified(model, ctx, concreteEvidences, matching),
-    [model, ctx.scopeKey, concreteEvidences, matching.length],
+    () => buildDeterministicThreeESimplified(model, ctx, concreteEvidences, matching, locale),
+    [model, ctx.scopeKey, concreteEvidences, matching.length, locale],
   );
   const threeEAiCtx = useMemo(
     () => buildThreeEAiContext(model, ctx, concreteEvidences, matching),
@@ -189,7 +192,7 @@ export function SelectionThreeE({
     const scopeKey = ctx.scopeKey;
     const prevHistory = chatByScope[scopeKey] ?? [];
     setChatInput("");
-    const guard = checkThreeEScopeGuardrail(q, threeEAiCtx);
+    const guard = checkThreeEScopeGuardrail(q, threeEAiCtx, locale);
     if (!guard.allowed && guard.refusalMessage) {
       setChatByScope((prev) => ({
         ...prev,

@@ -38,6 +38,9 @@ public class AiExplainRequestDTO {
     private UUID findingId;
     private UUID evaluationRunId;
 
+    @Schema(description = "Ngôn ngữ hiển thị (en hoặc vi, mặc định en)")
+    private String locale;
+
     @Builder.Default
     @Schema(description = "Bắt buộc gọi mới không dùng cache (mặc định false)")
     private Boolean forceRefresh = false;

@@ -33,20 +33,25 @@ export function literalSourceContext(context: ThreeEAiPromptContext): ThreeEAiPr
 export function normalizeThreeE(
   candidate: unknown,
   input: ThreeEAiPromptContext,
+  locale: "en" | "vi" = "en",
 ): ThreeEAiSimplifiedExplanation {
   const context = literalSourceContext(input),
     source = context.codeSnippets;
   const supplied = source.length,
     omitted = context.omittedSnippets ?? 0;
+  const noticeEn = supplied
+    ? "Interpretation of " +
+      supplied +
+      " selected snippet(s); evidence is partial and runtime behavior is not verified."
+    : "Model metadata only; no saved source snippets were supplied. Implementation behavior and business roles are unknown.";
+  const noticeVi = supplied
+    ? "Chỉ diễn giải dựa trên các đoạn mã bằng chứng đang chọn; đây chưa phải là xác minh toàn bộ mã nguồn hoặc Runtime."
+    : "Chỉ có siêu dữ liệu mô hình. Chưa có đoạn mã nguồn trích xuất trực tiếp; hành vi chi tiết và vai trò nghiệp vụ chưa được xác lập.";
   const grounding = {
     status: supplied ? ("PARTIAL_SOURCE" as const) : ("MODEL_ONLY" as const),
     suppliedSnippets: supplied,
     omittedSnippets: omitted,
-    notice: supplied
-      ? "Interpretation of " +
-        supplied +
-        " selected snippet(s); evidence is partial and runtime behavior is not verified."
-      : "Model metadata only; no saved source snippets were supplied. Implementation behavior and business roles are unknown.",
+    notice: locale === "vi" ? noticeVi : noticeEn,
   };
   const data = supplied ? record(candidate) : {};
   const allowed = new Set(source.map((item) => item.id));
@@ -55,18 +60,20 @@ export function normalizeThreeE(
       .filter(([id, note]) => allowed.has(id) && !!text(note))
       .map(([id, note]) => [id, text(note, 500)]),
   );
+  const defaultExplain = locale === "vi"
+    ? `Mô hình biểu diễn "${context.title}" dưới dạng ${context.type}. Vai trò nghiệp vụ và hành vi Runtime chưa được xác lập chỉ qua tên gọi hoặc số lượng kết nối.`
+    : "The model represents " +
+      context.title +
+      " as " +
+      context.type +
+      ". Business roles and runtime behavior are not established by names or connection counts.";
+  const defaultEvaluate = locale === "vi"
+    ? "Tính đúng đắn, chất lượng kiến trúc và độ an toàn vận hành chưa thể xác lập đầy đủ từ ngữ cảnh thu gọn này."
+    : "Correctness, architectural quality and operational safety cannot be established from this partial context.";
   return {
-    explainSimple:
-      text(data["explainSimple"]) ||
-      "The model represents " +
-        context.title +
-        " as " +
-        context.type +
-        ". Business roles and runtime behavior are not established by names or connection counts.",
+    explainSimple: text(data["explainSimple"]) || defaultExplain,
     exploreSimple: text(data["exploreSimple"]) || grounding.notice,
-    evaluateSimple:
-      text(data["evaluateSimple"]) ||
-      "Correctness, architectural quality and operational safety cannot be established from this partial context.",
+    evaluateSimple: text(data["evaluateSimple"]) || defaultEvaluate,
     snippetNotes,
     grounding,
     assumptions: list(data["assumptions"]),

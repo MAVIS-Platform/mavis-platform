@@ -3,6 +3,7 @@
 import { useContext, useMemo } from "react";
 import { useApiQuery } from "@/hooks/use-api";
 import { ApiContext } from "@/providers/app-context";
+import { useLocale } from "@/lib/i18n/locale-context";
 import {
   buildPeerConnectionGroups,
   feignContract,
@@ -84,6 +85,7 @@ function ServiceCodeSubtree({
   isSubject: boolean;
   items: SideCodeEvidenceItem[];
 }) {
+  const { t } = useLocale();
   const borderClass = isSubject
     ? "border-border border-l-2 border-l-primary/40 bg-muted/20"
     : "border-border bg-muted/20";
@@ -93,10 +95,10 @@ function ServiceCodeSubtree({
     <div className={`rounded-lg border p-3 space-y-2.5 ${borderClass}`}>
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 pb-1.5">
         <span className={`font-mono text-xs font-semibold ${titleClass}`}>
-          {prefixLabel} ({isSubject ? "Selected service" : "Connected service"}):
+          {prefixLabel} ({isSubject ? t("Selected service") : t("Connected service")}):
         </span>
         <Badge variant="outline" className="font-mono text-[10px]">
-          {items.length} code reference(s)
+          {items.length} {t("code reference(s)")}
         </Badge>
       </div>
 
@@ -186,6 +188,7 @@ function PeerPairAccordionItem({
   defaultOpen: boolean;
   onSelect?: (id: string) => void;
 }) {
+  const { t } = useLocale();
   return (
     <details
       open={defaultOpen}
@@ -219,7 +222,7 @@ function PeerPairAccordionItem({
             </Badge>
           ))}
           <Badge variant="secondary" className="font-mono text-[10px]">
-            {group.edgeCount} relationship(s)
+            {group.edgeCount} {t("relationship(s)")}
           </Badge>
         </div>
       </summary>
@@ -282,6 +285,7 @@ function CommunicationPanelContent({
   peerFilterId?: string | undefined;
   onSelect?: ((id: string) => void) | undefined;
 }) {
+  const { t } = useLocale();
   let groups = buildPeerConnectionGroups(model, selectedId);
   if (peerFilterId) {
     const filtered = groups.filter((g) => g.peerId === peerFilterId);
@@ -307,13 +311,13 @@ function CommunicationPanelContent({
         <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
           <FolderGit2 className="size-4 text-primary shrink-0" />
           <span>
-            Connection evidence for{" "}
+            {t("Connection evidence for")}{" "}
             <strong className="font-mono text-foreground">{subjectName}</strong>{" "}
-            ({groups.length} peer(s))
+            ({groups.length} {t("peer(s)")})
           </span>
         </div>
         <span className="text-[11px] text-muted-foreground">
-          Select a pair <strong>{subjectName} ↔ ...</strong> to inspect infrastructure and source evidence
+          {t("Select a pair")} <strong>{subjectName} ↔ ...</strong> {t("to inspect infrastructure and source evidence")}
         </span>
       </div>
 
