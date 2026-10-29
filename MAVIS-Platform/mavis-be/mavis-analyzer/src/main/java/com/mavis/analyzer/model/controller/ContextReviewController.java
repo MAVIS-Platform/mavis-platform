@@ -8,5 +8,6 @@ import java.util.UUID;
 @RequestMapping("/api/v1/analyzer/models/{modelId}/context-review")
 public class ContextReviewController {
  private final ContextReviewService service;
+ @GetMapping("/candidates") public ApiResponse<?> candidates(@PathVariable UUID modelId){return ApiResponse.success(service.candidates(modelId));}
  @PostMapping public ApiResponse<?> review(@PathVariable UUID modelId,@RequestBody ContextReviewService.Request request){return ApiResponse.success(service.review(modelId,request));}
 }

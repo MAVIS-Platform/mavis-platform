@@ -59,6 +59,8 @@ export function RequestState({
   empty = false,
   children,
   emptyMessage,
+  loading,
+  keepContentOnError = false,
 }: {
   query: {
     isPending: boolean;
@@ -69,10 +71,12 @@ export function RequestState({
   };
   empty?: boolean;
   emptyMessage?: string;
+  loading?: ReactNode;
+  keepContentOnError?: boolean;
   children: ReactNode;
 }) {
-  if (query.isPending) return <LoadingState />;
-  if (query.isError)
+  if (query.isPending) return loading ?? <LoadingState />;
+  if (query.isError && !keepContentOnError)
     return (
       <ErrorState
         error={query.error}
@@ -91,6 +95,22 @@ export function RequestState({
         <p role="status" className="mb-2 text-xs text-muted-foreground">
           Updating…
         </p>
+      )}
+      {query.isError && keepContentOnError && (
+        <div
+          role="status"
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground"
+        >
+          <span>Could not refresh this view. Showing the last loaded data.</span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            Retry
+          </Button>
+        </div>
       )}
       {children}
     </div>

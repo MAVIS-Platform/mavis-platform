@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.*;
 import java.time.OffsetDateTime;
-import java.util.regex.Pattern;
 
 @Service @RequiredArgsConstructor
 public class ContextReviewService {
@@ -25,7 +24,6 @@ public class ContextReviewService {
  private final ModelVersionService revisions;
  private final ObjectMapper json;
  public record Request(int expectedRevision,String action,String candidateId,String name,String kind,String targetKey,String direction,String basis,String boundary,List<UUID> evidenceIds){}
- private static final Pattern ROLE=Pattern.compile("hasRole\\(\\s*[\"']([A-Za-z][A-Za-z0-9_:-]{1,63})[\"']\\s*\\)");
  public static String key(ModelElement e){var p=e.getProperties();return p!=null&&p.hasNonNull("logicalKey")?p.path("logicalKey").asText():p!=null&&p.hasNonNull("workerLogicalId")?"worker:"+p.path("workerLogicalId").asText():"element:"+e.getId();}
  private BusinessException invalid(String message){return new BusinessException(ErrorCode.BAD_REQUEST,message);}
  private String text(String s,int max){if(s==null||s.isBlank()||s.length()>max)throw invalid("Missing or invalid context review field");return s.trim();}
@@ -42,9 +40,13 @@ public class ContextReviewService {
   if(entries.size()>100||audit.size()>=300)throw invalid("Context review limit reached");
   var edits=new ArrayList<ModelVersionService.ElementEdit>();var links=new ArrayList<ModelVersionService.RelationshipEdit>();
   String action=text(r.action(),20);String who=SecurityUtils.getCurrentUserId().toString();String now=OffsetDateTime.now().toString();
+  var rejectedSourceKeys=rejectedSources(base.getProject().getId(),base.getRevision());
   ObjectNode item=null;
   if(Set.of("CONFIRM","REJECT","EDIT").contains(action)){
    for(var entry:entries)if(entry.path("id").asText().equals(r.candidateId()))item=(ObjectNode)entry;
+   if(item==null && entries.size()<100){
+    for(var candidate:roleCandidates(modelId,inside,evidence.findByModelVersionId(modelId)))if(!rejectedSourceKeys.contains(candidate.path("sourceRoleKey").asText())&&candidate.path("id").asText().equals(r.candidateId())){item=candidate;entries.add(item);break;}
+   }
    if(item==null||!"PROPOSED".equals(item.path("state").asText()))throw invalid("Only proposed context can be reviewed");
   }
   if(r.evidenceIds()!=null && r.evidenceIds().size()>20)throw invalid("Too many evidence references");
@@ -52,19 +54,15 @@ public class ContextReviewService {
   if("SUGGEST".equals(action)){
    int before=entries.size();
    var seen=new HashSet<String>();for(var entry:entries)seen.add(entry.path("dedupKey").asText());
-   for(var ev:citations){
+   for(var candidate:roleCandidates(modelId,inside,citations)){
     if(entries.size()>=100||review.toString().length()>48000)break;
-    if(!"STATIC_CODE".equals(ev.getSourceType())||ev.getExcerpt()==null||ev.getElement()==null||!inside.stream().anyMatch(n->n.getId().equals(ev.getElement().getId())))continue;
-    var matcher=ROLE.matcher(ev.getExcerpt());while(matcher.find()&&entries.size()<100&&review.toString().length()<48000){
-     String role=matcher.group(1),dedup="role:"+role+":"+key(ev.getElement());if(!seen.add(dedup))continue;
-     var candidate=json.createObjectNode().put("id",UUID.randomUUID().toString()).put("state","PROPOSED").put("kind","PERSON").put("name","Role: "+role).put("targetKey",key(ev.getElement())).put("direction","INBOUND").put("basis","Source mentions a security role. This does not prove a human actor or business role; review is required.").put("sourceLocator",ev.getLocator()).put("sourceExcerpt",ev.getExcerpt().substring(0,Math.min(1200,ev.getExcerpt().length()))).put("proposalOrigin","SOURCE_CANDIDATE").put("sourceModelId",modelId.toString()).put("dedupKey",dedup);
-     candidate.putArray("evidenceIds").add(ev.getId().toString());entries.add(candidate);
-    }
+    if(!rejectedSourceKeys.contains(candidate.path("sourceRoleKey").asText())&&seen.add(candidate.path("dedupKey").asText()))entries.add(candidate);
    }
+   var modelLinks=relationships.findByModelVersionId(modelId);
    for(var n:nodes){
     if(entries.size()>=100||review.toString().length()>48000)break;
     if(!"EXTERNAL_SYSTEM".equals(n.getElementType())||"CONFIRMED".equals(n.getProperties()==null?"":n.getProperties().path("contextReviewState").asText()))continue;
-    var rel=relationships.findByModelVersionId(modelId).stream().filter(e->(e.getSourceElement().getId().equals(n.getId())&&inside.stream().anyMatch(i->i.getId().equals(e.getTargetElement().getId())))||(e.getTargetElement().getId().equals(n.getId())&&inside.stream().anyMatch(i->i.getId().equals(e.getSourceElement().getId())))).findFirst();
+    var rel=modelLinks.stream().filter(e->(e.getSourceElement().getId().equals(n.getId())&&inside.stream().anyMatch(i->i.getId().equals(e.getTargetElement().getId())))||(e.getTargetElement().getId().equals(n.getId())&&inside.stream().anyMatch(i->i.getId().equals(e.getSourceElement().getId())))).findFirst();
     if(rel.isEmpty())continue;var edge=rel.get();var target=edge.getSourceElement().getId().equals(n.getId())?edge.getTargetElement():edge.getSourceElement();String dedup="external:"+key(n);if(!seen.add(dedup))continue;
     entries.add(json.createObjectNode().put("id",UUID.randomUUID().toString()).put("state","PROPOSED").put("kind","EXTERNAL_SYSTEM").put("name",n.getName()).put("targetKey",key(target)).put("existingElementKey",key(n)).put("direction",edge.getSourceElement().getId().equals(n.getId())?"INBOUND":"OUTBOUND").put("basis","Extracted dependency candidate. External ownership and the system boundary are not established.").put("proposalOrigin","MODEL_CANDIDATE").put("sourceModelId",modelId.toString()).put("dedupKey",dedup));
    }
@@ -102,6 +100,35 @@ public class ContextReviewService {
   if(review.toString().length()>63000)throw invalid("Context review history limit reached; existing decisions were not changed");
   edits.add(new ModelVersionService.ElementEdit(anchor.getId().toString(),"UPDATE",null,null,null,null,null,null,json.createObjectNode().set("contextReview",review)));
   return revisions.revise(modelId,new ModelVersionService.RevisionRequest(edits,links));
+ }
+
+ @Transactional(readOnly=true)
+ public Map<String,Object> candidates(UUID modelId){
+  var base=models.findById(modelId).orElseThrow(()->invalid("Model unavailable"));access.requireProjectReadAccess(base.getProject());
+  var nodes=elements.findByModelVersionId(modelId);var seen=new HashSet<String>();
+  for(var n:nodes)if(n.getProperties()!=null)for(var e:n.getProperties().path("contextReview").path("entries"))seen.add(e.path("dedupKey").asText());
+  var entries=roleCandidates(modelId,nodes.stream().filter(n->!Set.of("PERSON","EXTERNAL_SYSTEM").contains(n.getElementType())).toList(),evidence.findByModelVersionId(modelId));
+  var rejected=rejectedSources(base.getProject().getId(),base.getRevision());
+  return Map.of("entries",entries.stream().filter(e->!seen.contains(e.path("dedupKey").asText())&&!rejected.contains(e.path("sourceRoleKey").asText())).toList());
+ }
+ private Set<String> rejectedSources(UUID projectId,int revision){
+  var keys=new HashSet<String>();
+  for(var row:elements.findContextSourceDecisions(projectId,revision))if(row.length>=2&&"REJECTED".equals(row[1]))keys.add(String.valueOf(row[0]));return keys;
+ }
+ private List<ObjectNode> roleCandidates(UUID modelId,List<ModelElement> inside,List<Evidence> citations){
+  var ids=new HashSet<UUID>();inside.forEach(n->ids.add(n.getId()));var seen=new HashSet<String>();var result=new ArrayList<ObjectNode>();
+  for(var ev:citations){
+   if(result.size()>=100)break;
+   if(!"STATIC_CODE".equals(ev.getSourceType())||ev.getExcerpt()==null||ev.getLocator()==null||ev.getElement()==null||!ids.contains(ev.getElement().getId()))continue;
+   String code=SecurityRoleSource.withoutComments(ev.getExcerpt());
+   for(String role:SecurityRoleSource.roles(code)){
+    String dedup="role:"+role+":"+key(ev.getElement());if(!seen.add(dedup))continue;
+    var candidate=json.createObjectNode().put("id",UUID.nameUUIDFromBytes(dedup.getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString()).put("state","PROPOSED").put("kind","PERSON").put("name","Role: "+role).put("targetKey",key(ev.getElement())).put("direction","INBOUND").put("basis","Security principal inferred from a source access rule. Human identity, business role and observed traffic are not established; please verify.").put("sourceLocator",ev.getLocator()).put("sourceExcerpt",SecurityRoleSource.excerpt(ev.getExcerpt(),role)).put("proposalOrigin","SOURCE_CANDIDATE").put("sourceModelId",modelId.toString()).put("dedupKey",dedup);
+    candidate.put("sourceRoleKey",UUID.nameUUIDFromBytes((role+"\n"+ev.getLocator()+"\n"+ev.getExcerpt()).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString());
+    candidate.putArray("evidenceIds").add(ev.getId().toString());result.add(candidate);if(result.size()>=100)break;
+   }
+  }
+  return result;
  }
  private String itemKey(Request r,ArrayNode entries){for(var entry:entries)if(entry.path("id").asText().equals(r.candidateId()))return entry.path("targetKey").asText();return "";}
 }

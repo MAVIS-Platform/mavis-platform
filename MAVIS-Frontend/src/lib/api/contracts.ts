@@ -5,6 +5,7 @@ const id = z.string().min(1);
 const project = z.object({ projectId: id });
 const nothing = z.object({});
 const ok = z.object({ ok: z.literal(true) });
+const notificationReadAck=ok.extend({recipientId:z.string().uuid().optional(),readAt:z.string().datetime().optional(),asOf:z.string().datetime().optional(),unreadCount:z.number().int().nonnegative().optional(),before:z.string().datetime().optional(),notificationId:z.string().uuid().optional()});
 function contract<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
   input: I,
   output: O,
@@ -14,10 +15,16 @@ function contract<I extends z.ZodTypeAny, O extends z.ZodTypeAny>(
 }
 const notificationCategory = z.enum(["WORKSPACE","ASSIGNMENT","SUBMISSION","ANALYSIS","RUNTIME","ACCOUNT","SYSTEM"]);
 const notificationItem = z.object({ id:z.string().uuid(),category:notificationCategory,title:z.string(),body:z.string(),targetPath:z.string().refine(p=>/^\/(?!\/)/.test(p)&&!p.includes("\\")),createdAt:z.string().datetime(),readAt:z.string().datetime().nullable() });
+const activityBase=z.object({id,projectId:id,projectName:z.string(),occurredAt:z.string().nullable(),projectDeleted:z.boolean(),targetId:id.nullable(),targetName:z.string().nullable(),actorId:id.nullable(),actorName:z.string().nullable()});
+const activityItem=z.discriminatedUnion("kind",[
+ activityBase.extend({kind:z.literal("ANALYSIS"),job:d.analysisJobSchema}),
+ activityBase.extend({kind:z.literal("PROJECT_DELETED"),job:z.null()}),
+ activityBase.extend({kind:z.literal("SNAPSHOT_DELETED"),job:z.null()}),
+]);
 export const contracts = {
-  notifications: contract(z.object({page:z.number().int().min(0).max(10000),size:z.number().int().min(1).max(50),unreadOnly:z.boolean(),category:notificationCategory.optional()}),z.object({items:z.array(notificationItem),total:z.number().int().nonnegative(),unreadCount:z.number().int().nonnegative(),page:z.number().int(),size:z.number().int(),asOf:z.string().datetime()})),
-  readNotification: contract(z.object({notificationId:z.string().uuid()}),ok,true),
-  readAllNotifications: contract(z.object({before:z.string().datetime()}),ok,true),
+  notifications: contract(z.object({page:z.number().int().min(0).max(10000),size:z.number().int().min(1).max(50),unreadOnly:z.boolean(),category:notificationCategory.optional()}),z.object({items:z.array(notificationItem),total:z.number().int().nonnegative(),unreadCount:z.number().int().nonnegative(),page:z.number().int(),size:z.number().int(),asOf:z.string().datetime(),recipientId:z.string().uuid().optional()})),
+  readNotification: contract(z.object({notificationId:z.string().uuid()}),notificationReadAck,true),
+  readAllNotifications: contract(z.object({before:z.string().datetime()}),notificationReadAck,true),
   updateProfile: contract(
     z
       .object({
@@ -327,6 +334,7 @@ export const contracts = {
     d.snapshotSchema,
     true,
   ),
+  projectActivity: contract(z.object({page:z.number().int().min(0).max(10000),size:z.number().int().min(1).max(50)}),z.object({items:z.array(activityItem),total:z.number().int().nonnegative(),page:z.number().int(),size:z.number().int()})),
   projectAnalysisActivity: contract(z.object({page:z.number().int().min(0).max(10000),size:z.number().int().min(1).max(50)}),z.object({items:z.array(d.analysisJobSchema.extend({projectName:z.string(),startedAt:z.string().nullable(),completedAt:z.string().nullable()})),total:z.number().int().nonnegative(),page:z.number().int(),size:z.number().int()})),
   analysisJobs: contract(project, z.array(d.analysisJobSchema)),
   startAnalysis: contract(
@@ -339,6 +347,7 @@ export const contracts = {
   model: contract(z.object({ modelId: id, projectId: id.optional() }), d.modelSchema),
   deleteProject: contract(project, ok, true),
   deleteSnapshot: contract(z.object({projectId:id,snapshotId:id}),ok,true),
+  contextCandidates: contract(z.object({modelId:id}), z.object({entries:z.array(z.record(z.unknown()))})),
   reviewContext: contract(z.object({
     modelId: id, expectedRevision: z.number().int().positive(),
     action: z.enum(["SUGGEST", "PROPOSE", "EDIT", "CONFIRM", "REJECT"]),

@@ -32,10 +32,23 @@ class ResourceDeletionPostgresTest {
     sql.update("INSERT INTO model_versions(id,project_id,source_snapshot_id,revision,is_latest_valid) VALUES (?,?,?,1,false)",m1,pid,s1);
     sql.update("INSERT INTO model_versions(id,project_id,source_snapshot_id,revision,origin,is_latest_valid) VALUES (?,?,?,2,'USER_CONFIRMED',false)",m2,pid,s2);
     sql.update("INSERT INTO model_versions(id,project_id,source_snapshot_id,revision,base_model_version_id,is_latest_valid) VALUES (?,?,?,3,?,true)",m3,pid,s1,m1);
-    var projects=mock(ProjectRepository.class);var snapshots=mock(SourceSnapshotRepository.class);var project=Project.builder().id(pid).status("READY").build();
+    // Exercise the exact native source-decision query against real PostgreSQL.
+    String decisions=ModelElementRepository.CONTEXT_SOURCE_DECISIONS_SQL.replace(":projectId","?").replace(":revision","?");
+    String addReview="INSERT INTO model_elements(id,model_version_id,element_type,name,properties) VALUES (?,?,'SERVICE_CONTAINER','Source review',?::jsonb)";
+    UUID review1=UUID.randomUUID(),review2=UUID.randomUUID(),review3=UUID.randomUUID();
+    sql.update(addReview,review1,m1,"{\"contextReview\":{\"entries\":[{\"sourceRoleKey\":\"source-a\",\"state\":\"REJECTED\"}]}}");
+    sql.update(addReview,review2,m2,"{\"contextReview\":{\"entries\":[{\"sourceRoleKey\":\"source-a\",\"state\":\"CONFIRMED\"}]}}");
+    sql.update(addReview,review3,m3,"{\"contextReview\":{\"entries\":[{\"sourceRoleKey\":\"source-b\",\"state\":\"REJECTED\"}]}}");
+    assertEquals("REJECTED",sql.queryForList(decisions,pid,1).get(0).get("state"));
+    var latest=sql.queryForList(decisions,pid,3);assertEquals(2,latest.size());assertEquals("CONFIRMED",latest.get(0).get("state"));assertEquals("REJECTED",latest.get(1).get("state"));assertTrue(sql.queryForList(decisions,UUID.randomUUID(),3).isEmpty());
+    sql.update("DELETE FROM model_elements WHERE id IN (?,?,?)",review1,review2,review3);
+    var projects=mock(ProjectRepository.class);var snapshots=mock(SourceSnapshotRepository.class);var project=Project.builder().id(pid).name("Deletion fixture").owner(User.builder().id(uid).build()).status("ACTIVE").build();
     when(projects.findLockedById(pid)).thenReturn(Optional.of(project));when(snapshots.findById(s1)).thenReturn(Optional.of(SourceSnapshot.builder().id(s1).project(project).build()));
+    org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(uid.toString(),null,List.of()));
+    when(projects.save(any())).thenAnswer(call->{Project value=call.getArgument(0);sql.update("UPDATE projects SET status=? WHERE id=?",value.getStatus(),value.getId());return value;});
     var service=new ProjectResourceDeletionService(projects,snapshots,mock(AccessPolicyService.class),sql);
     tx.executeWithoutResult(status->service.deleteSnapshot(pid,s1));
+    assertEquals(1,sql.queryForObject("SELECT count(*) FROM audit_logs WHERE action='SNAPSHOT_DELETED' AND target_id=?",Integer.class,s1));
     assertEquals(0,sql.queryForObject("SELECT count(*) FROM source_snapshots WHERE id=?",Integer.class,s1));assertEquals(0,sql.queryForObject("SELECT count(*) FROM model_versions WHERE source_snapshot_id=?",Integer.class,s1));assertEquals(true,sql.queryForObject("SELECT is_latest_valid FROM model_versions WHERE id=?",Boolean.class,m2));
     // Another snapshot owns a child revision: deleting the base must roll back everything.
     sql.update("INSERT INTO source_snapshots(id,project_id,artifact_hash) VALUES (?,?,'retained-content-hash')",s1,pid);
@@ -43,7 +56,26 @@ class ResourceDeletionPostgresTest {
     sql.update("UPDATE model_versions SET base_model_version_id=? WHERE id=?",m1,m2);
     assertThrows(BusinessException.class,()->tx.executeWithoutResult(status->service.deleteSnapshot(pid,s1)));
     assertEquals(1,sql.queryForObject("SELECT count(*) FROM source_snapshots WHERE id=?",Integer.class,s1));assertEquals(1,sql.queryForObject("SELECT count(*) FROM model_versions WHERE id=?",Integer.class,m1));assertEquals(true,sql.queryForObject("SELECT is_latest_valid FROM model_versions WHERE id=?",Boolean.class,m2));
-   }finally{command.execute("DROP DATABASE "+db+" WITH (FORCE)");}
+
+    assertEquals(1,sql.queryForObject("SELECT count(*) FROM audit_logs",Integer.class));
+    // If the audit insert cannot commit, deleting the data cannot commit either.
+    sql.update("UPDATE model_versions SET base_model_version_id=NULL WHERE id=?",m2);
+    sql.execute("CREATE FUNCTION reject_fixture_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture audit rejection' USING ERRCODE='23514'; END $$");
+    sql.execute("CREATE TRIGGER reject_audit BEFORE INSERT ON audit_logs FOR EACH ROW EXECUTE FUNCTION reject_fixture_audit()");
+    assertThrows(org.springframework.dao.DataIntegrityViolationException.class,()->tx.executeWithoutResult(status->service.deleteSnapshot(pid,s1)));
+    assertEquals(1,sql.queryForObject("SELECT count(*) FROM source_snapshots WHERE id=?",Integer.class,s1));assertEquals(1,sql.queryForObject("SELECT count(*) FROM audit_logs",Integer.class));
+    sql.execute("DROP TRIGGER reject_audit ON audit_logs");
+    sql.update("INSERT INTO jobs(project_id,source_snapshot_id,job_type,status) VALUES (?,?,'STATIC_ANALYSIS','COMPLETED')",pid,s2);
+    sql.update("INSERT INTO jobs(project_id,source_snapshot_id,job_type,status) VALUES (?,?,'EVALUATION','COMPLETED')",pid,s2);
+    tx.executeWithoutResult(status->service.deleteProject(pid));
+    assertEquals(2,sql.queryForObject("SELECT count(*) FROM audit_logs",Integer.class));
+    var policy=mock(AccessPolicyService.class);when(policy.requireCurrentActiveUser()).thenReturn(User.builder().id(uid).build());
+    var activity=new com.mavis.bootstrap.activity.ResourceActivityController(policy,sql,new com.fasterxml.jackson.databind.ObjectMapper());
+    var dataPage=(Map<?,?>)activity.feed(0,10).getData();assertEquals(3L,dataPage.get("total"));
+    var feed=(List<com.mavis.bootstrap.activity.ResourceActivityController.Item>)dataPage.get("items");assertTrue(feed.stream().allMatch(row->row.projectDeleted()));assertTrue(feed.stream().anyMatch(row->row.kind().equals("PROJECT_DELETED")&&row.projectName().equals("Deletion fixture")));assertTrue(feed.stream().anyMatch(row->row.kind().equals("SNAPSHOT_DELETED")));
+    when(policy.requireCurrentActiveUser()).thenReturn(User.builder().id(UUID.randomUUID()).build());
+    assertEquals(0L,((Map<?,?>)activity.feed(0,10).getData()).get("total"));
+   }finally{org.springframework.security.core.context.SecurityContextHolder.clearContext();command.execute("DROP DATABASE "+db+" WITH (FORCE)");}
   }
  }
 }

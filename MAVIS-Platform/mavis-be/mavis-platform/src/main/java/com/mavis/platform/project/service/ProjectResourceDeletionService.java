@@ -18,6 +18,13 @@ public class ProjectResourceDeletionService {
  private final SourceSnapshotRepository snapshots;
  private final AccessPolicyService access;
  private final JdbcTemplate sql;
+ private void audit(Project project,UUID target,String action,String targetName,String mode){
+  var actor=com.mavis.common.utils.SecurityUtils.getCurrentUserId();
+  var details=com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("schema","resource-deletion/v1").put("projectId",project.getId().toString()).put("projectName",project.getName()).put("targetName",targetName).put("mode",mode).put("actorId",actor.toString());
+  if(project.getOwner()!=null)details.put("ownerId",project.getOwner().getId().toString());
+  int written=sql.update("INSERT INTO audit_logs(actor_id,action,target_type,target_id,details) VALUES (?,?,?,?,CAST(? AS jsonb))",actor,action,"PROJECT_DELETED".equals(action)?"PROJECT":"SOURCE_SNAPSHOT",target,details.toString());
+  if(written!=1)throw new IllegalStateException("Deletion audit was not persisted; transaction must roll back");
+ }
  private Project lock(UUID id){var project=projects.findLockedById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND,"Project not found"));access.requireProjectWriteAccess(project);return project;}
  private boolean exists(String query,Object... args){return Boolean.TRUE.equals(sql.queryForObject(query,Boolean.class,args));}
  private void conflict(String message){throw new BusinessException(ErrorCode.CONFLICT,message);}
@@ -29,6 +36,7 @@ public class ProjectResourceDeletionService {
   var project=lock(id);if("DELETED".equals(project.getStatus()))return;idle(id);
   if(exists("SELECT EXISTS (SELECT 1 FROM source_snapshots WHERE project_id=? AND (is_published=true OR EXISTS (SELECT 1 FROM projects p WHERE p.reference_snapshot_id=source_snapshots.id)))",id)||exists("SELECT EXISTS (SELECT 1 FROM submission_snapshots s JOIN source_snapshots ss ON ss.id=s.source_snapshot_id WHERE ss.project_id=?)",id))conflict("Deletion is blocked for published reference data or submitted coursework.");
   project.setStatus("DELETED");project.setUpdatedAt(OffsetDateTime.now());projects.save(project);
+  audit(project,id,"PROJECT_DELETED",project.getName(),"SOFT_DELETE");
  }
  @Transactional(rollbackFor=Exception.class)
  public void deleteSnapshot(UUID projectId,UUID snapshotId){
@@ -48,6 +56,8 @@ public class ProjectResourceDeletionService {
    }
   }catch(DataIntegrityViolationException referenced){throw new BusinessException(ErrorCode.CONFLICT,"This snapshot has dependent revisions or protected records.");}
   project.setUpdatedAt(OffsetDateTime.now());projects.save(project);
+  String label="GITHUB_COMMIT".equals(snapshot.getSourceType())?(snapshot.getBranchName()==null?"Unknown branch":snapshot.getBranchName())+" / "+(snapshot.getCommitSha()==null?"Unknown commit":snapshot.getCommitSha().substring(0,Math.min(8,snapshot.getCommitSha().length()))):"ZIP upload";
+  audit(project,snapshotId,"SNAPSHOT_DELETED",label,"HARD_DELETE");
   // Immutable artifacts may be shared by other snapshots. Storage retention handles physical files.
  }
 }

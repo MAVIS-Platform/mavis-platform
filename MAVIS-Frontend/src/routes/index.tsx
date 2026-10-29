@@ -2,14 +2,23 @@
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Network } from "lucide-react";
+import { ArrowUpRight, CircleHelp, Network } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
-import { PageContainer, SectionHeader } from "@/components/layout/page";
+import { PageContainer } from "@/components/layout/page";
 import { RequestState } from "@/components/shared/request-state";
-import { DataTable, DetailPanel, SummaryCard } from "@/components/shared/data";
+import { DataTable, DetailPanel, SummaryCard, StatusBadge } from "@/components/shared/data";
 import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
 import { Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { useLocale } from "@/lib/i18n/locale-context";
 import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { ProjectStatusBadge, CreateProjectAction } from "@/features/projects/components";
 import { ResourceDeleteAction } from "@/features/projects/resource-delete-action";
@@ -44,6 +53,62 @@ function runtimeSummary(projects: Project[] | undefined): string | number {
   if (unchecked === projects.length) return "Not checked";
   return `${projects.filter((p) => p.runtimeSupported).length} of ${projects.length}`;
 }
+function OverviewHelp() {
+  const { t } = useLocale();
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-9 rounded-full text-muted-foreground hover:text-foreground"
+          aria-label={t("Overview help", "Hướng dẫn tổng quan")}
+          title={t("Overview help", "Hướng dẫn tổng quan")}
+        >
+          <CircleHelp className="size-5" aria-hidden="true" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{t("Quick Start Guides", "Hướng dẫn bắt đầu")}</DialogTitle>
+          <DialogDescription>
+            {t(
+              "Choose a workflow to get started with MAVIS.",
+              "Chọn quy trình phù hợp để bắt đầu sử dụng MAVIS.",
+            )}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 text-sm sm:grid-cols-2">
+          <div className="space-y-2 rounded-lg border bg-card p-3">
+            <p className="flex items-center gap-1.5 font-semibold text-foreground">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
+                1
+              </span>
+              Personal Architecture Exploration
+            </p>
+            <p className="leading-6 text-muted-foreground">
+              Click <strong>Import project source</strong> (top right) → Enter GitHub URL or upload
+              ZIP → Explore Architecture Graph, C4/UML Diagrams, 3E Inspector &amp; Change Impact.
+            </p>
+          </div>
+          <div className="space-y-2 rounded-lg border bg-card p-3">
+            <p className="flex items-center gap-1.5 font-semibold text-foreground">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
+                2
+              </span>
+              Class Coursework &amp; Assignments
+            </p>
+            <p className="leading-6 text-muted-foreground">
+              Open <strong>My Workspaces</strong> in sidebar → Select your class → Open{" "}
+              <strong>Assignments &amp; Submit</strong> → Create coursework project and submit your
+              model.
+            </p>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
 function Projects() {
   const projects = useApiQuery("projectOverviews", {});
   const selection = useSelection();
@@ -59,7 +124,13 @@ function Projects() {
   return (
     <div className="mx-auto w-full max-w-[1600px]">
       <PageContainer>
-        <SectionHeader title="Overview" actions={<CreateProjectAction />} />
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
+            <OverviewHelp />
+          </div>
+          <CreateProjectAction />
+        </div>
         <RequestState query={projects}>
           <div className="grid grid-cols-2 gap-3 [&>article>div]:text-xl sm:gap-4 sm:[&>article>div]:text-2xl xl:grid-cols-4">
             <SummaryCard label="Projects" value={projects.data?.length ?? 0} />
@@ -68,39 +139,6 @@ function Projects() {
             <SummaryCard label="Runtime capable" value={runtimeSummary(projects.data)} />
           </div>
 
-          <div className="mt-4 rounded-xl border bg-muted/20 p-4">
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Quick Start Guides
-            </h3>
-            <div className="grid gap-3 text-xs md:grid-cols-2">
-              <div className="space-y-1 rounded-lg border bg-card p-3">
-                <p className="flex items-center gap-1.5 font-semibold text-foreground">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
-                    1
-                  </span>
-                  Personal Architecture Exploration
-                </p>
-                <p className="text-muted-foreground">
-                  Click <strong>Import project source</strong> (top right) → Enter GitHub URL or
-                  upload ZIP → Explore Architecture Graph, C4/UML Diagrams, 3E Inspector &amp; Change
-                  Impact.
-                </p>
-              </div>
-              <div className="space-y-1 rounded-lg border bg-card p-3">
-                <p className="flex items-center gap-1.5 font-semibold text-foreground">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 font-bold text-primary">
-                    2
-                  </span>
-                  Class Coursework &amp; Assignments
-                </p>
-                <p className="text-muted-foreground">
-                  Open <strong>My Workspaces</strong> in sidebar → Select your class → Open{" "}
-                  <strong>Assignments &amp; Submit</strong> → Create coursework project and submit
-                  your model.
-                </p>
-              </div>
-            </div>
-          </div>
           <div className="mt-6 min-w-0 space-y-5">
             <section className="min-w-0">
               <DetailPanel title="Recent projects">
@@ -249,20 +287,16 @@ function Projects() {
                 )}
               </DetailPanel>
             </section>
-            <ProjectActivity projectCount={projects.data?.length ?? 0} />
+            <ProjectActivity />
           </div>
         </RequestState>
       </PageContainer>
     </div>
   );
 }
-function ProjectActivity({ projectCount }: { projectCount: number }) {
+function ProjectActivity() {
   const [page, setPage] = useState(0);
-  const q = useApiQuery(
-    "projectAnalysisActivity",
-    { page, size: 10 },
-    { enabled: projectCount > 0, refreshMs: 30000 },
-  );
+  const q = useApiQuery("projectActivity", { page, size: 10 }, { refreshMs: 30000 });
   return (
     <DetailPanel
       title="Recent activity"
@@ -270,7 +304,7 @@ function ProjectActivity({ projectCount }: { projectCount: number }) {
         <Button
           size="sm"
           variant="outline"
-          disabled={!projectCount || q.isFetching}
+          disabled={q.isFetching}
           onClick={() => void q.refetch()}
         >
           {q.isFetching ? "Refreshing…" : "Refresh"}
@@ -278,99 +312,138 @@ function ProjectActivity({ projectCount }: { projectCount: number }) {
       }
     >
       <p className="text-xs text-muted-foreground">
-        Analysis history across your projects · newest activity first
+        Analysis and deletion history across your projects · newest activity first
       </p>
-      {!projectCount ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Your project activity will appear here after importing and analyzing source.
-        </p>
-      ) : (
-        <RequestState query={q}>
-          <div className="space-y-4">
-            <DataTable
-              caption="Analysis activity across all your projects"
-              emptyDescription="No analysis runs yet. Open a project to analyze its source."
-              rows={q.data?.items ?? []}
-              rowKey={(job) => job.id}
-              columns={[
-                {
-                  key: "time",
-                  label: "Time",
-                  render: (job) => {
-                    const value = job.completedAt ?? job.startedAt;
-                    const date = value ? new Date(value) : null;
-                    return date && !Number.isNaN(date.getTime()) ? (
-                      <time
-                        dateTime={value!}
-                        title={date.toLocaleString()}
-                        className="whitespace-nowrap text-xs"
-                      >
-                        {date.toLocaleDateString()}
-                        <span className="mt-1 block text-muted-foreground">
-                          {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </time>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Not available</span>
-                    );
-                  },
+      <RequestState query={q}>
+        <div className="space-y-4">
+          <DataTable
+            caption="Project activity"
+            emptyDescription="No recorded activity yet."
+            rows={q.data?.items ?? []}
+            rowKey={(row) => `${row.kind}:${row.id}`}
+            columns={[
+              {
+                key: "time",
+                label: "Time",
+                render: (row) => {
+                  const date = row.occurredAt ? new Date(row.occurredAt) : null;
+                  return date && !Number.isNaN(date.getTime()) ? (
+                    <time
+                      dateTime={row.occurredAt!}
+                      title={date.toLocaleString()}
+                      className="whitespace-nowrap text-xs"
+                    >
+                      {date.toLocaleDateString()}
+                      <span className="mt-1 block text-muted-foreground">
+                        {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </time>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Not available</span>
+                  );
                 },
-                {
-                  key: "project",
-                  label: "Project",
-                  render: (job) => (
+              },
+              {
+                key: "project",
+                label: "Project",
+                render: (row) =>
+                  row.projectDeleted ? (
+                    <span className="font-medium text-muted-foreground" translate="no">
+                      {row.projectName}
+                    </span>
+                  ) : (
                     <Link
-                      href={`/project-overview?project=${encodeURIComponent(job.projectId)}`}
+                      href={`/project-overview?project=${encodeURIComponent(row.projectId)}`}
                       className="font-medium text-primary hover:underline"
                     >
-                      {job.projectName}
+                      {row.projectName}
                     </Link>
                   ),
-                },
-                {
-                  key: "activity",
-                  label: "Analysis activity",
-                  render: (job) => (
-                    <div className="space-y-1">
-                      <AnalysisStatusIndicator job={job} compact />
-                      <p className="text-xs text-muted-foreground">
-                        Run {job.id.slice(0, 8)} · Snapshot {job.snapshotId.slice(0, 8)}
-                      </p>
-                    </div>
-                  ),
-                },
-                {
-                  key: "open",
-                  label: "Details",
-                  render: (job) => (
+              },
+              {
+                key: "activity",
+                label: "Activity",
+                render: (row) => (
+                  <div className="space-y-1">
+                    {row.job ? (
+                      <>
+                        <AnalysisStatusIndicator job={row.job} compact />
+                        <p className="text-xs text-muted-foreground">
+                          Run {row.job.id.slice(0, 8)} · Snapshot {row.job.snapshotId.slice(0, 8)}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <StatusBadge
+                          status={
+                            row.kind === "PROJECT_DELETED" ? "Project removed" : "Snapshot deleted"
+                          }
+                          variant="outline"
+                        />
+                        <p className="break-words text-xs" translate="no">
+                          {row.targetName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {row.actorName ? (
+                            <>
+                              By <span translate="no">{row.actorName}</span>
+                            </>
+                          ) : row.actorId ? (
+                            <>
+                              User <code>{row.actorId.slice(0, 8)}</code>
+                            </>
+                          ) : (
+                            "Actor not recorded"
+                          )}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                key: "open",
+                label: "Details",
+                render: (row) =>
+                  row.job && !row.projectDeleted ? (
                     <Button asChild size="sm" variant="ghost">
                       <Link
                         href={
-                          job.modelId
-                            ? `/architecture?project=${encodeURIComponent(job.projectId)}&model=${encodeURIComponent(job.modelId)}`
-                            : `/analysis-history?project=${encodeURIComponent(job.projectId)}`
+                          row.job.modelId
+                            ? `/architecture?project=${encodeURIComponent(row.projectId)}&model=${encodeURIComponent(row.job.modelId)}`
+                            : `/analysis-history?project=${encodeURIComponent(row.projectId)}`
                         }
                       >
-                        {job.modelId ? "Inspect" : "View history"}
+                        Inspect
                       </Link>
                     </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      {row.kind === "PROJECT_DELETED"
+                        ? "Soft delete · history retained"
+                        : row.kind === "SNAPSHOT_DELETED"
+                          ? "Snapshot and generated revisions removed"
+                          : "Project removed"}
+                      <span className="mt-1 block font-mono" title={row.targetId ?? row.id}>
+                        {(row.targetId ?? row.id).slice(0, 8)}
+                      </span>
+                    </span>
                   ),
-                },
-              ]}
-            />
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">{q.data?.total ?? 0} analysis runs</p>
-              {(q.data?.total ?? 0) > 10 && (
-                <Pagination
-                  page={page + 1}
-                  pageCount={Math.ceil((q.data?.total ?? 0) / 10)}
-                  onPageChange={(n) => setPage(n - 1)}
-                />
-              )}
-            </div>
+              },
+            ]}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">{q.data?.total ?? 0} activity events</p>
+            {(q.data?.total ?? 0) > 10 && (
+              <Pagination
+                page={page + 1}
+                pageCount={Math.ceil((q.data?.total ?? 0) / 10)}
+                onPageChange={(n) => setPage(n - 1)}
+              />
+            )}
           </div>
-        </RequestState>
-      )}
+        </div>
+      </RequestState>
     </DetailPanel>
   );
 }

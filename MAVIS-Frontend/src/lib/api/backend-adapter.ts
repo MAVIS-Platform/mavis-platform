@@ -28,7 +28,7 @@ export class BackendAdapter implements ApiAdapter {
       },
       ["importSource", "importGithub", "renderArchitectureView"].includes(operation)
         ? 120000
-        : ["explain", "elementEvidenceContext", "model"].includes(operation)
+        : ["explain", "elementEvidenceContext", "model", "reviewContext", "contextCandidates"].includes(operation)
           ? 60000
           : 20000,
     );
