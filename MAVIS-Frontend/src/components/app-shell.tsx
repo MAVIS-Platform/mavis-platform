@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { NotificationBell } from "@/features/notifications/inbox";
 import { AppearanceSelector } from "@/components/appearance-selector";
+import { LocaleSwitchButton } from "@/lib/i18n/locale-context";
 import { MavisLogo } from "@/components/mavis-logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -510,6 +511,7 @@ function ShellChrome({
               ]}
             />
             <div className="flex shrink-0 items-center gap-1">
+              <LocaleSwitchButton />
               <AppearanceSelector />
               <NotificationBell />
               {!live && (

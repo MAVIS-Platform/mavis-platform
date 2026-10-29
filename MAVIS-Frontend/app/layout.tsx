@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { LocaleProvider } from "@/lib/i18n/locale-context";
 import { AppProvider } from "@/providers/app-provider";
 import { readAppConfiguration } from "@/lib/api/config";
 import "../src/styles.css";
@@ -39,9 +40,11 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       </head>
       <body>
         <ThemeProvider>
-          <AppProvider mode={configuration.mode} mockScenario={configuration.mockScenario}>
-            {children}
-          </AppProvider>
+          <LocaleProvider>
+            <AppProvider mode={configuration.mode} mockScenario={configuration.mockScenario}>
+              {children}
+            </AppProvider>
+          </LocaleProvider>
         </ThemeProvider>
       </body>
     </html>
