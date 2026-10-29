@@ -68,4 +68,6 @@ class ContextReviewServiceTest {
  }
 
  @Test void quotedExamplesAreNotAccessRules(){assertThat(SecurityRoleSource.roles("String example=\".hasRole('ADMIN')\";")).isEmpty();assertThat(SecurityRoleSource.roles("String example=\"@PreAuthorize(hasRole('ADMIN'))\";")).isEmpty();}
+
+ @Test void displayedSourceExcerptContainsTheActualRoleRule(){String source="// "+"padding ".repeat(300)+"\n@RolesAllowed(\"ADMIN\")";String snippet=SecurityRoleSource.excerpt(source,"ADMIN");assertThat(snippet).contains("@RolesAllowed(\"ADMIN\")");assertThat(snippet.length()).isLessThanOrEqualTo(1100);}
 }
