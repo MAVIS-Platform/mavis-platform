@@ -354,4 +354,8 @@ class AccessPolicyServiceImplTest {
         assertThatThrownBy(accessPolicyService::requireCurrentActiveUser).isInstanceOf(BusinessException.class);
         verify(userRepository, times(2)).findWithRoleById(currentUserId);
     }
+    @Test void deletedProjectsCannotBeModified(){
+        var project=Project.builder().id(UUID.randomUUID()).status("DELETED").owner(currentUser).build();
+        assertThatThrownBy(()->accessPolicyService.requireProjectWriteAccess(project)).isInstanceOf(BusinessException.class).hasMessageContaining("Project not found");
+    }
 }

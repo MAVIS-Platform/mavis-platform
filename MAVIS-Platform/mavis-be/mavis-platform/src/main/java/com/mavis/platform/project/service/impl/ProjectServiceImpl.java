@@ -42,6 +42,7 @@ public class ProjectServiceImpl implements ProjectService {
     private final SourceSnapshotRepository sourceSnapshotRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final com.mavis.common.security.AccessPolicyService accessPolicyService;
+    private final com.mavis.platform.project.service.ProjectResourceDeletionService resourceDeletion;
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -139,9 +140,10 @@ public class ProjectServiceImpl implements ProjectService {
         log.info("Publishing snapshot {} for project {}", snapshotId, projectId);
         UUID currentUserId = SecurityUtils.getCurrentUserId();
 
-        Project project = projectRepository.findWithDetailsById(projectId)
+        Project project = projectRepository.findLockedById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
 
+        if("DELETED".equalsIgnoreCase(project.getStatus()))throw new BusinessException(ErrorCode.NOT_FOUND,"Project not found");
         validateProjectOwnershipOrLecturer(project, currentUserId);
         if(project.getWorkspace()==null) throw new BusinessException(ErrorCode.FORBIDDEN,"A teaching workspace is required to publish references");
         accessPolicyService.requireWorkspaceLecturer(project.getWorkspace().getId());
@@ -252,16 +254,7 @@ public class ProjectServiceImpl implements ProjectService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteProject(UUID id) {
-        log.info("Deleting project with ID: {}", id);
-        Project project = projectRepository.findWithDetailsById(id)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + id));
-
-        accessPolicyService.requireProjectWriteAccess(project);
-
-        project.setStatus("DELETED");
-        project.setUpdatedAt(OffsetDateTime.now());
-        projectRepository.save(project);
-        log.info("Project with ID: {} has been marked as DELETED", id);
+        resourceDeletion.deleteProject(id);
     }
 
     private void validateProjectOwnershipOrLecturer(Project project, UUID currentUserId) {

@@ -52,7 +52,7 @@ jobs:
           cache: maven
       - name: Backend regression tests
         working-directory: MAVIS-Platform/mavis-be
-        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=GitHubRepositoryUrlsTest,SourceIngestionServiceImplTest,ProjectServiceImplTest,JavaSourceParserTest,GraphBuilderServiceTest,FeignCommunicationResolverTest,CrossLanguageServiceLinkerTest,SecurityConfigTest,JobServiceImplTest,AnalysisRequestServiceTest,RuntimeRecoveryControllerTest,RuntimeRunnerDispatcherTest,ContextReviewServiceTest,ModelVersionServiceImplTest,OtelTraceCorrelationServiceImplTest,MigrationUpgradeTest,AdminHealthControllerTest,AiUsageControllerTest,GeminiMonitoringClientTest,NotificationControllerTest -Dsurefire.failIfNoSpecifiedTests=false test
+        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=GitHubRepositoryUrlsTest,SourceIngestionServiceImplTest,ProjectServiceImplTest,ProjectResourceDeletionServiceTest,JavaSourceParserTest,GraphBuilderServiceTest,FeignCommunicationResolverTest,CrossLanguageServiceLinkerTest,SecurityConfigTest,JobServiceImplTest,AnalysisRequestServiceTest,RuntimeRecoveryControllerTest,RuntimeRunnerDispatcherTest,ContextReviewServiceTest,ModelVersionServiceImplTest,OtelTraceCorrelationServiceImplTest,MigrationUpgradeTest,ResourceDeletionPostgresTest,AdminHealthControllerTest,AiUsageControllerTest,GeminiMonitoringClientTest,NotificationControllerTest -Dsurefire.failIfNoSpecifiedTests=false test
       - name: Transactional notification delivery tests
         run: >-
           docker run --rm --network host -v "$PWD:/source:ro" -w /source

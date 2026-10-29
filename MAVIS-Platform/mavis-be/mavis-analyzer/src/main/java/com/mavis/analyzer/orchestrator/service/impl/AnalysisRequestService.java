@@ -35,6 +35,7 @@ public class AnalysisRequestService {
         var project = projects.findLockedById(snapshot.getProject().getId()).orElseThrow();
         accessPolicy.requireProjectWriteAccess(project);
 
+        if("DELETED".equalsIgnoreCase(project.getStatus()))throw new BusinessException(ErrorCode.NOT_FOUND,"Project not found");
         var previous = jobs.findByProjectIdAndAnalysisRequestKey(project.getId(), key);
         if (previous.isPresent()) {
             var job = previous.get();
