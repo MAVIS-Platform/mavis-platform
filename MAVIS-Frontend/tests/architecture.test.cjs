@@ -1943,3 +1943,28 @@ test("notification cutoff preserves new messages within the same millisecond and
  assert.equal(applyNotificationRead(data,{page:0,size:5,unreadOnly:false},"readAllNotifications",{before},{...ack,recipientId:"other"}),data);
  assert.equal(applyNotificationRead(data,{page:0,size:5,unreadOnly:false},"readAllNotifications",{before},{ok:true}),data);
 });
+
+
+test("direct project URLs populate selection and the project dropdown without click initialization", () => {
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {SelectionContext}=require("../src/providers/app-context.ts");
+ let selected;
+ let params=new URLSearchParams("project=project-b");
+ const {AppProvider}=loadRoutedComponent("src/providers/app-provider.tsx",{
+  "next/navigation":{usePathname:()=>"/project-overview",useSearchParams:()=>params,useRouter:()=>({replace(){}})},
+  "@/components/ui/sonner":{Toaster:()=>null},
+ });
+ function Probe(){selected=React.useContext(SelectionContext);return null;}
+ renderToStaticMarkup(React.createElement(AppProvider,{mode:"backend"},React.createElement(Probe)));
+ assert.equal(selected.projectId,"project-b");
+ const {ProjectSelector}=loadRoutedComponent("src/features/projects/components.tsx",{
+  "@/hooks/use-api":{useApiQuery:()=>({data:[{id:"project-a",name:"Project A"},{id:"project-b",name:"Project B"}],isPending:false,isError:false}),useSelection:()=>selected},
+  "@tanstack/react-query":{useIsMutating:()=>0},
+ });
+ const {QueryClient,QueryClientProvider}=require("@tanstack/react-query");
+ const html=renderToStaticMarkup(React.createElement(QueryClientProvider,{client:new QueryClient()},React.createElement(ProjectSelector)));
+ assert.match(html,/<option value="project-b" selected="">Project B<\/option>/);
+ params=new URLSearchParams("project=project-a");
+ renderToStaticMarkup(React.createElement(AppProvider,{mode:"backend"},React.createElement(Probe)));
+ assert.equal(selected.projectId,"project-a");
+});
