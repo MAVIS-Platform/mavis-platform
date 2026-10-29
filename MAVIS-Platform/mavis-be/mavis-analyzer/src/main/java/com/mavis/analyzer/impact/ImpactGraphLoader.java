@@ -14,7 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
 
-@Service @RequiredArgsConstructor
+@Service
 public class ImpactGraphLoader {
     private final ModelVersionRepository models;
     private final ModelElementRepository elements;
@@ -23,18 +23,59 @@ public class ImpactGraphLoader {
     private final JobRepository jobs;
     private final ObjectMapper json;
     private final com.mavis.common.security.AccessPolicyService accessPolicy;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ImpactGraphLoader(
+            ModelVersionRepository models,
+            ModelElementRepository elements,
+            ModelRelationshipRepository relationships,
+            EvidenceRepository evidence,
+            JobRepository jobs,
+            ObjectMapper json,
+            com.mavis.common.security.AccessPolicyService accessPolicy) {
+        this.models = models;
+        this.elements = elements;
+        this.relationships = relationships;
+        this.evidence = evidence;
+        this.jobs = jobs;
+        this.json = json;
+        this.accessPolicy = accessPolicy;
+    }
+
+    public ImpactGraphLoader(
+            ModelVersionRepository models,
+            ModelElementRepository elements,
+            ModelRelationshipRepository relationships,
+            EvidenceRepository evidence,
+            JobRepository jobs,
+            ObjectMapper json) {
+        this(models, elements, relationships, evidence, jobs, json, null);
+    }
+
+    private static final Set<String> IMPACT_NODE_TYPES = Set.of(
+        "SERVICE_CONTAINER",
+        "QUEUE_BROKER",
+        "MESSAGE_CHANNEL",
+        "DATABASE",
+        "EXTERNAL_SYSTEM"
+    );
+
     public record EvidenceView(String id,UUID sourceSnapshotId,String locator,String adapterVersion,String sourceType,JsonNode provenance){}
     public record Snapshot(ImpactWorkerClient.Request request,Map<String,String> serviceNames,Map<String,EvidenceView> evidence,List<String> warnings){}
     @Transactional(readOnly=true)
     public Snapshot load(UUID modelId,UUID target,String expectedRevision,int maxDepth,int maxPaths){
         if(maxDepth<1||maxDepth>100||maxPaths<1||maxPaths>10000)throw invalid();
         var model=models.findById(modelId).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND,"Model not found"));
-        accessPolicy.requireProjectReadAccess(model.getProject());
+        if (accessPolicy != null) {
+            accessPolicy.requireProjectReadAccess(model.getProject());
+        }
         boolean ready="USER_CONFIRMED".equals(model.getOrigin())||jobs.findBySourceSnapshotId(model.getSourceSnapshot().getId()).stream().anyMatch(j->"COMPLETED".equals(j.getStatus())&&j.getResultManifest()!=null&&modelId.toString().equals(j.getResultManifest().path("modelVersionId").asText())&&"ADAPTERS_COMPLETED".equals(j.getResultManifest().path("completeness").asText()));
         if(!ready)throw new BusinessException(ErrorCode.BAD_REQUEST,"Impact requires a completed, version-pinned model");
         var allEls = elements.findByModelVersionId(modelId);
         var names = new TreeMap<String, String>();
-        allEls.stream().filter(e -> "SERVICE_CONTAINER".equals(e.getElementType())).forEach(e -> names.put(e.getId().toString(), e.getName()));
+        allEls.stream()
+                .filter(e -> e.getElementType() != null && IMPACT_NODE_TYPES.contains(e.getElementType()))
+                .forEach(e -> names.put(e.getId().toString(), e.getName()));
 
         UUID resolvedTargetId = target;
         if (!names.containsKey(target.toString())) {
@@ -56,7 +97,8 @@ public class ImpactGraphLoader {
             "MESSAGE_PUBLISH",
             "MESSAGE_SUBSCRIBE",
             "DECLARED_COMPOSE",
-            "DECLARED_LINK"
+            "DECLARED_LINK",
+            "DATABASE_ACCESS"
         );
         for (var r : relationships.findByModelVersionId(modelId)) {
             if (!impactRelTypes.contains(r.getRelationType())) continue;
@@ -64,7 +106,19 @@ public class ImpactGraphLoader {
             var tgt = resolveContainer(r.getTargetElement());
             if (src == null || tgt == null || src.getId().equals(tgt.getId())) continue;
             if (!names.containsKey(src.getId().toString()) || !names.containsKey(tgt.getId().toString())) continue;
-            selected.add(new ResolvedRel(r, src, tgt));
+
+            ModelElement effectiveSrc = src;
+            ModelElement effectiveTgt = tgt;
+            if ("MESSAGE_SUBSCRIBE".equals(r.getRelationType())) {
+                boolean srcIsChannel = isChannelOrBroker(src);
+                boolean tgtIsChannel = isChannelOrBroker(tgt);
+                if (srcIsChannel && !tgtIsChannel) {
+                    effectiveSrc = tgt;
+                    effectiveTgt = src;
+                }
+            }
+
+            selected.add(new ResolvedRel(r, effectiveSrc, effectiveTgt));
         }
         if (selected.size() > 50000) throw invalid();
         selected.sort(Comparator.comparing(sr -> sr.rel().getId().toString()));
@@ -78,13 +132,69 @@ public class ImpactGraphLoader {
             grouped.computeIfAbsent(e.getRelationship().getId(), ignored -> new ArrayList<>()).add(id);
             evidenceViews.put(id, new EvidenceView(id, e.getSourceSnapshot().getId(), e.getLocator(), e.getAdapterVersion(), e.getSourceType(), e.getProvenance()));
         }
-        var edges = selected.stream().map(sr -> new ImpactWorkerClient.Edge(
-                sr.rel().getId().toString(),
+
+        List<ImpactWorkerClient.Edge> edges = new ArrayList<>();
+        Set<String> edgeIds = new HashSet<>();
+        for (var sr : selected) {
+            String edgeId = sr.rel().getId().toString();
+            edgeIds.add(edgeId);
+            edges.add(new ImpactWorkerClient.Edge(
+                edgeId,
                 sr.sourceContainer().getId().toString(),
                 sr.targetContainer().getId().toString(),
                 "HttpRestCall",
                 grouped.getOrDefault(sr.rel().getId(), List.of()).stream().sorted().toList()
-        )).toList();
+            ));
+        }
+
+        // Synthesize direct virtual messaging edges (subContainer -> pubContainer)
+        // so when pubContainer is impacted/fails, subContainer is also traversed as impacted.
+        Map<String, List<ResolvedRel>> publishersByChannel = new HashMap<>();
+        Map<String, List<ResolvedRel>> subscribersByChannel = new HashMap<>();
+        for (var sr : selected) {
+            if ("MESSAGE_PUBLISH".equals(sr.rel().getRelationType())) {
+                publishersByChannel.computeIfAbsent(sr.targetContainer().getId().toString(), k -> new ArrayList<>()).add(sr);
+            } else if ("MESSAGE_SUBSCRIBE".equals(sr.rel().getRelationType())) {
+                subscribersByChannel.computeIfAbsent(sr.targetContainer().getId().toString(), k -> new ArrayList<>()).add(sr);
+            }
+        }
+
+        Map<String, Set<String>> synthPairsEvidence = new LinkedHashMap<>();
+        for (var entry : publishersByChannel.entrySet()) {
+            String channelId = entry.getKey();
+            List<ResolvedRel> pubList = entry.getValue();
+            List<ResolvedRel> subList = subscribersByChannel.getOrDefault(channelId, List.of());
+            for (var pub : pubList) {
+                String pubId = pub.sourceContainer().getId().toString();
+                for (var sub : subList) {
+                    String subId = sub.sourceContainer().getId().toString();
+                    if (pubId.equals(subId)) continue;
+                    String pairKey = subId + "->" + pubId;
+                    Set<String> evs = synthPairsEvidence.computeIfAbsent(pairKey, k -> new LinkedHashSet<>());
+                    evs.addAll(grouped.getOrDefault(pub.rel().getId(), List.of()));
+                    evs.addAll(grouped.getOrDefault(sub.rel().getId(), List.of()));
+                }
+            }
+        }
+
+        for (var entry : synthPairsEvidence.entrySet()) {
+            String[] parts = entry.getKey().split("->");
+            String subId = parts[0];
+            String pubId = parts[1];
+            String synthEdgeId = UUID.nameUUIDFromBytes(("synthetic-messaging-" + subId + "->" + pubId).getBytes(StandardCharsets.UTF_8)).toString();
+            if (!edgeIds.contains(synthEdgeId)) {
+                edgeIds.add(synthEdgeId);
+                edges.add(new ImpactWorkerClient.Edge(
+                    synthEdgeId,
+                    subId,
+                    pubId,
+                    "HttpRestCall",
+                    entry.getValue().stream().sorted().toList()
+                ));
+            }
+        }
+        if (edges.size() > 50000) throw invalid();
+
         String revision;
         try {
             revision = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(json.writeValueAsBytes(List.of(modelId.toString(), new ArrayList<>(names.keySet()), edges))));
@@ -95,11 +205,19 @@ public class ImpactGraphLoader {
         return new Snapshot(new ImpactWorkerClient.Request(modelId.toString(), modelId.toString(), revision, true, resolvedTargetId.toString(), new ArrayList<>(names.keySet()), edges, maxDepth, List.of(), maxPaths), Map.copyOf(names), Map.copyOf(evidenceViews), List.of("SERVICE_HTTP_EDGES_INCLUDED", "CASCADING_MULTI_HOP_CONTAINER_RESOLVED"));
     }
 
+    private boolean isChannelOrBroker(ModelElement el) {
+        if (el == null || el.getElementType() == null) return false;
+        return "MESSAGE_CHANNEL".equalsIgnoreCase(el.getElementType()) || "QUEUE_BROKER".equalsIgnoreCase(el.getElementType());
+    }
+
     private ModelElement resolveContainer(ModelElement element) {
         if (element == null) return null;
+        if (element.getElementType() != null && IMPACT_NODE_TYPES.contains(element.getElementType())) {
+            return element;
+        }
         Set<ModelElement> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         for (ModelElement cur = element; cur != null && visited.add(cur); cur = cur.getParentElement()) {
-            if ("SERVICE_CONTAINER".equalsIgnoreCase(cur.getElementType())) {
+            if (cur.getElementType() != null && IMPACT_NODE_TYPES.contains(cur.getElementType())) {
                 return cur;
             }
         }

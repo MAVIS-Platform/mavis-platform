@@ -263,6 +263,8 @@ export function ArchitecturePresentation({
               docked={mode === "graph"}
               connection={connection}
               elements={projection.model.elements}
+              model={model}
+              projectId={model.projectId}
               onInspect={(id) => {
                 setDrilledSourceEdgeId(null);
                 onSelect(id);

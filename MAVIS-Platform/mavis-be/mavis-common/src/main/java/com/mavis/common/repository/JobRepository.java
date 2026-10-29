@@ -17,6 +17,7 @@ public interface JobRepository extends JpaRepository<Job, UUID> {
     java.util.Optional<Job> findByProjectIdAndAnalysisRequestKey(UUID projectId,String analysisRequestKey);
     List<Job> findByProjectIdOrderByStartedAtDesc(UUID projectId);
     boolean existsByProjectIdAndJobTypeAndStatusIn(UUID projectId, String jobType, java.util.Collection<String> statuses);
+    List<Job> findByProjectIdAndJobTypeAndStatusIn(UUID projectId, String jobType, java.util.Collection<String> statuses);
     List<Job> findBySourceSnapshotId(UUID sourceSnapshotId);
     List<Job> findByStatus(String status);
     List<Job> findTop100ByStatusOrderByStartedAtAsc(String status);

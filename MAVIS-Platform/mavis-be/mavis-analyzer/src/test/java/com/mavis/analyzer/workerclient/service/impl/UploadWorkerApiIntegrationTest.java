@@ -62,7 +62,7 @@ class UploadWorkerApiIntegrationTest {
         @Bean(name="mavisAnalysisExecutor") public org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor executor(){return new AnalysisLifecycleConfiguration().analysisExecutor();}
         @Bean JobControlService controls(JobRepository j,AnalysisAttemptRepository a,AnalysisExecutionRegistry x,ApplicationEventPublisher e,ObjectMapper json){return new JobControlService(j,a,x,e,json);}
         @Bean JobServiceImpl jobs(JobRepository j,ProjectRepository p,com.mavis.common.security.AccessPolicyService policy){return new JobServiceImpl(j,p,policy);}
-        @Bean AnalysisRequestService analysisRequests(SourceSnapshotRepository s,ProjectRepository p,JobRepository j,ApplicationEventPublisher e){return new AnalysisRequestService(s,p,j,e);}
+        @Bean AnalysisRequestService analysisRequests(SourceSnapshotRepository s,ProjectRepository p,JobRepository j,com.mavis.common.security.AccessPolicyService policy,ApplicationEventPublisher e){return new AnalysisRequestService(s,p,j,policy,e);}
     }
     private void start(boolean validKey)throws Exception {
         Assumptions.assumeTrue(System.getenv("MAVIS_TEST_JDBC_URL")!=null && System.getenv("MAVIS_WORKER_TEST_URL")!=null,"Run live API integration harness");
