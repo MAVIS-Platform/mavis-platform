@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { SelectField } from "@/components/shared/forms";
+import { ContextReview } from "./context-review";
 import { DrawioEditor } from "./drawio-editor";
 import { ScenarioDiagram } from "./scenario-diagram";
 import { UmlDiagramWorkspace } from "./uml-diagram-workspace";
@@ -94,7 +95,7 @@ export function ArchitectureDiagrams({
     "UML_STATE",
   ].includes(kind);
   const isC4EnrichableKind =
-    kind === "CONTEXT" || kind === "CONTAINER" || kind === "COMPONENT";
+    kind === "CONTAINER" || kind === "COMPONENT";
 
   useEffect(() => {
     if (!isC4EnrichableKind) {
@@ -320,6 +321,7 @@ export function ArchitectureDiagrams({
           </div>
         )}
       </div>
+      {kind === "CONTEXT" && <ContextReview key={model.id} model={model} />}
       {kind === "CONTEXT" && deriveC4ContextModel(model).persons.length === 0 && (
         <div role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">
           <p className="font-medium">Context incomplete · external callers require review</p>

@@ -111,7 +111,7 @@ public class ModelVersionServiceImpl implements ModelVersionService {
                 case "REMOVE" -> {if(nodes.remove(edit.ref())==null)throw invalid();parents.remove(edit.ref());}
                 case "UPDATE" -> {var n=nodes.get(edit.ref());if(n==null||edit.kind()!=null||edit.parentRef()!=null)throw invalid();
                     if(edit.name()!=null){name(edit.name());n.setName(edit.name());}if(edit.status()!=null){if(!edit.status().equals("STUDENT_CONFIRMED"))throw invalid();n.setStatus(edit.status());}if(edit.languageStack()!=null)n.setLanguageStack(edit.languageStack());if(edit.scope()!=null)n.setScope(edit.scope());n.setProperties(metadata(n.getProperties(),edit.properties()));changedNodes.add(edit.ref());}
-                case "ADD" -> {if(nodes.containsKey(edit.ref())||oldByRef.containsKey(edit.ref())||edit.kind()==null||!Set.of("COMPONENT","CLASS_INTERFACE","SERVICE_CONTAINER","DATABASE","EXTERNAL_SYSTEM","QUEUE_BROKER").contains(edit.kind()))throw invalid();name(edit.name());
+                case "ADD" -> {if(nodes.containsKey(edit.ref())||oldByRef.containsKey(edit.ref())||edit.kind()==null||!Set.of("COMPONENT","CLASS_INTERFACE","SERVICE_CONTAINER","DATABASE","EXTERNAL_SYSTEM","QUEUE_BROKER","PERSON").contains(edit.kind()))throw invalid();name(edit.name());
                     nodes.put(edit.ref(),ModelElement.builder().modelVersion(next).name(edit.name()).elementType(edit.kind()).status("STUDENT_CONFIRMED").languageStack(edit.languageStack()).scope(edit.scope()).properties(metadata(json.createObjectNode().put("logicalKey","user:"+UUID.randomUUID()).put("origin","USER_CONFIRMED"),edit.properties())).build());
                     if(edit.parentRef()!=null)parents.put(edit.ref(),edit.parentRef());addedNodes.add(edit.ref());}
                 default -> throw invalid();
@@ -148,8 +148,8 @@ public class ModelVersionServiceImpl implements ModelVersionService {
             provenance.put("copiedFromEvidenceId",e.getId().toString()).put("baseModelVersionId",baseId.toString());
             copies.add(Evidence.builder().modelVersion(next).sourceSnapshot(e.getSourceSnapshot()).runtimeSession(e.getRuntimeSession()).element(n).relationship(r).locator(e.getLocator()).sourceType(e.getSourceType()).adapterVersion(e.getAdapterVersion()).excerpt(e.getExcerpt()).provenance(provenance).build());
         }
-        var nodeEdits=new HashSet<String>(changedNodes);nodeEdits.addAll(addedNodes);for(String id:nodeEdits)copies.add(editEvidence(next,baseId,nodes.get(id),null));
-        var edgeEdits=new HashSet<String>(changedEdges);edgeEdits.addAll(addedEdges);for(String id:edgeEdits)copies.add(editEvidence(next,baseId,null,edges.get(id)));
+        var nodeEdits=new HashSet<String>(changedNodes);nodeEdits.addAll(addedNodes);for(String id:nodeEdits)if(request.elements().stream().noneMatch(edit->id.equals(edit.ref())&&edit.properties()!=null&&(edit.properties().has("contextReview")||edit.properties().has("contextFactOrigin"))))copies.add(editEvidence(next,baseId,nodes.get(id),null));
+        var edgeEdits=new HashSet<String>(changedEdges);edgeEdits.addAll(addedEdges);for(String id:edgeEdits)if(!edges.get(id).getProperties().has("contextFactOrigin"))copies.add(editEvidence(next,baseId,null,edges.get(id)));
         evidence.saveAll(copies);evidence.flush();diagrams.generateDefaultDiagramsForModel(next,new ArrayList<>(nodes.values()),new ArrayList<>(edges.values()));
         models.invalidatePreviousVersions(base.getProject().getId(),next.getId());next.setIsLatestValid(true);models.save(next);return view(next);
     }
