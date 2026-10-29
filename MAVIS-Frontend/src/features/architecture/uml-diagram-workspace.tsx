@@ -35,6 +35,7 @@ import {
   type UmlStateOverlay,
 } from "./uml-diagrams";
 import type { DrawioTheme } from "@/lib/drawio/rules";
+import { useLocale } from "@/lib/i18n/locale-context";
 
 const clientUmlAiCache = new Map<string, UmlAiDiagramEnrichment>();
 
@@ -57,6 +58,7 @@ export function UmlDiagramWorkspace({
   theme?: DrawioTheme | undefined;
   onThemeChange?: ((theme: DrawioTheme) => void) | undefined;
 }) {
+  const { locale } = useLocale();
   const api = useApi();
   const cache = useQueryClient();
   const [internalTheme, setInternalTheme] = useState<DrawioTheme>(externalTheme ?? "clean");
@@ -288,7 +290,8 @@ export function UmlDiagramWorkspace({
   const [umlAiEnrichment, setUmlAiEnrichment] = useUmlScopeState<UmlAiDiagramEnrichment | null>(documentScope, null);
 
   useEffect(() => {
-    const cached = clientUmlAiCache.get(compactUmlContext.contextHash);
+    const cacheKey = `${compactUmlContext.contextHash}:${locale}`;
+    const cached = clientUmlAiCache.get(cacheKey);
     if (cached) {
       setUmlAiEnrichment(cached);
       return;
@@ -297,12 +300,12 @@ export function UmlDiagramWorkspace({
     fetch("/api/ai-diagram-semantics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ umlContext: compactUmlContext }),
+      body: JSON.stringify({ umlContext: compactUmlContext, locale }),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { umlEnrichment?: UmlAiDiagramEnrichment } | null) => {
         if (cancelled || !data?.umlEnrichment) return;
-        clientUmlAiCache.set(compactUmlContext.contextHash, data.umlEnrichment);
+        clientUmlAiCache.set(cacheKey, data.umlEnrichment);
         setUmlAiEnrichment(data.umlEnrichment);
       })
       .catch(() => {
@@ -311,7 +314,7 @@ export function UmlDiagramWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [compactUmlContext]);
+  }, [compactUmlContext, locale]);
 
   const projection = useMemo(
     () => applyUmlAiEnrichment(baseProjection, umlAiEnrichment),

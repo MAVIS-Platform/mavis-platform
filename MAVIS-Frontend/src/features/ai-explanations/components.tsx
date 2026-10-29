@@ -165,8 +165,8 @@ export function AIExplanationPanel({
     [model, ctx, persistedEvidences, citedAsEvidence],
   );
   const deterministic3E = useMemo(
-    () => buildDeterministicThreeESimplified(model, ctx, concreteEvidences, []),
-    [model, ctx, concreteEvidences],
+    () => buildDeterministicThreeESimplified(model, ctx, concreteEvidences, [], locale),
+    [model, ctx, concreteEvidences, locale],
   );
   const threeEAiCtx = useMemo(
     () => buildThreeEAiContext(model, ctx, concreteEvidences, []),
@@ -209,6 +209,7 @@ export function AIExplanationPanel({
       explanationScope: effectiveScope,
       ...(q ? { userQuestion: q } : {}),
       forceRefresh,
+      locale,
     });
   };
 

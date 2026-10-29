@@ -390,7 +390,7 @@ export async function POST(request: NextRequest) {
     // Branch -1: 3E Simplified AI Explanation + Per-Snippet Code Notes
     if (body.threeEContext && body.threeEContext.contextHash) {
       const tCtx = literalSourceContext(body.threeEContext);
-      const fallback3E = normalizeThreeE(null, tCtx);
+      const fallback3E = normalizeThreeE(null, tCtx, locale);
       const cacheKey = `evidence-v2:${locale}:${tCtx.contextHash}`;
       const hit = threeEEnrichmentCache.get(cacheKey);
       if (hit) {
@@ -439,7 +439,7 @@ export async function POST(request: NextRequest) {
         userPayload,
       );
       const merged3E: ThreeEAiSimplifiedExplanation = {
-        ...normalizeThreeE(parsed3E, tCtx),
+        ...normalizeThreeE(parsed3E, tCtx, locale),
         tokenStats: {
           rawChars: tCtx.rawChars,
           compressedChars: tCtx.compressedChars,
@@ -463,7 +463,8 @@ export async function POST(request: NextRequest) {
     // Branch 0: UML Diagram Enrichment (Class / Package / Deployment / Activity / State)
     if (body.umlContext && body.umlContext.contextHash) {
       const umlCtx = body.umlContext;
-      const hit = umlEnrichmentCache.get(umlCtx.contextHash);
+      const umlCacheKey = `${umlCtx.contextHash}:${locale}`;
+      const hit = umlEnrichmentCache.get(umlCacheKey);
       if (hit) {
         return NextResponse.json({ umlEnrichment: hit, cached: true });
       }
@@ -477,10 +478,15 @@ export async function POST(request: NextRequest) {
         items: umlCtx.items,
         astSkeleton: umlCtx.astSkeleton,
       });
+      const umlSystemPrompt =
+        locale === "vi"
+          ? UML_SYSTEM_PROMPT +
+            "\n\nIMPORTANT LANGUAGE REQUIREMENT: Write all human-readable descriptions, flowTitles, flowSummaries, action labels, and state notes in natural, clear VIETNAMESE (Tiếng Việt), while keeping technical identifiers, class names, method names, and protocols (HTTP, REST, gRPC, Kafka) in English."
+          : UML_SYSTEM_PROMPT;
       const parsedUml = await callStructuredLlm<UmlAiDiagramEnrichment>(
         resolved,
         userId,
-        UML_SYSTEM_PROMPT,
+        umlSystemPrompt,
         userPayload,
       );
       const mergedUml: UmlAiDiagramEnrichment = {
@@ -537,14 +543,15 @@ export async function POST(request: NextRequest) {
         const oldest = umlEnrichmentCache.keys().next().value;
         if (oldest) umlEnrichmentCache.delete(oldest);
       }
-      umlEnrichmentCache.set(umlCtx.contextHash, mergedUml);
+      umlEnrichmentCache.set(umlCacheKey, mergedUml);
       return NextResponse.json({ umlEnrichment: mergedUml, cached: false });
     }
 
     // Branch 1: C4 Diagram Enrichment (System Context / Container / Component)
     if (body.c4Context && body.c4Context.contextHash) {
       const c4Ctx = body.c4Context;
-      const hit = c4EnrichmentCache.get(c4Ctx.contextHash);
+      const c4CacheKey = `${c4Ctx.contextHash}:${locale}`;
+      const hit = c4EnrichmentCache.get(c4CacheKey);
       if (hit) {
         return NextResponse.json({ c4Enrichment: hit, cached: true });
       }
@@ -560,10 +567,15 @@ export async function POST(request: NextRequest) {
         externals: c4Ctx.externals,
         astSkeleton: c4Ctx.astSkeleton,
       });
+      const c4SystemPrompt =
+        locale === "vi"
+          ? C4_SYSTEM_PROMPT +
+            "\n\nIMPORTANT LANGUAGE REQUIREMENT: Write all nodeDescriptions in natural, clear VIETNAMESE (Tiếng Việt) up to 54 characters, while keeping technical identifiers and service names in English."
+          : C4_SYSTEM_PROMPT;
       const parsedC4 = await callStructuredLlm<C4AiDiagramEnrichment>(
         resolved,
         userId,
-        C4_SYSTEM_PROMPT,
+        c4SystemPrompt,
         userPayload,
       );
       const mergedC4: C4AiDiagramEnrichment = {
@@ -579,7 +591,7 @@ export async function POST(request: NextRequest) {
         const oldest = c4EnrichmentCache.keys().next().value;
         if (oldest) c4EnrichmentCache.delete(oldest);
       }
-      c4EnrichmentCache.set(c4Ctx.contextHash, mergedC4);
+      c4EnrichmentCache.set(c4CacheKey, mergedC4);
       return NextResponse.json({ c4Enrichment: mergedC4, cached: false });
     }
 
@@ -590,7 +602,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ enrichment: fallback, cached: false });
     }
 
-    const hit = enrichmentCache.get(ctx.contextHash);
+    const seqCacheKey = `${ctx.contextHash}:${locale}`;
+    const hit = enrichmentCache.get(seqCacheKey);
     if (hit) {
       return NextResponse.json({ enrichment: hit, cached: true });
     }
@@ -607,10 +620,16 @@ export async function POST(request: NextRequest) {
       astSkeleton: ctx.astSkeleton,
     });
 
+    const seqSystemPrompt =
+      locale === "vi"
+        ? SEQUENCE_SYSTEM_PROMPT +
+          "\n\nIMPORTANT LANGUAGE REQUIREMENT: Write flowTitle and flowSummary in natural, clear VIETNAMESE (Tiếng Việt), while keeping technical identifiers, method names, and return values in English."
+        : SEQUENCE_SYSTEM_PROMPT;
+
     const parsedAi = await callStructuredLlm<SequenceAiEnrichment>(
       resolved,
-        userId,
-      SEQUENCE_SYSTEM_PROMPT,
+      userId,
+      seqSystemPrompt,
       userPayload,
     );
 
@@ -671,7 +690,7 @@ export async function POST(request: NextRequest) {
       const oldestKey = enrichmentCache.keys().next().value;
       if (oldestKey) enrichmentCache.delete(oldestKey);
     }
-    enrichmentCache.set(ctx.contextHash, merged);
+    enrichmentCache.set(seqCacheKey, merged);
 
     return NextResponse.json({ enrichment: merged, cached: false });
   } catch {

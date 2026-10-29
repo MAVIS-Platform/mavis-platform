@@ -1,4 +1,28 @@
 import type { ArchitecturalModel, Evidence } from "@/types/domain";
+import {
+  ruleNamesVi,
+  resultNamesVi,
+  getRuleNameVi,
+  getResultNameVi,
+  sourceLabelVi,
+  selectionSummaryVi,
+  explainEvidenceSnippetSimplyVi,
+  buildDeterministicThreeESimplifiedVi,
+  threeERefusalMessageVi,
+} from "@/lib/i18n/three-e-vi";
+
+export { ruleNamesVi, resultNamesVi };
+
+export function getRuleName(ruleId: string, locale: "en" | "vi" = "en"): string {
+  if (locale === "vi") return getRuleNameVi(ruleId);
+  return ruleNames[ruleId] ?? ruleId;
+}
+
+export function getResultName(status: string, locale: "en" | "vi" = "en"): string {
+  if (locale === "vi") return getResultNameVi(status);
+  return resultNames[status] ?? status;
+}
+
 export const RULE_SET = "3e-2";
 export const ruleNames: Record<string, string> = {
   "RULE-01": "Cyclic dependencies between services",
@@ -13,7 +37,8 @@ export const resultNames: Record<string, string> = {
   NEEDS_REVIEW: "Needs verification",
   NOT_APPLICABLE: "Not applicable",
 };
-export function sourceLabel(evidence: Pick<Evidence, "kind" | "sourceType">) {
+export function sourceLabel(evidence: Pick<Evidence, "kind" | "sourceType">, locale: "en" | "vi" = "en") {
+  if (locale === "vi") return sourceLabelVi(evidence);
   const type = evidence.sourceType?.toUpperCase() ?? "";
   if (type.startsWith("RUNTIME")) return "Observed at runtime";
   if (type.includes("CONFIG") || type.includes("COMPOSE")) return "From configuration";
@@ -30,7 +55,8 @@ export function shortLocator(location: string) {
     return normalized.split("/").slice(-3).join("/");
   return normalized || "No source location";
 }
-export function selectionSummary(model: ArchitecturalModel, id: string) {
+export function selectionSummary(model: ArchitecturalModel, id: string, locale: "en" | "vi" = "en") {
+  if (locale === "vi") return selectionSummaryVi(model, id);
   const node = model.elements.find((node) => node.id === id),
     edge = model.edges.find((edge) => edge.id === id);
   const name = (id: string) =>
@@ -962,7 +988,9 @@ export interface ThreeEAiPromptContext {
 export function explainEvidenceSnippetSimply(
   item: Pick<Evidence, "kind" | "sourceType" | "location" | "snippet">,
   subjectTitle?: string,
+  locale: "en" | "vi" = "en",
 ): string {
+  if (locale === "vi") return explainEvidenceSnippetSimplyVi(item, subjectTitle);
   const loc = shortLocator(item.location);
   const snippet = item.snippet ?? "";
   const lower = (loc + "\n" + snippet).toLowerCase();
@@ -1151,7 +1179,9 @@ export function buildDeterministicThreeESimplified(
   ctx: ThreeESubjectContext,
   concreteEvidences: readonly Evidence[],
   matchingFindings: readonly Record<string, unknown>[],
+  locale: "en" | "vi" = "en",
 ): ThreeEAiSimplifiedExplanation {
+  if (locale === "vi") return buildDeterministicThreeESimplifiedVi(model, ctx, concreteEvidences, matchingFindings);
   const { node, edge, title, connections } = ctx.subject;
   const saved = concreteEvidences.filter(
     (ev) => ev.origin !== "preview" && ev.sourceType !== "MODEL_METADATA_PREVIEW",
@@ -1355,9 +1385,12 @@ export function checkThreeEScopeGuardrail(
     | "codeSnippets"
     | "otherElementNames"
   >,
+  locale: "en" | "vi" = "en",
 ): { allowed: boolean; reason?: "off-topic" | "wrong-service"; refusalMessage?: string } {
   const q = question.trim();
-  const defaultRefusal = `I only answer questions about the software architecture, code evidence, dependencies, and design trade-offs of "${tCtx.title}" (${tCtx.type}). Please ask a question scoped to this selected element.`;
+  const defaultRefusal = locale === "vi"
+    ? threeERefusalMessageVi("off-topic", tCtx)
+    : `I only answer questions about the software architecture, code evidence, dependencies, and design trade-offs of "${tCtx.title}" (${tCtx.type}). Please ask a question scoped to this selected element.`;
 
   if (q.length < 2 || CHITCHAT_ONLY_REGEX.test(q) || OFF_TOPIC_GUARDRAIL_REGEX.test(q)) {
     return { allowed: false, reason: "off-topic", refusalMessage: defaultRefusal };
@@ -1388,7 +1421,9 @@ export function checkThreeEScopeGuardrail(
       return {
         allowed: false,
         reason: "wrong-service",
-        refusalMessage: `You currently have "${tCtx.title}" selected, but your question asks about "${foreignMatch}" (which is outside "${tCtx.title}"'s direct scope). Please select "${foreignMatch}" on the diagram or ask about "${tCtx.title}".`,
+        refusalMessage: locale === "vi"
+          ? threeERefusalMessageVi("wrong-service", tCtx, foreignMatch)
+          : `You currently have "${tCtx.title}" selected, but your question asks about "${foreignMatch}" (which is outside "${tCtx.title}"'s direct scope). Please select "${foreignMatch}" on the diagram or ask about "${tCtx.title}".`,
       };
     }
   }

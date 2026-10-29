@@ -24,6 +24,7 @@ import {
 } from "./diagram-projections";
 import { generateDrawio } from "@/lib/drawio/generate";
 import type { DrawioTheme } from "@/lib/drawio/rules";
+import { useLocale } from "@/lib/i18n/locale-context";
 import { layoutLocally } from "./drawio-local-layout";
 import type { SequenceSelectionContext } from "./three-e-content";
 
@@ -54,6 +55,7 @@ function formatC4NodeBadge(kind?: string): string {
 }
 
 export function ArchitectureDiagrams({
+
   model,
   selectedId,
   onSelect,
@@ -66,6 +68,7 @@ export function ArchitectureDiagrams({
   onSelectSequence?: ((id: string | null, seqCtx: SequenceSelectionContext | null) => void) | undefined;
   systemName?: string | undefined;
 }) {
+  const { locale } = useLocale();
   const [kind, setKind] = useState<DiagramKind>("CONTEXT"),
     [service, setService] = useState(""),
     [theme, setTheme] = useState<DrawioTheme>("clean"),
@@ -108,7 +111,8 @@ export function ArchitectureDiagrams({
       container?.id,
       systemName,
     );
-    const cached = clientC4EnrichmentCache.get(c4Ctx.contextHash);
+    const cacheKey = `${c4Ctx.contextHash}:${locale}`;
+    const cached = clientC4EnrichmentCache.get(cacheKey);
     if (cached) {
       setC4AiEnrichment(cached);
       return;
@@ -118,12 +122,12 @@ export function ArchitectureDiagrams({
     fetch("/api/ai-diagram-semantics", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ c4Context: c4Ctx }),
+      body: JSON.stringify({ c4Context: c4Ctx, locale }),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { c4Enrichment?: C4AiDiagramEnrichment } | null) => {
         if (cancelled || !data?.c4Enrichment) return;
-        clientC4EnrichmentCache.set(c4Ctx.contextHash, data.c4Enrichment);
+        clientC4EnrichmentCache.set(cacheKey, data.c4Enrichment);
         setC4AiEnrichment(data.c4Enrichment);
       })
       .catch(() => {
@@ -132,7 +136,7 @@ export function ArchitectureDiagrams({
     return () => {
       cancelled = true;
     };
-  }, [isC4EnrichableKind, kind, model, container?.id, systemName]);
+  }, [isC4EnrichableKind, kind, model, container?.id, systemName, locale]);
 
   const selection = useMemo(
     () => selectDiagram(model, kind, container?.id, { systemName }),
