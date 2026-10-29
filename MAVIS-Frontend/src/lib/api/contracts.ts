@@ -137,6 +137,7 @@ export const contracts = {
         defaultBranch: z.string().trim().min(1).max(255).optional(),
         workspaceId: id.optional(),
         assignmentId: id.optional(),
+        referenceSnapshotId: id.optional(),
       })
       .refine(
         (value) => !value.assignmentId || !!value.workspaceId,

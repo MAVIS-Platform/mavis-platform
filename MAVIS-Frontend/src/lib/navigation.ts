@@ -197,6 +197,38 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
   },
 ];
 
+export const studentWorkspaceNavigation: readonly NavigationGroup[] = [
+  {
+    label: "Class Workspace",
+    items: [
+      {
+        id: "workspace-overview",
+        label: "Class Overview",
+        icon: LayoutGrid,
+        href: "/workspace-overview",
+      },
+      {
+        id: "assignments",
+        label: "Assignments & Submit",
+        icon: BookOpen,
+        href: "/assignments",
+      },
+      {
+        id: "members",
+        label: "Class Members",
+        icon: Users,
+        href: "/members",
+      },
+      {
+        id: "submissions",
+        label: "My Submissions",
+        icon: ClipboardCheck,
+        href: "/submissions",
+      },
+    ],
+  },
+];
+
 export const submissionReviewNavigation: readonly NavigationGroup[] = [
   {
     label: "Submitted snapshot · read-only",
@@ -214,18 +246,42 @@ export function contextualNavigation(
   scope: WorkspaceScope,
 ): readonly NavigationGroup[] {
   if (role === "student" && scope === "project") return projectNavigation;
+  if (role === "student" && scope === "workspace") return studentWorkspaceNavigation;
   if (role === "lecturer" && scope === "workspace") return lecturerWorkspaceNavigation;
-  if (role === "lecturer" && scope === "review") return submissionReviewNavigation;
+  if ((role === "lecturer" || role === "student") && scope === "review") {
+    return submissionReviewNavigation;
+  }
   return [];
 }
 
 export function existingRouteContext(pathname: string) {
-  const page = projectNavigation
+  const projectPage = projectNavigation
     .flatMap((group) => group.items)
     .find((item) => item.href === pathname);
-  if (page) return { scope: "project" as const, title: page.label, activeId: page.id };
-  if (pathname === "/import")
+  if (projectPage) {
+    return { scope: "project" as const, title: projectPage.label, activeId: projectPage.id };
+  }
+  if (pathname === "/import") {
     return { scope: "project" as const, title: "Import Project Source", activeId: "snapshots" };
+  }
+  const workspacePage = lecturerWorkspaceNavigation
+    .flatMap((group) => group.items)
+    .find((item) => item.href === pathname && item.href !== "/submissions");
+  if (workspacePage) {
+    return { scope: "workspace" as const, title: workspacePage.label, activeId: workspacePage.id };
+  }
+  if (pathname === "/references") {
+    return { scope: "workspace" as const, title: "Reference Source Versions", activeId: "references" };
+  }
+  if (pathname.startsWith("/submissions/")) {
+    return { scope: "review" as const, title: "Submission Details & Review", activeId: "review" };
+  }
+  if (pathname === "/workspaces") {
+    return { scope: "global" as const, title: "My Workspaces", activeId: "workspaces" };
+  }
+  if (pathname === "/submissions") {
+    return { scope: "global" as const, title: "My Submissions", activeId: "submissions" };
+  }
   return { scope: "global" as const, title: "My Projects", activeId: "projects" };
 }
 

@@ -39,12 +39,12 @@ export function ArchitectureWorkspace({
   return (
     <PageContainer>
       <div className="space-y-2.5">
-        <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
-          <div className="w-full sm:w-64">
-            <ProjectSelector />
-          </div>
-          {state.projectId && state.model && (
-            <>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-full sm:w-64">
+              <ProjectSelector />
+            </div>
+            {state.projectId && state.model && (
               <div className="w-full sm:w-80">
                 <ModelVersionSelector
                   models={state.models}
@@ -52,7 +52,53 @@ export function ArchitectureWorkspace({
                   onChange={state.selectModel}
                 />
               </div>
-            </>
+            )}
+          </div>
+          {state.projectId && state.model && (
+            <div className="ml-auto flex flex-wrap items-center gap-1.5">
+              <Button asChild size="sm" variant={resolvedMode === "graph" ? "default" : "outline"}>
+                <Link
+                  href={`/architecture?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                >
+                  Graph Explorer
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant={resolvedMode === "diagram" ? "default" : "outline"}>
+                <Link
+                  href={`/diagrams?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                >
+                  C4 &amp; UML Diagrams
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  href={`/impact?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                >
+                  Change Impact
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  href={`/model?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                >
+                  Model Editor
+                </Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href={`/sessions?project=${encodeURIComponent(state.projectId)}`}>
+                  Runtime
+                </Link>
+              </Button>
+              {project.data?.workspaceId && (
+                <Button asChild size="sm" className="bg-primary font-semibold text-primary-foreground">
+                  <Link
+                    href={`/assignments?workspace=${encodeURIComponent(project.data.workspaceId)}${project.data.assignmentId ? `#assignment-${encodeURIComponent(project.data.assignmentId)}` : ""}`}
+                  >
+                    Submit to Assignment →
+                  </Link>
+                </Button>
+              )}
+            </div>
           )}
         </div>
         {state.projectId &&
