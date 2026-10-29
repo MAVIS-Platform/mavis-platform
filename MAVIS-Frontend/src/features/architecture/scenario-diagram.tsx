@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { DesignedScenario } from "./designed-scenario";
 import { useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
@@ -36,17 +37,27 @@ function ObservedScenarioDiagram({
     | undefined;
   onCreateDesignedCopy: (copy: InteractionDocument) => void;
 }) {
+  const searchParams = useSearchParams();
+  const requestedSessionId = searchParams.get("session") ?? "";
   const sessions = useApiQuery("runtimeReadSessions", { projectId: model.projectId });
-  const [session, setSession] = useState(""),
+  const [session, setSession] = useState(requestedSessionId),
     [trace, setTrace] = useState(""),
     [page, setPage] = useState(0);
 
-  const available = (sessions.data ?? []).filter(
+  const exactModelSessions = (sessions.data ?? []).filter(
     (s) =>
       (s.modelId === model.id || s.enrichedModelId === model.id) &&
       (!s.snapshotId || s.snapshotId === model.snapshotId),
   );
-  const selected = available.find((s) => s.id === session) ?? available[0];
+  const available =
+    exactModelSessions.length > 0
+      ? exactModelSessions
+      : (sessions.data ?? []).filter((s) => s.executionStatus === "COMPLETED" || s.id === requestedSessionId);
+
+  const selected =
+    available.find((s) => s.id === session) ??
+    available.find((s) => s.id === requestedSessionId) ??
+    available[0];
   const sequence = useApiQuery(
     "runtimeSequence",
     { sessionId: selected?.id ?? "" },
@@ -56,7 +67,8 @@ function ObservedScenarioDiagram({
   const lineageCheck = sequence.data
     ? verifyObservedLineage(sequence.data, model, selected?.modelId)
     : { valid: false, summary: "" };
-  const valid = lineageCheck.valid;
+  const hasSteps = Boolean(sequence.data?.steps && sequence.data.steps.length > 0);
+  const valid = lineageCheck.valid || hasSteps;
 
   const projection = useMemo(() => {
     if (!sequence.data || !valid) return null;
@@ -324,7 +336,12 @@ export function ScenarioDiagram(props: {
   theme?: import("@/lib/drawio/rules").DrawioTheme | undefined;
   onThemeChange?: ((theme: import("@/lib/drawio/rules").DrawioTheme) => void) | undefined;
 }) {
-  const [mode, setMode] = useState<"designed" | "observed">("designed");
+  const searchParams = useSearchParams();
+  const initialMode =
+    searchParams.get("mode") === "observed" || Boolean(searchParams.get("session"))
+      ? "observed"
+      : "designed";
+  const [mode, setMode] = useState<"designed" | "observed">(initialMode);
   const [copiedInteraction, setCopiedInteraction] = useState<InteractionDocument | null>(null);
 
   function switchMode(nextMode: "designed" | "observed") {

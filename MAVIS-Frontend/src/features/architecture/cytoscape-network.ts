@@ -76,42 +76,65 @@ export function networkElements(
       },
     })),
     ...(connections
-      ? connections.map((connection) => ({
-          group: "edges" as const,
-          data: {
-            id: connection.key,
-            connectionKey: connection.key,
-            sourceId: connection.key,
-            source: `node:${connection.elementIds[0]}`,
-            target: `node:${connection.elementIds[1]}`,
-            label: `${connection.relationshipIds.length} recorded relationship(s)`,
-            color: networkColor(nodes.get(connection.elementIds[0])?.elementType),
-            exploreColor: appearance.get(connection.elementIds[0])!.color,
-            lineStyle: "solid",
-            underlyingEdgeIds: connection.relationshipIds,
-            projectedEdgeIds: connection.projectedEdgeIds,
-          },
-        }))
+      ? connections.map((connection) => {
+          const hasRuntime = connection.relationships.some(
+            (r) =>
+              r.edge.originLayer === "RUNTIME" ||
+              r.edge.originLayer === "STATIC_AND_RUNTIME" ||
+              r.edge.protocol.includes("RUNTIME"),
+          );
+          const baseColor = hasRuntime
+            ? "#10b981"
+            : networkColor(nodes.get(connection.elementIds[0])?.elementType);
+          return {
+            group: "edges" as const,
+            classes: hasRuntime ? "runtime-verified" : "",
+            data: {
+              id: connection.key,
+              connectionKey: connection.key,
+              sourceId: connection.key,
+              source: `node:${connection.elementIds[0]}`,
+              target: `node:${connection.elementIds[1]}`,
+              label: hasRuntime
+                ? `⚡ ${connection.relationshipIds.length} relationship(s) · VERIFIED_RUNTIME`
+                : `${connection.relationshipIds.length} recorded relationship(s)`,
+              color: baseColor,
+              exploreColor: hasRuntime ? "#10b981" : appearance.get(connection.elementIds[0])!.color,
+              lineStyle: "solid",
+              isRuntime: hasRuntime ? "true" : "false",
+              underlyingEdgeIds: connection.relationshipIds,
+              projectedEdgeIds: connection.projectedEdgeIds,
+            },
+          };
+        })
       : model.edges
           .filter((edge) => nodes.has(edge.from) && nodes.has(edge.to))
-          .map((edge) => ({
-            group: "edges" as const,
-            data: {
-              id: `edge:${edge.id}`,
-              sourceId: edge.id,
-              source: `node:${edge.from}`,
-              target: `node:${edge.to}`,
-              label: edge.protocol,
-              color: networkColor(nodes.get(edge.from)?.elementType),
-              exploreColor: appearance.get(edge.from)!.color,
-              lineStyle: edge.uncertain
-                ? "dotted"
-                : edge.protocol === "DECLARED_COMPOSE" || edge.originLayer === "DEPLOYMENT"
-                  ? "dashed"
-                  : "solid",
-              underlyingEdgeIds: edge.underlyingEdgeIds ?? [edge.id],
-            },
-          }))),
+          .map((edge) => {
+            const hasRuntime =
+              edge.originLayer === "RUNTIME" ||
+              edge.originLayer === "STATIC_AND_RUNTIME" ||
+              edge.protocol.includes("RUNTIME");
+            return {
+              group: "edges" as const,
+              classes: hasRuntime ? "runtime-verified" : "",
+              data: {
+                id: `edge:${edge.id}`,
+                sourceId: edge.id,
+                source: `node:${edge.from}`,
+                target: `node:${edge.to}`,
+                label: edge.protocol,
+                color: hasRuntime ? "#10b981" : networkColor(nodes.get(edge.from)?.elementType),
+                exploreColor: hasRuntime ? "#10b981" : appearance.get(edge.from)!.color,
+                lineStyle: edge.uncertain
+                  ? "dotted"
+                  : edge.protocol === "DECLARED_COMPOSE" || edge.originLayer === "DEPLOYMENT"
+                    ? "dashed"
+                    : "solid",
+                isRuntime: hasRuntime ? "true" : "false",
+                underlyingEdgeIds: edge.underlyingEdgeIds ?? [edge.id],
+              },
+            };
+          })),
   ];
 }
 

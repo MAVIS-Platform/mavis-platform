@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
@@ -66,7 +67,15 @@ export function ArchitectureDiagrams({
   systemName?: string | undefined;
 }) {
   const { locale } = useLocale();
-  const [kind, setKind] = useState<DiagramKind>("CONTEXT"),
+  const searchParams = useSearchParams();
+  const requestedKindParam = searchParams.get("kind");
+  const initialKind: DiagramKind =
+    requestedKindParam && diagramOptions.some((o) => o.value === requestedKindParam)
+      ? (requestedKindParam as DiagramKind)
+      : requestedKindParam === "SCENARIOS"
+        ? "UML_SEQUENCE"
+        : "CONTEXT";
+  const [kind, setKind] = useState<DiagramKind>(initialKind),
     [service, setService] = useState(""),
     [theme, setTheme] = useState<DrawioTheme>("clean"),
     [c4AiEnrichment, setC4AiEnrichment] = useState<C4AiDiagramEnrichment | null>(null),
@@ -104,7 +113,16 @@ export function ArchitectureDiagrams({
     "UML_ACTIVITY",
     "UML_STATE",
   ].includes(kind);
-  const isC4EnrichableKind = kind === "CONTAINER" || kind === "COMPONENT";
+  useEffect(() => {
+    if (requestedKindParam && diagramOptions.some((o) => o.value === requestedKindParam)) {
+      setKind(requestedKindParam as DiagramKind);
+    } else if (requestedKindParam === "SCENARIOS") {
+      setKind("UML_SEQUENCE");
+    }
+  }, [requestedKindParam]);
+
+  const isC4EnrichableKind =
+    kind === "CONTAINER" || kind === "COMPONENT";
 
   useEffect(() => {
     if (!isC4EnrichableKind) {

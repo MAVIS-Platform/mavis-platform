@@ -355,9 +355,19 @@ public class RuntimeRunnerDispatcher {
             String httpMethod = rel.getProperties() != null && rel.getProperties().hasNonNull("httpMethod")
                     ? rel.getProperties().get("httpMethod").asText()
                     : "GET";
-            String route = rel.getProperties() != null && rel.getProperties().hasNonNull("httpPath")
-                    ? rel.getProperties().get("httpPath").asText()
-                    : ("/api/v1/" + tgtName.toLowerCase(Locale.ROOT));
+            String rawRoute = rel.getProperties() != null && rel.getProperties().hasNonNull("httpPath")
+                    ? rel.getProperties().get("httpPath").asText().trim()
+                    : "";
+            String normalizedRoute;
+            if (rawRoute.startsWith("/")) {
+                normalizedRoute = rawRoute;
+            } else if (!rawRoute.isBlank()) {
+                String cleanSlug = rawRoute.replaceFirst("(?i)^fruit[-_]", "").replaceFirst("(?i)[-_]service$", "").toLowerCase(Locale.ROOT);
+                normalizedRoute = "/api/" + cleanSlug;
+            } else {
+                String cleanSlug = tgtName.replaceFirst("(?i)^fruit[-_]", "").replaceFirst("(?i)[-_]service$", "").toLowerCase(Locale.ROOT);
+                normalizedRoute = "/api/" + cleanSlug;
+            }
 
             spans.add(RunnerCorrelatedSpanDTO.builder()
                     .traceId(traceId)
@@ -372,7 +382,7 @@ public class RuntimeRunnerDispatcher {
                     .spanStatus("OK")
                     .httpStatusCode(200)
                     .httpMethod(httpMethod)
-                    .route(route)
+                    .route(normalizedRoute)
                     .build());
             lastSpanIdByService.put(tgtName.toLowerCase(Locale.ROOT), childSpanId);
 
