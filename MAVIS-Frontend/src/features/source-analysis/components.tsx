@@ -1,4 +1,7 @@
+"use client";
+
 import { StatusBadge } from "@/components/shared/data";
+import { useLocale } from "@/lib/i18n/locale-context";
 import type { AnalysisJob } from "@/types/domain";
 
 export function formatAnalysisJobMessage(job: AnalysisJob): string {
@@ -32,12 +35,13 @@ export function AnalysisStatusIndicator({
   job: AnalysisJob;
   compact?: boolean;
 }) {
+  const { t } = useLocale();
   const isActive = job.status === "processing" || job.status === "queued" || job.status === "cancelling";
   const showWorker =
     Boolean(job.workerStatus) &&
     job.workerStatus !== "NOT_APPLICABLE" &&
     job.workerStatus !== "NONE";
-  const summary = formatAnalysisJobMessage(job);
+  const summary = t(formatAnalysisJobMessage(job));
 
   if (compact) {
     return (
@@ -94,4 +98,3 @@ export function AnalysisStatusIndicator({
     </div>
   );
 }
-

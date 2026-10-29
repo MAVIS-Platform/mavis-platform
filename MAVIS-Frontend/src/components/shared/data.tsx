@@ -1,6 +1,9 @@
+"use client";
+
 import { Fragment, type ReactNode } from "react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { EmptyState } from "./request-state";
+import { useLocale } from "@/lib/i18n/locale-context";
 
 export function StatusBadge({
   status,
@@ -9,8 +12,10 @@ export function StatusBadge({
   status: string;
   variant?: BadgeProps["variant"];
 }) {
-  return <Badge variant={variant}>{status}</Badge>;
+  const { t } = useLocale();
+  return <Badge variant={variant}>{t(status)}</Badge>;
 }
+
 export function SummaryCard({
   label,
   value,
@@ -20,14 +25,16 @@ export function SummaryCard({
   value: ReactNode;
   description?: string;
 }) {
+  const { t } = useLocale();
   return (
     <article className="rounded-xl border bg-card p-4 shadow-sm">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="text-xs font-medium text-muted-foreground">{t(label)}</p>
       <div className="mt-2 font-mono text-2xl font-semibold">{value}</div>
-      {description && <p className="mt-2 text-xs text-muted-foreground">{description}</p>}
+      {description && <p className="mt-2 text-xs text-muted-foreground">{t(description)}</p>}
     </article>
   );
 }
+
 export function DetailPanel({
   title,
   children,
@@ -37,17 +44,20 @@ export function DetailPanel({
   children: ReactNode;
   actions?: ReactNode;
 }) {
+  const { t } = useLocale();
   return (
     <section className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="text-sm font-semibold">{t(title)}</h2>
         {actions}
       </div>
       {children}
     </section>
   );
 }
+
 export type TableColumn<T> = { key: string; label: string; render: (row: T) => ReactNode };
+
 export function DataTable<T>({
   rows,
   columns,
@@ -63,6 +73,7 @@ export function DataTable<T>({
   emptyDescription?: string;
   renderExpandedRow?: (row: T) => ReactNode;
 }) {
+  const { t } = useLocale();
   if (!rows.length)
     return (
       <EmptyState
@@ -78,7 +89,7 @@ export function DataTable<T>({
           <tr className="border-b text-xs text-muted-foreground">
             {columns.map((c) => (
               <th scope="col" key={c.key} className="px-5 py-3 font-medium">
-                {c.label}
+                {t(c.label)}
               </th>
             ))}
           </tr>

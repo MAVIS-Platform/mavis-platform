@@ -18,7 +18,9 @@ import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { SelectField } from "@/components/shared/forms";
 import { RequestState } from "@/components/shared/request-state";
 import { StatusBadge } from "@/components/shared/data";
+import { useLocale } from "@/lib/i18n/locale-context";
 import type { Project } from "@/types/domain";
+
 export function ProjectStatusBadge({ status }: { status: Project["status"] }) {
   return (
     <StatusBadge
@@ -27,7 +29,9 @@ export function ProjectStatusBadge({ status }: { status: Project["status"] }) {
     />
   );
 }
+
 export function ProjectCard({ project, onSelect }: { project: Project; onSelect: () => void }) {
+  const { t } = useLocale();
   return (
     <article className="space-y-3 rounded-xl border bg-card p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3">
@@ -42,20 +46,22 @@ export function ProjectCard({ project, onSelect }: { project: Project; onSelect:
       </div>
       <p className="font-mono text-xs text-muted-foreground">{project.repository}</p>
       <p className="text-xs text-muted-foreground">
-        {project.services ?? "Unknown"} services · Runtime{" "}
+        {project.services ?? t("Unknown")} {t("services")} · Runtime{" "}
         {project.runtimeSupported === null
-          ? "not checked"
+          ? t("not checked")
           : project.runtimeSupported
-            ? "supported"
-            : "unavailable"}
+            ? t("supported")
+            : t("unavailable")}
       </p>
     </article>
   );
 }
+
 export function ProjectSelector({
   workspaceId,
   assignmentId,
 }: { workspaceId?: string; assignmentId?: string } = {}) {
+  const { t } = useLocale();
   const busy = useIsMutating() > 0;
   const query = useApiQuery("projects", {});
   const selection = useSelection();
@@ -63,11 +69,11 @@ export function ProjectSelector({
     <RequestState query={query} empty={query.data?.length === 0}>
       <SelectField
         disabled={busy}
-        label="Selected project"
+        label={t("Selected project")}
         value={selection.projectId}
         onChange={selection.setProjectId}
         options={[
-          { value: "", label: "Choose a project…" },
+          { value: "", label: t("Choose a project…") },
           ...(query.data ?? [])
             .filter(
               (p) =>
@@ -85,10 +91,12 @@ export function ProjectSelector({
 export function CreateProjectAction() {
   return <ProjectImportDialog create projectId="" />;
 }
+
 export function ImportSnapshotAction() {
   const { projectId } = useSelection();
   return <ProjectImportDialog projectId={projectId} />;
 }
+
 function ProjectImportDialog({
   projectId,
   create = false,
@@ -96,6 +104,7 @@ function ProjectImportDialog({
   projectId: string;
   create?: boolean;
 }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false);
   const router = useRouter(),
@@ -118,7 +127,7 @@ function ProjectImportDialog({
     >
       <DialogTrigger asChild>
         <Button size={create ? "default" : "sm"} disabled={!create && !projectId}>
-          {create ? "Import project source" : "Import new snapshot"}
+          {create ? t("Import project source") : t("Import new snapshot")}
         </Button>
       </DialogTrigger>
       <DialogContent
@@ -131,11 +140,11 @@ function ProjectImportDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>{create ? "Import new project" : "Import new snapshot"}</DialogTitle>
+          <DialogTitle>{create ? t("Import new project") : t("Import new snapshot")}</DialogTitle>
           <DialogDescription>
             {create
-              ? "Enter a project name and its public GitHub repository, then choose a branch or pin a commit. The first snapshot will be imported and analyzed."
-              : "Add a new snapshot to this project. Its linked GitHub repository stays the same. Analysis starts after import."}
+              ? t("Enter a project name and its public GitHub repository, then choose a branch or pin a commit. The first snapshot will be imported and analyzed.")
+              : t("Add a new snapshot to this project. Its linked GitHub repository stays the same. Analysis starts after import.")}
           </DialogDescription>
         </DialogHeader>
         {open && (

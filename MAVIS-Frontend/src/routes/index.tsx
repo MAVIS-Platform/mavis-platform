@@ -11,7 +11,9 @@ import { Pagination, SearchInput, SelectField } from "@/components/shared/forms"
 import { Button } from "@/components/ui/button";
 import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { ProjectStatusBadge, CreateProjectAction } from "@/features/projects/components";
+import { useLocale } from "@/lib/i18n/locale-context";
 import type { Project } from "@/types/domain";
+
 export default function Index() {
   return (
     <AppShell contentVariant="workspace">
@@ -19,6 +21,7 @@ export default function Index() {
     </AppShell>
   );
 }
+
 function servicesSummary(projects: Project[] | undefined): string | number {
   if (!projects) return "Unknown";
   if (projects.length === 0) return 0;
@@ -27,6 +30,7 @@ function servicesSummary(projects: Project[] | undefined): string | number {
   if (known.length === projects.length) return total;
   return known.length > 0 ? `${total}+` : "Unknown";
 }
+
 function readySummary(projects: Project[] | undefined): string | number {
   if (!projects) return "Unknown";
   if (projects.length === 0) return 0;
@@ -35,6 +39,7 @@ function readySummary(projects: Project[] | undefined): string | number {
   if (unknown === 0) return ready;
   return `${ready} of ${projects.length}`;
 }
+
 function runtimeSummary(projects: Project[] | undefined): string | number {
   if (!projects) return "Not checked";
   if (projects.length === 0) return 0;
@@ -42,7 +47,9 @@ function runtimeSummary(projects: Project[] | undefined): string | number {
   if (unchecked === projects.length) return "Not checked";
   return `${projects.filter((p) => p.runtimeSupported).length} of ${projects.length}`;
 }
+
 function Projects() {
+  const { t } = useLocale();
   const projects = useApiQuery("projectOverviews", {});
   const selection = useSelection();
   const [search, setSearch] = useState("");
@@ -57,7 +64,7 @@ function Projects() {
   return (
     <div className="mx-auto w-full max-w-[1600px]">
       <PageContainer>
-        <SectionHeader title="Overview" actions={<CreateProjectAction />} />
+        <SectionHeader title={t("Overview")} actions={<CreateProjectAction />} />
         <RequestState query={projects}>
           <div className="grid grid-cols-2 gap-3 [&>article>div]:text-xl sm:gap-4 sm:[&>article>div]:text-2xl xl:grid-cols-4">
             <SummaryCard label="Projects" value={projects.data?.length ?? 0} />
@@ -92,8 +99,8 @@ function Projects() {
                 {filtered.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
                     {(projects.data?.length ?? 0) === 0
-                      ? "No projects yet. Click “Import project source” to create and import your first project."
-                      : "No projects match the current filter."}
+                      ? t("No projects yet. Click “Import project source” to create and import your first project.")
+                      : t("No projects match the current filter.")}
                   </div>
                 ) : (
                   <DataTable
@@ -110,7 +117,7 @@ function Projects() {
                               href={`/project-overview?project=${encodeURIComponent(p.id)}`}
                               onClick={() => selection.setProjectId(p.id)}
                               className="group inline-flex max-w-full items-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 font-semibold text-primary shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                              title="Open project overview"
+                              title={t("Open project overview")}
                             >
                               <span className="min-w-0 break-words">{p.name}</span>
                               <ArrowUpRight
@@ -132,7 +139,7 @@ function Projects() {
                       {
                         key: "services",
                         label: "Services",
-                        render: (p) => p.services ?? "Unknown",
+                        render: (p) => p.services ?? t("Unknown"),
                       },
                       {
                         key: "status",
@@ -144,10 +151,10 @@ function Projects() {
                         label: "Runtime",
                         render: (p) =>
                           p.runtimeSupported === null
-                            ? "Not checked"
+                            ? t("Not checked")
                             : p.runtimeSupported
-                              ? "Supported"
-                              : "Unavailable",
+                              ? t("Supported")
+                              : t("Unavailable"),
                       },
                       {
                         key: "time",
@@ -157,7 +164,7 @@ function Projects() {
                           const date = value ? new Date(value) : null;
                           if (!date || Number.isNaN(date.getTime()))
                             return (
-                              <span className="text-xs text-muted-foreground">Not available</span>
+                              <span className="text-xs text-muted-foreground">{t("Not available")}</span>
                             );
                           return (
                             <div className="whitespace-nowrap text-xs">
@@ -171,7 +178,7 @@ function Projects() {
                                 </span>
                               </time>
                               {!p.updatedAt && (
-                                <span className="mt-1 block text-muted-foreground">Created</span>
+                                <span className="mt-1 block text-muted-foreground">{t("Created")}</span>
                               )}
                             </div>
                           );
@@ -188,7 +195,7 @@ function Projects() {
                               aria-label={`View graph of ${p.name}`}
                             >
                               <Network className="size-4" aria-hidden="true" />
-                              View
+                              {t("View")}
                             </Link>
                           </Button>
                         ),
@@ -212,7 +219,9 @@ function Projects() {
     </div>
   );
 }
+
 function ProjectActivity({ projectCount }: { projectCount: number }) {
+  const { t } = useLocale();
   const [page, setPage] = useState(0);
   const q = useApiQuery(
     "projectAnalysisActivity",
@@ -229,23 +238,23 @@ function ProjectActivity({ projectCount }: { projectCount: number }) {
           disabled={!projectCount || q.isFetching}
           onClick={() => void q.refetch()}
         >
-          {q.isFetching ? "Refreshing…" : "Refresh"}
+          {q.isFetching ? t("Refreshing…") : t("Refresh")}
         </Button>
       }
     >
       <p className="text-xs text-muted-foreground">
-        Analysis history across your projects · newest activity first
+        {t("Analysis history across your projects · newest activity first")}
       </p>
       {!projectCount ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Your project activity will appear here after importing and analyzing source.
+          {t("Your project activity will appear here after importing and analyzing source.")}
         </p>
       ) : (
         <RequestState query={q}>
           <div className="space-y-4">
             <DataTable
               caption="Analysis activity across all your projects"
-              emptyDescription="No analysis runs yet. Open a project to analyze its source."
+              emptyDescription={t("No analysis runs yet. Open a project to analyze its source.")}
               rows={q.data?.items ?? []}
               rowKey={(job) => job.id}
               columns={[
@@ -267,7 +276,7 @@ function ProjectActivity({ projectCount }: { projectCount: number }) {
                         </span>
                       </time>
                     ) : (
-                      <span className="text-xs text-muted-foreground">Not available</span>
+                      <span className="text-xs text-muted-foreground">{t("Not available")}</span>
                     );
                   },
                 },
@@ -290,7 +299,7 @@ function ProjectActivity({ projectCount }: { projectCount: number }) {
                     <div className="space-y-1">
                       <AnalysisStatusIndicator job={job} compact />
                       <p className="text-xs text-muted-foreground">
-                        Run {job.id.slice(0, 8)} · Snapshot {job.snapshotId.slice(0, 8)}
+                        {t("Run")} {job.id.slice(0, 8)} · Snapshot {job.snapshotId.slice(0, 8)}
                       </p>
                     </div>
                   ),
@@ -307,7 +316,7 @@ function ProjectActivity({ projectCount }: { projectCount: number }) {
                             : `/analysis-history?project=${encodeURIComponent(job.projectId)}`
                         }
                       >
-                        {job.modelId ? "Inspect" : "View history"}
+                        {job.modelId ? t("Inspect") : t("View history")}
                       </Link>
                     </Button>
                   ),
@@ -315,7 +324,9 @@ function ProjectActivity({ projectCount }: { projectCount: number }) {
               ]}
             />
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">{q.data?.total ?? 0} analysis runs</p>
+              <p className="text-xs text-muted-foreground">
+                {q.data?.total ?? 0} {t("analysis runs")}
+              </p>
               {(q.data?.total ?? 0) > 10 && (
                 <Pagination
                   page={page + 1}
