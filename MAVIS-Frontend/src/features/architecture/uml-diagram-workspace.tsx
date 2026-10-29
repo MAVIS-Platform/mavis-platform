@@ -323,6 +323,9 @@ export function UmlDiagramWorkspace({
 
   // Effective projection reflects the canvas at all times (including when a Draw.io draft has deleted or modified cells)
   const effectiveProjection: AnyUmlProjection = reconciledDraftProjection ?? projection;
+  const stateMachineUnavailable = effectiveProjection.diagramKind === "UML_STATE" &&
+    (effectiveProjection.states.length === 0 ||
+      (effectiveProjection.enumOnlyNoTransitions && effectiveProjection.transitions.length === 0));
 
   const cleanGeneratedXml = useMemo(
     () =>
@@ -540,7 +543,7 @@ export function UmlDiagramWorkspace({
 
         {projection.diagramKind === "UML_STATE" && (
           <SelectField
-            label="State machine"
+            label={locale === "vi" ? "Đối tượng trạng thái / enum" : "State target / enum"}
             value={projection.selectedTargetId}
             onChange={(v) => {
               clearDraftConflictState();
@@ -550,7 +553,9 @@ export function UmlDiagramWorkspace({
               projection.availableTargets.length > 0
                 ? projection.availableTargets.map((t) => ({
                     value: t.targetId,
-                    label: t.classifierName,
+                    label: t.enumOnlyNoTransitions
+                      ? `${t.classifierName} (${locale === "vi" ? "chỉ khai báo enum" : "enum declaration only"})`
+                      : t.classifierName,
                   }))
                 : [{ value: "designed", label: "Designed State Machine" }]
             }
@@ -746,7 +751,7 @@ export function UmlDiagramWorkspace({
             </div>
           )}
 
-          {effectiveProjection.diagramKind === "UML_STATE" && (
+          {effectiveProjection.diagramKind === "UML_STATE" && !stateMachineUnavailable && (
             <div className="grid gap-3 sm:grid-cols-2">
               <SearchableThreeESelect
                 label="Element to explore"
@@ -787,7 +792,16 @@ export function UmlDiagramWorkspace({
       </div>
 
       {/* Never present a dependency template as a behavioral Activity. */}
-      {effectiveProjection.diagramKind === "UML_ACTIVITY" && effectiveProjection.unsupportedConstructs.includes("INFERRED_BUSINESS_FLOW_REQUIRES_SOURCE_VERIFICATION") ? (
+      {stateMachineUnavailable ? (
+        <div role="status" className="space-y-2 rounded-lg border bg-card p-4 text-sm" data-testid="uml-state-unavailable">
+          <p className="font-medium">{locale === "vi" ? "Chưa có bằng chứng về state machine" : "No state machine behavior available"}</p>
+          <p className="text-muted-foreground">{effectiveProjection.diagramKind === "UML_STATE" && effectiveProjection.enumOnlyNoTransitions
+            ? (locale === "vi"
+              ? "Đối tượng được chọn chỉ khai báo các giá trị enum, không có bằng chứng chuyển trạng thái. Các giá trị enum không tự chứng minh một vòng đời. Xem giá trị enum trong Class Diagram; hệ thống không tự thêm trạng thái đầu/cuối hoặc mũi tên."
+              : "The selected target only declares enum values; no state transitions were extracted. Enum values alone do not establish a lifecycle. Inspect enum values in Class Diagram; initial/final states and arrows are not invented.")
+            : (locale === "vi" ? "Model này chưa có vòng đời trạng thái được trích xuất từ mã nguồn." : "This model has no source-extracted state lifecycle.")}</p>
+        </div>
+      ) : effectiveProjection.diagramKind === "UML_ACTIVITY" && effectiveProjection.unsupportedConstructs.includes("INFERRED_BUSINESS_FLOW_REQUIRES_SOURCE_VERIFICATION") ? (
         <p role="status" className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">This selection only has static dependencies, not an extracted method control-flow graph. Choose a method above to view its source Activity, or inspect these relationships in Graph Explorer.</p>
       ) : effectiveProjection.diagramKind === "UML_ACTIVITY" && !effectiveProjection.nodes.length ? null : <DrawioEditor
         key={documentScope}

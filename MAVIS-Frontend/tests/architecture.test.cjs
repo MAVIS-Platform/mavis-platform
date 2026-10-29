@@ -1968,3 +1968,46 @@ test("direct project URLs populate selection and the project dropdown without cl
  renderToStaticMarkup(React.createElement(AppProvider,{mode:"backend"},React.createElement(Probe)));
  assert.equal(selected.projectId,"project-a");
 });
+
+
+test("state workspace does not present ErrorCode enum constants as a behavioral machine", () => {
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {QueryClient,QueryClientProvider}=require("@tanstack/react-query");
+ const {UmlDiagramWorkspace}=loadRoutedComponent("src/features/architecture/uml-diagram-workspace.tsx",{
+  "@/hooks/use-api":{useApi:()=>({mode:"mock"}),useApiQuery:()=>({data:undefined,error:null,isPending:false})},
+  "@/lib/i18n/locale-context":{useLocale:()=>({locale:"en"})},
+  "./drawio-editor":{DrawioEditor:()=>React.createElement("div",{"data-testid":"state-editor"})},
+ });
+ const lifecycle={stateMachineKind:"ENUM_DECLARATION",enumOnlyNoTransitions:true,states:["EMPLOYEE_NOT_FOUND","INVALID_INPUT","INTERNAL_ERROR"],transitions:[]};
+ const model={id:"model",projectId:"project",snapshotId:"snapshot",revision:1,label:"Test",elements:[{id:"error-code",name:"ErrorCode",elementType:"CLASS_INTERFACE",properties:{umlClassifier:{name:"ErrorCode",stateLifecycle:lifecycle}},evidence:[]}],edges:[]};
+ const render=()=>renderToStaticMarkup(React.createElement(QueryClientProvider,{client:new QueryClient()},React.createElement(UmlDiagramWorkspace,{model,kind:"UML_STATE",selectedId:null,onSelect(){}})));
+ const empty=render();
+ assert.match(empty,/No state machine behavior available/);
+ assert.match(empty,/ErrorCode \(enum declaration only\)/);
+ assert.ok(!empty.includes('data-testid="state-editor"'));
+ assert.ok(!empty.includes('data-testid="uml-item-EMPLOYEE_NOT_FOUND"'));
+ model.elements[0].properties.umlClassifier.stateLifecycle={stateMachineKind:"STATEFUL_CLASS",enumOnlyNoTransitions:false,states:["NEW","DONE"],transitions:[{fromState:"NEW",toState:"DONE",trigger:"complete()"}]};
+ const valid=render();
+ assert.ok(valid.includes('data-testid="state-editor"'));
+ assert.ok(!valid.includes('data-testid="uml-state-unavailable"'));
+});
+
+
+test("diagram and graph selections use the same docked 3E inspector", () => {
+ const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
+ const {ArchitecturePresentation}=loadRoutedComponent('src/features/architecture/architecture-presentation.tsx',{
+  './dependency-network':{DependencyNetwork:()=>null},
+  './architecture-diagrams':{ArchitectureDiagrams:()=>React.createElement('div',null,'Diagram workspace')},
+  './inspector-sidebar':{InspectorSidebar:({children})=>React.createElement('section',{'data-shared-dock':true},children)},
+  './selection-three-e':{SelectionThreeE:({docked,selectedId,sequenceContext})=>React.createElement('div',{'data-docked':String(docked),'data-selected':selectedId,'data-sequence':sequenceContext?.messageId??''})},
+ });
+ const model={id:'m',projectId:'p',snapshotId:'s',revision:1,label:'Test',elements:[{id:'service',name:'department-service',elementType:'SERVICE_CONTAINER',layer:'domain',description:'',evidence:[]},{id:'repository',name:'DepartmentRepository',elementType:'COMPONENT',parentId:'service',layer:'domain',description:'',evidence:[]}],edges:[]};
+ for(const mode of ['graph','diagram']){
+  const html=renderToStaticMarkup(React.createElement(ArchitecturePresentation,{model,selectedId:'repository',onSelect(){},mode}));
+  assert.match(html,/data-shared-dock="true"/);
+  assert.match(html,/data-docked="true"/);
+  assert.match(html,/data-selected="repository"/);
+ }
+ const idle=renderToStaticMarkup(React.createElement(ArchitecturePresentation,{model,selectedId:null,onSelect(){},mode:'diagram'}));
+ assert.ok(!idle.includes('data-shared-dock'));
+});

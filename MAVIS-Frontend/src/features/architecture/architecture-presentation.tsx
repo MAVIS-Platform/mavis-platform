@@ -142,7 +142,7 @@ export function ArchitecturePresentation({
 
   const activeSequenceContext = mode === "diagram" ? sequenceContext : null;
   const workspace = useRef<HTMLDivElement>(null);
-  const dockOpen = mode === "graph" && Boolean(selectedId || connection);
+  const dockOpen = Boolean(selectedId || connection);
   const [workspaceHeight, setWorkspaceHeight] = useState(700);
   useEffect(() => {
     if (!dockOpen) return;
@@ -167,7 +167,7 @@ export function ArchitecturePresentation({
     onSelect(null);
     requestAnimationFrame(() =>
       workspace.current
-        ?.querySelector<HTMLElement>('[data-renderer="cytoscape"]')
+        ?.querySelector<HTMLElement>('[data-renderer="cytoscape"], iframe[title="draw.io diagram editor"]')
         ?.focus({ preventScroll: true }),
     );
   };
@@ -176,7 +176,7 @@ export function ArchitecturePresentation({
     <div
       data-architecture-workspace
       onKeyDown={(event) => {
-        if (mode === "graph" && event.key === "Escape" && !event.defaultPrevented) {
+        if (event.key === "Escape" && !event.defaultPrevented) {
           closeInspector();
         }
       }}
@@ -193,7 +193,9 @@ export function ArchitecturePresentation({
               : "min-w-0"
         }
       >
-        <div className={dockOpen ? "min-h-0 min-w-0 flex-1 overflow-hidden" : "min-w-0"}>
+        <div className={dockOpen
+          ? `min-h-0 min-w-0 flex-1 ${mode === "diagram" ? "overflow-y-auto overscroll-contain" : "overflow-hidden"}`
+          : "min-w-0"}>
           {mode === "graph" && !selectedId && !connection && (
             <div className="mb-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
               💡 <strong className="text-foreground">Interactive Guide:</strong> Click any{" "}
@@ -269,7 +271,7 @@ export function ArchitecturePresentation({
           {connection && !selectedId && (
             <ConnectionDetailsPanel
               key={connection.key}
-              docked={mode === "graph"}
+              docked={dockOpen}
               connection={connection}
               elements={projection.model.elements}
               model={model}
@@ -286,7 +288,7 @@ export function ArchitecturePresentation({
           )}
           {selectedId && (
             <SelectionThreeE
-              docked={mode === "graph"}
+              docked={dockOpen}
               projectId={model.projectId}
               key={computeSelectionScopeKey({
                 model,
