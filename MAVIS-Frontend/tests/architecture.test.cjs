@@ -1922,3 +1922,24 @@ test("unresolved external dependencies require a boundary decision before C4 con
  assert.equal(deriveC4ContextModel(model).externals.length,0);
  assert.equal(deriveC4ContextModel({...model,elements:[svc,{...ext,properties:{...ext.properties,contextReviewState:"CONFIRMED",contextFactOrigin:"USER_CONFIRMED"}}]}).externals.length,1);
 });
+
+test("notification read-all patches a seven-unread count even when only five rows are cached",()=>{
+ const {applyNotificationRead}=require("../src/features/notifications/read-cache.ts");
+ const recipientId="11111111-1111-4111-8111-111111111111",before="2026-10-29T10:00:00.000001Z",readAt="2026-10-29T10:00:01Z";
+ const data={recipientId,items:Array.from({length:5},(_,i)=>({id:String(i),createdAt:"2026-10-29T09:00:00Z",readAt:null})),total:7,unreadCount:7,page:0,size:5,asOf:before};
+ const ack={ok:true,recipientId,before,readAt,asOf:readAt,unreadCount:0};
+ const all=applyNotificationRead(data,{page:0,size:5,unreadOnly:false},"readAllNotifications",{before},ack);
+ assert.equal(all.unreadCount,0);assert.ok(all.items.every(n=>n.readAt===readAt));assert.equal(all.total,7);
+ const unread=applyNotificationRead(data,{page:0,size:5,unreadOnly:true},"readAllNotifications",{before},ack);assert.equal(unread.items.length,0);assert.equal(unread.total,0);
+ assert.equal(data.unreadCount,7);assert.ok(data.items.every(n=>n.readAt===null));
+});
+test("notification cutoff preserves new messages within the same millisecond and newer snapshots",()=>{
+ const {applyNotificationRead}=require("../src/features/notifications/read-cache.ts");
+ const recipientId="11111111-1111-4111-8111-111111111111",before="2026-10-29T10:00:00.000001Z",asOf="2026-10-29T10:00:01Z";
+ const data={recipientId,items:[{id:"old",createdAt:before,readAt:null},{id:"new",createdAt:"2026-10-29T10:00:00.000002Z",readAt:null}],total:2,unreadCount:2,page:0,size:5,asOf};
+ const ack={ok:true,recipientId,before,asOf,readAt:asOf,unreadCount:1};
+ const next=applyNotificationRead(data,{page:0,size:5,unreadOnly:true},"readAllNotifications",{before},ack);assert.equal(next.unreadCount,1);assert.deepEqual(next.items.map(n=>n.id),["new"]);assert.equal(next.items[0].readAt,null);
+ const newer={...data,asOf:"2026-10-29T10:00:02Z",unreadCount:3};assert.equal(applyNotificationRead(newer,{page:0,size:5,unreadOnly:false},"readAllNotifications",{before},ack),newer);
+ assert.equal(applyNotificationRead(data,{page:0,size:5,unreadOnly:false},"readAllNotifications",{before},{...ack,recipientId:"other"}),data);
+ assert.equal(applyNotificationRead(data,{page:0,size:5,unreadOnly:false},"readAllNotifications",{before},{ok:true}),data);
+});
