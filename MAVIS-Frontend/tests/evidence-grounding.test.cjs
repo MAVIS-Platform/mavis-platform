@@ -141,3 +141,12 @@ test('Deployment retains configuration semantics and distinguishes declared imag
  assert.ok(deployment.validationIssues.some(item=>item.code==='DECLARED_DEPLOYMENT_NOT_RUNTIME'));
  const xml=buildUmlDrawioXml(deployment);assert.match(xml,/host dynamically assigned/);assert.match(xml,/CONFIGURATION_DEPENDENCY/);
 });
+ test('Source security principal previews are dashed and never confirmed facts',()=>{
+  const model=fixture(),target=model.elements[0];target.properties={logicalKey:'api'};
+  const {withContextCandidates}=require('../src/features/architecture/context-candidates.ts');
+  const entry={id:'source-role',name:'Role: ADMIN',kind:'PERSON',state:'PROPOSED',targetKey:'api',direction:'INBOUND',basis:'Source role requirement',proposalOrigin:'SOURCE_CANDIDATE',sourceLocator:'SecurityConfig.java:12',sourceExcerpt:"@PreAuthorize(\"hasRole('ADMIN')\")",evidenceIds:['source-proof']};
+  const preview=withContextCandidates(model,[entry]);assert.equal(projections.deriveC4ContextModel(model).persons.length,0);const people=projections.deriveC4ContextModel(preview).persons;assert.equal(people.length,1);assert.equal(people[0].provisional,true);
+  const xml=projections.buildContextDiagramDrawioXml(preview,'Role preview');assert.match(xml,/Security principal/);assert.match(xml,/dashed=1/);assert.match(xml,/0 declared actor/);assert.match(xml,/SecurityConfig.java:12/);
+  for(const patch of [{state:'REJECTED'},{proposalOrigin:'USER_PROVIDED'},{evidenceIds:[]},{sourceExcerpt:''},{targetKey:'missing'}])assert.equal(projections.deriveC4ContextModel(withContextCandidates(model,[{...entry,...patch}])).persons.length,0);
+  assert.equal(projections.deriveC4ContextModel(withContextCandidates(model,[entry,entry])).persons.length,1);
+ });

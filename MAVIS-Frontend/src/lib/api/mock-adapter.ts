@@ -244,6 +244,7 @@ export class MockAdapter implements ApiAdapter {
   private perform<K extends Operation>(operation: K, raw: Request<K>): unknown {
     // Parsing per branch preserves discriminated request types without `any`.
     switch (operation) {
+      case "contextCandidates": return { entries: [] } as Response<K>;
       case "session":
         return { user: this.user };
       case "mockLogin": {

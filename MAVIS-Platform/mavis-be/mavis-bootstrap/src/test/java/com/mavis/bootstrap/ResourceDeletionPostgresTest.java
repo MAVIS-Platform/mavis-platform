@@ -32,6 +32,16 @@ class ResourceDeletionPostgresTest {
     sql.update("INSERT INTO model_versions(id,project_id,source_snapshot_id,revision,is_latest_valid) VALUES (?,?,?,1,false)",m1,pid,s1);
     sql.update("INSERT INTO model_versions(id,project_id,source_snapshot_id,revision,origin,is_latest_valid) VALUES (?,?,?,2,'USER_CONFIRMED',false)",m2,pid,s2);
     sql.update("INSERT INTO model_versions(id,project_id,source_snapshot_id,revision,base_model_version_id,is_latest_valid) VALUES (?,?,?,3,?,true)",m3,pid,s1,m1);
+    // Exercise the exact native source-decision query against real PostgreSQL.
+    String decisions=ModelElementRepository.CONTEXT_SOURCE_DECISIONS_SQL.replace(":projectId","?").replace(":revision","?");
+    String addReview="INSERT INTO model_elements(id,model_version_id,element_type,name,properties) VALUES (?,?,'SERVICE_CONTAINER','Source review',?::jsonb)";
+    UUID review1=UUID.randomUUID(),review2=UUID.randomUUID(),review3=UUID.randomUUID();
+    sql.update(addReview,review1,m1,"{\"contextReview\":{\"entries\":[{\"sourceRoleKey\":\"source-a\",\"state\":\"REJECTED\"}]}}");
+    sql.update(addReview,review2,m2,"{\"contextReview\":{\"entries\":[{\"sourceRoleKey\":\"source-a\",\"state\":\"CONFIRMED\"}]}}");
+    sql.update(addReview,review3,m3,"{\"contextReview\":{\"entries\":[{\"sourceRoleKey\":\"source-b\",\"state\":\"REJECTED\"}]}}");
+    assertEquals("REJECTED",sql.queryForList(decisions,pid,1).get(0).get("state"));
+    var latest=sql.queryForList(decisions,pid,3);assertEquals(2,latest.size());assertEquals("CONFIRMED",latest.get(0).get("state"));assertEquals("REJECTED",latest.get(1).get("state"));assertTrue(sql.queryForList(decisions,UUID.randomUUID(),3).isEmpty());
+    sql.update("DELETE FROM model_elements WHERE id IN (?,?,?)",review1,review2,review3);
     var projects=mock(ProjectRepository.class);var snapshots=mock(SourceSnapshotRepository.class);var project=Project.builder().id(pid).name("Deletion fixture").owner(User.builder().id(uid).build()).status("ACTIVE").build();
     when(projects.findLockedById(pid)).thenReturn(Optional.of(project));when(snapshots.findById(s1)).thenReturn(Optional.of(SourceSnapshot.builder().id(s1).project(project).build()));
     org.springframework.security.core.context.SecurityContextHolder.getContext().setAuthentication(new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(uid.toString(),null,List.of()));

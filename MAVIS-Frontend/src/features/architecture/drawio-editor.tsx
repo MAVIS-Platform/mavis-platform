@@ -456,6 +456,10 @@ export function DrawioEditor({
   // Reload canvas when parent passes updated XML (e.g. AI enrichment completed or scope changed without remount)
   useEffect(() => {
     if (!xml || loadedPropXml.current === xml) return;
+    if (dirty) {
+      setStatus("Source data changed. Your unsaved drawing has been retained.");
+      return;
+    }
     loadedPropXml.current = xml;
     let nextXml = xml;
     try {
@@ -476,11 +480,11 @@ export function DrawioEditor({
         saveAndExit: 0,
       });
     }
-  }, [xml, ready, title]);
+  }, [xml, ready, title, dirty]);
 
   useEffect(() => {
     const currentKey = `${modelId}:${diagramId}:${scope}`;
-    if (!ready || !autoSaveWhenReady || !saveCallback.current) return;
+    if (!ready || dirty || !autoSaveWhenReady || !saveCallback.current) return;
     if (autoSavedRef.current === currentKey) return;
     autoSavedRef.current = currentKey;
     void saveCallback
@@ -492,7 +496,7 @@ export function DrawioEditor({
       .catch(() => {
         // Silent fallback if initial auto-save encounters transient error
       });
-  }, [ready, autoSaveWhenReady, modelId, diagramId, scope, xml]);
+  }, [ready, autoSaveWhenReady, modelId, diagramId, scope, xml, dirty]);
 
   // Instant theme application (uses latest.current which is kept fresh by autosave: 1)
   useEffect(() => {

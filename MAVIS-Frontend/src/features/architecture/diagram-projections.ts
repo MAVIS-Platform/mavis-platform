@@ -1,3 +1,4 @@
+import { candidateSchema, keyOf } from "./context-candidates";
 import type { ArchitecturalModel } from "@/types/domain";
 import { palette, type DiagramDocument, type DiagramNode, type DrawioTheme } from "@/lib/drawio/rules";
 import { isDeclarativeClientElement } from "./classifier-semantics";
@@ -223,6 +224,7 @@ const escapeXml = (value: unknown) =>
     .replaceAll("\n", "&#xa;");
 
 interface C4ContextPersonSpec {
+  provisional?: boolean;
   id: string;
   name: string;
   description: string;
@@ -279,6 +281,21 @@ export function deriveC4ContextModel(model: ArchitecturalModel): {
           ]
         : [];
     });
+
+  const targets = new Map(internalNodes.map(n => [keyOf(n), n]));
+  const seenCandidates = new Set<string>();
+  for (const node of model.elements) {
+    const raw = node.properties?.["contextReview"];
+    if (!raw || typeof raw !== "object" || !("entries" in raw) || !Array.isArray(raw.entries)) continue;
+    for (const value of raw.entries) {
+      const parsed = candidateSchema.safeParse(value);
+      if (!parsed.success) continue;
+      const entry = parsed.data, target = targets.get(entry.targetKey);
+      if (entry.state !== "PROPOSED" || entry.kind !== "PERSON" || entry.proposalOrigin !== "SOURCE_CANDIDATE" || !entry.sourceLocator || !entry.sourceExcerpt || !entry.evidenceIds?.length || !target || seenCandidates.has(entry.id)) continue;
+      seenCandidates.add(entry.id);
+      persons.push({id:`candidate:${entry.id}`, name:entry.name, provisional:true, description:`Security principal inferred from an access rule; human identity and business role require review. Source: ${entry.sourceLocator}`, actionLabel:"Source access rule · unverified interaction", underlyingNodeIds:[target.id], underlyingEdgeIds:[], direction:entry.direction});
+    }
+  }
 
   // N-C1-02: Strictly exclude internal Databases, Kafka/Queues, CDC, Zipkin, and Services!
   // Only include true EXTERNAL_SYSTEM elements outside the system boundary.
@@ -547,6 +564,7 @@ export function buildContextDiagramDrawioXml(
     id: string;
     name: string;
     role: "PERSON" | "EXTERNAL_SYSTEM";
+    provisional?: boolean;
     badge: string;
     description: string;
     actionLabel: string;
@@ -563,7 +581,8 @@ export function buildContextDiagramDrawioXml(
     id: person.id,
     name: person.name,
     role: "PERSON",
-    badge: "Person",
+    badge: person.provisional ? "Security principal · needs review" : "Person",
+    provisional: Boolean(person.provisional),
     description: person.description,
     actionLabel: person.actionLabel,
     direction: person.direction,
@@ -682,7 +701,7 @@ export function buildContextDiagramDrawioXml(
     '<mxCell id="0"/>',
     '<mxCell id="1" parent="0"/>',
     `<mxCell id="mavis_title" mavisC4Context="6" mavisDocument="${escapeXml(JSON.stringify(documentMeta))}" mavisRuleVersion="mavis-se-3" mavisTheme="${theme}" value="${escapeXml(`System Context diagram for ${resolvedSystemName}`)}" style="text;html=0;fontFamily=Arial;fontSize=20;fontStyle=1;fontColor=${p.text};align=left;" vertex="1" parent="1"><mxGeometry x="64" y="24" width="960" height="32" as="geometry"/></mxCell>`,
-    `<mxCell id="mavis_scope" value="${escapeXml(`C4 Level 1 (System Context) · 1 Software System · ${persons.length} identified actor(s) · ${externals.length} identified external system(s) · ${persons.length === 0 ? "Context incomplete: caller roles require confirmation" : "Declared context: boundary and actor roles require review"}`)}" style="text;html=0;fontFamily=Arial;fontSize=12;fontColor=${p.text};align=left;" vertex="1" parent="1"><mxGeometry x="64" y="60" width="980" height="24" as="geometry"/></mxCell>`,
+    `<mxCell id="mavis_scope" value="${escapeXml(`C4 Level 1 (System Context) · 1 Software System · ${persons.filter(p=>!p.provisional).length} declared actor(s) · ${persons.filter(p=>p.provisional).length} provisional security principal(s) · ${externals.length} identified external system(s) · ${persons.length === 0 ? "Context incomplete: caller roles require confirmation" : "Declared context: boundary and actor roles require review"}`)}" style="text;html=0;fontFamily=Arial;fontSize=12;fontColor=${p.text};align=left;" vertex="1" parent="1"><mxGeometry x="64" y="60" width="980" height="24" as="geometry"/></mxCell>`,
     `<mxCell id="system_center" mavisId="system:${escapeXml(model.projectId)}" mavisRole="SYSTEM" mavisName="${escapeXml(resolvedSystemName)}" mavisDescription="${escapeXml(systemDescription)}" mavisNodeMetadata="${escapeXml(JSON.stringify({ underlyingNodeIds: internalNodeIds }))}" value="${escapeXml(boxHtml(resolvedSystemName, "Software System", systemDescription))}" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;fillColor=${p.system};fontColor=${p.nodeText};strokeColor=${p.border};strokeWidth=2;fontFamily=Arial;spacing=12;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="${sysX}" y="${sysY}" width="${sysWidth}" height="${sysHeight}" as="geometry"/></mxCell>`,
   ];
 
@@ -704,7 +723,7 @@ export function buildContextDiagramDrawioXml(
       ? ` mavisNodeMetadata="${escapeXml(JSON.stringify({ viewLocal: true, underlyingNodeIds: item.underlyingNodeIds }))}"`
       : "";
     cells.push(
-      `<mxCell id="${item.cellId}" mavisId="${escapeXml(item.id)}" mavisRole="${item.role}" mavisName="${escapeXml(item.name)}" mavisDescription="${escapeXml(item.description)}"${nodeMetaAttr} value="${escapeXml(boxHtml(item.name, item.badge, item.description))}" style="rounded=1;arcSize=${arcSize};whiteSpace=wrap;html=1;fillColor=${fill};fontColor=${p.nodeText};strokeColor=${stroke};strokeWidth=1.5;fontFamily=Arial;spacing=10;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="${x}" y="${y}" width="${cardWidth}" height="${cardHeight}" as="geometry"/></mxCell>`,
+      `<mxCell id="${item.cellId}" mavisId="${escapeXml(item.id)}" mavisRole="${item.provisional ? "SECURITY_PRINCIPAL" : item.role}" mavisName="${escapeXml(item.name)}" mavisDescription="${escapeXml(item.description)}"${nodeMetaAttr} value="${escapeXml(boxHtml(item.name, item.badge, item.description))}" style="rounded=1;arcSize=${arcSize};whiteSpace=wrap;html=1;fillColor=${fill};fontColor=${p.nodeText};strokeColor=${stroke};strokeWidth=1.5;${item.provisional ? "dashed=1;dashPattern=6 4;" : ""}fontFamily=Arial;spacing=10;align=center;verticalAlign=middle;" vertex="1" parent="1"><mxGeometry x="${x}" y="${y}" width="${cardWidth}" height="${cardHeight}" as="geometry"/></mxCell>`,
     );
 
     const isInbound = item.direction === "INBOUND";
@@ -724,7 +743,7 @@ export function buildContextDiagramDrawioXml(
       : ` mavisRelationType="USES_API"`;
 
     cells.push(
-      `<mxCell id="${item.edgeId}" mavisId="${escapeXml(item.mavisEdgeId)}" mavisRole="edge"${edgeMetaAttr} value="${escapeXml(item.actionLabel)}" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=${p.line};strokeWidth=1.5;endArrow=block;endFill=1;fontFamily=Arial;fontSize=11;fontColor=${p.text};labelBackgroundColor=${p.background};exitX=${realExitX};exitY=${realExitY};exitPerimeter=0;entryX=${realEntryX};entryY=${realEntryY};entryPerimeter=0;" edge="1" parent="1" source="${sourceId}" target="${targetId}"><mxGeometry relative="1" as="geometry">${pointsXml}</mxGeometry></mxCell>`,
+      `<mxCell id="${item.edgeId}" mavisId="${escapeXml(item.mavisEdgeId)}" mavisRole="edge"${edgeMetaAttr} value="${escapeXml(item.actionLabel)}" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=${p.line};strokeWidth=1.5;${item.provisional ? "dashed=1;dashPattern=6 4;" : ""}endArrow=block;endFill=1;fontFamily=Arial;fontSize=11;fontColor=${p.text};labelBackgroundColor=${p.background};exitX=${realExitX};exitY=${realExitY};exitPerimeter=0;entryX=${realEntryX};entryY=${realEntryY};entryPerimeter=0;" edge="1" parent="1" source="${sourceId}" target="${targetId}"><mxGeometry relative="1" as="geometry">${pointsXml}</mxGeometry></mxCell>`,
     );
   };
 
@@ -832,6 +851,7 @@ export function buildContextDiagramDrawioXml(
   const legendLines = [
     "SYSTEM CONTEXT LEGEND (C4 LEVEL 1 — SYSTEM CONTEXT)",
     "• [Person] (Perimeter): Explicit actors with declared model relationships; roles are never inferred from controller or entity names.",
+    "• Dashed security principal: inferred from a source access rule, not a confirmed human actor or observed interaction. Please verify the business role.",
     "• [Software System] (Center): Target software system treated as a black box (internal microservices, databases, and brokers are detailed in the C2 Container diagram).",
     "• Directed Arrow (───►): Declared relationship direction; not proof of observed traffic or business behavior.",
   ];

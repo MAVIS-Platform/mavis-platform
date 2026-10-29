@@ -347,6 +347,7 @@ export const contracts = {
   model: contract(z.object({ modelId: id, projectId: id.optional() }), d.modelSchema),
   deleteProject: contract(project, ok, true),
   deleteSnapshot: contract(z.object({projectId:id,snapshotId:id}),ok,true),
+  contextCandidates: contract(z.object({modelId:id}), z.object({entries:z.array(z.record(z.unknown()))})),
   reviewContext: contract(z.object({
     modelId: id, expectedRevision: z.number().int().positive(),
     action: z.enum(["SUGGEST", "PROPOSE", "EDIT", "CONFIRM", "REJECT"]),

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { z } from "zod";
+import { normalizeError } from "@/lib/errors/api-error";
 import type { ArchitecturalModel } from "@/types/domain";
 import { useApi, useApiMutation } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
@@ -10,31 +11,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { SelectField } from "@/components/shared/forms";
 import type { Request } from "@/lib/api/contracts";
 
-const candidateSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  kind: z.enum(["PERSON", "EXTERNAL_SYSTEM"]),
-  state: z.enum(["PROPOSED", "CONFIRMED", "REJECTED"]),
-  targetKey: z.string(),
-  direction: z.enum(["INBOUND", "OUTBOUND"]),
-  basis: z.string(),
-  proposalOrigin: z.string(),
-  sourceModelId: z.string().optional(),
-  existingElementKey: z.string().optional(),
-  sourceLocator: z.string().optional(),
-  sourceExcerpt: z.string().optional(),
-  confirmedBy: z.string().optional(),
-  boundary: z.string().optional(),
-  evidenceIds: z.array(z.string()).optional(),
-});
-const keyOf = (node: ArchitecturalModel["elements"][number]) =>
-  String(
-    node.properties?.["logicalKey"] ??
-      (node.properties?.["workerLogicalId"]
-        ? `worker:${node.properties["workerLogicalId"]}`
-        : `element:${node.id}`),
-  );
-export function ContextReview({ model }: { model: ArchitecturalModel }) {
+import { candidateSchema, keyOf } from "./context-candidates";
+export function ContextReview({
+  model,
+  discovery,
+}: {
+  model: ArchitecturalModel;
+  discovery?:
+    | { isPending: boolean; isFetching: boolean; isError: boolean; refetch: () => unknown }
+    | undefined;
+}) {
   const api = useApi(),
     save = useApiMutation("reviewContext"),
     router = useRouter(),
@@ -89,7 +75,13 @@ export function ContextReview({ model }: { model: ArchitecturalModel }) {
       query.set("model", next.id);
       router.replace(`${pathname}?${query}`, { scroll: false });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Context review could not be saved.");
+      setError(
+        normalizeError(e).kind === "timeout"
+          ? "The save response timed out. Its outcome is unknown. Reload the latest revision before retrying; your decision may already have been saved."
+          : e instanceof Error
+            ? e.message
+            : "Context review could not be saved.",
+      );
     }
   }
   if (api.mode !== "backend")
@@ -102,14 +94,25 @@ export function ContextReview({ model }: { model: ArchitecturalModel }) {
   return (
     <details className="rounded-xl border bg-card p-4">
       <summary className="cursor-pointer text-sm font-semibold">
-        Review system context · {entries.filter((e) => e.state === "PROPOSED").length} pending
+        Review system context ·{" "}
+        {discovery?.isPending
+          ? "Checking source…"
+          : discovery?.isError
+            ? "Source check unavailable"
+            : `${entries.filter((e) => e.state === "PROPOSED").length} pending`}
       </summary>
       <div className="mt-4 space-y-4 text-sm">
         <p className="text-xs leading-5 text-muted-foreground">
-          Suggestions are not facts. Only explicit confirmation adds an actor or boundary decision
-          to a new revision. User confirmation is recorded separately from source or runtime
-          verification.
+          Source security principals are drawn provisionally with dashed lines. They are not
+          confirmed human actors. Please verify their business role; only your confirmation records
+          a context decision.
         </p>
+        {discovery?.isError && (
+          <p role="alert" className="text-destructive">
+            Source candidates could not be loaded. Retry the source check; this does not mean no
+            actors exist.
+          </p>
+        )}
         {error && (
           <p role="alert" className="text-destructive">
             {error}
@@ -117,21 +120,24 @@ export function ContextReview({ model }: { model: ArchitecturalModel }) {
         )}
         <Button
           variant="outline"
-          disabled={save.isPending || !internal.length}
-          onClick={() => void act({ action: "SUGGEST" })}
+          disabled={save.isPending || discovery?.isFetching || !internal.length}
+          onClick={() => (discovery ? void discovery.refetch() : void act({ action: "SUGGEST" }))}
         >
-          Find evidence-backed candidates
+          Refresh source candidates
         </Button>
         <p className="text-xs text-muted-foreground">
-          Scans saved security-role snippets and extracted external dependencies. No AI-generated
-          actor names or default User actor are added.
+          Scans saved source access rules. No AI-generated actor names or default User actor are
+          added. Source previews do not create a model revision.
         </p>
-        {stored?.lastSuggestionCount === 0 && (
-          <p role="status" className="text-xs text-muted-foreground">
-            No new evidence-backed candidates were found. No actors or external systems were
-            invented.
-          </p>
-        )}
+        {stored?.lastSuggestionCount === 0 &&
+          !entries.some((e) => e.state === "PROPOSED") &&
+          !discovery?.isError &&
+          !discovery?.isPending && (
+            <p role="status" className="text-xs text-muted-foreground">
+              No new evidence-backed candidates were found. No actors or external systems were
+              invented.
+            </p>
+          )}
         {entries.map((entry) => (
           <article key={entry.id} className="space-y-2 rounded-lg border p-3">
             <div className="flex flex-wrap justify-between gap-2">

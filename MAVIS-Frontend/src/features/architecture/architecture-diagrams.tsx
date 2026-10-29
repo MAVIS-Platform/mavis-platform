@@ -4,17 +4,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { SelectField } from "@/components/shared/forms";
+import { withContextCandidates } from "./context-candidates";
 import { ContextReview } from "./context-review";
 import { DrawioEditor } from "./drawio-editor";
 import { ScenarioDiagram } from "./scenario-diagram";
 import { UmlDiagramWorkspace } from "./uml-diagram-workspace";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
 import type { UmlDiagramKind } from "./uml-diagrams";
-import {
-  diagramKinds,
-  selectDiagram,
-  type DiagramKind,
-} from "./diagram-catalog";
+import { diagramKinds, selectDiagram, type DiagramKind } from "./diagram-catalog";
 import {
   applyC4AiEnrichmentToDocument,
   buildC4CompactContext,
@@ -55,8 +52,7 @@ function formatC4NodeBadge(kind?: string): string {
 }
 
 export function ArchitectureDiagrams({
-
-  model,
+  model: sourceModel,
   selectedId,
   onSelect,
   onSelectSequence,
@@ -65,7 +61,8 @@ export function ArchitectureDiagrams({
   model: ArchitecturalModel;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onSelectSequence?: ((id: string | null, seqCtx: SequenceSelectionContext | null) => void) | undefined;
+  onSelectSequence?:
+    ((id: string | null, seqCtx: SequenceSelectionContext | null) => void) | undefined;
   systemName?: string | undefined;
 }) {
   const { locale } = useLocale();
@@ -80,6 +77,16 @@ export function ArchitectureDiagrams({
     [error, setError] = useState("");
   const api = useApi(),
     cache = useQueryClient();
+  const discovery = useApiQuery(
+    "contextCandidates",
+    { modelId: sourceModel.id },
+    { enabled: api.mode === "backend" && kind === "CONTEXT" },
+  );
+  const model = useMemo(
+    () => withContextCandidates(sourceModel, discovery.data?.entries ?? []),
+    [sourceModel, discovery.data],
+  );
+  const [previewContext, setPreviewContext] = useState(false);
   const allContainers = model.elements
     .filter((node) => node.elementType === "SERVICE_CONTAINER")
     .map((node) => ({
@@ -97,8 +104,7 @@ export function ArchitectureDiagrams({
     "UML_ACTIVITY",
     "UML_STATE",
   ].includes(kind);
-  const isC4EnrichableKind =
-    kind === "CONTAINER" || kind === "COMPONENT";
+  const isC4EnrichableKind = kind === "CONTAINER" || kind === "COMPONENT";
 
   useEffect(() => {
     if (!isC4EnrichableKind) {
@@ -264,13 +270,18 @@ export function ArchitectureDiagrams({
         : "";
   const hasValidSavedXml = Boolean(
     saved.data?.xml &&
-      (kind === "CONTEXT"
-        ? saved.data.xml.includes('mavisC4Context="6"')
-        : saved.data.xml.includes('mavisSmartRouting="3"') &&
-          (!document?.["policyVersion"] || saved.data.xml.includes(String(document["policyVersion"]))) &&
-          (!document || saved.data.xml.includes(`name="${document.notation} · ${document.level}"`))),
+    (kind === "CONTEXT"
+      ? saved.data.xml.includes('mavisC4Context="6"')
+      : saved.data.xml.includes('mavisSmartRouting="3"') &&
+        (!document?.["policyVersion"] ||
+          saved.data.xml.includes(String(document["policyVersion"]))) &&
+        (!document || saved.data.xml.includes(`name="${document.notation} · ${document.level}"`))),
   );
-  const xml = (hasValidSavedXml ? saved.data?.xml : null) ?? generated;
+  const xml =
+    kind === "CONTEXT" && api.mode === "backend" && discovery.isPending
+      ? ""
+      : ((hasValidSavedXml && !(kind === "CONTEXT" && previewContext) ? saved.data?.xml : null) ??
+        generated);
   const currentOption = diagramOptions.find((item) => item.value === kind);
   const title =
     kind === "COMPONENT"
@@ -325,23 +336,52 @@ export function ArchitectureDiagrams({
           </div>
         )}
       </div>
-      {kind === "CONTEXT" && <ContextReview key={model.id} model={model} />}
+      {kind === "CONTEXT" && hasValidSavedXml && discovery.data?.entries.length ? (
+        <div role="status" className="rounded-lg border p-3 text-sm">
+          A saved drawing is retained. Source candidates do not overwrite your edits.{" "}
+          <button type="button" className="underline" onClick={() => setPreviewContext((v) => !v)}>
+            {previewContext ? "Show saved drawing" : "Preview inferred context"}
+          </button>
+        </div>
+      ) : null}
+      {kind === "CONTEXT" && (
+        <ContextReview
+          key={model.id}
+          model={model}
+          discovery={api.mode === "backend" ? discovery : undefined}
+        />
+      )}
       {kind === "CONTEXT" && deriveC4ContextModel(model).persons.length === 0 && (
         <div role="status" className="rounded-lg border bg-muted/30 p-3 text-sm">
           <p className="font-medium">Context incomplete · external callers require review</p>
           <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            No confirmed actor interaction is recorded in this revision. HTTP endpoints identify interfaces, not human roles.
-            Runtime traces can support service interactions but do not establish business actors or system ownership.
-            Review and document the system boundary and confirmed actors before treating this as a complete context diagram.
+            No confirmed actor interaction is recorded in this revision. HTTP endpoints identify
+            interfaces, not human roles. Runtime traces can support service interactions but do not
+            establish business actors or system ownership. Review and document the system boundary
+            and confirmed actors before treating this as a complete context diagram.
           </p>
         </div>
       )}
-      {selection.notice && !isUmlWorkspaceKind && <p role="status" className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">{selection.notice}</p>}
+      {selection.notice && !isUmlWorkspaceKind && (
+        <p
+          role="status"
+          className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground"
+        >
+          {selection.notice}
+        </p>
+      )}
       {kind === "CONTAINER" && document && (
-        <p role="status" className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
-          Showing {document.layoutJson.nodes.filter((node) => node.kind === "SERVICE_CONTAINER").length} recognized service containers, including infrastructure and isolated services.
-          {" "}{Number(document["omittedNodes"] ?? 0)} lower-level element(s) and {Number(document["omittedEdges"] ?? 0)} relationship(s) are outside this view.
-          Startup dependencies are shown in Deployment; configuration across profiles is declared, not observed runtime traffic.
+        <p
+          role="status"
+          className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground"
+        >
+          Showing{" "}
+          {document.layoutJson.nodes.filter((node) => node.kind === "SERVICE_CONTAINER").length}{" "}
+          recognized service containers, including infrastructure and isolated services.{" "}
+          {Number(document["omittedNodes"] ?? 0)} lower-level element(s) and{" "}
+          {Number(document["omittedEdges"] ?? 0)} relationship(s) are outside this view. Startup
+          dependencies are shown in Deployment; configuration across profiles is declared, not
+          observed runtime traffic.
         </p>
       )}
       {kind === "SCENARIOS" || kind === "UML_SEQUENCE" ? (
@@ -412,7 +452,9 @@ export function ArchitectureDiagrams({
                       return [
                         {
                           value: targetId,
-                          badge: "Person",
+                          badge: person.provisional
+                            ? "Security principal · needs review"
+                            : "Person",
                           label: `${idx + 2}. ${person.name}`,
                           sublabel: person.description,
                         },
@@ -439,8 +481,11 @@ export function ArchitectureDiagrams({
                       return [
                         {
                           value: targetId,
-                          badge: "HTTP_ENTRYPOINT",
-                          label: person.direction === "OUTBOUND" ? `#${idx + 1} ${c4ContextInspector.resolvedSystemName} → ${person.name}` : `#${idx + 1} ${person.name} → ${c4ContextInspector.resolvedSystemName}`,
+                          badge: person.provisional ? "SOURCE_ACCESS_RULE" : "HTTP_ENTRYPOINT",
+                          label:
+                            person.direction === "OUTBOUND"
+                              ? `#${idx + 1} ${c4ContextInspector.resolvedSystemName} → ${person.name}`
+                              : `#${idx + 1} ${person.name} → ${c4ContextInspector.resolvedSystemName}`,
                           sublabel: person.actionLabel,
                         },
                       ];
