@@ -336,6 +336,14 @@ export const contracts = {
   analysisJob: contract(z.object({ jobId: id }), d.analysisJobSchema),
   models: contract(project, z.array(d.modelSchema)),
   model: contract(z.object({ modelId: id, projectId: id.optional() }), d.modelSchema),
+  reviewContext: contract(z.object({
+    modelId: id, expectedRevision: z.number().int().positive(),
+    action: z.enum(["SUGGEST", "PROPOSE", "EDIT", "CONFIRM", "REJECT"]),
+    candidateId: z.string().optional(), name: z.string().trim().min(1).max(255).optional(),
+    kind: z.enum(["PERSON", "EXTERNAL_SYSTEM"]).optional(), targetKey: z.string().max(500).optional(),
+    direction: z.enum(["INBOUND", "OUTBOUND"]).optional(), basis: z.string().trim().max(2000).optional(),
+    boundary: z.string().trim().min(10).max(2000).optional(), evidenceIds: z.array(z.string().uuid()).max(20).optional(),
+  }), d.modelSchema, true),
   saveModel: contract(
     z.object({
       modelId: id,

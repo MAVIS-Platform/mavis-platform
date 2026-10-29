@@ -1663,6 +1663,10 @@ export async function executeJava(
         ...(a.cached !== undefined ? { cached: a.cached } : {}),
       };
     }
+    case "reviewContext": {
+      const result = z.object({ id: z.string().uuid() }).parse(await post(`analyzer/models/${id(input,"modelId")}/context-review`, input));
+      return model(result.id);
+    }
     case "saveModel": {
       const baseId = id(input, "modelId");
       const metadata = modelSummary(await get(`analyzer/models/${baseId}`));
