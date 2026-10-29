@@ -74,7 +74,15 @@ export function validateResponse<K extends Operation>(
       "configurationRevision",
       "scenarioRevision",
     ]) {
-      if (Object.hasOwn(request, key) && Object.hasOwn(value, key) && request[key] !== value[key])
+      if (
+        Object.hasOwn(request, key) &&
+        request[key] !== undefined &&
+        request[key] !== null &&
+        Object.hasOwn(value, key) &&
+        value[key] !== undefined &&
+        value[key] !== null &&
+        request[key] !== value[key]
+      )
         fail();
     }
     if (

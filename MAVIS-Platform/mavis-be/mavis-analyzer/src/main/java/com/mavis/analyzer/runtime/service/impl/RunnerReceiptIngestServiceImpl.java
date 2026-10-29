@@ -625,10 +625,16 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             UUID relId = step.relationship != null ? (step.relationship.getId() != null ? step.relationship.getId() : baseRelId) : null;
             UUID evId = step.evidence != null ? step.evidence.getId() : null;
 
+            String resolvedCallerName = step.caller != null && step.caller.getName() != null
+                    ? step.caller.getName()
+                    : step.parentSpan.getRuntimeService();
+            String resolvedCalleeName = step.callee != null && step.callee.getName() != null
+                    ? step.callee.getName()
+                    : step.childSpan.getRuntimeService();
             stepNode.put("stepOrder", step.order);
             stepNode.put("messageId", step.messageId);
-            stepNode.put("callerService", step.parentSpan.getRuntimeService());
-            stepNode.put("calleeService", step.childSpan.getRuntimeService());
+            stepNode.put("callerService", resolvedCallerName);
+            stepNode.put("calleeService", resolvedCalleeName);
             stepNode.put("callerParticipantId", callerParticipantId);
             stepNode.put("calleeParticipantId", calleeParticipantId);
             if (callerElId != null) stepNode.put("callerElementId", callerElId.toString()); else stepNode.putNull("callerElementId");
@@ -638,8 +644,8 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             stepNode.put("callerResolutionStatus", callerStatus);
             stepNode.put("calleeResolutionStatus", calleeStatus);
             String operation = (step.childSpan.getRoute() != null && !step.childSpan.getRoute().isBlank())
-                    ? "HTTP -> " + step.childSpan.getRuntimeService()
-                    : "Call " + step.childSpan.getRuntimeService();
+                    ? step.childSpan.getRoute()
+                    : ("/api/v1/" + Objects.toString(resolvedCalleeName, "service").toLowerCase(Locale.ROOT));
             stepNode.put("operation", operation);
             stepNode.put("messageSort", "UNKNOWN");
             String httpMethod = step.childSpan.getHttpMethod() != null && !step.childSpan.getHttpMethod().isBlank()

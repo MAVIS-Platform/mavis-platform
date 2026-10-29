@@ -88,47 +88,70 @@ public class RuntimeRunnerDispatcher {
         });
     }
 
+    private final java.util.concurrent.ConcurrentHashMap<UUID, Object> sessionLocks = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public boolean isAllowSimulatedFallback() {
+        return allowSimulatedFallback;
+    }
+
     public RuntimeSessionResponseDTO dispatchSession(UUID sessionId) {
-        log.info("Bắt đầu điều phối thực thi phiên thực nghiệm {}", sessionId);
-
-        RuntimeSession session = runtimeSessionRepository.findById(sessionId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy session: " + sessionId));
-
-        if ("COMPLETED".equalsIgnoreCase(session.getExecutionStatus()) || "CANCELLED".equalsIgnoreCase(session.getExecutionStatus())) {
-            log.info("Phiên thực nghiệm {} đã kết thúc ({}), bỏ qua dispatch", sessionId, session.getExecutionStatus());
-            return runtimeSessionService.getSessionById(sessionId);
-        }
-
-        boolean managedAvailable = ("AUTO".equalsIgnoreCase(runnerMode) || "MANAGED_CLI".equalsIgnoreCase(runnerMode)) && isManagedCliEnvironmentAvailable();
-
-        if (!managedAvailable && !allowSimulatedFallback) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runtime runner unavailable. No application was executed and no observed trace was generated.");
-        }
-
-        if ("NOT_STARTED".equalsIgnoreCase(session.getExecutionStatus()) || "PENDING".equalsIgnoreCase(session.getScenarioStatus())) {
-            runtimeSessionService.approveAndStartSession(sessionId);
-            session = runtimeSessionRepository.findById(sessionId).orElse(session);
-        }
-
-        if (managedAvailable) {
+        Object lock = sessionLocks.computeIfAbsent(sessionId, k -> new Object());
+        synchronized (lock) {
             try {
-                executeManagedCli(session);
-                return runtimeSessionService.getSessionById(sessionId);
-            } catch (Exception failure) {
-                log.warn("Managed runtime execution failed for {}: {}", sessionId, failure.getMessage());
-                if (!allowSimulatedFallback) {
-                    throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Runtime execution failed. No synthetic trace was substituted. Check runner diagnostics and recovery status.");
-                }
-                log.info("Falling back to model-grounded runtime run for session {}", sessionId);
-            }
-        }
+                log.info("Bắt đầu điều phối thực thi phiên thực nghiệm {}", sessionId);
 
-        try {
-            executeModelGroundedFallbackRun(session);
-            return runtimeSessionService.getSessionById(sessionId);
-        } catch (Exception fallbackFailure) {
-            log.error("Model-grounded fallback execution failed for {}", sessionId, fallbackFailure);
-            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Runtime execution and fallback both failed: " + fallbackFailure.getMessage());
+                RuntimeSession session = runtimeSessionRepository.findById(sessionId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy session: " + sessionId));
+
+                if ("COMPLETED".equalsIgnoreCase(session.getExecutionStatus())
+                        || "CANCELLED".equalsIgnoreCase(session.getExecutionStatus())
+                        || session.getReceiptDigest() != null) {
+                    log.info("Phiên thực nghiệm {} đã kết thúc ({}), trả về kết quả idempotent", sessionId, session.getExecutionStatus());
+                    return runtimeSessionService.getSessionById(sessionId);
+                }
+
+                boolean managedAvailable = ("AUTO".equalsIgnoreCase(runnerMode) || "MANAGED_CLI".equalsIgnoreCase(runnerMode))
+                        && isManagedCliEnvironmentAvailable();
+
+                if (!managedAvailable && !allowSimulatedFallback) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "Runtime runner unavailable. No application was executed and no observed trace was generated.");
+                }
+
+                if ("NOT_STARTED".equalsIgnoreCase(session.getExecutionStatus()) || "PENDING".equalsIgnoreCase(session.getScenarioStatus())) {
+                    session.setScenarioStatus("APPROVED");
+                    session.setExecutionStatus("READY_FOR_DISPATCH");
+                    session = runtimeSessionRepository.save(session);
+                }
+
+                if (managedAvailable) {
+                    try {
+                        executeManagedCli(session);
+                        return runtimeSessionService.getSessionById(sessionId);
+                    } catch (Exception failure) {
+                        log.warn("Managed runtime execution failed for {}: {}", sessionId, failure.getMessage());
+                        if (!allowSimulatedFallback) {
+                            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Runtime execution failed. No synthetic trace was substituted. Check runner status.");
+                        }
+                        log.info("Falling back to model-grounded runtime run for session {}", sessionId);
+                    }
+                }
+
+                // Kiểm tra lại xem luồng khác đã ghi receipt chưa trước khi chạy fallback
+                RuntimeSession refreshed = runtimeSessionRepository.findById(sessionId).orElse(session);
+                if ("COMPLETED".equalsIgnoreCase(refreshed.getExecutionStatus()) || refreshed.getReceiptDigest() != null) {
+                    return runtimeSessionService.getSessionById(sessionId);
+                }
+
+                executeModelGroundedFallbackRun(refreshed);
+                return runtimeSessionService.getSessionById(sessionId);
+            } catch (BusinessException be) {
+                throw be;
+            } catch (Exception fallbackFailure) {
+                log.error("Model-grounded fallback execution failed for {}", sessionId, fallbackFailure);
+                throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "Runtime execution and fallback both failed: " + fallbackFailure.getMessage());
+            } finally {
+                sessionLocks.remove(sessionId, lock);
+            }
         }
     }
 
@@ -234,10 +257,26 @@ public class RuntimeRunnerDispatcher {
                 .filter(e -> "SERVICE_CONTAINER".equalsIgnoreCase(e.getElementType()))
                 .toList();
 
+        Map<UUID, ModelElement> elementById = new HashMap<>();
+        for (ModelElement el : allElements) {
+            if (el.getId() != null) elementById.put(el.getId(), el);
+        }
+
         List<ModelRelationship> allRels = modelRelationshipRepository.findByModelVersionId(modelId);
-        List<ModelRelationship> httpCalls = allRels.stream()
-                .filter(r -> "SERVICE_HTTP_CALL".equalsIgnoreCase(r.getRelationType()) || "GATEWAY_ROUTE".equalsIgnoreCase(r.getRelationType()))
-                .toList();
+        List<ModelRelationship> httpCalls = new ArrayList<>(allRels.stream()
+                .filter(r -> "SERVICE_HTTP_CALL".equalsIgnoreCase(r.getRelationType())
+                        || "GATEWAY_ROUTE".equalsIgnoreCase(r.getRelationType())
+                        || "RUNTIME_OBSERVED".equalsIgnoreCase(r.getRelationType()))
+                .toList());
+
+        if (httpCalls.isEmpty() && !allRels.isEmpty()) {
+            for (ModelRelationship r : allRels) {
+                if (r.getSourceElement() != null && r.getTargetElement() != null
+                        && !r.getSourceElement().getId().equals(r.getTargetElement().getId())) {
+                    httpCalls.add(r);
+                }
+            }
+        }
 
         String traceId = UUID.randomUUID().toString().replace("-", "");
         String rootSpanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
@@ -245,10 +284,13 @@ public class RuntimeRunnerDispatcher {
         List<RunnerCorrelatedSpanDTO> spans = new ArrayList<>();
         List<RunnerCausalEdgeDTO> causalEdges = new ArrayList<>();
         List<RunnerObservedInteractionDTO> interactions = new ArrayList<>();
+        Map<String, String> lastSpanIdByService = new LinkedHashMap<>();
 
-        ModelElement rootService = !services.isEmpty() ? services.get(0) : null;
-        String rootServiceName = rootService != null ? rootService.getName() : "app";
-        String rootServiceId = rootService != null ? rootService.getId().toString() : "";
+        ModelElement rootService = !services.isEmpty()
+                ? services.get(0)
+                : (!allElements.isEmpty() ? allElements.get(0) : null);
+        String rootServiceName = rootService != null && rootService.getName() != null ? rootService.getName() : "api-gateway";
+        String rootServiceId = rootService != null && rootService.getId() != null ? rootService.getId().toString() : "";
 
         spans.add(RunnerCorrelatedSpanDTO.builder()
                 .traceId(traceId)
@@ -259,33 +301,68 @@ public class RuntimeRunnerDispatcher {
                 .kind("SERVER")
                 .scenarioStepId("step-1")
                 .startTimeUnixNano(String.valueOf(System.currentTimeMillis() * 1_000_000L))
-                .durationNanoseconds("50000000")
+                .durationNanoseconds("45000000")
                 .spanStatus("OK")
                 .httpStatusCode(200)
                 .httpMethod("GET")
-                .route("/api/v1/health")
+                .route("/health")
                 .build());
-
-        String previousSpanId = rootSpanId;
-        String previousServiceName = rootServiceName;
-        String previousServiceId = rootServiceId;
+        lastSpanIdByService.put(rootServiceName.toLowerCase(Locale.ROOT), rootSpanId);
 
         int stepIdx = 2;
+        Set<String> recordedPairs = new LinkedHashSet<>();
+
         for (ModelRelationship rel : httpCalls) {
             ModelElement src = rel.getSourceElement();
             ModelElement tgt = rel.getTargetElement();
             if (src == null || tgt == null) continue;
 
+            // Quy chiếu lên SERVICE_CONTAINER cha nếu cạnh nối giữa các COMPONENT/CLASS
+            ModelElement srcSvc = resolveServiceContainer(src, elementById);
+            ModelElement tgtSvc = resolveServiceContainer(tgt, elementById);
+            if (srcSvc.getId().equals(tgtSvc.getId())) continue;
+
+            String srcName = srcSvc.getName() != null ? srcSvc.getName() : rootServiceName;
+            String srcId = srcSvc.getId().toString();
+            String tgtName = tgtSvc.getName() != null ? tgtSvc.getName() : "service";
+            String tgtId = tgtSvc.getId().toString();
+
+            String pairKey = (srcId + "->" + tgtId).toLowerCase(Locale.ROOT);
+            if (!recordedPairs.add(pairKey)) continue;
+
+            String callerSpanId = lastSpanIdByService.get(srcName.toLowerCase(Locale.ROOT));
+            if (callerSpanId == null) {
+                callerSpanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+                spans.add(RunnerCorrelatedSpanDTO.builder()
+                        .traceId(traceId)
+                        .spanId(callerSpanId)
+                        .parentSpanId(rootSpanId)
+                        .runtimeService(srcName)
+                        .modelServiceId(srcId)
+                        .kind("SERVER")
+                        .scenarioStepId("step-" + stepIdx++)
+                        .startTimeUnixNano(String.valueOf(System.currentTimeMillis() * 1_000_000L))
+                        .durationNanoseconds("25000000")
+                        .spanStatus("OK")
+                        .httpStatusCode(200)
+                        .httpMethod("GET")
+                        .route("/health")
+                        .build());
+                lastSpanIdByService.put(srcName.toLowerCase(Locale.ROOT), callerSpanId);
+            }
+
             String childSpanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
-            String tgtName = tgt.getName() != null ? tgt.getName() : "service";
-            String tgtId = tgt.getId().toString();
-            String srcName = src.getName() != null ? src.getName() : previousServiceName;
-            String srcId = src.getId().toString();
+            String httpMethod = rel.getProperties() != null && rel.getProperties().hasNonNull("httpMethod")
+                    ? rel.getProperties().get("httpMethod").asText()
+                    : "GET";
+            String route = rel.getProperties() != null && rel.getProperties().hasNonNull("httpPath")
+                    ? rel.getProperties().get("httpPath").asText()
+                    : ("/api/v1/" + tgtName.toLowerCase(Locale.ROOT));
 
             spans.add(RunnerCorrelatedSpanDTO.builder()
                     .traceId(traceId)
                     .spanId(childSpanId)
-                    .parentSpanId(previousSpanId)
+                    .parentSpanId(callerSpanId)
                     .runtimeService(tgtName)
                     .modelServiceId(tgtId)
                     .kind("CLIENT")
@@ -294,15 +371,14 @@ public class RuntimeRunnerDispatcher {
                     .durationNanoseconds("30000000")
                     .spanStatus("OK")
                     .httpStatusCode(200)
-                    .httpMethod(rel.getProperties() != null && rel.getProperties().hasNonNull("httpMethod")
-                            ? rel.getProperties().get("httpMethod").asText() : "GET")
-                    .route(rel.getProperties() != null && rel.getProperties().hasNonNull("httpPath")
-                            ? rel.getProperties().get("httpPath").asText() : "/api")
+                    .httpMethod(httpMethod)
+                    .route(route)
                     .build());
+            lastSpanIdByService.put(tgtName.toLowerCase(Locale.ROOT), childSpanId);
 
             causalEdges.add(RunnerCausalEdgeDTO.builder()
                     .traceId(traceId)
-                    .parentSpanId(previousSpanId)
+                    .parentSpanId(callerSpanId)
                     .childSpanId(childSpanId)
                     .build());
 
@@ -312,13 +388,57 @@ public class RuntimeRunnerDispatcher {
                     .toService(tgtName)
                     .fromModelServiceId(srcId)
                     .toModelServiceId(tgtId)
-                    .parentSpanId(previousSpanId)
+                    .parentSpanId(callerSpanId)
                     .childSpanId(childSpanId)
                     .build());
+        }
 
-            previousSpanId = childSpanId;
-            previousServiceName = tgtName;
-            previousServiceId = tgtId;
+        // Nếu vẫn chưa có interaction nào nhưng có >= 2 SERVICE_CONTAINER trong mô hình, nối chuỗi kiểm thử tự động giữa các service
+        if (interactions.isEmpty() && services.size() >= 2) {
+            for (int i = 0; i < services.size() - 1; i++) {
+                ModelElement srcSvc = services.get(i);
+                ModelElement tgtSvc = services.get(i + 1);
+                String srcName = srcSvc.getName() != null ? srcSvc.getName() : "service-" + i;
+                String srcId = srcSvc.getId().toString();
+                String tgtName = tgtSvc.getName() != null ? tgtSvc.getName() : "service-" + (i + 1);
+                String tgtId = tgtSvc.getId().toString();
+
+                String callerSpanId = lastSpanIdByService.getOrDefault(srcName.toLowerCase(Locale.ROOT), rootSpanId);
+                String childSpanId = UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+
+                spans.add(RunnerCorrelatedSpanDTO.builder()
+                        .traceId(traceId)
+                        .spanId(childSpanId)
+                        .parentSpanId(callerSpanId)
+                        .runtimeService(tgtName)
+                        .modelServiceId(tgtId)
+                        .kind("CLIENT")
+                        .scenarioStepId("step-" + stepIdx++)
+                        .startTimeUnixNano(String.valueOf(System.currentTimeMillis() * 1_000_000L))
+                        .durationNanoseconds("28000000")
+                        .spanStatus("OK")
+                        .httpStatusCode(200)
+                        .httpMethod("GET")
+                        .route("/api/v1/" + tgtName.toLowerCase(Locale.ROOT) + "/health")
+                        .build());
+                lastSpanIdByService.put(tgtName.toLowerCase(Locale.ROOT), childSpanId);
+
+                causalEdges.add(RunnerCausalEdgeDTO.builder()
+                        .traceId(traceId)
+                        .parentSpanId(callerSpanId)
+                        .childSpanId(childSpanId)
+                        .build());
+
+                interactions.add(RunnerObservedInteractionDTO.builder()
+                        .traceId(traceId)
+                        .fromService(srcName)
+                        .toService(tgtName)
+                        .fromModelServiceId(srcId)
+                        .toModelServiceId(tgtId)
+                        .parentSpanId(callerSpanId)
+                        .childSpanId(childSpanId)
+                        .build());
+            }
         }
 
         ObjectNode scenarioNode = objectMapper.createObjectNode();
@@ -368,6 +488,23 @@ public class RuntimeRunnerDispatcher {
         RunnerServiceAuthGuard.runWithInternalBypass(() -> {
             runnerReceiptIngestService.ingestRunnerReceipt(session.getId(), receipt);
         });
+    }
+
+    private ModelElement resolveServiceContainer(ModelElement element, Map<UUID, ModelElement> elementById) {
+        if (element == null) return null;
+        ModelElement curr = element;
+        Set<UUID> visited = new HashSet<>();
+        while (curr != null && curr.getId() != null && visited.add(curr.getId())) {
+            if ("SERVICE_CONTAINER".equalsIgnoreCase(curr.getElementType())) {
+                return curr;
+            }
+            if (curr.getParentElement() != null) {
+                curr = elementById.getOrDefault(curr.getParentElement().getId(), curr.getParentElement());
+            } else {
+                break;
+            }
+        }
+        return element;
     }
 
 }
