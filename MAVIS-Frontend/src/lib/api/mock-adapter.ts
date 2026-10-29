@@ -244,6 +244,7 @@ export class MockAdapter implements ApiAdapter {
   private perform<K extends Operation>(operation: K, raw: Request<K>): unknown {
     // Parsing per branch preserves discriminated request types without `any`.
     switch (operation) {
+      case "contextCandidates": return { entries: [] } as Response<K>;
       case "session":
         return { user: this.user };
       case "mockLogin": {
@@ -306,6 +307,11 @@ export class MockAdapter implements ApiAdapter {
         };
         this.snapshots.push(s);
         return s;
+      }
+      case "projectActivity": {
+        const args=contracts.projectActivity.input.parse(raw);
+        const rows=this.jobs.map(job=>({id:job.id,kind:"ANALYSIS",projectId:job.projectId,projectName:this.projects.find(p=>p.id===job.projectId)?.name??job.projectId,occurredAt:null,projectDeleted:false,targetId:job.snapshotId,targetName:null,actorId:null,actorName:null,job}));
+        return {items:rows.slice(args.page*args.size,(args.page+1)*args.size),total:rows.length,page:args.page,size:args.size};
       }
       case "projectAnalysisActivity": {
         const args=contracts.projectAnalysisActivity.input.parse(raw);

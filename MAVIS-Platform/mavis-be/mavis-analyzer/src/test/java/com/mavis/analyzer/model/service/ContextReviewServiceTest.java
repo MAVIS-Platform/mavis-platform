@@ -35,4 +35,39 @@ class ContextReviewServiceTest {
  @Test void permissionCheckedBeforeMutation(){doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN,"Denied")).when(access).requireProjectWriteAccess(project);assertThatThrownBy(()->service.review(model.getId(),request("PROPOSE"))).isInstanceOf(BusinessException.class);verifyNoInteractions(revisions);}
  @Test void runtimeLogsCannotProposeHumanRoles(){var ev=Evidence.builder().id(UUID.randomUUID()).sourceType("RUNTIME_TRACE").element(target).locator("trace:test").excerpt("hasRole('ADMIN')").build();when(evidence.findByModelVersionId(model.getId())).thenReturn(List.of(ev));service.review(model.getId(),request("SUGGEST"));assertThat(captured().elements().get(0).properties().path("contextReview").path("entries").isEmpty()).isTrue();}
  @Test void extractedDependencyTopologyCannotBeSilentlyChanged(){stored("PROPOSED");var entry=(ObjectNode)target.getProperties().path("contextReview").path("entries").get(0);entry.put("kind","EXTERNAL_SYSTEM").put("existingElementKey","external:source");assertThatThrownBy(()->service.review(model.getId(),new ContextReviewService.Request(1,"EDIT","c1","External","EXTERNAL_SYSTEM","api","OUTBOUND","User wants another direction",null,List.of()))).isInstanceOf(BusinessException.class).hasMessageContaining("recorded topology");verifyNoInteractions(revisions);}
+
+ @Test void previewReadsSourceWithoutWritingRevision(){
+  var ev=Evidence.builder().id(UUID.randomUUID()).sourceType("STATIC_CODE").element(target).locator("Api.java:4").excerpt("@RolesAllowed({\"ADMIN\", \"STAFF\"})").build();when(evidence.findByModelVersionId(model.getId())).thenReturn(List.of(ev));
+  var preview=service.candidates(model.getId());assertThat((List<?>)preview.get("entries")).hasSize(2);verify(access).requireProjectReadAccess(project);verifyNoInteractions(revisions);
+ }
+ @Test void rejectedSourceRoleIsNotProposedAgain(){
+  var ev=Evidence.builder().id(UUID.randomUUID()).sourceType("STATIC_CODE").element(target).locator("Api.java:4").excerpt("@PreAuthorize(\"hasRole('ADMIN')\")").build();when(evidence.findByModelVersionId(model.getId())).thenReturn(List.of(ev));
+  var preview=(List<ObjectNode>)service.candidates(model.getId()).get("entries");var entry=preview.get(0);service.review(model.getId(),new ContextReviewService.Request(1,"REJECT",entry.path("id").asText(),null,null,null,null,null,null,null));
+  var review=captured().elements().get(0).properties().path("contextReview");((ObjectNode)target.getProperties()).set("contextReview",review);
+  assertThat((List<?>)service.candidates(model.getId()).get("entries")).isEmpty();
+ }
+ @Test void commentsAndRuntimeDoNotCreateSourcePrincipals(){
+  assertThat(SecurityRoleSource.roles(SecurityRoleSource.withoutComments("// @PreAuthorize(\"hasRole('ADMIN')\")\n/* @RolesAllowed(\"STAFF\") */"))).isEmpty();
+  assertThat(SecurityRoleSource.roles("class AdminController {} String role=\"ADMIN\";")).isEmpty();
+  assertThat(SecurityRoleSource.roles("@Secured({\"ROLE_ADMIN\", \"ROLE_STAFF\"})")).containsExactly("ROLE_ADMIN","ROLE_STAFF");
+ }
+
+ @Test void previewPermissionFailureDoesNotReadSource(){doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN,"Denied")).when(access).requireProjectReadAccess(project);assertThatThrownBy(()->service.candidates(model.getId())).isInstanceOf(BusinessException.class);verifyNoInteractions(evidence,revisions);}
+ @Test void dynamicRolesDoNotBecomeLiteralActors(){assertThat(SecurityRoleSource.roles("@PreAuthorize(\"hasRole('ROLE_' + #tenant)\")")).isEmpty();assertThat(SecurityRoleSource.roles(".hasAnyRole(\"ADMIN\", \"STAFF\")")).containsExactly("ADMIN","STAFF");}
+ @Test void previewConfirmationRequiresExplicitReviewAndValidatesReferences(){
+  var ev=Evidence.builder().id(UUID.randomUUID()).sourceType("STATIC_CODE").element(target).locator("Api.java:4").excerpt("@RolesAllowed(\"ADMIN\")").build();when(evidence.findByModelVersionId(model.getId())).thenReturn(List.of(ev));
+  var entry=((List<ObjectNode>)service.candidates(model.getId()).get("entries")).get(0);service.review(model.getId(),new ContextReviewService.Request(1,"CONFIRM",entry.path("id").asText(),null,null,null,null,null,"Confirmed administrator role outside the application boundary",null));
+  var added=captured().elements().stream().filter(e->"ADD".equals(e.operation())).findFirst().orElseThrow();assertThat(added.properties().path("contextFactOrigin").asText()).isEqualTo("USER_CONFIRMED");assertThat(added.properties().path("confirmedBy").asText()).isEqualTo(actor.toString());
+ }
+
+ @Test void unchangedRejectedSourceStaysSuppressedAcrossFreshAnalysis(){
+  var ev=Evidence.builder().id(UUID.randomUUID()).sourceType("STATIC_CODE").element(target).locator("Api.java:4").excerpt("@RolesAllowed(\"ADMIN\")").build();when(evidence.findByModelVersionId(model.getId())).thenReturn(List.of(ev));
+  var entry=((List<ObjectNode>)service.candidates(model.getId()).get("entries")).get(0).deepCopy();entry.put("state","REJECTED");when(elements.findContextSourceDecisions(project.getId(),1)).thenReturn(Collections.singletonList(new Object[]{entry.path("sourceRoleKey").asText(),"REJECTED"}));
+  assertThat((List<?>)service.candidates(model.getId()).get("entries")).isEmpty();
+  ev.setExcerpt("@RolesAllowed(\"STAFF\")");assertThat((List<?>)service.candidates(model.getId()).get("entries")).hasSize(1);
+ }
+
+ @Test void quotedExamplesAreNotAccessRules(){assertThat(SecurityRoleSource.roles("String example=\".hasRole('ADMIN')\";")).isEmpty();assertThat(SecurityRoleSource.roles("String example=\"@PreAuthorize(hasRole('ADMIN'))\";")).isEmpty();}
+
+ @Test void displayedSourceExcerptContainsTheActualRoleRule(){String source="// "+"padding ".repeat(300)+"\n@RolesAllowed(\"ADMIN\")";String snippet=SecurityRoleSource.excerpt(source,"ADMIN");assertThat(snippet).contains("@RolesAllowed(\"ADMIN\")");assertThat(snippet.length()).isLessThanOrEqualTo(1100);}
 }

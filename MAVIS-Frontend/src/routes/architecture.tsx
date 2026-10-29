@@ -1,4 +1,5 @@
 "use client";
+import { ArchitectureLoading } from "@/features/architecture/architecture-loading";
 import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { useState } from "react";
 import Link from "next/link";
@@ -26,8 +27,7 @@ export function ArchitectureWorkspace({
   title?: string;
   mode?: "graph" | "diagram";
 } = {}) {
-  const resolvedMode =
-    mode ?? (title.toLowerCase().includes("diagram") ? "diagram" : "graph");
+  const resolvedMode = mode ?? (title.toLowerCase().includes("diagram") ? "diagram" : "graph");
   const state = useModel();
   const project = useApiQuery(
     "project",
@@ -56,41 +56,49 @@ export function ArchitectureWorkspace({
           </div>
           {state.projectId && state.model && (
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
-              <Button asChild size="sm" variant={resolvedMode === "graph" ? "default" : "outline"}>
-                <Link
-                  href={`/architecture?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                >
-                  Graph Explorer
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant={resolvedMode === "diagram" ? "default" : "outline"}>
-                <Link
-                  href={`/diagrams?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                >
-                  C4 &amp; UML Diagrams
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link
-                  href={`/impact?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                >
-                  Change Impact
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link
-                  href={`/model?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                >
-                  Model Editor
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/sessions?project=${encodeURIComponent(state.projectId)}`}>
-                  Runtime
-                </Link>
-              </Button>
+              {resolvedMode !== "graph" && (
+                <>
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/architecture?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                    >
+                      Graph Explorer
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="default">
+                    <Link
+                      href={`/diagrams?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                    >
+                      C4 &amp; UML Diagrams
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/impact?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                    >
+                      Change Impact
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link
+                      href={`/model?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                    >
+                      Model Editor
+                    </Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={`/sessions?project=${encodeURIComponent(state.projectId)}`}>
+                      Runtime
+                    </Link>
+                  </Button>
+                </>
+              )}
               {project.data?.workspaceId && (
-                <Button asChild size="sm" className="bg-primary font-semibold text-primary-foreground">
+                <Button
+                  asChild
+                  size="sm"
+                  className="bg-primary font-semibold text-primary-foreground"
+                >
                   <Link
                     href={`/assignments?workspace=${encodeURIComponent(project.data.workspaceId)}${project.data.assignmentId ? `#assignment-${encodeURIComponent(project.data.assignmentId)}` : ""}`}
                   >
@@ -101,37 +109,50 @@ export function ArchitectureWorkspace({
             </div>
           )}
         </div>
-        {state.projectId &&
-          (state.models.length === 0 ? (
-            <div className="space-y-4 rounded-xl border bg-card p-8 text-center">
-              <h2 className="text-base font-semibold">Project Not Analyzed Yet</h2>
-              <p className="mx-auto max-w-md text-sm text-muted-foreground">
-                No architecture model has been generated for this project yet. Run snapshot analysis to extract architecture models, components, and diagrams.
-              </p>
-              <Button asChild>
-                <Link href={`/snapshots?project=${state.projectId}`}>
-                  Analyze Source Snapshot
-                </Link>
-              </Button>
-            </div>
-          ) : (
-            <RequestState query={state.query}>
-              {state.model && (
-                <ArchitecturePresentation
-                  model={state.model}
-                  mode={resolvedMode}
-                  selectedId={id}
-                  systemName={project.data?.name}
-                  onSelect={(elementId) => {
-                    if (state.model)
-                      setSelected(elementId ? { modelId: state.model.id, elementId } : null);
-                  }}
-                />
-              )}
-            </RequestState>
-          ))}
+        {state.projectId && (
+          <RequestState
+            query={state.query}
+            keepContentOnError={!!state.model}
+            loading={
+              <ArchitectureLoading
+                key={`${state.projectId}:${state.models[0]?.id ?? "revisions"}`}
+                mode={resolvedMode}
+                loadingRevisions={state.models.length === 0}
+              />
+            }
+          >
+            {state.models.length === 0 && !state.model ? (
+              <div className="space-y-4 rounded-xl border bg-card p-8 text-center">
+                <h2 className="text-base font-semibold">Project Not Analyzed Yet</h2>
+                <p className="mx-auto max-w-md text-sm text-muted-foreground">
+                  No architecture model has been generated for this project yet. Run snapshot
+                  analysis to extract architecture models, components, and diagrams.
+                </p>
+                <Button asChild>
+                  <Link href={`/snapshots?project=${state.projectId}`}>
+                    Analyze Source Snapshot
+                  </Link>
+                </Button>
+              </div>
+            ) : (
+              <>
+                {state.model && (
+                  <ArchitecturePresentation
+                    model={state.model}
+                    mode={resolvedMode}
+                    selectedId={id}
+                    systemName={project.data?.name}
+                    onSelect={(elementId) => {
+                      if (state.model)
+                        setSelected(elementId ? { modelId: state.model.id, elementId } : null);
+                    }}
+                  />
+                )}
+              </>
+            )}
+          </RequestState>
+        )}
       </div>
     </PageContainer>
   );
 }
-
