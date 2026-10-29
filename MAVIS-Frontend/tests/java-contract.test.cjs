@@ -709,3 +709,14 @@ test("project activity adapter retains deletion identity when job/actor names ar
  const previous=global.fetch;global.fetch=async()=>Response.json({code:200,data:{items:[{id:job,kind:"SNAPSHOT_DELETED",projectId:project,projectName:"Archived project",occurredAt:"2026-10-29T09:00:00Z",projectDeleted:true,targetId:snapshot,targetName:"main / abc12345",actorId:node}],total:1,page:0,size:10}});
  try{const result=await executeJava("projectActivity",{page:0,size:10},"jwt",new AbortController().signal);assert.equal(result.items[0].kind,"SNAPSHOT_DELETED");assert.equal(result.items[0].targetId,snapshot);assert.equal(result.items[0].job,null);assert.equal(result.items[0].actorName,null);}finally{global.fetch=previous;}
 });
+
+
+test("login redirect accepts internal destinations and rejects external or disguised URLs", () => {
+ const {safeLoginRedirect}=require("../src/lib/auth/safe-login-redirect.ts");
+ for(const value of [null,"","/","/login","/login?next=/workspaces","/login/","/a/../login","https://example.com","//example.com","javascript:alert(1)","/\\example.com","/\n/example.com","/%2f%2fexample.com","/%5cexample.com","/%0a/example.com","/%ZZ"]){
+  assert.equal(safeLoginRedirect(value),null,String(value));
+ }
+ for(const value of ["/workspaces","/project-overview?project=test#details","/architecture?project=a&model=b"]){
+  assert.equal(safeLoginRedirect(value),value);
+ }
+});

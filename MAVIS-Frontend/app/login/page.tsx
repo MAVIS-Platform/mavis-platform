@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { safeLoginRedirect } from "@/lib/auth/safe-login-redirect";
 import { GoogleSignIn } from "@/features/auth/google-sign-in";
 import { LoginBackground } from "@/features/auth/login-background";
 import { useId, useState } from "react";
@@ -38,8 +39,8 @@ export default function LoginPage() {
     await client.cancelQueries();
     client.clear();
     client.setQueryData(["api", "session", {}], session);
-    const next = params.get("next");
-    if (next && next !== "/" && next !== "/login") {
+    const next = safeLoginRedirect(params.get("next"));
+    if (next) {
       router.replace(next);
       return;
     }
