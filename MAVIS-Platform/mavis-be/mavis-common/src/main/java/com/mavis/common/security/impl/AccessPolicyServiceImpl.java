@@ -179,6 +179,7 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy đồ án");
         }
 
+        if ("DELETED".equalsIgnoreCase(project.getStatus())) throw new BusinessException(ErrorCode.NOT_FOUND,"Project not found");
         User user = requireCurrentActiveUser();
 
         // 1. SYSTEM_ADMIN có toàn quyền sửa/xóa

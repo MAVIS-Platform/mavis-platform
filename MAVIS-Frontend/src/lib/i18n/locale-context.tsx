@@ -15,6 +15,9 @@ interface LocaleContextValue {
 const STORAGE_KEY = "mavis.locale";
 
 export const EXACT_VI_DICTIONARY: Record<string, string> = {
+  "Stop active analysis/runtime work and resolve cleanup before deleting this item.": "Cần dừng phân tích/runtime và xử lý việc dọn dẹp còn tồn trước khi xóa.",
+  "Published reference data, submitted coursework and runtime-linked snapshots must be retained and cannot be deleted here.": "Không thể xóa dữ liệu tham chiếu đã công bố, bài đã nộp hoặc bản chụp liên kết runtime để giữ nguyên lịch sử.",
+  "This snapshot has dependent revisions or protected records. Delete the dependent data only through its own supported workflow, or retain this snapshot.": "Bản chụp này có revision phụ thuộc hoặc dữ liệu được bảo vệ. Cần giữ bản chụp hoặc xử lý dữ liệu phụ thuộc qua chức năng tương ứng.",
   ").": ").",
   ". New revisions must branch from the latest revision (": ". Các bản sửa đổi mới phải được tạo từ bản mới nhất (",
   "Displayed in view:": "Đang hiển thị trong góc nhìn:",

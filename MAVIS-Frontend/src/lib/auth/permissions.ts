@@ -67,6 +67,8 @@ export function operationPermission(operation: Operation): Permission | undefine
       "importSource",
       "startAnalysis",
       "saveModel",
+      "deleteProject",
+      "deleteSnapshot",
       "reviewContext",
       "saveRuntimeConfiguration",
       "saveScenario",

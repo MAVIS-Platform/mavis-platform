@@ -65,4 +65,5 @@ class AnalysisRequestServiceTest {
         assertThatThrownBy(()->service.start(snapshot.getId(),"forbidden")).isInstanceOf(BusinessException.class).hasMessageContaining("access denied");
         verify(jobs,never()).save(any());verifyNoInteractions(events);
     }
+    @Test void deletedProjectCannotStartAnotherAnalysis(){project.setStatus("DELETED");assertThatThrownBy(()->service.start(snapshot.getId(),"deleted-project")).isInstanceOf(BusinessException.class).hasMessageContaining("Project not found");verify(jobs,never()).save(any());verifyNoInteractions(events);}
 }
