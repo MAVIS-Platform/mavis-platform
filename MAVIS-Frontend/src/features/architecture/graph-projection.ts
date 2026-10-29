@@ -150,10 +150,14 @@ export function projectGraphModel(
       previous.uncertain ||= edge.uncertain;
       if (previous.resolutionStatus !== status) previous.resolutionStatus = "UNKNOWN";
       if (edge.properties) {
-        previous.properties = {
-          ...edge.properties,
-          ...(previous.properties ?? {}),
-        };
+        const merged: Record<string, unknown> = { ...(previous.properties ?? {}) };
+        for (const [k, v] of Object.entries(edge.properties)) {
+          const existing = merged[k];
+          if (existing === undefined || existing === null || existing === "") {
+            merged[k] = v;
+          }
+        }
+        previous.properties = merged;
       }
     } else {
       groups.set(key, {

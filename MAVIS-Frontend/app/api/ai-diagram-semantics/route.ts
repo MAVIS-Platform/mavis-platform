@@ -159,7 +159,7 @@ async function callStructuredLlm<T>(
       };
       await reportAiUsage("openai", modelName, data.usage?.prompt_tokens, data.usage?.completion_tokens, userId);
       const content = data.choices?.[0]?.message?.content?.trim();
-      if (content) return JSON.parse(content) as Partial<T>;
+      if (content) return safeParseLlmJson<T>(content);
     }
     return null;
   }
@@ -188,9 +188,23 @@ async function callStructuredLlm<T>(
       : undefined;
     await reportAiUsage("gemini", "gemini-2.5-flash", data.usageMetadata?.promptTokenCount, outputTokens, userId);
     const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (content) return JSON.parse(content) as Partial<T>;
+    if (content) return safeParseLlmJson<T>(content);
   }
   return null;
+}
+
+function safeParseLlmJson<T>(raw: string): Partial<T> | null {
+  try {
+    let cleaned = raw.trim();
+    if (cleaned.startsWith("```json")) {
+      cleaned = cleaned.replace(/^```json\s*/i, "").replace(/\s*```$/, "");
+    } else if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    }
+    return JSON.parse(cleaned) as Partial<T>;
+  } catch {
+    return null;
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -198,7 +212,18 @@ export async function POST(request: NextRequest) {
     { error: "Request unavailable" },
     { status, headers: { "Cache-Control": "no-store" } },
   );
-  if (request.headers.get("origin") !== `${request.nextUrl.protocol}//${request.headers.get("host")}`) {
+  const originHeader = request.headers.get("origin");
+  if (!originHeader || request.headers.get("sec-fetch-site") === "cross-site") {
+    return fail(403);
+  }
+  try {
+    const originUrl = new URL(originHeader);
+    const forwardedHost = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "";
+    const expectedHost = forwardedHost.split(",")[0]?.trim().replace(/:\d+$/, "");
+    if (!expectedHost || (originUrl.hostname !== expectedHost && originUrl.host !== forwardedHost)) {
+      return fail(403);
+    }
+  } catch {
     return fail(403);
   }
   const token = request.cookies.get("mavis_session")?.value;
@@ -308,7 +333,7 @@ export async function POST(request: NextRequest) {
           history: history.slice(-4),
           userQuestion: q,
         }),
-        350,
+        1024,
       );
 
       const answer =

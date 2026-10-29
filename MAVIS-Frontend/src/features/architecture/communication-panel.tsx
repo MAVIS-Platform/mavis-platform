@@ -1,5 +1,8 @@
 "use client";
 
+import { useContext, useMemo } from "react";
+import { useApiQuery } from "@/hooks/use-api";
+import { ApiContext } from "@/providers/app-context";
 import {
   buildPeerConnectionGroups,
   feignContract,
@@ -21,8 +24,9 @@ import {
 export interface CommunicationPanelProps {
   model: ArchitecturalModel;
   selectedId: string | null;
-  projectId?: string;
-  onSelect?: (id: string) => void;
+  projectId?: string | undefined;
+  peerFilterId?: string | undefined;
+  onSelect?: ((id: string) => void) | undefined;
 }
 
 function DockerInfraSection({ items }: { items: DockerOrInfraItem[] }) {
@@ -267,17 +271,24 @@ function PeerPairAccordionItem({
   );
 }
 
-export function CommunicationPanel({
+function CommunicationPanelContent({
   model,
   selectedId,
-  projectId: _projectId,
+  peerFilterId,
   onSelect,
-}: CommunicationPanelProps) {
-  if (!selectedId) {
-    return null;
+}: {
+  model: ArchitecturalModel;
+  selectedId: string;
+  peerFilterId?: string | undefined;
+  onSelect?: ((id: string) => void) | undefined;
+}) {
+  let groups = buildPeerConnectionGroups(model, selectedId);
+  if (peerFilterId) {
+    const filtered = groups.filter((g) => g.peerId === peerFilterId);
+    if (filtered.length > 0) {
+      groups = filtered;
+    }
   }
-
-  const groups = buildPeerConnectionGroups(model, selectedId);
 
   if (groups.length === 0) {
     return (
@@ -311,11 +322,73 @@ export function CommunicationPanel({
           <PeerPairAccordionItem
             key={group.pairKey}
             group={group}
-            defaultOpen={isDirectEdge || groups.length === 1}
+            defaultOpen={Boolean(peerFilterId) || isDirectEdge || groups.length === 1}
             {...(onSelect ? {onSelect} : {})}
           />
         ))}
       </div>
     </div>
   );
+}
+
+function CommunicationPanelHydrated(props: CommunicationPanelProps) {
+  const evidenceQuery = useApiQuery(
+    "elementEvidenceContext",
+    { modelId: props.model.id, elementId: props.selectedId ?? "" },
+    { enabled: Boolean(props.projectId && props.model.id && props.selectedId) },
+  );
+
+  const modelWithHydratedEvidence = useMemo(() => {
+    const relEvidence = evidenceQuery.data?.relationshipEvidence;
+    if (!relEvidence || relEvidence.length === 0) {
+      return props.model;
+    }
+    const evidenceMap = new Map<string, any[]>();
+    for (const item of relEvidence) {
+      const list = evidenceMap.get(item.relationshipId) ?? [];
+      list.push(item.evidence);
+      evidenceMap.set(item.relationshipId, list);
+    }
+    const updatedEdges = props.model.edges.map((edge) => {
+      const hydrated = evidenceMap.get(edge.id);
+      if (hydrated && (!edge.evidence || edge.evidence.length === 0)) {
+        return {
+          ...edge,
+          evidence: hydrated,
+        };
+      }
+      return edge;
+    });
+    return {
+      ...props.model,
+      edges: updatedEdges,
+    };
+  }, [props.model, evidenceQuery.data]);
+
+  return (
+    <CommunicationPanelContent
+      model={modelWithHydratedEvidence}
+      selectedId={props.selectedId!}
+      peerFilterId={props.peerFilterId}
+      onSelect={props.onSelect}
+    />
+  );
+}
+
+export function CommunicationPanel(props: CommunicationPanelProps) {
+  if (!props.selectedId) {
+    return null;
+  }
+  const api = useContext(ApiContext);
+  if (!api || !props.projectId) {
+    return (
+      <CommunicationPanelContent
+        model={props.model}
+        selectedId={props.selectedId}
+        peerFilterId={props.peerFilterId}
+        onSelect={props.onSelect}
+      />
+    );
+  }
+  return <CommunicationPanelHydrated {...props} />;
 }

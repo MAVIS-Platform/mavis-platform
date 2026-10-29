@@ -1,7 +1,7 @@
 "use client";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Zap, ArrowRight, ExternalLink, Activity, CheckCircle2, Clock } from "lucide-react";
+import { Zap, ArrowRight, ExternalLink, Activity, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
 import { RuntimeStepperBanner } from "./screens";
 import { useState } from "react";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
@@ -69,9 +69,14 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const approve = useApiMutation("runtimeApprove");
   const [action, setAction] = useState<"stop" | "approve" | null>(null);
   const models = useApiQuery("modelVersions", { projectId }, { enabled: !!projectId });
+  const scenarios = useApiQuery("scenarios", { projectId }, { enabled: !!projectId });
+  const staticModelsList = (models.data ?? []).filter((m) => !("source" in m) || (m as any).source !== "RUNTIME_ENRICHED");
+  const targetModelId = (staticModelsList[0] ?? models.data?.[0])?.id;
+  const modelDetail = useApiQuery("model", { projectId, modelId: targetModelId ?? "" }, { enabled: !!projectId && !!targetModelId });
   const startRuntime = useApiMutation("startRuntime");
   const [quickRunRunning, setQuickRunRunning] = useState(false);
   const [quickRunMsg, setQuickRunMsg] = useState("");
+  const [quickRunError, setQuickRunError] = useState("");
 
   const handleQuickRun = async () => {
     if (!projectId || !snapshots.data?.length) return;
@@ -83,16 +88,49 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     const latestModel = staticModels[0] ?? models.data?.[0];
     if (!latestSnapshot) return;
 
+    setQuickRunError("");
     try {
+      const firstScenario = scenarios.data?.[0];
+      const realServices = (modelDetail.data?.elements ?? []).filter((e) => e.elementType === "SERVICE_CONTAINER");
+      const defaultSvc = realServices[0]?.name ?? "app";
+      let steps: Array<{ id: string; title: string; service: string; method: string; path: string; expectedStatus: number }> = [];
+
+      if (firstScenario?.steps && firstScenario.steps.length > 0) {
+        steps = firstScenario.steps.map((st, i) => {
+          const targetSvc = realServices[i % Math.max(1, realServices.length)]?.name ?? defaultSvc;
+          return {
+            id: `step-${i + 1}`,
+            title: typeof st === "string" ? st : `Verify Step ${i + 1}`,
+            service: targetSvc,
+            method: "GET",
+            path: "/health",
+            expectedStatus: 200,
+          };
+        });
+      } else {
+        if (realServices.length > 0) {
+          steps = realServices.slice(0, 3).map((svc, idx) => ({
+            id: `step-${idx + 1}`,
+            title: `Verify ${svc.name}`,
+            service: svc.name,
+            method: "GET",
+            path: "/health",
+            expectedStatus: 200,
+          }));
+        } else {
+          steps = [
+            { id: "step-1", title: "Auto-Verify Service Connection", service: "app", method: "GET", path: "/health", expectedStatus: 200 },
+          ];
+        }
+      }
+
       const res = await startRuntime.mutateAsync({
         projectId,
         snapshotId: latestSnapshot.id,
         modelId: latestModel?.id,
         scenarioId: "auto-" + Math.random().toString(16).slice(2, 8),
         scenarioName: "1-Click Auto Verify · " + new Date().toLocaleTimeString(),
-        steps: [
-          { id: "step-auto", title: "Auto-Verify All Service Connections", service: "auto", method: "POST", path: "/api/auto-verify", expectedStatus: 200 },
-        ],
+        steps,
         configurationRevision: 1,
         scenarioRevision: 1,
         approved: true,
@@ -102,7 +140,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       setQuickRunMsg(`Session ${res.id.slice(0, 8)} started successfully. Status: ${res.executionStatus || res.status}`);
       void list.refetch();
     } catch (err) {
-      setQuickRunMsg("Runtime execution failed: " + (err instanceof Error ? err.message : String(err)));
+      const msg = err instanceof Error ? err.message : String(err);
+      setQuickRunMsg("");
+      setQuickRunError("Runtime execution failed: " + msg);
     } finally {
       setQuickRunRunning(false);
     }
@@ -135,6 +175,12 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               <p className="text-xs font-medium text-primary mt-1">
                 {quickRunMsg}
               </p>
+            )}
+            {quickRunError && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive flex items-center gap-2 mt-2">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>{quickRunError}</span>
+              </div>
             )}
           </div>
           <Button
