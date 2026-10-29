@@ -69,6 +69,7 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
         Project project = projectRepository.findLockedById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
 
+        if ("DELETED".equalsIgnoreCase(project.getStatus())) throw new BusinessException(ErrorCode.NOT_FOUND,"Project not found");
         if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền tải lên cho dự án này");
         }
@@ -111,6 +112,7 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
         Project project = projectRepository.findLockedById(request.getProjectId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + request.getProjectId()));
 
+        if ("DELETED".equalsIgnoreCase(project.getStatus())) throw new BusinessException(ErrorCode.NOT_FOUND,"Project not found");
         if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền nạp mã nguồn cho dự án này");
         }

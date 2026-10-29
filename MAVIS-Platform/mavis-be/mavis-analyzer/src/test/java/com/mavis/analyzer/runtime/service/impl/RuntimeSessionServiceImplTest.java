@@ -92,6 +92,7 @@ class RuntimeSessionServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(projectRepository.findLockedById(org.mockito.ArgumentMatchers.any(UUID.class))).thenAnswer(call -> projectRepository.findById(call.getArgument(0)));
         projectId = UUID.randomUUID();
         snapshotId = UUID.randomUUID();
 

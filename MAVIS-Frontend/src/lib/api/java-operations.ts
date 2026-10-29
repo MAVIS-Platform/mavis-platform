@@ -1664,6 +1664,14 @@ export async function executeJava(
         ...(a.cached !== undefined ? { cached: a.cached } : {}),
       };
     }
+    case "deleteProject": {
+      await javaRequest(`projects/${id(input,"projectId")}`,token,{method:"DELETE",signal});
+      return {ok:true};
+    }
+    case "deleteSnapshot": {
+      await javaRequest(`projects/${id(input,"projectId")}/snapshots/${id(input,"snapshotId")}`,token,{method:"DELETE",signal});
+      return {ok:true};
+    }
     case "reviewContext": {
       const result = z.object({ id: z.string().uuid() }).parse(await post(`analyzer/models/${id(input,"modelId")}/context-review`, input));
       return model(result.id);

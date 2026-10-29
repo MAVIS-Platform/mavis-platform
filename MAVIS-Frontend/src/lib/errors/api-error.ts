@@ -1,4 +1,7 @@
 export const publicErrors = {
+  DELETE_BUSY: "Stop active analysis/runtime work and resolve cleanup before deleting this item.",
+  DELETE_PROTECTED: "Published reference data, submitted coursework and runtime-linked snapshots must be retained and cannot be deleted here.",
+  DELETE_REFERENCED: "This snapshot has dependent revisions or protected records. Delete the dependent data only through its own supported workflow, or retain this snapshot.",
   LOGIN_CREDENTIALS: "Email or password is incorrect.",
   LOGIN_VERIFICATION: "Verify your email before signing in.",
   LOGIN_LOCKED: "This account is locked or inactive. Contact your administrator.",
@@ -33,6 +36,11 @@ export function backendErrorCode(
   message: unknown,
 ): PublicErrorCode | undefined {
   if (typeof message !== "string") return undefined;
+  if (path.startsWith("projects/") && status === 409) {
+    if (message === "Deletion is blocked while analysis or runtime work is active or cleanup is unresolved.") return "DELETE_BUSY";
+    if (["Deletion is blocked for published reference data or submitted coursework.","Deletion is blocked for published, submitted or runtime-linked snapshots."].includes(message)) return "DELETE_PROTECTED";
+    if (message === "This snapshot has dependent revisions or protected records.") return "DELETE_REFERENCED";
+  }
   if (["auth/login", "auth/google"].includes(path)) {
     if (status === 401 && message === "Sai email hoặc mật khẩu") return "LOGIN_CREDENTIALS";
     if (status === 403 && message === "Vui lòng xác thực Email trước khi đăng nhập")

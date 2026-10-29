@@ -11,6 +11,7 @@ import { Pagination, SearchInput, SelectField } from "@/components/shared/forms"
 import { Button } from "@/components/ui/button";
 import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { ProjectStatusBadge, CreateProjectAction } from "@/features/projects/components";
+import { ResourceDeleteAction } from "@/features/projects/resource-delete-action";
 import type { Project } from "@/types/domain";
 export default function Index() {
   return (
@@ -179,18 +180,21 @@ function Projects() {
                       },
                       {
                         key: "actions",
-                        label: "Workspace",
+                        label: "Actions",
                         render: (p) => (
-                          <Button asChild size="sm" variant="outline">
-                            <Link
-                              href={`/architecture?project=${encodeURIComponent(p.id)}`}
-                              onClick={() => selection.setProjectId(p.id)}
-                              aria-label={`View graph of ${p.name}`}
-                            >
-                              <Network className="size-4" aria-hidden="true" />
-                              View
-                            </Link>
-                          </Button>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button asChild size="sm" variant="outline">
+                              <Link
+                                href={`/architecture?project=${encodeURIComponent(p.id)}`}
+                                onClick={() => selection.setProjectId(p.id)}
+                                aria-label={`View graph of ${p.name}`}
+                              >
+                                <Network className="size-4" aria-hidden="true" />
+                                View
+                              </Link>
+                            </Button>
+                            <ResourceDeleteAction projectId={p.id} name={p.name} />
+                          </div>
                         ),
                       },
                     ]}

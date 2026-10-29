@@ -14,6 +14,7 @@ import {
   AnalysisStatusIndicator,
   formatAnalysisJobMessage,
 } from "@/features/source-analysis/components";
+import { ResourceDeleteAction } from "./resource-delete-action";
 import { ProjectStatusBadge, ImportSnapshotAction } from "./components";
 import {
   analysisInProgress,
@@ -68,6 +69,7 @@ export function ProjectOverview() {
                   </Button>
                 )}
                 <ImportSnapshotAction />
+                <ResourceDeleteAction projectId={projectId} name={query.data.name} />
               </div>
             }
           >
@@ -545,6 +547,12 @@ export function SourceSnapshots() {
                         snapshotAnalysisLabel(latestJob, Boolean(latestModel))
                       )}
                     </Button>
+                    <ResourceDeleteAction
+                      projectId={projectId}
+                      snapshotId={s.id}
+                      name={s.name}
+                      disabled={isAnalyzingAny}
+                    />
                   </div>
                 );
               },

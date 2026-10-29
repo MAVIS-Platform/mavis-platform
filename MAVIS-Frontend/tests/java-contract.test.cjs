@@ -696,3 +696,13 @@ test("new project persists its repository and default branch in the create reque
  const result=await executeJava('createProject',{name:'Example',repositoryUrl:'https://github.com/example/repo',defaultBranch:'master'},'jwt');
  assert.equal(payload.repositoryUrl,'https://github.com/example/repo');assert.equal(payload.defaultBranch,'master');assert.equal(result.repository,payload.repositoryUrl);
 });
+
+test("delete mutations use scoped DELETE endpoints and never send repository deletion requests",async()=>{
+ const original=global.fetch,calls=[];
+ global.fetch=async(url,init)=>{calls.push({url:String(url),method:init?.method});return Response.json({code:200,message:"Deleted",data:null});};
+ try{
+  assert.deepEqual(await executeJava("deleteProject",{projectId:project},"jwt",new AbortController().signal),{ok:true});
+  assert.deepEqual(await executeJava("deleteSnapshot",{projectId:project,snapshotId:snapshot},"jwt",new AbortController().signal),{ok:true});
+  assert.equal(calls.length,2);assert.ok(calls.every(c=>c.method==="DELETE"));assert.ok(calls[0].url.endsWith('/projects/'+project));assert.ok(calls[1].url.endsWith('/projects/'+project+'/snapshots/'+snapshot));
+ }finally{global.fetch=original;}
+});
