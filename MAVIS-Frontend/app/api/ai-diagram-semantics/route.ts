@@ -244,6 +244,7 @@ export async function POST(request: NextRequest) {
       umlContext?: CompactUmlAiContext;
       threeEContext?: ThreeEAiPromptContext;
       threeEFallback?: ThreeEAiSimplifiedExplanation;
+      locale?: "en" | "vi";
       threeEChat?: {
         threeEContext: ThreeEAiPromptContext;
         currentExplanation?: {
@@ -253,8 +254,10 @@ export async function POST(request: NextRequest) {
         };
         history?: Array<{ role: "user" | "assistant"; content: string }>;
         question: string;
+        locale?: "en" | "vi";
       };
     };
+    const locale = body.locale === "vi" || body.threeEChat?.locale === "vi" ? "vi" : "en";
 
     // Branch -2: Interactive 3E Follow-up Q&A Chat
     if (body.threeEChat && body.threeEChat.question?.trim()) {
@@ -272,7 +275,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const chatCacheKey = `evidence-v3-en:${tCtx.contextHash}::${q.toLowerCase()}`;
+      const chatCacheKey = `evidence-v3-${locale}:${tCtx.contextHash}::${q.toLowerCase()}`;
       const cachedAnswer = threeEChatCache.get(chatCacheKey);
       if (cachedAnswer) {
         return NextResponse.json({
@@ -287,6 +290,25 @@ export async function POST(request: NextRequest) {
         const inbound = tCtx.inboundPeers.slice(0, 4).join(", ");
         const outbound = tCtx.outboundPeers.slice(0, 4).join(", ");
         const children = tCtx.childComponents.slice(0, 5).join(", ");
+        if (locale === "vi") {
+          const parts: string[] = [
+            `Về "${tCtx.title}" (${tCtx.type}): ${currentExplanation?.explainSimple || tCtx.summary}`,
+          ];
+          if (inbound || outbound) {
+            parts.push(
+              `Các kết nối mô hình đã khai báo: ${inbound ? `kết nối đến [${inbound}]` : "không ghi nhận đối tác gọi đến"}${
+                outbound ? ` và gọi ra [${outbound}]` : ""
+              }.`,
+            );
+          }
+          if (children) {
+            parts.push(`Các component bên trong: ${children}.`);
+          }
+          if (files.length > 0) {
+            parts.push(`Bằng chứng mã nguồn đặt tại: ${files.slice(0, 3).join(", ")}.`);
+          }
+          return parts.join(" ");
+        }
         const parts: string[] = [
           `Regarding "${tCtx.title}" (${tCtx.type}): ${currentExplanation?.explainSimple || tCtx.summary}`,
         ];
@@ -309,15 +331,25 @@ export async function POST(request: NextRequest) {
       const resolved = tCtx.codeSnippets.length ? resolveAiKey() : null;
       if (!resolved || !tCtx.codeSnippets.length) {
         return NextResponse.json({
-          answer: tCtx.codeSnippets.length ? buildFallbackAnswer() : "No saved source snippets are available for this selection. The model alone cannot establish its implementation behavior or business role.",
+          answer: tCtx.codeSnippets.length
+            ? buildFallbackAnswer()
+            : (locale === "vi"
+                ? "Chưa có đoạn mã nguồn nào được lưu cho phần tử này. Chỉ dựa vào mô hình thì chưa thể xác định được hành vi thực thi hay vai trò nghiệp vụ."
+                : "No saved source snippets are available for this selection. The model alone cannot establish its implementation behavior or business role."),
           provider: "ast-skeleton",
         });
       }
 
+      const chatSystemPrompt =
+        locale === "vi"
+          ? THREE_E_CHAT_SYSTEM_PROMPT +
+            `\n\nIMPORTANT LANGUAGE INSTRUCTION: Return all explanation text in clear, natural Vietnamese Software Engineering terminology, while keeping class names, method names, service names, and file paths unchanged. Return valid JSON only: { "answer": "...", "offTopic": false }`
+          : THREE_E_CHAT_SYSTEM_PROMPT;
+
       const parsedChat = await callStructuredLlm<{ answer?: string; offTopic?: boolean }>(
         resolved,
         userId,
-        THREE_E_CHAT_SYSTEM_PROMPT,
+        chatSystemPrompt,
         JSON.stringify({
           target: {
             title: tCtx.title,
@@ -359,15 +391,22 @@ export async function POST(request: NextRequest) {
     if (body.threeEContext && body.threeEContext.contextHash) {
       const tCtx = literalSourceContext(body.threeEContext);
       const fallback3E = normalizeThreeE(null, tCtx);
-      const hit = threeEEnrichmentCache.get("evidence-v2:" + tCtx.contextHash);
+      const cacheKey = `evidence-v2:${locale}:${tCtx.contextHash}`;
+      const hit = threeEEnrichmentCache.get(cacheKey);
       if (hit) {
         return NextResponse.json({ threeEEnrichment: hit, cached: true });
       }
       const resolved = tCtx.codeSnippets.length ? resolveAiKey() : null;
       if (!resolved || !tCtx.codeSnippets.length) {
+        const enrichedFallback = { ...fallback3E };
+        if (locale === "vi") {
+          enrichedFallback.explainSimple = `Mô hình đại diện cho "${tCtx.title}" dưới dạng ${tCtx.type}. Vai trò nghiệp vụ và hành vi thực thi runtime chưa thể xác định chỉ dựa trên tên gọi hay số lượng kết nối.`;
+          enrichedFallback.exploreSimple = `Chưa có đoạn mã nguồn nào được lưu cho phần tử này. Bản xem trước metadata là dữ liệu tái tạo từ AST, không phải bằng chứng mã nguồn.`;
+          enrichedFallback.evaluateSimple = "Tính đúng đắn, chất lượng kiến trúc và độ an toàn vận hành không thể khẳng định chỉ từ ngữ cảnh cục bộ này.";
+        }
         return NextResponse.json({
           threeEEnrichment: {
-            ...fallback3E,
+            ...enrichedFallback,
             tokenStats: {
               rawChars: tCtx.rawChars,
               compressedChars: tCtx.compressedChars,
@@ -388,10 +427,15 @@ export async function POST(request: NextRequest) {
         findingsSummary: tCtx.findingsSummary,
         codeSnippets: tCtx.codeSnippets,
       });
+      const threeESystemPrompt =
+        locale === "vi"
+          ? THREE_E_SYSTEM_PROMPT +
+            `\n\nIMPORTANT LANGUAGE INSTRUCTION: Return all explanation text (explainSimple, exploreSimple, evaluateSimple, snippetNotes, assumptions, unknowns, answer) in clear, natural Vietnamese Software Engineering terminology, while keeping class names, method names, service names, and file paths unchanged.`
+          : THREE_E_SYSTEM_PROMPT;
       const parsed3E = await callStructuredLlm<ThreeEAiSimplifiedExplanation>(
         resolved,
         userId,
-        THREE_E_SYSTEM_PROMPT,
+        threeESystemPrompt,
         userPayload,
       );
       const merged3E: ThreeEAiSimplifiedExplanation = {
@@ -403,11 +447,16 @@ export async function POST(request: NextRequest) {
           provider: parsed3E ? resolved.provider : "ast-skeleton",
         },
       };
+      if (locale === "vi" && !parsed3E) {
+        merged3E.explainSimple = `Mô hình đại diện cho "${tCtx.title}" dưới dạng ${tCtx.type}. Vai trò nghiệp vụ và hành vi thực thi runtime chưa thể xác định chỉ dựa trên tên gọi hay số lượng kết nối.`;
+        merged3E.exploreSimple = `Phân tích dựa trên ${tCtx.codeSnippets.length} đoạn mã nguồn đã chọn; bằng chứng là một phần và hành vi runtime chưa được xác minh.`;
+        merged3E.evaluateSimple = "Tính đúng đắn, chất lượng kiến trúc và độ an toàn vận hành không thể khẳng định chỉ từ ngữ cảnh cục bộ này.";
+      }
       if (threeEEnrichmentCache.size >= 500) {
         const oldest = threeEEnrichmentCache.keys().next().value;
         if (oldest) threeEEnrichmentCache.delete(oldest);
       }
-      threeEEnrichmentCache.set("evidence-v2:" + tCtx.contextHash, merged3E);
+      threeEEnrichmentCache.set(cacheKey, merged3E);
       return NextResponse.json({ threeEEnrichment: merged3E, cached: false });
     }
 

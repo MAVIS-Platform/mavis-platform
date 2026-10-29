@@ -7,6 +7,7 @@ import { ErrorState } from "@/components/shared/request-state";
 import { useApi, useApiMutation, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel, Evidence } from "@/types/domain";
 import { ThreeEEvidence } from "@/features/architecture/three-e-evidence";
+import { useLocale } from "@/lib/i18n/locale-context";
 import {
   buildDeterministicThreeESimplified,
   buildThreeEAiContext,
@@ -102,6 +103,7 @@ export function AIExplanationPanel({
   elementId: string;
 }) {
   const api = useApi();
+  const { locale } = useLocale();
   const generate = useApiMutation("explain");
   const isEdge = useMemo(
     () => !model.elements.some((e) => e.id === elementId) && model.edges.some((e) => e.id === elementId),
@@ -182,6 +184,7 @@ export function AIExplanationPanel({
       body: JSON.stringify({
         threeEContext: threeEAiCtx,
         threeEFallback: deterministic3E,
+        locale,
       }),
     })
       .then((res) => (res.ok ? res.json() : null))
@@ -195,7 +198,7 @@ export function AIExplanationPanel({
     return () => {
       cancelled = true;
     };
-  }, [elementId, api.mode, threeEAiCtx.contextHash]);
+  }, [elementId, api.mode, threeEAiCtx.contextHash, locale]);
 
   const triggerExplain = (forceRefresh: boolean, customQuestion?: string) => {
     const q = (customQuestion ?? userQuestion).trim();
