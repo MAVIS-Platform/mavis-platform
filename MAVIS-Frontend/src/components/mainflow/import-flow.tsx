@@ -8,17 +8,35 @@ import { ErrorState } from "@/components/shared/request-state";
 import { githubImportRequest } from "@/lib/mainflow-api";
 import { importAndAnalyze, type ImportWorkflowState } from "@/features/projects/import-workflow";
 import type { Response } from "@/lib/api/contracts";
+import { GuidedTarget } from "@/components/shared/guided-target";
+import { useLocale } from "@/lib/i18n/locale-context";
 
 type ImportResult = { projectId: string; snapshotId: string; jobId: string };
 export function ImportFlow({
   projectId = "",
   onComplete,
   onBusyChange,
+  tourStep = null,
+  onTourStepChange,
 }: {
   projectId?: string;
   onComplete?: (result: ImportResult) => void;
   onBusyChange?: (busy: boolean) => void;
+  tourStep?: number | null;
+  onTourStepChange?: (step: number | null) => void;
 } = {}) {
+  const { t } = useLocale();
+  const guide = (step: number, title: string, description: string, nextDisabled = false) => ({
+    active: tourStep === step,
+    step,
+    title,
+    description,
+    nextDisabled,
+    onNext: () => onTourStepChange?.(step === 5 ? null : step + 1),
+    onBack: () => onTourStepChange?.(step - 1),
+    onSkip: () => onTourStepChange?.(null),
+    last: step === 5,
+  });
   const api = useApi(),
     cache = useQueryClient();
   const project = useApiQuery("project", { projectId }, { enabled: !!projectId });
@@ -136,6 +154,7 @@ export function ImportFlow({
           : !!name.trim() && !!selectedBranch && (branchesCurrent || !!created)));
   async function submit() {
     if (inFlight.current || !valid) return;
+    onTourStepChange?.(null);
     inFlight.current = true;
     onBusyChange?.(true);
     try {
@@ -183,18 +202,30 @@ export function ImportFlow({
           )}
         </div>
       ) : (
-        <label className="block space-y-2 text-sm font-medium">
-          <span>Project name</span>
-          <Input
-            aria-label="Project name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Name your project"
-            maxLength={255}
-            required
-            disabled={busy || !!created}
-          />
-        </label>
+        <GuidedTarget
+          {...guide(
+            1,
+            t("Name your project", "Đặt tên dự án"),
+            t(
+              "Choose a name you can recognize in My Projects. Enter a name, then select Next.",
+              "Đặt tên để dễ nhận biết trong danh sách dự án. Nhập tên rồi bấm Tiếp tục.",
+            ),
+            !name.trim(),
+          )}
+        >
+          <label className="block space-y-2 text-sm font-medium">
+            <span>Project name</span>
+            <Input
+              aria-label="Project name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Name your project"
+              maxLength={255}
+              required
+              disabled={busy || !!created}
+            />
+          </label>
+        </GuidedTarget>
       )}
       {projectId && !boundRepository && (
         <div className="flex gap-2" role="group" aria-label="Snapshot source">
@@ -221,21 +252,35 @@ export function ImportFlow({
       {sourceType === "github" ? (
         <>
           {!boundRepository && (
-            <label className="block space-y-2 text-sm font-medium">
-              <span>{projectId ? "Link original GitHub repository" : "GitHub repository URL"}</span>
-              <Input
-                aria-label="GitHub repository URL"
-                type="url"
-                value={repository}
-                onChange={(e) => {
-                  setRepository(e.target.value);
-                  setBranch("");
-                }}
-                placeholder="https://github.com/owner/repository"
-                required
-                disabled={busy || !!created}
-              />
-            </label>
+            <GuidedTarget
+              {...guide(
+                2,
+                t("Add your GitHub repository", "Thêm repository GitHub"),
+                t(
+                  "Paste a public repository URL, such as https://github.com/owner/repository. MAVIS will load its branches. If loading fails, check the URL or retry below.",
+                  "Dán URL repository công khai, ví dụ https://github.com/owner/repository. MAVIS sẽ tải danh sách nhánh. Nếu tải lỗi, kiểm tra URL hoặc thử lại bên dưới.",
+                ),
+                !repositoryUrl || !branchesCurrent || !selectedBranch,
+              )}
+            >
+              <label className="block space-y-2 text-sm font-medium">
+                <span>
+                  {projectId ? "Link original GitHub repository" : "GitHub repository URL"}
+                </span>
+                <Input
+                  aria-label="GitHub repository URL"
+                  type="url"
+                  value={repository}
+                  onChange={(e) => {
+                    setRepository(e.target.value);
+                    setBranch("");
+                  }}
+                  placeholder="https://github.com/owner/repository"
+                  required
+                  disabled={busy || !!created}
+                />
+              </label>
+            </GuidedTarget>
           )}
           {(boundRepository || repository.trim()) && !repositoryUrl && (
             <p className="text-xs text-destructive">
@@ -243,50 +288,74 @@ export function ImportFlow({
             </p>
           )}
           <>
-            <label className="block space-y-2 text-sm font-medium">
-              <span>Branch</span>
-              <select
-                aria-label="Branch"
-                className="h-10 w-full rounded-md border bg-card px-3 text-sm"
-                value={selectedBranch}
-                disabled={busy || !!importedSnapshot || !branchesCurrent || !!commit.trim()}
-                onChange={(e) => setBranch(e.target.value)}
-              >
-                {!branchesCurrent && (
-                  <option value="">
-                    {refs.isFetching
-                      ? "Loading branches…"
-                      : repositoryUrl
-                        ? "Branches unavailable"
-                        : "Enter a repository URL first"}
-                  </option>
-                )}
-                {importedSnapshot && selectedBranch && !branches.includes(selectedBranch) && (
-                  <option value={selectedBranch}>{selectedBranch} (imported)</option>
-                )}
-                {branches.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                    {b === refs.data?.defaultBranch ? " (default)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="block space-y-2 text-sm font-medium">
-              <span>Commit SHA (optional)</span>
-              <Input
-                aria-label="Commit SHA"
-                placeholder="Full 40-character SHA"
-                value={commit}
-                onChange={(e) => setCommit(e.target.value)}
-                pattern="[a-fA-F0-9]{40}"
-                disabled={busy || !!importedSnapshot}
-              />
-              <span className="block text-xs font-normal text-muted-foreground">
-                Leave empty for the latest commit on the selected branch. A SHA overrides the branch
-                selection.
-              </span>
-            </label>
+            <GuidedTarget
+              {...guide(
+                3,
+                t("Choose a branch", "Chọn nhánh"),
+                t(
+                  "Choose the branch to analyze. The repository's default branch is selected initially. You can keep it or select another branch.",
+                  "Chọn nhánh cần phân tích. Nhánh mặc định được chọn sẵn; bạn có thể giữ nguyên hoặc chọn nhánh khác.",
+                ),
+                !branchesCurrent || !selectedBranch,
+              )}
+            >
+              <label className="block space-y-2 text-sm font-medium">
+                <span>Branch</span>
+                <select
+                  aria-label="Branch"
+                  className="h-10 w-full rounded-md border bg-card px-3 text-sm"
+                  value={selectedBranch}
+                  disabled={busy || !!importedSnapshot || !branchesCurrent || !!commit.trim()}
+                  onChange={(e) => setBranch(e.target.value)}
+                >
+                  {!branchesCurrent && (
+                    <option value="">
+                      {refs.isFetching
+                        ? "Loading branches…"
+                        : repositoryUrl
+                          ? "Branches unavailable"
+                          : "Enter a repository URL first"}
+                    </option>
+                  )}
+                  {importedSnapshot && selectedBranch && !branches.includes(selectedBranch) && (
+                    <option value={selectedBranch}>{selectedBranch} (imported)</option>
+                  )}
+                  {branches.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                      {b === refs.data?.defaultBranch ? " (default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </GuidedTarget>
+            <GuidedTarget
+              {...guide(
+                4,
+                t("Pin a commit (optional)", "Chọn commit cụ thể (không bắt buộc)"),
+                t(
+                  "Leave this empty to analyze the latest commit on your branch. To pin a version, enter its full 40-character commit SHA; this overrides the branch selection.",
+                  "Để trống để phân tích commit mới nhất của nhánh. Nếu muốn cố định phiên bản, nhập SHA đủ 40 ký tự; SHA sẽ được ưu tiên thay cho nhánh.",
+                ),
+                !!commit.trim() && !/^[a-fA-F0-9]{40}$/.test(commit),
+              )}
+            >
+              <label className="block space-y-2 text-sm font-medium">
+                <span>Commit SHA (optional)</span>
+                <Input
+                  aria-label="Commit SHA"
+                  placeholder="Full 40-character SHA"
+                  value={commit}
+                  onChange={(e) => setCommit(e.target.value)}
+                  pattern="[a-fA-F0-9]{40}"
+                  disabled={busy || !!importedSnapshot}
+                />
+                <span className="block text-xs font-normal text-muted-foreground">
+                  Leave empty for the latest commit on the selected branch. A SHA overrides the
+                  branch selection.
+                </span>
+              </label>
+            </GuidedTarget>
             <Button
               type="button"
               variant="ghost"
@@ -347,15 +416,26 @@ export function ImportFlow({
       )}
       {run.error && <ErrorState error={run.error} />}
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="submit" disabled={busy || !valid}>
-          {busy
-            ? stage || "Working…"
-            : importedSnapshot
-              ? "Retry analysis"
-              : created
-                ? "Retry import & analyze"
-                : "Import & analyze"}
-        </Button>
+        <GuidedTarget
+          {...guide(
+            5,
+            t("Ready to import", "Sẵn sàng nhập dự án"),
+            t(
+              "Click Import & analyze when you are ready to create the project and start analysis. Finish tour only closes this guide; it does not submit the form. Keep the dialog open while importing.",
+              "Khi sẵn sàng, bấm Import & analyze để tạo dự án và bắt đầu phân tích. Xong hướng dẫn chỉ đóng hướng dẫn, không gửi biểu mẫu. Giữ cửa sổ mở trong lúc nhập.",
+            ),
+          )}
+        >
+          <Button type="submit" disabled={busy || !valid}>
+            {busy
+              ? stage || "Working…"
+              : importedSnapshot
+                ? "Retry analysis"
+                : created
+                  ? "Retry import & analyze"
+                  : "Import & analyze"}
+          </Button>
+        </GuidedTarget>
         {busy && (
           <p role="status" className="text-xs text-muted-foreground">
             Keep this dialog open until the import finishes.
