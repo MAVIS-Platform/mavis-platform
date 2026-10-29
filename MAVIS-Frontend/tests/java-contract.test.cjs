@@ -234,7 +234,7 @@ test("GitHub imports pin the selected branch to an immutable commit before downl
  });
  const rows=await executeJava("projectOverviews",{},"jwt",new AbortController().signal);
  assert.equal(rows.length,2);
- assert.deepEqual(validateResponse("projectOverviews",{},rows).map(r=>[r.status,r.services,r.runtimeSupported]),[["processing",2,null],["failed",null,true]]);
+ assert.deepEqual(validateResponse("projectOverviews",{},rows).map(r=>[r.status,r.services,r.runtimeSupported]),[["processing",null,null],["failed",null,true]]);
 });
 test("project overview degrades a broken per-project source to explicit unknowns instead of failing the page",async t=>{
  environment(t);t.mock.method(globalThis,"fetch",async url=>{
@@ -452,29 +452,27 @@ test("submission lists deduplicate metadata and defer heavy assets until detail 
  assert.equal(paths.filter(p=>p===`analyzer/models/${model}`).length,1);
 });
 
-test("overview starts independent APIs together and graph waits only for models", async t => {
- environment(t);const paths=[];let releaseJobs,releaseModels,releaseSessions;
+test("overview loads status and runtime concurrently without waiting for models or graphs", async t => {
+ environment(t);const paths=[];let releaseJobs,releaseSessions;
  const jobsGate=new Promise(resolve=>{releaseJobs=resolve;});
- const modelsGate=new Promise(resolve=>{releaseModels=resolve;});
  const sessionsGate=new Promise(resolve=>{releaseSessions=resolve;});
  t.mock.method(globalThis,"fetch",async url=>{
   const path=new URL(url).pathname.replace("/api/v1/","");paths.push(path);let data;
   if(path==="projects")data=[{id:project,name:"Project"}];
-  else if(path.endsWith("/jobs")){await jobsGate;data=[];}
-  else if(path.endsWith("/models")){await modelsGate;data=[metadata];}
-  else if(path.endsWith("/runtime-sessions")){await sessionsGate;data=[];}
-  else if(path.endsWith("/graph"))data={nodes:[],edges:[]};
-  else throw Error("Unexpected request "+path);
+  else if(path.endsWith("/jobs")){await jobsGate;data=[jobDto];}
+  else if(path.endsWith("/runtime-sessions")){await sessionsGate;data=[{id:node,projectId:project}];}
+  else return new Promise(()=>{}); // A heavy model/graph call would prevent completion.
   return Response.json({code:200,data});
  });
  const pending=executeJava("projectOverviews",{},"jwt",new AbortController().signal);
  try {
   await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(paths.includes(`analyzer/projects/${project}/jobs`));assert.ok(paths.includes(`analyzer/projects/${project}/models`));assert.ok(paths.includes(`analyzer/projects/${project}/runtime-sessions`));
-  assert.ok(!paths.includes(`analyzer/models/${model}/graph`));
-  releaseModels();await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(paths.includes(`analyzer/models/${model}/graph`));
- } finally {releaseJobs();releaseModels();releaseSessions();await pending;}
+  assert.deepEqual(paths.sort(),["projects",`analyzer/projects/${project}/jobs`,`analyzer/projects/${project}/runtime-sessions`].sort());
+ } finally {releaseJobs();releaseSessions();}
+ const rows=validateResponse("projectOverviews",{},await pending);
+ assert.equal(rows[0].services,null);
+ assert.equal(rows[0].status,"ready");
+ assert.equal(rows[0].runtimeSupported,true);
 });
 
 test("mutation invalidation excludes unrelated IDs and uses submission response scope", () => {
