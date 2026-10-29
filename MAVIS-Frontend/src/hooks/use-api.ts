@@ -1,6 +1,7 @@
 "use client";
 import { useContext, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { applyNotificationRead } from "@/features/notifications/read-cache";
 import { toast } from "sonner";
 import { ApiContext, SelectionContext } from "@/providers/app-context";
 import type { Operation, Request, Response } from "@/lib/api/contracts";
@@ -95,8 +96,28 @@ export function useApiMutation<K extends Operation>(operation: K) {
   const api = useApi();
   const client = useQueryClient();
   return useMutation<Response<K>, Error, Request<K>>({
+    onMutate: async () => {
+      if (["readNotification", "readAllNotifications"].includes(operation))
+        await client.cancelQueries({ queryKey: ["api", "notifications"] });
+    },
     mutationFn: (input) => api.execute(operation, input),
     onSuccess: (data, input) => {
+      if (operation === "readNotification" || operation === "readAllNotifications") {
+        for (const [key, cached] of client.getQueriesData<Response<"notifications">>({
+          queryKey: ["api", "notifications"],
+        })) {
+          client.setQueryData(
+            key,
+            applyNotificationRead(
+              cached,
+              key[2] as Request<"notifications">,
+              operation,
+              input as Request<"readNotification" | "readAllNotifications">,
+              data as Response<"readNotification" | "readAllNotifications">,
+            ),
+          );
+        }
+      }
       const related: readonly string[] = mutationInvalidations[operation] ?? [];
       const scope = mutationScope(operation, input, data);
       const upsertRow = (rows: unknown[] | undefined, next: unknown) => {

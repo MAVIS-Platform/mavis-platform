@@ -4,6 +4,7 @@ import { useState, useEffect, useContext } from "react";
 import { ApiContext } from "@/providers/app-context";
 import {
   Bell,
+  Loader2,
   CheckCheck,
   Check,
   ArrowUpRight,
@@ -107,7 +108,7 @@ function NotificationList({
                 {timeLabel(item.createdAt)}
               </time>
             </Link>
-            {!item.readAt && (
+            {!item.readAt ? (
               <Button
                 variant="ghost"
                 size="icon"
@@ -119,6 +120,14 @@ function NotificationList({
               >
                 <Check className="size-4" />
               </Button>
+            ) : (
+              <span
+                className="flex size-8 shrink-0 items-center justify-center text-muted-foreground"
+                title="Read"
+                aria-label="Read"
+              >
+                <CheckCheck className="size-4" aria-hidden="true" />
+              </span>
             )}
           </li>
         );
@@ -208,7 +217,11 @@ function ConnectedNotificationBell() {
             onClick={() => q.data && all.mutate({ before: q.data.asOf })}
             title="Mark all as read"
           >
-            <CheckCheck className="size-4" />
+            {all.isPending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <CheckCheck className="size-4" />
+            )}
             <span className="sr-only">Mark all as read</span>
           </Button>
         </div>
@@ -234,6 +247,10 @@ function ConnectedNotificationBell() {
             <InboxFailure refresh={() => void q.refetch()} />
           ) : q.data?.items.length ? (
             <NotificationList items={q.data.items} compact onNavigate={() => setOpen(false)} />
+          ) : q.isFetching && unreadOnly && (q.data?.unreadCount ?? 0) > 0 ? (
+            <p role="status" className="p-5 text-sm text-muted-foreground">
+              Refreshing unread notifications…
+            </p>
           ) : (
             <InboxEmpty unreadOnly={unreadOnly} />
           )}
@@ -297,7 +314,11 @@ export function NotificationCenter() {
             disabled={!q.data?.unreadCount || all.isPending}
             onClick={() => q.data && all.mutate({ before: q.data.asOf })}
           >
-            <CheckCheck className="size-4" />
+            {all.isPending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <CheckCheck className="size-4" />
+            )}
             Mark all as read
           </Button>
         </div>
@@ -340,6 +361,10 @@ export function NotificationCenter() {
           <InboxFailure refresh={() => void q.refetch()} />
         ) : q.data?.items.length ? (
           <NotificationList items={q.data.items} />
+        ) : q.isFetching && unreadOnly && (q.data?.unreadCount ?? 0) > 0 ? (
+          <p role="status" className="p-5 text-sm text-muted-foreground">
+            Refreshing unread notifications…
+          </p>
         ) : (
           <InboxEmpty unreadOnly={unreadOnly} />
         )}
