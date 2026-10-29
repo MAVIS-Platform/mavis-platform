@@ -64,6 +64,14 @@ public class ProjectServiceImpl implements ProjectService {
             assignment = assignmentRepository.findById(request.getAssignmentId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "Không tìm thấy Assignment với ID: " + request.getAssignmentId()));
+            if (workspace == null && assignment.getWorkspace() != null) {
+                workspace = assignment.getWorkspace();
+                accessPolicyService.requireWorkspaceMember(workspace.getId());
+            } else if (workspace != null && assignment.getWorkspace() != null
+                    && !workspace.getId().equals(assignment.getWorkspace().getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST,
+                        "Đề bài tập không thuộc về lớp học (Workspace) đã chọn");
+            }
         }
 
         String projectType = request.getProjectType();
@@ -96,7 +104,11 @@ public class ProjectServiceImpl implements ProjectService {
         Project project = Project.builder()
                 .name(request.getName().trim())
                 .description(request.getDescription())
-                .repositoryUrl(GitHubRepositoryUrls.normalize(request.getRepositoryUrl()))
+                .repositoryUrl(GitHubRepositoryUrls.normalize(
+                        (request.getRepositoryUrl() == null || request.getRepositoryUrl().isBlank())
+                                && refSnapshot != null && refSnapshot.getProject() != null
+                                ? refSnapshot.getProject().getRepositoryUrl()
+                                : request.getRepositoryUrl()))
                 .defaultBranch(request.getDefaultBranch() != null && !request.getDefaultBranch().isBlank()
                         ? request.getDefaultBranch().trim() : "main")
                 .workspace(workspace)
