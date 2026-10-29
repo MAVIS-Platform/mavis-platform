@@ -14,8 +14,18 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
   batchWorkspaceMembers:["workspaces"],publishReference:["referenceVersions","snapshots","workspaceProjects"],
   freezeArtifacts:["diagrams"],saveArchitectureDocument:["architectureDocument","documentRevisions"],
   updateFeedback:["submission","submissions","assignmentSubmissions"],deleteFeedback:["submission","submissions","assignmentSubmissions"],
-  runtimeStop: ["runtimeReadSessions", "runtimeReadSession"],
-  runtimeApprove: ["runtimeReadSessions", "runtimeReadSession"],
+  runtimeStop: ["runtimeReadSessions", "runtimeReadSession", "runtimeSessions", "runtimeSession"],
+  runtimeApprove: [
+    "runtimeReadSessions",
+    "runtimeReadSession",
+    "runtimeSessions",
+    "runtimeSession",
+    "runtimeSequence",
+    "models",
+    "modelVersions",
+    "model",
+    "diagrams",
+  ],
   importSource: ["snapshots"],
   importGithub: ["snapshots"],
   createProject: ["projects", "projectOverviews"],
@@ -38,7 +48,18 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
   saveRuntimeConfiguration: ["runtimeConfiguration"],
   createScenario: ["scenarios"],
   saveScenario: ["scenarios"],
-  startRuntime: ["runtimeSessions", "runtimeReadSessions", "runtimeReadSession", "platformSummary"],
+  startRuntime: [
+    "runtimeSessions",
+    "runtimeSession",
+    "runtimeReadSessions",
+    "runtimeReadSession",
+    "runtimeSequence",
+    "models",
+    "modelVersions",
+    "model",
+    "diagrams",
+    "platformSummary",
+  ],
   stopRuntime: ["runtimeSessions", "runtimeSession", "platformSummary", "audit"],
   submit: ["submissions", "submission", "assignmentSubmissions"],
   feedback: ["submissions", "submission", "assignmentSubmissions"],
@@ -108,26 +129,48 @@ export function queryMatchesScope(queryKey: readonly unknown[], scope: Record<st
 
 export function terminalSignature(operation: Operation, data: unknown): string {
   if (
-    !["analysisJob", "analysisJobs", "projectAnalysisActivity", "adminJobs", "runtimeSession", "runtimeSessions"].includes(
-      operation,
-    )
+    ![
+      "analysisJob",
+      "analysisJobs",
+      "projectAnalysisActivity",
+      "adminJobs",
+      "runtimeSession",
+      "runtimeSessions",
+      "runtimeReadSession",
+      "runtimeReadSessions",
+    ].includes(operation)
   )
     return "";
-  const rows = operation === "projectAnalysisActivity" && data && typeof data === "object" && "items" in data
-    ? data.items : data;
+  const rows =
+    operation === "projectAnalysisActivity" &&
+    data &&
+    typeof data === "object" &&
+    "items" in data
+      ? data.items
+      : data;
   return (Array.isArray(rows) ? rows : [rows])
     .flatMap((value: unknown) => {
+      if (!value || typeof value !== "object" || !("id" in value)) return [];
+      const statusStr =
+        "status" in value && typeof value.status === "string"
+          ? value.status.toLowerCase()
+          : "executionStatus" in value && typeof value.executionStatus === "string"
+            ? value.executionStatus.toLowerCase()
+            : "";
       if (
-        !value ||
-        typeof value !== "object" ||
-        !("id" in value) ||
-        !("status" in value) ||
-        !["completed", "failed", "cancelled", "terminated", "timed-out", "partial"].includes(
-          String(value.status),
-        )
+        ![
+          "completed",
+          "complete",
+          "failed",
+          "cancelled",
+          "terminated",
+          "timed-out",
+          "timeout",
+          "partial",
+        ].includes(statusStr)
       )
         return [];
-      return [`${String(value.id)}:${String(value.status)}`];
+      return [`${String(value.id)}:${statusStr}`];
     })
     .sort()
     .join("|");

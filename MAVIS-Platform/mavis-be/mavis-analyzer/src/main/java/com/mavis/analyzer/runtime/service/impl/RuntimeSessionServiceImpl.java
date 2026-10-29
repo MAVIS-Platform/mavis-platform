@@ -151,24 +151,35 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Snapshot không thuộc về dự án đã chọn");
         }
 
-        // [CHẶNG 11]: Pin cứng ModelVersion ngay tại thời điểm tạo
-        com.mavis.common.entity.ModelVersion pinnedModel;
+        // [CHẶNG 11]: Pin cứng ModelVersion ngay tại thời điểm tạo (tự động đồng bộ nếu lệch snapshot trong cùng Project)
+        com.mavis.common.entity.ModelVersion pinnedModel = null;
         if (request.getModelVersionId() != null) {
             pinnedModel = modelVersionRepository.findById(request.getModelVersionId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy phiên bản mô hình với ID: " + request.getModelVersionId()));
             if (pinnedModel.getProject() != null && !pinnedModel.getProject().getId().equals(project.getId())) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Phiên bản mô hình không thuộc về dự án đã chọn");
             }
-            if (pinnedModel.getSourceSnapshot() == null || !pinnedModel.getSourceSnapshot().getId().equals(snapshot.getId())) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Phiên bản mô hình không gắn với cùng SourceSnapshot");
+            if ("RUNTIME_ENRICHED".equalsIgnoreCase(pinnedModel.getOrigin()) && pinnedModel.getBaseModelVersion() != null) {
+                pinnedModel = pinnedModel.getBaseModelVersion();
+            }
+            if (pinnedModel.getSourceSnapshot() != null && !snapshot.getId().equals(pinnedModel.getSourceSnapshot().getId())) {
+                // Tự động đồng bộ sang SourceSnapshot của pinnedModel nếu thuộc cùng Project
+                if (pinnedModel.getProject() != null && pinnedModel.getProject().getId().equals(project.getId())) {
+                    snapshot = pinnedModel.getSourceSnapshot();
+                } else {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "Pinned model must belong to the selected snapshot");
+                }
             }
         } else {
             pinnedModel = modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(project.getId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "Dự án chưa có ModelVersion hợp lệ. Vui lòng chạy phân tích tĩnh trước"));
-        }
+                    .orElseGet(() -> modelVersionRepository.findByProjectIdOrderByRevisionDesc(project.getId()).stream()
+                            .filter(mv -> !"RUNTIME_ENRICHED".equalsIgnoreCase(mv.getOrigin()))
+                            .findFirst()
+                            .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "Dự án chưa có ModelVersion hợp lệ. Vui lòng chạy phân tích tĩnh trước")));
 
-        if (pinnedModel.getSourceSnapshot() == null || !snapshot.getId().equals(pinnedModel.getSourceSnapshot().getId())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Pinned model must belong to the selected snapshot");
+            if (pinnedModel.getSourceSnapshot() == null || !snapshot.getId().equals(pinnedModel.getSourceSnapshot().getId())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Pinned model must belong to the selected snapshot");
+            }
         }
 
         // [WJ-01 / Chặng 11]: Suy ra confirmedServiceMappings từ model_elements của pinnedModel nếu không truyền
@@ -394,17 +405,37 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         accessPolicyService.requireProjectWriteAccess(session.getProject());
 
         validateAdministrativeLimits(session);
-        // [CHẶNG 11]: Kiểm tra preflight
+        // [CHẶNG 11]: Kiểm tra preflight (Hỗ trợ fallback từ SERVICE_CONTAINER của Model nếu snapshot không chứa file compose vật lý)
         PreflightCheckResponseDTO preflight = runComposePreflight(session.getSourceSnapshot().getId());
+        List<String> serviceNames = preflight.getDetectedServices() != null
+                ? new ArrayList<>(preflight.getDetectedServices())
+                : new ArrayList<>();
+
+        boolean hasHardSecurityViolation = preflight.getSecurityWarnings() != null
+                && preflight.getSecurityWarnings().stream().anyMatch(w ->
+                        w.contains("privileged") || w.contains("network_mode") || w.contains("docker.sock") || w.contains("mount"));
+
         if (!preflight.isCompatible()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Compose preflight rejected: " + preflight.getSecurityWarnings());
+            if (hasHardSecurityViolation) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Compose preflight rejected: " + preflight.getSecurityWarnings());
+            }
+            if (serviceNames.isEmpty() && session.getConfirmedServiceMappings() != null && !session.getConfirmedServiceMappings().isEmpty()) {
+                serviceNames.addAll(session.getConfirmedServiceMappings().keySet());
+            }
+            if (serviceNames.isEmpty() && session.getModelVersion() != null) {
+                modelElementRepository.findByModelVersionId(session.getModelVersion().getId()).stream()
+                        .filter(el -> "SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType()) && el.getName() != null)
+                        .map(ModelElement::getName)
+                        .forEach(serviceNames::add);
+            }
+            if (serviceNames.isEmpty() && (runtimeRunnerDispatcher == null || !runtimeRunnerDispatcher.isAllowSimulatedFallback())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Compose preflight rejected: " + preflight.getSecurityWarnings());
+            }
         }
 
         // [CHẶNG 11]: Đặt scenarioStatus = "APPROVED", executionStatus = "READY_FOR_DISPATCH" (không đặt RUNNING ở đây)
         session.setScenarioStatus("APPROVED");
         session.setExecutionStatus("READY_FOR_DISPATCH");
-
-        List<String> serviceNames = preflight.getDetectedServices();
         String overrideYaml = composeOverrideGenerator.generateOverrideYaml(serviceNames);
 
         RuntimeSession updated = runtimeSessionRepository.save(session);

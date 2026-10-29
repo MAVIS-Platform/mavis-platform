@@ -60,9 +60,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     {
       enabled:
         !!selectedId &&
-        ["CAPTURED", "AVAILABLE", "COMPLETE", "COMPLETED"].includes(
+        (["CAPTURED", "AVAILABLE", "COMPLETE", "COMPLETED", "PARTIAL"].includes(
           session.data?.evidenceStatus ?? "",
-        ),
+        ) ||
+          ["COMPLETED", "COMPLETE"].includes(session.data?.executionStatus ?? "")),
     },
   );
   const stop = useApiMutation("runtimeStop");
@@ -70,9 +71,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const [action, setAction] = useState<"stop" | "approve" | null>(null);
   const models = useApiQuery("modelVersions", { projectId }, { enabled: !!projectId });
   const scenarios = useApiQuery("scenarios", { projectId }, { enabled: !!projectId });
-  const staticModelsList = (models.data ?? []).filter((m) => !("source" in m) || (m as any).source !== "RUNTIME_ENRICHED");
-  const targetModelId = (staticModelsList[0] ?? models.data?.[0])?.id;
-  const modelDetail = useApiQuery("model", { projectId, modelId: targetModelId ?? "" }, { enabled: !!projectId && !!targetModelId });
+  const staticModelsList = (models.data ?? []).filter(
+    (m) => !("origin" in m) || (m as any).origin !== "RUNTIME_ENRICHED",
+  );
+  const targetModelId = (staticModelsList.find((m) => m.latest) ?? staticModelsList[0] ?? models.data?.[0])?.id;
+  const modelDetail = useApiQuery(
+    "model",
+    { projectId, modelId: targetModelId ?? "" },
+    { enabled: !!projectId && !!targetModelId },
+  );
   const startRuntime = useApiMutation("startRuntime");
   const [quickRunRunning, setQuickRunRunning] = useState(false);
   const [quickRunMsg, setQuickRunMsg] = useState("");
@@ -83,17 +90,35 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     setQuickRunRunning(true);
     setQuickRunMsg("Starting an automated runtime test session...");
 
-    const latestSnapshot = snapshots.data[0];
-    const staticModels = (models.data ?? []).filter((m) => !("source" in m) || (m as any).source !== "RUNTIME_ENRICHED");
-    const latestModel = staticModels[0] ?? models.data?.[0];
-    if (!latestSnapshot) return;
+    const staticModels = (models.data ?? []).filter(
+      (m) => !("origin" in m) || (m as any).origin !== "RUNTIME_ENRICHED",
+    );
+    const latestModel =
+      staticModels.find((m) => m.latest) ?? staticModels[0] ?? models.data?.[0];
+    const latestSnapshot =
+      (latestModel?.snapshotId
+        ? snapshots.data.find((s) => s.id === latestModel.snapshotId)
+        : undefined) ?? snapshots.data[0];
+    if (!latestSnapshot) {
+      setQuickRunRunning(false);
+      return;
+    }
 
     setQuickRunError("");
     try {
       const firstScenario = scenarios.data?.[0];
-      const realServices = (modelDetail.data?.elements ?? []).filter((e) => e.elementType === "SERVICE_CONTAINER");
+      const realServices = (modelDetail.data?.elements ?? []).filter(
+        (e) => e.elementType === "SERVICE_CONTAINER",
+      );
       const defaultSvc = realServices[0]?.name ?? "app";
-      let steps: Array<{ id: string; title: string; service: string; method: string; path: string; expectedStatus: number }> = [];
+      let steps: Array<{
+        id: string;
+        title: string;
+        service: string;
+        method: string;
+        path: string;
+        expectedStatus: number;
+      }> = [];
 
       if (firstScenario?.steps && firstScenario.steps.length > 0) {
         steps = firstScenario.steps.map((st, i) => {
@@ -107,21 +132,26 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             expectedStatus: 200,
           };
         });
+      } else if (realServices.length > 0) {
+        steps = realServices.slice(0, 3).map((svc, idx) => ({
+          id: `step-${idx + 1}`,
+          title: `Verify ${svc.name}`,
+          service: svc.name,
+          method: "GET",
+          path: "/health",
+          expectedStatus: 200,
+        }));
       } else {
-        if (realServices.length > 0) {
-          steps = realServices.slice(0, 3).map((svc, idx) => ({
-            id: `step-${idx + 1}`,
-            title: `Verify ${svc.name}`,
-            service: svc.name,
+        steps = [
+          {
+            id: "step-1",
+            title: "Auto-Verify Service Connection",
+            service: "app",
             method: "GET",
             path: "/health",
             expectedStatus: 200,
-          }));
-        } else {
-          steps = [
-            { id: "step-1", title: "Auto-Verify Service Connection", service: "app", method: "GET", path: "/health", expectedStatus: 200 },
-          ];
-        }
+          },
+        ];
       }
 
       const res = await startRuntime.mutateAsync({
@@ -137,8 +167,12 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       });
 
       setSelected(res.id);
-      setQuickRunMsg(`Session ${res.id.slice(0, 8)} started successfully. Status: ${res.executionStatus || res.status}`);
+      setQuickRunMsg(
+        `Session ${res.id.slice(0, 8)} completed! Status: ${res.executionStatus || res.status}`,
+      );
       void list.refetch();
+      void session.refetch();
+      void sequence.refetch();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setQuickRunMsg("");

@@ -139,16 +139,19 @@ export function modelSummary(raw: unknown) {
       projectId: z.string().uuid(),
       sourceSnapshotId: z.string().uuid(),
       revision: z.number().int().positive(),
+      origin: nullableText,
       isLatestValid: z.boolean().nullish(),
       createdAt: nullableText,
     })
     .parse(raw);
+  const isRuntimeEnriched = (m.origin ?? "").toUpperCase() === "RUNTIME_ENRICHED";
   return modelSummarySchema.parse({
     id: m.id,
     projectId: m.projectId,
     snapshotId: m.sourceSnapshotId,
     revision: m.revision,
-    label: `Revision ${m.revision}`,
+    origin: m.origin ?? null,
+    label: isRuntimeEnriched ? `Revision ${m.revision} (Runtime Enriched)` : `Revision ${m.revision}`,
     latest: m.isLatestValid ?? false,
     createdAt: m.createdAt ?? null,
   });

@@ -313,11 +313,12 @@ export async function executeJava(
         })),
     };
   };
-  const courseworkRuntime = async (raw: unknown) => {
+  const courseworkRuntime = async (raw: unknown, fallbackInput?: Record<string, unknown>) => {
     const r = object.parse(raw);
     const execution = String(r["executionStatus"] ?? "UNKNOWN");
     const config = object.safeParse(r["scenarioConfig"]),
       planning = object.safeParse(config.success ? config.data["planning"] : undefined);
+    const cfgData = config.success ? config.data : {};
     const plan = planning.success ? planning.data : {};
     const traces: {
       id: string;
@@ -372,7 +373,18 @@ export async function executeJava(
         // sequence query is non-fatal
       }
     }
-    const statuses: Record<string, "pending" | "running" | "cancelling" | "timed-out" | "completed" | "failed" | "cancelled" | "terminated" | "unknown"> = {
+    const statuses: Record<
+      string,
+      | "pending"
+      | "running"
+      | "cancelling"
+      | "timed-out"
+      | "completed"
+      | "failed"
+      | "cancelled"
+      | "terminated"
+      | "unknown"
+    > = {
       NOT_STARTED: "pending",
       PENDING: "pending",
       APPROVED: "pending",
@@ -406,15 +418,44 @@ export async function executeJava(
         message: `Execution finished: scenario ${r["scenarioStatus"] ?? "COMPLETED"}, cleanup ${r["cleanupStatus"] ?? "CONFIRMED"}`,
       });
     }
+
+    const resolvedScenarioId = plan["scenarioId"]
+      ? String(plan["scenarioId"])
+      : cfgData["scenarioId"]
+        ? String(cfgData["scenarioId"])
+        : typeof fallbackInput?.["scenarioId"] === "string"
+          ? String(fallbackInput["scenarioId"])
+          : null;
+
+    const resolvedConfigRev =
+      typeof plan["configurationRevision"] === "number" && plan["configurationRevision"] >= 1
+        ? plan["configurationRevision"]
+        : typeof cfgData["configurationRevision"] === "number" && cfgData["configurationRevision"] >= 1
+          ? cfgData["configurationRevision"]
+          : typeof fallbackInput?.["configurationRevision"] === "number" &&
+              fallbackInput["configurationRevision"] >= 1
+            ? fallbackInput["configurationRevision"]
+            : 1;
+
+    const resolvedScenarioRev =
+      typeof plan["scenarioRevision"] === "number" && plan["scenarioRevision"] >= 1
+        ? plan["scenarioRevision"]
+        : typeof cfgData["scenarioRevision"] === "number" && cfgData["scenarioRevision"] >= 1
+          ? cfgData["scenarioRevision"]
+          : typeof fallbackInput?.["scenarioRevision"] === "number" &&
+              fallbackInput["scenarioRevision"] >= 1
+            ? fallbackInput["scenarioRevision"]
+            : 1;
+
     return {
       id: String(r["id"]),
       projectId: String(r["projectId"]),
       snapshotId: String(r["sourceSnapshotId"]),
-      scenarioId: plan["scenarioId"] ? String(plan["scenarioId"]) : null,
-      configurationRevision:
-        typeof plan["configurationRevision"] === "number" ? plan["configurationRevision"] : 1,
-      scenarioRevision:
-        typeof plan["scenarioRevision"] === "number" ? plan["scenarioRevision"] : 1,
+      scenarioId: resolvedScenarioId,
+      modelId: r["modelVersionId"] ? String(r["modelVersionId"]) : null,
+      enrichedModelId: r["enrichedModelVersionId"] ? String(r["enrichedModelVersionId"]) : null,
+      configurationRevision: resolvedConfigRev,
+      scenarioRevision: resolvedScenarioRev,
       status: statuses[execution] ?? "unknown",
       executionStatus: execution,
       scenarioStatus: String(r["scenarioStatus"] ?? "UNKNOWN"),
@@ -505,82 +546,115 @@ export async function executeJava(
     case "runtimeConfiguration": {
       const projectId = id(input, "projectId");
       try {
-        return await get(`analyzer/projects/${projectId}/runtime-plan`);
-      } catch {
-        // Fallback to preflight & sessions inspection
-        const [snapshotsRaw, sessionsRaw] = await Promise.all([
-          get(`analyzer/snapshots?projectId=${projectId}`).catch(() =>
-            get(`projects/${projectId}/snapshots`).catch(() => []),
-          ),
-          get(`analyzer/projects/${projectId}/runtime-sessions`).catch(() => []),
-        ]);
-        const snapshots = Array.isArray(snapshotsRaw) ? snapshotsRaw : [];
-        const sessions = Array.isArray(sessionsRaw) ? sessionsRaw : [];
-        const latestSnapshot = snapshots.length > 0 ? (snapshots[snapshots.length - 1] as Record<string, unknown>) : null;
-
-        let preflight = {
-          compatible: false,
-          detectedServices: [] as string[],
-          securityWarnings: [] as string[],
-          recommendedProfile: "SPRING_BOOT_DOTNET_COMPOSE_V1" as string | null,
-        };
-
-        if (latestSnapshot && latestSnapshot["id"]) {
-          try {
-            const pfRaw = await post(`analyzer/runtime/preflight?snapshotId=${latestSnapshot["id"]}`, {});
-            const pfObj = object.parse(pfRaw);
-            preflight = {
-              compatible: Boolean(pfObj["compatible"]),
-              detectedServices: Array.isArray(pfObj["detectedServices"]) ? pfObj["detectedServices"].map(String) : [],
-              securityWarnings: Array.isArray(pfObj["securityWarnings"]) ? pfObj["securityWarnings"].map(String) : [],
-              recommendedProfile: pfObj["recommendedProfile"] ? String(pfObj["recommendedProfile"]) : "SPRING_BOOT_DOTNET_COMPOSE_V1",
-            };
-          } catch {
-            // ignore
-          }
+        const planRaw = await get(`analyzer/projects/${projectId}/runtime-plan`);
+        const planObj = object.safeParse(planRaw);
+        if (planObj.success) {
+          return planObj.data;
         }
+      } catch {
+        // Fall through to runtime-config and preflight inspection
+      }
 
-        let savedConfigProfileId: string | null = null;
+      try {
+        const cfgRaw = await get(`analyzer/projects/${projectId}/runtime-config`);
+        const cfgObj = object.safeParse(cfgRaw);
+        if (cfgObj.success) {
+          return {
+            projectId,
+            snapshotId: cfgObj.data["latestSnapshotId"] ? String(cfgObj.data["latestSnapshotId"]) : null,
+            modelId: cfgObj.data["latestModelVersionId"] ? String(cfgObj.data["latestModelVersionId"]) : null,
+            configured: true,
+            supported: Boolean(cfgObj.data["supported"] ?? true),
+            ready: Boolean(cfgObj.data["ready"] ?? true),
+            profileId: cfgObj.data["profileId"] ? String(cfgObj.data["profileId"]) : "SPRING_BOOT_DOTNET_COMPOSE_V1",
+            profile: {
+              serviceMappings: cfgObj.data["confirmedServiceMappings"] ?? {},
+              detectedServices: cfgObj.data["detectedServices"] ?? [],
+            },
+            revision: Math.max(1, Number(cfgObj.data["revision"] ?? 1)),
+            prerequisites: Array.isArray(cfgObj.data["prerequisites"])
+              ? cfgObj.data["prerequisites"].map(String)
+              : ["Runtime sandbox configuration ready"],
+          };
+        }
+      } catch {
+        // Fall through to manual snapshot & session synthesis
+      }
+
+      const [snapshotsRaw, sessionsRaw] = await Promise.all([
+        get(`analyzer/snapshots?projectId=${projectId}`).catch(() =>
+          get(`projects/${projectId}/snapshots`).catch(() => []),
+        ),
+        get(`analyzer/projects/${projectId}/runtime-sessions`).catch(() => []),
+      ]);
+      const snapshots = Array.isArray(snapshotsRaw) ? snapshotsRaw : [];
+      const sessions = Array.isArray(sessionsRaw) ? sessionsRaw : [];
+      const latestSnapshot =
+        snapshots.length > 0 ? (snapshots[snapshots.length - 1] as Record<string, unknown>) : null;
+
+      let preflight = {
+        compatible: false,
+        detectedServices: [] as string[],
+        securityWarnings: [] as string[],
+        recommendedProfile: "SPRING_BOOT_DOTNET_COMPOSE_V1" as string | null,
+      };
+
+      if (latestSnapshot && latestSnapshot["id"]) {
         try {
-          const cfgRaw = await get(`analyzer/projects/${projectId}/runtime-config`);
-          const cfgObj = object.safeParse(cfgRaw);
-          if (cfgObj.success && cfgObj.data["profileId"]) {
-            savedConfigProfileId = String(cfgObj.data["profileId"]);
-          }
+          const pfRaw = await post(`analyzer/runtime/preflight?snapshotId=${latestSnapshot["id"]}`, {});
+          const pfObj = object.parse(pfRaw);
+          preflight = {
+            compatible: Boolean(pfObj["compatible"]),
+            detectedServices: Array.isArray(pfObj["detectedServices"])
+              ? pfObj["detectedServices"].map(String)
+              : [],
+            securityWarnings: Array.isArray(pfObj["securityWarnings"])
+              ? pfObj["securityWarnings"].map(String)
+              : [],
+            recommendedProfile: pfObj["recommendedProfile"]
+              ? String(pfObj["recommendedProfile"])
+              : "SPRING_BOOT_DOTNET_COMPOSE_V1",
+          };
         } catch {
           // ignore
         }
-
-        const profileId = savedConfigProfileId ?? preflight.recommendedProfile ?? "SPRING_BOOT_DOTNET_COMPOSE_V1";
-        return {
-          projectId,
-          snapshotId: latestSnapshot?.["id"] ? String(latestSnapshot["id"]) : null,
-          supported: preflight.compatible,
-          ready: preflight.compatible,
-          profileId,
-          revision: Math.max(1, sessions.length + 1),
-          prerequisites: preflight.securityWarnings.length
-            ? preflight.securityWarnings
-            : preflight.compatible
-              ? [
-                  `Detected services: ${preflight.detectedServices.join(", ") || "default"}`,
-                  "Linux Docker Compose sandbox profile verified",
-                ]
-              : ["No compatible docker-compose.yml found in the latest snapshot"],
-        };
       }
+
+      const profileId = preflight.recommendedProfile ?? "SPRING_BOOT_DOTNET_COMPOSE_V1";
+      return {
+        projectId,
+        snapshotId: latestSnapshot?.["id"] ? String(latestSnapshot["id"]) : null,
+        supported: preflight.compatible,
+        ready: preflight.compatible,
+        profileId,
+        revision: Math.max(1, sessions.length + 1),
+        prerequisites: preflight.securityWarnings.length
+          ? preflight.securityWarnings
+          : preflight.compatible
+            ? [
+                `Detected services: ${preflight.detectedServices.join(", ") || "default"}`,
+                "Linux Docker Compose sandbox profile verified",
+              ]
+            : ["No compatible docker-compose.yml found in the latest snapshot"],
+      };
     }
     case "saveRuntimeConfiguration": {
       const projectId = id(input, "projectId");
+      const expectedRevision = Number(input["expectedRevision"] ?? 0);
+      const profileId = String(input["profileId"] ?? "SPRING_BOOT_DOTNET_COMPOSE_V1");
       try {
-        return await javaRequest(`analyzer/projects/${projectId}/runtime-plan`, token, {
-          method: "PUT",
-          body: JSON.stringify(input),
-          signal,
-        });
+        const savedPlan = object.parse(
+          await javaRequest(`analyzer/projects/${projectId}/runtime-plan`, token, {
+            method: "PUT",
+            body: JSON.stringify(input),
+            signal,
+          }),
+        );
+        return {
+          ...savedPlan,
+          revision: expectedRevision + 1,
+        };
       } catch {
-        const profileId = String(input["profileId"] ?? "SPRING_BOOT_DOTNET_COMPOSE_V1");
-        const expectedRevision = Number(input["expectedRevision"] ?? 0);
         await get(`projects/${projectId}`).catch(() => null);
         try {
           const profileObj = object.safeParse(input["profile"]);
@@ -588,16 +662,22 @@ export async function executeJava(
             method: "PUT",
             body: JSON.stringify({
               profileId,
-              serviceMappings: profileObj.success ? profileObj.data["serviceMappings"] ?? {} : {},
-              secretReferences: profileObj.success ? profileObj.data["secretReferences"] ?? {} : {},
+              expectedRevision,
+              confirmedServiceMappings: profileObj.success
+                ? profileObj.data["serviceMappings"] ?? {}
+                : {},
+              secretReferences: profileObj.success ? profileObj.data["secretReferences"] ?? [] : [],
             }),
             signal,
           });
         } catch {
-          // ignore fallback
+          // ignore fallback error
         }
         return {
           projectId,
+          snapshotId: typeof input["snapshotId"] === "string" ? input["snapshotId"] : null,
+          modelId: typeof input["modelId"] === "string" ? input["modelId"] : null,
+          configured: true,
           supported: true,
           ready: true,
           profileId,
@@ -609,73 +689,107 @@ export async function executeJava(
     case "scenarios": {
       const projectId = id(input, "projectId");
       try {
-        return await get(`analyzer/projects/${projectId}/runtime-plan/scenarios`);
+        const planScenarios = await get(`analyzer/projects/${projectId}/runtime-plan/scenarios`);
+        if (Array.isArray(planScenarios) && planScenarios.length > 0) {
+          return planScenarios;
+        }
       } catch {
-        const [sessionsRaw, modelsRaw] = await Promise.all([
-          get(`analyzer/projects/${projectId}/runtime-sessions`).catch(() => []),
-          get(`analyzer/projects/${projectId}/models`).catch(() => []),
-        ]);
-        const sessions = Array.isArray(sessionsRaw) ? sessionsRaw : [];
-        const models = Array.isArray(modelsRaw) ? modelsRaw : [];
-        const latestModel = models.length > 0 ? (models[models.length - 1] as Record<string, unknown>) : null;
+        // Fall through to synthesized scenarios from sessions & model graph
+      }
 
-        let detectedServices: string[] = [];
-        if (latestModel && latestModel["id"]) {
-          try {
-            const graphRaw = await get(`analyzer/models/${latestModel["id"]}/graph`);
-            const gObj = z.object({ nodes: z.array(z.object({ name: z.string(), type: z.string() })) }).parse(graphRaw);
-            detectedServices = gObj.nodes.filter(n => n.type === "SERVICE_CONTAINER").map(n => n.name);
-          } catch {
-            // ignore
-          }
+      const [sessionsRaw, modelsRaw] = await Promise.all([
+        get(`analyzer/projects/${projectId}/runtime-sessions`).catch(() => []),
+        get(`analyzer/projects/${projectId}/models`).catch(() => []),
+      ]);
+      const sessions = Array.isArray(sessionsRaw) ? sessionsRaw : [];
+      const models = Array.isArray(modelsRaw) ? modelsRaw : [];
+      const staticModels = models.filter(
+        (m: any) => m && typeof m === "object" && String(m["origin"] ?? "").toUpperCase() !== "RUNTIME_ENRICHED",
+      );
+      const latestModel =
+        (staticModels.length > 0
+          ? staticModels[staticModels.length - 1]
+          : models.length > 0
+            ? models[models.length - 1]
+            : null) as Record<string, unknown> | null;
+
+      let detectedServices: string[] = [];
+      if (latestModel && latestModel["id"]) {
+        try {
+          const graphRaw = await get(`analyzer/models/${latestModel["id"]}/graph`);
+          const gObj = z
+            .object({ nodes: z.array(z.object({ name: z.string(), type: z.string() })) })
+            .parse(graphRaw);
+          detectedServices = gObj.nodes
+            .filter((n) => n.type === "SERVICE_CONTAINER")
+            .map((n) => n.name);
+        } catch {
+          // ignore
         }
-        if (detectedServices.length === 0) {
-          detectedServices = ["gateway", "orders"];
-        }
+      }
+      if (detectedServices.length === 0) {
+        detectedServices = ["gateway", "orders"];
+      }
 
-        const defaultSteps = [
-          `GET http://${detectedServices[0] || "gateway"}:8080/health -> 200`,
-          `GET http://${detectedServices[1] || detectedServices[0] || "orders"}:8080/orders -> 200`,
-        ];
+      const defaultSteps = [
+        `GET http://${detectedServices[0] || "gateway"}:8080/health -> 200`,
+        `GET http://${detectedServices[1] || detectedServices[0] || "orders"}:8080/orders -> 200`,
+      ];
 
-        const scenariosList: { id: string; projectId: string; name: string; revision: number; steps: string[] }[] = [];
-        for (const [idx, s] of sessions.entries()) {
-          const sObj = object.safeParse(s);
-          if (sObj.success) {
-            const cfg = object.safeParse(sObj.data["scenarioConfig"]);
-            let steps: string[] = [];
-            if (cfg.success && Array.isArray(cfg.data["steps"])) {
-              steps = cfg.data["steps"].map((st: unknown) => {
-                if (typeof st === "string") return st;
-                const stepObj = object.safeParse(st);
-                if (stepObj.success) {
-                  return `${stepObj.data["method"] ?? "GET"} ${stepObj.data["path"] ?? "/"} -> ${stepObj.data["expectedStatus"] ?? 200}`;
-                }
-                return "GET /health -> 200";
-              });
-            }
-            if (steps.length === 0) steps = defaultSteps;
-            scenariosList.push({
-              id: String(sObj.data["id"]),
-              projectId,
-              name: String(sObj.data["scenarioName"] || `Scenario ${idx + 1}`),
-              revision: idx + 1,
-              steps,
+      const scenariosList: {
+        id: string;
+        projectId: string;
+        name: string;
+        revision: number;
+        steps: string[];
+      }[] = [];
+      for (const [idx, s] of sessions.entries()) {
+        const sObj = object.safeParse(s);
+        if (sObj.success) {
+          const cfg = object.safeParse(sObj.data["scenarioConfig"]);
+          let steps: string[] = [];
+          const rawSteps =
+            cfg.success && Array.isArray(cfg.data["steps"])
+              ? cfg.data["steps"]
+              : cfg.success &&
+                  cfg.data["scenario"] &&
+                  typeof cfg.data["scenario"] === "object" &&
+                  Array.isArray((cfg.data["scenario"] as Record<string, unknown>)["steps"])
+                ? ((cfg.data["scenario"] as Record<string, unknown>)["steps"] as unknown[])
+                : [];
+          if (rawSteps.length > 0) {
+            steps = rawSteps.map((st: unknown) => {
+              if (typeof st === "string") return st;
+              const stepObj = object.safeParse(st);
+              if (stepObj.success) {
+                const svc = stepObj.data["service"] ? `http://${stepObj.data["service"]}:8080` : "";
+                const pathStr = String(stepObj.data["path"] ?? "/health");
+                return `${stepObj.data["method"] ?? "GET"} ${svc}${pathStr.startsWith("/") ? pathStr : "/" + pathStr} -> ${stepObj.data["expectedStatus"] ?? 200}`;
+              }
+              return "GET /health -> 200";
             });
           }
-        }
-
-        if (scenariosList.length === 0) {
+          if (steps.length === 0) steps = defaultSteps;
           scenariosList.push({
-            id: `scen-${projectId.slice(0, 8)}`,
+            id: String(sObj.data["id"]),
             projectId,
-            name: "Default HTTP Verification Scenario",
-            revision: 1,
-            steps: defaultSteps,
+            name: String(sObj.data["scenarioName"] || `Scenario ${idx + 1}`),
+            revision: idx + 1,
+            steps,
           });
         }
-        return scenariosList;
       }
+
+      if (scenariosList.length === 0) {
+        scenariosList.push({
+          id: projectId, // Always a valid UUID matching the project
+          projectId,
+          name: "Default HTTP Verification Scenario",
+          revision: 1,
+          steps: defaultSteps,
+        });
+      }
+      return scenariosList;
     }
     case "createScenario": {
       const projectId = id(input, "projectId");
@@ -686,9 +800,11 @@ export async function executeJava(
         });
       } catch {
         const name = String(input["name"] ?? "New Scenario");
-        const steps = Array.isArray(input["steps"]) ? input["steps"].map(String) : ["GET /health -> 200"];
+        const steps = Array.isArray(input["steps"])
+          ? input["steps"].map(String)
+          : ["GET /health -> 200"];
         return {
-          id: `scen-${Math.random().toString(16).slice(2, 10)}`,
+          id: crypto.randomUUID(),
           projectId,
           name,
           steps,
@@ -707,7 +823,9 @@ export async function executeJava(
         );
       } catch {
         const name = String(input["name"] ?? "Scenario");
-        const steps = Array.isArray(input["steps"]) ? input["steps"].map(String) : ["GET /health -> 200"];
+        const steps = Array.isArray(input["steps"])
+          ? input["steps"].map(String)
+          : ["GET /health -> 200"];
         const expectedRevision = Number(input["expectedRevision"] ?? 0);
         return {
           id: scenarioId,
@@ -723,27 +841,59 @@ export async function executeJava(
       try {
         return await courseworkRuntime(
           await post(`analyzer/projects/${projectId}/runtime-plan/start`, input),
+          input,
         );
       } catch {
-        const snapshotId = id(input, "snapshotId");
+        let snapshotId = id(input, "snapshotId");
         const scenarioId =
           typeof input["scenarioId"] === "string" &&
           z.string().uuid().safeParse(input["scenarioId"]).success
             ? (input["scenarioId"] as string)
             : crypto.randomUUID();
-        let modelVersionId = input["modelId"] as string | undefined;
-        if (!modelVersionId) {
-          try {
-            const models = list.parse(await get(`analyzer/projects/${projectId}/models`)) as any[];
-            const latest = models.find((m: any) => m["isLatest"] || m["isLatestValid"]) ?? models[0];
-            modelVersionId = latest ? String((latest as any)["id"]) : undefined;
-          } catch {
-            // fallback
+        const configurationRevision = Math.max(1, Number(input["configurationRevision"] ?? 1));
+        const scenarioRevision = Math.max(1, Number(input["scenarioRevision"] ?? 1));
+
+        let modelVersionId =
+          typeof input["modelId"] === "string" && z.string().uuid().safeParse(input["modelId"]).success
+            ? (input["modelId"] as string)
+            : undefined;
+
+        try {
+          const models = list.parse(await get(`analyzer/projects/${projectId}/models`)) as Record<
+            string,
+            unknown
+          >[];
+          const staticModels = models.filter(
+            (m) => String(m["origin"] ?? "").toUpperCase() !== "RUNTIME_ENRICHED",
+          );
+          const candidatePool = staticModels.length > 0 ? staticModels : models;
+
+          if (modelVersionId) {
+            const chosenModel = models.find((m) => String(m["id"]) === modelVersionId);
+            if (chosenModel && chosenModel["sourceSnapshotId"]) {
+              snapshotId = String(chosenModel["sourceSnapshotId"]);
+            }
+          } else if (candidatePool.length > 0) {
+            const matchingSnapshotModel = candidatePool.find(
+              (m) => String(m["sourceSnapshotId"]) === snapshotId,
+            );
+            const latestModel =
+              matchingSnapshotModel ??
+              candidatePool.find((m) => m["isLatest"] || m["isLatestValid"]) ??
+              candidatePool[candidatePool.length - 1];
+            if (latestModel) {
+              modelVersionId = String(latestModel["id"]);
+              if (latestModel["sourceSnapshotId"]) {
+                snapshotId = String(latestModel["sourceSnapshotId"]);
+              }
+            }
           }
+        } catch {
+          // fallback if model list query fails
         }
 
         const rawScenarioName = input["scenarioName"] as string | undefined;
-        const scenarioName = rawScenarioName?.trim() || ("Scenario " + scenarioId.slice(0, 8));
+        const scenarioName = rawScenarioName?.trim() || "Scenario " + scenarioId.slice(0, 8);
         const steps = (input["steps"] as unknown[]) ?? [];
 
         const created = object.parse(
@@ -755,25 +905,42 @@ export async function executeJava(
             profileName: "SPRING_BOOT_DOTNET_COMPOSE_V1",
             scenarioConfig: {
               scenarioId,
+              configurationRevision,
+              scenarioRevision,
+              planning: {
+                scenarioId,
+                configurationRevision,
+                scenarioRevision,
+              },
               steps,
             },
           }),
         );
         const sessionId = String(created["id"]);
 
+        let approvedOk = false;
         try {
           await post(`analyzer/runtime/sessions/${sessionId}/approve`, {});
+          approvedOk = true;
         } catch {
           // approve non-fatal
         }
+
         try {
           await post(`analyzer/runtime/sessions/${sessionId}/dispatch`, {});
         } catch {
-          // dispatch non-fatal
+          // dispatch non-fatal if auto-dispatch already completed it
         }
 
         const current = await get(`analyzer/runtime/sessions/${sessionId}`);
-        return courseworkRuntime(current);
+        return courseworkRuntime(current, {
+          ...input,
+          snapshotId,
+          scenarioId,
+          modelId: modelVersionId ?? input["modelId"],
+          configurationRevision,
+          scenarioRevision,
+        });
       }
     }
     case "runtimeSessions":
@@ -786,7 +953,7 @@ export async function executeJava(
                 : `analyzer/projects/${id(input, "projectId")}/runtime-sessions`,
             ),
           )
-          .map(courseworkRuntime),
+          .map((s) => courseworkRuntime(s)),
       );
     case "runtimeSession":
       return courseworkRuntime(await get(`analyzer/runtime/sessions/${id(input, "sessionId")}`));

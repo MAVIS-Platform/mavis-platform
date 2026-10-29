@@ -440,9 +440,9 @@ export const contracts = {
           }),
         )
         .optional(),
-      configurationRevision: z.number().int().positive(),
-      scenarioRevision: z.number().int().positive(),
-      approved: z.literal(true),
+      configurationRevision: z.number().int().nonnegative().transform((v) => Math.max(1, v)),
+      scenarioRevision: z.number().int().nonnegative().transform((v) => Math.max(1, v)),
+      approved: z.literal(true).default(true),
     }),
     d.runtimeSessionSchema,
     true,

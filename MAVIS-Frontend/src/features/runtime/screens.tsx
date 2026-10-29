@@ -84,6 +84,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const preflight = useApiMutation("runtimePreflight");
   const save = useApiMutation("saveRuntimeConfiguration");
 
+  const models = useApiQuery("modelVersions", { projectId });
+  const staticModels = (models.data ?? []).filter(
+    (m) => !("origin" in m) || (m as any).origin !== "RUNTIME_ENRICHED",
+  );
+  const defaultModelId = (staticModels[0] ?? models.data?.[0])?.id ?? "";
+
   const [snapshotId, setSnapshotId] = useState("");
   const [profileId, setProfileId] = useState("SPRING_BOOT_DOTNET_COMPOSE_V1");
   const [serviceMappings, setServiceMappings] = useState<Record<string, string>>({});
@@ -95,6 +101,26 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       setProfileId(config.data.profileId);
     }
   }, [config.data?.profileId]);
+
+  useEffect(() => {
+    if (!snapshotId && snapshots.data?.length) {
+      const preferredSnapId =
+        config.data?.snapshotId ||
+        (staticModels[0] ?? models.data?.[0])?.snapshotId ||
+        snapshots.data[0]?.id;
+      if (preferredSnapId) setSnapshotId(preferredSnapId);
+    }
+  }, [snapshots.data, config.data?.snapshotId, models.data, snapshotId]);
+
+  useEffect(() => {
+    const rawProfile = config.data?.profile as Record<string, unknown> | undefined;
+    if (rawProfile && typeof rawProfile["serviceMappings"] === "object" && rawProfile["serviceMappings"] !== null) {
+      setServiceMappings((prev) => ({
+        ...(rawProfile["serviceMappings"] as Record<string, string>),
+        ...prev,
+      }));
+    }
+  }, [config.data?.profile]);
 
   useEffect(() => {
     if (preflight.data?.detectedServices?.length) {
@@ -267,7 +293,8 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 {
                   projectId,
                   profileId,
-                  snapshotId: snapshotId || undefined,
+                  snapshotId: snapshotId || snapshots.data?.[0]?.id || undefined,
+                  modelId: defaultModelId || undefined,
                   profile: {
                     serviceMappings,
                     secretReferences: secretRefs
@@ -339,6 +366,23 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   ]);
   const [runMessage, setRunMessage] = useState("");
 
+  const staticModels = (models.data ?? []).filter(
+    (m) => !("origin" in m) || (m as any).origin !== "RUNTIME_ENRICHED",
+  );
+  const selectableModels = staticModels.length > 0 ? staticModels : (models.data ?? []);
+
+  useEffect(() => {
+    if (!modelId && selectableModels.length > 0) {
+      const preferred = selectableModels.find((m) => m.latest) ?? selectableModels[0];
+      if (preferred) {
+        setModelId(preferred.id);
+        if (preferred.snapshotId) {
+          setSnapshotId(preferred.snapshotId);
+        }
+      }
+    }
+  }, [selectableModels, modelId]);
+
   useEffect(() => {
     if (!snapshotId && snapshots.data?.length) {
       const newest = snapshots.data[0];
@@ -346,12 +390,13 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     }
   }, [snapshots.data, snapshotId]);
 
-  useEffect(() => {
-    if (!modelId && models.data?.length) {
-      const newest = models.data[0];
-      if (newest) setModelId(newest.id);
+  const handleModelChange = (nextModelId: string) => {
+    setModelId(nextModelId);
+    const matched = (models.data ?? []).find((m) => m.id === nextModelId);
+    if (matched?.snapshotId) {
+      setSnapshotId(matched.snapshotId);
     }
-  }, [models.data, modelId]);
+  };
 
   useEffect(() => {
     if (scenarios.data && scenarios.data.length > 0) {
@@ -394,14 +439,24 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   };
 
   const handleCreateAndRun = (approveAndDispatch: boolean) => {
-    if (!snapshotId) return;
-    setRunMessage(approveAndDispatch ? "Creating, approving and dispatching run..." : "Creating runtime session...");
+    const chosenModel =
+      (models.data ?? []).find((m) => m.id === modelId) ??
+      selectableModels[0] ??
+      models.data?.[0];
+    const effectiveSnapshotId = chosenModel?.snapshotId || snapshotId || snapshots.data?.[0]?.id;
+    if (!effectiveSnapshotId) return;
+
+    setRunMessage(
+      approveAndDispatch
+        ? "Creating, approving and dispatching run..."
+        : "Creating runtime session...",
+    );
 
     start.mutate(
       {
         projectId,
-        snapshotId,
-        modelId: modelId || undefined,
+        snapshotId: effectiveSnapshotId,
+        modelId: chosenModel?.id || modelId || undefined,
         scenarioId: crypto.randomUUID(),
         scenarioName: scenarioName?.trim() || "Scenario " + new Date().toLocaleTimeString(),
         steps: steps.map((st, i) => ({
@@ -412,7 +467,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           path: st.path,
           expectedStatus: parseInt(st.status, 10) || 200,
         })),
-        configurationRevision: config.data?.revision ?? 1,
+        configurationRevision: Math.max(1, Number(config.data?.revision || 1)),
         scenarioRevision: 1,
         approved: true,
       },
@@ -456,8 +511,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             <SelectField
               label="Model version"
               value={modelId}
-              onChange={setModelId}
-              options={(models.data ?? []).map((m) => ({
+              onChange={handleModelChange}
+              options={selectableModels.map((m) => ({
                 value: m.id,
                 label: `${"label" in m && m.label ? m.label : `Revision ${m.revision}`} · ${m.id.slice(0, 8)}`,
               }))}

@@ -74,7 +74,7 @@ export function useApiQuery<K extends Operation>(
     if (!terminal) return;
     const scope = JSON.parse(terminalScope) as Record<string, unknown>;
     const related = operation.startsWith("runtime")
-      ? ["platformSummary"]
+      ? ["models", "modelVersions", "model", "diagrams", "runtimeSequence", "platformSummary"]
       : [
           "models",
           "modelVersions",
