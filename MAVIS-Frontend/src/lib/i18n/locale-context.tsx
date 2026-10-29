@@ -15,6 +15,16 @@ interface LocaleContextValue {
 const STORAGE_KEY = "mavis.locale";
 
 export const EXACT_VI_DICTIONARY: Record<string, string> = {
+  "Analysis and deletion history across your projects · newest activity first": "Lịch sử phân tích và xóa dữ liệu · hoạt động mới nhất trước",
+  "Project activity": "Hoạt động dự án",
+  "No recorded activity yet.": "Chưa có hoạt động được ghi nhận.",
+  "Project removed": "Đã gỡ dự án",
+  "Snapshot deleted": "Đã xóa bản chụp",
+  "Soft delete · history retained": "Xóa mềm · giữ nguyên lịch sử",
+  "Snapshot and generated revisions removed": "Đã xóa bản chụp và các revision sinh ra",
+  "Actor not recorded": "Chưa ghi nhận người thao tác",
+  "activity events": "sự kiện hoạt động",
+
   "Stop active analysis/runtime work and resolve cleanup before deleting this item.": "Cần dừng phân tích/runtime và xử lý việc dọn dẹp còn tồn trước khi xóa.",
   "Published reference data, submitted coursework and runtime-linked snapshots must be retained and cannot be deleted here.": "Không thể xóa dữ liệu tham chiếu đã công bố, bài đã nộp hoặc bản chụp liên kết runtime để giữ nguyên lịch sử.",
   "This snapshot has dependent revisions or protected records. Delete the dependent data only through its own supported workflow, or retain this snapshot.": "Bản chụp này có revision phụ thuộc hoặc dữ liệu được bảo vệ. Cần giữ bản chụp hoặc xử lý dữ liệu phụ thuộc qua chức năng tương ứng.",

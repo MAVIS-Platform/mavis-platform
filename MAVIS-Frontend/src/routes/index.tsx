@@ -6,7 +6,7 @@ import { ArrowUpRight, Network } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
 import { RequestState } from "@/components/shared/request-state";
-import { DataTable, DetailPanel, SummaryCard } from "@/components/shared/data";
+import { DataTable, DetailPanel, SummaryCard, StatusBadge } from "@/components/shared/data";
 import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
 import { Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { Button } from "@/components/ui/button";
@@ -249,20 +249,16 @@ function Projects() {
                 )}
               </DetailPanel>
             </section>
-            <ProjectActivity projectCount={projects.data?.length ?? 0} />
+            <ProjectActivity />
           </div>
         </RequestState>
       </PageContainer>
     </div>
   );
 }
-function ProjectActivity({ projectCount }: { projectCount: number }) {
+function ProjectActivity() {
   const [page, setPage] = useState(0);
-  const q = useApiQuery(
-    "projectAnalysisActivity",
-    { page, size: 10 },
-    { enabled: projectCount > 0, refreshMs: 30000 },
-  );
+  const q = useApiQuery("projectActivity", { page, size: 10 }, { refreshMs: 30000 });
   return (
     <DetailPanel
       title="Recent activity"
@@ -270,7 +266,7 @@ function ProjectActivity({ projectCount }: { projectCount: number }) {
         <Button
           size="sm"
           variant="outline"
-          disabled={!projectCount || q.isFetching}
+          disabled={q.isFetching}
           onClick={() => void q.refetch()}
         >
           {q.isFetching ? "Refreshing…" : "Refresh"}
@@ -278,99 +274,138 @@ function ProjectActivity({ projectCount }: { projectCount: number }) {
       }
     >
       <p className="text-xs text-muted-foreground">
-        Analysis history across your projects · newest activity first
+        Analysis and deletion history across your projects · newest activity first
       </p>
-      {!projectCount ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Your project activity will appear here after importing and analyzing source.
-        </p>
-      ) : (
-        <RequestState query={q}>
-          <div className="space-y-4">
-            <DataTable
-              caption="Analysis activity across all your projects"
-              emptyDescription="No analysis runs yet. Open a project to analyze its source."
-              rows={q.data?.items ?? []}
-              rowKey={(job) => job.id}
-              columns={[
-                {
-                  key: "time",
-                  label: "Time",
-                  render: (job) => {
-                    const value = job.completedAt ?? job.startedAt;
-                    const date = value ? new Date(value) : null;
-                    return date && !Number.isNaN(date.getTime()) ? (
-                      <time
-                        dateTime={value!}
-                        title={date.toLocaleString()}
-                        className="whitespace-nowrap text-xs"
-                      >
-                        {date.toLocaleDateString()}
-                        <span className="mt-1 block text-muted-foreground">
-                          {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </time>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Not available</span>
-                    );
-                  },
+      <RequestState query={q}>
+        <div className="space-y-4">
+          <DataTable
+            caption="Project activity"
+            emptyDescription="No recorded activity yet."
+            rows={q.data?.items ?? []}
+            rowKey={(row) => `${row.kind}:${row.id}`}
+            columns={[
+              {
+                key: "time",
+                label: "Time",
+                render: (row) => {
+                  const date = row.occurredAt ? new Date(row.occurredAt) : null;
+                  return date && !Number.isNaN(date.getTime()) ? (
+                    <time
+                      dateTime={row.occurredAt!}
+                      title={date.toLocaleString()}
+                      className="whitespace-nowrap text-xs"
+                    >
+                      {date.toLocaleDateString()}
+                      <span className="mt-1 block text-muted-foreground">
+                        {date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    </time>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Not available</span>
+                  );
                 },
-                {
-                  key: "project",
-                  label: "Project",
-                  render: (job) => (
+              },
+              {
+                key: "project",
+                label: "Project",
+                render: (row) =>
+                  row.projectDeleted ? (
+                    <span className="font-medium text-muted-foreground" translate="no">
+                      {row.projectName}
+                    </span>
+                  ) : (
                     <Link
-                      href={`/project-overview?project=${encodeURIComponent(job.projectId)}`}
+                      href={`/project-overview?project=${encodeURIComponent(row.projectId)}`}
                       className="font-medium text-primary hover:underline"
                     >
-                      {job.projectName}
+                      {row.projectName}
                     </Link>
                   ),
-                },
-                {
-                  key: "activity",
-                  label: "Analysis activity",
-                  render: (job) => (
-                    <div className="space-y-1">
-                      <AnalysisStatusIndicator job={job} compact />
-                      <p className="text-xs text-muted-foreground">
-                        Run {job.id.slice(0, 8)} · Snapshot {job.snapshotId.slice(0, 8)}
-                      </p>
-                    </div>
-                  ),
-                },
-                {
-                  key: "open",
-                  label: "Details",
-                  render: (job) => (
+              },
+              {
+                key: "activity",
+                label: "Activity",
+                render: (row) => (
+                  <div className="space-y-1">
+                    {row.job ? (
+                      <>
+                        <AnalysisStatusIndicator job={row.job} compact />
+                        <p className="text-xs text-muted-foreground">
+                          Run {row.job.id.slice(0, 8)} · Snapshot {row.job.snapshotId.slice(0, 8)}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <StatusBadge
+                          status={
+                            row.kind === "PROJECT_DELETED" ? "Project removed" : "Snapshot deleted"
+                          }
+                          variant="outline"
+                        />
+                        <p className="break-words text-xs" translate="no">
+                          {row.targetName}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {row.actorName ? (
+                            <>
+                              By <span translate="no">{row.actorName}</span>
+                            </>
+                          ) : row.actorId ? (
+                            <>
+                              User <code>{row.actorId.slice(0, 8)}</code>
+                            </>
+                          ) : (
+                            "Actor not recorded"
+                          )}
+                        </p>
+                      </>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                key: "open",
+                label: "Details",
+                render: (row) =>
+                  row.job && !row.projectDeleted ? (
                     <Button asChild size="sm" variant="ghost">
                       <Link
                         href={
-                          job.modelId
-                            ? `/architecture?project=${encodeURIComponent(job.projectId)}&model=${encodeURIComponent(job.modelId)}`
-                            : `/analysis-history?project=${encodeURIComponent(job.projectId)}`
+                          row.job.modelId
+                            ? `/architecture?project=${encodeURIComponent(row.projectId)}&model=${encodeURIComponent(row.job.modelId)}`
+                            : `/analysis-history?project=${encodeURIComponent(row.projectId)}`
                         }
                       >
-                        {job.modelId ? "Inspect" : "View history"}
+                        Inspect
                       </Link>
                     </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      {row.kind === "PROJECT_DELETED"
+                        ? "Soft delete · history retained"
+                        : row.kind === "SNAPSHOT_DELETED"
+                          ? "Snapshot and generated revisions removed"
+                          : "Project removed"}
+                      <span className="mt-1 block font-mono" title={row.targetId ?? row.id}>
+                        {(row.targetId ?? row.id).slice(0, 8)}
+                      </span>
+                    </span>
                   ),
-                },
-              ]}
-            />
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-muted-foreground">{q.data?.total ?? 0} analysis runs</p>
-              {(q.data?.total ?? 0) > 10 && (
-                <Pagination
-                  page={page + 1}
-                  pageCount={Math.ceil((q.data?.total ?? 0) / 10)}
-                  onPageChange={(n) => setPage(n - 1)}
-                />
-              )}
-            </div>
+              },
+            ]}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">{q.data?.total ?? 0} activity events</p>
+            {(q.data?.total ?? 0) > 10 && (
+              <Pagination
+                page={page + 1}
+                pageCount={Math.ceil((q.data?.total ?? 0) / 10)}
+                onPageChange={(n) => setPage(n - 1)}
+              />
+            )}
           </div>
-        </RequestState>
-      )}
+        </div>
+      </RequestState>
     </DetailPanel>
   );
 }
