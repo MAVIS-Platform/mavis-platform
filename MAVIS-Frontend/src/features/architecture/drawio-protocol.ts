@@ -1,5 +1,18 @@
-export const DRAWIO_URL = process.env["NEXT_PUBLIC_DRAWIO_URL"] ?? "http://127.0.0.1:8090";
+export const DRAWIO_URL =
+  process.env["NEXT_PUBLIC_DRAWIO_URL"] ?? "http://127.0.0.1:8090";
 export const DRAWIO_ORIGIN = new URL(DRAWIO_URL).origin;
+
+export const FALLBACK_DRAWIO_URL = "https://embed.diagrams.net";
+export const FALLBACK_DRAWIO_ORIGIN = new URL(FALLBACK_DRAWIO_URL).origin;
+
+export const ALLOWED_DRAWIO_ORIGINS = new Set<string>([
+  DRAWIO_ORIGIN,
+  "http://127.0.0.1:8090",
+  "http://localhost:8090",
+  FALLBACK_DRAWIO_ORIGIN,
+  "https://app.diagrams.net",
+]);
+
 // Arrange and route connectors locally, without changing element IDs or labels.
 export const DRAWIO_LAYOUT = [
   {
@@ -14,19 +27,40 @@ export const DRAWIO_LAYOUT = [
     },
   },
 ];
+
 export const DRAWIO_MAX_XML_LENGTH = 2_000_000;
+
+const ALLOWED_DRAWIO_EVENTS = new Set<string>([
+  "configure",
+  "init",
+  "load",
+  "layout",
+  "fit",
+  "save",
+  "autosave",
+  "export",
+]);
+
 export function readDrawioEvent(
   message: Pick<MessageEvent, "origin" | "source" | "data">,
   frame: unknown,
-): { event: string; xml?: string; error?: unknown } | null {
+  allowedOrigins?: Set<string> | string,
+): { event: string; xml?: string; data?: string; error?: unknown } | null {
+  const isOriginAllowed = allowedOrigins
+    ? typeof allowedOrigins === "string"
+      ? message.origin === allowedOrigins
+      : allowedOrigins.has(message.origin)
+    : message.origin === DRAWIO_ORIGIN;
+
   if (
     !frame ||
-    message.origin !== DRAWIO_ORIGIN ||
+    !isOriginAllowed ||
     message.source !== frame ||
     typeof message.data !== "string" ||
-    message.data.length > DRAWIO_MAX_XML_LENGTH + 100_000
-  )
+    message.data.length > DRAWIO_MAX_XML_LENGTH * 3
+  ) {
     return null;
+  }
   try {
     const data: unknown = JSON.parse(message.data);
     if (
@@ -34,12 +68,18 @@ export function readDrawioEvent(
       typeof data !== "object" ||
       !("event" in data) ||
       typeof data.event !== "string" ||
-      !["init", "load", "layout", "fit", "save", "autosave", "export"].includes(data.event)
-    )
+      !ALLOWED_DRAWIO_EVENTS.has(data.event)
+    ) {
       return null;
-    if ("xml" in data && (typeof data.xml !== "string" || data.xml.length > DRAWIO_MAX_XML_LENGTH))
+    }
+    if (
+      "xml" in data &&
+      data.xml !== undefined &&
+      (typeof data.xml !== "string" || data.xml.length > DRAWIO_MAX_XML_LENGTH)
+    ) {
       return null;
-    return data as { event: string; xml?: string; error?: unknown };
+    }
+    return data as { event: string; xml?: string; data?: string; error?: unknown };
   } catch {
     return null;
   }
@@ -60,9 +100,12 @@ export function drawioFitRequest(
     data.containerSize?.height,
   ];
   if (
-    !values.every((number) => typeof number === "number" && Number.isFinite(number) && number > 0)
-  )
+    !values.every(
+      (number) => typeof number === "number" && Number.isFinite(number) && number > 0,
+    )
+  ) {
     return null;
+  }
   const [modelWidth, modelHeight, width, height] = values as number[];
   return {
     action: "fit",

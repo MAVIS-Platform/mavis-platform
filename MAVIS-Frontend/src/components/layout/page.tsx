@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/lib/i18n/locale-context";
 
 export function PageContainer({
   children,
@@ -31,20 +32,22 @@ export function SectionHeader({
   description?: string;
   actions?: ReactNode;
 }) {
+  const { t } = useLocale();
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+        <h1 className="text-xl font-semibold tracking-tight">{t(title)}</h1>
+        {description && <p className="mt-1 text-sm text-muted-foreground">{t(description)}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }
 export function ContextPanel({ title, children }: { title: string; children: ReactNode }) {
+  const { t } = useLocale();
   return (
-    <aside aria-label={title} className="mavis-panel min-w-0 self-start p-6">
-      <h2 className="sr-only">{title}</h2>
+    <aside aria-label={t(title)} className="mavis-panel min-w-0 self-start p-6">
+      <h2 className="sr-only">{t(title)}</h2>
       {children}
     </aside>
   );
@@ -54,6 +57,7 @@ export function Breadcrumbs({
 }: {
   items: readonly { label: string; href?: string; visibility?: "sm" | "lg" }[];
 }) {
+  const { t } = useLocale();
   return (
     <nav aria-label="Breadcrumb" className="min-w-0 flex-1">
       <ol className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -70,7 +74,7 @@ export function Breadcrumbs({
             )}
           >
             {item.href ? (
-              <Link href={item.href}>{item.label}</Link>
+              <Link href={item.href}>{t(item.label)}</Link>
             ) : (
               <span
                 aria-current={i === items.length - 1 ? "page" : undefined}
@@ -80,7 +84,7 @@ export function Breadcrumbs({
                   item.visibility === "lg" && "max-w-40",
                 )}
               >
-                {item.label}
+                {t(item.label)}
               </span>
             )}
             {i < items.length - 1 && (

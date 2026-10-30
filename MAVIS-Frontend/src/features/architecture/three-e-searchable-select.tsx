@@ -69,7 +69,7 @@ export function SearchableThreeESelect({
       <div className="flex items-center justify-between gap-2">
         <label className="text-xs font-medium text-foreground">{label}</label>
         <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
-          {options.length} item{options.length === 1 ? "" : "s"}
+          {`${options.length} ${options.length === 1 ? "item" : "items"}`}
         </span>
       </div>
 

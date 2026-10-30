@@ -23,6 +23,7 @@ import { useApiMutation, useApiQuery, useSelection, useSession } from "@/hooks/u
 import { hasPermission, type Permission } from "@/lib/auth/permissions";
 import { DRAWIO_THEME_OPTIONS, type DrawioTheme } from "@/lib/drawio/rules";
 import { roleLabels, type AppRole } from "@/lib/navigation";
+import { useLocale } from "@/lib/i18n/locale-context";
 
 const ALL_PERMISSIONS: ReadonlyArray<{ id: Permission; label: string }> = [
   { id: "project:read", label: "Read Projects & Models" },
@@ -49,11 +50,12 @@ export default function ProfilePage() {
 }
 
 function Profile() {
+  const { t } = useLocale();
   const session = useSession();
   if (session.isPending) {
     return (
       <PageContainer>
-        <p className="text-sm text-muted-foreground">Loading profile…</p>
+        <p className="text-sm text-muted-foreground">{t("Loading profile…")}</p>
       </PageContainer>
     );
   }
@@ -61,7 +63,7 @@ function Profile() {
     return (
       <PageContainer>
         <p role="alert" className="text-sm text-destructive">
-          Sign in to edit your profile.
+          {t("Sign in to edit your profile.")}
         </p>
       </PageContainer>
     );
@@ -83,6 +85,7 @@ function ProfileDashboard({
   const queryClient = useQueryClient();
   const selection = useSelection();
   const { appearance, setAppearance } = useAppearance();
+  const { t } = useLocale();
 
   const update = useApiMutation("updateProfile");
   const signOut = useApiMutation("signOut");
@@ -125,8 +128,8 @@ function ProfileDashboard({
           setConfirmPassword("");
           setSavedNotice(
             newPassword
-              ? "Profile and password updated successfully."
-              : "Profile display name updated.",
+              ? t("Profile and password updated successfully.")
+              : t("Profile display name updated."),
           );
         },
       },
@@ -178,7 +181,7 @@ function ProfileDashboard({
             disabled={signOut.isPending}
           >
             <LogOut className="mr-1.5 size-4" />
-            {signOut.isPending ? "Signing out…" : "Sign out"}
+            {signOut.isPending ? t("Signing out…") : t("Sign out")}
           </Button>
         }
       />
@@ -197,21 +200,21 @@ function ProfileDashboard({
                 <StatusBadge status="active session" variant="success" />
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span>Account ID:</span>
+                <span>{t("Account ID:")}</span>
                 <code className="rounded bg-muted px-1.5 py-0.5 font-mono">{user.id}</code>
                 <button
                   type="button"
                   onClick={handleCopyId}
                   className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-muted"
-                  title="Copy Account ID"
+                  title={t("Copy Account ID")}
                 >
                   {copiedId ? (
                     <>
-                      <Check className="size-3" /> Copied
+                      <Check className="size-3" /> {t("Copied")}
                     </>
                   ) : (
                     <>
-                      <Copy className="size-3" /> Copy
+                      <Copy className="size-3" /> {t("Copy")}
                     </>
                   )}
                 </button>
@@ -222,12 +225,12 @@ function ProfileDashboard({
           <div className="flex flex-wrap items-center gap-2">
             {canReadProjects && (
               <Button asChild size="sm" variant="outline">
-                <Link href="/">My Projects ({projectList.length})</Link>
+                <Link href="/">{t("My Projects")} ({projectList.length})</Link>
               </Button>
             )}
             {canReadWorkspaces && (
               <Button asChild size="sm" variant="outline">
-                <Link href="/workspaces">My Workspaces ({workspaceList.length})</Link>
+                <Link href="/workspaces">{t("My Workspaces")} ({workspaceList.length})</Link>
               </Button>
             )}
           </div>
@@ -251,27 +254,27 @@ function ProfileDashboard({
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <UserRound className="size-3.5" />
-                <span>Profile Information</span>
+                <span>{t("Profile Information")}</span>
               </div>
               <label className="block space-y-1.5 text-sm font-medium">
-                <span>Full name</span>
+                <span>{t("Full name")}</span>
                 <Input
                   required
                   maxLength={255}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   autoComplete="name"
-                  placeholder="Enter your display name"
+                  placeholder={t("Enter your display name")}
                 />
               </label>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="rounded-lg border bg-muted/30 p-3">
-                  <p className="text-xs text-muted-foreground">Assigned role</p>
+                  <p className="text-xs text-muted-foreground">{t("Assigned role")}</p>
                   <p className="mt-1 text-sm font-medium">{roleLabels[user.role] ?? user.role}</p>
                 </div>
                 <div className="rounded-lg border bg-muted/30 p-3">
-                  <p className="text-xs text-muted-foreground">Role code</p>
+                  <p className="text-xs text-muted-foreground">{t("Role code")}</p>
                   <p className="mt-1 font-mono text-sm font-medium">{user.role}</p>
                 </div>
               </div>
@@ -280,11 +283,11 @@ function ProfileDashboard({
             <div className="space-y-3 border-t pt-4">
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 <KeyRound className="size-3.5" />
-                <span>Change Password</span>
+                <span>{t("Change Password")}</span>
               </div>
 
               <label className="block space-y-1.5 text-sm font-medium">
-                <span>Current password</span>
+                <span>{t("Current password")}</span>
                 <Input
                   type="password"
                   maxLength={100}
@@ -292,13 +295,13 @@ function ProfileDashboard({
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   autoComplete="current-password"
-                  placeholder="Current password"
+                  placeholder={t("Current password")}
                 />
               </label>
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block space-y-1.5 text-sm font-medium">
-                  <span>New password (optional)</span>
+                  <span>{t("New password (optional)")}</span>
                   <Input
                     type="password"
                     minLength={6}
@@ -306,12 +309,12 @@ function ProfileDashboard({
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     autoComplete="new-password"
-                    placeholder="At least 6 characters"
+                    placeholder={t("At least 6 characters")}
                   />
                 </label>
 
                 <label className="block space-y-1.5 text-sm font-medium">
-                  <span>Confirm new password</span>
+                  <span>{t("Confirm new password")}</span>
                   <Input
                     type="password"
                     minLength={6}
@@ -319,14 +322,14 @@ function ProfileDashboard({
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     autoComplete="new-password"
-                    placeholder="Re-enter new password"
+                    placeholder={t("Re-enter new password")}
                   />
                 </label>
               </div>
 
               {passwordMismatch && (
                 <p role="alert" className="text-xs font-medium text-destructive">
-                  New password and confirmation do not match.
+                  {t("New password and confirmation do not match.")}
                 </p>
               )}
             </div>
@@ -336,7 +339,7 @@ function ProfileDashboard({
                 disabled={update.isPending || !fullName.trim() || passwordMismatch}
                 type="submit"
               >
-                {update.isPending ? "Saving…" : "Save profile"}
+                {update.isPending ? t("Saving…") : t("Save profile")}
               </Button>
               {fullName !== user.name && (
                 <Button
@@ -350,7 +353,7 @@ function ProfileDashboard({
                     setConfirmPassword("");
                   }}
                 >
-                  Reset
+                  {t("Reset")}
                 </Button>
               )}
             </div>
@@ -379,7 +382,7 @@ function ProfileDashboard({
           <DetailPanel title="Appearance preferences">
             <div className="space-y-4">
               <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Interface theme</p>
+                <p className="text-xs font-medium text-muted-foreground">{t("Interface theme")}</p>
                 <div className="grid grid-cols-2 gap-2.5">
                   <button
                     type="button"
@@ -391,7 +394,7 @@ function ProfileDashboard({
                     }`}
                   >
                     <Sun className="size-4 shrink-0" />
-                    <span>Light</span>
+                    <span>{t("Light")}</span>
                   </button>
                   <button
                     type="button"
@@ -403,13 +406,13 @@ function ProfileDashboard({
                     }`}
                   >
                     <Moon className="size-4 shrink-0" />
-                    <span>Dark</span>
+                    <span>{t("Dark")}</span>
                   </button>
                 </div>
               </div>
 
               <div className="space-y-2 border-t pt-4">
-                <p className="text-xs font-medium text-muted-foreground">Diagram palette</p>
+                <p className="text-xs font-medium text-muted-foreground">{t("Diagram palette")}</p>
                 <div className="flex flex-wrap gap-2">
                   {DRAWIO_THEME_OPTIONS.map((opt) => (
                     <button
@@ -422,7 +425,7 @@ function ProfileDashboard({
                           : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                       }`}
                     >
-                      {opt.label}
+                      {t(opt.label)}
                     </button>
                   ))}
                 </div>
@@ -438,7 +441,7 @@ function ProfileDashboard({
                     key={perm.id}
                     className="flex items-center justify-between gap-2 rounded-lg border bg-background/40 px-3 py-2.5"
                   >
-                    <span className="text-xs font-semibold">{perm.label}</span>
+                    <span className="text-xs font-semibold">{t(perm.label)}</span>
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                       {perm.id}
                     </code>
@@ -448,7 +451,7 @@ function ProfileDashboard({
 
               {canReadProjects && projectList.length > 0 && (
                 <div className="space-y-2 border-t pt-3">
-                  <p className="text-xs font-medium text-muted-foreground">Recent projects</p>
+                  <p className="text-xs font-medium text-muted-foreground">{t("Recent projects")}</p>
                   <div className="divide-y rounded-lg border bg-background/40">
                     {projectList.slice(0, 3).map((p) => (
                       <div
@@ -458,7 +461,7 @@ function ProfileDashboard({
                         <div className="min-w-0">
                           <span className="font-medium">{p.name}</span>
                           <span className="ml-2 text-muted-foreground">
-                            {p.services ?? 0} services
+                            {p.services ?? 0} {t("services")}
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -469,7 +472,7 @@ function ProfileDashboard({
                             className="h-7 px-2 text-xs"
                             onClick={() => selection.setProjectId(p.id)}
                           >
-                            <Link href={`/project-overview?project=${p.id}`}>Overview</Link>
+                            <Link href={`/project-overview?project=${p.id}`}>{t("Overview")}</Link>
                           </Button>
                           <Button
                             asChild
@@ -478,7 +481,7 @@ function ProfileDashboard({
                             className="h-7 px-2 text-xs"
                             onClick={() => selection.setProjectId(p.id)}
                           >
-                            <Link href={`/diagrams?project=${p.id}`}>Diagrams</Link>
+                            <Link href={`/diagrams?project=${p.id}`}>{t("Diagrams")}</Link>
                           </Button>
                         </div>
                       </div>

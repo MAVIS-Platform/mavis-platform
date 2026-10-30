@@ -33,6 +33,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
+import { useLocale } from "@/lib/i18n/locale-context";
 
 export function FormField({
   label,
@@ -51,12 +52,13 @@ export function FormField({
     "aria-describedby": string | undefined;
   }) => ReactNode;
 }) {
+  const { t } = useLocale();
   const id = useId();
   return (
     <div className="space-y-2">
       <label htmlFor={id} className="flex items-center gap-1.5 text-xs font-medium">
-        <span>{label}</span>
-        {sublabel && <span className="font-normal text-muted-foreground/70">{sublabel}</span>}
+        <span>{t(label)}</span>
+        {sublabel && <span className="font-normal text-muted-foreground/70">{t(sublabel)}</span>}
       </label>
       {children({
         id,
@@ -69,7 +71,7 @@ export function FormField({
           className={error ? "text-xs text-destructive" : "text-xs text-muted-foreground"}
           role={error ? "alert" : undefined}
         >
-          {error ?? hint}
+          {t(error ?? hint ?? "")}
         </p>
       )}
     </div>
@@ -84,6 +86,7 @@ export function SearchInput({
   onChange: (value: string) => void;
   label?: string;
 }) {
+  const { t } = useLocale();
   return (
     <FormField label={label}>
       {(props) => (
@@ -92,7 +95,7 @@ export function SearchInput({
           type="search"
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          placeholder={label}
+          placeholder={t(label)}
         />
       )}
     </FormField>
@@ -113,6 +116,7 @@ export function SelectField({
   options: readonly { value: string; label: string }[];
   disabled?: boolean;
 }) {
+  const { t } = useLocale();
   return (
     <FormField label={label} sublabel={sublabel}>
       {(props) => (
@@ -125,12 +129,12 @@ export function SelectField({
         >
           {!value && !options.some((option) => option.value === "") && (
             <option value="" disabled>
-              Select {label.toLowerCase()}
+              {t(`Select ${label.toLowerCase()}`)}
             </option>
           )}
           {options.map((option) => (
             <option key={option.value} value={option.value}>
-              {option.label}
+              {t(option.label)}
             </option>
           ))}
         </select>
@@ -166,6 +170,7 @@ export function ConfirmDialog({
   error?: ReactNode;
   children?: ReactNode;
 }) {
+  const { t } = useLocale();
   return (
     <AlertDialog
       open={open}
@@ -175,13 +180,13 @@ export function ConfirmDialog({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
+          <AlertDialogTitle>{t(title)}</AlertDialogTitle>
+          <AlertDialogDescription>{t(description)}</AlertDialogDescription>
         </AlertDialogHeader>
         {children}
         {error}
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={pending}>{t("Cancel")}</AlertDialogCancel>
           <AlertDialogAction
             disabled={pending || confirmDisabled}
             onClick={(event) => {
@@ -189,7 +194,7 @@ export function ConfirmDialog({
               onConfirm();
             }}
           >
-            {pending ? "Saving…" : "Confirm"}
+            {pending ? t("Saving…") : t("Confirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -209,19 +214,20 @@ export function Modal({
   description: string;
   children: ReactNode;
 }) {
+  const { t } = useLocale();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogTitle>{t(title)}</DialogTitle>
+          <DialogDescription>{t(description)}</DialogDescription>
         </DialogHeader>
         {children}
       </DialogContent>
     </Dialog>
   );
 }
-export function Drawer({
+export function SideSheet({
   open,
   onOpenChange,
   title,
@@ -234,14 +240,15 @@ export function Drawer({
   description: string;
   children: ReactNode;
 }) {
+  const { t } = useLocale();
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>{title}</SheetTitle>
-          <SheetDescription>{description}</SheetDescription>
+          <SheetTitle>{t(title)}</SheetTitle>
+          <SheetDescription>{t(description)}</SheetDescription>
         </SheetHeader>
-        {children}
+        <div className="py-4">{children}</div>
       </SheetContent>
     </Sheet>
   );
@@ -253,10 +260,11 @@ export function ActionMenu({
   label: string;
   actions: readonly { label: string; onSelect: () => void; disabled?: boolean }[];
 }) {
+  const { t } = useLocale();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="icon" variant="ghost" aria-label={label}>
+        <Button size="icon" variant="ghost" aria-label={t(label)}>
           <MoreHorizontal />
         </Button>
       </DropdownMenuTrigger>
@@ -267,7 +275,7 @@ export function ActionMenu({
             disabled={action.disabled ?? false}
             onSelect={action.onSelect}
           >
-            {action.label}
+            {t(action.label)}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -283,6 +291,7 @@ export function Pagination({
   pageCount: number;
   onPageChange: (page: number) => void;
 }) {
+  const { t } = useLocale();
   return (
     <nav aria-label="Pagination" className="flex items-center justify-end gap-3 text-xs">
       <Button
@@ -291,10 +300,10 @@ export function Pagination({
         disabled={page <= 1}
         onClick={() => onPageChange(page - 1)}
       >
-        Previous
+        {t("Previous")}
       </Button>
       <span aria-live="polite">
-        Page {page} of {Math.max(1, pageCount)}
+        {t(`Page ${page} of ${Math.max(1, pageCount)}`)}
       </span>
       <Button
         size="sm"
@@ -302,7 +311,7 @@ export function Pagination({
         disabled={page >= pageCount}
         onClick={() => onPageChange(page + 1)}
       >
-        Next
+        {t("Next")}
       </Button>
     </nav>
   );

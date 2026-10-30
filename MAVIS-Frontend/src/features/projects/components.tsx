@@ -145,7 +145,7 @@ function ProjectImportDialog({
       >
         <DialogTrigger asChild>
           <Button size={create ? "default" : "sm"} disabled={!create && !projectId}>
-            {create ? "Import project source" : "Import new snapshot"}
+            {create ? t("Import project source", "Nhập mã nguồn dự án") : t("Import new snapshot", "Nhập bản chụp mới")}
           </Button>
         </DialogTrigger>
       </GuidedTarget>
