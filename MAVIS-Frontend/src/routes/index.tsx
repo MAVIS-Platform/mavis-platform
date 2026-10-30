@@ -129,6 +129,7 @@ function OverviewHelp({ onStart }: { onStart: () => void }) {
   );
 }
 function Projects() {
+  const { t } = useLocale();
   const projects = useApiQuery("projectOverviews", {});
   const selection = useSelection();
   const [search, setSearch] = useState("");
@@ -190,8 +191,14 @@ function Projects() {
                 {filtered.length === 0 ? (
                   <div className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
                     {(projects.data?.length ?? 0) === 0
-                      ? "No projects yet. Click “Import project source” to create and import your first project."
-                      : "No projects match the current filter."}
+                      ? t(
+                          "No projects yet. Click “Import project source” to create and import your first project.",
+                          "Chưa có dự án nào. Bấm “Nhập mã nguồn dự án” để tạo và nhập dự án đầu tiên của bạn.",
+                        )
+                      : t(
+                          "No projects match the current filter.",
+                          "Không có dự án nào khớp với bộ lọc hiện tại.",
+                        )}
                   </div>
                 ) : (
                   <DataTable
@@ -319,6 +326,7 @@ function Projects() {
   );
 }
 function ProjectActivity() {
+  const { t } = useLocale();
   const [page, setPage] = useState(0);
   const q = useApiQuery("projectActivity", { page, size: 10 }, { refreshMs: 30000 });
   return (
@@ -336,7 +344,10 @@ function ProjectActivity() {
       }
     >
       <p className="text-xs text-muted-foreground">
-        Analysis and deletion history across your projects · newest activity first
+        {t(
+          "Analysis and deletion history across your projects · newest activity first",
+          "Lịch sử phân tích và xóa dữ liệu · hoạt động mới nhất trước",
+        )}
       </p>
       <RequestState query={q}>
         <div className="space-y-4">
@@ -393,7 +404,8 @@ function ProjectActivity() {
                       <>
                         <AnalysisStatusIndicator job={row.job} compact />
                         <p className="text-xs text-muted-foreground">
-                          Run {row.job.id.slice(0, 8)} · Snapshot {row.job.snapshotId.slice(0, 8)}
+                          {t("Run", "Lần chạy")} {row.job.id.slice(0, 8)} · {t("Snapshot", "Bản chụp")}{" "}
+                          {row.job.snapshotId.slice(0, 8)}
                         </p>
                       </>
                     ) : (
@@ -438,16 +450,16 @@ function ProjectActivity() {
                             : `/analysis-history?project=${encodeURIComponent(row.projectId)}`
                         }
                       >
-                        Inspect
+                        {t("Inspect", "Kiểm tra")}
                       </Link>
                     </Button>
                   ) : (
                     <span className="text-xs text-muted-foreground">
                       {row.kind === "PROJECT_DELETED"
-                        ? "Soft delete · history retained"
+                        ? t("Soft delete · history retained", "Xóa mềm · giữ lại lịch sử")
                         : row.kind === "SNAPSHOT_DELETED"
-                          ? "Snapshot and generated revisions removed"
-                          : "Project removed"}
+                          ? t("Snapshot and generated revisions removed", "Đã xóa bản chụp và các phiên bản đã tạo")
+                          : t("Project removed", "Đã xóa dự án")}
                       <span className="mt-1 block font-mono" title={row.targetId ?? row.id}>
                         {(row.targetId ?? row.id).slice(0, 8)}
                       </span>

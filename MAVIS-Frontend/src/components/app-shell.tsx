@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { NotificationBell } from "@/features/notifications/inbox";
 import { AppearanceSelector } from "@/components/appearance-selector";
-import { LocaleSwitchButton } from "@/lib/i18n/locale-context";
+import { LocaleSwitchButton, useLocale } from "@/lib/i18n/locale-context";
 import { MavisLogo } from "@/components/mavis-logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -72,6 +72,7 @@ export type AppShellProps = {
 };
 
 export function AppShell(props: AppShellProps) {
+  const { t } = useLocale();
   const pathname = usePathname();
   // FlowFrame verifies the Java session. Do not run the provisional session
   // adapter or its permission gate for the integrated backend mainflow.
@@ -198,6 +199,7 @@ function ShellChrome({
   signOutPending?: boolean;
   onSignOut?: () => void;
 }) {
+  const { t } = useLocale();
   const pathname = usePathname();
   const route = existingRouteContext(pathname);
   const scope =
@@ -354,10 +356,10 @@ function ShellChrome({
           ) : (
             <>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Learning & analysis
+                {t("Learning & analysis", "Học tập & phân tích")}
               </p>
               <p className="mt-1 text-xs font-medium">
-                {live ? "Architecture analysis" : roleLabels[role]}
+                {live ? t("Architecture analysis", "Phân tích kiến trúc") : t(roleLabels[role] ?? role)}
               </p>
             </>
           )}
@@ -385,11 +387,13 @@ function ShellChrome({
               {!isCollapsed && (
                 <div className="mb-4 px-2">
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    {scope === "review"
-                      ? "Submission review"
-                      : scope === "project"
-                        ? "Project workspace"
-                        : "Teaching workspace"}
+                    {t(
+                      scope === "review"
+                        ? "Submission review"
+                        : scope === "project"
+                          ? "Project workspace"
+                          : "Teaching workspace",
+                    )}
                   </p>
                   <p className="mt-1 break-words text-xs font-medium">{context}</p>
                   {scope === "review" && (
@@ -697,13 +701,14 @@ function NavigationGroups({
   label: string;
   currentKind?: "page" | "location";
 }) {
+  const { t } = useLocale();
   return (
-    <nav aria-label={label} className="space-y-5">
+    <nav aria-label={t(label)} className="space-y-5">
       {groups.map((group) => (
         <div key={group.label}>
           {!collapsed && (
             <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              {group.label}
+              {t(group.label)}
             </p>
           )}
           <ul className="space-y-1">
@@ -741,6 +746,7 @@ function NavigationEntry({
   onNavigate: (id: string) => void;
   currentKind: "page" | "location";
 }) {
+  const { t } = useLocale();
   const className = cn(
     "flex min-h-9 w-full items-center gap-2.5 rounded-md px-2 text-left text-xs leading-5 transition-colors",
     collapsed && "justify-center px-0",
@@ -757,8 +763,8 @@ function NavigationEntry({
       <item.icon className="size-4 shrink-0" aria-hidden="true" />
       {!collapsed && (
         <>
-          <span className="min-w-0 flex-1">{item.label}</span>
-          {!preview && !item.href && <span className="text-[9px] font-normal">Planned</span>}
+          <span className="min-w-0 flex-1">{t(item.label)}</span>
+          {!preview && !item.href && <span className="text-[9px] font-normal">{t("Planned", "Đã lên kế hoạch")}</span>}
         </>
       )}
     </>
@@ -768,7 +774,7 @@ function NavigationEntry({
       className={className}
       onClick={() => onNavigate(item.id)}
       aria-current={active ? currentKind : undefined}
-      aria-label={item.label}
+      aria-label={t(item.label)}
     >
       {content}
     </button>
@@ -777,7 +783,7 @@ function NavigationEntry({
       href={item.href}
       className={className}
       aria-current={active ? currentKind : undefined}
-      aria-label={item.label}
+      aria-label={t(item.label)}
     >
       {content}
     </Link>
