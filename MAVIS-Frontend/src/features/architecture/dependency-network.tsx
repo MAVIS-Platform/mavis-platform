@@ -784,7 +784,7 @@ export function DependencyNetwork({
               className="h-7 px-2.5 text-[11px]"
               onClick={() => changeOrigin("all")}
             >
-              All Relationships ({model.edges.length})
+              {`All Relationships (${model.edges.length})`}
             </Button>
             <Button
               type="button"

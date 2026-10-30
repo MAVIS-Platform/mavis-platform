@@ -177,10 +177,14 @@ function Projects() {
                       setStatus(value);
                       setPage(1);
                     }}
-                    options={["all", "ready", "processing", "failed", "partial"].map((value) => ({
-                      value,
-                      label: value,
-                    }))}
+                    options={[
+                      { value: "all", label: "All statuses" },
+                      { value: "ready", label: "Ready" },
+                      { value: "processing", label: "Processing" },
+                      { value: "failed", label: "Failed" },
+                      { value: "partial", label: "Partial" },
+                    ]}
+
                   />
                 </div>
                 {filtered.length === 0 ? (
