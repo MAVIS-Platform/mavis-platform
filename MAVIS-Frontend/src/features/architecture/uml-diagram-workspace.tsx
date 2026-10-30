@@ -562,9 +562,6 @@ export function UmlDiagramWorkspace({
           />
         )}
 
-        {effectiveProjection.diagramKind === "UML_CLASS" && <p role="status" className="text-xs text-muted-foreground">
-          Showing {effectiveProjection.classifiers.length} extracted/designed classifiers in the selected scope. Missing client or model types require inspecting this revision's extracted metadata; they are not invented from field names.
-        </p>}
         {effectiveProjection.diagramKind === "UML_PACKAGE" && <p role="status" className="text-xs text-muted-foreground">
           Packages are grouped by service and qualified name. HTTP service calls do not establish Java package imports; only recorded code dependencies are used.
         </p>}
