@@ -15,7 +15,7 @@ import {
   formatAnalysisJobMessage,
 } from "@/features/source-analysis/components";
 import { ResourceDeleteAction } from "./resource-delete-action";
-import { ProjectStatusBadge, ImportSnapshotAction } from "./components";
+import { ProjectStatusBadge } from "./components";
 import {
   analysisInProgress,
   snapshotAnalysisLabel,
@@ -140,7 +140,6 @@ export function ProjectOverview() {
                     <Link href={`/snapshots?project=${projectId}`}>Analyze Source</Link>
                   </Button>
                 )}
-                <ImportSnapshotAction />
                 <ResourceDeleteAction projectId={projectId} name={query.data.name} />
               </div>
             }
