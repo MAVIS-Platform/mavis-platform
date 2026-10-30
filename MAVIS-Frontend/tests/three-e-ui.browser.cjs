@@ -134,7 +134,7 @@ async function main() {
       "true",
     );
     await page.screenshot({ animations: "disabled", path: path.join(output, "desktop-explain.png"), fullPage: true });
-    await page.getByRole("button", { name: "Inspect source evidence", exact: true }).click();
+    await page.getByRole("tab", { name: /Evidence/ }).click();
     await page.getByRole("heading", { name: "Trace it to the source" }).waitFor();
     assert.equal(
       await page.getByText("Receiver · matching HTTP endpoint", { exact: false }).count(),
