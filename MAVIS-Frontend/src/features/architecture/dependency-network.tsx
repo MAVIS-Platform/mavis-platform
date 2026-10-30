@@ -165,10 +165,6 @@ export function DependencyNetwork({
     () => networkElements(projection.model, 2, connections),
     [projection.model, connections],
   );
-  const relationshipCount = connections.reduce(
-    (sum, connection) => sum + connection.relationshipIds.length,
-    0,
-  );
   function inspectConnection(connection: NetworkConnection) {
     if (onConnectionSelect) onConnectionSelect(connection.key);
     else {
@@ -798,26 +794,10 @@ export function DependencyNetwork({
           </div>
         </div>
       )}
-      <div
+      {(relationshipScopeCount > 0 || projection.unassignedElements > 0 || hiddenCategories.length > 0 || query.trim() !== "" || nodes.length > 300) && <div
         hidden={fillHeight && !dockToolsOpen}
         className={`${fillHeight && !dockToolsOpen ? "!hidden" : ""} flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground`}
       >
-        <span>
-          <strong className="text-foreground">Source model:</strong> {model.elements.length}{" "}
-          elements · {model.edges.length} relationships
-        </span>
-        <span>
-          <strong className="text-foreground">Displayed in view:</strong> {nodes.length} elements ·{" "}
-          {connections.length} visible connections · {relationshipCount} underlying relationships
-        </span>
-        <span>
-          <strong className="text-foreground">Filtered by origin:</strong>{" "}
-          {projection.filteredRelationships} relationships ({origin})
-        </span>
-        <span>
-          <strong className="text-foreground">Internal:</strong> {projection.internalRelationships}{" "}
-          hidden within collapsed containers
-        </span>
         {relationshipScopeCount > 0 && (
           <span>{relationshipScopeCount} relationships hidden by type/uncertainty filters.</span>
         )}
@@ -846,7 +826,7 @@ export function DependencyNetwork({
             (Grid layout mode: &gt;300 elements active, force simulation bypassed for performance)
           </span>
         )}
-      </div>
+      </div>}
       <details hidden={fillHeight && !dockToolsOpen} className="border-b p-3 text-sm">
         <summary className="cursor-pointer">Graph elements (keyboard navigation)</summary>
         <div className="mt-3 max-h-64 space-y-2 overflow-auto">
