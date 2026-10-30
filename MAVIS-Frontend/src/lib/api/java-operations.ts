@@ -34,7 +34,7 @@ export async function currentSession(token: string | undefined, signal?: AbortSi
       user: userView(await javaRequest("auth/me", token, { ...(signal ? { signal } : {}) })),
     };
   } catch (error) {
-    if (error instanceof ApiError && [401, 403].includes(error.status ?? 0)) return { user: null };
+    if (error instanceof ApiError && error.status === 401) return { user: null };
     throw error;
   }
 }

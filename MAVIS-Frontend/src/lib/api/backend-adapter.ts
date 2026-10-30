@@ -7,6 +7,7 @@ import {
 } from "./contracts";
 import { ApiError, fromStatus, normalizeError, publicErrorCode } from "@/lib/errors/api-error";
 import { validateResponse } from "./validate-response";
+import { authClientError, retryAfterSeconds } from "@/lib/auth/auth-errors";
 
 export class BackendAdapter implements ApiAdapter {
   readonly mode = "backend" as const;
@@ -15,7 +16,8 @@ export class BackendAdapter implements ApiAdapter {
     input: Request<K>,
     signal?: AbortSignal,
   ): Promise<Response<K>> {
-    if (!contracts[operation].input.safeParse(input).success) throw new ApiError("validation", 422);
+    if (!contracts[operation].input.safeParse(input).success)
+      throw authClientError(new ApiError("validation", 422), operation);
     const controller = new AbortController();
     const cancel = () => controller.abort();
     signal?.addEventListener("abort", cancel, { once: true });
@@ -28,7 +30,13 @@ export class BackendAdapter implements ApiAdapter {
       },
       ["importSource", "importGithub", "renderArchitectureView"].includes(operation)
         ? 120000
-        : ["explain", "elementEvidenceContext", "model", "reviewContext", "contextCandidates"].includes(operation)
+        : [
+              "explain",
+              "elementEvidenceContext",
+              "model",
+              "reviewContext",
+              "contextCandidates",
+            ].includes(operation)
           ? 60000
           : 20000,
     );
@@ -69,12 +77,24 @@ export class BackendAdapter implements ApiAdapter {
             const code = publicErrorCode(
               error && typeof error === "object" && "code" in error ? error.code : undefined,
             );
-            if (code) throw new ApiError(fromStatus(response.status).kind, response.status, code);
+            if (code)
+              throw new ApiError(
+                fromStatus(response.status).kind,
+                response.status,
+                code,
+                retryAfterSeconds(response.headers.get("retry-after")),
+              );
           } catch (error) {
             if (error instanceof ApiError) throw error;
           }
         }
-        throw fromStatus(response.status);
+        const failure = fromStatus(response.status);
+        throw new ApiError(
+          failure.kind,
+          failure.status,
+          undefined,
+          retryAfterSeconds(response.headers.get("retry-after")),
+        );
       }
       let body: unknown;
       try {
@@ -84,7 +104,7 @@ export class BackendAdapter implements ApiAdapter {
       }
       return validateResponse(operation, input, body);
     } catch (error) {
-      throw timedOut ? new ApiError("timeout") : normalizeError(error);
+      throw authClientError(timedOut ? new ApiError("timeout") : normalizeError(error), operation);
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", cancel);

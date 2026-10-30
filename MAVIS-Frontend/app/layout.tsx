@@ -12,14 +12,14 @@ import "../src/features/auth/login-background.css";
 const appearanceBootstrap = `(function(){var a="light";try{var s=localStorage.getItem("mavis.appearance");if(s==="light"||s==="dark")a=s;}catch(e){}var d=a==="dark";document.documentElement.classList.toggle("dark",d);document.documentElement.dataset.appearance=a;document.documentElement.style.colorScheme=d?"dark":"light";})();`;
 
 export const metadata: Metadata = {
-  
   title: "MAVIS — Architecture Learning & Analysis",
   description:
     "AI-Assisted Microservices Architecture Visualization and Change Impact Analysis. Learn through source analysis, architectural models, and scoped runtime evidence.",
   authors: [{ name: "MAVIS" }],
   icons: {
-  icon: "/logo.png",
-},
+    icon: { url: "/mavis-logo.png", type: "image/png" },
+    shortcut: "/mavis-logo.png",
+  },
 };
 
 export const dynamic = "force-dynamic";

@@ -42,7 +42,9 @@ public class GlobalExceptionHandler {
         } else {
             status = HttpStatus.BAD_REQUEST;
         }
-        return org.springframework.http.ResponseEntity.status(status).body(ApiResponse.error(ex.getErrorCode(), ex.getMessage()));
+        ApiResponse<Void> body = ApiResponse.error(ex.getErrorCode(), ex.getMessage());
+        if (ex instanceof AuthException auth) body.setErrorCode(auth.getAuthErrorCode().name());
+        return org.springframework.http.ResponseEntity.status(status).body(body);
     }
 
     /**
@@ -51,6 +53,14 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ApiResponse<Void> handleValidationException(MethodArgumentNotValidException ex) {
+        if (ex.getParameter().getContainingClass().getPackageName().contains(".auth.")) {
+            AuthErrorCode code = ex.getBindingResult().getFieldErrors().stream()
+                    .anyMatch(field -> field.getField().equals("newPassword") || field.getField().equals("password"))
+                    ? AuthErrorCode.AUTH_PASSWORD_POLICY : AuthErrorCode.AUTH_INPUT_INVALID;
+            ApiResponse<Void> body = ApiResponse.error(code.getStatus(), code.getMessage());
+            body.setErrorCode(code.name());
+            return body;
+        }
         // Gom tất cả các lỗi của các field lại thành 1 string duy nhất
         List<String> errors = ex.getBindingResult().getFieldErrors()
                 .stream()
