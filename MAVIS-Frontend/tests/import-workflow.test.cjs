@@ -52,3 +52,23 @@ test('import refresh invalidates current and legacy project lists without touchi
   assert.equal(cache.getQueryState(['api','model',{modelId:'unrelated'}]).isInvalidated,false);
  } finally {stops.forEach(stop=>stop());observers.forEach(observer=>observer.destroy());cache.clear();}
 });
+
+const {adminJobsReturnHref,summarizeJobModel}=require('../src/lib/navigation/admin-job-review.ts');
+test('admin review return retains the selected job and list context',()=>{
+ const target='/administration/jobs?job=job-7&search=spring+demo&status=completed&page=3';
+ assert.equal(adminJobsReturnHref(new URLSearchParams({returnTo:target})),target);
+});
+test('admin review return rejects external and user overview destinations',()=>{
+ for(const target of ['https://example.com/administration/jobs','//example.com/administration/jobs','/project-overview?project=p','/administration/jobs/other','javascript:alert(1)'])
+  assert.equal(adminJobsReturnHref(new URLSearchParams({returnTo:target})),'/administration/jobs');
+ assert.equal(adminJobsReturnHref(new URLSearchParams()),'/administration/jobs');
+});
+test('admin review return keeps only list state parameters',()=>{
+ assert.equal(adminJobsReturnHref(new URLSearchParams({returnTo:'/administration/jobs?job=j&returnTo=https://example.com#x'})),'/administration/jobs?job=j');
+});
+test('job model summary counts services, uncertain relationships and unique attached evidence',()=>{
+ const proof={id:'shared'};
+ assert.deepEqual(summarizeJobModel({elements:[{elementType:'SERVICE_CONTAINER',evidence:[proof]},{elementType:'COMPONENT',evidence:[]}],edges:[{uncertain:true,evidence:[proof,{id:'other'}]},{uncertain:false,evidence:[]}]}),
+ {services:1,elements:2,relationships:2,evidence:2,uncertain:1});
+ assert.deepEqual(summarizeJobModel({elements:[],edges:[]}),{services:0,elements:0,relationships:0,evidence:0,uncertain:0});
+});

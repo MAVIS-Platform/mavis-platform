@@ -51,6 +51,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useApi, useApiMutation, useApiQuery, useSession, useSelection } from "@/hooks/use-api";
 import { RequireSession } from "@/features/auth/access";
+import { adminJobsReturnHref } from "@/lib/navigation/admin-job-review";
 import { Breadcrumbs, ContextPanel, Header, Sidebar } from "@/components/layout/page";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Permission } from "@/lib/auth/permissions";
@@ -507,10 +508,12 @@ function ShellChrome({
                 ...(scope !== "global"
                   ? [
                       {
-                        label: context,
+                        label: role === "admin" && scope === "project" ? "Analysis Jobs" : context,
                         href:
                           scope === "project"
-                            ? `/project-overview${navigationQuery}`
+                            ? role === "admin"
+                              ? adminJobsReturnHref(new URLSearchParams(navigationQuery))
+                              : `/project-overview${navigationQuery}`
                             : scope === "review"
                               ? `/submissions${navigationQuery}`
                               : `/workspaces${navigationQuery}`,
