@@ -10,6 +10,13 @@ public sealed class ManagedRuntimeAdapter(JavaRuntimeClient java, IDockerCommand
     {
         if (!Path.IsPathFullyQualified(stateRoot)) throw new ArgumentException("Absolute state root required.");
         var definition = await java.GetDefinitionAsync(sessionId, ct);
+        if (definition.ProtectedEnvironmentAvailable)
+        {
+            var environment = await java.GetEnvironmentAsync(definition, ct);
+            var combined = new Dictionary<string,string>(secrets ?? new Dictionary<string,string>(), StringComparer.Ordinal);
+            foreach (var pair in environment) combined[pair.Key] = pair.Value;
+            secrets = combined;
+        }
         var collector = new FileInfo(collectorConfigPath);
         if (!collector.Exists || collector.Length > 1_048_576) throw new ArgumentException("Collector config unavailable.");
         var backend = new DockerComposeSession(definition, stateRoot, await File.ReadAllTextAsync(collector.FullName, ct), docker, secrets, java);

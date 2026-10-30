@@ -2,16 +2,17 @@ using System.Text.Json;
 
 namespace MAVIS.Runner;
 
+public sealed record RuntimeEnvironmentBinding(string Name, string Reference);
 public sealed record RuntimeServiceProfile(string Runtime, int ContainerPort, string ReadinessPath = "/health");
 public sealed record RunnerExecutionProfile(string CollectorImage, string InstrumentationVolume,
     IReadOnlyDictionary<string, RuntimeServiceProfile> Applications, int MemoryMiB = 256, double Cpus = 1,
     int TimeoutSeconds = 120, bool ApprovedForLocalPoc = false, string? ScenarioRunnerImage = null,
-    string DotnetInstrumentationVersion = "1.17.0", string JavaInstrumentationVersion = "2.32.0");
+    string DotnetInstrumentationVersion = "1.17.0", string JavaInstrumentationVersion = "2.32.0", IReadOnlyDictionary<string, IReadOnlyList<RuntimeEnvironmentBinding>>? EnvironmentBindings = null);
 
 /// <summary>Generates only an override; it does not claim compatibility or launch workloads.</summary>
 public static class ComposeOverrideBuilder
 {
-    public static string Build(ComposePreflightResult preflight, RunnerExecutionProfile profile, string collectorConfigPath)
+    public static string Build(ComposePreflightResult preflight, RunnerExecutionProfile profile, string collectorConfigPath, IReadOnlyDictionary<string,string>? protectedValues = null)
     {
         if (!preflight.Compatible || !profile.ApprovedForLocalPoc || profile.MemoryMiB is < 64 or > 2048 ||
             !double.IsFinite(profile.Cpus) || profile.Cpus is <= 0 or > 4 || profile.TimeoutSeconds is < 1 or > 300 ||
@@ -19,6 +20,7 @@ public static class ComposeOverrideBuilder
             !Pinned(profile.CollectorImage) || !Name(profile.InstrumentationVolume) || !Path.IsPathFullyQualified(collectorConfigPath) ||
             preflight.Services.Contains("mavis-collector", StringComparer.Ordinal) || preflight.Services.Contains("mavis-agent", StringComparer.Ordinal))
             throw new ArgumentException("A compatible input and an approved, bounded PoC profile are required.");
+        if (profile.EnvironmentBindings?.Keys.Any(service => !preflight.Services.Contains(service)) == true) throw new ArgumentException("Environment bindings target an unknown service.");
         var services = new Dictionary<string, object>();
         foreach (var service in preflight.Services)
         {
@@ -29,6 +31,16 @@ public static class ComposeOverrideBuilder
                 ["read_only"] = true, ["tmpfs"] = new[] { "/tmp:rw,noexec,nosuid,size=64m" }, ["restart"] = "no",
                 ["networks"] = new[] { "default" }
             };
+            var protectedEnvironment = new Dictionary<string,string>();
+            foreach (var binding in profile.EnvironmentBindings?.GetValueOrDefault(service) ?? [])
+            {
+                if (protectedEnvironment.Count >= 64 || binding is null || !System.Text.RegularExpressions.Regex.IsMatch(binding.Name,"^[A-Z][A-Z0-9_]{0,63}$") ||
+                    new[]{"OTEL_","JAVA_","JDK_","DOTNET_","CORECLR_","LD_","MAVIS_"}.Any(prefix=>binding.Name.StartsWith(prefix,StringComparison.Ordinal)) || binding.Name=="PATH" ||
+                    protectedValues is null || !protectedValues.TryGetValue(binding.Reference,out var value)) throw new ArgumentException("Application environment binding unavailable or reserved.");
+                // Compose interpolation must not expand user inputs against the runner host environment.
+                protectedEnvironment[binding.Name]=value.Replace("$", "$$", StringComparison.Ordinal);
+            }
+            if(protectedEnvironment.Count>0)config["environment"]=protectedEnvironment;
             if (profile.Applications.TryGetValue(service, out var app))
             {
                 if (app is null || app.Runtime is not ("dotnet8-linux-x64-glibc" or "java") || app.ContainerPort is < 1 or > 65535 ||
@@ -53,6 +65,7 @@ public static class ComposeOverrideBuilder
                     environment["OTEL_DOTNET_AUTO_HOME"] = "/mavis-otel/dotnet";
                     environment["OTEL_DOTNET_AUTO_LOG_DIRECTORY"] = "/tmp/otel";
                 }
+                foreach (var pair in protectedEnvironment) environment[pair.Key]=pair.Value;
                 config["environment"] = environment;
                 config["volumes"] = new[] { new { type = "volume", source = "mavis-instrumentation", target = "/mavis-otel", read_only = true } };
             }
