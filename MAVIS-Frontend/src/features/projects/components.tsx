@@ -57,12 +57,18 @@ export function ProjectCard({ project, onSelect }: { project: Project; onSelect:
 export function ProjectSelector({
   workspaceId,
   assignmentId,
-}: { workspaceId?: string; assignmentId?: string } = {}) {
+  selectedProject,
+}: { workspaceId?: string; assignmentId?: string; selectedProject?: Project | undefined } = {}) {
   const busy = useIsMutating() > 0;
   const query = useApiQuery("projects", {});
   const selection = useSelection();
+  const projects = query.data ?? [];
+  const options = selectedProject?.id === selection.projectId &&
+    !projects.some((project) => project.id === selectedProject.id)
+    ? [selectedProject, ...projects]
+    : projects;
   return (
-    <RequestState query={query} empty={query.data?.length === 0}>
+    <RequestState query={query} empty={!options.length}>
       <SelectField
         disabled={busy}
         label="Selected project"
@@ -70,7 +76,7 @@ export function ProjectSelector({
         onChange={selection.setProjectId}
         options={[
           { value: "", label: "Choose a project…" },
-          ...(query.data ?? [])
+          ...options
             .filter(
               (p) =>
                 !workspaceId ||
