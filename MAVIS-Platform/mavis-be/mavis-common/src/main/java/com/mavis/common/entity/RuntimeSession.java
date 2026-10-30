@@ -19,6 +19,10 @@ import java.util.UUID;
 @Builder
 public class RuntimeSession {
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Column(name = "environment_ciphertext", columnDefinition = "text")
+    private String environmentCiphertext;
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;

@@ -1,3 +1,4 @@
+import { resolveReceiver, resolveCalledMethods } from "./source-call-resolution";
 import type { ArchitecturalModel } from "@/types/domain";
 import type {
   UmlActivityDiagramProjection,
@@ -112,26 +113,16 @@ export function expandSourceActivityWorkflow(
       }
       const call = matching[0]!;
       const receiverType = String(call["receiverType"] ?? "");
-      const simple = receiverType.replace(/<.*>/, "").split(".").at(-1);
       const owner = byId.get(operation.classifierId)!;
-      const targets = model.elements.filter(
-        (node) =>
-          node.parentId === owner.parentId &&
-          (record(node.properties?.["umlClassifier"])["qualifiedName"] === receiverType ||
-            node.name === simple),
-      );
+      const targets = resolveReceiver(model, owner, receiverType);
       if (targets.length !== 1) {
         warnings.add(`Unresolved or ambiguous receiver: ${receiverType || "unknown"}.`);
         continue;
       }
       let target = targets[0]!;
-      let targetMethods = rows(record(target.properties?.["umlClassifier"])["methodsCfg"]).filter(
-        (method) => method["methodName"] === call["methodName"],
-      );
+      let targetMethods = resolveCalledMethods(rows(record(target.properties?.["umlClassifier"])["methodsCfg"]), call);
       if (!targetMethods.length && typeof target.properties?.["targetService"] === "string") {
-        const members = rows(record(target.properties?.["umlClassifier"])["members"]).filter(
-          (member) => member["name"] === call["methodName"],
-        );
+        const members = resolveCalledMethods(rows(record(target.properties?.["umlClassifier"])["members"]), call);
         const mappings =
           members.length === 1 && Array.isArray(members[0]!["endpointDeclarations"])
             ? (members[0]!["endpointDeclarations"] as unknown[]).map(String)

@@ -665,6 +665,8 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
         String modelVersionIdStr = session.getModelVersion().getId().toString();
 
+        var exportedProfile = profileNode.deepCopy();
+        if (exportedProfile instanceof ObjectNode object) object.remove(java.util.List.of("serviceMappings", "secretReferences"));
         return RunnerDefinitionExportDTO.builder()
                 .sessionId(session.getId().toString())
                 .modelVersionId(modelVersionIdStr)
@@ -674,9 +676,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .scenarioVersionId(session.getScenarioVersionId() != null ? session.getScenarioVersionId() : "scenario/1.0")
                 .resourceProject(session.getResourceProject())
                 .composeYaml(composeYaml)
-                .profile(profileNode)
+                .profile(exportedProfile)
                 .scenario(scenarioCopy)
                 .confirmedServiceMappings(mappings)
+                .protectedEnvironmentAvailable(session.getEnvironmentCiphertext() != null)
                 .build();
     }
 

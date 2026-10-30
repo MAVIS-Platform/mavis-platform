@@ -6,9 +6,11 @@ using System.Text.RegularExpressions;
 
 namespace MAVIS.Runner;
 
+public sealed record EnvironmentHeader(string Name, string Reference);
 public sealed record HttpScenarioStep(string Id, string Service, string Method, string Path, int ExpectedStatus,
     string? JsonBody = null, IReadOnlyDictionary<string, string>? Headers = null,
-    IReadOnlyDictionary<string, string>? SecretHeaders = null, IReadOnlyDictionary<string, string>? Extract = null);
+    IReadOnlyDictionary<string, string>? SecretHeaders = null, IReadOnlyDictionary<string, string>? Extract = null,
+    IReadOnlyDictionary<string, string>? EnvironmentVariables = null, string? BodyReference = null, IReadOnlyList<EnvironmentHeader>? EnvHeaders = null);
 public sealed record HttpScenarioDefinition(string SessionId, IReadOnlyList<HttpScenarioStep> Steps, int TimeoutSeconds = 120);
 public sealed record HttpStepOutcome(string StepId, string Status, int? StatusCode, string TraceId, string ParentSpanId, long ElapsedMilliseconds);
 public sealed record HttpScenarioOutcome(string SessionId, string Status, IReadOnlyList<HttpStepOutcome> Steps);
@@ -45,6 +47,7 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
         foreach (var step in scenario.Steps)
         {
             deadline.Token.ThrowIfCancellationRequested();
+            foreach (var binding in step.EnvironmentVariables ?? new Dictionary<string,string>()) variables[binding.Key] = secrets[binding.Value];
             var watch = Stopwatch.StartNew();
             var trace = ActivityTraceId.CreateRandom().ToHexString();
             var span = ActivitySpanId.CreateRandom().ToHexString();
@@ -60,11 +63,13 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
                     if (!secrets.TryGetValue(header.Value, out var secret)) throw new InvalidOperationException("Missing protected reference.");
                     AddHeader(header.Key, secret);
                 }
-                if (step.JsonBody is not null)
+                var jsonBody = step.BodyReference is null ? step.JsonBody : secrets[step.BodyReference];
+                foreach (var header in step.EnvHeaders ?? []) AddHeader(header.Name, secrets[header.Reference]);
+                if (jsonBody is not null)
                 {
                     // Body is a complete JSON document; no raw text substitution into JSON syntax.
-                    using var body = JsonDocument.Parse(step.JsonBody);
-                    request.Content = new StringContent(JsonSerializer.Serialize(Replace(body.RootElement)), Encoding.UTF8, "application/json");
+                    using var body = JsonDocument.Parse(jsonBody);
+                    request.Content = new StringContent(JsonSerializer.Serialize(step.BodyReference is null ? Replace(body.RootElement) : body.RootElement), Encoding.UTF8, "application/json");
                 }
                 using var stepTimeout = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
                 stepTimeout.CancelAfter(TimeSpan.FromSeconds(30));
@@ -141,6 +146,19 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
                 throw new ArgumentException("Scenario must use known loopback service endpoints and relative paths.");
             if (step.Path.Length > 8192 || (step.JsonBody?.Length ?? 0) > 1_048_576 || (step.Headers?.Count ?? 0) > 64 || (step.SecretHeaders?.Count ?? 0) > 64)
                 throw new ArgumentException("Scenario step exceeds profile limits.");
+            if (step.EnvHeaders?.Count > 64 || step.EnvHeaders?.Any(header => header is null || !Regex.IsMatch(header.Name, "^[A-Za-z][A-Za-z0-9-]{0,63}$") || !secrets.ContainsKey(header.Reference) || new[]{"Host","traceparent","tracestate"}.Contains(header.Name,StringComparer.OrdinalIgnoreCase)) == true)
+                throw new ArgumentException("Protected header input is unavailable or unsupported.");
+            if (step.EnvironmentVariables?.Count > 64) throw new ArgumentException("Too many environment bindings.");
+            foreach (var binding in step.EnvironmentVariables ?? new Dictionary<string,string>())
+            {
+                if (!Regex.IsMatch(binding.Key, "^[A-Z][A-Z0-9_]{0,63}$") || !secrets.ContainsKey(binding.Value)) throw new ArgumentException("Protected input reference is unavailable.");
+                available.Add(binding.Key);
+            }
+            if (step.BodyReference is not null)
+            {
+                if (step.JsonBody is not null || !secrets.TryGetValue(step.BodyReference,out var bodyInput) || bodyInput.Length > MaxResponseBytes) throw new ArgumentException("Protected body reference unavailable.");
+                using var body = JsonDocument.Parse(bodyInput);
+            }
             if (step.JsonBody is not null) { using var body = JsonDocument.Parse(step.JsonBody); }
             foreach (var value in new[] { step.Path, step.JsonBody ?? "" }.Concat(step.Headers?.Values ?? []))
                 foreach (Match match in Variable.Matches(value))

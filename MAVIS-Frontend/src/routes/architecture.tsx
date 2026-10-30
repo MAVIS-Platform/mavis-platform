@@ -110,7 +110,7 @@ export function ArchitectureWorkspace({
             </div>
           )}
         </div>
-        {state.projectId && state.model && (
+        {isAdmin && state.projectId && state.model && (
           <nav aria-label="Architecture views" className="flex flex-wrap gap-2 rounded-xl border bg-card p-3">
             <Button asChild size="sm" variant={resolvedMode === "graph" ? "default" : "outline"}>
               <Link href={`/architecture?${new URLSearchParams({ project: state.projectId, model: state.model.id, ...reviewContext })}`}

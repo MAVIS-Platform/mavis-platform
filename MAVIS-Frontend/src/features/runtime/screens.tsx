@@ -47,7 +47,8 @@ export function RuntimeStepperBanner({ currentStep, projectId }: { currentStep: 
 }
 
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { suggestRuntimeScenarios, automaticRuntimeDraft, parseRuntimeEnvFile, type RuntimeDraftStep } from "./scenario-suggestions";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useApi, useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
@@ -351,19 +352,26 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const scenarios = useApiQuery("scenarios", { projectId });
   const config = useApiQuery("runtimeConfiguration", { projectId });
   const start = useApiMutation("startRuntime");
+  const saveDraft = useApiMutation("createScenario");
+  const submitting = useRef(false);
+  const persistedDraft = useRef<{ fingerprint: string; scenario: { id: string; revision: number } } | null>(null);
 
   const [snapshotId, setSnapshotId] = useState("");
   const [modelId, setModelId] = useState("");
   const modelDetail = useApiQuery("model", { modelId }, { enabled: Boolean(modelId) });
   const realServices = (modelDetail.data?.elements ?? []).filter((e) => e.elementType === "SERVICE_CONTAINER");
   const detectedServiceNames = realServices.map((s) => s.name);
-  const defaultSvc = detectedServiceNames[0] ?? "api-gateway";
+  const defaultSvc = detectedServiceNames[0] ?? "";
 
-  const [scenarioName, setScenarioName] = useState("Order & Payment Checkout Flow");
-  const [steps, setSteps] = useState([
-    { service: "api-gateway", method: "GET", path: "/health", status: "200" },
-    { service: "order-service", method: "GET", path: "/orders", status: "200" },
-  ]);
+  const [scenarioName, setScenarioName] = useState("Backend API smoke scenario");
+  const [steps, setDraftSteps] = useState<RuntimeDraftStep[]>([]);
+  const edited = useRef(false);
+  const setSteps: typeof setDraftSteps = value => { edited.current = true; setDraftSteps(value); };
+  const suggestions = useMemo(() => modelDetail.data ? suggestRuntimeScenarios(modelDetail.data, config.data?.profile) : [], [modelDetail.data, config.data?.profile]);
+  const automatic = useMemo(() => automaticRuntimeDraft(suggestions, config.data?.profile), [suggestions, config.data?.profile]);
+  const [environment, setEnvironment] = useState<Record<string,string>>({});
+  useEffect(() => { setEnvironment({}); }, [modelId]);
+  const applySuggestions = () => setSteps(automatic.steps);
   const [runMessage, setRunMessage] = useState("");
 
   const staticModels = (models.data ?? []).filter(
@@ -391,6 +399,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   }, [snapshots.data, snapshotId]);
 
   const handleModelChange = (nextModelId: string) => {
+    edited.current = false;
+    setEnvironment({});
+    setDraftSteps([]);
     setModelId(nextModelId);
     const matched = (models.data ?? []).find((m) => m.id === nextModelId);
     if (matched?.snapshotId) {
@@ -399,92 +410,51 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   };
 
   useEffect(() => {
-    if (scenarios.data && scenarios.data.length > 0) {
-      const first = scenarios.data[0];
-      if (first?.steps && first.steps.length > 0) {
-        const parsed = first.steps.map((st, i) => {
-          const raw = typeof st === "string" ? st : "";
-          const match = raw.match(/^(GET|POST|PUT|DELETE|PATCH)\s+(?:https?:\/\/([^\/:]+)(?::\d+)?)?(\/[^\s]*)?(?:\s*->\s*(\d+))?/i);
-          const method = match?.[1] ? match[1].toUpperCase() : "GET";
-          const svcFromUrl = match?.[2];
-          const svc = svcFromUrl || detectedServiceNames[i % Math.max(1, detectedServiceNames.length)] || defaultSvc;
-          const path = match?.[3] || (raw.startsWith("/") ? raw : "/health");
-          const status = match?.[4] || "200";
-          return { service: svc, method, path, status };
-        });
-        if (parsed.length > 0) {
-          setSteps(parsed);
-          return;
-        }
-      }
-    }
-    if (detectedServiceNames.length > 0) {
-      setSteps(
-        detectedServiceNames.slice(0, 3).map((svcName, idx) => ({
-          service: svcName,
-          method: idx === 1 ? "GET" : idx === 2 ? "POST" : "GET",
-          path: idx === 1 ? "/orders" : idx === 2 ? "/payments/process" : "/health",
-          status: "200",
-        }))
-      );
-    }
-  }, [scenarios.data, modelDetail.data?.id]);
+    if (!edited.current) setDraftSteps(automatic.steps);
+  }, [automatic]);
 
   const addStep = () => {
-    setSteps((s) => [...s, { service: defaultSvc, method: "GET", path: "/health", status: "200" }]);
+    setSteps((s) => [...s, { service: defaultSvc, method: "GET", path: "", status: "200" }]);
   };
 
   const removeStep = (index: number) => {
     setSteps((s) => s.filter((_, i) => i !== index));
   };
 
-  const handleCreateAndRun = (approveAndDispatch: boolean) => {
-    const chosenModel =
-      (models.data ?? []).find((m) => m.id === modelId) ??
-      selectableModels[0] ??
-      models.data?.[0];
-    const effectiveSnapshotId = chosenModel?.snapshotId || snapshotId || snapshots.data?.[0]?.id;
-    if (!effectiveSnapshotId) return;
-
-    setRunMessage(
-      approveAndDispatch
-        ? "Creating, approving and dispatching run..."
-        : "Creating runtime session...",
-    );
-
-    start.mutate(
-      {
-        projectId,
-        snapshotId: effectiveSnapshotId,
-        modelId: chosenModel?.id || modelId || undefined,
-        scenarioId: crypto.randomUUID(),
-        scenarioName: scenarioName?.trim() || "Scenario " + new Date().toLocaleTimeString(),
-        steps: steps.map((st, i) => ({
-          id: `step-${i + 1}`,
-          title: `${st.method} ${st.path}`,
-          service: st.service,
-          method: st.method,
-          path: st.path,
-          expectedStatus: parseInt(st.status, 10) || 200,
-        })),
-        configurationRevision: Math.max(1, Number(config.data?.revision || 1)),
-        scenarioRevision: 1,
-        approved: true,
-      },
-      {
-        onSuccess: (session) => {
-          setRunMessage(
-            `Session ${session.id.slice(0, 8)} created successfully! Status: ${session.executionStatus || session.status}. Redirecting to Sessions...`,
-          );
-          setTimeout(() => {
-            router.push(`/sessions?project=${projectId}&session=${session.id}`);
-          }, 800);
-        },
-        onError: (err) => {
-          setRunMessage(`Execution failed: ${err instanceof Error ? err.message : String(err)}`);
-        },
-      },
-    );
+  const handleCreateAndRun = async (approveAndDispatch: boolean) => {
+    if (submitting.current) return;
+    const chosenModel = selectableModels.find(m => m.id === modelId);
+    const effectiveSnapshotId = chosenModel?.snapshotId;
+    if (!chosenModel || !effectiveSnapshotId || !steps.length) { setRunMessage("Select an analyzed model and at least one request."); return; }
+    if (steps.some(step => !step.service || !step.path.startsWith("/") || step.path.startsWith("//") || /[\r\n]/.test(step.path) || !/^\d{3}$/.test(step.status) || Number(step.status) < 100 || Number(step.status) > 599)) {
+      setRunMessage("Complete request services, paths, parameter values and expected status codes."); return;
+    }
+    if (approveAndDispatch && (!config.data?.ready || config.data.modelId !== chosenModel.id || config.data.snapshotId !== effectiveSnapshotId)) {
+      setRunMessage("Runtime configuration must be ready and pinned to this source/model before approval."); return;
+    }
+    const required = automatic.inputs;
+    if (approveAndDispatch && required.length && !config.data?.protectedInputsReady) { setRunMessage("Protected runtime inputs are not ready. An administrator must complete runtime setup."); return; }
+    if (approveAndDispatch && required.some(input => !environment[input.name]?.trim())) { setRunMessage("Fill the required environment and test inputs before approval."); return; }
+    if (approveAndDispatch && required.some(input => { if(input.kind!=="json")return false;try{JSON.parse(environment[input.name]!);return false;}catch{return true;} })) {setRunMessage("A JSON test body is not valid JSON.");return;}
+    const protectedValues = Object.fromEntries(required.filter(input => environment[input.name] !== undefined).map(input => [input.name, environment[input.name]!]));
+    if (new TextEncoder().encode(JSON.stringify(protectedValues)).length > 65536) { setRunMessage("Runtime inputs exceed the supported size."); return; }
+    const draft = { projectId, name: scenarioName.trim() || "Backend API smoke scenario",
+      steps: steps.map((step, index) => JSON.stringify({ id: `step-${index+1}`, service: step.service, method: step.method, path: step.path, expectedStatus: Number(step.status), ...(step.environmentVariables ? { environmentVariables: step.environmentVariables } : {}), ...(step.envHeaders ? { envHeaders: step.envHeaders } : {}), ...(step.bodyReference ? { bodyReference: step.bodyReference } : {}) })) };
+    const fingerprint = JSON.stringify(draft);
+    submitting.current = true;
+    try {
+      setRunMessage("Saving scenario...");
+      const saved = persistedDraft.current?.fingerprint === fingerprint ? persistedDraft.current.scenario : await saveDraft.mutateAsync(draft);
+      persistedDraft.current = { fingerprint, scenario: saved };
+      if (!approveAndDispatch) { setRunMessage("Scenario saved for review. No runtime session was started."); return; }
+      setRunMessage("Approving the saved scenario and requesting execution...");
+      const session = await start.mutateAsync({ projectId, snapshotId: effectiveSnapshotId, modelId: chosenModel.id,
+        scenarioId: saved.id, scenarioName: draft.name, configurationRevision: config.data!.revision,
+        scenarioRevision: saved.revision, approved: true, environment: protectedValues });
+      router.push(`/sessions?project=${projectId}&session=${session.id}`);
+    } catch (error) {
+      setRunMessage(`Request failed: ${error instanceof Error ? error.message : String(error)}. Check sessions before retrying an execution request.`);
+    } finally { submitting.current = false; }
   };
 
   return (
@@ -529,6 +499,31 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             )}
           </FormField>
 
+          <div className="space-y-2 rounded-lg border p-3 text-sm">
+            <p className="font-medium">Suggested from this backend</p>
+            <p className="text-muted-foreground">Requests are drafts from extracted endpoints. HTTP 200 is a test expectation, not an observed result. Review before approval.</p>
+            {!suggestions.length && <p>No endpoint declarations are available. Analyze the source or add a request explicitly.</p>}
+            {suggestions.filter(s => s.missing.length).map(s => <p key={s.key} className="text-xs"><strong>{s.method} {s.path}</strong>: {s.missing.join("; ")}</p>)}
+            {!config.data?.ready && <p><Link className="underline" href={`/runtime-config?project=${projectId}`}>Complete runtime prerequisites</Link> before running.</p>}
+          </div>
+          <section className="space-y-3 rounded-lg border p-3" aria-label="Environment and test inputs">
+            <h3 className="font-medium">Environment and test inputs</h3>
+            <p className="text-sm text-muted-foreground">MAVIS builds the requests. Enter only missing values, then review and approve. Values are sent separately from the saved scenario.</p>
+            {automatic.inputs.length>0 && <FormField label="Import .env values" hint="Processed locally. Only inputs required by this draft are included when you approve.">{props=><Input {...props} type="file" onChange={async event=>{
+              const file=event.target.files?.[0];if(!file)return;
+              try{if(file.size>65536)throw new Error("Environment file exceeds the supported size");const parsed=parseRuntimeEnvFile(await file.text());setEnvironment(current=>({...current,...Object.fromEntries(automatic.inputs.filter(input=>Object.hasOwn(parsed,input.name)).map(input=>[input.name,parsed[input.name]!]))}));setRunMessage("Environment inputs imported. Review the generated scenario before approval.");}
+              catch(error){setRunMessage(error instanceof Error?error.message:"Could not import environment inputs");}
+              finally{event.target.value="";}
+            }}/>}</FormField>}
+            {automatic.inputs.map(input => <FormField key={input.name} label={input.label} hint={input.name}>{props => input.kind==="json" ?
+              <Textarea {...props} value={environment[input.name]??""} onChange={event=>setEnvironment(current=>({...current,[input.name]:event.target.value}))} autoComplete="off" /> :
+              <Input {...props} type={input.kind==="credential"?"password":"text"} value={environment[input.name]??""} onChange={event=>setEnvironment(current=>({...current,[input.name]:event.target.value}))} autoComplete="off" />}</FormField>)}
+            {automatic.inputs.length>0 && !config.data?.protectedInputsReady && <p className="text-sm">An administrator must prepare protected runtime inputs before this draft can run.</p>}
+            {!automatic.inputs.length && <p className="text-sm">No extra values are required for this draft.</p>}
+            {automatic.blocked.map((message,index)=><p className="text-xs text-muted-foreground" key={index}>{message}</p>)}
+            <ul className="space-y-1 text-xs">{steps.map((step,index)=><li key={index}>{step.method} {step.service}{step.path}</li>)}</ul>
+          </section>
+          <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm">Advanced request editor</summary>
           {/* HTTP Steps Editor */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -537,22 +532,10 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => {
-                    const sampleServices =
-                      detectedServiceNames.length > 0
-                        ? detectedServiceNames.slice(0, 3)
-                        : ["api-gateway", "order-service", "catalog-service"];
-                    setSteps(
-                      sampleServices.map((svc, idx) => ({
-                        service: svc,
-                        method: idx === 1 ? "GET" : idx === 2 ? "POST" : "GET",
-                        path: idx === 1 ? "/orders" : idx === 2 ? "/payments/process" : "/health",
-                        status: "200",
-                      })),
-                    );
-                  }}
+                  onClick={applySuggestions}
+                  disabled={!automatic.steps.length}
                 >
-                  ⚡ Fill Sample Steps
+                  Rebuild automatic draft
                 </Button>
                 <Button size="sm" variant="outline" onClick={addStep}>
                   + Add Step
@@ -617,19 +600,20 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             </div>
           </div>
 
+          </details>
           <div className="flex gap-3 pt-2">
             <Button
-              disabled={!snapshotId || start.isPending}
+              disabled={!modelId || !steps.length || !config.data?.ready || config.data.modelId !== modelId || config.data.snapshotId !== snapshotId || (automatic.inputs.length>0 && !config.data.protectedInputsReady) || automatic.inputs.some(input=>!environment[input.name]?.trim()) || saveDraft.isPending || start.isPending}
               onClick={() => handleCreateAndRun(true)}
             >
               {start.isPending ? "Starting..." : "🚀 Create & Approve Run"}
             </Button>
             <Button
               variant="outline"
-              disabled={!snapshotId || start.isPending}
+              disabled={!modelId || !steps.length || saveDraft.isPending || start.isPending}
               onClick={() => handleCreateAndRun(false)}
             >
-              Save As Pending Session
+              Save scenario without running
             </Button>
           </div>
 

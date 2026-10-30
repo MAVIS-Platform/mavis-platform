@@ -42,11 +42,15 @@ public class RunnerServiceAuthGuard {
         }
     }
 
+    public boolean isConfigured() {
+        return runnerServiceKey != null && !runnerServiceKey.isBlank() && !runnerServiceKey.equals("mavis-local-runner-secret-key");
+    }
+
     public boolean isRunnerServiceKeyValid() {
         if (Boolean.TRUE.equals(INTERNAL_DISPATCH.get())) {
             return true;
         }
-        if (runnerServiceKey == null || runnerServiceKey.isBlank()) {
+        if (!isConfigured()) {
             return false;
         }
         if (httpServletRequest == null) {

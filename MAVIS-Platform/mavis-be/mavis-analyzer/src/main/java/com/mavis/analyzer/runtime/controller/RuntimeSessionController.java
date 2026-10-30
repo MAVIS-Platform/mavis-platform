@@ -54,7 +54,7 @@ public class RuntimeSessionController {
 
     @PostMapping("/runtime/sessions/{sessionId}/dispatch")
     @Operation(summary = "Kích hoạt điều phối thực thi phiên thực nghiệm ngay lập tức (J50-03, V15, N15)",
-            description = "Tự động kích hoạt MAVIS.Runner CLI hoặc Synthetic POC Trace và trả về kết quả đã cập nhật")
+            description = "Kích hoạt MAVIS.Runner; không thay thế thực thi bằng trace mô phỏng")
     public ApiResponse<RuntimeSessionResponseDTO> dispatchSession(@PathVariable UUID sessionId) {
         RuntimeSessionResponseDTO response = runtimeSessionService.dispatchSession(sessionId);
         return ApiResponse.success("Kích hoạt điều phối phiên thực nghiệm thành công", response);

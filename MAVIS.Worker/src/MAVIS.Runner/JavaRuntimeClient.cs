@@ -32,6 +32,18 @@ public sealed class JavaRuntimeClient : IRuntimeLifecycleObserver, IDisposable
         return RuntimeDefinitionReader.Read(json, sessionId);
     }
 
+    public async Task<IReadOnlyDictionary<string,string>> GetEnvironmentAsync(RuntimeRunDefinition definition, CancellationToken ct)
+    {
+        var response = await SendAsync(HttpMethod.Get, Route(definition.SessionId, "protected-environment"), null, ct);
+        using var document = JsonDocument.Parse(response);
+        var data = Data(document.RootElement);
+        RequireIdentity(data, definition.SessionId, definition.ResourceProject!);
+        var values = data.GetProperty("values").Deserialize<Dictionary<string,string>>() ?? throw new InvalidOperationException("Missing protected environment.");
+        if (values.Count > 64 || values.Any(pair => pair.Key.Length is < 1 or > 64 || pair.Value.Length > 16000 || pair.Key.Any(c => !char.IsAsciiLetterOrDigit(c) && c != '_')))
+            throw new InvalidOperationException("Invalid protected environment.");
+        return values;
+    }
+
     public async Task AcknowledgeAsync(RuntimeLifecycleEvent notification, CancellationToken ct)
     {
         _ = RuntimeAllocation.ProjectName(notification.ResourceProject);
