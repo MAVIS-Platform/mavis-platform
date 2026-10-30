@@ -1,7 +1,9 @@
 "use client";
 import Link from "next/link";
 import { AdminToolbar, PageResults, Notice } from "./operations";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { summarizeJobModel } from "@/lib/navigation/admin-job-review";
 import { useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
 import { RequestState, ErrorState } from "@/components/shared/request-state";
@@ -749,12 +751,60 @@ export function PlatformUsage() {
     </div>
   );
 }
+function AdminJobDetails({ job, returnTo }: { job: Response<"adminJobs">[number]; returnTo: string }) {
+  const project = useApiQuery("project", { projectId: job.projectId });
+  const model = useApiQuery("model", { projectId: job.projectId, modelId: job.modelId ?? "" },
+    { enabled: !!job.modelId });
+  const summary = model.data ? summarizeJobModel(model.data) : null;
+  return (
+    <DetailPanel title="Selected job">
+      <dl className="grid gap-3 text-sm sm:grid-cols-2">
+        <div><dt className="text-muted-foreground">Project</dt><dd>{project.data?.name ?? job.projectId}</dd></div>
+        <div><dt className="text-muted-foreground">Job ID</dt><dd className="break-all font-mono text-xs">{job.id}</dd></div>
+        <div><dt className="text-muted-foreground">Source snapshot</dt><dd className="break-all font-mono text-xs">{job.snapshotId}</dd></div>
+        <div><dt className="text-muted-foreground">Architecture revision</dt><dd>{model.data?.revision ?? "—"}</dd></div>
+      </dl>
+      {project.isError && <ErrorState error={project.error} onRetry={() => void project.refetch()} />}
+      <AnalysisStatusIndicator job={job} />
+      {job.modelId ? <RequestState query={model}>
+        {summary && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Analysis result summary">
+          <SummaryCard label="Services" value={summary.services} />
+          <SummaryCard label="Elements" value={summary.elements} />
+          <SummaryCard label="Relationships" value={summary.relationships} />
+          <SummaryCard label="Evidence records" value={summary.evidence} />
+          <SummaryCard label="Uncertain relationships" value={summary.uncertain} />
+        </div>}
+      </RequestState> : <p className="text-sm text-muted-foreground">No architecture model is available for this job.</p>}
+      {job.modelId && <Button asChild variant="outline" size="sm">
+        <Link href={`/architecture?${new URLSearchParams({ project: job.projectId, model: job.modelId, returnTo })}`}>
+          Open architecture
+        </Link>
+      </Button>}
+    </DetailPanel>
+  );
+}
+
 export function AdminAnalysisJobs() {
   const q = useApiQuery("adminJobs", {}, { refreshMs: 30000 });
-  const [search, setSearch] = useState(""),
-    [status, setStatus] = useState("all"),
-    [page, setPage] = useState(1),
-    [selected, setSelected] = useState("");
+  const params = useSearchParams();
+  const router = useRouter();
+  const [search, setSearch] = useState(params.get("search") ?? ""),
+    [status, setStatus] = useState(params.get("status") ?? "all"),
+    [page, setPage] = useState(Math.max(1, parseInt(params.get("page") ?? "1", 10) || 1));
+  const selected = params.get("job") ?? "";
+  useEffect(() => {
+    setSearch(params.get("search") ?? "");
+    setStatus(params.get("status") ?? "all");
+    setPage(Math.max(1, parseInt(params.get("page") ?? "1", 10) || 1));
+  }, [params]);
+  const detailsHref = (jobId: string) => {
+    const next = new URLSearchParams();
+    if (jobId) next.set("job", jobId);
+    if (search) next.set("search", search);
+    if (status !== "all") next.set("status", status);
+    next.set("page", String(activePage));
+    return `/administration/jobs?${next}`;
+  };
   const rows = (q.data ?? []).filter(
     (j) =>
       (j.id + " " + j.projectId + " " + j.message).toLowerCase().includes(search.toLowerCase()) &&
@@ -825,19 +875,7 @@ export function AdminAnalysisJobs() {
             caption="Recent analysis jobs"
             renderExpandedRow={(job) =>
               job.id === selected ? (
-                <DetailPanel title="Selected job">
-                  <p className="break-all font-mono text-xs">{job.id}</p>
-                  <AnalysisStatusIndicator job={job} />
-                  {job.modelId && (
-                    <Button asChild variant="outline" size="sm">
-                      <Link
-                        href={`/architecture?project=${encodeURIComponent(job.projectId)}&model=${encodeURIComponent(job.modelId)}`}
-                      >
-                        Open architecture
-                      </Link>
-                    </Button>
-                  )}
-                </DetailPanel>
+                <AdminJobDetails job={job} returnTo={detailsHref(job.id)} />
               ) : null
             }
             rows={rows.slice((activePage - 1) * 10, activePage * 10)}
@@ -882,7 +920,7 @@ export function AdminAnalysisJobs() {
                     size="sm"
                     variant="outline"
                     aria-expanded={selected === j.id}
-                    onClick={() => setSelected((current) => (current === j.id ? "" : j.id))}
+                    onClick={() => router.replace(detailsHref(selected === j.id ? "" : j.id), { scroll: false })}
                   >
                     {selected === j.id ? "Hide details" : "View details"}
                   </Button>
