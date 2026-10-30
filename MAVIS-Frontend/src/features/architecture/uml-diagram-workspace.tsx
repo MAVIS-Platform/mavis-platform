@@ -527,11 +527,10 @@ export function UmlDiagramWorkspace({
                 {view === "workflow" ? "Source workflow" : view === "method" ? "Method control flow" : "Dependency reference"}
               </Button>)}
             </div>
-            <p className="text-xs leading-5 text-muted-foreground">
-              {activityView === "workflow" ? "Endpoint/use-case CFG with uniquely resolved method bodies expanded. Swimlanes show classifier responsibility. Missing receiver types, ambiguous overloads and unsupported control paths remain explicit; this is static analysis, not observed execution."
-                : activityView === "method" ? "One method's extracted control-flow graph. Technical/configuration methods are available here; a single lane can be correct for a local method."
+            {activityView !== "workflow" && <p className="text-xs leading-5 text-muted-foreground">
+              {activityView === "method" ? "One method's extracted control-flow graph. Technical/configuration methods are available here; a single lane can be correct for a local method."
                 : "Unverified dependency illustrations are reference material and are not executable business workflows."}
-            </p>
+            </p>}
             {activityOps.length ? <SelectField label={activityView === "reference" ? "Dependency reference" : "Activity flow"}
               value={activeOpId} onChange={(value) => { clearDraftConflictState(); setSelectedOperationId(value); }}
               options={activityOps.map((operation) => ({ value: operation.operationId,
