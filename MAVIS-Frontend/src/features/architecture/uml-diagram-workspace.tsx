@@ -562,9 +562,6 @@ export function UmlDiagramWorkspace({
           />
         )}
 
-        {effectiveProjection.diagramKind === "UML_PACKAGE" && <p role="status" className="text-xs text-muted-foreground">
-          Packages are grouped by service and qualified name. HTTP service calls do not establish Java package imports; only recorded code dependencies are used.
-        </p>}
         <div className="border-t pt-3" data-testid="uml-interactive-items">
           {effectiveProjection.diagramKind === "UML_CLASS" && (
             <div className="grid gap-3 sm:grid-cols-2">
