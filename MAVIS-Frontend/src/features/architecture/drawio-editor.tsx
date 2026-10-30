@@ -673,7 +673,7 @@ export function DrawioEditor({
           config: {
             css: `.geSmallAppIcon { content: url(${JSON.stringify(
               logoUrl,
-            )}) !important; width: 24px !important; height: 24px !important; object-fit: contain; }`,
+            )}) !important; width: 24px !important; height: 24px !important; object-fit: contain; clip-path: ellipse(47% 47% at 50% 50%) content-box; }`,
           },
         });
         return;
