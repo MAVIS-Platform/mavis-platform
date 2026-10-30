@@ -117,10 +117,12 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
             label: "Submission",
             render: (s) => (
               <Link
-                className="text-primary underline"
+                className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-primary hover:underline"
                 href={`/submissions/${encodeURIComponent(s.id)}`}
+                title={s.id}
               >
-                {s.id}
+                <span>#{s.id.slice(0, 8)}</span>
+                <span className="font-sans text-[11px] font-medium">→</span>
               </Link>
             ),
           },
@@ -137,7 +139,11 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
             render: (s) => <SubmissionResult submissionId={s.id} />,
           },
           { key: "feedback", label: "Feedback", render: (s) => s.feedback.length },
-          { key: "date", label: "Submitted", render: (s) => s.submittedAt },
+          {
+            key: "date",
+            label: "Submitted",
+            render: (s) => (s.submittedAt ? new Date(s.submittedAt).toLocaleString() : "Not submitted"),
+          },
         ]}
       />
       {count > 1 && <Pagination page={current} pageCount={count} onPageChange={setPage} />}

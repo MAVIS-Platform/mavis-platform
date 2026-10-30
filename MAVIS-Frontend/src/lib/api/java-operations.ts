@@ -994,6 +994,8 @@ export async function executeJava(
           memoryMiB: 1024,
           cpus: 2,
           timeoutSeconds: 120,
+          revision: 1,
+          enabled: true,
         },
       ]);
     case "configureIntegration":
@@ -1011,6 +1013,8 @@ export async function executeJava(
         memoryMiB: typeof input["memoryMiB"] === "number" ? input["memoryMiB"] : 1024,
         cpus: typeof input["cpus"] === "number" ? input["cpus"] : 2,
         timeoutSeconds: typeof input["timeoutSeconds"] === "number" ? input["timeoutSeconds"] : 120,
+        revision: typeof input["revision"] === "number" ? input["revision"] : 1,
+        enabled: typeof input["enabled"] === "boolean" ? input["enabled"] : true,
       }));
     case "audit":
       return z

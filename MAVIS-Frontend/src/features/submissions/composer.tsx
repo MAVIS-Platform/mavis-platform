@@ -1,6 +1,6 @@
 "use client";
 import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { useModel } from "@/features/architecture/use-model";
@@ -93,9 +93,22 @@ export function SubmissionComposer({
     diagrams.data ?? [],
   );
   const overdue = isDeadlinePassed(requirements?.dueAt);
-  const compatible = (sessions.data ?? []).filter(
-    (s) => s.status === "completed" && s.snapshotId === state.model?.snapshotId,
-  );
+  const compatible = useMemo(() => {
+    const allCompleted = (sessions.data ?? []).filter(
+      (s) =>
+        s.status === "completed" ||
+        String(s.status).toUpperCase() === "COMPLETED" ||
+        String(s.executionStatus).toUpperCase() === "COMPLETED",
+    );
+    if (!state.model) return allCompleted;
+    const exactMatch = allCompleted.filter(
+      (s) =>
+        s.snapshotId === state.model?.snapshotId ||
+        s.modelId === state.model?.id ||
+        s.enrichedModelId === state.model?.id,
+    );
+    return exactMatch.length > 0 ? exactMatch : allCompleted;
+  }, [sessions.data, state.model]);
   const selectedRuntime = compatible.find((s) => s.id === runtimeId);
 
   return (
@@ -311,11 +324,25 @@ export function SubmissionComposer({
                         ? "Required runtime evidence"
                         : "Optional runtime evidence"
                     }
-                    value={selectedRuntime?.id ?? "none"}
+                    value={selectedRuntime?.id ?? ""}
                     onChange={setRuntimeId}
                     options={[
-                      { value: "none", label: "Do not include runtime evidence" },
-                      ...compatible.map((s) => ({ value: s.id, label: s.id })),
+                      { value: "", label: "No runtime trace attached" },
+                      ...compatible.map((s) => {
+                        const sAny = s as Record<string, unknown>;
+                        const title =
+                          typeof sAny["scenarioName"] === "string" && sAny["scenarioName"]
+                            ? sAny["scenarioName"]
+                            : s.scenarioId || "Runtime Session";
+                        const count =
+                          typeof sAny["traceCount"] === "number"
+                            ? sAny["traceCount"]
+                            : (s.traces?.length ?? 0);
+                        return {
+                          value: s.id,
+                          label: `${title} · #${s.id.slice(0, 8)} (${count} spans)`,
+                        };
+                      }),
                     ]}
                   />
                 </RequestState>

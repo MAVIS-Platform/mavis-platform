@@ -616,17 +616,17 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   )}
                   <dl className="my-4 grid gap-2 sm:grid-cols-2">
                     {[
-                      "executionStatus",
-                      "scenarioStatus",
-                      "evidenceStatus",
-                      "cleanupStatus",
-                      "traceQuality",
-                      "mappingStatus",
-                    ].map((key) => (
+                      { key: "executionStatus", label: "Execution status" },
+                      { key: "scenarioStatus", label: "Scenario status" },
+                      { key: "evidenceStatus", label: "Evidence status" },
+                      { key: "cleanupStatus", label: "Cleanup status" },
+                      { key: "traceQuality", label: "Trace quality" },
+                      { key: "mappingStatus", label: "Mapping status" },
+                    ].map(({ key, label }) => (
                       <div key={key}>
-                        <dt className="text-xs text-muted-foreground">{key}</dt>
+                        <dt className="text-xs text-muted-foreground">{label}</dt>
                         <dd className="text-sm">
-                          {String(session.data![key as keyof NonNullable<typeof session.data>])}
+                          {String(session.data?.[key as keyof NonNullable<typeof session.data>] ?? "n/a")}
                         </dd>
                       </div>
                     ))}

@@ -79,22 +79,33 @@ export function FeedbackPanel({
       {canReview && (
         <>
           <p className="text-xs text-muted-foreground">Inline feedback is visible to the student immediately. Use the private grading draft above for notes you are not ready to publish.</p>
-          <SelectField
-            label="Feedback target"
-            value={target}
-            onChange={setTarget}
-            options={[
-              { value: "", label: "General feedback" },
-              ...submission.model.elements.map((e) => ({
-                value: e.id,
-                label: `Element · ${e.name}`,
-              })),
-              ...submission.model.edges.map((e) => ({
-                value: e.id,
-                label: `Relationship · ${e.protocol} · ${e.id}`,
-              })),
-            ]}
-          />
+          {(() => {
+            const elementNameById = new Map(
+              submission.model.elements.map((e) => [e.id, e.name] as const),
+            );
+            return (
+              <SelectField
+                label="Feedback target"
+                value={target}
+                onChange={setTarget}
+                options={[
+                  { value: "", label: "General feedback" },
+                  ...submission.model.elements.map((e) => ({
+                    value: e.id,
+                    label: `Element · ${e.name}`,
+                  })),
+                  ...submission.model.edges.map((e) => {
+                    const fromName = elementNameById.get(e.from) ?? e.from.slice(0, 8);
+                    const toName = elementNameById.get(e.to) ?? e.to.slice(0, 8);
+                    return {
+                      value: e.id,
+                      label: `Relationship · ${fromName} → ${toName} (${e.protocol})`,
+                    };
+                  }),
+                ]}
+              />
+            );
+          })()}
           {selectedId && (
             <Button variant="outline" size="sm" onClick={() => setTarget(selectedId)}>
               Use selected graph item
