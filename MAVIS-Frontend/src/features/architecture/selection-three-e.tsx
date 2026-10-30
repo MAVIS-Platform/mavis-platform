@@ -7,7 +7,7 @@ import { useApi, useApiQuery } from "@/hooks/use-api";
 import { api as backend } from "@/lib/mainflow-api";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BookOpen, FileCode2, ShieldCheck, X, MessageSquare, Info, Loader2 } from "lucide-react";
+import { BookOpen, FileCode2, ShieldCheck, X, MessageSquare, Loader2 } from "lucide-react";
 import { ThreeEEvidence } from "./three-e-evidence";
 import { CommunicationPanel } from "./communication-panel";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -386,18 +386,6 @@ export function SelectionThreeE({
               <div className="rounded-xl border border-primary/15 bg-primary/[0.04] p-4">
                 <p className="text-sm leading-7">{active3E.explainSimple}</p>
               </div>
-              <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span>{active3E.grounding?.notice ?? deterministic3E.grounding?.notice}</span>
-              </p>
-              <Button
-                variant="outline"
-                className="h-auto min-h-10 w-full justify-between whitespace-normal rounded-lg text-left text-sm"
-                onClick={() => setActiveTab("evidence")}
-              >
-                <span className="min-w-0">Inspect source evidence</span>
-                <span className="shrink-0" aria-hidden="true">→</span>
-              </Button>
             </section>
 
             <details className="group rounded-xl border bg-background">
