@@ -75,7 +75,6 @@ export function ProjectSelector({
         value={selection.projectId}
         onChange={selection.setProjectId}
         options={[
-          { value: "", label: "Choose a project…" },
           ...options
             .filter(
               (p) =>
