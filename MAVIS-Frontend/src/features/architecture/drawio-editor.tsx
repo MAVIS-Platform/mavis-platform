@@ -1021,14 +1021,6 @@ export function DrawioEditor({
               ))}
             </div>
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!ready || processing}
-            onClick={relayoutDiagram}
-          >
-            Relayout
-          </Button>
           {onSave && (
             <Button
               size="sm"
