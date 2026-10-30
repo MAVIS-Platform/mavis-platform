@@ -231,6 +231,7 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
             opMap.put("memberKind", "OPERATION");
             opMap.put("name", mName);
             opMap.put("endpointDeclarations", method.getAnnotations().stream().map(Object::toString).filter(a -> a.matches("(?s)@(Get|Post|Put|Delete|Patch|Request)Mapping.*")).toList());
+            opMap.put("accessDeclarations", method.getAnnotations().stream().filter(a -> java.util.Set.of("PreAuthorize", "Secured", "RolesAllowed").contains(a.getName().getIdentifier())).map(Object::toString).toList());
             opMap.put("type", retType);
             opMap.put("returnType", retType);
             opMap.put("parameters", params);
@@ -302,6 +303,8 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
         umlClassifier.put("packageName", packageName);
         umlClassifier.put("typeKind", typeKind);
         umlClassifier.put("annotations", n.getAnnotations().stream().map(a -> a.getNameAsString()).toList());
+        umlClassifier.put("endpointPrefixDeclarations", n.getAnnotations().stream().filter(a -> a.getName().getIdentifier().equals("RequestMapping")).map(Object::toString).toList());
+        umlClassifier.put("accessDeclarations", n.getAnnotations().stream().filter(a -> java.util.Set.of("PreAuthorize", "Secured", "RolesAllowed").contains(a.getName().getIdentifier())).map(Object::toString).toList());
         umlClassifier.put("baseTypes", n.getExtendedTypes().stream().map(t -> t.getNameWithScope()).toList());
         umlClassifier.put("interfaceTypes", n.getImplementedTypes().stream().map(t -> t.getNameWithScope()).toList());
         umlClassifier.put("imports", cu == null ? List.of() : cu.getImports().stream().filter(i -> !i.isStatic()).map(i -> i.getNameAsString() + (i.isAsterisk() ? ".*" : "")).toList());
@@ -555,6 +558,17 @@ public class UmlClassifierVisitor extends VoidVisitorAdapter<List<CodeEvidenceDT
             var item = new LinkedHashMap<String, Object>();
             item.put("receiver", scope);item.put("receiverType", receiverTypes.get(scope));item.put("methodName", call.getNameAsString());
             item.put("arguments", call.getArguments().toString());
+            item.put("argumentCount", call.getArguments().size());
+            item.put("argumentTypes", call.getArguments().stream().map(argument -> {
+                if (argument.isStringLiteralExpr()) return "String";
+                if (argument.isBooleanLiteralExpr()) return "boolean";
+                if (argument.isCharLiteralExpr()) return "char";
+                if (argument.isIntegerLiteralExpr()) return "int";
+                if (argument.isLongLiteralExpr()) return "long";
+                if (argument.isObjectCreationExpr()) return argument.asObjectCreationExpr().getTypeAsString();
+                if (argument.isNameExpr()) return receiverTypes.getOrDefault(argument.asNameExpr().getNameAsString(), "UNKNOWN");
+                return "UNKNOWN";
+            }).toList());
             item.put("line", call.getBegin().map(p -> p.line).orElse(startLine));
             item.put("endLine", call.getEnd().map(p -> p.line).orElse(startLine));item.put("endColumn", call.getEnd().map(p -> p.column).orElse(0));
             var loopConditions = new ArrayList<String>();

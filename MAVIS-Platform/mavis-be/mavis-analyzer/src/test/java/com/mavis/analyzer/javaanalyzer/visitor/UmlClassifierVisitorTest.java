@@ -187,4 +187,33 @@ class UmlClassifierVisitorTest {
         assertThat(unresolved.stream().anyMatch(u -> u.contains("forceArchive->ARCHIVED"))).isTrue();
         assertThat(lifecycle.get("extractionCompleteness")).isEqualTo("PARTIAL");
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void sourceCallsCarryArgumentArityAndKnownTypesForOverloads() {
+        var cu = StaticJavaParser.parse("class Controller { Service service; void create(Request request) { service.accept(\"text\", 7, request); } }");
+        List<CodeEvidenceDTO> evidences = new ArrayList<>();
+        new UmlClassifierVisitor("Controller.java").visit(cu, evidences);
+        var cls = evidences.stream().filter(e -> "CLASS_INTERFACE".equals(e.getElementType())).findFirst().orElseThrow();
+        var uml = (Map<String,Object>) cls.getMetadata().get("umlClassifier");
+        var cfgs = (List<Map<String,Object>>) uml.get("methodsCfg");
+        var calls = (List<Map<String,Object>>) cfgs.get(0).get("calls");
+        assertThat(calls).hasSize(1);
+        assertThat(calls.get(0).get("argumentCount")).isEqualTo(3);
+        assertThat((List<String>) calls.get(0).get("argumentTypes")).containsExactly("String", "int", "Request");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void runtimeDraftMetadataPreservesControllerPrefixAndMethodAccessRules() {
+        var cu = StaticJavaParser.parse("@RequestMapping(\"/api\") class Controller { @GetMapping(\"/items\") @Secured(\"ROLE_ADMIN\") public String list() { return \"ok\"; } }");
+        List<CodeEvidenceDTO> evidences = new ArrayList<>();
+        new UmlClassifierVisitor("Controller.java").visit(cu, evidences);
+        var cls = evidences.stream().filter(e -> "CLASS_INTERFACE".equals(e.getElementType())).findFirst().orElseThrow();
+        var uml = (Map<String,Object>) cls.getMetadata().get("umlClassifier");
+        assertThat((List<String>) uml.get("endpointPrefixDeclarations")).containsExactly("@RequestMapping(\"/api\")");
+        var members = (List<Map<String,Object>>) uml.get("members");
+        var method = members.stream().filter(m -> "list".equals(m.get("name"))).findFirst().orElseThrow();
+        assertThat((List<String>) method.get("accessDeclarations")).containsExactly("@Secured(\"ROLE_ADMIN\")");
+    }
 }

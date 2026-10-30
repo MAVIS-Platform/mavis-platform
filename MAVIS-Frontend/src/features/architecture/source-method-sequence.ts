@@ -1,3 +1,4 @@
+import { resolveReceiver, resolveCalledMethods } from "./source-call-resolution";
 import type { ArchitecturalModel } from "@/types/domain";
 import type {
   DetectedSequenceFlow,
@@ -14,7 +15,6 @@ const rows = (value: unknown): Record<string, unknown>[] =>
   Array.isArray(value) ? value.map(record) : [];
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-const simple = (type: string) => type.replace(/<.*>/, "").split(".").at(-1);
 function methods(node: ArchitecturalModel["elements"][number]) {
   return rows(record(node.properties?.["umlClassifier"])["methodsCfg"]);
 }
@@ -112,13 +112,7 @@ export function buildSourceMethodInteraction(
       );
     const from = participant(owner);
     for (const call of rows(cfg["calls"])) {
-      const candidates = model.elements.filter(
-        (node) =>
-          node.parentId === owner.parentId &&
-          node.id !== owner.id &&
-          (node.name === simple(String(call["receiverType"])) ||
-            record(node.properties?.["umlClassifier"])["qualifiedName"] === call["receiverType"]),
-      );
+      const candidates = resolveReceiver(model, owner, String(call["receiverType"] ?? ""));
       if (candidates.length !== 1) {
         if (!/Logger|Log$/.test(String(call["receiverType"])))
           limitations.add("UNRESOLVED_RECEIVER: " + String(call["receiverType"]));
@@ -151,16 +145,13 @@ export function buildSourceMethodInteraction(
         provenance: "STATIC",
         isUncertain: false,
       });
-      const localMethods = methods(target).filter(
-        (method) => method["methodName"] === call["methodName"],
-      );
+      const localMethods = resolveCalledMethods(methods(target), call);
       if (localMethods.length === 1)
         walk(target.id, String(localMethods[0]!["signature"]), depth + 1, loops, nextStack);
+      else if (localMethods.length > 1) limitations.add("AMBIGUOUS_OVERLOAD: " + target.name + "." + String(call["methodName"]));
       const targetService = target.properties?.["targetService"];
       if (typeof targetService === "string") {
-        const member = rows(record(target.properties?.["umlClassifier"])["members"]).filter(
-          (member) => member["name"] === call["methodName"],
-        );
+        const member = resolveCalledMethods(rows(record(target.properties?.["umlClassifier"])["members"]), call);
         const mappings = member.length === 1 ? strings(member[0]!["endpointDeclarations"]) : [];
         const service = model.elements.filter(
           (node) =>

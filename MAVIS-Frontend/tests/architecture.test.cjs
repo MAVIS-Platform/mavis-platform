@@ -2029,7 +2029,7 @@ test("admin model deep links retain an authorized selected project even when own
 test("architecture view tabs preserve project/model and deep link every diagram kind",()=>{
  const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
  const kinds=['CONTEXT','CONTAINER','COMPONENT','UML_SEQUENCE','UML_CLASS','UML_PACKAGE','UML_DEPLOYMENT','UML_ACTIVITY','UML_STATE'];
- let role='student';
+ let role='admin';
  let params=new URLSearchParams('project=foreign-project&model=pinned-model&kind=UML_CLASS');
  const query={isPending:false,isError:false,isFetching:false,refetch(){}};
  const {ArchitectureWorkspace}=loadRoutedComponent('src/routes/architecture.tsx',{
@@ -2058,7 +2058,7 @@ test("architecture view tabs preserve project/model and deep link every diagram 
  const graphTag=[...graph.matchAll(/<a\b[^>]*>/g)].find(m=>m[0].includes('aria-current="page"'))?.[0];
  assert.match(graphTag,/href="\/architecture\?/);
  assert.match(graph,/data-view-mode="graph"/);
- assert.ok(!graph.includes('Back to analysis jobs'));
+ assert.ok(graph.includes('Back to analysis jobs'));
  role='admin';
  const returnTo='/administration/jobs?job=job-12&search=spring&status=completed&page=2';
  params=new URLSearchParams({project:'foreign-project',model:'pinned-model',returnTo});
@@ -2070,4 +2070,13 @@ test("architecture view tabs preserve project/model and deep link every diagram 
   assert.equal(url.searchParams.get('returnTo'),returnTo);
  }
  assert.ok(admin.includes('/administration/jobs?job=job-12&amp;search=spring&amp;status=completed&amp;page=2'));
+ for(const userRole of ['student','lecturer']){
+  role=userRole;
+  for(const mode of ['graph','diagram']){
+   const user=renderToStaticMarkup(React.createElement(ArchitectureWorkspace,{mode}));
+   assert.ok(!user.includes('aria-label="Architecture views"'),`${role} ${mode} must not show admin tabs`);
+   assert.ok(!user.includes('Back to analysis jobs'));
+   assert.ok(user.includes(`data-view-mode="${mode}"`));
+  }
+ }
 });

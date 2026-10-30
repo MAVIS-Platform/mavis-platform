@@ -24,10 +24,11 @@ public class RuntimePlanningService {
  private final PlatformRuntimeSettings settings;
  private final RuntimeSessionService runtime;
  private final ObjectMapper json;
+ private final RuntimeSessionEnvironmentService environments;
  public record ConfigurationRequest(@NotNull UUID snapshotId,@NotNull UUID modelId,@NotBlank String profileId,@NotNull JsonNode profile,@Min(0) int expectedRevision){}
  public record ScenarioRequest(@NotBlank @Size(max=100) String name,@NotEmpty @Size(max=30) List<@NotBlank @Size(max=10000) String> steps,@Min(0) int expectedRevision){}
- public record StartRequest(@NotNull UUID snapshotId,@NotNull UUID scenarioId,@Min(1) int configurationRevision,@Min(1) int scenarioRevision,@AssertTrue boolean approved){}
- public record ConfigurationView(UUID projectId,UUID snapshotId,UUID modelId,String profileId,JsonNode profile,int revision,boolean configured,boolean supported,boolean ready,List<String> prerequisites){}
+ public record StartRequest(@NotNull UUID snapshotId,@NotNull UUID scenarioId,@Min(1) int configurationRevision,@Min(1) int scenarioRevision,@AssertTrue boolean approved,@com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY) Map<String,String> environment){ @Override public String toString(){return "RuntimeStartRequest[snapshotId="+snapshotId+",scenarioId="+scenarioId+",environment=[protected]]";} }
+ public record ConfigurationView(UUID projectId,UUID snapshotId,UUID modelId,String profileId,JsonNode profile,int revision,boolean configured,boolean supported,boolean ready,List<String> prerequisites,boolean protectedInputsReady){}
  public record ScenarioView(UUID id,UUID projectId,String name,List<String> steps,int revision){}
  private Project project(UUID id,boolean write){var p=projects.findById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));if(write)policy.requireProjectWriteAccess(p);else policy.requireProjectReadAccess(p);return p;}
  private void lock(UUID id){var p=projects.findLockedById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));policy.requireProjectWriteAccess(p);}
@@ -36,7 +37,7 @@ public class RuntimePlanningService {
   if(snapshot!=null){var pre=runtime.runComposePreflight(snapshot);supported=pre.isCompatible();warnings.addAll(pre.getSecurityWarnings());}else warnings.add("No source snapshot exists");
   if(c==null)warnings.add("Save a pinned source, model and operator-provisioned execution profile before starting");
   boolean enabled=settings.enabled("otel-collector")&&(c==null||settings.profile(c.getProfileId()).enabled());if(!enabled)warnings.add("Runtime integration or execution profile is disabled");
-  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),c==null?json.createObjectNode():c.getProfile().deepCopy(),c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled,warnings);
+  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),c==null?json.createObjectNode():c.getProfile().deepCopy(),c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled,warnings,environments.isConfigured());
  }
  @Transactional
  public ConfigurationView saveConfiguration(UUID id,ConfigurationRequest r){lock(id);var c=configurations.findById(id).orElseGet(RuntimeConfiguration::new);if(c.getRevision()!=r.expectedRevision())throw new BusinessException(ErrorCode.CONFLICT);
@@ -64,6 +65,7 @@ public class RuntimePlanningService {
   var config=json.createObjectNode();config.set("profile",c.getProfile().deepCopy());var scenario=config.putObject("scenario");scenario.set("steps",s.getSteps().deepCopy());scenario.put("timeoutSeconds",settings.requireProfile(c.getProfileId()).timeoutSeconds());
   var planning=config.putObject("planning");planning.put("scenarioId",s.getId().toString());planning.put("scenarioRevision",s.getRevision());planning.put("configurationRevision",c.getRevision());
   var created=runtime.createRuntimeSession(RuntimeSessionCreateRequest.builder().projectId(id).sourceSnapshotId(c.getSourceSnapshotId()).modelVersionId(c.getModelVersionId()).profileName(c.getProfileId()).scenarioName(s.getName()).scenarioConfig(config).build());
+  environments.store(created.getId(),r.environment());
   return runtime.approveAndStartSession(created.getId());
  }
  private void validateProfile(JsonNode p){if(!p.isObject()||p.toString().length()>50000||!p.equals(SecretRedactor.redactJson(p)))throw new BusinessException(ErrorCode.BAD_REQUEST,"Profile must be a bounded object without literal secrets");

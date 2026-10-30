@@ -68,7 +68,7 @@ mavis:
     state-root: ${MAVIS_RUNNER_STATE_ROOT:${java.io.tmpdir}/mavis-runner-state}
     auto-dispatch-enabled: ${MAVIS_RUNNER_AUTO_DISPATCH:true}
     mode: ${MAVIS_RUNNER_MODE:AUTO}
-    service-key: ${MAVIS_RUNNER_SERVICE_KEY:mavis-local-runner-secret-key}
+    service-key: ${MAVIS_RUNNER_SERVICE_KEY:}
     collector-config-path: ${MAVIS_RUNNER_COLLECTOR_CONFIG:samples/runtime-poc/collector.yaml}
     runner-project-path: ${MAVIS_RUNNER_PROJECT_PATH:../MAVIS.Worker/src/MAVIS.Runner/MAVIS.Runner.csproj}
     allow-unverified-poc-promotion: false
