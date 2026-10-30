@@ -10,5 +10,7 @@ import java.util.UUID;
 
 @Repository
 public interface UserOtpRepository extends JpaRepository<UserOtp, UUID> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    Optional<UserOtp> findFirstByUserAndOtpCodeAndPurposeOrderByCreatedAtDesc(User user, String otpCode, String purpose);
     Optional<UserOtp> findFirstByUserAndOtpCodeAndIsUsedFalseOrderByCreatedAtDesc(User user, String otpCode);
 }

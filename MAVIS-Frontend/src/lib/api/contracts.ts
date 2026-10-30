@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { verificationCodePattern } from "@/lib/auth/verification-code";
 import * as d from "@/types/domain";
 
 const id = z.string().min(1);
@@ -49,7 +50,7 @@ export const contracts = {
     true,
   ),
   verifyEmail: contract(
-    z.object({ email: z.string().email(), otpCode: z.string().trim().min(1).max(12) }),
+    z.object({ email: z.string().email(), otpCode: z.string().regex(verificationCodePattern) }),
     ok,
     true,
   ),
@@ -58,7 +59,7 @@ export const contracts = {
   resetPassword: contract(
     z.object({
       email: z.string().email(),
-      otpCode: z.string().trim().min(1).max(12),
+      otpCode: z.string().regex(verificationCodePattern),
       newPassword: z.string().min(6),
     }),
     ok,

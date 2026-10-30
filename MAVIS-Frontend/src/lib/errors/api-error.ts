@@ -1,21 +1,44 @@
 export const publicErrors = {
   DELETE_BUSY: "Stop active analysis/runtime work and resolve cleanup before deleting this item.",
-  DELETE_PROTECTED: "Published reference data, submitted coursework and runtime-linked snapshots must be retained and cannot be deleted here.",
-  DELETE_REFERENCED: "This snapshot has dependent revisions or protected records. Delete the dependent data only through its own supported workflow, or retain this snapshot.",
+  DELETE_PROTECTED:
+    "Published reference data, submitted coursework and runtime-linked snapshots must be retained and cannot be deleted here.",
+  DELETE_REFERENCED:
+    "This snapshot has dependent revisions or protected records. Delete the dependent data only through its own supported workflow, or retain this snapshot.",
   LOGIN_CREDENTIALS: "Email or password is incorrect.",
-  LOGIN_VERIFICATION: "Verify your email before signing in.",
-  LOGIN_LOCKED: "This account is locked or inactive. Contact your administrator.",
+  LOGIN_VERIFICATION: "Please verify your email before signing in.",
+  LOGIN_LOCKED: "Your account is locked. Please contact the administrator for assistance.",
+  AUTH_CODE_INVALID: "The verification code is incorrect. Please try again.",
+  AUTH_CODE_EXPIRED: "The verification code has expired. Please request a new code.",
+  AUTH_CODE_USED: "This verification code has already been used. Please request a new code.",
+  AUTH_RESET_INVALID: "The password reset code is invalid. Please check it and try again.",
+  AUTH_RESET_EXPIRED: "The password reset code has expired. Please request a new code.",
+  AUTH_RESET_USED: "This password reset code has already been used. Please request a new code.",
+  AUTH_PASSWORD_POLICY:
+    "Your password does not meet the requirements. Please review the password rules and try again.",
+  AUTH_INPUT_INVALID: "Please check the information entered and try again.",
+  AUTH_VERIFICATION_UNAVAILABLE:
+    "Email verification could not be completed. Please check your code or sign in if already verified.",
+  AUTH_EMAIL_DELIVERY: "We couldn't send the email right now. Please try again later.",
+  AUTH_NETWORK: "Unable to connect. Please check your internet connection and try again.",
+  AUTH_SERVER: "Something went wrong. Please try again later.",
+  AUTH_RATE_LIMIT: "Too many requests. Please wait a moment before trying again.",
+  AUTH_RESEND_LIMIT: "Too many requests. Please wait before requesting another code.",
   SUBMISSION_DEADLINE: "The assignment deadline has passed. Ask your lecturer to extend it.",
   SUBMISSION_SCOPE: "Use a project created for this assignment's workspace.",
   SUBMISSION_OWNER: "Only the project owner can submit this work.",
   SUBMISSION_PARTIAL: "Complete or confirm this partial analysis before submitting.",
   SUBMISSION_MODEL_MISMATCH: "The selected model version does not belong to this project.",
-  SUBMISSION_SNAPSHOT_MISSING: "The selected model version is missing an immutable source snapshot.",
+  SUBMISSION_SNAPSHOT_MISSING:
+    "The selected model version is missing an immutable source snapshot.",
   SUBMISSION_DIAGRAM_MISMATCH: "The selected diagram bundle does not belong to this model version.",
-  SUBMISSION_REQUIRED_DIAGRAM: "One or more required diagram types are missing from your selection. Save or select the required diagrams first.",
-  SUBMISSION_EVALUATION_MISMATCH: "The selected evaluation run does not belong to this model version.",
-  SUBMISSION_RUNTIME_MISMATCH: "The selected runtime session does not match this project and source snapshot.",
-  SUBMISSION_RUNTIME_REQUIRED: "This assignment requires a completed (PASSED) Runtime Trace session on the same source snapshot.",
+  SUBMISSION_REQUIRED_DIAGRAM:
+    "One or more required diagram types are missing from your selection. Save or select the required diagrams first.",
+  SUBMISSION_EVALUATION_MISMATCH:
+    "The selected evaluation run does not belong to this model version.",
+  SUBMISSION_RUNTIME_MISMATCH:
+    "The selected runtime session does not match this project and source snapshot.",
+  SUBMISSION_RUNTIME_REQUIRED:
+    "This assignment requires a completed (PASSED) Runtime Trace session on the same source snapshot.",
   PROFILE_CURRENT_PASSWORD: "Current password is incorrect. Please try again.",
   SUBMISSION_DIAGRAM: "Save a diagram for this exact model version before submitting.",
   REFERENCE_MODEL:
@@ -44,15 +67,20 @@ export function backendErrorCode(
 ): PublicErrorCode | undefined {
   if (typeof message !== "string") return undefined;
   if (path.startsWith("projects/") && status === 409) {
-    if (message === "Deletion is blocked while analysis or runtime work is active or cleanup is unresolved.") return "DELETE_BUSY";
-    if (["Deletion is blocked for published reference data or submitted coursework.","Deletion is blocked for published, submitted or runtime-linked snapshots."].includes(message)) return "DELETE_PROTECTED";
-    if (message === "This snapshot has dependent revisions or protected records.") return "DELETE_REFERENCED";
-  }
-  if (["auth/login", "auth/google"].includes(path)) {
-    if (status === 401 && message === "Sai email hoặc mật khẩu") return "LOGIN_CREDENTIALS";
-    if (status === 403 && message === "Vui lòng xác thực Email trước khi đăng nhập")
-      return "LOGIN_VERIFICATION";
-    if (status === 403 && message === "Tài khoản của bạn đã bị khóa") return "LOGIN_LOCKED";
+    if (
+      message ===
+      "Deletion is blocked while analysis or runtime work is active or cleanup is unresolved."
+    )
+      return "DELETE_BUSY";
+    if (
+      [
+        "Deletion is blocked for published reference data or submitted coursework.",
+        "Deletion is blocked for published, submitted or runtime-linked snapshots.",
+      ].includes(message)
+    )
+      return "DELETE_PROTECTED";
+    if (message === "This snapshot has dependent revisions or protected records.")
+      return "DELETE_REFERENCED";
   }
   if (path === "submissions") {
     if (status === 400 && message === "Đã quá hạn nộp bài cho đề bài này")
@@ -137,6 +165,7 @@ export class ApiError extends Error {
     public readonly kind: ErrorKind,
     public readonly status?: number,
     public readonly code?: PublicErrorCode,
+    public readonly retryAfter?: number,
   ) {
     super(code ? publicErrors[code] : messages[kind]);
     this.name = "ApiError";

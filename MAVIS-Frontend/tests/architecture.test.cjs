@@ -565,6 +565,80 @@ test("all auth flows reuse one login background while retaining their forms and 
   }
 });
 
+test("session gate redirects only confirmed unauthenticated sessions and retains full route context", () => {
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ let effects=[],redirects=[],state={isPending:false,isError:false,data:{user:null}};
+ const hooks={useSession:()=>state,useApi:()=>({mode:"backend"})};
+ const {RequireSession}=loadRoutedComponent("src/features/auth/access.tsx",{
+  react:{...React,useEffect:fn=>effects.push(fn)},"@/hooks/use-api":hooks,
+  "next/navigation":{usePathname:()=>"/architecture",useSearchParams:()=>new URLSearchParams("project=one&model=two&origin=STATIC"),useRouter:()=>({replace:path=>redirects.push(path)})},
+ },{window:{location:{hash:"#selected"}}});
+ function render(){effects=[];const html=renderToStaticMarkup(React.createElement(RequireSession,null,React.createElement("p",null,"protected content")));effects.forEach(fn=>fn());return html;}
+ let html=render();assert.ok(!html.includes("Sign in required"));assert.ok(!html.includes("protected content"));assert.equal(redirects.length,1);
+ assert.equal(new URL(redirects[0],"http://localhost").searchParams.get("next"),"/architecture?project=one&model=two&origin=STATIC#selected");
+ redirects=[];state={isPending:false,isError:true,error:new Error("offline"),refetch(){}};render();assert.equal(redirects.length,0);
+ state={isPending:true,isError:false};render();assert.equal(redirects.length,0);
+ state={isPending:false,isError:false,data:{user:{role:"student"}}};html=render();assert.ok(html.includes("protected content"));assert.equal(redirects.length,0);
+ const {RequireSession:Blocked}=loadRoutedComponent("src/features/auth/access.tsx",{react:{...React,useEffect:fn=>effects.push(fn)},"@/hooks/use-api":hooks});
+ html=renderToStaticMarkup(React.createElement(Blocked,{permission:"admin:manage"},"private"));assert.ok(html.includes("Access unavailable"));assert.ok(!html.includes("private"));
+});
+
+test("OTP presentation reuses six numeric slots and requires explicit submission",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {VerificationCodeInput}=loadRoutedComponent("src/features/auth/verification-code-input.tsx");
+ const {isCompleteVerificationCode}=require("../src/lib/auth/verification-code.ts");
+ const html=renderToStaticMarkup(React.createElement(VerificationCodeInput,{value:"012345",onChange(){},disabled:false}));
+ assert.ok(html.includes('inputMode="numeric"'));assert.ok(html.includes('autoComplete="one-time-code"'));
+ assert.ok(html.includes('maxLength="6"'));assert.ok(html.includes('minLength="6"'));assert.ok(html.includes('aria-describedby='));
+ assert.equal(isCompleteVerificationCode("012345"),true);for(const code of ["12345","1234567","12345a"])assert.equal(isCompleteVerificationCode(code),false);
+});
+
+test("authentication messages preserve Vietnamese translations",()=>{
+ const {EXACT_VI_DICTIONARY}=require("../src/lib/i18n/locale-context.tsx");
+ const {publicErrors}=require("../src/lib/errors/api-error.ts");
+ for(const [code,message] of Object.entries(publicErrors).filter(([code])=>code.startsWith("AUTH_")||code.startsWith("LOGIN_"))) {
+  assert.ok(EXACT_VI_DICTIONARY[message],code);assert.notEqual(EXACT_VI_DICTIONARY[message],message);
+ }
+});
+
+test("auth forms display approved backend errors accessibly without raw exception text",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {ThemeProvider}=require("../src/components/theme-provider.tsx");
+ const {ApiError,publicErrors}=require("../src/lib/errors/api-error.ts");
+ for(const [flow,op,code] of [["verify","verifyEmail","AUTH_CODE_EXPIRED"],["reset-password","resetPassword","AUTH_RESET_USED"],["forgot-password","forgotPassword","AUTH_SERVER"]]) {
+  const {AuthFlow}=loadRoutedComponent("src/features/auth/auth-flow.tsx",{"@/hooks/use-api":{useApiMutation:name=>({isPending:false,isError:name===op,error:name===op?new ApiError("invalid",400,code):null})}});
+  const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AuthFlow,{flow})));assert.ok(html.includes('role="alert"'));assert.ok(html.includes(publicErrors[code]));assert.ok(!html.includes("stack trace"));
+ }
+});
+
+test("auth form prevents incomplete OTPs and duplicate submissions while preserving separate purposes",async()=>{
+ const React=require("react");
+ const allNodes=node=>!node||typeof node!=="object"?[]:[node,...React.Children.toArray(node.props?.children).flatMap(allNodes)];
+ function harness(flow,initial={},reject){
+  let cursor=0,refCursor=0;const states=[],refs=[],calls=[],routes=[];let release;
+  Object.assign(states,initial);
+  const react={...React,useState:start=>{const i=cursor++;if(!(i in states))states[i]=typeof start==="function"?start():start;return[states[i],v=>{states[i]=typeof v==="function"?v(states[i]):v;}];},useRef:start=>{const i=refCursor++;return refs[i]??=( {current:start} );},useEffect(){}};
+  const {AuthFlow}=loadRoutedComponent("src/features/auth/auth-flow.tsx",{react,
+   "@/lib/i18n/locale-context":{useLocale:()=>({t:v=>v})},
+   "next/navigation":{useSearchParams:()=>new URLSearchParams("email=fixture%40example.org"),useRouter:()=>({push:r=>routes.push(r),replace:r=>routes.push(r)})},
+   "@/hooks/use-api":{useApiMutation:op=>({isPending:false,isError:false,mutateAsync:input=>{calls.push([op,input]);return new Promise((resolve,rejectFn)=>{release=()=>reject?rejectFn(reject):resolve({ok:true});});}})},
+  });
+  const render=()=>{cursor=0;refCursor=0;return allNodes(AuthFlow({flow}));};
+  const submit=()=>render().find(n=>n.type==="form").props.onSubmit({preventDefault(){}});
+  return{states,calls,routes,submit,render,release:()=>release()};
+ }
+ const incomplete=harness("verify",{4:"12345"});incomplete.submit();assert.equal(incomplete.calls.length,0);assert.equal(incomplete.states[6],"Enter exactly six digits.");
+ const verify=harness("verify",{4:"012345"});verify.submit();verify.submit();assert.equal(verify.calls.length,1);assert.equal(verify.calls[0][0],"verifyEmail");assert.equal(verify.calls[0][1].email,"fixture@example.org");assert.equal(verify.calls[0][1].otpCode,"012345");verify.release();await new Promise(setImmediate);assert.deepEqual(verify.routes,["/login?verified=1"]);
+ const reset=harness("reset-password",{2:"valid-password",3:"valid-password",4:"012345"});reset.submit();assert.equal(reset.calls[0][0],"resetPassword");reset.release();await new Promise(setImmediate);assert.deepEqual(reset.routes,["/login?reset=1"]);
+ const {ApiError}=require("../src/lib/errors/api-error.ts");const expired=harness("reset-password",{2:"valid-password",3:"valid-password",4:"012345"},new ApiError("invalid",400,"AUTH_RESET_EXPIRED"));expired.submit();expired.release();await new Promise(setImmediate);assert.equal(expired.states[4],"");assert.equal(expired.states[2],"valid-password");assert.equal(expired.routes.length,0);
+ const forgot=harness("forgot-password");forgot.submit();forgot.release();await new Promise(setImmediate);assert.deepEqual(forgot.routes,["/auth/reset-password?email=fixture%40example.org"]);
+ for(const flow of ["verify","reset-password"]) {
+  const h=harness(flow);const action=h.render().find(n=>n.props?.variant==="link"&&typeof n.props.onClick==="function");
+  action.props.onClick();action.props.onClick();assert.equal(h.calls.length,1);assert.equal(h.calls[0][0],flow==="verify"?"resendOtp":"forgotPassword");h.release();await new Promise(setImmediate);
+  assert.equal(h.states[7],30);assert.equal(h.render().find(n=>n.props?.variant==="link"&&typeof n.props.onClick==="function").props.disabled,true);
+ }
+});
+
 test("profile renders real long account values and a separate password action without invented email", () => {
   const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
   const hooks={useApi:()=>({mode:"backend"}),useApiMutation:()=>({isPending:false,error:null})};

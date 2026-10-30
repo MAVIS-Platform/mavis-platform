@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, LoaderCircle, CheckCircle2 } from "lucide-react";
@@ -10,6 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AppearanceSelector } from "@/components/appearance-selector";
 import { ErrorState } from "@/components/shared/request-state";
+import { VerificationCodeInput } from "./verification-code-input";
+import { isCompleteVerificationCode } from "@/lib/auth/verification-code";
+import { normalizeError } from "@/lib/errors/api-error";
+import { useLocale } from "@/lib/i18n/locale-context";
 export function AuthFlow({
   flow,
 }: {
@@ -17,12 +21,25 @@ export function AuthFlow({
 }) {
   const params = useSearchParams();
   const router = useRouter();
+  const { t } = useLocale();
   const [email, setEmail] = useState(params.get("email") ?? "");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [otp, setOtp] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(
+    flow === "reset-password"
+      ? "If this email is registered, you will receive a password reset code."
+      : "",
+  );
+  const [validation, setValidation] = useState("");
+  const [cooldown, setCooldown] = useState(0);
+  const submitting = useRef(false);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = window.setTimeout(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [cooldown]);
   const register = useApiMutation("register");
   const verify = useApiMutation("verifyEmail");
   const resend = useApiMutation("resendOtp");
@@ -36,7 +53,8 @@ export function AuthFlow({
         : flow === "forgot-password"
           ? forgot
           : reset;
-  const busy = current.isPending || resend.isPending;
+  const busy = current.isPending || resend.isPending || forgot.isPending;
+  const needsCode = flow === "verify" || flow === "reset-password";
   const title = {
     register: "Create your account",
     verify: "Verify your email",
@@ -50,6 +68,22 @@ export function AuthFlow({
     "reset-password": "Use your reset code to choose a new password.",
   }[flow];
   async function submit() {
+    if (submitting.current || busy) return;
+    if (needsCode && !isCompleteVerificationCode(otp)) {
+      setValidation("Enter exactly six digits.");
+      return;
+    }
+    if (
+      ["register", "reset-password"].includes(flow) &&
+      (password.length < 6 || password !== confirm)
+    ) {
+      setValidation(
+        password !== confirm ? "Passwords do not match." : "Use at least 6 characters.",
+      );
+      return;
+    }
+    submitting.current = true;
+    setValidation("");
     setMessage("");
     try {
       if (flow === "register") {
@@ -67,8 +101,34 @@ export function AuthFlow({
         setConfirm("");
         router.replace("/login?reset=1");
       }
-    } catch {
-      /* Mutation error shown below. */
+    } catch (error) {
+      const failure = normalizeError(error);
+      if (failure.code?.startsWith("AUTH_CODE_") || failure.code?.startsWith("AUTH_RESET_"))
+        setOtp("");
+      if (failure.kind === "rate-limit") setCooldown(failure.retryAfter ?? 30);
+    } finally {
+      submitting.current = false;
+    }
+  }
+  async function requestAnotherCode() {
+    if (submitting.current || busy || cooldown > 0 || !email.trim()) return;
+    submitting.current = true;
+    setMessage("");
+    try {
+      if (flow === "verify") await resend.mutateAsync({ email });
+      else await forgot.mutateAsync({ email });
+      setOtp("");
+      setMessage(
+        flow === "verify"
+          ? "If this email needs verification, you will receive a new code."
+          : "If this email is registered, you will receive a password reset code.",
+      );
+      setCooldown(30);
+    } catch (error) {
+      const failure = normalizeError(error);
+      if (failure.kind === "rate-limit") setCooldown(failure.retryAfter ?? 30);
+    } finally {
+      submitting.current = false;
     }
   }
   return (
@@ -120,18 +180,16 @@ export function AuthFlow({
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
-          {["verify", "reset-password"].includes(flow) && (
-            <label className="block space-y-2 text-sm font-medium">
-              <span>Verification code</span>
-              <Input
-                required
-                autoComplete="one-time-code"
-                maxLength={12}
-                value={otp}
-                disabled={busy}
-                onChange={(e) => setOtp(e.target.value)}
-              />
-            </label>
+          {needsCode && (
+            <VerificationCodeInput
+              value={otp}
+              onChange={(value) => {
+                setOtp(value);
+                setValidation("");
+              }}
+              disabled={busy}
+              autoFocus={Boolean(params.get("email"))}
+            />
           )}
           {["register", "reset-password"].includes(flow) && (
             <>
@@ -147,6 +205,7 @@ export function AuthFlow({
                   onChange={(e) => setPassword(e.target.value)}
                 />
               </label>
+              <p className="text-xs text-muted-foreground">{t("Use at least 6 characters.")}</p>
               <label className="block space-y-2 text-sm font-medium">
                 <span>Confirm password</span>
                 <Input
@@ -167,10 +226,23 @@ export function AuthFlow({
             </>
           )}
           {current.isError && <ErrorState error={current.error} />}
+          {validation && (
+            <p role="alert" className="text-sm text-destructive">
+              {t(validation)}
+            </p>
+          )}
+          {flow === "forgot-password" && cooldown > 0 && (
+            <p role="status" className="text-xs text-muted-foreground">
+              {t("Request another code in")} {cooldown}s
+            </p>
+          )}
           <Button
             className="h-12 w-full"
             disabled={
-              busy || (["register", "reset-password"].includes(flow) && password !== confirm)
+              busy ||
+              (needsCode && !isCompleteVerificationCode(otp)) ||
+              (flow === "forgot-password" && cooldown > 0) ||
+              (["register", "reset-password"].includes(flow) && password !== confirm)
             }
           >
             {busy ? <LoaderCircle className="animate-spin" /> : null}
@@ -185,30 +257,29 @@ export function AuthFlow({
                     : "Reset password"}
           </Button>
         </form>
-        {flow === "verify" && (
+        {needsCode && (
           <div className="mt-5">
             <Button
               variant="link"
-              disabled={busy}
-              onClick={async () => {
-                setMessage("");
-                try {
-                  await resend.mutateAsync({ email });
-                  setMessage("A new code was requested. Check your inbox.");
-                } catch {
-                  /* Error below. */
-                }
-              }}
+              disabled={busy || cooldown > 0 || !email.trim()}
+              onClick={() => void requestAnotherCode()}
             >
-              {resend.isPending ? "Requesting…" : "Resend verification code"}
+              {cooldown > 0
+                ? `${t("Request another code in")} ${cooldown}s`
+                : busy
+                  ? t("Requesting…")
+                  : t(
+                      flow === "verify" ? "Resend verification code" : "Resend password reset code",
+                    )}
             </Button>
             {resend.isError && <ErrorState error={resend.error} />}
+            {flow === "reset-password" && forgot.isError && <ErrorState error={forgot.error} />}
           </div>
         )}
         {message && (
           <p role="status" className="mt-4 flex items-center gap-2 text-sm">
             <CheckCircle2 size={16} />
-            {message}
+            {t(message)}
           </p>
         )}
         <p className="mt-6 text-xs leading-5 text-muted-foreground">

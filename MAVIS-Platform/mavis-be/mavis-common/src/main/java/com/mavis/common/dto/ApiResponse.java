@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 public class ApiResponse<T> {
     private int code;
     private String message;
+    private String errorCode;
     private T data;
 
     @Builder.Default

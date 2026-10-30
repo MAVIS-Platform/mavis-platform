@@ -8,6 +8,7 @@ import { BackendAdapter } from "@/lib/api/backend-adapter";
 import { MockAdapter, type MockScenario } from "@/lib/api/mock-adapter";
 import type { ApiAdapter } from "@/lib/api/contracts";
 import { normalizeError } from "@/lib/errors/api-error";
+import { createSessionRecovery } from "@/lib/auth/session-recovery";
 import { ApiContext, SelectionContext } from "./app-context";
 export function AppProvider({
   children,
@@ -22,17 +23,17 @@ export function AppProvider({
     mode === "mock" ? new MockAdapter(mockScenario) : new BackendAdapter(),
   );
   const [client] = useState(() => {
-    const report = (error: unknown) => {
-      const normalized = normalizeError(error);
-      if (normalized.kind === "unauthorized") {
-        queryClient.setQueryData(["api", "session", {}], { user: null });
-        void queryClient.cancelQueries({ predicate: (q) => q.queryKey[1] !== "session" });
-        queryClient.removeQueries({ predicate: (q) => q.queryKey[1] !== "session" });
-      }
-    };
     const queryClient = new QueryClient({
-      queryCache: new QueryCache({ onError: report }),
-      mutationCache: new MutationCache({ onError: report }),
+      queryCache: new QueryCache({
+        onError: (error, query) => {
+          void recover(error, query.queryKey[1]);
+        },
+      }),
+      mutationCache: new MutationCache({
+        onError: (error, _variables, _context, mutation) => {
+          void recover(error, mutation.options.mutationKey?.[1]);
+        },
+      }),
       defaultOptions: {
         queries: {
           staleTime: 30000,
@@ -44,6 +45,7 @@ export function AppProvider({
         mutations: { retry: false },
       },
     });
+    const recover = createSessionRecovery(queryClient, api);
     return queryClient;
   });
 
