@@ -2,6 +2,9 @@
 import { ArchitectureLoading } from "@/features/architecture/architecture-loading";
 import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { canonicalNineDiagramCatalog } from "@/features/architecture/diagram-catalog";
+import { useLocale } from "@/lib/i18n/locale-context";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { AppShell } from "@/components/app-shell";
@@ -29,6 +32,10 @@ export function ArchitectureWorkspace({
 } = {}) {
   const resolvedMode = mode ?? (title.toLowerCase().includes("diagram") ? "diagram" : "graph");
   const state = useModel();
+  const params = useSearchParams();
+  const { t } = useLocale();
+  const requestedKind = params.get("kind") === "SCENARIOS" ? "UML_SEQUENCE" : params.get("kind");
+  const activeKind = canonicalNineDiagramCatalog.find((item) => item.kind === requestedKind)?.kind ?? "CONTEXT";
   const project = useApiQuery(
     "project",
     { projectId: state.projectId },
@@ -42,7 +49,7 @@ export function ArchitectureWorkspace({
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-full sm:w-64">
-              <ProjectSelector />
+              <ProjectSelector selectedProject={project.data} />
             </div>
             {state.projectId && state.model && (
               <div className="w-full sm:w-80">
@@ -58,20 +65,6 @@ export function ArchitectureWorkspace({
             <div className="ml-auto flex flex-wrap items-center gap-1.5">
               {resolvedMode !== "graph" && (
                 <>
-                  <Button asChild size="sm" variant="outline">
-                    <Link
-                      href={`/architecture?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                    >
-                      Graph Explorer
-                    </Link>
-                  </Button>
-                  <Button asChild size="sm" variant="default">
-                    <Link
-                      href={`/diagrams?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                    >
-                      C4 &amp; UML Diagrams
-                    </Link>
-                  </Button>
                   <Button asChild size="sm" variant="outline">
                     <Link
                       href={`/impact?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
@@ -109,6 +102,23 @@ export function ArchitectureWorkspace({
             </div>
           )}
         </div>
+        {state.projectId && state.model && (
+          <nav aria-label="Architecture views" className="flex flex-wrap gap-2 rounded-xl border bg-card p-3">
+            <Button asChild size="sm" variant={resolvedMode === "graph" ? "default" : "outline"}>
+              <Link href={`/architecture?${new URLSearchParams({ project: state.projectId, model: state.model.id })}`}
+                aria-current={resolvedMode === "graph" ? "page" : undefined}>{t("Graph Explorer")}</Link>
+            </Button>
+            {canonicalNineDiagramCatalog.map((item) => (
+              <Button key={item.id} asChild size="sm"
+                variant={resolvedMode === "diagram" && activeKind === item.kind ? "default" : "outline"}>
+                <Link href={`/diagrams?${new URLSearchParams({ project: state.projectId, model: state.model!.id, kind: item.kind })}`}
+                  aria-current={resolvedMode === "diagram" && activeKind === item.kind ? "page" : undefined}>
+                  {t(item.label)}
+                </Link>
+              </Button>
+            ))}
+          </nav>
+        )}
         {state.projectId && (
           <RequestState
             query={state.query}
