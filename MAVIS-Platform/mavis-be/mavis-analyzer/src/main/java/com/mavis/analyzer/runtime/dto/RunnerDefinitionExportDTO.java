@@ -28,4 +28,5 @@ public class RunnerDefinitionExportDTO {
     private JsonNode scenario;
     private Map<String, String> confirmedServiceMappings;
     private String resourceProject;
+    private boolean protectedEnvironmentAvailable;
 }

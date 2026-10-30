@@ -185,3 +185,27 @@ test('Recursive source Activity calls stop without losing a valid caller CFG',()
  assert.ok(projected.unsupportedConstructs.some(s=>s.includes('Recursive')));assert.equal(projected.extractionCompleteness,'PARTIAL');
  assert.equal(validateActivityStructure(projected.nodes,projected.edges).filter(i=>i.severity==='ERROR').length,0);
 });
+
+const {resolveReceiver,resolveCalledMethods}=require('../src/features/architecture/source-call-resolution.ts');
+test('BE calls prefer exact qualified receiver and never bind a foreign same-named class',()=>{
+ const owner={id:'controller',parentId:'service',name:'Controller'};
+ const node=(id,q,parentId='service')=>({id,parentId,name:'Repository',properties:{umlClassifier:{qualifiedName:q}}});
+ const model={elements:[owner,node('a','a.Repository'),node('b','b.Repository'),node('foreign','a.Repository','other-service')]};
+ assert.deepEqual(resolveReceiver(model,owner,'a.Repository').map(n=>n.id),['a']);
+ assert.deepEqual(resolveReceiver(model,owner,'missing.Repository'),[]);
+ assert.equal(resolveReceiver(model,owner,'Repository').length,2);
+});
+test('BE overload resolution uses arity and typed AST arguments; unknown types remain ambiguous',()=>{
+ const methods=[{methodName:'save',signature:'save()'},{methodName:'save',signature:'save(String)'},{methodName:'save',signature:'save(int)'}];
+ assert.equal(resolveCalledMethods(methods,{methodName:'save',argumentCount:0})[0].signature,'save()');
+ assert.equal(resolveCalledMethods(methods,{methodName:'save',argumentCount:1,argumentTypes:['String']})[0].signature,'save(String)');
+ assert.equal(resolveCalledMethods(methods,{methodName:'save',argumentCount:1,argumentTypes:['int']})[0].signature,'save(int)');
+ assert.equal(resolveCalledMethods(methods,{methodName:'save',argumentCount:1,argumentTypes:['UNKNOWN']}).length,2);
+ assert.equal(resolveCalledMethods(methods,{methodName:'save',argumentCount:2}).length,0);
+});
+test('BE legacy argument counting handles generics in signatures without guessing complex expression types',()=>{
+ const methods=[{name:'send',signature:'send(Map<String,Order>,String)'},{name:'send',signature:'send(String)'}];
+ assert.equal(resolveCalledMethods(methods,{methodName:'send',arguments:'[orders, name]'})[0].signature,'send(Map<String,Order>,String)');
+ assert.equal(resolveCalledMethods(methods,{methodName:'send',arguments:'[build(a,b)]'}).length,2);
+ assert.equal(resolveCalledMethods(methods,{methodName:'send',arguments:'[null]'}).length,1);
+});

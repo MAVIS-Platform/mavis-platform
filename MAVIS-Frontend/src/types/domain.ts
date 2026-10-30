@@ -134,6 +134,7 @@ export const modelSchema = z
   });
 export type ArchitecturalModel = z.infer<typeof modelSchema>;
 export const runtimeConfigurationSchema = z.object({
+  protectedInputsReady: z.boolean().optional(),
   projectId: z.string(),
   snapshotId: z.string().nullable().optional(),
   modelId: z.string().nullable().optional(),

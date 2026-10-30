@@ -7,7 +7,7 @@ namespace MAVIS.Runner;
 public sealed record RuntimeRunDefinition(string SessionId, string ModelVersionId, string SourceSnapshotId,
     string ProfileVersionId, string ComposeYaml, RunnerExecutionProfile Profile, HttpScenarioDefinition Scenario,
     IReadOnlyDictionary<string, string> ConfirmedServiceMappings, string? RunConfigurationVersionId = null, string? ScenarioVersionId = null,
-    string? ResourceProject = null);
+    string? ResourceProject = null, bool ProtectedEnvironmentAvailable = false);
 
 /// <summary>Operator-invoked local PoC adapter. Not an internet-facing arbitrary repository execution service.</summary>
 public sealed class DockerComposeSession(RuntimeRunDefinition definition, string stateRoot, string collectorConfiguration,
@@ -34,7 +34,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             throw new ArgumentException("Invalid session provenance or operator state root.");
         var preflight = ComposePreflight.Check(definition.ComposeYaml);
         if (!preflight.Compatible) throw new ArgumentException("Compose preflight rejected this execution profile.");
-        _ = ComposeOverrideBuilder.Build(preflight, definition.Profile, Path.Combine(Path.GetFullPath(stateRoot), "validate", "collector.yaml"));
+        _ = ComposeOverrideBuilder.Build(preflight, definition.Profile, Path.Combine(Path.GetFullPath(stateRoot), "validate", "collector.yaml"), secrets);
         if (!PinnedRunnerImage(definition.Profile.ScenarioRunnerImage)) throw new ArgumentException("A content-addressed scenario runner image is required.");
         new HttpScenarioRunner(allowContainerDns: true).ValidateDefinition(definition.Scenario,
             definition.Profile.Applications.ToDictionary(p => p.Key, p => new Uri($"http://{p.Key}:{p.Value.ContainerPort}")),
@@ -47,9 +47,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         _lease = new FileStream(Path.Combine(stateRoot, "runner.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         _directory = RuntimeAllocation.Reserve(Path.GetFullPath(stateRoot), ResourceProject, definition);
         AllocationReserved = true;
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(_directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var collectorPath = Path.Combine(_directory, "collector.yaml");
         Stage = "OVERRIDE";
-        var overrides = ComposeOverrideBuilder.Build(preflight, definition.Profile, collectorPath);
+        var overrides = ComposeOverrideBuilder.Build(preflight, definition.Profile, collectorPath, secrets);
         await File.WriteAllTextAsync(collectorPath, collectorConfiguration, ct);
         await File.WriteAllTextAsync(Path.Combine(_directory, "compose.yaml"), definition.ComposeYaml, ct);
         await File.WriteAllTextAsync(Path.Combine(_directory, "override.json"), overrides, ct);

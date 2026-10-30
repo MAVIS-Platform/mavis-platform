@@ -740,3 +740,17 @@ test("Zipkin containers infer platform from technology or image while preserving
   assert.equal(wire.modelView(metadata,graph,[detail]).elements[0].layer,"domain");
  }
 });
+
+test("runtime planning failures cannot fabricate saved configuration, scenarios or dispatch",async t=>{
+ environment(t);
+ for(const operation of ['runtimeConfiguration','saveRuntimeConfiguration','scenarios','createScenario','saveScenario','startRuntime']){
+  const calls=[];const mocked=t.mock.method(globalThis,'fetch',async(url,options)=>{calls.push({url:String(url),options});return Response.json({code:409,message:'Planning conflict'},{status:409});});
+  const input={projectId:project,snapshotId:snapshot,modelId:model,scenarioId:node,profileId:'profile',profile:{},name:'Scenario',steps:['{}'],expectedRevision:1,configurationRevision:1,scenarioRevision:1,approved:true};
+  await assert.rejects(()=>executeJava(operation,input,'jwt',new AbortController().signal));
+  assert.equal(calls.length,1,operation+' retried through a legacy/fabricated path');mocked.mock.restore();
+ }
+});
+test("an empty saved scenario list remains empty instead of generating fake business requests",async t=>{
+ environment(t);let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;return Response.json({code:200,data:[]});});
+ assert.deepEqual(await executeJava('scenarios',{projectId:project},'jwt',new AbortController().signal),[]);assert.equal(calls,1);
+});
