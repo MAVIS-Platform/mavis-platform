@@ -133,6 +133,13 @@ function ManagedShellChrome(props: AppShellProps) {
         !onPreviewNavigate,
     },
   );
+  const selectedProjectName = projectQuery.data?.find((p) => p.id === selection.projectId)?.name;
+  const selectedProjectQuery = useApiQuery(
+    "project",
+    { projectId: selection.projectId },
+    { enabled: scope === "project" && !!selection.projectId && !props.contextName &&
+      !onPreviewNavigate && projectQuery.isSuccess && !selectedProjectName },
+  );
   const workspaceQuery = useApiQuery(
     "workspaces",
     {},
@@ -153,7 +160,7 @@ function ManagedShellChrome(props: AppShellProps) {
   const contextName =
     props.contextName ??
     (scope === "project"
-      ? (projectQuery.data?.find((p) => p.id === selection.projectId)?.name ?? "Select a project")
+      ? (selectedProjectName ?? selectedProjectQuery.data?.name ?? "Select a project")
       : (workspaceQuery.data?.find((w) => w.id === selection.workspaceId)?.name ??
         "Select a workspace"));
   return (

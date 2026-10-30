@@ -2011,3 +2011,50 @@ test("diagram and graph selections use the same docked 3E inspector", () => {
  const idle=renderToStaticMarkup(React.createElement(ArchitecturePresentation,{model,selectedId:null,onSelect(){},mode:'diagram'}));
  assert.ok(!idle.includes('data-shared-dock'));
 });
+
+
+test("admin model deep links retain an authorized selected project even when own project list is empty",()=>{
+ const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
+ const {ProjectSelector}=loadRoutedComponent('src/features/projects/components.tsx',{
+  '@/hooks/use-api':{useApiQuery:()=>({data:[],isPending:false,isError:false,isFetching:false}),useSelection:()=>({projectId:'foreign-project',setProjectId(){}})},
+  '@tanstack/react-query':{useIsMutating:()=>0},
+ });
+ const html=renderToStaticMarkup(React.createElement(ProjectSelector,{selectedProject:{id:'foreign-project',name:'QA Spring Demo'}}));
+ assert.match(html,/<option value="foreign-project" selected="">QA Spring Demo<\/option>/);
+ assert.ok(!html.includes('No results yet'));
+ const wrong=renderToStaticMarkup(React.createElement(ProjectSelector,{selectedProject:{id:'other-project',name:'Wrong project'}}));
+ assert.ok(!wrong.includes('Wrong project'));
+});
+
+test("architecture view tabs preserve project/model and deep link every diagram kind",()=>{
+ const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
+ const kinds=['CONTEXT','CONTAINER','COMPONENT','UML_SEQUENCE','UML_CLASS','UML_PACKAGE','UML_DEPLOYMENT','UML_ACTIVITY','UML_STATE'];
+ let params=new URLSearchParams('project=foreign-project&model=pinned-model&kind=UML_CLASS');
+ const query={isPending:false,isError:false,isFetching:false,refetch(){}};
+ const {ArchitectureWorkspace}=loadRoutedComponent('src/routes/architecture.tsx',{
+  'next/navigation':{useSearchParams:()=>params},
+  '@/lib/i18n/locale-context':{useLocale:()=>({t:s=>s})},
+  '@/features/architecture/use-model':{useModel:()=>({projectId:'foreign-project',model:{id:'pinned-model',projectId:'foreign-project',elements:[],edges:[]},models:[{id:'pinned-model',revision:1}],query,selectModel(){}})},
+  '@/hooks/use-api':{useApiQuery:()=>({...query,data:{id:'foreign-project',name:'QA Spring Demo'}})},
+  '@/features/projects/components':{ProjectSelector:({selectedProject})=>React.createElement('span',null,selectedProject?.name)},
+  '@/features/architecture/components':{ModelVersionSelector:()=>null},
+  '@/features/architecture/architecture-presentation':{ArchitecturePresentation:({mode})=>React.createElement('div',{'data-view-mode':mode})},
+ });
+ for(const kind of kinds){
+  params=new URLSearchParams({project:'foreign-project',model:'pinned-model',kind});
+  const html=renderToStaticMarkup(React.createElement(ArchitectureWorkspace,{mode:'diagram'}));
+  const nav=/<nav aria-label="Architecture views"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1];assert.ok(nav);
+  const hrefs=[...nav.matchAll(/href="([^"]+)"/g)].map(m=>new URL(m[1].replaceAll('&amp;','&'),'https://mavis.invalid'));
+  assert.equal(hrefs.length,10);
+  for(const url of hrefs){assert.equal(url.searchParams.get('project'),'foreign-project');assert.equal(url.searchParams.get('model'),'pinned-model');}
+  assert.deepEqual(hrefs.filter(u=>u.pathname==='/diagrams').map(u=>u.searchParams.get('kind')),kinds);
+  const activeTag=[...nav.matchAll(/<a\b[^>]*>/g)].find(m=>m[0].includes('aria-current="page"'))?.[0];
+  const active=/href="([^"]+)"/.exec(activeTag)?.[1];
+  assert.equal(new URL(active.replaceAll('&amp;','&'),'https://mavis.invalid').searchParams.get('kind'),kind);
+  assert.match(html,/data-view-mode="diagram"/);
+ }
+ const graph=renderToStaticMarkup(React.createElement(ArchitectureWorkspace,{mode:'graph'}));
+ const graphTag=[...graph.matchAll(/<a\b[^>]*>/g)].find(m=>m[0].includes('aria-current="page"'))?.[0];
+ assert.match(graphTag,/href="\/architecture\?/);
+ assert.match(graph,/data-view-mode="graph"/);
+});
