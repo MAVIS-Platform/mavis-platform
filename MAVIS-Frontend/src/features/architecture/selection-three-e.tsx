@@ -822,9 +822,6 @@ export function SelectionThreeE({
                 </ul>
               </section>
             )}
-            <Button variant="outline" className="w-full" onClick={() => setActiveTab("evidence")}>
-              Review supporting evidence
-            </Button>
           </TabsContent>
         </div>
       </Tabs>
