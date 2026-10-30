@@ -768,10 +768,12 @@ export function DependencyNetwork({
       </Tooltip.Provider>
       {runtimeEdgeCount > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs">
-          <div className="flex items-center gap-2 text-emerald-300 font-medium">
+          <div className="flex items-center gap-2 text-xs text-emerald-300 font-medium">
             <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-semibold">Runtime-Enriched Model Active:</span>
+            <span className="font-bold">{runtimeEdgeCount}</span>
             <span>
-              <strong>Runtime-Enriched Model Active:</strong> {runtimeEdgeCount} relationship(s) verified via OpenTelemetry traces (highlighted in <strong className="text-emerald-400">emerald green →</strong> on the graph).
+              relationships verified via OpenTelemetry traces are highlighted in solid emerald green on the graph. Click any green edge to inspect its runtime trace evidence.
             </span>
           </div>
           <div className="flex items-center gap-1.5">

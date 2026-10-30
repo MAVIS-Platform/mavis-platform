@@ -99,7 +99,9 @@ export function Accounts() {
           }}
           options={[
             { value: "all", label: "All roles" },
-            ...["admin", "lecturer", "student"].map((value) => ({ value, label: value })),
+            { value: "admin", label: "System Administrator" },
+            { value: "lecturer", label: "Lecturer" },
+            { value: "student", label: "Student" },
           ]}
         />
         <SelectField
@@ -111,10 +113,9 @@ export function Accounts() {
           }}
           options={[
             { value: "all", label: "All statuses" },
-            ...["ACTIVE", "LOCKED", "PENDING_VERIFICATION"].map((value) => ({
-              value,
-              label: value.replaceAll("_", " ").toLowerCase(),
-            })),
+            { value: "ACTIVE", label: "Active" },
+            { value: "LOCKED", label: "Locked" },
+            { value: "PENDING_VERIFICATION", label: "Pending verification" },
           ]}
         />
       </div>
@@ -806,16 +807,14 @@ export function AdminAnalysisJobs() {
           }}
           options={[
             { value: "all", label: "All statuses" },
-            ...[
-              "queued",
-              "processing",
-              "completed",
-              "failed",
-              "partial",
-              "cancelling",
-              "cancelled",
-              "timed-out",
-            ].map((value) => ({ value, label: value })),
+            { value: "queued", label: "Queued" },
+            { value: "processing", label: "Processing" },
+            { value: "completed", label: "Completed" },
+            { value: "failed", label: "Failed" },
+            { value: "partial", label: "Partial" },
+            { value: "cancelling", label: "Cancelling" },
+            { value: "cancelled", label: "Cancelled" },
+            { value: "timed-out", label: "Timed out" },
           ]}
         />
       </div>

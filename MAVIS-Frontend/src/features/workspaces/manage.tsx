@@ -92,31 +92,40 @@ export function WorkspaceControls({
       {showOverview && (
         <>
           <form
+            className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
               update.mutate({ workspaceId: workspace.id, name, description });
             }}
-            className="flex flex-wrap gap-2"
           >
-            <Input
-              aria-label="Workspace name"
-              required
-              maxLength={255}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <Button disabled={update.isPending}>Rename</Button>
+            <FormField label="Workspace name">
+              {(props) => (
+                <Input
+                  {...props}
+                  aria-label="Workspace name"
+                  required
+                  maxLength={255}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              )}
+            </FormField>
+            <FormField label="Class description">
+              {(props) => (
+                <Textarea
+                  {...props}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  maxLength={5000}
+                />
+              )}
+            </FormField>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={update.isPending} title="Rename and save class settings">
+                {update.isPending ? "Saving..." : "Save class settings"}
+              </Button>
+            </div>
           </form>
-          <FormField label="Class description">
-            {(props) => (
-              <Textarea
-                {...props}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                maxLength={5000}
-              />
-            )}
-          </FormField>
         </>
       )}
       {showMembers && (

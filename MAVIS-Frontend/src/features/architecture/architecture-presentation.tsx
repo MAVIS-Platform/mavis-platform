@@ -198,11 +198,9 @@ export function ArchitecturePresentation({
           : "min-w-0"}>
           {mode === "graph" && !selectedId && !connection && (
             <div className="mb-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
-              💡 <strong className="text-foreground">Interactive Guide:</strong> Click any{" "}
-              <strong className="text-foreground">Service node</strong> on the graph to open the{" "}
-              <strong className="text-foreground">3E Inspector (Explain · Explore · Evaluate)</strong> and{" "}
-              <strong className="text-foreground">Connection Evidence Tree (A ↔ B)</strong>. Click any{" "}
-              <strong className="text-foreground">connection line</strong> to inspect directional relationships.
+              <p className="text-xs text-foreground">
+                Click any Service node on the graph to open the Component Inspection Drawer (source files, dependencies, evaluation warnings), or click any Edge arrow (A ↔ B) to inspect exact code and config connection evidence.
+              </p>
             </div>
           )}
           {mode === "graph" ? (
