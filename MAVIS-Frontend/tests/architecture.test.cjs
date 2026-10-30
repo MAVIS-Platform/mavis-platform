@@ -2029,13 +2029,14 @@ test("admin model deep links retain an authorized selected project even when own
 test("architecture view tabs preserve project/model and deep link every diagram kind",()=>{
  const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
  const kinds=['CONTEXT','CONTAINER','COMPONENT','UML_SEQUENCE','UML_CLASS','UML_PACKAGE','UML_DEPLOYMENT','UML_ACTIVITY','UML_STATE'];
+ let role='student';
  let params=new URLSearchParams('project=foreign-project&model=pinned-model&kind=UML_CLASS');
  const query={isPending:false,isError:false,isFetching:false,refetch(){}};
  const {ArchitectureWorkspace}=loadRoutedComponent('src/routes/architecture.tsx',{
   'next/navigation':{useSearchParams:()=>params},
   '@/lib/i18n/locale-context':{useLocale:()=>({t:s=>s})},
   '@/features/architecture/use-model':{useModel:()=>({projectId:'foreign-project',model:{id:'pinned-model',projectId:'foreign-project',elements:[],edges:[]},models:[{id:'pinned-model',revision:1}],query,selectModel(){}})},
-  '@/hooks/use-api':{useApiQuery:()=>({...query,data:{id:'foreign-project',name:'QA Spring Demo'}})},
+  '@/hooks/use-api':{useSession:()=>({data:{user:{role}}}),useApiQuery:()=>({...query,data:{id:'foreign-project',name:'QA Spring Demo'}})},
   '@/features/projects/components':{ProjectSelector:({selectedProject})=>React.createElement('span',null,selectedProject?.name)},
   '@/features/architecture/components':{ModelVersionSelector:()=>null},
   '@/features/architecture/architecture-presentation':{ArchitecturePresentation:({mode})=>React.createElement('div',{'data-view-mode':mode})},
@@ -2057,4 +2058,16 @@ test("architecture view tabs preserve project/model and deep link every diagram 
  const graphTag=[...graph.matchAll(/<a\b[^>]*>/g)].find(m=>m[0].includes('aria-current="page"'))?.[0];
  assert.match(graphTag,/href="\/architecture\?/);
  assert.match(graph,/data-view-mode="graph"/);
+ assert.ok(!graph.includes('Back to analysis jobs'));
+ role='admin';
+ const returnTo='/administration/jobs?job=job-12&search=spring&status=completed&page=2';
+ params=new URLSearchParams({project:'foreign-project',model:'pinned-model',returnTo});
+ const admin=renderToStaticMarkup(React.createElement(ArchitectureWorkspace,{mode:'graph'}));
+ assert.ok(admin.includes('Back to analysis jobs'));
+ const adminNav=/<nav aria-label="Architecture views"[^>]*>([\s\S]*?)<\/nav>/.exec(admin)[1];
+ for(const match of adminNav.matchAll(/href="([^"]+)"/g)){
+  const url=new URL(match[1].replaceAll('&amp;','&'),'https://mavis.invalid');
+  assert.equal(url.searchParams.get('returnTo'),returnTo);
+ }
+ assert.ok(admin.includes('/administration/jobs?job=job-12&amp;search=spring&amp;status=completed&amp;page=2'));
 });

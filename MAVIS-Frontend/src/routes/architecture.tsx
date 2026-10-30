@@ -13,7 +13,8 @@ import { RequestState } from "@/components/shared/request-state";
 import { ProjectSelector } from "@/features/projects/components";
 import { ModelVersionSelector } from "@/features/architecture/components";
 import { useModel } from "@/features/architecture/use-model";
-import { useApi, useApiQuery } from "@/hooks/use-api";
+import { useApi, useApiQuery, useSession } from "@/hooks/use-api";
+import { adminJobsReturnHref } from "@/lib/navigation/admin-job-review";
 import { FlowFrame } from "@/components/mainflow/shell";
 import { ModelFlow } from "@/components/mainflow/model-flow";
 export default function ArchitecturePage() {
@@ -33,6 +34,10 @@ export function ArchitectureWorkspace({
   const resolvedMode = mode ?? (title.toLowerCase().includes("diagram") ? "diagram" : "graph");
   const state = useModel();
   const params = useSearchParams();
+  const session = useSession();
+  const isAdmin = session.data?.user?.role === "admin";
+  const returnHref = adminJobsReturnHref(params);
+  const reviewContext = isAdmin ? { returnTo: returnHref } : {};
   const { t } = useLocale();
   const requestedKind = params.get("kind") === "SCENARIOS" ? "UML_SEQUENCE" : params.get("kind");
   const activeKind = canonicalNineDiagramCatalog.find((item) => item.kind === requestedKind)?.kind ?? "CONTEXT";
@@ -46,6 +51,9 @@ export function ArchitectureWorkspace({
   return (
     <PageContainer>
       <div className="space-y-2.5">
+        {isAdmin && <Button asChild variant="outline" size="sm">
+          <Link href={returnHref}>← {t("Back to analysis jobs")}</Link>
+        </Button>}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-full sm:w-64">
@@ -105,13 +113,13 @@ export function ArchitectureWorkspace({
         {state.projectId && state.model && (
           <nav aria-label="Architecture views" className="flex flex-wrap gap-2 rounded-xl border bg-card p-3">
             <Button asChild size="sm" variant={resolvedMode === "graph" ? "default" : "outline"}>
-              <Link href={`/architecture?${new URLSearchParams({ project: state.projectId, model: state.model.id })}`}
+              <Link href={`/architecture?${new URLSearchParams({ project: state.projectId, model: state.model.id, ...reviewContext })}`}
                 aria-current={resolvedMode === "graph" ? "page" : undefined}>{t("Graph Explorer")}</Link>
             </Button>
             {canonicalNineDiagramCatalog.map((item) => (
               <Button key={item.id} asChild size="sm"
                 variant={resolvedMode === "diagram" && activeKind === item.kind ? "default" : "outline"}>
-                <Link href={`/diagrams?${new URLSearchParams({ project: state.projectId, model: state.model!.id, kind: item.kind })}`}
+                <Link href={`/diagrams?${new URLSearchParams({ project: state.projectId, model: state.model!.id, kind: item.kind, ...reviewContext })}`}
                   aria-current={resolvedMode === "diagram" && activeKind === item.kind ? "page" : undefined}>
                   {t(item.label)}
                 </Link>
