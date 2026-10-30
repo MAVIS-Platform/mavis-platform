@@ -74,6 +74,24 @@ jobs:
           npm ci --no-audit --no-fund
           npm test
 
+      - name: Production route render smoke test
+        working-directory: MAVIS-Frontend
+        env:
+          MAVIS_API_MODE: backend
+        run: |
+          npm run build
+          npm run start -- --hostname 127.0.0.1 --port 3092 > "$RUNNER_TEMP/mavis-route-smoke.log" 2>&1 &
+          route_server_pid=$!
+          trap 'kill "$route_server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --silent --output /dev/null http://127.0.0.1:3092/login; then break; fi
+            sleep 1
+          done
+          if ! npm run test:routes -- http://127.0.0.1:3092; then
+            tail -n 80 "$RUNNER_TEMP/mavis-route-smoke.log"
+            exit 1
+          fi
+
   images:
     if: github.event_name != 'pull_request'
     needs: verify
