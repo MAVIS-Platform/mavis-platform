@@ -32,7 +32,7 @@ public class ComposePreflightValidator {
             "/root"
     );
 
-    private static final Pattern ENV_PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([A-Za-z_][A-Za-z0-9_]*)(?::-?([^}]*))?}");
+    private static final Pattern ENV_PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([A-Z][A-Z0-9_]+)(?::-?([^}]*))?}");
     private static final Pattern SPRING_MAPPING_PATTERN = Pattern.compile("@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\\s*(?:\\(([^)]*)\\))?");
     private static final Pattern QUOTED_STRING_PATTERN = Pattern.compile("\"([^\"]+)\"");
     private static final Pattern DOTNET_ROUTE_ATTR_PATTERN = Pattern.compile("\\[(HttpGet|HttpPost|HttpPut|HttpDelete|HttpPatch|Route)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?\\]");
@@ -561,7 +561,7 @@ public class ComposePreflightValidator {
                 || u.equals("DATABASE_URL") || u.equals("SPRING_DATASOURCE_URL")) {
             return "DB_SECRET";
         }
-        if (u.contains("SECRET") || u.contains("PASSWORD") || u.contains("TOKEN") || u.contains("API_KEY") || u.contains("PRIVATE_KEY") || u.contains("CREDENTIAL")) {
+        if (u.contains("SECRET") || u.contains("PASSWORD") || u.contains("TOKEN") || u.contains("API_KEY") || u.contains("PRIVATE_KEY") || u.endsWith("_KEY") || u.contains("CREDENTIAL")) {
             return "SECRET";
         }
         return "ENV";
