@@ -103,6 +103,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [newSecretKey, setNewSecretKey] = useState("");
   const [newSecretVal, setNewSecretVal] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [selectedServiceFilter, setSelectedServiceFilter] = useState("ALL");
 
   useEffect(() => {
     if (preflight.data?.recommendedProfile) {
@@ -363,71 +364,92 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   )}
                 </div>
 
-                {/* Detected Services */}
+                {/* Detected Services Dropdown */}
                 <div>
-                  <strong className="text-sm">Detected Services & Runtime Stacks:</strong>
-                  <div className="flex flex-wrap gap-2 mt-1.5">
-                    {activeServices.length ? (
-                      activeServices.map((svc) => (
-                        <span
-                          key={svc}
-                          className="px-2.5 py-1 rounded-md text-xs font-mono bg-primary/10 text-primary border border-primary/20"
-                        >
-                          {svc}
-                          {servicePorts[svc] ? ` :${servicePorts[svc]}` : ""}
-                          {serviceStacks[svc] ? ` (${serviceStacks[svc]})` : ""}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-xs text-muted-foreground">No services detected</span>
-                    )}
-                  </div>
+                  <SelectField
+                    label={`Detected Services & Runtime Stacks (${activeServices.length})`}
+                    value={selectedServiceFilter}
+                    onChange={setSelectedServiceFilter}
+                    options={[
+                      {
+                        value: "ALL",
+                        label: activeServices.length
+                          ? `All detected services (${activeServices.length})`
+                          : "No services detected",
+                      },
+                      ...activeServices.map((svc) => ({
+                        value: svc,
+                        label: `${svc}${servicePorts[svc] ? ` :${servicePorts[svc]}` : ""}${serviceStacks[svc] ? ` (${serviceStacks[svc]})` : ""}`,
+                      })),
+                    ]}
+                  />
                 </div>
 
                 {/* Discovered API Endpoints */}
-                <div>
-                  <strong className="text-sm">
-                    Discovered API Endpoints ({detectedEndpoints.length}):
-                  </strong>
-                  {detectedEndpoints.length > 0 ? (
-                    <div className="mt-1.5 max-h-44 overflow-y-auto rounded border bg-background/80 divide-y text-xs">
-                      {detectedEndpoints.map((ep, idx) => (
-                        <div
-                          key={`${ep.service}-${ep.method}-${ep.path}-${idx}`}
-                          className="flex items-center justify-between gap-2 px-3 py-1.5"
-                        >
-                          <div className="flex items-center gap-2 font-mono">
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 font-semibold">
-                              {ep.method}
-                            </span>
-                            <span className="font-medium">{ep.path}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-muted-foreground">
-                            <span className="font-mono text-foreground/80">{ep.service}</span>
-                            {ep.source && (
-                              <span className="hidden sm:inline truncate max-w-48">
-                                · {ep.source}
-                              </span>
-                            )}
-                          </div>
+                {(() => {
+                  const filteredEndpoints =
+                    selectedServiceFilter === "ALL"
+                      ? detectedEndpoints
+                      : detectedEndpoints.filter((ep) => ep.service === selectedServiceFilter);
+                  return (
+                    <div>
+                      <strong className="text-sm">
+                        Discovered API Endpoints ({filteredEndpoints.length}):
+                      </strong>
+                      {filteredEndpoints.length > 0 ? (
+                        <div className="mt-1.5 max-h-44 overflow-y-auto rounded border bg-background/80 divide-y text-xs">
+                          {filteredEndpoints.map((ep, idx) => (
+                            <div
+                              key={`${ep.service}-${ep.method}-${ep.path}-${idx}`}
+                              className="flex items-center justify-between gap-2 px-3 py-1.5"
+                            >
+                              <div className="flex items-center gap-2 font-mono">
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 font-semibold">
+                                  {ep.method}
+                                </span>
+                                <span className="font-medium">{ep.path}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-muted-foreground">
+                                <span className="font-mono text-foreground/80">{ep.service}</span>
+                                {ep.source && (
+                                  <span className="hidden sm:inline truncate max-w-48">
+                                    · {ep.source}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Run preflight to inspect controller routes and HTTP endpoints from source.
+                        </p>
+                      )}
                     </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Run preflight to inspect controller routes and HTTP endpoints from source.
-                    </p>
-                  )}
-                </div>
+                  );
+                })()}
 
                 {/* Database Checks */}
                 <div>
                   <strong className="text-sm">
-                    Database & Connection Inspection ({databaseChecks.length}):
+                    Database & Connection Inspection (
+                    {
+                      (selectedServiceFilter === "ALL"
+                        ? databaseChecks
+                        : databaseChecks.filter((db) => db.service === selectedServiceFilter)
+                      ).length
+                    }
+                    ):
                   </strong>
-                  {databaseChecks.length > 0 ? (
+                  {(selectedServiceFilter === "ALL"
+                    ? databaseChecks
+                    : databaseChecks.filter((db) => db.service === selectedServiceFilter)
+                  ).length > 0 ? (
                     <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-                      {databaseChecks.map((db, idx) => (
+                      {(selectedServiceFilter === "ALL"
+                        ? databaseChecks
+                        : databaseChecks.filter((db) => db.service === selectedServiceFilter)
+                      ).map((db, idx) => (
                         <div
                           key={`${db.service}-${db.dbType}-${idx}`}
                           className="rounded border bg-background/80 p-2.5 text-xs space-y-1"
