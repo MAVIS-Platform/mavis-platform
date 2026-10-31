@@ -76,23 +76,35 @@ function httpMethodBadgeClass(method: string): string {
   }
 }
 
-function readStep1Target(projectId: string): { modelId?: string; snapshotId?: string } {
+interface Step1Draft {
+  modelId?: string;
+  snapshotId?: string;
+  profileId?: string;
+  serviceMappings?: Record<string, string>;
+  envVars?: Record<string, string>;
+  secretValues?: Record<string, string>;
+  secretReferences?: string[];
+  dismissedSecretKeys?: string[];
+}
+
+function readStep1Target(projectId: string): Step1Draft {
   try {
     const raw = typeof window !== "undefined" ? window.sessionStorage.getItem(`mavis:runtime-target:${projectId}`) : null;
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as { modelId?: string; snapshotId?: string };
+    const parsed = JSON.parse(raw) as Step1Draft;
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
   }
 }
 
-function writeStep1Target(projectId: string, modelId: string, snapshotId: string) {
+function writeStep1Target(projectId: string, draft: Step1Draft) {
   try {
-    if (typeof window !== "undefined" && projectId && (modelId || snapshotId)) {
+    if (typeof window !== "undefined" && projectId) {
+      const existing = readStep1Target(projectId);
       window.sessionStorage.setItem(
         `mavis:runtime-target:${projectId}`,
-        JSON.stringify({ modelId, snapshotId }),
+        JSON.stringify({ ...existing, ...draft }),
       );
     }
   } catch {
@@ -177,10 +189,34 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   }, [projectId, snapshots.data, config.data?.snapshotId, config.data?.modelId, models.data, snapshotId, modelId, defaultModelId]);
 
   useEffect(() => {
-    if (modelId || snapshotId) {
-      writeStep1Target(projectId, modelId, snapshotId);
+    const stored = readStep1Target(projectId);
+    if (stored.serviceMappings && Object.keys(stored.serviceMappings).length > 0) {
+      setServiceMappings((prev) => ({ ...stored.serviceMappings, ...prev }));
     }
-  }, [projectId, modelId, snapshotId]);
+    if (stored.envVars && Object.keys(stored.envVars).length > 0) {
+      setEnvVars((prev) => ({ ...stored.envVars, ...prev }));
+    }
+    if (stored.secretValues && Object.keys(stored.secretValues).length > 0) {
+      setSecretValues((prev) => ({ ...stored.secretValues, ...prev }));
+    }
+    if (stored.dismissedSecretKeys && stored.dismissedSecretKeys.length > 0) {
+      setDismissedSecretKeys((prev) => Array.from(new Set([...prev, ...stored.dismissedSecretKeys!])));
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (modelId || snapshotId) {
+      writeStep1Target(projectId, {
+        modelId,
+        snapshotId,
+        profileId,
+        serviceMappings,
+        envVars,
+        secretValues,
+        dismissedSecretKeys,
+      });
+    }
+  }, [projectId, modelId, snapshotId, profileId, serviceMappings, envVars, secretValues, dismissedSecretKeys]);
 
   const rawProfile = (config.data?.profile ?? {}) as Record<string, unknown>;
   const configuredSecretKeys = Array.isArray(rawProfile["configuredSecretKeys"])
@@ -825,8 +861,8 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         </div>
       </DetailPanel>
 
-      {/* Step 3: Save Configuration */}
-      <DetailPanel title="3. Execution Profile & Save Configuration">
+      {/* Step 3: Execution Profile & Proceed to Step 2 */}
+      <DetailPanel title="3. Execution Profile & Next Step">
         <div className="space-y-4">
           <div className="flex items-center justify-between rounded-lg border px-3 py-2 bg-muted/20 text-xs">
             <span className="text-muted-foreground">
@@ -835,9 +871,13 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
             <span className="font-mono font-semibold">{profileId}</span>
           </div>
 
+          <p className="text-xs text-muted-foreground">
+            Your configuration is held as a draft in this session and will only be saved when you confirm and launch the runtime session into Step 3. Exiting early discards unsaved changes.
+          </p>
+
           <div className="flex flex-wrap items-center gap-3">
             <Button
-              disabled={save.isPending}
+              type="button"
               onClick={() => {
                 const combinedSecretRefs = Array.from(
                   new Set([
@@ -848,47 +888,22 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     ...allSecretKeys,
                   ]),
                 ).filter((k) => !dismissedSecretKeys.includes(k));
-                save.mutate(
-                  {
-                    projectId,
-                    profileId,
-                    snapshotId: snapshotId || snapshots.data?.[0]?.id || undefined,
-                    modelId: modelId || defaultModelId || undefined,
-                    profile: {
-                      serviceMappings,
-                      environmentVariables: envVars,
-                      secretValues,
-                      secretReferences: combinedSecretRefs,
-                    },
-                    expectedRevision: config.data?.revision ?? 0,
-                  },
-                  {
-                    onSuccess: () => {
-                      setSaveSuccess(true);
-                      setTimeout(() => setSaveSuccess(false), 4000);
-                    },
-                  },
-                );
+                writeStep1Target(projectId, {
+                  modelId: modelId || defaultModelId,
+                  snapshotId: snapshotId || snapshots.data?.[0]?.id || "",
+                  profileId,
+                  serviceMappings,
+                  envVars,
+                  secretValues,
+                  secretReferences: combinedSecretRefs,
+                  dismissedSecretKeys,
+                });
+                router.push(`/scenarios?project=${projectId}`);
               }}
-            >
-              {save.isPending ? "Saving..." : "Save Runtime Configuration"}
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => router.push(`/scenarios?project=${projectId}`)}
             >
               Continue to Step 2: Test Scenarios →
             </Button>
           </div>
-
-          {saveSuccess && (
-            <p className="text-sm text-success font-medium">
-              ✓ Runtime configuration, environment variables, and secrets saved successfully!
-            </p>
-          )}
-          {save.isError && <ErrorState error={save.error} />}
         </div>
       </DetailPanel>
     </div>
@@ -1005,14 +1020,25 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   }, [snapshots.data, snapshotId]);
 
   useEffect(() => {
+    const stored = readStep1Target(projectId);
     const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
-    const step1Env =
-      rawProf["environmentVariables"] && typeof rawProf["environmentVariables"] === "object"
+    const step1Env = {
+      ...(rawProf["environmentVariables"] && typeof rawProf["environmentVariables"] === "object"
         ? (rawProf["environmentVariables"] as Record<string, unknown>)
-        : {};
-    const step1Secrets = Array.isArray(rawProf["configuredSecretKeys"])
-      ? (rawProf["configuredSecretKeys"] as unknown[]).map(String)
-      : [];
+        : {}),
+      ...(stored.envVars ?? {}),
+    };
+    const step1Secrets = Array.from(
+      new Set([
+        ...(Array.isArray(rawProf["configuredSecretKeys"])
+          ? (rawProf["configuredSecretKeys"] as unknown[]).map(String)
+          : []),
+        ...(stored.secretReferences ?? []),
+        ...Object.entries(stored.secretValues ?? {})
+          .filter(([, v]) => Boolean(v?.trim()))
+          .map(([k]) => k),
+      ]),
+    );
     const inherited = Array.from(new Set([...Object.keys(step1Env), ...step1Secrets]));
     if (inherited.length > 0) {
       setInheritedEnvKeys((prev) => Array.from(new Set([...prev, ...inherited])));
@@ -1028,7 +1054,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         return next;
       });
     }
-  }, [config.data?.profile]);
+  }, [projectId, config.data?.profile]);
 
   const triggerSystemAiGeneration = (explicitGoal?: string) => {
     if (!snapshotId) return;
@@ -1231,50 +1257,54 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       return;
     }
     let activeConfigRevision = config.data?.revision ?? 0;
-    if (
-      approveAndDispatch &&
-      (!config.data?.ready ||
-        config.data.modelId !== chosenModel.id ||
-        config.data.snapshotId !== effectiveSnapshotId)
-    ) {
+    if (approveAndDispatch) {
       try {
-        setRunMessage("Synchronizing and pinning Step 1 configuration for the selected Snapshot/Model...");
+        setRunMessage("Saving complete Step 1 & Step 2 runtime configuration...");
+        const stored = readStep1Target(projectId);
         const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
+        const mergedMappings = {
+          ...(rawProf["serviceMappings"] && typeof rawProf["serviceMappings"] === "object"
+            ? (rawProf["serviceMappings"] as Record<string, string>)
+            : {}),
+          ...(stored.serviceMappings ?? {}),
+        };
+        const mergedEnvVars = {
+          ...(rawProf["environmentVariables"] && typeof rawProf["environmentVariables"] === "object"
+            ? (rawProf["environmentVariables"] as Record<string, string>)
+            : {}),
+          ...(stored.envVars ?? {}),
+        };
+        const mergedSecretRefs = Array.from(
+          new Set([
+            ...(Array.isArray(rawProf["secretReferences"])
+              ? (rawProf["secretReferences"] as unknown[]).map(String)
+              : []),
+            ...(stored.secretReferences ?? []),
+            ...Object.keys(stored.secretValues ?? {}),
+          ]),
+        ).filter((k) => !(stored.dismissedSecretKeys ?? []).includes(k));
         const pinned = await autoSaveConfig.mutateAsync({
           projectId,
-          profileId: config.data?.profileId || "SPRING_BOOT_DOTNET_COMPOSE_V1",
+          profileId: stored.profileId || config.data?.profileId || "SPRING_BOOT_DOTNET_COMPOSE_V1",
           snapshotId: effectiveSnapshotId,
           modelId: chosenModel.id,
           profile: {
-            serviceMappings:
-              rawProf["serviceMappings"] && typeof rawProf["serviceMappings"] === "object"
-                ? rawProf["serviceMappings"]
-                : {},
-            environmentVariables:
-              rawProf["environmentVariables"] && typeof rawProf["environmentVariables"] === "object"
-                ? rawProf["environmentVariables"]
-                : {},
-            secretReferences: Array.isArray(rawProf["secretReferences"])
-              ? rawProf["secretReferences"]
-              : [],
+            serviceMappings: mergedMappings,
+            environmentVariables: mergedEnvVars,
+            secretValues: stored.secretValues ?? {},
+            secretReferences: mergedSecretRefs,
           },
           expectedRevision: activeConfigRevision,
         });
         activeConfigRevision = pinned.revision;
       } catch (pinErr) {
         setRunMessage(
-          `Could not auto-save Step 1 configuration: ${pinErr instanceof Error ? pinErr.message : String(pinErr)}`,
+          `Could not save runtime configuration: ${pinErr instanceof Error ? pinErr.message : String(pinErr)}`,
         );
         return;
       }
     }
     const required = activeInputs;
-    if (approveAndDispatch && required.length && !config.data?.protectedInputsReady) {
-      setRunMessage(
-        "Protected runtime inputs are not ready. An administrator must complete runtime setup.",
-      );
-      return;
-    }
     if (approveAndDispatch && required.some((input) => !environment[input.name]?.trim())) {
       setRunMessage("Fill the required environment and test inputs before approval.");
       return;
@@ -1450,15 +1480,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               {aiSummary ||
                 "Requests are drafts synthesized from extracted endpoints and architecture relationships. Review and confirm below before running."}
             </p>
-            {!config.data?.ready && (
-              <p className="text-xs text-amber-600 font-medium">
-                ⚠ Step 1 configuration is not saved or does not match the current Snapshot/Model.{" "}
-                <Link className="underline" href={`/runtime-config?project=${projectId}`}>
-                  Complete runtime prerequisites
-                </Link>{" "}
-                or click Confirm & Start Run below to auto-sync Step 1.
-              </p>
-            )}
           </div>
         </div>
       </DetailPanel>
@@ -1670,11 +1691,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 }
               </FormField>
             ))}
-            {activeInputs.length > 0 && !config.data?.protectedInputsReady && (
-              <p className="text-xs text-amber-600">
-                An administrator must prepare protected runtime inputs before this draft can run.
-              </p>
-            )}
             {!activeInputs.length && (
               <p className="text-xs text-emerald-600 font-medium">
                 ✓ No extra parameters are required for this scenario (environment variables and secrets from Step 1 are inherited automatically).
@@ -1723,8 +1739,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               onChange={(e) => setUserConfirmed(e.target.checked)}
             />
             <span>
-              <strong>I confirm the test scenario above:</strong> Authorize MAVIS to save this approved
-              scenario and launch containers in the isolated Docker Sandbox to capture OpenTelemetry traces.
+              <strong>I confirm the test scenario above:</strong> Authorize MAVIS to save the complete
+              runtime configuration and launch containers in Step 3 to capture OpenTelemetry traces.
             </span>
           </label>
 
@@ -1742,106 +1758,13 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               onClick={() => handleCreateAndRun(true)}
             >
               {autoSaveConfig.isPending || start.isPending
-                ? "Synchronizing & starting..."
-                : "🚀 Confirm & Approve Run"}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={
-                !userConfirmed || !modelId || !steps.length || saveDraft.isPending || start.isPending
-              }
-              onClick={() => handleCreateAndRun(false)}
-            >
-              💾 Confirm & Save Scenario Without Running
+                ? "Saving & launching into Step 3..."
+                : "🚀 Confirm & Run in Step 3"}
             </Button>
           </div>
 
           {runMessage && <p className="text-sm font-medium text-primary mt-2">{runMessage}</p>}
         </div>
-      </DetailPanel>
-
-      <DetailPanel title="Saved Scenarios">
-        <RequestState query={scenarios} empty={!scenarios.data?.length}>
-          <div className="space-y-3">
-            {scenarios.data?.map((sc) => {
-              const parsedSteps = sc.steps
-                .map((raw) => {
-                  try {
-                    const obj = JSON.parse(raw) as Record<string, unknown>;
-                    return {
-                      service: String(obj["service"] ?? defaultSvc),
-                      method: String(obj["method"] ?? "GET").toUpperCase(),
-                      path: String(obj["path"] ?? "/health"),
-                      status: String(obj["expectedStatus"] ?? 200),
-                      rationale: "Loaded from saved scenario",
-                      source: `Saved Rev ${sc.revision}`,
-                      ...(obj["environmentVariables"] && typeof obj["environmentVariables"] === "object"
-                        ? { environmentVariables: obj["environmentVariables"] as Record<string, string> }
-                        : {}),
-                      ...(obj["bodyReference"] && typeof obj["bodyReference"] === "string"
-                        ? { bodyReference: obj["bodyReference"] }
-                        : {}),
-                    } as RuntimeDraftStep;
-                  } catch {
-                    return null;
-                  }
-                })
-                .filter((x): x is RuntimeDraftStep => x !== null);
-              return (
-                <div key={sc.id} className="rounded-lg border p-3.5 space-y-2.5 bg-muted/10">
-                  <div className="flex flex-wrap justify-between items-center gap-2">
-                    <div>
-                      <span className="font-semibold text-sm">{sc.name}</span>
-                      <span className="ml-2 px-1.5 py-0.5 rounded bg-muted text-xs text-muted-foreground font-mono">
-                        Revision {sc.revision} · {parsedSteps.length || sc.steps.length} steps
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => {
-                          setScenarioName(sc.name);
-                          if (parsedSteps.length > 0) {
-                            setSteps(parsedSteps);
-                            persistedDraft.current = null;
-                            setRunMessage(`✓ Loaded scenario "${sc.name}" (Revision ${sc.revision}) into the editor.`);
-                          }
-                        }}
-                      >
-                        📥 Load into Editor
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {parsedSteps.length > 0
-                      ? parsedSteps.map((st, idx) => (
-                          <span
-                            key={idx}
-                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded border bg-background font-mono text-xs"
-                          >
-                            <span className="text-muted-foreground">#{idx + 1}</span>
-                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${httpMethodBadgeClass(st.method)}`}>
-                              {st.method}
-                            </span>
-                            <span>
-                              {st.service}
-                              {st.path}
-                            </span>
-                            <span className="text-muted-foreground">→ {st.status}</span>
-                          </span>
-                        ))
-                      : sc.steps.map((st, idx) => (
-                          <span key={idx} className="font-mono text-xs text-muted-foreground">
-                            {st}
-                          </span>
-                        ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </RequestState>
       </DetailPanel>
     </div>
   );
