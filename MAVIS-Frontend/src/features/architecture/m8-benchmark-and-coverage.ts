@@ -1,7 +1,7 @@
 import type { ArchitecturalModel } from "@/types/domain";
 import { projectGraphModel } from "./graph-projection";
 import { assessReadability } from "@/lib/architecture/readability";
-import { canonicalNineDiagramCatalog } from "./diagram-catalog";
+import { canonicalDiagramCatalog } from "./diagram-catalog";
 import {
   hydrateUmlWorkspaceFromXml,
   projectUmlActivityDiagram,
@@ -436,23 +436,9 @@ export function buildM8CoverageMatrix(options?: M8CoverageVerificationOptions) {
         collapseExpandSupported: true,
         originFilters: ["all", "source", "deployment", "runtime"],
       },
-      canonicalDiagrams: canonicalNineDiagramCatalog,
+      canonicalDiagrams: canonicalDiagramCatalog,
     },
     diagrams: [
-      {
-        diagramId: "C4_CONTEXT",
-        milestone: "M1",
-        verificationStatus: coreInvariantsPass ? "SELF_VERIFIED" : "UNVERIFIED",
-        javaSupport: "EXTRACTED",
-        csharpSupport: "EXTRACTED",
-        composeSupport: "EXTRACTED",
-        runtimeOtelSupport: "NOT_APPLICABLE",
-        designedOverlaySupport: "SUPPORTED",
-        restraintRules: [
-          "Inbound HTTP entrypoints do not fabricate external actors/callers",
-          "Compose depends_on excluded from context interactions",
-        ],
-      },
       {
         diagramId: "C4_CONTAINER",
         milestone: "M1",

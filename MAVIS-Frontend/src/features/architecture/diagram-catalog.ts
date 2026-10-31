@@ -28,11 +28,6 @@ export const diagramKinds: Record<
 > = {
   C4: [
     {
-      value: "CONTEXT",
-      label: "System Context",
-      description: "The system and its known external dependencies.",
-    },
-    {
       value: "CONTAINER",
       label: "Container",
       description: "Services, data stores and their architectural interactions.",
@@ -109,8 +104,7 @@ export const diagramKinds: Record<
     },
   ],
 };
-export const canonicalNineDiagramCatalog = [
-  { id: "C4_CONTEXT", family: "C4", kind: "CONTEXT", milestone: "M1", label: "C4 Level 1 · System Context" },
+export const canonicalDiagramCatalog = [
   { id: "C4_CONTAINER", family: "C4", kind: "CONTAINER", milestone: "M1", label: "C4 Level 2 · Container" },
   { id: "C4_COMPONENT", family: "C4", kind: "COMPONENT", milestone: "M2", label: "C4 Level 3 · Component" },
   { id: "UML_SEQUENCE", family: "UML", kind: "UML_SEQUENCE", milestone: "M3", label: "UML Sequence Diagram" },
@@ -120,6 +114,10 @@ export const canonicalNineDiagramCatalog = [
   { id: "UML_ACTIVITY", family: "UML", kind: "UML_ACTIVITY", milestone: "M6", label: "UML Activity Diagram" },
   { id: "UML_STATE", family: "UML", kind: "UML_STATE", milestone: "M7", label: "UML State Machine Diagram" },
 ] as const;
+export function resolveDiagramKind(value: string | null): DiagramKind {
+  if (value === "SCENARIOS") return "UML_SEQUENCE";
+  return canonicalDiagramCatalog.find(item => item.kind === value)?.kind ?? "CONTAINER";
+}
 export function modelDocument(model: ArchitecturalModel): DiagramDocument {
   const nodes: DiagramDocument["layoutJson"]["nodes"] = model.elements.map((node) => {
     const isClient = isDeclarativeClientElement(node);

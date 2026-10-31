@@ -1146,7 +1146,7 @@ test("simplified C4/4+1 catalog preserves element IDs and never relabels static 
  const {modelView}=require("../src/lib/api/java-wire.ts");const {selectDiagram,diagramKinds,diagramMembers}=require("../src/features/architecture/diagram-catalog.ts");
  const raw=JSON.parse(fs.readFileSync(path.join(root,"tests/fixtures/ftgo-component.json"),"utf8"));
  const model={id:raw.modelVersionId,projectId:"p",snapshotId:"s",revision:1,label:"Model",elements:raw.layoutJson.nodes.map(n=>({id:n.id,name:n.name,elementType:n.kind,parentId:n.parentId,technology:n.languageStack,properties:n.properties,description:n.description??"",layer:"unclassified",evidence:[]})),edges:raw.layoutJson.edges.map(e=>({id:e.id,from:e.from,to:e.to,protocol:e.type,originLayer:e.originLayer,uncertain:true,evidence:[]}))};
- assert.deepEqual(diagramKinds.C4.map(d=>d.value),["CONTEXT","CONTAINER","COMPONENT"]);assert.equal(diagramKinds['4+1'].length,5);
+ assert.deepEqual(diagramKinds.C4.map(d=>d.value),["CONTAINER","COMPONENT"]);assert.equal(diagramKinds['4+1'].length,5);
  const container=selectDiagram(model,'CONTAINER');assert.equal(container.document.notation,'C4');assert.equal(container.document.level,'CONTAINER');
  const containerNodes=container.document.layoutJson.nodes;
  const boundary=containerNodes.find(n=>n.id==="system:boundary");
@@ -2243,7 +2243,7 @@ test("admin model deep links retain an authorized selected project even when own
 
 test("architecture view tabs preserve project/model and deep link every diagram kind",()=>{
  const React=require('react'),{renderToStaticMarkup}=require('react-dom/server');
- const kinds=['CONTEXT','CONTAINER','COMPONENT','UML_SEQUENCE','UML_CLASS','UML_PACKAGE','UML_DEPLOYMENT','UML_ACTIVITY','UML_STATE'];
+ const kinds=['CONTAINER','COMPONENT','UML_SEQUENCE','UML_CLASS','UML_PACKAGE','UML_DEPLOYMENT','UML_ACTIVITY','UML_STATE'];
  let role='admin';
  let params=new URLSearchParams('project=foreign-project&model=pinned-model&kind=UML_CLASS');
  const query={isPending:false,isError:false,isFetching:false,refetch(){}};
@@ -2261,7 +2261,7 @@ test("architecture view tabs preserve project/model and deep link every diagram 
   const html=renderToStaticMarkup(React.createElement(ArchitectureWorkspace,{mode:'diagram'}));
   const nav=/<nav aria-label="Architecture views"[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1];assert.ok(nav);
   const hrefs=[...nav.matchAll(/href="([^"]+)"/g)].map(m=>new URL(m[1].replaceAll('&amp;','&'),'https://mavis.invalid'));
-  assert.equal(hrefs.length,10);
+  assert.equal(hrefs.length,9);
   for(const url of hrefs){assert.equal(url.searchParams.get('project'),'foreign-project');assert.equal(url.searchParams.get('model'),'pinned-model');}
   assert.deepEqual(hrefs.filter(u=>u.pathname==='/diagrams').map(u=>u.searchParams.get('kind')),kinds);
   const activeTag=[...nav.matchAll(/<a\b[^>]*>/g)].find(m=>m[0].includes('aria-current="page"'))?.[0];
@@ -2294,4 +2294,14 @@ test("architecture view tabs preserve project/model and deep link every diagram 
    assert.ok(user.includes(`data-view-mode="${mode}"`));
   }
  }
+});
+
+test("Eight active diagram kinds retire Context links to Container",()=>{
+ const {canonicalDiagramCatalog,diagramKinds,resolveDiagramKind}=require('../src/features/architecture/diagram-catalog.ts');
+ const kinds=['CONTAINER','COMPONENT','UML_SEQUENCE','UML_CLASS','UML_PACKAGE','UML_DEPLOYMENT','UML_ACTIVITY','UML_STATE'];
+ assert.deepEqual(canonicalDiagramCatalog.map(item=>item.kind),kinds);
+ assert.deepEqual([...diagramKinds.C4,...diagramKinds.UML].map(item=>item.value),kinds);
+ for(const value of [null,'CONTEXT','invalid'])assert.equal(resolveDiagramKind(value),'CONTAINER');
+ assert.equal(resolveDiagramKind('SCENARIOS'),'UML_SEQUENCE');
+ for(const value of kinds)assert.equal(resolveDiagramKind(value),value);
 });
