@@ -206,6 +206,24 @@ public class ComposePreflightValidator {
             log.warn("Không thể quét bổ sung source snapshot tại {}: {}", storagePath, e.getMessage());
         }
 
+        List<String> services = dto.getDetectedServices() != null ? new ArrayList<>(dto.getDetectedServices()) : new ArrayList<>();
+        Map<String, Integer> ports = dto.getServicePorts() != null ? new HashMap<>(dto.getServicePorts()) : new HashMap<>();
+        Map<String, String> stacks = dto.getServiceStacks() != null ? new HashMap<>(dto.getServiceStacks()) : new HashMap<>();
+        if (services.isEmpty() && !endpoints.isEmpty()) {
+            for (DetectedEndpointDTO ep : endpoints) {
+                String s = cleanServiceCandidate(ep.getService());
+                if (!s.isBlank() && s.matches("[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}")
+                        && services.stream().noneMatch(x -> x.equalsIgnoreCase(s))
+                        && services.size() < 8) {
+                    services.add(s);
+                    ports.putIfAbsent(s, 8080);
+                    stacks.putIfAbsent(s, ep.getSource() != null && ep.getSource().toLowerCase(Locale.ROOT).endsWith(".cs") ? "dotnet" : "java");
+                }
+            }
+            dto.setDetectedServices(services);
+            dto.setServicePorts(ports);
+            dto.setServiceStacks(stacks);
+        }
         dto.setRequiredEnvVars(new ArrayList<>(envMap.values()));
         dto.setDatabaseChecks(dbChecks);
         dto.setDetectedEndpoints(endpoints);
@@ -594,25 +612,70 @@ public class ComposePreflightValidator {
         return cleaned.length() > 140 ? cleaned.substring(0, 140) + "..." : cleaned;
     }
 
+    private static final Pattern GITHUB_ZIP_ROOT_PATTERN = Pattern.compile("^(.*)-[0-9a-f]{7,40}$", Pattern.CASE_INSENSITIVE);
+
+    public static String cleanServiceCandidate(String raw) {
+        if (raw == null || raw.isBlank()) return "";
+        String trimmed = raw.trim();
+        Matcher m = GITHUB_ZIP_ROOT_PATTERN.matcher(trimmed);
+        if (m.matches() && !m.group(1).isBlank()) {
+            trimmed = m.group(1);
+        }
+        trimmed = trimmed.replaceAll("[^a-zA-Z0-9_-]", "-").replaceAll("-+", "-").replaceAll("^-|-$", "");
+        if (trimmed.length() > 62) trimmed = trimmed.substring(0, 62);
+        return trimmed;
+    }
+
     private static String inferServiceFromPath(String relativePath, List<String> detectedServices) {
-        String norm = relativePath.replace('\\', '/').toLowerCase(Locale.ROOT);
+        String norm = relativePath.replace('\\', '/');
+        String lowerNorm = norm.toLowerCase(Locale.ROOT);
         if (detectedServices != null) {
             for (String svc : detectedServices) {
-                if (norm.contains(svc.toLowerCase(Locale.ROOT))) {
+                String ls = svc.toLowerCase(Locale.ROOT);
+                if (lowerNorm.contains("/" + ls + "/") || lowerNorm.startsWith(ls + "/")) {
                     return svc;
                 }
             }
         }
-        String[] parts = relativePath.replace('\\', '/').split("/");
-        for (String part : parts) {
-            if (!part.isBlank() && !part.equalsIgnoreCase("src") && !part.equalsIgnoreCase("main")
-                    && !part.equalsIgnoreCase("java") && !part.equalsIgnoreCase("resources")
-                    && !part.endsWith(".java") && !part.endsWith(".cs") && !part.endsWith(".yml")
-                    && !part.endsWith(".yaml") && !part.endsWith(".properties") && !part.endsWith(".json")) {
-                return part;
+        String[] parts = norm.split("/");
+        int startIdx = 0;
+        if (parts.length > 1 && GITHUB_ZIP_ROOT_PATTERN.matcher(parts[0]).matches()) {
+            startIdx = 1;
+        }
+        for (int i = startIdx; i < parts.length; i++) {
+            if ("src".equalsIgnoreCase(parts[i]) && i > startIdx) {
+                String moduleCandidate = cleanServiceCandidate(parts[i - 1]);
+                if (!moduleCandidate.isBlank()) {
+                    if (detectedServices != null) {
+                        for (String svc : detectedServices) {
+                            if (svc.equalsIgnoreCase(moduleCandidate)
+                                    || svc.toLowerCase(Locale.ROOT).startsWith(moduleCandidate.toLowerCase(Locale.ROOT))) {
+                                return svc;
+                            }
+                        }
+                    }
+                    return moduleCandidate;
+                }
             }
         }
-        return detectedServices != null && !detectedServices.isEmpty() ? detectedServices.get(0) : "default-service";
+        for (int i = startIdx; i < parts.length; i++) {
+            String part = parts[i];
+            if (!part.isBlank() && !part.equalsIgnoreCase("src") && !part.equalsIgnoreCase("main")
+                    && !part.equalsIgnoreCase("java") && !part.equalsIgnoreCase("resources")
+                    && !part.equalsIgnoreCase("controllers") && !part.equalsIgnoreCase("controller")
+                    && !part.contains(".")) {
+                String cleaned = cleanServiceCandidate(part);
+                if (!cleaned.isBlank()) return cleaned;
+            }
+        }
+        if (detectedServices != null && !detectedServices.isEmpty()) {
+            return detectedServices.get(0);
+        }
+        if (parts.length > 0 && GITHUB_ZIP_ROOT_PATTERN.matcher(parts[0]).matches()) {
+            String repoName = cleanServiceCandidate(parts[0]);
+            if (!repoName.isBlank()) return repoName;
+        }
+        return "default-service";
     }
 
     private static String normalizeEndpointPath(String basePath, String subPath) {

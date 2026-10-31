@@ -513,10 +513,13 @@ public class RuntimePlanningService {
 
  private String inferSampleJsonBody(String path){
   String lower=path==null?"":path.toLowerCase(Locale.ROOT);
+  if(lower.contains("employee"))return "{\"name\":\"Nguyen Van A\",\"age\":28,\"position\":\"Developer\",\"departmentId\":1,\"organizationId\":1}";
+  if(lower.contains("department"))return "{\"name\":\"Engineering\",\"organizationId\":1}";
+  if(lower.contains("organization"))return "{\"name\":\"MAVIS Corp\",\"address\":\"Hanoi\"}";
   if(lower.contains("order")||lower.contains("checkout"))return "{\"itemId\":\"item-1\",\"quantity\":1}";
   if(lower.contains("payment"))return "{\"orderId\":\"order-1\",\"amount\":100}";
   if(lower.contains("user")||lower.contains("account"))return "{\"name\":\"Test User\",\"email\":\"user@example.org\"}";
-  return "{\"name\":\"sample-request\",\"quantity\":1}";
+  return "{\"name\":\"sample-entity\",\"organizationId\":1,\"departmentId\":1}";
  }
 
  private boolean isValidSafeJson(String text){
