@@ -59,7 +59,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 
-function httpMethodBadgeClass(method: string): string {
+export function httpMethodBadgeClass(method: string): string {
   switch (method.toUpperCase()) {
     case "GET":
       return "bg-emerald-500/15 text-emerald-500 border border-emerald-500/30";
@@ -76,7 +76,7 @@ function httpMethodBadgeClass(method: string): string {
   }
 }
 
-interface Step1Draft {
+export interface Step1Draft {
   modelId?: string;
   snapshotId?: string;
   profileId?: string;
@@ -85,9 +85,11 @@ interface Step1Draft {
   secretValues?: Record<string, string>;
   secretReferences?: string[];
   dismissedSecretKeys?: string[];
+  scenarioName?: string;
+  plannedSteps?: RuntimeDraftStep[];
 }
 
-function readStep1Target(projectId: string): Step1Draft {
+export function readStep1Target(projectId: string): Step1Draft {
   try {
     const raw = typeof window !== "undefined" ? window.sessionStorage.getItem(`mavis:runtime-target:${projectId}`) : null;
     if (!raw) return {};
@@ -98,7 +100,7 @@ function readStep1Target(projectId: string): Step1Draft {
   }
 }
 
-function writeStep1Target(projectId: string, draft: Step1Draft) {
+export function writeStep1Target(projectId: string, draft: Step1Draft) {
   try {
     if (typeof window !== "undefined" && projectId) {
       const existing = readStep1Target(projectId);
@@ -159,6 +161,8 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [selectedServiceFilter, setSelectedServiceFilter] = useState("ALL");
   const [selectedDbIndex, setSelectedDbIndex] = useState("ALL");
   const [dismissedSecretKeys, setDismissedSecretKeys] = useState<string[]>([]);
+  const [showMappingInputs, setShowMappingInputs] = useState(false);
+  const [showEnvInputs, setShowEnvInputs] = useState(false);
 
   useEffect(() => {
     if (preflight.data?.recommendedProfile) {
@@ -613,28 +617,67 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
 
         <div className="mt-4 space-y-6">
           {/* 2A. Service Mapping */}
-          <div>
-            <h4 className="text-sm font-semibold mb-2">Service-to-Model Mapping</h4>
-            {activeServices.length ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {activeServices.map((svc) => (
-                  <div key={svc} className="flex items-center gap-2">
-                    <span className="w-32 font-mono text-xs truncate" title={svc}>
-                      {svc}
-                    </span>
-                    <span className="text-muted-foreground">→</span>
-                    <Input
-                      className="flex-1 font-mono text-xs"
-                      placeholder="Model Element Name / ID"
-                      value={serviceMappings[svc] ?? svc}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setServiceMappings((m) => ({ ...m, [svc]: val }));
-                      }}
-                    />
-                  </div>
-                ))}
+          <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold">Service-to-Model Mapping (Auto-Matched by System & AI)</h4>
+                <p className="text-xs text-muted-foreground">
+                  Detected Docker Compose services are automatically bound to their corresponding Architecture Model containers.
+                </p>
               </div>
+              {activeServices.length > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setShowMappingInputs((prev) => !prev)}
+                >
+                  {showMappingInputs ? "Done Customizing" : "Customize Mapping"}
+                </Button>
+              )}
+            </div>
+            {activeServices.length ? (
+              showMappingInputs ? (
+                <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                  {activeServices.map((svc) => (
+                    <div key={svc} className="flex items-center gap-2">
+                      <span className="w-32 font-mono text-xs truncate" title={svc}>
+                        {svc}
+                      </span>
+                      <span className="text-muted-foreground">→</span>
+                      <Input
+                        className="flex-1 font-mono text-xs h-8"
+                        placeholder="Model Element Name / ID"
+                        value={serviceMappings[svc] ?? svc}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setServiceMappings((m) => ({ ...m, [svc]: val }));
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  {activeServices.map((svc) => (
+                    <div
+                      key={svc}
+                      className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs font-mono"
+                    >
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                      <span className="font-semibold text-foreground">{svc}</span>
+                      {servicePorts[svc] && (
+                        <span className="text-muted-foreground">:{servicePorts[svc]}</span>
+                      )}
+                      <span className="text-emerald-400">➔</span>
+                      <span className="text-emerald-400 font-semibold">
+                        {serviceMappings[svc] ?? svc}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )
             ) : (
               <p className="text-xs text-muted-foreground">
                 Run preflight above to auto-detect service containers from source.
@@ -785,78 +828,114 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
           </div>
           {/* 2C. Environment Variables */}
           <div className="space-y-3 border-t pt-4">
-            <div>
-              <h4 className="text-sm font-semibold">Environment Variables (Non-Secret Config)</h4>
-              <p className="text-xs text-muted-foreground">
-                Database hosts, ports, URLs, and runtime flags injected into Docker Compose override.
-              </p>
-            </div>
-
-            {Object.keys(envVars).length > 0 && (
-              <div className="space-y-2">
-                {Object.entries(envVars).map(([k, v]) => (
-                  <div key={k} className="flex items-center gap-2">
-                    <span className="w-56 font-mono text-xs truncate font-medium" title={k}>
-                      {k}
-                    </span>
-                    <span className="text-muted-foreground">=</span>
-                    <Input
-                      className="flex-1 font-mono text-xs h-8"
-                      placeholder="Value"
-                      value={v}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setEnvVars((prev) => ({ ...prev, [k]: val }));
-                      }}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        setEnvVars((prev) => {
-                          const next = { ...prev };
-                          delete next[k];
-                          return next;
-                        })
-                      }
-                    >
-                      ✕
-                    </Button>
-                  </div>
-                ))}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold">
+                  Environment Variables ({Object.keys(envVars).length} Auto-Configured)
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Service URLs, ports, and runtime flags automatically extracted from Docker Compose and source configs.
+                </p>
               </div>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                className="w-48 font-mono text-xs h-8"
-                placeholder="ENV_KEY (e.g. DB_HOST)"
-                value={newEnvKey}
-                onChange={(e) => setNewEnvKey(e.target.value.toUpperCase())}
-              />
-              <Input
-                className="flex-1 min-w-48 font-mono text-xs h-8"
-                placeholder="Environment value (e.g. postgres:5432)"
-                value={newEnvVal}
-                onChange={(e) => setNewEnvVal(e.target.value)}
-              />
               <Button
                 type="button"
-                variant="outline"
                 size="sm"
-                disabled={!newEnvKey.trim()}
-                onClick={() => {
-                  const k = newEnvKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
-                  if (!k) return;
-                  setEnvVars((prev) => ({ ...prev, [k]: newEnvVal }));
-                  setNewEnvKey("");
-                  setNewEnvVal("");
-                }}
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => setShowEnvInputs((prev) => !prev)}
               >
-                + Add Environment Variable
+                {showEnvInputs ? "Hide Env Editor" : `Customize Env Vars (${Object.keys(envVars).length})`}
               </Button>
             </div>
+
+            {!showEnvInputs ? (
+              Object.keys(envVars).length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 rounded-lg border bg-muted/20 p-2.5">
+                  {Object.entries(envVars).map(([k, v]) => (
+                    <span
+                      key={k}
+                      className="inline-flex items-center gap-1 rounded border bg-background/80 px-2 py-0.5 font-mono text-[11px]"
+                    >
+                      <strong className="text-foreground">{k}</strong>
+                      <span className="text-muted-foreground">=</span>
+                      <span className="text-emerald-400 truncate max-w-44">{v || "(default)"}</span>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  No additional environment variables required.
+                </p>
+              )
+            ) : (
+              <div className="space-y-3">
+                {Object.keys(envVars).length > 0 && (
+                  <div className="space-y-2">
+                    {Object.entries(envVars).map(([k, v]) => (
+                      <div key={k} className="flex items-center gap-2">
+                        <span className="w-56 font-mono text-xs truncate font-medium" title={k}>
+                          {k}
+                        </span>
+                        <span className="text-muted-foreground">=</span>
+                        <Input
+                          className="flex-1 font-mono text-xs h-8"
+                          placeholder="Value"
+                          value={v}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setEnvVars((prev) => ({ ...prev, [k]: val }));
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setEnvVars((prev) => {
+                              const next = { ...prev };
+                              delete next[k];
+                              return next;
+                            })
+                          }
+                        >
+                          ✕
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    className="w-48 font-mono text-xs h-8"
+                    placeholder="ENV_KEY (e.g. DB_HOST)"
+                    value={newEnvKey}
+                    onChange={(e) => setNewEnvKey(e.target.value.toUpperCase())}
+                  />
+                  <Input
+                    className="flex-1 min-w-48 font-mono text-xs h-8"
+                    placeholder="Environment value (e.g. postgres:5432)"
+                    value={newEnvVal}
+                    onChange={(e) => setNewEnvVal(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!newEnvKey.trim()}
+                    onClick={() => {
+                      const k = newEnvKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
+                      if (!k) return;
+                      setEnvVars((prev) => ({ ...prev, [k]: newEnvVal }));
+                      setNewEnvKey("");
+                      setNewEnvVal("");
+                    }}
+                  >
+                    + Add Environment Variable
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </DetailPanel>
@@ -972,6 +1051,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   );
   const [environment, setEnvironment] = useState<Record<string, string>>({});
   const [runMessage, setRunMessage] = useState("");
+
+  useEffect(() => {
+    if (projectId && steps.length > 0) {
+      writeStep1Target(projectId, {
+        scenarioName,
+        plannedSteps: steps,
+      });
+    }
+  }, [projectId, scenarioName, steps]);
 
   const staticModels = (models.data ?? []).filter(
     (m) => !("origin" in m) || (m as any).origin !== "RUNTIME_ENRICHED",
@@ -1508,6 +1596,62 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               />
             )}
           </FormField>
+
+          {steps.length > 0 && (() => {
+            const uniqueEntryServices = Array.from(new Set(steps.map((s) => s.service)));
+            const allDetectedServices = Array.from(
+              new Set([
+                ...detectedServiceNames,
+                ...uniqueEntryServices,
+              ]),
+            );
+            const downstreamServices = allDetectedServices.filter(
+              (s) => !uniqueEntryServices.includes(s),
+            );
+            return (
+              <div className="rounded-xl border border-primary/25 bg-slate-950/70 p-3.5 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-sky-400">
+                    🕸️ Predicted Architecture Workflow Preview ({steps.length} HTTP Calls → {allDetectedServices.length} Services)
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    Live trace & sequence diagram will render in Step 3
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-mono font-bold text-sky-300">
+                    ⚡ MAVIS Runner
+                  </div>
+                  <span className="text-sky-400 font-bold">──▶</span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {uniqueEntryServices.map((entrySvc) => (
+                      <div
+                        key={entrySvc}
+                        className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-mono font-semibold text-emerald-300"
+                      >
+                        🟢 {entrySvc}
+                      </div>
+                    ))}
+                  </div>
+                  {downstreamServices.length > 0 && (
+                    <>
+                      <span className="text-emerald-400 font-bold">──▶</span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {downstreamServices.map((ds) => (
+                          <div
+                            key={ds}
+                            className="rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs font-mono text-violet-300"
+                          >
+                            🔗 {ds}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
