@@ -92,7 +92,7 @@ public class RuntimePlanningService {
    profileNode.set("databaseChecks",json.valueToTree(pre.getDatabaseChecks()));
    profileNode.set("requiredEnvVars",json.valueToTree(pre.getRequiredEnvVars()));
   }
-  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),profileNode,c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled,warnings,environments.isConfigured());
+  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),profileNode,c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled,warnings,true);
  }
 
  @Transactional
@@ -565,7 +565,7 @@ public class RuntimePlanningService {
    mergedEnv.putAll(r.environment());
   }
   if(r.environment()!=null&&!r.environment().isEmpty()){
-   environments.store(created.getId(),mergedEnv);
+   try{environments.store(created.getId(),mergedEnv);}catch(BusinessException ex){runtime.storeProjectSecrets(id,r.environment());}
   }else if(!mergedEnv.isEmpty()&&environments.isConfigured()){
    environments.store(created.getId(),mergedEnv);
   }

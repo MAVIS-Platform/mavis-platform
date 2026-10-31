@@ -353,8 +353,8 @@ public class ComposePreflightValidator {
                 registerEnvVar(envMap, "API_KEY", inferredService, null, cleanRelPath);
             }
         }
-        // 2. Java Controller endpoints
-        if (lowerPath.endsWith(".java") && content.contains("Mapping")) {
+        // 2. Java Controller endpoints (skip @FeignClient / @HttpExchange client interfaces)
+        if (lowerPath.endsWith(".java") && content.contains("Mapping") && !content.contains("@FeignClient") && !content.contains("@HttpExchange")) {
             int classDeclIdx = content.indexOf("class ");
             if (classDeclIdx < 0) classDeclIdx = content.indexOf("interface ");
             String basePath = "";
