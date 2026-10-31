@@ -6,6 +6,7 @@ import type { ArchitecturalModel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SelectField } from "@/components/shared/forms";
+import { formatStatusLabel } from "@/lib/status-label";
 import { DrawioEditor } from "./drawio-editor";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
 import type { DrawioTheme } from "@/lib/drawio/rules";
@@ -341,7 +342,7 @@ export function DesignedScenario({
                 value: p.participantId,
                 badge: p.elementType ?? "LIFELINE",
                 label: `${idx + 1}. :${p.name}`,
-                sublabel: `Status: ${p.resolutionStatus}`,
+                sublabel: `Status: ${formatStatusLabel(p.resolutionStatus)}`,
               }))}
             />
             <SearchableThreeESelect

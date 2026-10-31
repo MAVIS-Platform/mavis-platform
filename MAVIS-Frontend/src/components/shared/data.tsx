@@ -2,16 +2,33 @@ import { Fragment, type ReactNode } from "react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { EmptyState } from "./request-state";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { translatedStatusLabel } from "@/lib/status-label";
+
+export function StatusLabel({
+  status,
+  preserveCase = false,
+}: {
+  status: string;
+  preserveCase?: boolean;
+}) {
+  const { t } = useLocale();
+  return <>{preserveCase ? t(status) : translatedStatusLabel(status, t)}</>;
+}
 
 export function StatusBadge({
   status,
   variant = "outline",
+  preserveCase = false,
 }: {
   status: string;
   variant?: BadgeProps["variant"];
+  preserveCase?: boolean;
 }) {
-  const { t } = useLocale();
-  return <Badge variant={variant}>{t(status)}</Badge>;
+  return (
+    <Badge variant={variant}>
+      <StatusLabel status={status} preserveCase={preserveCase} />
+    </Badge>
+  );
 }
 export function SummaryCard({
   label,

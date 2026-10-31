@@ -5,6 +5,7 @@ import { useApi, useApiQuery } from "@/hooks/use-api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/shared/forms";
+import { StatusLabel } from "@/components/shared/data";
 import type { Assignment } from "./requirements";
 
 export function AssignmentSourcePicker({
@@ -340,7 +341,7 @@ export function AssignmentSourcePicker({
       )}
       {job.data && ["failed", "cancelled", "timed-out"].includes(job.data.status) && (
         <p role="alert">
-          Analysis {job.data.status}.{" "}
+          Analysis <StatusLabel status={job.data.status} />.{" "}
           <Button type="button" variant="outline" onClick={() => retry.mutate()}>
             Retry analysis
           </Button>
