@@ -177,9 +177,11 @@ export function AIExplanationPanel({
   useEffect(() => {
     if (!elementId || api.mode !== "backend") return;
     let cancelled = false;
+    const controller = new AbortController();
     setAi3ELoading(true);
     fetch("/api/ai-diagram-semantics", {
       method: "POST",
+      signal: controller.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         threeEContext: threeEAiCtx,
@@ -197,6 +199,7 @@ export function AIExplanationPanel({
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [elementId, api.mode, threeEAiCtx.contextHash, locale]);
 

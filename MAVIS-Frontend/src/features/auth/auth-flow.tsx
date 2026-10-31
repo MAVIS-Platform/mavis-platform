@@ -34,6 +34,7 @@ export function AuthFlow({
   );
   const [validation, setValidation] = useState("");
   const [cooldown, setCooldown] = useState(0);
+  const [verificationEmail, setVerificationEmail] = useState(params.get("email") ?? "");
   const submitting = useRef(false);
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -54,7 +55,11 @@ export function AuthFlow({
           ? forgot
           : reset;
   const busy = current.isPending || resend.isPending || forgot.isPending;
-  const needsCode = flow === "verify" || flow === "reset-password";
+  const needsCode =
+    (flow === "verify" && Boolean(verificationEmail) && email === verificationEmail) ||
+    flow === "reset-password";
+  const showsPassword =
+    flow === "register" || (flow === "reset-password" && isCompleteVerificationCode(otp));
   const title = {
     register: "Create your account",
     verify: "Verify your email",
@@ -63,12 +68,18 @@ export function AuthFlow({
   }[flow];
   const description = {
     register: "Start exploring architecture with a verified MAVIS account.",
-    verify: "Enter the code from your verification email.",
+    verify: needsCode
+      ? "Enter the code from your verification email."
+      : "Enter your email to receive a verification code.",
     "forgot-password": "Enter your account email to request a reset code.",
     "reset-password": "Use your reset code to choose a new password.",
   }[flow];
   async function submit() {
     if (submitting.current || busy) return;
+    if (flow === "verify" && !needsCode) {
+      await requestAnotherCode();
+      return;
+    }
     if (needsCode && !isCompleteVerificationCode(otp)) {
       setValidation("Enter exactly six digits.");
       return;
@@ -117,7 +128,13 @@ export function AuthFlow({
     try {
       if (flow === "verify") await resend.mutateAsync({ email });
       else await forgot.mutateAsync({ email });
+      if (flow === "verify") setVerificationEmail(email);
+      setValidation("");
       setOtp("");
+      if (flow === "reset-password") {
+        setPassword("");
+        setConfirm("");
+      }
       setMessage(
         flow === "verify"
           ? "If this email needs verification, you will receive a new code."
@@ -169,29 +186,48 @@ export function AuthFlow({
               />
             </label>
           )}
-          <label className="block space-y-2 text-sm font-medium">
-            <span>Email address</span>
-            <Input
-              required
-              type="email"
-              autoComplete="email"
-              value={email}
-              disabled={busy}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
+          {needsCode ? (
+            <div className="space-y-2 text-sm">
+              <p className="font-medium">Email</p>
+              <p className="break-words text-muted-foreground">{email}</p>
+            </div>
+          ) : (
+            <label className="block space-y-2 text-sm font-medium">
+              <span>Email</span>
+              <Input
+                required
+                type="email"
+                autoComplete="email"
+                value={email}
+                disabled={busy}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (flow === "verify") {
+                    setVerificationEmail("");
+                    setOtp("");
+                    setValidation("");
+                    setMessage("");
+                  }
+                }}
+              />
+            </label>
+          )}
           {needsCode && (
             <VerificationCodeInput
               value={otp}
               onChange={(value) => {
                 setOtp(value);
                 setValidation("");
+                if (flow === "reset-password") {
+                  setPassword("");
+                  setConfirm("");
+                }
               }}
               disabled={busy}
-              autoFocus={Boolean(params.get("email"))}
+              autoFocus={needsCode}
             />
           )}
-          {["register", "reset-password"].includes(flow) && (
+          {showsPassword && (
             <>
               <label className="block space-y-2 text-sm font-medium">
                 <span>{flow === "register" ? "Password" : "New password"}</span>
@@ -231,7 +267,7 @@ export function AuthFlow({
               {t(validation)}
             </p>
           )}
-          {flow === "forgot-password" && cooldown > 0 && (
+          {(flow === "forgot-password" || (flow === "verify" && !needsCode)) && cooldown > 0 && (
             <p role="status" className="text-xs text-muted-foreground">
               {t("Request another code in")} {cooldown}s
             </p>
@@ -241,6 +277,7 @@ export function AuthFlow({
             disabled={
               busy ||
               (needsCode && !isCompleteVerificationCode(otp)) ||
+              (flow === "verify" && !needsCode && cooldown > 0) ||
               (flow === "forgot-password" && cooldown > 0) ||
               (["register", "reset-password"].includes(flow) && password !== confirm)
             }
@@ -251,12 +288,15 @@ export function AuthFlow({
               : flow === "register"
                 ? "Create account"
                 : flow === "verify"
-                  ? "Verify email"
+                  ? needsCode
+                    ? "Verify email"
+                    : "Send verification code"
                   : flow === "forgot-password"
                     ? "Send reset code"
                     : "Reset password"}
           </Button>
         </form>
+        {flow === "verify" && !needsCode && resend.isError && <ErrorState error={resend.error} />}
         {needsCode && (
           <div className="mt-5">
             <Button
