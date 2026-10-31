@@ -324,7 +324,7 @@ export function SourceSnapshots() {
     { jobId: activeJobId },
     { enabled: Boolean(activeJobId), poll: Boolean(activeJobId) },
   );
-  const { models } = useModel();
+  const { models } = useModel({ loadDetail: false });
 
   useEffect(() => {
     if (!projectId || !requestedJobId || !highlightedSnapshotId) return;

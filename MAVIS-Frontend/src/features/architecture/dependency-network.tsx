@@ -142,11 +142,10 @@ export function DependencyNetwork({
     y: number;
     moved: boolean;
   } | null>(null);
-  const internalProjection = useMemo(
-    () => projectGraphModel(model, expanded, origin),
-    [model, expanded, origin],
+  const baseProjection = useMemo(
+    () => controlledProjection ?? projectGraphModel(model, expanded, origin),
+    [controlledProjection, model, expanded, origin],
   );
-  const baseProjection = controlledProjection ?? internalProjection;
   const projection = useMemo(
     () => ({
       ...baseProjection,
@@ -156,13 +155,12 @@ export function DependencyNetwork({
   );
   const nodes = projection.model.elements;
   const edges = projection.model.edges;
-  const internalConnections = useMemo(
-    () => networkConnections(model, projection.model),
-    [model, projection.model],
+  const connections = useMemo(
+    () => controlledConnections ?? networkConnections(model, projection.model),
+    [controlledConnections, model, projection.model],
   );
-  const connections = controlledConnections ?? internalConnections;
   const elements = useMemo(
-    () => networkElements(projection.model, 2, connections),
+    () => networkElements(projection.model, null, connections),
     [projection.model, connections],
   );
   function inspectConnection(connection: NetworkConnection) {
@@ -207,12 +205,15 @@ export function DependencyNetwork({
   useEffect(() => {
     const container = viewport.current;
     if (!container || !active) return;
-    const positions = networkPositions(
-      projection.model,
-      container.clientWidth / Math.max(1, container.clientHeight),
-    );
     const snapshots = cameraSnapshots.current;
     const saved = snapshots.get(currentMode.current);
+    const needsPositions = nodes.some((node) => !saved?.positions.has(`node:${node.id}`));
+    const positions = needsPositions
+      ? networkPositions(
+          projection.model,
+          container.clientWidth / Math.max(1, container.clientHeight),
+        )
+      : new Map<string, { x: number; y: number }>();
     const cy = cytoscape({
       container,
       elements: elements.map((element) =>
@@ -429,7 +430,7 @@ export function DependencyNetwork({
       refreshTheme.current = () => {};
       presentMode.current = () => {};
     };
-  }, [active, elements, nodes.length, projection.model]);
+  }, [active, elements, nodes, projection.model]);
 
   useEffect(() => {
     if (!fillHeight) return;

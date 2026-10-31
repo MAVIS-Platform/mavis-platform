@@ -1,8 +1,8 @@
 "use client";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useApi, useApiQuery, useSelection } from "@/hooks/use-api";
-export function useModel() {
+export function useModel({ loadDetail = true }: { loadDetail?: boolean } = {}) {
   const api = useApi();
   const { projectId } = useSelection();
   const params = useSearchParams();
@@ -12,7 +12,10 @@ export function useModel() {
     { projectId },
     { enabled: !!projectId },
   );
-  const models = [...(summaries.data ?? [])].sort((a, b) => b.revision - a.revision);
+  const models = useMemo(
+    () => [...(summaries.data ?? [])].sort((a, b) => b.revision - a.revision),
+    [summaries.data],
+  );
   const chosen = params.get("model");
   const selected = chosen || models[0]?.id || "";
   useEffect(() => {
@@ -22,7 +25,11 @@ export function useModel() {
       router.replace(`?${next}`);
     }
   }, [api.mode, chosen, selected, params, router]);
-  const detail = useApiQuery("model", { modelId: selected, projectId }, { enabled: !!selected });
+  const detail = useApiQuery(
+    "model",
+    { modelId: selected, projectId },
+    { enabled: loadDetail && !!selected },
+  );
   return {
     query: selected ? detail : summaries,
     models,

@@ -3,7 +3,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Zap, ArrowRight, ExternalLink, Activity, CheckCircle2, Clock, AlertTriangle } from "lucide-react";
 import { RuntimeStepperBanner } from "./screens";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { DetailPanel, StatusLabel } from "@/components/shared/data";
 import { translatedStatusLabel } from "@/lib/status-label";
@@ -236,7 +236,10 @@ function RuntimeSequenceDiagramCanvas({
   sessionId: string;
 }) {
   const [zoomPct, setZoomPct] = useState(100);
-  const { svgMarkup, participants } = buildRuntimeSequenceSvgString(steps, sessionTitle);
+  const { svgMarkup, participants } = useMemo(
+    () => buildRuntimeSequenceSvgString(steps, sessionTitle),
+    [steps, sessionTitle],
+  );
 
   const handleDownloadSvg = () => {
     const blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });

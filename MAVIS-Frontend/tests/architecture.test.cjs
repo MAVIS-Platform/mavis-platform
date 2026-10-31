@@ -634,14 +634,15 @@ test("all auth flows reuse one login background while retaining their forms and 
   const {ThemeProvider}=require("../src/components/theme-provider.tsx");
   const {LoginBackground}=loadRoutedComponent("src/features/auth/login-background.tsx");
   const {AuthFlow}=loadRoutedComponent("src/features/auth/auth-flow.tsx",{"./login-background":{LoginBackground},"@/hooks/use-api":{useApiMutation:()=>({isPending:false,isError:false})}});
-  for(const [flow,action] of [["register","Create account"],["forgot-password","Send reset code"],["verify","Verify email"],["reset-password","Reset password"]]) {
+  for(const [flow,action] of [["register","Create account"],["forgot-password","Send reset code"],["verify","Send verification code"],["reset-password","Reset password"]]) {
     const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AuthFlow,{flow})));
     assert.equal((html.match(/mavis-auth-background/g)||[]).length,1,flow);
     assert.ok(html.includes("relative isolate min-h-svh"));
     assert.ok(html.includes("pointer-events-none fixed inset-0"));
-    assert.ok(html.includes('type="email"'));assert.ok(html.includes(action));assert.ok(html.includes('href="/login"'));
-    assert.equal(html.includes("Verification code"),["verify","reset-password"].includes(flow));
-    assert.equal(html.includes("Resend verification code"),flow==="verify");
+    assert.equal(html.includes('type="email"'),flow!=="reset-password");assert.ok(html.includes(action));assert.ok(html.includes('href="/login"'));
+    assert.equal(html.includes("Verification code"),flow==="reset-password");
+    assert.equal(html.includes("Resend verification code"),false);
+    assert.equal(html.includes('autoComplete="new-password"'),flow==="register");
   }
 });
 
@@ -708,7 +709,25 @@ test("auth form prevents incomplete OTPs and duplicate submissions while preserv
   return{states,calls,routes,submit,render,release:()=>release()};
  }
  const incomplete=harness("verify",{4:"12345"});incomplete.submit();assert.equal(incomplete.calls.length,0);assert.equal(incomplete.states[6],"Enter exactly six digits.");
+ const entry=harness("verify",{8:""});
+ assert.equal(entry.render().some(n=>n.props?.onChange&&n.props?.autoFocus),false);
+ entry.submit();assert.equal(entry.calls[0][0],"resendOtp");assert.equal(entry.calls[0][1].email,"fixture@example.org");
+ entry.release();await new Promise(setImmediate);assert.equal(entry.states[8],"fixture@example.org");
+ assert.ok(entry.render().some(n=>n.props?.onChange&&n.props?.autoFocus));
+ assert.equal(entry.render().some(n=>n.props?.type==="email"),false);
+ assert.equal(entry.states[0],"fixture@example.org");
  const verify=harness("verify",{4:"012345"});verify.submit();verify.submit();assert.equal(verify.calls.length,1);assert.equal(verify.calls[0][0],"verifyEmail");assert.equal(verify.calls[0][1].email,"fixture@example.org");assert.equal(verify.calls[0][1].otpCode,"012345");verify.release();await new Promise(setImmediate);assert.deepEqual(verify.routes,["/login?verified=1"]);
+ const resetEntry=harness("reset-password");
+ assert.equal(resetEntry.render().some(n=>n.props?.type==="email"),false);
+ assert.equal(resetEntry.render().filter(n=>n.props?.type==="password").length,0);
+ resetEntry.render().find(n=>n.props?.onChange&&n.props?.autoFocus).props.onChange("12345");
+ assert.equal(resetEntry.render().filter(n=>n.props?.type==="password").length,0);
+ resetEntry.render().find(n=>n.props?.onChange&&n.props?.autoFocus).props.onChange("012345");
+ assert.equal(resetEntry.render().filter(n=>n.props?.type==="password").length,2);
+ resetEntry.states[2]="password";resetEntry.states[3]="password";
+ resetEntry.render().find(n=>n.props?.onChange&&n.props?.autoFocus).props.onChange("01234");
+ assert.equal(resetEntry.render().filter(n=>n.props?.type==="password").length,0);
+ assert.equal(resetEntry.states[2],"");assert.equal(resetEntry.states[3],"");
  const reset=harness("reset-password",{2:"valid-password",3:"valid-password",4:"012345"});reset.submit();assert.equal(reset.calls[0][0],"resetPassword");reset.release();await new Promise(setImmediate);assert.deepEqual(reset.routes,["/login?reset=1"]);
  const {ApiError}=require("../src/lib/errors/api-error.ts");const expired=harness("reset-password",{2:"valid-password",3:"valid-password",4:"012345"},new ApiError("invalid",400,"AUTH_RESET_EXPIRED"));expired.submit();expired.release();await new Promise(setImmediate);assert.equal(expired.states[4],"");assert.equal(expired.states[2],"valid-password");assert.equal(expired.routes.length,0);
  const forgot=harness("forgot-password");forgot.submit();forgot.release();await new Promise(setImmediate);assert.deepEqual(forgot.routes,["/auth/reset-password?email=fixture%40example.org"]);

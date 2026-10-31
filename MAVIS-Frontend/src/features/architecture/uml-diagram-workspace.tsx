@@ -297,8 +297,10 @@ export function UmlDiagramWorkspace({
       return;
     }
     let cancelled = false;
+    const controller = new AbortController();
     fetch("/api/ai-diagram-semantics", {
       method: "POST",
+      signal: controller.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ umlContext: compactUmlContext, locale }),
     })
@@ -313,6 +315,7 @@ export function UmlDiagramWorkspace({
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [compactUmlContext, locale]);
 

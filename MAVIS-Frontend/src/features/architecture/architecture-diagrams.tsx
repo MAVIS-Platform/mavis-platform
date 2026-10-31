@@ -121,8 +121,10 @@ export function ArchitectureDiagrams({
     }
     setC4AiEnrichment(null);
     let cancelled = false;
+    const controller = new AbortController();
     fetch("/api/ai-diagram-semantics", {
       method: "POST",
+      signal: controller.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ c4Context: c4Ctx, locale }),
     })
@@ -137,6 +139,7 @@ export function ArchitectureDiagrams({
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [isC4EnrichableKind, kind, model, container?.id, systemName, locale]);
 
