@@ -526,8 +526,8 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   Auto-Detected Required Connections & API Keys ({allSecretKeys.length} box{allSecretKeys.length === 1 ? "" : "es"})
                 </h4>
                 <p className="text-xs text-muted-foreground">
-                  Hệ thống tự động nhận diện từ mã nguồn & kiến trúc tĩnh (ví dụ: có Database → hiện box{" "}
-                  <code>DB_CONNECTION_STRING</code>, có AI/External API → hiện box <code>API_KEY</code>).
+                  Automatically detected from source code and static architecture (e.g. Database detected →{" "}
+                  <code>DB_CONNECTION_STRING</code> box appears; AI/External API detected → <code>API_KEY</code> box appears).
                 </p>
               </div>
               <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs font-medium">
@@ -557,12 +557,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           ? "🗄️ Database Credential"
                           : "🔑 Protected Secret";
                   const defaultPlaceholder = isConfigured
-                    ? "•••••••• (Đã lưu — để trống nếu giữ nguyên)"
+                    ? "•••••••• (Saved — leave blank to keep existing value)"
                     : isDbConn
-                      ? "jdbc:postgresql://host:5432/db?user=...&password=... (hoặc Server=...)"
+                      ? "jdbc:postgresql://host:5432/db?user=...&password=... (or Server=...)"
                       : isAiOrApi
-                        ? "sk-... / AIza... (Nhập API Key cho AI / External API)"
-                        : `Nhập giá trị cho ${sKey}`;
+                        ? "sk-... / AIza... (Enter API Key for AI / External API)"
+                        : `Enter value for ${sKey}`;
                   return (
                     <div key={sKey} className="rounded-lg border p-3 space-y-2 bg-muted/20">
                       <div className="flex items-center justify-between gap-2">
@@ -570,7 +570,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           <div className="text-xs font-semibold">{friendlyLabel}</div>
                           <div className="font-mono text-[11px] text-muted-foreground">
                             {sKey}
-                            {meta?.source ? ` · từ ${meta.source}` : ""}
+                            {meta?.source ? ` · from ${meta.source}` : ""}
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5">
@@ -602,21 +602,21 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
               </div>
             ) : (
               <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-                Không phát hiện yêu cầu Database Connection hay API Key bắt buộc trong snapshot này. Bạn vẫn có thể thêm biến thủ công bên dưới nếu cần.
+                No required Database Connection or API Key detected in this snapshot. You can still add custom boxes below if needed.
               </div>
             )}
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <Input
                 className="w-56 font-mono text-xs h-8"
-                placeholder="Thêm box khác (VD: DB_CONNECTION_STRING, API_KEY)"
+                placeholder="Add another box (e.g. DB_CONNECTION_STRING, API_KEY)"
                 value={newSecretKey}
                 onChange={(e) => setNewSecretKey(e.target.value.toUpperCase())}
               />
               <Input
                 type="password"
                 className="flex-1 min-w-48 font-mono text-xs h-8"
-                placeholder="Giá trị..."
+                placeholder="Value..."
                 value={newSecretVal}
                 onChange={(e) => setNewSecretVal(e.target.value)}
               />
@@ -633,7 +633,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   setNewSecretVal("");
                 }}
               >
-                + Thêm Box
+                + Add Box
               </Button>
             </div>
           </div>
@@ -1013,7 +1013,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             method,
             path: rewrittenPath,
             status: "200",
-            rationale: `Tự động trích xuất từ Step 1 (${ep.source ?? "source snapshot"})`,
+            rationale: `Automatically extracted from Step 1 (${ep.source ?? "source snapshot"})`,
             source: ep.source ?? "Step 1 Preflight",
             ...(Object.keys(vars).length > 0 ? { environmentVariables: vars } : {}),
             ...(bodyRef ? { bodyReference: bodyRef } : {}),
@@ -1082,7 +1082,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         method: "GET",
         path: "/health",
         status: "200",
-        rationale: "Bước kiểm thử bổ sung bởi người dùng",
+        rationale: "Custom HTTP test step added by user",
         source: "User defined",
       },
     ]);
@@ -1095,7 +1095,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const handleCreateAndRun = async (approveAndDispatch: boolean) => {
     if (submitting.current) return;
     if (!userConfirmed) {
-      setRunMessage("Vui lòng tích xác nhận kịch bản trước khi lưu hoặc chạy.");
+      setRunMessage("Please confirm the scenario before saving or running.");
       return;
     }
     const chosenModel = selectableModels.find((m) => m.id === modelId);
@@ -1127,7 +1127,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         config.data.snapshotId !== effectiveSnapshotId)
     ) {
       try {
-        setRunMessage("Đang tự động đồng bộ & chốt cấu hình Step 1 cho Snapshot/Model hiện tại...");
+        setRunMessage("Synchronizing and pinning Step 1 configuration for the selected Snapshot/Model...");
         const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
         const pinned = await autoSaveConfig.mutateAsync({
           projectId,
@@ -1152,7 +1152,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         activeConfigRevision = pinned.revision;
       } catch (pinErr) {
         setRunMessage(
-          `Không thể tự động lưu cấu hình Step 1: ${pinErr instanceof Error ? pinErr.message : String(pinErr)}`,
+          `Could not auto-save Step 1 configuration: ${pinErr instanceof Error ? pinErr.message : String(pinErr)}`,
         );
         return;
       }
@@ -1218,7 +1218,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           : await saveDraft.mutateAsync(draft);
       persistedDraft.current = { fingerprint, scenario: saved };
       if (!approveAndDispatch) {
-        setRunMessage("✓ Đã xác nhận và lưu kịch bản thành công (chưa chạy phiên Runtime).");
+        setRunMessage("✓ Scenario confirmed and saved without starting a runtime session.");
         return;
       }
       setRunMessage("Approving the confirmed scenario and dispatching execution...");
@@ -1247,10 +1247,10 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     <div className="space-y-6">
       <RuntimeStepperBanner currentStep={2} projectId={projectId} />
 
-      <DetailPanel title="1. Hệ thống + AI Tự động Sinh Kịch bản Kiểm thử (Auto-Generate Scenario)">
+      <DetailPanel title="1. System + AI Auto-Generate Test Scenario">
         <p className="text-sm text-muted-foreground">
-          Kết hợp dữ liệu phân tích tĩnh ở Step 1 (Services, Endpoints, Relationships, DB/Env) và AI để
-          tự động đề xuất chuỗi bước kiểm thử HTTP hợp lý trước khi bạn xác nhận.
+          Combines Step 1 static analysis (Services, Endpoints, Relationships, DB/Env) with AI to
+          automatically propose an ordered HTTP test workflow before user confirmation.
         </p>
 
         <div className="mt-4 space-y-4">
@@ -1294,13 +1294,13 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-64">
               <FormField
-                label="Mục tiêu kiểm thử cho AI (Tùy chọn)"
-                hint="Ví dụ: Kiểm thử luồng tạo đơn hàng và thanh toán liên service"
+                label="AI Testing Goal (Optional)"
+                hint="Example: Verify cross-service organization, department, and employee creation flow"
               >
                 {(props) => (
                   <Input
                     {...props}
-                    placeholder="Nhập mục tiêu kiểm thử cụ thể hoặc để trống để AI tự đề xuất toàn diện..."
+                    placeholder="Enter a specific test objective or leave blank for comprehensive auto-generation..."
                     value={aiGoal}
                     onChange={(e) => setAiGoal(e.target.value)}
                   />
@@ -1317,15 +1317,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               }}
             >
               {generateAiDraft.isPending
-                ? "✨ Hệ thống + AI đang phân tích..."
-                : "✨ Tạo lại kịch bản bằng Hệ thống + AI"}
+                ? "✨ System + AI analyzing..."
+                : "✨ Regenerate Scenario with System + AI"}
             </Button>
           </div>
 
           <div className="rounded-lg border p-3.5 bg-muted/30 space-y-2 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="font-semibold">Nguồn đề xuất kịch bản:</span>
+                <span className="font-semibold">Scenario Proposal Source:</span>
                 {generatorMode === "AI_ASSISTED" ? (
                   <span className="px-2 py-0.5 rounded bg-primary/15 text-primary text-xs font-semibold">
                     ✨ AI + System Generated ({aiModelName || "Gemini"})
@@ -1338,9 +1338,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               </div>
               {inheritedEnvKeys.length > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  Kế thừa từ Step 1:{" "}
+                  Inherited from Step 1:{" "}
                   <strong className="font-mono text-foreground">
-                    {inheritedEnvKeys.length} biến Env/Secret ({inheritedEnvKeys.slice(0, 4).join(", ")}
+                    {inheritedEnvKeys.length} Env/Secret vars ({inheritedEnvKeys.slice(0, 4).join(", ")}
                     {inheritedEnvKeys.length > 4 ? "..." : ""})
                   </strong>
                 </span>
@@ -1352,20 +1352,20 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             </p>
             {!config.data?.ready && (
               <p className="text-xs text-amber-600 font-medium">
-                ⚠ Cấu hình Step 1 chưa lưu hoặc chưa khớp Snapshot/Model hiện tại.{" "}
+                ⚠ Step 1 configuration is not saved or does not match the current Snapshot/Model.{" "}
                 <Link className="underline" href={`/runtime-config?project=${projectId}`}>
-                  Quay lại hoàn tất Step 1
+                  Complete runtime prerequisites
                 </Link>{" "}
-                trước khi bấm chạy.
+                or click Confirm & Start Run below to auto-sync Step 1.
               </p>
             )}
           </div>
         </div>
       </DetailPanel>
 
-      <DetailPanel title="2. Kiểm tra & Chỉnh sửa Kịch bản Đề xuất (Review Scenario Steps)">
+      <DetailPanel title="2. Review & Customize Proposed Scenario Steps">
         <div className="space-y-4">
-          <FormField label="Tên Kịch bản (Scenario Name)">
+          <FormField label="Scenario Name">
             {(props) => (
               <Input
                 {...props}
@@ -1379,10 +1379,10 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             <div className="flex items-center justify-between">
               <div>
                 <h4 className="text-sm font-semibold">
-                  Chuỗi bước HTTP đề xuất ({steps.length} bước)
+                  Proposed HTTP Sequence ({steps.length} step{steps.length === 1 ? "" : "s"})
                 </h4>
                 <p className="text-xs text-muted-foreground">
-                  Bạn có thể chỉnh sửa trực tiếp Method, Service, Path, Status kỳ vọng hoặc xóa/thêm bước.
+                  Edit the HTTP Method, Service, Path, or expected Status directly, or add/remove steps.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -1392,18 +1392,18 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   onClick={applySuggestions}
                   disabled={generateAiDraft.isPending}
                 >
-                  ↺ Khôi phục đề xuất mặc định
+                  ↺ Reset to Default Proposal
                 </Button>
                 <Button size="sm" variant="outline" onClick={addStep}>
-                  + Thêm bước HTTP
+                  + Add HTTP Step
                 </Button>
               </div>
             </div>
 
             {steps.length === 0 ? (
               <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
-                Chưa có bước kịch bản nào. Bấm <strong>✨ Tạo lại kịch bản bằng Hệ thống + AI</strong> hoặc{" "}
-                <strong>+ Thêm bước HTTP</strong> để bắt đầu.
+                No scenario steps yet. Click <strong>✨ Regenerate Scenario with System + AI</strong> or{" "}
+                <strong>+ Add HTTP Step</strong> to start.
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -1478,7 +1478,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                     {(st.rationale || st.source) && (
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pl-1">
                         {st.rationale && <span>💡 {st.rationale}</span>}
-                        {st.source && <span className="font-mono text-[11px]">Nguồn: {st.source}</span>}
+                        {st.source && <span className="font-mono text-[11px]">Source: {st.source}</span>}
                       </div>
                     )}
                   </div>
@@ -1489,11 +1489,11 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
           <section className="space-y-3 rounded-lg border p-3.5" aria-label="Environment and test inputs">
             <h3 className="text-sm font-semibold">
-              Dữ liệu đầu vào cho kịch bản (Path Params / JSON Body mẫu)
+              Environment and test inputs (Path Params / Sample JSON Bodies)
             </h3>
             <p className="text-xs text-muted-foreground">
-              Hệ thống + AI đã điền sẵn giá trị mẫu cho các tham số đường dẫn hoặc JSON request body. Bạn có thể
-              kiểm tra hoặc sửa lại trước khi xác nhận.
+              System + AI pre-filled sample values for path parameters and JSON request bodies. Review
+              or customize them before approval.
             </p>
             {activeInputs.length > 0 && (
               <FormField
@@ -1577,7 +1577,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             )}
             {!activeInputs.length && (
               <p className="text-xs text-emerald-600 font-medium">
-                ✓ Không cần nhập thêm tham số phụ cho kịch bản này (các biến môi trường & secret từ Step 1 sẽ được tự động nạp).
+                ✓ No extra parameters are required for this scenario (environment variables and secrets from Step 1 are inherited automatically).
               </p>
             )}
             {automatic.blocked.map((message, index) => (
@@ -1589,13 +1589,13 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         </div>
       </DetailPanel>
 
-      <DetailPanel title="3. Xác nhận của Người dùng & Thực thi (User Confirmation & Dispatch)">
+      <DetailPanel title="3. User Confirmation & Execution Dispatch">
         <div className="space-y-4">
           <div className="rounded-lg border p-3.5 bg-muted/20 space-y-2 text-xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-semibold text-sm">Tóm tắt kịch bản chờ xác nhận:</span>
+              <span className="font-semibold text-sm">Scenario Summary Awaiting Confirmation:</span>
               <span className="font-mono">
-                {steps.length} HTTP steps · {inheritedEnvKeys.length} biến kế thừa từ Step 1
+                {steps.length} HTTP steps · {inheritedEnvKeys.length} vars inherited from Step 1
               </span>
             </div>
             <ul className="space-y-1 font-mono text-muted-foreground">
@@ -1617,8 +1617,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               onChange={(e) => setUserConfirmed(e.target.checked)}
             />
             <span>
-              <strong>Tôi xác nhận kịch bản kiểm thử trên:</strong> Cho phép MAVIS lưu kịch bản đã
-              duyệt và khởi chạy các container trong mạng Docker Sandbox cô lập để thu thập trace thực tế.
+              <strong>I confirm the test scenario above:</strong> Authorize MAVIS to save this approved
+              scenario and launch containers in the isolated Docker Sandbox to capture OpenTelemetry traces.
             </span>
           </label>
 
@@ -1636,8 +1636,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               onClick={() => handleCreateAndRun(true)}
             >
               {autoSaveConfig.isPending || start.isPending
-                ? "Đang đồng bộ & khởi chạy..."
-                : "✅ Xác nhận & Chạy phiên kiểm thử (Confirm & Start Run)"}
+                ? "Synchronizing & starting..."
+                : "🚀 Confirm & Approve Run"}
             </Button>
             <Button
               variant="outline"
@@ -1646,7 +1646,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               }
               onClick={() => handleCreateAndRun(false)}
             >
-              💾 Xác nhận & Chỉ lưu kịch bản
+              💾 Confirm & Save Scenario Without Running
             </Button>
           </div>
 
@@ -1654,7 +1654,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         </div>
       </DetailPanel>
 
-      <DetailPanel title="Kịch bản đã xác nhận & lưu trước đó (Saved Scenarios)">
+      <DetailPanel title="Saved Scenarios">
         <RequestState query={scenarios} empty={!scenarios.data?.length}>
           <div className="space-y-3">
             {scenarios.data?.map((sc) => {
@@ -1667,7 +1667,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                       method: String(obj["method"] ?? "GET").toUpperCase(),
                       path: String(obj["path"] ?? "/health"),
                       status: String(obj["expectedStatus"] ?? 200),
-                      rationale: "Nạp từ kịch bản đã lưu",
+                      rationale: "Loaded from saved scenario",
                       source: `Saved Rev ${sc.revision}`,
                       ...(obj["environmentVariables"] && typeof obj["environmentVariables"] === "object"
                         ? { environmentVariables: obj["environmentVariables"] as Record<string, string> }
@@ -1699,11 +1699,11 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                           if (parsedSteps.length > 0) {
                             setSteps(parsedSteps);
                             persistedDraft.current = null;
-                            setRunMessage(`✓ Đã nạp kịch bản "${sc.name}" (Revision ${sc.revision}) lên trình chỉnh sửa.`);
+                            setRunMessage(`✓ Loaded scenario "${sc.name}" (Revision ${sc.revision}) into the editor.`);
                           }
                         }}
                       >
-                        📥 Nạp lên trình sửa
+                        📥 Load into Editor
                       </Button>
                     </div>
                   </div>
