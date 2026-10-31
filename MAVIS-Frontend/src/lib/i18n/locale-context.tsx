@@ -483,7 +483,9 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Elements": "Phần tử",
   "Elements:": "Phần tử:",
   "Email": "Email",
-  "Email address": "Địa chỉ Email",
+  "Email address": "Email",
+  "Enter your email to receive a verification code.": "Nhập email để nhận mã xác minh.",
+  "Send verification code": "Gửi mã xác minh",
   "Enabled": "Đã bật",
   "Enter a label to identify this snapshot.": "Nhập nhãn để nhận diện bản chụp này.",
   "Enter a score between 0 and 100 with at most two decimal places.": "Nhập điểm từ 0 đến 100, tối đa hai chữ số thập phân.",
@@ -1710,7 +1712,7 @@ function applyDomTranslation(root: Node, locale: Locale) {
   isApplyingDomTranslation = true;
   try {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-    let current: Node | null = walker.nextNode();
+    let current: Node | null = root.nodeType === 3 ? root : walker.nextNode();
     while (current) {
       const parent = current.parentElement;
       if (!shouldSkipElement(parent)) {
@@ -1734,7 +1736,10 @@ function applyDomTranslation(root: Node, locale: Locale) {
 
     if (root instanceof Element || root instanceof Document) {
       const container = root instanceof Document ? root.body : root;
-      const elements = container?.querySelectorAll?.("[placeholder], [title], [aria-label]");
+      const elements = [
+        ...(root instanceof Element ? [root] : []),
+        ...(container?.querySelectorAll?.("[placeholder], [title], [aria-label]") ?? []),
+      ];
       elements?.forEach((el) => {
         if (shouldSkipElement(el)) return;
         let attrMap = originalAttrMap.get(el);
@@ -1772,19 +1777,56 @@ function AutoDomTranslator({ locale }: { locale: Locale }) {
     if (locale !== "vi") return;
 
     let rafId = 0;
-    const observer = new MutationObserver(() => {
-      if (rafId) cancelAnimationFrame(rafId);
-      rafId = requestAnimationFrame(() => {
-        if (document.body) applyDomTranslation(document.body, "vi");
-      });
-    });
-    observer.observe(document.body, {
+    const pending = new Set<Node>();
+    const observation = {
       childList: true,
       subtree: true,
       characterData: true,
+      attributes: true,
+      attributeFilter: ["placeholder", "title", "aria-label"],
+    };
+    const collect = (records: MutationRecord[]) => {
+      for (const record of records) {
+        if (record.type === "characterData") {
+          const tracked = originalTextMap.get(record.target);
+          if (!tracked || record.target.nodeValue !== tracked.lastRendered)
+            pending.add(record.target);
+        } else if (record.type === "attributes" && record.target instanceof Element) {
+          const attribute = record.attributeName;
+          if (!attribute) continue;
+          const tracked = originalAttrMap.get(record.target)?.get(attribute);
+          if (!tracked || record.target.getAttribute(attribute) !== tracked.lastRendered)
+            pending.add(record.target);
+        } else {
+          record.addedNodes.forEach((node) => pending.add(node));
+        }
+      }
+    };
+    const observer = new MutationObserver((records) => {
+      collect(records);
+      if (rafId || !pending.size) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        collect(observer.takeRecords());
+        // Translation writes must not schedule another pass over the same text.
+        observer.disconnect();
+        try {
+          for (const node of pending) {
+            if (!node.isConnected) continue;
+            let parent = node.parentNode;
+            while (parent && !pending.has(parent)) parent = parent.parentNode;
+            if (!parent) applyDomTranslation(node, "vi");
+          }
+        } finally {
+          pending.clear();
+          if (document.body) observer.observe(document.body, observation);
+        }
+      });
     });
+    observer.observe(document.body, observation);
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
+      pending.clear();
       observer.disconnect();
     };
   }, [locale]);
