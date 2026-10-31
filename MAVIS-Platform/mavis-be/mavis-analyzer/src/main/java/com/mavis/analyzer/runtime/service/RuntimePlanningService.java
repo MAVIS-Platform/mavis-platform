@@ -394,13 +394,14 @@ public class RuntimePlanningService {
         {
           "service": "must be one of Allowed services",
           "method": "GET|POST|PUT|PATCH|DELETE",
-          "path": "/exact/or/parameterized/path",
+          "path": "/concrete/path/with/realistic/sample/id/like/1",
           "expectedStatus": 200,
           "rationale": "English 1-line reason for this step",
           "sampleJsonBody": "{\\"optional\\":\\"sample\\"}"
         }
       ]
     }
+    Replace any path parameters like {id} or {orderId} directly with realistic sample values (e.g. 1, SKU-LAPTOP-01) and provide realistic sampleJsonBody for POST/PUT/PATCH requests.
     """);
 
   ObjectNode reqBody=json.createObjectNode();
@@ -507,7 +508,8 @@ public class RuntimePlanningService {
  private String inferSampleParamValue(String param){
   String lower=param==null?"":param.toLowerCase(Locale.ROOT);
   if(lower.contains("uuid")||lower.contains("guid"))return "00000000-0000-0000-0000-000000000001";
-  if(lower.contains("code")||lower.contains("slug")||lower.contains("name"))return "sample-item-1";
+  if(lower.contains("code")||lower.contains("sku"))return "SKU-LAPTOP-01";
+  if(lower.contains("slug")||lower.contains("name"))return "sample-item-1";
   return "1";
  }
 
@@ -516,9 +518,11 @@ public class RuntimePlanningService {
   if(lower.contains("employee"))return "{\"name\":\"Nguyen Van A\",\"age\":28,\"position\":\"Developer\",\"departmentId\":1,\"organizationId\":1}";
   if(lower.contains("department"))return "{\"name\":\"Engineering\",\"organizationId\":1}";
   if(lower.contains("organization"))return "{\"name\":\"MAVIS Corp\",\"address\":\"Hanoi\"}";
-  if(lower.contains("order")||lower.contains("checkout"))return "{\"itemId\":\"item-1\",\"quantity\":1}";
-  if(lower.contains("payment"))return "{\"orderId\":\"order-1\",\"amount\":100}";
-  if(lower.contains("user")||lower.contains("account"))return "{\"name\":\"Test User\",\"email\":\"user@example.org\"}";
+  if(lower.contains("status"))return "{\"status\":\"COMPLETED\"}";
+  if(lower.contains("order")||lower.contains("checkout"))return "{\"customerEmail\":\"alice@mavis.io\",\"productCode\":\"SKU-LAPTOP-01\",\"itemId\":\"item-1\",\"quantity\":1}";
+  if(lower.contains("payment")||lower.contains("charge"))return "{\"orderId\":1,\"amount\":1299.00,\"paymentMethod\":\"CREDIT_CARD\"}";
+  if(lower.contains("product")||lower.contains("catalog"))return "{\"code\":\"SKU-MOUSE-02\",\"name\":\"Wireless Mouse\",\"price\":49.00,\"stock\":20,\"categoryId\":1}";
+  if(lower.contains("user")||lower.contains("account")||lower.contains("customer"))return "{\"name\":\"Test User\",\"email\":\"user@example.org\"}";
   return "{\"name\":\"sample-entity\",\"organizationId\":1,\"departmentId\":1}";
  }
 
