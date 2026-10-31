@@ -547,9 +547,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ umlEnrichment: mergedUml, cached: false });
     }
 
-    // Branch 1: C4 Diagram Enrichment (System Context / Container / Component)
+    // Branch 1: supported backend C4 Diagram Enrichment (Container / Component)
     if (body.c4Context && body.c4Context.contextHash) {
       const c4Ctx = body.c4Context;
+      if (!["CONTAINER", "COMPONENT"].includes(c4Ctx.kind)) {
+        return NextResponse.json({ error: "Unsupported C4 diagram kind" }, { status: 422 });
+      }
       const c4CacheKey = `${c4Ctx.contextHash}:${locale}`;
       const hit = c4EnrichmentCache.get(c4CacheKey);
       if (hit) {

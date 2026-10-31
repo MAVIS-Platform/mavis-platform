@@ -5,19 +5,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { SelectField } from "@/components/shared/forms";
-import { withContextCandidates } from "./context-candidates";
-import { ContextReview } from "./context-review";
 import { DrawioEditor } from "./drawio-editor";
 import { ScenarioDiagram } from "./scenario-diagram";
 import { UmlDiagramWorkspace } from "./uml-diagram-workspace";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
 import type { UmlDiagramKind } from "./uml-diagrams";
-import { diagramKinds, selectDiagram, type DiagramKind } from "./diagram-catalog";
+import { diagramKinds, resolveDiagramKind, selectDiagram, type DiagramKind } from "./diagram-catalog";
 import {
   applyC4AiEnrichmentToDocument,
   buildC4CompactContext,
-  buildContextDiagramDrawioXml,
-  deriveC4ContextModel,
   type C4AiDiagramEnrichment,
 } from "./diagram-projections";
 import { generateDrawio } from "@/lib/drawio/generate";
@@ -26,7 +22,7 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { layoutLocally } from "./drawio-local-layout";
 import type { SequenceSelectionContext } from "./three-e-content";
 
-const POPULAR_KINDS = new Set<DiagramKind>(["CONTAINER", "CONTEXT", "UML_SEQUENCE", "UML_CLASS"]);
+const POPULAR_KINDS = new Set<DiagramKind>(["CONTAINER", "UML_SEQUENCE", "UML_CLASS"]);
 const diagramOptions = [...diagramKinds.C4, ...diagramKinds.UML];
 const clientC4EnrichmentCache = new Map<string, C4AiDiagramEnrichment>();
 
@@ -69,12 +65,7 @@ export function ArchitectureDiagrams({
   const { locale } = useLocale();
   const searchParams = useSearchParams();
   const requestedKindParam = searchParams.get("kind");
-  const initialKind: DiagramKind =
-    requestedKindParam && diagramOptions.some((o) => o.value === requestedKindParam)
-      ? (requestedKindParam as DiagramKind)
-      : requestedKindParam === "SCENARIOS"
-        ? "UML_SEQUENCE"
-        : "CONTEXT";
+  const initialKind = resolveDiagramKind(requestedKindParam);
   const [kind, setKind] = useState<DiagramKind>(initialKind),
     [service, setService] = useState(""),
     [theme, setTheme] = useState<DrawioTheme>("clean"),
@@ -86,16 +77,7 @@ export function ArchitectureDiagrams({
     [error, setError] = useState("");
   const api = useApi(),
     cache = useQueryClient();
-  const discovery = useApiQuery(
-    "contextCandidates",
-    { modelId: sourceModel.id },
-    { enabled: api.mode === "backend" && kind === "CONTEXT" },
-  );
-  const model = useMemo(
-    () => withContextCandidates(sourceModel, discovery.data?.entries ?? []),
-    [sourceModel, discovery.data],
-  );
-  const [previewContext, setPreviewContext] = useState(false);
+  const model = sourceModel;
   const allContainers = model.elements
     .filter((node) => node.elementType === "SERVICE_CONTAINER")
     .map((node) => ({
@@ -114,11 +96,7 @@ export function ArchitectureDiagrams({
     "UML_STATE",
   ].includes(kind);
   useEffect(() => {
-    if (requestedKindParam && diagramOptions.some((o) => o.value === requestedKindParam)) {
-      setKind(requestedKindParam as DiagramKind);
-    } else if (requestedKindParam === "SCENARIOS") {
-      setKind("UML_SEQUENCE");
-    }
+    setKind(resolveDiagramKind(requestedKindParam));
   }, [requestedKindParam]);
 
   const isC4EnrichableKind =
@@ -131,7 +109,7 @@ export function ArchitectureDiagrams({
     }
     const c4Ctx = buildC4CompactContext(
       model,
-      kind as "CONTEXT" | "CONTAINER" | "COMPONENT",
+      kind as "CONTAINER" | "COMPONENT",
       container?.id,
       systemName,
     );
@@ -173,42 +151,8 @@ export function ArchitectureDiagrams({
         : selection.document,
     [selection.document, kind, c4AiEnrichment],
   );
-  const c4ContextInspector = useMemo(() => {
-    if (kind !== "CONTEXT") return null;
-    const base = deriveC4ContextModel(model);
-    const resolvedSystemName = systemName?.trim() || model.label || "System under analysis";
-    const persons = base.persons.map((p) => {
-      const ov = c4AiEnrichment?.persons?.[p.id];
-      return {
-        ...p,
-        name: p.name,
-        description: ov?.description?.trim() || p.description,
-        actionLabel: ov?.actionLabel?.trim() || p.actionLabel,
-      };
-    });
-    const externals = base.externals.map((ext) => {
-      const ov = c4AiEnrichment?.externals?.[ext.id];
-      return {
-        ...ext,
-        description: ov?.description?.trim() || ext.description,
-        actionLabel: ov?.actionLabel?.trim() || ext.actionLabel,
-      };
-    });
-    const primarySystemElementId =
-      containers.find((c) => /gateway|order/i.test(c.name))?.id ??
-      containers[0]?.id ??
-      base.internalNodeIds[0] ??
-      null;
-    return {
-      resolvedSystemName,
-      primarySystemElementId,
-      persons,
-      externals,
-    };
-  }, [kind, model, systemName, c4AiEnrichment, containers]);
-
   const c4DocNodes = useMemo(() => {
-    if (!document || kind === "CONTEXT") return [];
+    if (!document) return [];
     const validElementIds = new Set(model.elements.map((e) => e.id));
     return document.layoutJson.nodes.filter(
       (n) => n.kind !== "BOUNDARY" && !n.id.startsWith("boundary:") && validElementIds.has(n.id),
@@ -216,7 +160,7 @@ export function ArchitectureDiagrams({
   }, [document, kind, model.elements]);
 
   const c4DocEdges = useMemo(() => {
-    if (!document || kind === "CONTEXT") return [];
+    if (!document) return [];
     const nodeNameById = new Map<string, string>();
     for (const el of model.elements) nodeNameById.set(el.id, el.name);
     for (const n of document.layoutJson.nodes) nodeNameById.set(n.id, n.name);
@@ -253,17 +197,10 @@ export function ArchitectureDiagrams({
     { modelId: model.id, viewId: key },
     { enabled: api.mode === "backend" && !!document && !isUmlWorkspaceKind },
   );
-  const contextXml = useMemo(
-    () =>
-      kind === "CONTEXT" && document
-        ? buildContextDiagramDrawioXml(model, systemName, "clean", c4AiEnrichment)
-        : "",
-    [kind, document, model, systemName, c4AiEnrichment],
-  );
   useEffect(() => {
     let live = true;
     setError("");
-    if (!document || isUmlWorkspaceKind || kind === "CONTEXT") return;
+    if (!document || isUmlWorkspaceKind) return;
     void generateDrawio(document, "clean", layoutLocally)
       .catch(() =>
         selection.document
@@ -280,26 +217,13 @@ export function ArchitectureDiagrams({
       live = false;
     };
   }, [document, selection.document, isUmlWorkspaceKind, kind, targetKey]);
-  const generated =
-    kind === "CONTEXT"
-      ? contextXml
-      : generatedState.targetKey === targetKey
-        ? generatedState.xml
-        : "";
+  const generated = generatedState.targetKey === targetKey ? generatedState.xml : "";
   const hasValidSavedXml = Boolean(
-    saved.data?.xml &&
-    (kind === "CONTEXT"
-      ? saved.data.xml.includes('mavisC4Context="6"')
-      : saved.data.xml.includes('mavisSmartRouting="3"') &&
-        (!document?.["policyVersion"] ||
-          saved.data.xml.includes(String(document["policyVersion"]))) &&
-        (!document || saved.data.xml.includes(`name="${document.notation} · ${document.level}"`))),
+    saved.data?.xml && saved.data.xml.includes('mavisSmartRouting="3"') &&
+    (!document?.["policyVersion"] || saved.data.xml.includes(String(document["policyVersion"]))) &&
+    (!document || saved.data.xml.includes(`name="${document.notation} · ${document.level}"`)),
   );
-  const xml =
-    kind === "CONTEXT" && api.mode === "backend" && discovery.isPending
-      ? ""
-      : ((hasValidSavedXml && !(kind === "CONTEXT" && previewContext) ? saved.data?.xml : null) ??
-        generated);
+  const xml = (hasValidSavedXml ? saved.data?.xml : null) ?? generated;
   const currentOption = diagramOptions.find((item) => item.value === kind);
   const title =
     kind === "COMPONENT"
@@ -354,22 +278,7 @@ export function ArchitectureDiagrams({
           </div>
         )}
       </div>
-      {kind === "CONTEXT" && hasValidSavedXml && discovery.data?.entries.length ? (
-        <div role="status" className="rounded-lg border p-3 text-sm">
-          A saved drawing is retained. Source candidates do not overwrite your edits.{" "}
-          <button type="button" className="underline" onClick={() => setPreviewContext((v) => !v)}>
-            {previewContext ? "Show saved drawing" : "Preview inferred context"}
-          </button>
-        </div>
-      ) : null}
-      {kind === "CONTEXT" && (
-        <ContextReview
-          key={model.id}
-          model={model}
-          discovery={api.mode === "backend" ? discovery : undefined}
-        />
-      )}
-      {kind !== "CONTEXT" && selection.notice && !isUmlWorkspaceKind && (
+      {selection.notice && !isUmlWorkspaceKind && (
         <p
           role="status"
           className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground"
@@ -417,88 +326,7 @@ export function ArchitectureDiagrams({
       ) : (
         <div className="space-y-2.5">
           {/* C4 Top 3E Element & Relationship Inspector Card */}
-          {kind === "CONTEXT" && c4ContextInspector && (
-            <div
-              className="rounded-xl border bg-card p-3"
-              data-testid="c4-context-top-inspector-card"
-            >
-              <div className="grid gap-3 sm:grid-cols-2">
-                <SearchableThreeESelect
-                  label="Element to explore"
-                  placeholder="Select or search elements…"
-                  selectedValue={selectedId}
-                  onSelect={onSelect}
-                  options={[
-                    ...(c4ContextInspector.primarySystemElementId
-                      ? [
-                          {
-                            value: c4ContextInspector.primarySystemElementId,
-                            badge: "Software System",
-                            label: `1. ${c4ContextInspector.resolvedSystemName}`,
-                          },
-                        ]
-                      : []),
-                    ...c4ContextInspector.persons.flatMap((person, idx) => {
-                      const targetId =
-                        person.underlyingNodeIds[0] ?? c4ContextInspector.primarySystemElementId;
-                      if (!targetId) return [];
-                      return [
-                        {
-                          value: targetId,
-                          badge: person.provisional
-                            ? "Security principal · needs review"
-                            : "Person",
-                          label: `${idx + 2}. ${person.name}`,
-                          sublabel: person.description,
-                        },
-                      ];
-                    }),
-                    ...c4ContextInspector.externals.map((ext, idx) => ({
-                      value: ext.id,
-                      badge: "External System",
-                      label: `${idx + 2 + c4ContextInspector.persons.length}. ${ext.name}`,
-                      sublabel: ext.description,
-                    })),
-                  ]}
-                />
-                <SearchableThreeESelect
-                  label="Connection to explore"
-                  placeholder="Select or search connections…"
-                  selectedValue={selectedId}
-                  onSelect={onSelect}
-                  options={[
-                    ...c4ContextInspector.persons.flatMap((person, idx) => {
-                      const targetId =
-                        person.underlyingNodeIds[0] ?? c4ContextInspector.primarySystemElementId;
-                      if (!targetId) return [];
-                      return [
-                        {
-                          value: targetId,
-                          badge: person.provisional ? "SOURCE_ACCESS_RULE" : "HTTP_ENTRYPOINT",
-                          label:
-                            person.direction === "OUTBOUND"
-                              ? `#${idx + 1} ${c4ContextInspector.resolvedSystemName} → ${person.name}`
-                              : `#${idx + 1} ${person.name} → ${c4ContextInspector.resolvedSystemName}`,
-                          sublabel: person.actionLabel,
-                        },
-                      ];
-                    }),
-                    ...c4ContextInspector.externals.map((ext, idx) => ({
-                      value: ext.underlyingEdgeIds[0] ?? ext.id,
-                      badge: `EXTERNAL_${ext.direction}`,
-                      label:
-                        ext.direction === "INBOUND"
-                          ? `#${c4ContextInspector.persons.length + idx + 1} ${ext.name} → ${c4ContextInspector.resolvedSystemName}`
-                          : `#${c4ContextInspector.persons.length + idx + 1} ${c4ContextInspector.resolvedSystemName} → ${ext.name}`,
-                      sublabel: ext.actionLabel,
-                    })),
-                  ]}
-                />
-              </div>
-            </div>
-          )}
-
-          {kind !== "CONTEXT" && c4DocNodes.length > 0 && (
+          {c4DocNodes.length > 0 && (
             <div
               className="rounded-xl border bg-card p-3"
               data-testid={`c4-${kind.toLowerCase()}-top-inspector-card`}

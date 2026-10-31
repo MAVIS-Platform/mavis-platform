@@ -70,8 +70,10 @@ test('AI routes do not call an LLM without literal source evidence',async t=>{
  const context=buildThreeEAiContext(fixture(),subject(fixture()),[],[]);
  const response=await POST(new NextRequest('http://local/api/ai-diagram-semantics',{method:'POST',headers:{host:'local',origin:'http://local',cookie:'mavis_session=valid'},body:JSON.stringify({threeEContext:context,threeEFallback:{explainSimple:'Invented behavior'}})}));
  const data=await response.json();assert.equal(data.threeEEnrichment.grounding.status,'MODEL_ONLY');assert.doesNotMatch(data.threeEEnrichment.explainSimple,/Invented behavior/);
- const c4=await POST(new NextRequest('http://local/api/ai-diagram-semantics',{method:'POST',headers:{host:'local',origin:'http://local',cookie:'mavis_session=valid'},body:JSON.stringify({c4Context:{contextHash:'empty-evidence',astSkeleton:'',nodes:[]}})}));
+ const c4=await POST(new NextRequest('http://local/api/ai-diagram-semantics',{method:'POST',headers:{host:'local',origin:'http://local',cookie:'mavis_session=valid'},body:JSON.stringify({c4Context:{kind:'CONTAINER',contextHash:'empty-evidence',astSkeleton:'',nodes:[]}})}));
  assert.deepEqual((await c4.json()).c4Enrichment,{});assert.equal(calls,0);
+ const retired=await POST(new NextRequest('http://local/api/ai-diagram-semantics',{method:'POST',headers:{host:'local',origin:'http://local',cookie:'mavis_session=valid'},body:JSON.stringify({c4Context:{kind:'CONTEXT',contextHash:'retired-context',astSkeleton:'class Example {}',nodes:[]}})}));
+ assert.equal(retired.status,422);assert.equal(calls,0);
 });
 
 test('AI route rejects unauthenticated sessions and cross-origin requests before provider access',async t=>{

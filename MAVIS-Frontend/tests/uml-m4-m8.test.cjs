@@ -31,7 +31,7 @@ const { deploymentSegmentHitsBox } = require("../src/features/architecture/deplo
 const { activityNodeSize } = require("../src/features/architecture/activity-layout.ts");
 const {
   diagramKinds,
-  canonicalNineDiagramCatalog,
+  canonicalDiagramCatalog,
   selectDiagram,
 } = require("../src/features/architecture/diagram-catalog.ts");
 const {
@@ -73,17 +73,17 @@ function activityWorkflowFixture() {
     edges: [{ id: "call", from: "order-service", to: "consumer-service", protocol: "HTTP", uncertain: false, evidence: [] }] };
 }
 
-test("Assignment requirements expose exactly the nine sidebar diagrams plus Graph and distinguish C4 levels", () => {
+test("Assignment requirements expose exactly the eight sidebar diagrams plus Graph and distinguish C4 levels", () => {
   const {COURSEWORK_DIAGRAM_TYPES,normalizeDiagramRequirements,diagramTypeLabel}=require("../src/lib/architecture/coursework-diagram-types.ts");
   const {artifactNotation,missingDiagramRequirements}=require("../src/features/submissions/submission-readiness.ts");
-  assert.equal(COURSEWORK_DIAGRAM_TYPES.length,10);
-  assert.deepEqual(new Set(COURSEWORK_DIAGRAM_TYPES.map(t=>t.id)),new Set([...canonicalNineDiagramCatalog.map(t=>t.id),"DEPENDENCY_GRAPH"]));
+  assert.equal(COURSEWORK_DIAGRAM_TYPES.length,9);
+  assert.deepEqual(new Set(COURSEWORK_DIAGRAM_TYPES.map(t=>t.id)),new Set([...canonicalDiagramCatalog.map(t=>t.id),"DEPENDENCY_GRAPH"]));
   assert.ok(!COURSEWORK_DIAGRAM_TYPES.some(t=>["C4","VIEW_4_PLUS_1","BUNDLE"].includes(t.id)));
   for(const [view,type] of [["context","C4_CONTEXT"],["container","C4_CONTAINER"],["containers","C4_CONTAINER"],["component:service-id","C4_COMPONENT"],["c4-context","C4_CONTEXT"],["uml-class:service","UML_CLASS"],["scenarios:auto:macro:service","UML_SEQUENCE"],["graph","DEPENDENCY_GRAPH"]])assert.equal(artifactNotation(view),type);
   assert.deepEqual(missingDiagramRequirements(["C4_CONTEXT","C4_CONTAINER","C4_COMPONENT"],{documents:[{viewId:"container",revision:1}],diagramVersionIds:[]},[]),["C4_CONTEXT","C4_COMPONENT"]);
   assert.deepEqual(missingDiagramRequirements(["C4_COMPONENT"],{documents:[],diagramVersionIds:["container"]},[{id:"container",notation:"C4",level:"CONTAINER"}]),["C4_COMPONENT"]);
   assert.deepEqual(missingDiagramRequirements(["C4_COMPONENT"],{documents:[],diagramVersionIds:["component"]},[{id:"component",notation:"C4",level:"COMPONENT"}]),[]);
-  assert.deepEqual(new Set(normalizeDiagramRequirements(["C4","VIEW_4_PLUS_1","UML_CLASS"])),new Set(["C4_CONTEXT","C4_CONTAINER","C4_COMPONENT","UML_CLASS"]));
+  assert.deepEqual(new Set(normalizeDiagramRequirements(["C4","VIEW_4_PLUS_1","UML_CLASS"])),new Set(["C4_CONTAINER","C4_COMPONENT","UML_CLASS"]));
   assert.equal(diagramTypeLabel("DEPENDENCY_GRAPH"),"Graph");
 });
 
@@ -1207,10 +1207,10 @@ test("M8-AC01, M8-AC02, M8-AC03 & O6/O7/O8: Unified 9-diagram catalog, dynamic c
   const javaModel = loadJavaFixtureModel();
   const csharpModel = loadCsharpFixtureModel();
 
-  assert.equal(diagramKinds.C4.length, 3);
+  assert.equal(diagramKinds.C4.length, 2);
   assert.equal(diagramKinds.UML.length, 6);
   assert.equal(diagramKinds["4+1"].length, 5);
-  assert.equal(canonicalNineDiagramCatalog.length, 9);
+  assert.equal(canonicalDiagramCatalog.length, 8);
 
   const ordersSvc = javaModel.elements.find((e) => e.name === "orders-service");
   const c3Doc = selectDiagram(javaModel, "COMPONENT", ordersSvc.id).document;
@@ -1239,7 +1239,7 @@ test("M8-AC01, M8-AC02, M8-AC03 & O6/O7/O8: Unified 9-diagram catalog, dynamic c
     browserWorkloadVerified: false,
     liveOtelTraceCaptured: false,
   });
-  assert.equal(coverageMatrix.diagrams.length, 9);
+  assert.equal(coverageMatrix.diagrams.length, 8);
   assert.equal(coverageMatrix.dynamicInvariantChecks.honestDeploymentNoMeta, true);
   assert.equal(coverageMatrix.dynamicInvariantChecks.honestActivityNoCfg, true);
   assert.equal(coverageMatrix.dynamicInvariantChecks.honestStateNoLifecycle, true);
