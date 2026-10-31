@@ -1,4 +1,5 @@
 import { ApiError, fromStatus, backendErrorCode } from "@/lib/errors/api-error";
+import { authBackendCode, isPublicAuthPath, retryAfterSeconds } from "@/lib/auth/auth-errors";
 export async function javaRequest(
   path: string,
   token: string | undefined,
@@ -25,13 +26,21 @@ export async function javaRequest(
   } catch (error) {
     if (error instanceof DOMException && ["AbortError", "TimeoutError"].includes(error.name))
       throw new ApiError("timeout", 504);
-    throw new ApiError("network", 502);
+    throw new ApiError("network", 502, isPublicAuthPath(path) ? "AUTH_NETWORK" : undefined);
   }
   if (!response.ok) {
     const rawError: unknown = await response
       .clone()
       .json()
       .catch(() => null);
+    if (isPublicAuthPath(path)) {
+      throw new ApiError(
+        fromStatus(response.status).kind,
+        response.status,
+        authBackendCode(path, response.status, rawError),
+        retryAfterSeconds(response.headers.get("retry-after")),
+      );
+    }
     const code = backendErrorCode(
       path,
       response.status,

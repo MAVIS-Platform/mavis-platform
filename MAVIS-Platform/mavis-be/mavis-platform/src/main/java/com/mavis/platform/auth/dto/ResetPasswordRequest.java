@@ -12,6 +12,7 @@ public class ResetPasswordRequest {
     private String email;
 
     @NotBlank(message = "OTP code is required")
+    @jakarta.validation.constraints.Pattern(regexp = "[0-9]{6}", message = "Enter exactly six digits")
     private String otpCode;
 
     @NotBlank(message = "New password is required")

@@ -12,7 +12,6 @@ import {
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
-  Palette,
   UserRound,
 } from "lucide-react";
 import { NotificationBell } from "@/features/notifications/inbox";
@@ -21,6 +20,8 @@ import { LocaleSwitchButton, useLocale } from "@/lib/i18n/locale-context";
 import { MavisLogo } from "@/components/mavis-logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useProjectNavigation } from "@/hooks/use-project-navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -138,8 +139,15 @@ function ManagedShellChrome(props: AppShellProps) {
   const selectedProjectQuery = useApiQuery(
     "project",
     { projectId: selection.projectId },
-    { enabled: scope === "project" && !!selection.projectId && !props.contextName &&
-      !onPreviewNavigate && projectQuery.isSuccess && !selectedProjectName },
+    {
+      enabled:
+        scope === "project" &&
+        !!selection.projectId &&
+        !props.contextName &&
+        !onPreviewNavigate &&
+        projectQuery.isSuccess &&
+        !selectedProjectName,
+    },
   );
   const workspaceQuery = useApiQuery(
     "workspaces",
@@ -282,6 +290,12 @@ function ShellChrome({
     })),
   );
   const groups = decorateGroups(contextualNavigation(role, scope));
+  const projectGroups = useProjectNavigation(
+    role,
+    activeId,
+    groups.find((group) => group.items.some((item) => item.id === activeId))?.label,
+    scope === "project" && !live,
+  );
   const activeWorkspaceNavId =
     selectedWorkspaceId && workspaces.some((w) => w.id === selectedWorkspaceId)
       ? `workspace:${selectedWorkspaceId}`
@@ -367,7 +381,9 @@ function ShellChrome({
                 {t("Learning & analysis", "Học tập & phân tích")}
               </p>
               <p className="mt-1 text-xs font-medium">
-                {live ? t("Architecture analysis", "Phân tích kiến trúc") : t(roleLabels[role] ?? role)}
+                {live
+                  ? t("Architecture analysis", "Phân tích kiến trúc")
+                  : t(roleLabels[role] ?? role)}
               </p>
             </>
           )}
@@ -418,34 +434,11 @@ function ShellChrome({
                 preview={Boolean(onPreviewNavigate)}
                 onNavigate={navigatePreview}
                 label="Contextual navigation"
+                {...(scope === "project" && !live
+                  ? { expandedGroups: projectGroups.groups, onToggleGroup: projectGroups.toggle }
+                  : {})}
               />
             </div>
-          )}
-        </div>
-        <div className="shrink-0 space-y-2 border-t p-3">
-          <Link
-            href="/design-system"
-            aria-current={pathname === "/design-system" ? "page" : undefined}
-            aria-label="Design foundation"
-            className={cn(
-              "flex min-h-9 items-center gap-2.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground",
-              isCollapsed && "justify-center px-0",
-            )}
-            title="Design foundation"
-          >
-            <Palette className="size-4 shrink-0" aria-hidden="true" />
-            {!isCollapsed && (
-              <span>
-                Design foundation <span className="text-[10px]">· Stage 1</span>
-              </span>
-            )}
-          </Link>
-          {!isCollapsed && (
-            <p className="px-2 text-[11px] leading-5 text-muted-foreground">
-              Source analysis. Runtime evidence.
-              <br />
-              Explanations with context.
-            </p>
           )}
         </div>
       </>
@@ -702,6 +695,8 @@ function NavigationGroups({
   onNavigate,
   label,
   currentKind = "page",
+  expandedGroups,
+  onToggleGroup,
 }: {
   groups: readonly NavigationGroup[];
   collapsed: boolean;
@@ -710,17 +705,14 @@ function NavigationGroups({
   onNavigate: (id: string) => void;
   label: string;
   currentKind?: "page" | "location";
+  expandedGroups?: Record<string, boolean>;
+  onToggleGroup?: (group: string, open: boolean) => void;
 }) {
   const { t } = useLocale();
   return (
-    <nav aria-label={t(label)} className="space-y-5">
-      {groups.map((group) => (
-        <div key={group.label}>
-          {!collapsed && (
-            <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              {t(group.label)}
-            </p>
-          )}
+    <nav aria-label={t(label)} className={onToggleGroup ? "space-y-2" : "space-y-5"}>
+      {groups.map((group) => {
+        const items = (
           <ul className="space-y-1">
             {group.items.map((item) => (
               <li key={item.id}>
@@ -735,8 +727,41 @@ function NavigationGroups({
               </li>
             ))}
           </ul>
-        </div>
-      ))}
+        );
+        if (!collapsed && onToggleGroup && group.label !== "Project") {
+          return (
+            <Collapsible
+              key={group.label}
+              open={Boolean(expandedGroups?.[group.label])}
+              onOpenChange={(open) => onToggleGroup(group.label, open)}
+            >
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="group flex min-h-9 w-full items-center justify-between gap-2 rounded-md px-2 text-left text-[10px] font-semibold uppercase tracking-widest text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span>{t(group.label)}</span>
+                  <ChevronDown
+                    aria-hidden="true"
+                    className="size-3.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none group-data-[state=closed]:-rotate-90"
+                  />
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>{items}</CollapsibleContent>
+            </Collapsible>
+          );
+        }
+        return (
+          <div key={group.label}>
+            {!collapsed && (
+              <p className="mb-2 px-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                {t(group.label)}
+              </p>
+            )}
+            {items}
+          </div>
+        );
+      })}
     </nav>
   );
 }
@@ -774,7 +799,9 @@ function NavigationEntry({
       {!collapsed && (
         <>
           <span className="min-w-0 flex-1">{t(item.label)}</span>
-          {!preview && !item.href && <span className="text-[9px] font-normal">{t("Planned", "Đã lên kế hoạch")}</span>}
+          {!preview && !item.href && (
+            <span className="text-[9px] font-normal">{t("Planned", "Đã lên kế hoạch")}</span>
+          )}
         </>
       )}
     </>

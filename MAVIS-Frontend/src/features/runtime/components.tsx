@@ -1,4 +1,4 @@
-import { StatusBadge, DetailPanel, DataTable } from "@/components/shared/data";
+import { StatusBadge, StatusLabel, DetailPanel, DataTable } from "@/components/shared/data";
 import { EmptyState } from "@/components/shared/request-state";
 import type { RuntimeSession } from "@/types/domain";
 export function RuntimeStatusBadge({ status }: { status: RuntimeSession["status"] }) {
@@ -25,8 +25,8 @@ export function TraceViewer({ session }: { session: RuntimeSession }) {
   return (
     <DetailPanel title="Available runtime evidence">
       <p className="text-sm text-muted-foreground">
-        Scenario outcome: {session.outcome}. Observed interactions are scoped to this run; uncertain
-        mappings require verification.
+        Scenario outcome: <StatusLabel status={session.outcome} />. Observed interactions are scoped
+        to this run; uncertain mappings require verification.
       </p>
       {!session.traces.length ? (
         <EmptyState

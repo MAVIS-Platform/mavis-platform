@@ -147,7 +147,7 @@ test("same-origin login stores token only in HttpOnly cookie and unknown operati
  const response=await route.POST(request("http://127.0.0.1:3000"),context("signIn"));assert.equal(response.status,200);const data=await response.json();assert.deepEqual(data,{user:{id:project,name:"Actual user",role:"student"}});assert.ok(!JSON.stringify(data).includes("server-jwt"));assert.match(response.headers.get("set-cookie"),/HttpOnly/);
  const unavailable=await route.GET(new NextRequest("http://127.0.0.1:3000/api/mavis/notAnOperation"),context("notAnOperation"));assert.equal(unavailable.status,501);
 });
-test("session rejection clears identity instead of trusting browser metadata",async t=>{environment(t);t.mock.method(globalThis,"fetch",async()=>Response.json({message:"disabled"},{status:403}));assert.deepEqual(await currentSession("stale"),{user:null});});
+test("session rejection never trusts browser metadata and preserves account restriction errors",async t=>{environment(t);t.mock.method(globalThis,"fetch",async()=>Response.json({message:"disabled"},{status:403}));await assert.rejects(currentSession("stale"),e=>e.status===403);});
 
 test("runtime adapter preserves independent lifecycle/evidence/cleanup states",async t=>{
  environment(t);const sessionId="66666666-6666-4666-8666-666666666666";
@@ -553,7 +553,7 @@ test("audit: reviewed business errors survive Java and BFF without forwarding ar
  const {javaRequest}=require("../src/lib/api/java-client.ts");
  const {BackendAdapter}=require("../src/lib/api/backend-adapter.ts");
  let message="Sai email hoặc mật khẩu";
- t.mock.method(globalThis,"fetch",async()=>Response.json({message},{status:401}));
+ t.mock.method(globalThis,"fetch",async()=>Response.json({code:401,errorCode:"LOGIN_CREDENTIALS",message},{status:401}));
  await assert.rejects(javaRequest("auth/login",undefined,{method:"POST"}),e=>e.code==="LOGIN_CREDENTIALS");
  const response=await route.POST(new NextRequest("http://127.0.0.1:3000/api/mavis/signIn",{method:"POST",headers:{host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000","content-type":"application/json"},body:JSON.stringify({email:"u@example.org",password:"wrong"})}),{params:Promise.resolve({operation:"signIn"})});
  assert.equal(response.status,401);
@@ -719,6 +719,95 @@ test("login redirect accepts internal destinations and rejects external or disgu
  for(const value of ["/workspaces","/project-overview?project=test#details","/architecture?project=a&model=b"]){
   assert.equal(safeLoginRedirect(value),value);
  }
+});
+
+test("auth errors use structured backend codes and safe fallbacks through the BFF", async t => {
+ environment(t);
+ const {javaRequest}=require("../src/lib/api/java-client.ts");
+ const {publicErrors}=require("../src/lib/errors/api-error.ts");
+ const cases=[
+  ["auth/login",401,"LOGIN_CREDENTIALS"],["auth/login",403,"LOGIN_VERIFICATION"],["auth/login",403,"LOGIN_LOCKED"],
+  ...["INVALID","EXPIRED","USED"].map(s=>["auth/verify-email",400,`AUTH_CODE_${s}`]),
+  ...["INVALID","EXPIRED","USED"].map(s=>["auth/reset-password",400,`AUTH_RESET_${s}`]),
+  ["auth/reset-password",400,"AUTH_PASSWORD_POLICY"],["auth/register",500,"AUTH_EMAIL_DELIVERY"],
+ ];
+ for(const [path,status,errorCode] of cases) {
+  t.mock.method(globalThis,"fetch",async()=>Response.json({code:status,errorCode,message:"secret provider details"},{status}));
+  await assert.rejects(javaRequest(path,undefined,{method:"POST"}),e=>e.code===errorCode&&e.message===publicErrors[errorCode]&&!e.message.includes("secret"));
+ }
+ t.mock.method(globalThis,"fetch",async()=>Response.json({code:400,errorCode:"UNRECOGNIZED",message:"secret"},{status:400}));
+ await assert.rejects(javaRequest("auth/verify-email",undefined),e=>e.code==="AUTH_INPUT_INVALID");
+ t.mock.method(globalThis,"fetch",async()=>Response.json({message:"secret"},{status:429,headers:{"Retry-After":"120"}}));
+ await assert.rejects(javaRequest("auth/resend-otp",undefined),e=>e.code==="AUTH_RESEND_LIMIT"&&e.retryAfter===120);
+ const response=await route.POST(new NextRequest("http://127.0.0.1:3000/api/mavis/resendOtp",{method:"POST",headers:{host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000","content-type":"application/json"},body:JSON.stringify({email:"fixture@example.org"})}),{params:Promise.resolve({operation:"resendOtp"})});
+ assert.equal(response.status,429);assert.equal(response.headers.get("retry-after"),"120");assert.equal((await response.json()).code,"AUTH_RESEND_LIMIT");
+});
+
+test("public auth contract rejects incomplete and nonnumeric OTPs for both purposes",()=>{
+ const {contracts}=require("../src/lib/api/contracts.ts");
+ for(const otpCode of ["","12345","1234567","12x456","１２３４５６","123 56"])
+  for(const op of ["verifyEmail","resetPassword"]) assert.equal(contracts[op].input.safeParse({email:"fixture@example.org",otpCode,newPassword:"valid-password"}).success,false);
+ for(const op of ["verifyEmail","resetPassword"]) assert.equal(contracts[op].input.safeParse({email:"fixture@example.org",otpCode:"012345",newPassword:"valid-password"}).success,true);
+});
+
+test("intentional logout deletes the cookie without redirecting or storing a return destination",async t=>{
+ environment(t);let calls=0;t.mock.method(globalThis,"fetch",async()=>{calls++;throw Error("Logout must be local");});
+ const response=await route.POST(new NextRequest("http://127.0.0.1:3000/api/mavis/signOut",{method:"POST",headers:{host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000",cookie:"mavis_session=fixture","content-type":"application/json"},body:"{}"}),{params:Promise.resolve({operation:"signOut"})});
+ assert.equal(response.status,200);assert.deepEqual(await response.json(),{ok:true});assert.match(response.headers.get("set-cookie"),/mavis_session=;/);assert.equal(response.headers.get("location"),null);assert.equal(calls,0);
+});
+
+test("session checks distinguish expired credentials from restrictions and outages",async t=>{
+ environment(t);
+ for(const status of [401,403,500]) {
+  t.mock.method(globalThis,"fetch",async()=>Response.json({code:status},{status}));
+  if(status===401) assert.deepEqual(await currentSession("expired"),{user:null});
+  else await assert.rejects(currentSession("present"),e=>e.status===status);
+ }
+ assert.deepEqual(await currentSession(undefined),{user:null});
+});
+
+test("session recovery confirms expiry, coalesces failures and never confuses login or network failures",async()=>{
+ const {QueryClient}=require("@tanstack/react-query");
+ const {createSessionRecovery}=require("../src/lib/auth/session-recovery.ts");
+ const {ApiError}=require("../src/lib/errors/api-error.ts");
+ const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:Infinity}}});
+ const session={user:{id:"one",role:"student"}};client.setQueryData(["api","session",{}],session);client.setQueryData(["projects"],[1]);
+ let calls=0,release;
+ const recovery=createSessionRecovery(client,{execute:async()=>{calls++;return await new Promise(resolve=>release=resolve);}});
+ for(const operation of ["signIn","googleSignIn","verifyEmail","resetPassword","session","signOut"]) await recovery(new ApiError("unauthorized",401),operation);
+ for(const kind of ["network","server","forbidden"]) await recovery(new ApiError(kind),"projects");
+ assert.equal(calls,0);assert.ok(client.getQueryData(["api","session",{}]).user);
+ const first=recovery(new ApiError("unauthorized",401),"projects"),second=recovery(new ApiError("unauthorized",401),"models");
+ assert.equal(calls,1);release({user:null});await Promise.all([first,second]);
+ assert.deepEqual(client.getQueryData(["api","session",{}]),{user:null});assert.equal(client.getQueryData(["projects"]),undefined);
+ client.setQueryData(["api","session",{}],session);
+ const healthy=createSessionRecovery(client,{execute:async()=>session});await healthy(new ApiError("unauthorized",401),"projects");assert.ok(client.getQueryData(["api","session",{}]).user);
+ const outage=createSessionRecovery(client,{execute:async()=>{throw new ApiError("network");}});await outage(new ApiError("unauthorized",401),"projects");assert.ok(client.getQueryData(["api","session",{}]).user);
+ const stale=recovery(new ApiError("unauthorized",401),"projects");client.setQueryData(["api","session",{}],{user:{id:"new",role:"lecturer"}});release({user:null});await stale;assert.equal(client.getQueryData(["api","session",{}]).user.id,"new");client.clear();
+});
+
+test("login restoration validates routes, current resource access and role defaults",async()=>{
+ const {loginDestination}=require("../src/lib/auth/login-destination.ts");
+ const calls=[];const api={execute:async(op,input)=>{calls.push([op,input]);return op==="workspaces"?[{id:"workspace-1"}]:{};}};
+ const next="/architecture?project=project-1&model=model-1&origin=STATIC#node-1";
+ assert.equal(await loginDestination(next,"student",api),next);assert.deepEqual(calls[0],["project",{projectId:"project-1"}]);
+ assert.equal(await loginDestination("/workspace-overview?workspace=workspace-1","lecturer",api),"/workspace-overview?workspace=workspace-1");
+ assert.equal(await loginDestination("/workspace-overview?workspace=removed","lecturer",api),"/workspaces");
+ const unavailable={execute:async()=>{throw new Error("forbidden");}};assert.equal(await loginDestination(next,"student",unavailable),"/");
+ for(const next of [null,"https://outside.invalid","//outside.invalid","/%2f%2foutside.invalid","/auth/verify","/api/backend/projects","/_next/static/x","/missing-route","/login?next=/login"])
+  assert.equal(await loginDestination(next,"lecturer",api),"/workspaces");
+ assert.equal(await loginDestination("/administration/users","student",api),"/");
+ assert.equal(await loginDestination("/administration/users","admin",api),"/administration/users");
+ assert.equal(await loginDestination(null,"admin",api),"/administration/health");
+ assert.equal(await loginDestination("/profile","student",api),"/profile");
+});
+
+test("public auth network errors and unknown failures remain safe",async t=>{
+ const {BackendAdapter}=require("../src/lib/api/backend-adapter.ts");
+ t.mock.method(globalThis,"fetch",async()=>{throw new TypeError("secret connection details");});
+ await assert.rejects(new BackendAdapter().execute("forgotPassword",{email:"fixture@example.org"}),e=>e.code==="AUTH_NETWORK"&&!e.message.includes("secret"));
+ t.mock.method(globalThis,"fetch",async()=>Response.json({error:"secret sql"},{status:500}));
+ await assert.rejects(new BackendAdapter().execute("signIn",{email:"fixture@example.org",password:"candidate"}),e=>e.code==="AUTH_SERVER");
 });
 
 

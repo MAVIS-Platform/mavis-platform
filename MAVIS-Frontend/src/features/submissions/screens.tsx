@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { SelectField, SearchInput, Pagination } from "@/components/shared/forms";
 import { WorkspaceSelector } from "@/features/workspaces/components";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
-import { DataTable } from "@/components/shared/data";
+import { DataTable, StatusLabel } from "@/components/shared/data";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { TraceViewer, RuntimeSessionTimeline } from "@/features/runtime/components";
 import { SubmissionVersionHeader, FeedbackPanel } from "./components";
@@ -154,14 +154,20 @@ function SubmissionResult({ submissionId }: { submissionId: string }) {
   const query = useApiQuery("submissionReview", { submissionId });
   return (
     <span className="text-xs">
-      {query.isError
-        ? "Review unavailable"
-        : query.data
-          ? `${query.data.status}${query.data.score !== null ? ` · ${query.data.score}/100` : ""}`
-          : "Loading…"}
+      {query.isError ? (
+        "Review unavailable"
+      ) : query.data ? (
+        <>
+          <StatusLabel status={query.data.status} />
+          {query.data.score !== null ? ` · ${query.data.score}/100` : ""}
+        </>
+      ) : (
+        "Loading…"
+      )}
     </span>
   );
 }
+
 export function SubmissionReview({ submissionId }: { submissionId: string }) {
   const canReview = usePermission("submission:review");
   const query = useApiQuery(

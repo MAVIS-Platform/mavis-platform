@@ -5,7 +5,9 @@ import { Zap, ArrowRight, ExternalLink, Activity, CheckCircle2, Clock, AlertTria
 import { RuntimeStepperBanner } from "./screens";
 import { useState } from "react";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
-import { DetailPanel } from "@/components/shared/data";
+import { DetailPanel, StatusLabel } from "@/components/shared/data";
+import { translatedStatusLabel } from "@/lib/status-label";
+import { useLocale } from "@/lib/i18n/locale-context";
 import { RequestState, ErrorState } from "@/components/shared/request-state";
 import { SelectField, ConfirmDialog, SearchInput } from "@/components/shared/forms";
 import { AdminToolbar } from "@/features/administration/operations";
@@ -330,6 +332,7 @@ export function BackendRuntime({ administrative = false }: { administrative?: bo
   return <RuntimeProject key={projectId} administrative={administrative} />;
 }
 function RuntimeProject({ administrative = false }: { administrative?: boolean }) {
+  const { t } = useLocale();
   const { projectId } = useSelection();
   const [showVisualSequence, setShowVisualSequence] = useState(true);
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: !!projectId });
@@ -475,7 +478,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
 
       setSelected(res.id);
       setQuickRunMsg(
-        `Session ${res.id.slice(0, 8)} completed! Status: ${res.executionStatus || res.status}`,
+        `Session ${res.id.slice(0, 8)} completed! Status: ${translatedStatusLabel(res.executionStatus || res.status, t)}`,
       );
       void list.refetch();
       void session.refetch();
@@ -554,7 +557,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 { value: "all", label: "All statuses" },
                 ...Array.from(new Set((list.data ?? []).map((s) => s.executionStatus)))
                   .sort()
-                  .map((value) => ({ value, label: value })),
+                  .map((value) => ({ value, label: translatedStatusLabel(value, t) })),
               ]}
             />
           </div>
@@ -576,7 +579,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             onChange={setSelected}
             options={sessionOptions.map((s) => ({
               value: s.id,
-              label: `${s.scenarioName ?? s.id.slice(0, 8)} · ${s.executionStatus}`,
+              label: `${s.scenarioName ?? s.id.slice(0, 8)} · ${translatedStatusLabel(s.executionStatus, t)}`,
             }))}
           />
           {selectedId && (
@@ -626,7 +629,12 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                       <div key={key}>
                         <dt className="text-xs text-muted-foreground">{label}</dt>
                         <dd className="text-sm">
-                          {String(session.data?.[key as keyof NonNullable<typeof session.data>] ?? "n/a")}
+                          <StatusLabel
+                            status={String(
+                              session.data?.[key as keyof NonNullable<typeof session.data>] ??
+                                "n/a",
+                            )}
+                          />
                         </dd>
                       </div>
                     ))}
