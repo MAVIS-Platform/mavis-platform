@@ -105,6 +105,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [selectedServiceFilter, setSelectedServiceFilter] = useState("ALL");
   const [selectedDbIndex, setSelectedDbIndex] = useState("ALL");
+  const [dismissedSecretKeys, setDismissedSecretKeys] = useState<string[]>([]);
 
   useEffect(() => {
     if (preflight.data?.recommendedProfile) {
@@ -271,7 +272,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       ...configuredSecretKeys,
       ...Object.keys(secretValues),
     ]),
-  );
+  ).filter((k) => !dismissedSecretKeys.includes(k));
 
   return (
     <div className="space-y-6">
@@ -615,10 +616,29 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                               Configured ✓
                             </span>
                           )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            aria-label={`Remove ${sKey}`}
+                            title={`Remove ${sKey}`}
+                            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                            onClick={() => {
+                              setDismissedSecretKeys((prev) => Array.from(new Set([...prev, sKey])));
+                              setSecretValues((prev) => {
+                                const next = { ...prev };
+                                delete next[sKey];
+                                return next;
+                              });
+                            }}
+                          >
+                            ✕
+                          </Button>
                         </div>
                       </div>
                       <Input
                         type={isDbConn ? "text" : "password"}
+                        autoComplete="new-password"
                         className="font-mono text-xs h-9"
                         placeholder={defaultPlaceholder}
                         value={secretValues[sKey] ?? ""}
@@ -639,6 +659,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
 
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <Input
+                autoComplete="off"
                 className="w-56 font-mono text-xs h-8"
                 placeholder="Add another box (e.g. DB_CONNECTION_STRING, API_KEY)"
                 value={newSecretKey}
@@ -646,6 +667,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
               />
               <Input
                 type="password"
+                autoComplete="new-password"
                 className="flex-1 min-w-48 font-mono text-xs h-8"
                 placeholder="Value..."
                 value={newSecretVal}
@@ -659,6 +681,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 onClick={() => {
                   const k = newSecretKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
                   if (!k) return;
+                  setDismissedSecretKeys((prev) => prev.filter((item) => item !== k));
                   setSecretValues((prev) => ({ ...prev, [k]: newSecretVal }));
                   setNewSecretKey("");
                   setNewSecretVal("");
@@ -768,7 +791,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                       .filter(Boolean),
                     ...allSecretKeys,
                   ]),
-                );
+                ).filter((k) => !dismissedSecretKeys.includes(k));
                 save.mutate(
                   {
                     projectId,

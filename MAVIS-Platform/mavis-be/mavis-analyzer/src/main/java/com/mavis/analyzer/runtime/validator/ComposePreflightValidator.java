@@ -230,9 +230,12 @@ public class ComposePreflightValidator {
     }
 
     private boolean isIgnoredArchiveEntry(String path) {
-        String lower = path.toLowerCase(Locale.ROOT);
+        String lower = path.replace('\\', '/').toLowerCase(Locale.ROOT);
         return lower.contains("/node_modules/") || lower.contains("/target/") || lower.contains("/build/")
                 || lower.contains("/bin/") || lower.contains("/obj/") || lower.contains("/.git/")
+                || lower.contains("/.github/") || lower.startsWith(".github/")
+                || lower.contains("/.mvn/") || lower.startsWith(".mvn/")
+                || lower.contains("/.idea/") || lower.contains("/.vscode/")
                 || lower.contains("/test/") || lower.contains("/tests/");
     }
 
