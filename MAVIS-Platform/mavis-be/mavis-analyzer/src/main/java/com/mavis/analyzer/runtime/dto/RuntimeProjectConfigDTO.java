@@ -36,4 +36,22 @@ public class RuntimeProjectConfigDTO {
 
     @Builder.Default
     private Map<String, String> confirmedServiceMappings = new HashMap<>();
+
+    @Builder.Default
+    private Map<String, String> environmentVariables = new HashMap<>();
+
+    @Builder.Default
+    private List<String> secretReferences = new ArrayList<>();
+
+    @Builder.Default
+    private List<String> configuredSecretKeys = new ArrayList<>();
+
+    @Builder.Default
+    private List<PreflightCheckResponseDTO.DetectedEndpointDTO> detectedEndpoints = new ArrayList<>();
+
+    @Builder.Default
+    private List<PreflightCheckResponseDTO.DatabaseCheckDTO> databaseChecks = new ArrayList<>();
+
+    @Builder.Default
+    private List<PreflightCheckResponseDTO.RequiredEnvVarDTO> requiredEnvVars = new ArrayList<>();
 }

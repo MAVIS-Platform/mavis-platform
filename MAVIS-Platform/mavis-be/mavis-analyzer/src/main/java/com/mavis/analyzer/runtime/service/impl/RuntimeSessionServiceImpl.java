@@ -5,13 +5,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.analyzer.runtime.dto.*;
+import com.mavis.analyzer.runtime.dto.PreflightCheckResponseDTO.DatabaseCheckDTO;
+import com.mavis.analyzer.runtime.dto.PreflightCheckResponseDTO.DetectedEndpointDTO;
+import com.mavis.analyzer.runtime.dto.PreflightCheckResponseDTO.RequiredEnvVarDTO;
 import com.mavis.analyzer.runtime.generator.ComposeOverrideGenerator;
 import com.mavis.analyzer.runtime.security.RunnerServiceAuthGuard;
 import com.mavis.analyzer.runtime.service.RuntimeSessionService;
 import com.mavis.analyzer.runtime.util.SecretRedactor;
 import com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils;
 import com.mavis.analyzer.runtime.validator.ComposePreflightValidator;
+import com.mavis.common.entity.Evidence;
 import com.mavis.common.entity.ModelElement;
+import com.mavis.common.entity.ModelRelationship;
 import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.RuntimeSession;
@@ -38,6 +43,7 @@ import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -50,6 +56,7 @@ import java.util.zip.ZipFile;
 public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
     private static final Pattern RESOURCE_PROJECT_PATTERN = Pattern.compile("^mavisrun-[0-9a-f]{32}$");
+    private static final Pattern EXCERPT_MAPPING_PATTERN = Pattern.compile("@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?");
 
     private final RuntimeSessionRepository runtimeSessionRepository;
     private final ProjectRepository projectRepository;
@@ -71,6 +78,16 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     private String collectorImage;
 
     private final ConcurrentHashMap<UUID, RuntimeProjectConfigDTO> projectConfigs = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, Map<String, String>> projectSecrets = new ConcurrentHashMap<>();
+
+    @Autowired(required = false)
+    private ModelRelationshipRepository modelRelationshipRepository;
+
+    @Autowired(required = false)
+    private EvidenceRepository evidenceRepository;
+
+    @Autowired(required = false)
+    private RuntimeConfigurationRepository runtimeConfigurationRepository;
 
     @Autowired(required = false)
     @Lazy
@@ -97,10 +114,11 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         Path path = Path.of(storagePathStr);
+        PreflightCheckResponseDTO result = null;
         if (Files.isRegularFile(path)) {
             String fileName = path.getFileName().toString().toLowerCase();
             if (fileName.endsWith(".yml") || fileName.endsWith(".yaml")) {
-                return composePreflightValidator.validate(path);
+                result = composePreflightValidator.validate(path);
             } else if (fileName.endsWith(".zip")) {
                 // Đọc file docker-compose bên trong zip
                 try (ZipFile zipFile = new ZipFile(path.toFile())) {
@@ -111,7 +129,8 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                         if (entryName.endsWith("docker-compose.yml") || entryName.endsWith("docker-compose.yaml")) {
                             try (InputStream is = zipFile.getInputStream(entry)) {
                                 String yamlContent = new String(readBounded(is), StandardCharsets.UTF_8);
-                                return composePreflightValidator.validate(yamlContent);
+                                result = composePreflightValidator.validate(yamlContent);
+                                break;
                             }
                         }
                     }
@@ -122,12 +141,209 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         } else if (Files.isDirectory(path)) {
             Optional<Path> composePath = findComposeFileInDirectory(path);
             if (composePath.isPresent()) {
-                return composePreflightValidator.validate(composePath.get());
+                result = composePreflightValidator.validate(composePath.get());
             }
         }
 
         // Nếu không tìm thấy file thực tế trên đĩa (VD: môi trường mock hoặc test)
-        return composePreflightValidator.validate(path);
+        if (result == null) {
+            result = composePreflightValidator.validate(path);
+        }
+
+        try {
+            composePreflightValidator.inspectSnapshotSource(path, result);
+            enrichPreflightFromModel(snapshot, result);
+        } catch (Exception e) {
+            log.warn("Không thể làm giàu thông tin preflight từ model cho snapshot {}: {}", snapshotId, e.getMessage());
+        }
+
+        return result;
+    }
+
+    private void enrichPreflightFromModel(SourceSnapshot snapshot, PreflightCheckResponseDTO dto) {
+        if (snapshot == null || dto == null || modelVersionRepository == null || modelElementRepository == null) {
+            return;
+        }
+        UUID projectId = snapshot.getProject() != null ? snapshot.getProject().getId() : null;
+        if (projectId == null) return;
+
+        ModelVersion model = modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId)
+                .orElseGet(() -> {
+                    List<ModelVersion> all = modelVersionRepository.findByProjectIdOrderByRevisionDesc(projectId);
+                    return all != null && !all.isEmpty() ? all.get(0) : null;
+                });
+
+        if (model == null || model.getId() == null) return;
+
+        List<ModelElement> elements = modelElementRepository.findByModelVersionId(model.getId());
+        if (elements == null || elements.isEmpty()) return;
+
+        List<String> services = dto.getDetectedServices() != null ? new ArrayList<>(dto.getDetectedServices()) : new ArrayList<>();
+        Map<String, Integer> ports = dto.getServicePorts() != null ? new HashMap<>(dto.getServicePorts()) : new HashMap<>();
+        Map<String, String> stacks = dto.getServiceStacks() != null ? new HashMap<>(dto.getServiceStacks()) : new HashMap<>();
+        List<DetectedEndpointDTO> endpoints = dto.getDetectedEndpoints() != null ? new ArrayList<>(dto.getDetectedEndpoints()) : new ArrayList<>();
+        List<DatabaseCheckDTO> dbChecks = dto.getDatabaseChecks() != null ? new ArrayList<>(dto.getDatabaseChecks()) : new ArrayList<>();
+        Map<String, RequiredEnvVarDTO> envMap = new LinkedHashMap<>();
+        if (dto.getRequiredEnvVars() != null) {
+            for (RequiredEnvVarDTO v : dto.getRequiredEnvVars()) {
+                envMap.put(v.getName(), v);
+            }
+        }
+
+        Set<String> endpointKeys = new HashSet<>();
+        for (DetectedEndpointDTO ep : endpoints) {
+            endpointKeys.add((ep.getService() + ":" + ep.getMethod() + ":" + ep.getPath()).toLowerCase(Locale.ROOT));
+        }
+
+        Map<UUID, ModelElement> elementById = new HashMap<>();
+        for (ModelElement el : elements) {
+            if (el.getId() != null) elementById.put(el.getId(), el);
+            if ("SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType()) && el.getName() != null) {
+                String sName = el.getName();
+                boolean exists = services.stream().anyMatch(s -> s.equalsIgnoreCase(sName));
+                if (!exists) {
+                    services.add(sName);
+                }
+                ports.putIfAbsent(sName, 8080);
+                String lang = el.getLanguageStack() != null ? el.getLanguageStack().toLowerCase(Locale.ROOT) : "";
+                stacks.putIfAbsent(sName, (lang.contains("csharp") || lang.contains("dotnet")) ? "dotnet" : "java");
+            } else if ("DATABASE".equalsIgnoreCase(el.getElementType()) && el.getName() != null) {
+                String ownerSvc = el.getProperties() != null ? el.getProperties().path("ownerService").asText("database") : "database";
+                String host = el.getProperties() != null ? el.getProperties().path("physicalHost").asText(el.getName()) : el.getName();
+                String dbName = el.getProperties() != null ? el.getProperties().path("database").asText(el.getName()) : el.getName();
+                String protocol = el.getProperties() != null ? el.getProperties().path("protocol").asText("SQL") : "SQL";
+                boolean dbExists = dbChecks.stream().anyMatch(d -> d.getService().equalsIgnoreCase(ownerSvc));
+                if (!dbExists) {
+                    ComposePreflightValidator.registerEnvVar(envMap, "DB_PASSWORD", ownerSvc, null, "STATIC_MODEL");
+                    ComposePreflightValidator.registerEnvVar(envMap, "DB_HOST", ownerSvc, host, "STATIC_MODEL");
+                    dbChecks.add(DatabaseCheckDTO.builder()
+                            .service(ownerSvc)
+                            .dbType(protocol.toUpperCase(Locale.ROOT))
+                            .configKey("model:DATABASE:" + el.getName())
+                            .connectionUrl(host + "/" + dbName)
+                            .requiredEnvVars(List.of("DB_HOST", "DB_PASSWORD"))
+                            .status("DETECTED_IN_MODEL")
+                            .build());
+                }
+            }
+        }
+
+        if (modelRelationshipRepository != null) {
+            List<ModelRelationship> rels = modelRelationshipRepository.findByModelVersionId(model.getId());
+            if (rels != null) {
+                for (ModelRelationship rel : rels) {
+                    if ("SERVICE_HTTP_CALL".equalsIgnoreCase(rel.getRelationType()) || "GATEWAY_ROUTE".equalsIgnoreCase(rel.getRelationType())) {
+                        ModelElement tgt = resolveContainer(rel.getTargetElement(), elementById);
+                        if (tgt != null && tgt.getName() != null) {
+                            String method = rel.getProperties() != null && rel.getProperties().hasNonNull("httpMethod")
+                                    ? rel.getProperties().get("httpMethod").asText("GET").toUpperCase(Locale.ROOT)
+                                    : "GET";
+                            String path = rel.getProperties() != null && rel.getProperties().hasNonNull("httpPath")
+                                    ? rel.getProperties().get("httpPath").asText("/health")
+                                    : "/health";
+                            if (!path.startsWith("/")) path = "/" + path;
+                            String key = (tgt.getName() + ":" + method + ":" + path).toLowerCase(Locale.ROOT);
+                            if (endpointKeys.add(key)) {
+                                endpoints.add(DetectedEndpointDTO.builder()
+                                        .service(tgt.getName())
+                                        .method(method)
+                                        .path(path)
+                                        .source("STATIC_MODEL_RELATIONSHIP")
+                                        .build());
+                            }
+                        }
+                    } else if ("DATABASE_ACCESS".equalsIgnoreCase(rel.getRelationType())) {
+                        ModelElement src = resolveContainer(rel.getSourceElement(), elementById);
+                        ModelElement tgt = rel.getTargetElement();
+                        if (src != null && src.getName() != null) {
+                            String svcName = src.getName();
+                            boolean dbExists = dbChecks.stream().anyMatch(d -> d.getService().equalsIgnoreCase(svcName));
+                            if (!dbExists) {
+                                ComposePreflightValidator.registerEnvVar(envMap, "DB_PASSWORD", svcName, null, "STATIC_MODEL");
+                                dbChecks.add(DatabaseCheckDTO.builder()
+                                        .service(svcName)
+                                        .dbType("SQL")
+                                        .configKey("model:DATABASE_ACCESS")
+                                        .connectionUrl(tgt != null && tgt.getName() != null ? tgt.getName() : "database")
+                                        .requiredEnvVars(List.of("DB_PASSWORD"))
+                                        .status("DETECTED_IN_MODEL")
+                                        .build());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (evidenceRepository != null) {
+            List<Evidence> evidences = evidenceRepository.findByModelVersionId(model.getId());
+            if (evidences != null) {
+                for (Evidence ev : evidences) {
+                    if (ev.getExcerpt() != null && ev.getElement() != null) {
+                        Matcher m = EXCERPT_MAPPING_PATTERN.matcher(ev.getExcerpt());
+                        if (m.find()) {
+                            ModelElement owner = resolveContainer(ev.getElement(), elementById);
+                            String svcName = owner != null && owner.getName() != null ? owner.getName() : (services.isEmpty() ? "default-service" : services.get(0));
+                            String ann = m.group(1);
+                            String method = switch (ann) {
+                                case "PostMapping" -> "POST";
+                                case "PutMapping" -> "PUT";
+                                case "DeleteMapping" -> "DELETE";
+                                case "PatchMapping" -> "PATCH";
+                                default -> "GET";
+                            };
+                            String path = m.group(2) != null && !m.group(2).isBlank() ? m.group(2) : "/";
+                            if (!path.startsWith("/")) path = "/" + path;
+                            String key = (svcName + ":" + method + ":" + path).toLowerCase(Locale.ROOT);
+                            if (endpointKeys.add(key)) {
+                                endpoints.add(DetectedEndpointDTO.builder()
+                                        .service(svcName)
+                                        .method(method)
+                                        .path(path)
+                                        .source(ev.getLocator() != null ? ev.getLocator() : "STATIC_CODE_EVIDENCE")
+                                        .build());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for (String svc : services) {
+            boolean hasEp = endpoints.stream().anyMatch(e -> e.getService().equalsIgnoreCase(svc));
+            if (!hasEp) {
+                endpoints.add(DetectedEndpointDTO.builder()
+                        .service(svc)
+                        .method("GET")
+                        .path("/health")
+                        .source("DEFAULT_READINESS_PROBE")
+                        .build());
+            }
+        }
+
+        dto.setDetectedServices(services);
+        dto.setServicePorts(ports);
+        dto.setServiceStacks(stacks);
+        dto.setDetectedEndpoints(endpoints);
+        dto.setDatabaseChecks(dbChecks);
+        dto.setRequiredEnvVars(new ArrayList<>(envMap.values()));
+    }
+
+    private ModelElement resolveContainer(ModelElement el, Map<UUID, ModelElement> elementById) {
+        if (el == null) return null;
+        ModelElement curr = el;
+        Set<UUID> visited = new HashSet<>();
+        while (curr != null && curr.getId() != null && visited.add(curr.getId())) {
+            if ("SERVICE_CONTAINER".equalsIgnoreCase(curr.getElementType())) {
+                return curr;
+            }
+            if (curr.getParentElement() != null && curr.getParentElement().getId() != null) {
+                curr = elementById.getOrDefault(curr.getParentElement().getId(), curr.getParentElement());
+            } else {
+                break;
+            }
+        }
+        return el;
     }
 
     @Override
@@ -436,7 +652,17 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         // [CHẶNG 11]: Đặt scenarioStatus = "APPROVED", executionStatus = "READY_FOR_DISPATCH" (không đặt RUNNING ở đây)
         session.setScenarioStatus("APPROVED");
         session.setExecutionStatus("READY_FOR_DISPATCH");
-        String overrideYaml = composeOverrideGenerator.generateOverrideYaml(serviceNames);
+
+        UUID projId = session.getProject() != null ? session.getProject().getId() : null;
+        RuntimeProjectConfigDTO cfg = projId != null ? projectConfigs.get(projId) : null;
+        Map<String, String> envVars = cfg != null && cfg.getEnvironmentVariables() != null
+                ? cfg.getEnvironmentVariables()
+                : Collections.emptyMap();
+        List<String> secretRefs = cfg != null && cfg.getSecretReferences() != null
+                ? cfg.getSecretReferences()
+                : Collections.emptyList();
+
+        String overrideYaml = composeOverrideGenerator.generateOverrideYaml(serviceNames, envVars, secretRefs);
 
         RuntimeSession updated = runtimeSessionRepository.save(session);
         log.info("Phiên thực nghiệm ID: {} đã chuyển sang APPROVED / READY_FOR_DISPATCH thành công", sessionId);
@@ -775,10 +1001,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
 
-        boolean supported = preflight != null && preflight.isCompatible();
+        boolean supported = preflight != null && (preflight.isCompatible() || !preflight.getDetectedServices().isEmpty());
         boolean ready = supported && modelVersionId != null;
 
-        Map<String, String> confirmedServiceMappings = new HashMap<>();
+        Map<String, String> confirmedServiceMappings = new LinkedHashMap<>();
         if (modelVersionId != null) {
             List<ModelElement> elements = modelElementRepository.findByModelVersionId(modelVersionId);
             for (ModelElement el : elements) {
@@ -792,9 +1018,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         List<String> detectedServices = new ArrayList<>();
         if (preflight != null) {
             detectedServices.addAll(preflight.getDetectedServices());
-            if (!preflight.getSecurityWarnings().isEmpty()) {
+            if (!preflight.getSecurityWarnings().isEmpty() && !preflight.isCompatible()) {
                 prerequisites.addAll(preflight.getSecurityWarnings());
-            } else if (preflight.isCompatible()) {
+            } else if (supported) {
                 prerequisites.add("Detected services: " + (detectedServices.isEmpty() ? "default" : String.join(", ", detectedServices)));
                 prerequisites.add("Linux Docker Compose sandbox profile verified");
             } else {
@@ -805,14 +1031,56 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         RuntimeProjectConfigDTO saved = projectConfigs.get(projectId);
+        Map<String, String> envVars = new LinkedHashMap<>();
+        List<String> secretRefs = new ArrayList<>();
+
+        if (runtimeConfigurationRepository != null) {
+            runtimeConfigurationRepository.findById(projectId).ifPresent(rc -> {
+                if (rc.getProfile() != null && rc.getProfile().isObject()) {
+                    JsonNode p = rc.getProfile();
+                    if (p.has("serviceMappings") && p.get("serviceMappings").isObject()) {
+                        p.get("serviceMappings").fields().forEachRemaining(f -> confirmedServiceMappings.put(f.getKey(), f.getValue().asText()));
+                    }
+                    if (p.has("environmentVariables") && p.get("environmentVariables").isObject()) {
+                        p.get("environmentVariables").fields().forEachRemaining(f -> envVars.put(f.getKey(), f.getValue().asText()));
+                    }
+                    if (p.has("secretReferences") && p.get("secretReferences").isArray()) {
+                        p.get("secretReferences").forEach(n -> {
+                            String v = n.asText().trim();
+                            if (!v.isEmpty() && !secretRefs.contains(v)) secretRefs.add(v);
+                        });
+                    }
+                }
+            });
+        }
+
         String profileId = saved != null && saved.getProfileId() != null
                 ? saved.getProfileId()
                 : (preflight != null && preflight.getRecommendedProfile() != null ? preflight.getRecommendedProfile() : "SPRING_BOOT_DOTNET_COMPOSE_V1");
 
         int revision = saved != null && saved.getRevision() > 0 ? saved.getRevision() : Math.max(1, sessions.size() + 1);
 
-        if (saved != null && saved.getConfirmedServiceMappings() != null && !saved.getConfirmedServiceMappings().isEmpty()) {
-            confirmedServiceMappings.putAll(saved.getConfirmedServiceMappings());
+        if (saved != null) {
+            if (saved.getConfirmedServiceMappings() != null && !saved.getConfirmedServiceMappings().isEmpty()) {
+                confirmedServiceMappings.putAll(saved.getConfirmedServiceMappings());
+            }
+            if (saved.getEnvironmentVariables() != null && !saved.getEnvironmentVariables().isEmpty()) {
+                envVars.putAll(saved.getEnvironmentVariables());
+            }
+            if (saved.getSecretReferences() != null) {
+                for (String s : saved.getSecretReferences()) {
+                    if (s != null && !s.isBlank() && !secretRefs.contains(s.trim())) {
+                        secretRefs.add(s.trim());
+                    }
+                }
+            }
+        }
+
+        List<String> configuredSecrets = getConfiguredSecretKeys(projectId);
+        for (String cs : configuredSecrets) {
+            if (!secretRefs.contains(cs)) {
+                secretRefs.add(cs);
+            }
         }
 
         return RuntimeProjectConfigDTO.builder()
@@ -826,11 +1094,17 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .prerequisites(prerequisites)
                 .detectedServices(detectedServices)
                 .confirmedServiceMappings(confirmedServiceMappings)
+                .environmentVariables(envVars)
+                .secretReferences(secretRefs)
+                .configuredSecretKeys(configuredSecrets)
+                .detectedEndpoints(preflight != null && preflight.getDetectedEndpoints() != null ? preflight.getDetectedEndpoints() : Collections.emptyList())
+                .databaseChecks(preflight != null && preflight.getDatabaseChecks() != null ? preflight.getDatabaseChecks() : Collections.emptyList())
+                .requiredEnvVars(preflight != null && preflight.getRequiredEnvVars() != null ? preflight.getRequiredEnvVars() : Collections.emptyList())
                 .build();
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public RuntimeProjectConfigDTO updateProjectRuntimeConfig(UUID projectId, RuntimeProjectConfigRequestDTO request) {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
@@ -846,9 +1120,39 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 ? request.getProfileId()
                 : current.getProfileId();
 
-        Map<String, String> mappings = new HashMap<>(current.getConfirmedServiceMappings());
+        Map<String, String> mappings = new LinkedHashMap<>(current.getConfirmedServiceMappings());
         if (request != null && request.getConfirmedServiceMappings() != null) {
             mappings.putAll(request.getConfirmedServiceMappings());
+        }
+
+        Map<String, String> envVars = new LinkedHashMap<>(current.getEnvironmentVariables());
+        if (request != null && request.getEnvironmentVariables() != null) {
+            envVars.clear();
+            for (Map.Entry<String, String> e : request.getEnvironmentVariables().entrySet()) {
+                if (e.getKey() != null && !e.getKey().isBlank() && e.getValue() != null) {
+                    envVars.put(e.getKey().trim(), e.getValue());
+                }
+            }
+        }
+
+        if (request != null && request.getSecretValues() != null && !request.getSecretValues().isEmpty()) {
+            storeProjectSecrets(projectId, request.getSecretValues());
+        }
+
+        List<String> secretRefs = new ArrayList<>(current.getSecretReferences());
+        if (request != null && request.getSecretReferences() != null) {
+            secretRefs.clear();
+            for (String s : request.getSecretReferences()) {
+                if (s != null && !s.isBlank() && !secretRefs.contains(s.trim())) {
+                    secretRefs.add(s.trim());
+                }
+            }
+        }
+        List<String> configuredSecrets = getConfiguredSecretKeys(projectId);
+        for (String cs : configuredSecrets) {
+            if (!secretRefs.contains(cs)) {
+                secretRefs.add(cs);
+            }
         }
 
         RuntimeProjectConfigDTO updated = RuntimeProjectConfigDTO.builder()
@@ -862,11 +1166,53 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .prerequisites(current.getPrerequisites())
                 .detectedServices(current.getDetectedServices())
                 .confirmedServiceMappings(mappings)
+                .environmentVariables(envVars)
+                .secretReferences(secretRefs)
+                .configuredSecretKeys(configuredSecrets)
+                .detectedEndpoints(current.getDetectedEndpoints())
+                .databaseChecks(current.getDatabaseChecks())
+                .requiredEnvVars(current.getRequiredEnvVars())
                 .build();
 
         projectConfigs.put(projectId, updated);
         log.info("Cập nhật cấu hình runtime thành công cho project {}, revision {}", projectId, nextRevision);
         return updated;
+    }
+
+    @Override
+    public void storeProjectSecrets(UUID projectId, Map<String, String> secretValues) {
+        if (projectId == null || secretValues == null || secretValues.isEmpty()) return;
+        Map<String, String> store = projectSecrets.computeIfAbsent(projectId, k -> new ConcurrentHashMap<>());
+        for (Map.Entry<String, String> entry : secretValues.entrySet()) {
+            String key = entry.getKey() != null ? entry.getKey().trim() : "";
+            String val = entry.getValue();
+            if (!key.isEmpty() && val != null && !val.isBlank() && !"********".equals(val)) {
+                store.put(key, val);
+            }
+        }
+    }
+
+    @Override
+    public List<String> getConfiguredSecretKeys(UUID projectId) {
+        if (projectId == null) return Collections.emptyList();
+        Map<String, String> store = projectSecrets.get(projectId);
+        if (store == null || store.isEmpty()) return Collections.emptyList();
+        return store.keySet().stream().sorted().collect(Collectors.toList());
+    }
+
+    @Override
+    public Map<String, String> getProjectExecutionEnvironment(UUID projectId) {
+        if (projectId == null) return Collections.emptyMap();
+        Map<String, String> merged = new LinkedHashMap<>();
+        RuntimeProjectConfigDTO cfg = projectConfigs.get(projectId);
+        if (cfg != null && cfg.getEnvironmentVariables() != null) {
+            merged.putAll(cfg.getEnvironmentVariables());
+        }
+        Map<String, String> secrets = projectSecrets.get(projectId);
+        if (secrets != null) {
+            merged.putAll(secrets);
+        }
+        return merged;
     }
 
     @Override

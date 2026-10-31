@@ -127,6 +127,42 @@ export const contracts = {
       detectedServices: z.array(z.string()),
       securityWarnings: z.array(z.string()),
       recommendedProfile: z.string().nullable(),
+      servicePorts: z.record(z.number()).optional(),
+      serviceStacks: z.record(z.string()).optional(),
+      detectedEndpoints: z
+        .array(
+          z.object({
+            service: z.string(),
+            method: z.string(),
+            path: z.string(),
+            source: z.string().optional(),
+          }),
+        )
+        .optional(),
+      databaseChecks: z
+        .array(
+          z.object({
+            service: z.string(),
+            dbType: z.string(),
+            configKey: z.string().optional(),
+            connectionUrl: z.string().optional(),
+            requiredEnvVars: z.array(z.string()).optional(),
+            status: z.string().optional(),
+          }),
+        )
+        .optional(),
+      requiredEnvVars: z
+        .array(
+          z.object({
+            name: z.string(),
+            service: z.string().optional(),
+            category: z.string().optional(),
+            defaultValue: z.string().nullable().optional(),
+            required: z.boolean().optional(),
+            source: z.string().optional(),
+          }),
+        )
+        .optional(),
     }),
     true,
   ),

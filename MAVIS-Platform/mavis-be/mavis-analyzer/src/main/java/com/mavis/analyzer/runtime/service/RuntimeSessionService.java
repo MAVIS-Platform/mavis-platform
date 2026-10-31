@@ -4,7 +4,9 @@ import com.mavis.analyzer.runtime.dto.PreflightCheckResponseDTO;
 import com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest;
 import com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public interface RuntimeSessionService {
@@ -88,7 +90,7 @@ public interface RuntimeSessionService {
     com.mavis.analyzer.runtime.dto.RuntimeProjectConfigDTO getProjectRuntimeConfig(UUID projectId);
 
     /**
-     * Cập nhật cấu hình Runtime (profileId, confirmedServiceMappings) cho Project (J50-01, V14, F13).
+     * Cập nhật cấu hình Runtime (profileId, confirmedServiceMappings, environmentVariables, secretValues) cho Project (J50-01, V14, F13).
      *
      * @param projectId ID của dự án
      * @param request Cấu hình cập nhật
@@ -105,4 +107,14 @@ public interface RuntimeSessionService {
      * @return RuntimeSessionResponseDTO sau khi điều phối
      */
     RuntimeSessionResponseDTO dispatchSession(UUID sessionId);
+
+    default void storeProjectSecrets(UUID projectId, Map<String, String> secretValues) {}
+
+    default List<String> getConfiguredSecretKeys(UUID projectId) {
+        return Collections.emptyList();
+    }
+
+    default Map<String, String> getProjectExecutionEnvironment(UUID projectId) {
+        return Collections.emptyMap();
+    }
 }
