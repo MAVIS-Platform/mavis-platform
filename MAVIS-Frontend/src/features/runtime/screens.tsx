@@ -75,6 +75,30 @@ function httpMethodBadgeClass(method: string): string {
       return "bg-muted text-foreground border border-border";
   }
 }
+
+function readStep1Target(projectId: string): { modelId?: string; snapshotId?: string } {
+  try {
+    const raw = typeof window !== "undefined" ? window.sessionStorage.getItem(`mavis:runtime-target:${projectId}`) : null;
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as { modelId?: string; snapshotId?: string };
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStep1Target(projectId: string, modelId: string, snapshotId: string) {
+  try {
+    if (typeof window !== "undefined" && projectId && (modelId || snapshotId)) {
+      window.sessionStorage.setItem(
+        `mavis:runtime-target:${projectId}`,
+        JSON.stringify({ modelId, snapshotId }),
+      );
+    }
+  } catch {
+    // Ignore storage restriction
+  }
+}
 import { RuntimeSessionTimeline, RuntimeStatusBadge, TraceViewer } from "./components";
 import { BackendRuntime } from "./backend";
 import type { Response } from "@/lib/api/contracts";
@@ -133,17 +157,30 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   }, [preflight.data?.recommendedProfile, config.data?.profileId]);
 
   useEffect(() => {
+    const stored = readStep1Target(projectId);
     if (!snapshotId && snapshots.data?.length) {
       const preferredSnapId =
+        (stored.snapshotId && snapshots.data.some((s) => s.id === stored.snapshotId) ? stored.snapshotId : "") ||
         config.data?.snapshotId ||
         (staticModels[0] ?? models.data?.[0])?.snapshotId ||
         snapshots.data[0]?.id;
       if (preferredSnapId) setSnapshotId(preferredSnapId);
     }
     if (!modelId && defaultModelId) {
-      setModelId(config.data?.modelId || defaultModelId);
+      const allModels = models.data ?? [];
+      const preferredModelId =
+        (stored.modelId && allModels.some((m) => m.id === stored.modelId) ? stored.modelId : "") ||
+        config.data?.modelId ||
+        defaultModelId;
+      setModelId(preferredModelId);
     }
-  }, [snapshots.data, config.data?.snapshotId, config.data?.modelId, models.data, snapshotId, modelId, defaultModelId]);
+  }, [projectId, snapshots.data, config.data?.snapshotId, config.data?.modelId, models.data, snapshotId, modelId, defaultModelId]);
+
+  useEffect(() => {
+    if (modelId || snapshotId) {
+      writeStep1Target(projectId, modelId, snapshotId);
+    }
+  }, [projectId, modelId, snapshotId]);
 
   const rawProfile = (config.data?.profile ?? {}) as Record<string, unknown>;
   const configuredSecretKeys = Array.isArray(rawProfile["configuredSecretKeys"])
@@ -927,17 +964,30 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const selectableModels = staticModels.length > 0 ? staticModels : (models.data ?? []);
 
   useEffect(() => {
-    if (config.data?.modelId && !modelId) {
-      setModelId(config.data.modelId);
+    const stored = readStep1Target(projectId);
+    if (!modelId) {
+      if (stored.modelId && selectableModels.some((m) => m.id === stored.modelId)) {
+        setModelId(stored.modelId);
+      } else if (config.data?.modelId) {
+        setModelId(config.data.modelId);
+      }
     }
-    if (config.data?.snapshotId && !snapshotId) {
-      setSnapshotId(config.data.snapshotId);
+    if (!snapshotId) {
+      if (stored.snapshotId && (snapshots.data ?? []).some((s) => s.id === stored.snapshotId)) {
+        setSnapshotId(stored.snapshotId);
+      } else if (config.data?.snapshotId) {
+        setSnapshotId(config.data.snapshotId);
+      }
     }
-  }, [config.data?.modelId, config.data?.snapshotId]);
+  }, [projectId, config.data?.modelId, config.data?.snapshotId, selectableModels, snapshots.data, modelId, snapshotId]);
 
   useEffect(() => {
+    const stored = readStep1Target(projectId);
     if (!modelId && selectableModels.length > 0) {
-      const preferred = selectableModels.find((m) => m.latest) ?? selectableModels[0];
+      const preferred =
+        (stored.modelId ? selectableModels.find((m) => m.id === stored.modelId) : undefined) ??
+        selectableModels.find((m) => m.latest) ??
+        selectableModels[0];
       if (preferred) {
         setModelId(preferred.id);
         if (preferred.snapshotId) {
@@ -945,7 +995,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         }
       }
     }
-  }, [selectableModels, modelId]);
+  }, [projectId, selectableModels, modelId]);
 
   useEffect(() => {
     if (!snapshotId && snapshots.data?.length) {
@@ -953,18 +1003,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       if (newest) setSnapshotId(newest.id);
     }
   }, [snapshots.data, snapshotId]);
-
-  const handleModelChange = (nextModelId: string) => {
-    edited.current = false;
-    autoGenTriggered.current = "";
-    setEnvironment({});
-    setDraftSteps([]);
-    setModelId(nextModelId);
-    const matched = (models.data ?? []).find((m) => m.id === nextModelId);
-    if (matched?.snapshotId) {
-      setSnapshotId(matched.snapshotId);
-    }
-  };
 
   useEffect(() => {
     const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
@@ -1327,18 +1365,31 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         </p>
 
         <div className="mt-4 space-y-4">
-          <SelectField
-            label="Target revision"
-            value={modelId}
-            onChange={handleModelChange}
-            options={selectableModels.map((m) => {
-              const snap = (snapshots.data ?? []).find((s) => s.id === m.snapshotId);
-              return {
-                value: m.id,
-                label: `${"label" in m && m.label ? m.label : `Revision ${m.revision}`}${m.latest ? " (Latest)" : ""} · ${snap ? snap.name : m.id.slice(0, 8)}`,
-              };
-            })}
-          />
+          {(() => {
+            const activeModel = selectableModels.find((m) => m.id === modelId) ?? selectableModels[0];
+            const activeSnap =
+              (snapshots.data ?? []).find((s) => s.id === (activeModel?.snapshotId || snapshotId)) ??
+              snapshots.data?.[0];
+            const revLabel = activeModel
+              ? `${"label" in activeModel && activeModel.label ? activeModel.label : `Revision ${activeModel.revision}`}${activeModel.latest ? " (Latest)" : ""} · ${activeSnap ? activeSnap.name : activeModel.id.slice(0, 8)}`
+              : activeSnap
+                ? activeSnap.name
+                : "Inheriting from Step 1...";
+            return (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3.5 py-2.5 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Target revision (from Step 1):</span>
+                  <span className="font-mono font-semibold text-foreground">{revLabel}</span>
+                </div>
+                <Link
+                  href={`/runtime-config?project=${projectId}`}
+                  className="text-primary hover:underline font-medium"
+                >
+                  ← Change in Step 1
+                </Link>
+              </div>
+            );
+          })()}
 
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-64">

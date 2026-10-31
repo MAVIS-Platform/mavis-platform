@@ -292,8 +292,8 @@ public class RuntimePlanningService {
   }
 
   String summary=staticSteps.isEmpty()
-    ?"Chưa phát hiện endpoint khai báo tự động trong source; bạn có thể thêm bước HTTP thủ công bên dưới."
-    :"Hệ thống đã tự động tổng hợp "+staticSteps.size()+" bước kiểm thử từ "+allowedServices.size()+" service và các API phát hiện ở Step 1. Vui lòng kiểm tra và xác nhận trước khi chạy.";
+    ?"No declared HTTP endpoints were automatically detected in source; you can add HTTP steps manually below."
+    :"Automatically synthesized "+staticSteps.size()+" test steps across "+allowedServices.size()+" services and endpoints discovered in Step 1. Review and confirm below before running.";
   return new GeneratedScenarioDraftView(
     id,snapshotId,modelId,
     "Auto-generated Architecture Verification Scenario",
@@ -338,8 +338,8 @@ public class RuntimePlanningService {
    }
 
    String rationale=connectedServices.contains(ep.getService())
-     ?"Kiểm thử "+ep.getMethod()+" "+ep.getPath()+" trên "+ep.getService()+" để thu thập OpenTelemetry trace liên service."
-     :"Kiểm thử "+ep.getMethod()+" "+ep.getPath()+" trên "+ep.getService()+" (phát hiện từ "+(ep.getSource()!=null?ep.getSource():"source snapshot")+").";
+     ?"Verify "+ep.getMethod()+" "+ep.getPath()+" on "+ep.getService()+" to capture cross-service OpenTelemetry traces."
+     :"Verify "+ep.getMethod()+" "+ep.getPath()+" on "+ep.getService()+" (detected from "+(ep.getSource()!=null?ep.getSource():"source snapshot")+").";
 
    steps.add(new GeneratedStepDraft(
      "step-"+idx,
@@ -389,14 +389,14 @@ public class RuntimePlanningService {
     Return strict JSON ONLY (no markdown fences) matching this structure:
     {
       "suggestedName": "Scenario title",
-      "summary": "Brief Vietnamese explanation of why this scenario verifies the architecture",
+      "summary": "Brief English explanation of why this scenario verifies the architecture",
       "steps": [
         {
           "service": "must be one of Allowed services",
           "method": "GET|POST|PUT|PATCH|DELETE",
           "path": "/exact/or/parameterized/path",
           "expectedStatus": 200,
-          "rationale": "Vietnamese 1-line reason for this step",
+          "rationale": "English 1-line reason for this step",
           "sampleJsonBody": "{\\"optional\\":\\"sample\\"}"
         }
       ]
@@ -473,7 +473,7 @@ public class RuntimePlanningService {
     sampleInputs.putIfAbsent(bodyRef,isValidSafeJson(aiSampleBody)?aiSampleBody:inferSampleJsonBody(rawPath));
    }
 
-   String rationale=SecretRedactor.redactString(item.path("rationale").asText("Kiểm thử luồng API do AI + Hệ thống đề xuất."));
+   String rationale=SecretRedactor.redactString(item.path("rationale").asText("Verify API workflow proposed by AI + Static Analysis."));
    validSteps.add(new GeneratedStepDraft(
      "step-"+idx,
      svc,
@@ -491,7 +491,7 @@ public class RuntimePlanningService {
   if(validSteps.isEmpty())return null;
   String suggestedName=SecretRedactor.redactString(parsed.path("suggestedName").asText("AI Architecture Verification Scenario")).trim();
   if(suggestedName.isEmpty())suggestedName="AI Architecture Verification Scenario";
-  String summary=SecretRedactor.redactString(parsed.path("summary").asText("Kịch bản được tổng hợp tự động bởi Hệ thống + Gemini AI dựa trên các API và quan hệ kiến trúc ở Step 1.")).trim();
+  String summary=SecretRedactor.redactString(parsed.path("summary").asText("Scenario synthesized by System + Gemini AI from Step 1 endpoints and architecture relationships.")).trim();
   return new GeneratedScenarioDraftView(
     projectId,snapshotId,modelId,
     suggestedName.length()>100?suggestedName.substring(0,100):suggestedName,
