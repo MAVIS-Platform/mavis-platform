@@ -1,7 +1,6 @@
 // Exact diagram identities used in assignment requirements and frozen bundles.
-// C4 is a family; its three levels must not satisfy one another's requirements.
+// C4 is a family; Container and Component requirements remain distinct.
 export const COURSEWORK_DIAGRAM_TYPES = [
-  { id: "C4_CONTEXT", label: "C4 · System Context" },
   { id: "C4_COMPONENT", label: "C4 · Component Diagram" },
   { id: "C4_CONTAINER", label: "C4 · Container Diagram" },
   { id: "UML_CLASS", label: "UML Class Diagram" },
@@ -28,7 +27,7 @@ export function normalizeDiagramRequirements(types: readonly string[]): string[]
     ...new Set(
       types.flatMap((type) =>
         type === "C4"
-          ? ["C4_CONTEXT", "C4_CONTAINER", "C4_COMPONENT"]
+          ? ["C4_CONTAINER", "C4_COMPONENT"]
           : current.has(type)
             ? [type]
             : [],

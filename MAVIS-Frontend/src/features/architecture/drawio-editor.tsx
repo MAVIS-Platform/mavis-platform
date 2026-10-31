@@ -927,7 +927,7 @@ export function DrawioEditor({
       data-storage-key={storageKey}
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b p-3">
-        <div className="min-w-0 flex-1">
+        <div className="w-full min-w-0">
           <h2 className="break-words text-sm font-semibold">{title}</h2>
           <p
             role="status"
@@ -940,7 +940,7 @@ export function DrawioEditor({
             {status}
           </p>
         </div>
-        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 xl:w-auto">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2">
           <div className="flex items-center rounded-md border bg-muted/30 p-0.5 text-xs">
             <button
               type="button"
