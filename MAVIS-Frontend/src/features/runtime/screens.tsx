@@ -104,6 +104,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [newSecretVal, setNewSecretVal] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [selectedServiceFilter, setSelectedServiceFilter] = useState("ALL");
+  const [selectedDbIndex, setSelectedDbIndex] = useState("ALL");
 
   useEffect(() => {
     if (preflight.data?.recommendedProfile) {
@@ -364,26 +365,91 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   )}
                 </div>
 
-                {/* Detected Services Dropdown */}
-                <div>
-                  <SelectField
-                    label={`Detected Services & Runtime Stacks (${activeServices.length})`}
-                    value={selectedServiceFilter}
-                    onChange={setSelectedServiceFilter}
-                    options={[
-                      {
-                        value: "ALL",
-                        label: activeServices.length
-                          ? `All detected services (${activeServices.length})`
-                          : "No services detected",
-                      },
-                      ...activeServices.map((svc) => ({
-                        value: svc,
-                        label: `${svc}${servicePorts[svc] ? ` :${servicePorts[svc]}` : ""}${serviceStacks[svc] ? ` (${serviceStacks[svc]})` : ""}`,
-                      })),
-                    ]}
-                  />
-                </div>
+                {/* Detected Services & Database Checks Dropdowns */}
+                {(() => {
+                  const filteredDbs =
+                    selectedServiceFilter === "ALL"
+                      ? databaseChecks
+                      : databaseChecks.filter((db) => db.service === selectedServiceFilter);
+                  const chosenDb =
+                    selectedDbIndex !== "ALL" ? filteredDbs[Number(selectedDbIndex)] : undefined;
+                  return (
+                    <div className="space-y-2">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <SelectField
+                          label={`Detected Services & Runtime Stacks (${activeServices.length})`}
+                          value={selectedServiceFilter}
+                          onChange={(val) => {
+                            setSelectedServiceFilter(val);
+                            setSelectedDbIndex("ALL");
+                          }}
+                          options={[
+                            {
+                              value: "ALL",
+                              label: activeServices.length
+                                ? `All detected services (${activeServices.length})`
+                                : "No services detected",
+                            },
+                            ...activeServices.map((svc) => ({
+                              value: svc,
+                              label: `${svc}${servicePorts[svc] ? ` :${servicePorts[svc]}` : ""}${serviceStacks[svc] ? ` (${serviceStacks[svc]})` : ""}`,
+                            })),
+                          ]}
+                        />
+
+                        <SelectField
+                          label={`Database & Connection Inspection (${filteredDbs.length})`}
+                          value={selectedDbIndex}
+                          onChange={setSelectedDbIndex}
+                          options={
+                            filteredDbs.length > 0
+                              ? [
+                                  {
+                                    value: "ALL",
+                                    label: `All database bindings (${filteredDbs.length})`,
+                                  },
+                                  ...filteredDbs.map((db, idx) => ({
+                                    value: String(idx),
+                                    label: `${db.service} → ${db.dbType}${db.requiredEnvVars?.length ? ` (${db.requiredEnvVars.join(", ")})` : ""} · ${db.status ?? "DETECTED"}`,
+                                  })),
+                                ]
+                              : [
+                                  {
+                                    value: "ALL",
+                                    label: "No external database bindings detected",
+                                  },
+                                ]
+                          }
+                        />
+                      </div>
+
+                      {chosenDb && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded border bg-background/80 px-3 py-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold">
+                              {chosenDb.service} → {chosenDb.dbType}
+                            </span>
+                            {chosenDb.connectionUrl && (
+                              <span className="font-mono text-muted-foreground truncate max-w-md" title={chosenDb.connectionUrl}>
+                                · {chosenDb.connectionUrl}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {chosenDb.requiredEnvVars && chosenDb.requiredEnvVars.length > 0 && (
+                              <span className="text-muted-foreground">
+                                Requires: <strong className="font-mono text-foreground">{chosenDb.requiredEnvVars.join(", ")}</strong>
+                              </span>
+                            )}
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 font-mono text-[10px]">
+                              {chosenDb.status ?? "DETECTED"}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Discovered API Endpoints */}
                 {(() => {
@@ -428,59 +494,6 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     </div>
                   );
                 })()}
-
-                {/* Database Checks */}
-                <div>
-                  <strong className="text-sm">
-                    Database & Connection Inspection (
-                    {
-                      (selectedServiceFilter === "ALL"
-                        ? databaseChecks
-                        : databaseChecks.filter((db) => db.service === selectedServiceFilter)
-                      ).length
-                    }
-                    ):
-                  </strong>
-                  {(selectedServiceFilter === "ALL"
-                    ? databaseChecks
-                    : databaseChecks.filter((db) => db.service === selectedServiceFilter)
-                  ).length > 0 ? (
-                    <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
-                      {(selectedServiceFilter === "ALL"
-                        ? databaseChecks
-                        : databaseChecks.filter((db) => db.service === selectedServiceFilter)
-                      ).map((db, idx) => (
-                        <div
-                          key={`${db.service}-${db.dbType}-${idx}`}
-                          className="rounded border bg-background/80 p-2.5 text-xs space-y-1"
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold">
-                              {db.service} → {db.dbType}
-                            </span>
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 font-mono text-[10px]">
-                              {db.status ?? "DETECTED"}
-                            </span>
-                          </div>
-                          {db.connectionUrl && (
-                            <p className="font-mono text-muted-foreground truncate" title={db.connectionUrl}>
-                              {db.connectionUrl}
-                            </p>
-                          )}
-                          {db.requiredEnvVars && db.requiredEnvVars.length > 0 && (
-                            <p className="text-[11px] text-muted-foreground">
-                              Requires: <span className="font-mono">{db.requiredEnvVars.join(", ")}</span>
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      No external database bindings detected in snapshot config.
-                    </p>
-                  )}
-                </div>
 
                 {(preflight.data?.securityWarnings?.length || config.data?.prerequisites?.length) ? (
                   <div className="space-y-1">
