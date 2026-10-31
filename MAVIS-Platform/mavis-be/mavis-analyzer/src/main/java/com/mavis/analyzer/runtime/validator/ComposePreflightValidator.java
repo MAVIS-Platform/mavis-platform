@@ -257,7 +257,8 @@ public class ComposePreflightValidator {
             List<DetectedEndpointDTO> endpoints,
             Set<String> endpointKeys) {
 
-        String lowerPath = relativePath.toLowerCase(Locale.ROOT);
+        String cleanRelPath = stripGitHubRootPrefix(relativePath);
+        String lowerPath = cleanRelPath.toLowerCase(Locale.ROOT);
         String inferredService = inferServiceFromPath(relativePath, dto.getDetectedServices());
         String lowerContent = content.toLowerCase(Locale.ROOT);
 
@@ -267,12 +268,12 @@ public class ComposePreflightValidator {
             while (m.find()) {
                 String varName = m.group(1);
                 String defaultVal = m.group(2);
-                registerEnvVar(envMap, varName, inferredService, defaultVal, relativePath);
+                registerEnvVar(envMap, varName, inferredService, defaultVal, cleanRelPath);
             }
         }
         Matcher envCallMatcher = CODE_GETENV_PATTERN.matcher(content);
         while (envCallMatcher.find()) {
-            registerEnvVar(envMap, envCallMatcher.group(1), inferredService, null, relativePath);
+            registerEnvVar(envMap, envCallMatcher.group(1), inferredService, null, cleanRelPath);
         }
 
         // 1. Config files (.yml, .yaml, .properties, .json, .env)
@@ -290,7 +291,7 @@ public class ComposePreflightValidator {
                     List<String> lineVars = extractPlaceholderNames(line);
                     String dbType = inferDbTypeFromLine(lowerLine);
                     if (lineVars.isEmpty()) {
-                        registerEnvVar(envMap, "DB_CONNECTION_STRING", inferredService, null, relativePath);
+                        registerEnvVar(envMap, "DB_CONNECTION_STRING", inferredService, null, cleanRelPath);
                         lineVars.add("DB_CONNECTION_STRING");
                     }
                     boolean exists = dbChecks.stream().anyMatch(d -> Objects.equals(d.getService(), inferredService) && Objects.equals(d.getDbType(), dbType));
@@ -298,7 +299,7 @@ public class ComposePreflightValidator {
                         dbChecks.add(DatabaseCheckDTO.builder()
                                 .service(inferredService)
                                 .dbType(dbType)
-                                .configKey(relativePath)
+                                .configKey(cleanRelPath)
                                 .connectionUrl(sanitizeConnectionPreview(line))
                                 .requiredEnvVars(lineVars)
                                 .status("REQUIRES_ENV_OR_SECRET")
@@ -308,13 +309,13 @@ public class ComposePreflightValidator {
                 if (lowerLine.contains("jwt.secret") || lowerLine.contains("jwt_secret")) {
                     List<String> lineVars = extractPlaceholderNames(line);
                     if (lineVars.isEmpty()) {
-                        registerEnvVar(envMap, "JWT_SECRET", inferredService, null, relativePath);
+                        registerEnvVar(envMap, "JWT_SECRET", inferredService, null, cleanRelPath);
                     }
                 }
                 if (containsAiIndicator(lowerLine)) {
                     List<String> lineVars = extractPlaceholderNames(line);
                     if (lineVars.isEmpty() && envMap.keySet().stream().noneMatch(k -> k.toUpperCase(Locale.ROOT).contains("API_KEY"))) {
-                        registerEnvVar(envMap, "API_KEY", inferredService, null, relativePath);
+                        registerEnvVar(envMap, "API_KEY", inferredService, null, cleanRelPath);
                     }
                 }
             }
@@ -329,15 +330,15 @@ public class ComposePreflightValidator {
                 String dbType = inferDbTypeFromLine(lowerContent);
                 if (!envMap.containsKey("DB_CONNECTION_STRING")
                         && envMap.values().stream().noneMatch(v -> "DB_SECRET".equals(v.getCategory()))) {
-                    registerEnvVar(envMap, "DB_CONNECTION_STRING", inferredService, null, relativePath);
+                    registerEnvVar(envMap, "DB_CONNECTION_STRING", inferredService, null, cleanRelPath);
                 }
                 boolean exists = dbChecks.stream().anyMatch(d -> Objects.equals(d.getService(), inferredService));
                 if (!exists) {
                     dbChecks.add(DatabaseCheckDTO.builder()
                             .service(inferredService)
                             .dbType(dbType)
-                            .configKey(relativePath)
-                            .connectionUrl("Detected " + dbType + " integration in " + relativePath)
+                            .configKey(cleanRelPath)
+                            .connectionUrl("Detected " + dbType + " integration in " + cleanRelPath)
                             .requiredEnvVars(List.of("DB_CONNECTION_STRING"))
                             .status("DETECTED_IN_SOURCE")
                             .build());
@@ -346,28 +347,43 @@ public class ComposePreflightValidator {
 
             if (containsAiIndicator(lowerContent)
                     && envMap.keySet().stream().noneMatch(k -> k.toUpperCase(Locale.ROOT).contains("API_KEY"))) {
-                registerEnvVar(envMap, "API_KEY", inferredService, null, relativePath);
+                registerEnvVar(envMap, "API_KEY", inferredService, null, cleanRelPath);
             }
         }
         // 2. Java Controller endpoints
         if (lowerPath.endsWith(".java") && content.contains("Mapping")) {
+            int classDeclIdx = content.indexOf("class ");
+            if (classDeclIdx < 0) classDeclIdx = content.indexOf("interface ");
             String basePath = "";
             Matcher classMapping = Pattern.compile("@RequestMapping\\s*\\(\\s*(?:value\\s*=\\s*|path\\s*=\\s*)?\"([^\"]+)\"").matcher(content);
-            if (classMapping.find()) {
+            if (classMapping.find() && (classDeclIdx < 0 || classMapping.start() < classDeclIdx)) {
                 basePath = classMapping.group(1);
             }
             Matcher matcher = SPRING_MAPPING_PATTERN.matcher(content);
             while (matcher.find()) {
                 String ann = matcher.group(1);
                 String args = matcher.group(2) != null ? matcher.group(2) : "";
-                if ("RequestMapping".equals(ann) && args.contains(basePath) && !basePath.isEmpty()) {
-                    continue;
+                if ("RequestMapping".equals(ann)) {
+                    if (classDeclIdx > 0 && matcher.start() < classDeclIdx) {
+                        continue;
+                    }
+                    if (!basePath.isEmpty() && args.contains(basePath)) {
+                        continue;
+                    }
                 }
                 String method = switch (ann) {
                     case "PostMapping" -> "POST";
                     case "PutMapping" -> "PUT";
                     case "DeleteMapping" -> "DELETE";
                     case "PatchMapping" -> "PATCH";
+                    case "RequestMapping" -> {
+                        String u = args.toUpperCase(Locale.ROOT);
+                        if (u.contains("POST")) yield "POST";
+                        if (u.contains("PUT")) yield "PUT";
+                        if (u.contains("DELETE")) yield "DELETE";
+                        if (u.contains("PATCH")) yield "PATCH";
+                        yield "GET";
+                    }
                     default -> "GET";
                 };
                 String subPath = "";
@@ -382,7 +398,7 @@ public class ComposePreflightValidator {
                             .service(inferredService)
                             .method(method)
                             .path(fullPath)
-                            .source(relativePath)
+                            .source(cleanRelPath)
                             .build());
                 }
             }
@@ -393,7 +409,7 @@ public class ComposePreflightValidator {
             String baseRoute = "";
             Matcher routeAttr = Pattern.compile("\\[Route\\s*\\(\\s*\"([^\"]+)\"\\s*\\)\\]").matcher(content);
             if (routeAttr.find()) {
-                String controllerName = relativePath.substring(relativePath.lastIndexOf('/') + 1).replace("Controller.cs", "").toLowerCase(Locale.ROOT);
+                String controllerName = cleanRelPath.substring(cleanRelPath.lastIndexOf('/') + 1).replace("Controller.cs", "").toLowerCase(Locale.ROOT);
                 baseRoute = routeAttr.group(1).replace("[controller]", controllerName);
             }
             Matcher attrMatcher = DOTNET_ROUTE_ATTR_PATTERN.matcher(content);
@@ -409,7 +425,7 @@ public class ComposePreflightValidator {
                             .service(inferredService)
                             .method(method)
                             .path(fullPath)
-                            .source(relativePath)
+                            .source(cleanRelPath)
                             .build());
                 }
             }
@@ -423,7 +439,7 @@ public class ComposePreflightValidator {
                             .service(inferredService)
                             .method(method)
                             .path(fullPath)
-                            .source(relativePath)
+                            .source(cleanRelPath)
                             .build());
                 }
             }
@@ -614,6 +630,19 @@ public class ComposePreflightValidator {
 
     private static final Pattern GITHUB_ZIP_ROOT_PATTERN = Pattern.compile("^(.*)-[0-9a-f]{7,40}$", Pattern.CASE_INSENSITIVE);
 
+    public static String stripGitHubRootPrefix(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) return "";
+        String norm = relativePath.replace('\\', '/');
+        int slashIdx = norm.indexOf('/');
+        if (slashIdx > 0) {
+            String firstSeg = norm.substring(0, slashIdx);
+            if (GITHUB_ZIP_ROOT_PATTERN.matcher(firstSeg).matches()) {
+                return norm.substring(slashIdx + 1);
+            }
+        }
+        return norm;
+    }
+
     public static String cleanServiceCandidate(String raw) {
         if (raw == null || raw.isBlank()) return "";
         String trimmed = raw.trim();
@@ -624,6 +653,33 @@ public class ComposePreflightValidator {
         trimmed = trimmed.replaceAll("[^a-zA-Z0-9_-]", "-").replaceAll("-+", "-").replaceAll("^-|-$", "");
         if (trimmed.length() > 62) trimmed = trimmed.substring(0, 62);
         return trimmed;
+    }
+
+    public static String matchDetectedService(String candidate, List<String> detectedServices) {
+        if (candidate == null || candidate.isBlank() || detectedServices == null || detectedServices.isEmpty()) {
+            return null;
+        }
+        String candLower = cleanServiceCandidate(candidate).toLowerCase(Locale.ROOT);
+        if (candLower.isBlank()) return null;
+
+        for (String svc : detectedServices) {
+            if (svc.equalsIgnoreCase(candLower)) return svc;
+        }
+        String bestMatch = null;
+        for (String svc : detectedServices) {
+            String svcLower = svc.toLowerCase(Locale.ROOT);
+            if (candLower.endsWith("-" + svcLower)
+                    || svcLower.endsWith("-" + candLower)
+                    || candLower.startsWith(svcLower + "-")
+                    || svcLower.startsWith(candLower + "-")
+                    || candLower.contains(svcLower)
+                    || svcLower.contains(candLower)) {
+                if (bestMatch == null || svc.length() > bestMatch.length()) {
+                    bestMatch = svc;
+                }
+            }
+        }
+        return bestMatch;
     }
 
     private static String inferServiceFromPath(String relativePath, List<String> detectedServices) {
@@ -646,15 +702,8 @@ public class ComposePreflightValidator {
             if ("src".equalsIgnoreCase(parts[i]) && i > startIdx) {
                 String moduleCandidate = cleanServiceCandidate(parts[i - 1]);
                 if (!moduleCandidate.isBlank()) {
-                    if (detectedServices != null) {
-                        for (String svc : detectedServices) {
-                            if (svc.equalsIgnoreCase(moduleCandidate)
-                                    || svc.toLowerCase(Locale.ROOT).startsWith(moduleCandidate.toLowerCase(Locale.ROOT))) {
-                                return svc;
-                            }
-                        }
-                    }
-                    return moduleCandidate;
+                    String matched = matchDetectedService(moduleCandidate, detectedServices);
+                    return matched != null ? matched : moduleCandidate;
                 }
             }
         }
@@ -665,7 +714,10 @@ public class ComposePreflightValidator {
                     && !part.equalsIgnoreCase("controllers") && !part.equalsIgnoreCase("controller")
                     && !part.contains(".")) {
                 String cleaned = cleanServiceCandidate(part);
-                if (!cleaned.isBlank()) return cleaned;
+                if (!cleaned.isBlank()) {
+                    String matched = matchDetectedService(cleaned, detectedServices);
+                    return matched != null ? matched : cleaned;
+                }
             }
         }
         if (detectedServices != null && !detectedServices.isEmpty()) {
@@ -685,6 +737,12 @@ public class ComposePreflightValidator {
         if (b.endsWith("/")) b = b.substring(0, b.length() - 1);
         if (!s.isEmpty() && !s.startsWith("/")) s = "/" + s;
         String combined = (b + s).replaceAll("//+", "/");
+        if (combined.startsWith("/owners/*/")) {
+            combined = combined.replace("/owners/*/", "/owners/{ownerId}/");
+        }
+        if (combined.contains("/*/")) {
+            combined = combined.replace("/*/", "/{id}/");
+        }
         return combined.isEmpty() ? "/" : combined;
     }
 

@@ -282,6 +282,8 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
 
+        boolean hadSourceEndpoints = !endpoints.isEmpty();
+
         if (modelRelationshipRepository != null) {
             List<ModelRelationship> rels = modelRelationshipRepository.findByModelVersionId(model.getId());
             if (rels != null) {
@@ -292,14 +294,23 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                             String method = rel.getProperties() != null && rel.getProperties().hasNonNull("httpMethod")
                                     ? rel.getProperties().get("httpMethod").asText("GET").toUpperCase(Locale.ROOT)
                                     : "GET";
-                            String path = rel.getProperties() != null && rel.getProperties().hasNonNull("httpPath")
-                                    ? rel.getProperties().get("httpPath").asText("/health")
-                                    : "/health";
-                            if (!path.startsWith("/")) path = "/" + path;
-                            String key = (tgt.getName() + ":" + method + ":" + path).toLowerCase(Locale.ROOT);
+                            if (!Set.of("GET", "POST", "PUT", "PATCH", "DELETE").contains(method)) {
+                                continue;
+                            }
+                            String rawPath = rel.getProperties() != null && rel.getProperties().hasNonNull("httpPath")
+                                    ? rel.getProperties().get("httpPath").asText("").trim()
+                                    : "";
+                            if (rawPath.isBlank() || rawPath.contains("://") || rawPath.startsWith("lb:")) {
+                                if (hadSourceEndpoints) continue;
+                                rawPath = "/health";
+                            }
+                            String path = rawPath.startsWith("/") ? rawPath : "/" + rawPath;
+                            String matchedTarget = ComposePreflightValidator.matchDetectedService(tgt.getName(), services);
+                            String resolvedSvc = matchedTarget != null ? matchedTarget : ComposePreflightValidator.cleanServiceCandidate(tgt.getName());
+                            String key = (resolvedSvc + ":" + method + ":" + path).toLowerCase(Locale.ROOT);
                             if (endpointKeys.add(key)) {
                                 endpoints.add(DetectedEndpointDTO.builder()
-                                        .service(tgt.getName())
+                                        .service(resolvedSvc)
                                         .method(method)
                                         .path(path)
                                         .source("STATIC_MODEL_RELATIONSHIP")
@@ -310,7 +321,8 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                         ModelElement src = resolveContainer(rel.getSourceElement(), elementById);
                         ModelElement tgt = rel.getTargetElement();
                         if (src != null && src.getName() != null) {
-                            String svcName = src.getName();
+                            String matchedSrc = ComposePreflightValidator.matchDetectedService(src.getName(), services);
+                            String svcName = matchedSrc != null ? matchedSrc : src.getName();
                             boolean dbExists = dbChecks.stream().anyMatch(d -> d.getService().equalsIgnoreCase(svcName));
                             if (!dbExists) {
                                 if (envMap.values().stream().noneMatch(v -> "DB_SECRET".equals(v.getCategory()))) {
@@ -330,7 +342,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 }
             }
         }
-        if (evidenceRepository != null) {
+        if (!hadSourceEndpoints && evidenceRepository != null) {
             List<Evidence> evidences = evidenceRepository.findByModelVersionId(model.getId());
             if (evidences != null) {
                 for (Evidence ev : evidences) {
@@ -347,15 +359,22 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                                 case "PatchMapping" -> "PATCH";
                                 default -> "GET";
                             };
-                            String path = m.group(2) != null && !m.group(2).isBlank() ? m.group(2) : "/";
-                            if (!path.startsWith("/")) path = "/" + path;
+                            String rawSub = m.group(2);
+                            if (rawSub == null || rawSub.isBlank()) {
+                                continue;
+                            }
+                            String path = rawSub.startsWith("/") ? rawSub : "/" + rawSub;
+                            if (path.startsWith("/owners/*/")) path = path.replace("/owners/*/", "/owners/{ownerId}/");
+                            if (path.contains("/*/")) path = path.replace("/*/", "/{id}/");
+                            String locator = ev.getLocator() != null ? ev.getLocator().replaceAll("^.*?_source_extracted/", "") : "STATIC_CODE_EVIDENCE";
+                            locator = ComposePreflightValidator.stripGitHubRootPrefix(locator);
                             String key = (svcName + ":" + method + ":" + path).toLowerCase(Locale.ROOT);
                             if (endpointKeys.add(key)) {
                                 endpoints.add(DetectedEndpointDTO.builder()
                                         .service(svcName)
                                         .method(method)
                                         .path(path)
-                                        .source(ev.getLocator() != null ? ev.getLocator() : "STATIC_CODE_EVIDENCE")
+                                        .source(locator)
                                         .build());
                             }
                         }
@@ -367,15 +386,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         if (!services.isEmpty()) {
             for (DetectedEndpointDTO ep : endpoints) {
                 String cleanSvc = ComposePreflightValidator.cleanServiceCandidate(ep.getService());
-                String matched = services.stream()
-                        .filter(s -> s.equalsIgnoreCase(cleanSvc)
-                                || s.toLowerCase(Locale.ROOT).startsWith(cleanSvc.toLowerCase(Locale.ROOT))
-                                || cleanSvc.toLowerCase(Locale.ROOT).startsWith(s.toLowerCase(Locale.ROOT)))
-                        .findFirst()
-                        .orElse(null);
+                String matched = ComposePreflightValidator.matchDetectedService(cleanSvc, services);
                 if (matched != null) {
                     ep.setService(matched);
-                } else if (!cleanSvc.isBlank() && cleanSvc.matches("[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}") && services.size() < 10) {
+                } else if (!cleanSvc.isBlank() && cleanSvc.matches("[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}") && services.size() < 15) {
                     services.add(cleanSvc);
                     ports.putIfAbsent(cleanSvc, 8080);
                     stacks.putIfAbsent(cleanSvc, "java");
@@ -386,9 +400,8 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
 
-        for (String svc : services) {
-            boolean hasEp = endpoints.stream().anyMatch(e -> e.getService().equalsIgnoreCase(svc));
-            if (!hasEp) {
+        if (endpoints.isEmpty()) {
+            for (String svc : services) {
                 endpoints.add(DetectedEndpointDTO.builder()
                         .service(svc)
                         .method("GET")

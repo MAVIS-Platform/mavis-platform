@@ -603,4 +603,48 @@ class RuntimeSessionServiceImplTest {
                 .contains("employee-service", "organization-service")
                 .doesNotContain("sample-spring-microservices-new-ea3924065d5e328246381c4932306cce6feb9757");
     }
+
+    @Test
+    @DisplayName("STEP 1: Petclinic microservices ánh xạ đúng module prefix vào compose service và chuẩn hóa wildcard /owners/*/pets/{petId}")
+    void testPetclinicPrefixServiceMatchingAndWildcardNormalization(@TempDir Path tempDir) throws IOException {
+        Path zipPath = tempDir.resolve("petclinic.zip");
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(Files.newOutputStream(zipPath))) {
+            zos.putNextEntry(new java.util.zip.ZipEntry("spring-petclinic-microservices-e8b747ab522721076cacb5cf688eb8a54ba8c5c9/docker-compose.yml"));
+            zos.write("""
+                    services:
+                      config-server:
+                        image: petclinic-config:latest
+                        ports: ["8888:8888"]
+                      customers-service:
+                        image: petclinic-customers:latest
+                        ports: ["8081:8081"]
+                      visits-service:
+                        image: petclinic-visits:latest
+                        ports: ["8082:8082"]
+                    """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zos.closeEntry();
+
+            zos.putNextEntry(new java.util.zip.ZipEntry("spring-petclinic-microservices-e8b747ab522721076cacb5cf688eb8a54ba8c5c9/spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/web/PetResource.java"));
+            zos.write("""
+                    @RestController
+                    class PetResource {
+                        @GetMapping("/owners/*/pets/{petId}")
+                        public void findPet() {}
+                    }
+                    """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zos.closeEntry();
+        }
+
+        snapshot.setStoragePath(zipPath.toString());
+        when(sourceSnapshotRepository.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+
+        PreflightCheckResponseDTO preflight = runtimeSessionService.runComposePreflight(snapshotId);
+        assertThat(preflight.isCompatible()).isTrue();
+        assertThat(preflight.getDetectedEndpoints())
+                .anySatisfy(ep -> {
+                    assertThat(ep.getService()).isEqualTo("customers-service");
+                    assertThat(ep.getMethod()).isEqualTo("GET");
+                    assertThat(ep.getPath()).isEqualTo("/owners/{ownerId}/pets/{petId}");
+                });
+    }
 }
