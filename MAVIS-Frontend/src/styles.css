@@ -322,4 +322,6 @@
 @media (min-width: 768px) { :root { --page-gutter: var(--space-6); --button-height: 2.5rem; } }
 @media (min-width: 1280px) { :root { --page-gutter: var(--space-8); } }
 @media (max-width: 767px) { :root { --text-page: 1.75rem; --line-page: 2.25rem; } }
-@media (prefers-reduced-motion: reduce) { :root { --motion-fast: 0ms; --motion-normal: 0ms; } *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0ms !important; scroll-behavior: auto !important; } }
+@keyframes mavis-indeterminate { 0% { transform: translateX(-110%); } 50% { transform: translateX(55%); } 100% { transform: translateX(220%); } }
+.mavis-indeterminate-bar { width: 45%; animation: mavis-indeterminate 1.35s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+@media (prefers-reduced-motion: reduce) { :root { --motion-fast: 0ms; --motion-normal: 0ms; } *:not(.animate-spin):not(.mavis-indeterminate-bar), *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0ms !important; scroll-behavior: auto !important; } }

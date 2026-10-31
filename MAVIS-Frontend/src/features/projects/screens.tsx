@@ -347,7 +347,7 @@ export function SourceSnapshots() {
       return;
     }
 
-    if (typeof job.progress === "number" && job.progress >= 0) {
+    if (typeof job.progress === "number" && job.progress > 0) {
       setProgressPct(Math.min(99, job.progress));
     }
 
@@ -511,30 +511,50 @@ export function SourceSnapshots() {
               key: "status",
               label: "Analysis status",
               render: (s) => {
-                if (analyzingSnapshotId === s.id) {
+                const snapJobs = jobList.filter((j) => j.snapshotId === s.id);
+                const latestJob = snapJobs[0] ?? null;
+                const isRunningJob = Boolean(latestJob && analysisInProgress(latestJob));
+                if (analyzingSnapshotId === s.id || isRunningJob) {
+                  const pct =
+                    analyzingSnapshotId === s.id && progressPct !== null && progressPct > 0
+                      ? progressPct
+                      : latestJob && typeof latestJob.progress === "number" && latestJob.progress > 0
+                        ? Math.min(99, latestJob.progress)
+                        : null;
                   return (
-                    <div className="min-w-36 space-y-1.5" role="status" aria-live="polite">
+                    <div className="min-w-40 space-y-1.5" role="status" aria-live="polite">
                       <div className="flex items-center justify-between gap-2 text-xs font-medium text-primary">
-                        <span className="inline-flex items-center gap-1.5">
-                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                          Analyzing…
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            className="relative inline-flex size-4 shrink-0 items-center justify-center"
+                            aria-hidden="true"
+                          >
+                            <span className="absolute inset-0 rounded-full border-2 border-primary/25 border-t-primary animate-spin" />
+                            <Loader2 className="size-3 text-primary animate-spin" />
+                          </span>
+                          <span>Analyzing…</span>
                         </span>
-                        {progressPct !== null && (
-                          <span className="font-mono font-semibold">{progressPct}%</span>
+                        {pct !== null && (
+                          <span className="font-mono font-semibold">{pct}%</span>
                         )}
                       </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={`h-full rounded-full bg-primary transition-all duration-300 ${progressPct === null ? "motion-safe:animate-pulse" : ""}`}
-                          style={{ width: `${progressPct ?? 33}%` }}
-                          aria-hidden="true"
-                        />
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-primary/15">
+                        {pct !== null ? (
+                          <div
+                            className="h-full rounded-full bg-primary transition-all duration-300"
+                            style={{ width: `${pct}%` }}
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <div
+                            className="h-full rounded-full bg-primary mavis-indeterminate-bar"
+                            aria-hidden="true"
+                          />
+                        )}
                       </div>
                     </div>
                   );
                 }
-                const snapJobs = jobList.filter((j) => j.snapshotId === s.id);
-                const latestJob = snapJobs[0] ?? null;
                 if (!latestJob) {
                   return <StatusBadge status="not analyzed" variant="outline" />;
                 }
