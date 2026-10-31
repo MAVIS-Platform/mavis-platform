@@ -447,4 +447,77 @@ class RuntimeSessionServiceImplTest {
         verify(runtimeSessionRepository, never()).save(any());
     }
  @Test void disabledRuntimeIntegrationBlocksCreationBeforePersistence(){settings.updateIntegration("otel-collector",false,1,n->{});assertThatThrownBy(()->runtimeSessionService.createRuntimeSession(RuntimeSessionCreateRequest.builder().projectId(projectId).sourceSnapshotId(snapshotId).build())).isInstanceOf(BusinessException.class);verify(runtimeSessionRepository,never()).save(any());}
+
+    @Test
+    @DisplayName("STEP 1: Preflight quét Compose/Source phát hiện API, DB, Env/Secret và lưu cấu hình không lộ plaintext secret")
+    void testStep1PreflightAndRuntimeConfigSecrets(@TempDir Path tempDir) throws IOException {
+        String composeYaml = """
+                services:
+                  orders-api:
+                    image: orders-api:1.0
+                    ports:
+                      - "8080:8080"
+                    environment:
+                      SPRING_DATASOURCE_URL: jdbc:postgresql://orders-db:5432/orders
+                      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+                      FEATURE_FLAG: "true"
+                  orders-db:
+                    image: postgres:15
+                    environment:
+                      POSTGRES_PASSWORD: ${DB_PASSWORD}
+                """;
+        Path composeFile = tempDir.resolve("docker-compose.yml");
+        Files.writeString(composeFile, composeYaml);
+        Path controllerFile = tempDir.resolve("OrderController.java");
+        Files.writeString(controllerFile, """
+                @RestController
+                @RequestMapping("/api/orders")
+                public class OrderController {
+                    @PostMapping("/checkout")
+                    public void checkout() {}
+                }
+                """);
+        snapshot.setStoragePath(composeFile.toString());
+
+        when(sourceSnapshotRepository.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(sourceSnapshotRepository.findFirstByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(Optional.of(snapshot));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+
+        PreflightCheckResponseDTO preflight = runtimeSessionService.runComposePreflight(snapshotId);
+        assertThat(preflight.isCompatible()).isTrue();
+        assertThat(preflight.getDatabaseChecks()).isNotEmpty();
+        assertThat(preflight.getRequiredEnvVars()).extracting("name").contains("DB_PASSWORD");
+        assertThat(preflight.getDetectedEndpoints()).extracting("path").contains("/api/orders/checkout");
+
+        var updateReq = RuntimeProjectConfigRequestDTO.builder()
+                .confirmedServiceMappings(Map.of("orders-api", "comp-orders"))
+                .environmentVariables(Map.of("SPRING_PROFILES_ACTIVE", "staging"))
+                .secretReferences(List.of("DB_PASSWORD"))
+                .secretValues(Map.of("DB_PASSWORD", "super-secret-db-pass"))
+                .build();
+
+        var savedConfig = runtimeSessionService.updateProjectRuntimeConfig(projectId, updateReq);
+        assertThat(savedConfig.getEnvironmentVariables()).containsEntry("SPRING_PROFILES_ACTIVE", "staging");
+        assertThat(savedConfig.getConfiguredSecretKeys()).contains("DB_PASSWORD");
+        assertThat(runtimeSessionService.getProjectExecutionEnvironment(projectId))
+                .containsEntry("SPRING_PROFILES_ACTIVE", "staging")
+                .containsEntry("DB_PASSWORD", "super-secret-db-pass");
+
+        UUID sessionId = UUID.randomUUID();
+        RuntimeSession session = RuntimeSession.builder()
+                .id(sessionId)
+                .project(project)
+                .sourceSnapshot(snapshot)
+                .modelVersion(validModel)
+                .scenarioStatus("PENDING")
+                .executionStatus("NOT_STARTED")
+                .build();
+        when(runtimeSessionRepository.findLockedById(sessionId)).thenReturn(Optional.of(session));
+
+        RuntimeSessionResponseDTO approved = runtimeSessionService.approveAndStartSession(sessionId);
+        assertThat(approved.getOverrideComposeYaml())
+                .contains("- SPRING_PROFILES_ACTIVE=staging")
+                .contains("- DB_PASSWORD=${DB_PASSWORD:-}")
+                .doesNotContain("super-secret-db-pass");
+    }
 }

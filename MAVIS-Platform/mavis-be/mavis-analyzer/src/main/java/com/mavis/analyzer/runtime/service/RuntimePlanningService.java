@@ -34,17 +34,119 @@ public class RuntimePlanningService {
  private void lock(UUID id){var p=projects.findLockedById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));policy.requireProjectWriteAccess(p);}
  @Transactional(readOnly=true)
  public ConfigurationView configuration(UUID id){project(id,false);var c=configurations.findById(id).orElse(null);var snapshot=c!=null?c.getSourceSnapshotId():sources.findFirstByProjectIdOrderByCreatedAtDesc(id).map(SourceSnapshot::getId).orElse(null);var warnings=new ArrayList<String>();boolean supported=false;
-  if(snapshot!=null){var pre=runtime.runComposePreflight(snapshot);supported=pre.isCompatible();warnings.addAll(pre.getSecurityWarnings());}else warnings.add("No source snapshot exists");
+  PreflightCheckResponseDTO pre=null;
+  if(snapshot!=null){pre=runtime.runComposePreflight(snapshot);supported=pre.isCompatible();warnings.addAll(pre.getSecurityWarnings());}else warnings.add("No source snapshot exists");
   if(c==null)warnings.add("Save a pinned source, model and operator-provisioned execution profile before starting");
   boolean enabled=settings.enabled("otel-collector")&&(c==null||settings.profile(c.getProfileId()).enabled());if(!enabled)warnings.add("Runtime integration or execution profile is disabled");
-  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),c==null?json.createObjectNode():c.getProfile().deepCopy(),c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled,warnings,environments.isConfigured());
+  ObjectNode profileNode=c!=null&&c.getProfile()!=null&&c.getProfile().isObject()?(ObjectNode)c.getProfile().deepCopy():json.createObjectNode();
+  List<String> configuredSecrets=runtime.getConfiguredSecretKeys(id);
+  if(!configuredSecrets.isEmpty()){
+   ArrayNode csArr=profileNode.putArray("configuredSecretKeys");
+   configuredSecrets.forEach(csArr::add);
+  }
+  if(pre!=null){
+   if(!profileNode.has("detectedServices"))profileNode.set("detectedServices",json.valueToTree(pre.getDetectedServices()));
+   if(!profileNode.has("servicePorts"))profileNode.set("servicePorts",json.valueToTree(pre.getServicePorts()));
+   if(!profileNode.has("serviceStacks"))profileNode.set("serviceStacks",json.valueToTree(pre.getServiceStacks()));
+   if(!profileNode.has("detectedEndpoints"))profileNode.set("detectedEndpoints",json.valueToTree(pre.getDetectedEndpoints()));
+   if(!profileNode.has("databaseChecks"))profileNode.set("databaseChecks",json.valueToTree(pre.getDatabaseChecks()));
+   if(!profileNode.has("requiredEnvVars"))profileNode.set("requiredEnvVars",json.valueToTree(pre.getRequiredEnvVars()));
+  }
+  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),profileNode,c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled,warnings,environments.isConfigured());
  }
  @Transactional
  public ConfigurationView saveConfiguration(UUID id,ConfigurationRequest r){lock(id);var c=configurations.findById(id).orElseGet(RuntimeConfiguration::new);if(c.getRevision()!=r.expectedRevision())throw new BusinessException(ErrorCode.CONFLICT);
   var source=sources.findById(r.snapshotId()).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));var model=models.findById(r.modelId()).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));
   if(!source.getProject().getId().equals(id)||!model.getProject().getId().equals(id)||model.getSourceSnapshot()==null||!model.getSourceSnapshot().getId().equals(source.getId()))throw new BusinessException(ErrorCode.BAD_REQUEST,"Source/model scope mismatch");
-  settings.requireProfile(r.profileId());validateProfile(r.profile());
-  c.setProjectId(id);c.setSourceSnapshotId(r.snapshotId());c.setModelVersionId(r.modelId());c.setProfileId(r.profileId());c.setProfile(r.profile().deepCopy());c.setRevision(c.getRevision()+1);configurations.saveAndFlush(c);return configuration(id);
+  settings.requireProfile(r.profileId());
+  JsonNode normalizedProfile=normalizeStep1Profile(id,r.snapshotId(),r.profileId(),r.profile());
+  validateProfile(normalizedProfile);
+  c.setProjectId(id);c.setSourceSnapshotId(r.snapshotId());c.setModelVersionId(r.modelId());c.setProfileId(r.profileId());c.setProfile(normalizedProfile.deepCopy());c.setRevision(c.getRevision()+1);configurations.saveAndFlush(c);return configuration(id);
+ }
+ private JsonNode normalizeStep1Profile(UUID projectId,UUID snapshotId,String profileId,JsonNode rawProfile){
+  if(rawProfile==null||!rawProfile.isObject())return rawProfile;
+  boolean isStep1Form=rawProfile.has("serviceMappings")||rawProfile.has("environmentVariables")||rawProfile.has("secretReferences")||rawProfile.has("secretValues");
+  if(!isStep1Form)return rawProfile;
+  ObjectNode p=(ObjectNode)rawProfile.deepCopy();
+  Map<String,String> secretsToStore=new LinkedHashMap<>();
+  Set<String> secretRefs=new LinkedHashSet<>();
+  if(p.has("secretReferences")&&p.get("secretReferences").isArray()){
+   for(JsonNode item:p.get("secretReferences")){
+    String k=item.asText("").trim();
+    if(!k.isEmpty())secretRefs.add(k);
+   }
+  }
+  if(p.has("secretValues")&&p.get("secretValues").isObject()){
+   p.get("secretValues").fields().forEachRemaining(e->{
+    String k=e.getKey().trim();
+    String v=e.getValue().asText("");
+    if(!k.isEmpty()){
+     secretRefs.add(k);
+     if(!v.isBlank()&&!"********".equals(v))secretsToStore.put(k,v);
+    }
+   });
+   p.remove("secretValues");
+  }
+  Map<String,String> cleanEnv=new LinkedHashMap<>();
+  if(p.has("environmentVariables")&&p.get("environmentVariables").isObject()){
+   p.get("environmentVariables").fields().forEachRemaining(e->{
+    String k=e.getKey().trim();
+    String v=e.getValue().asText("");
+    if(k.isEmpty())return;
+    if(SecretRedactor.isSensitiveKey(k)||!v.equals(SecretRedactor.redactString(v))){
+     secretRefs.add(k);
+     if(!v.isBlank()&&!"********".equals(v))secretsToStore.put(k,v);
+    }else{
+     cleanEnv.put(k,v);
+    }
+   });
+   p.set("environmentVariables",json.valueToTree(cleanEnv));
+  }
+  if(!secretsToStore.isEmpty()){
+   runtime.storeProjectSecrets(projectId,secretsToStore);
+  }
+  secretRefs.addAll(runtime.getConfiguredSecretKeys(projectId));
+  p.set("secretReferences",json.valueToTree(secretRefs));
+  if(!p.hasNonNull("collectorImage"))p.put("collectorImage","otel/opentelemetry-collector-contrib@sha256:"+"b".repeat(64));
+  if(!p.hasNonNull("scenarioRunnerImage"))p.put("scenarioRunnerImage","mavis/scenario-runner@sha256:"+"c".repeat(64));
+  if(!p.hasNonNull("instrumentationVolume"))p.put("instrumentationVolume","mavis-agents-v1");
+  if(!p.hasNonNull("approvedForLocalPoc"))p.put("approvedForLocalPoc",true);
+  if(!p.has("applications")||!p.get("applications").isObject()||p.get("applications").isEmpty()){
+   ObjectNode apps=p.putObject("applications");
+   Set<String> svcNames=new LinkedHashSet<>();
+   PreflightCheckResponseDTO pre=null;
+   try{pre=runtime.runComposePreflight(snapshotId);}catch(Exception ignored){}
+   if(pre!=null&&pre.getDetectedServices()!=null)svcNames.addAll(pre.getDetectedServices());
+   if(p.has("serviceMappings")&&p.get("serviceMappings").isObject()){
+    p.get("serviceMappings").fieldNames().forEachRemaining(svcNames::add);
+   }
+   if(svcNames.isEmpty())svcNames.add("gateway");
+   int count=0;
+   for(String sName:svcNames){
+    if(count>=10)break;
+    String safeKey=sName.replaceAll("[^a-zA-Z0-9_-]","-");
+    if(safeKey.isEmpty()||!Character.isLetterOrDigit(safeKey.charAt(0)))safeKey="svc-"+safeKey;
+    if(safeKey.length()>62)safeKey=safeKey.substring(0,62);
+    ObjectNode appNode=apps.putObject(safeKey);
+    int port=pre!=null&&pre.getServicePorts()!=null&&pre.getServicePorts().containsKey(sName)?pre.getServicePorts().get(sName):8080;
+    String stack=pre!=null&&pre.getServiceStacks()!=null?pre.getServiceStacks().getOrDefault(sName,"java"):"java";
+    appNode.put("runtime","dotnet".equalsIgnoreCase(stack)?"dotnet8-linux-x64-glibc":"java");
+    appNode.put("containerPort",(port>=1&&port<=65535)?port:8080);
+    appNode.put("readinessPath","/health");
+    count++;
+   }
+  }
+  Map<String,String> mappings=new LinkedHashMap<>();
+  if(p.has("serviceMappings")&&p.get("serviceMappings").isObject()){
+   p.get("serviceMappings").fields().forEachRemaining(e->mappings.put(e.getKey(),e.getValue().asText("")));
+  }
+  runtime.updateProjectRuntimeConfig(projectId,RuntimeProjectConfigRequestDTO.builder()
+   .profileId(profileId)
+   . confirmedServiceMappings(mappings)
+   .environmentVariables(cleanEnv)
+   .secretReferences(new ArrayList<>(secretRefs))
+   .build());
+  return p;
  }
  @Transactional(readOnly=true)
  public List<ScenarioView> scenarios(UUID id){project(id,false);return scenarios.findByProjectIdOrderByNameAsc(id).stream().map(this::view).toList();}

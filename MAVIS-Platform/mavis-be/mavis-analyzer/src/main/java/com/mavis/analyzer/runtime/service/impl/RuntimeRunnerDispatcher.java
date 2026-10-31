@@ -215,6 +215,12 @@ public class RuntimeRunnerDispatcher {
         );
         pb.environment().put("MAVIS_RUNNER_ALLOW_LOCAL_POC", "1");
         pb.environment().put("MAVIS_RUNNER_SERVICE_KEY", runnerServiceKey != null ? runnerServiceKey : "mavis-local-runner-secret-key");
+        if (session.getProject() != null && session.getProject().getId() != null) {
+            Map<String, String> projectEnv = runtimeSessionService.getProjectExecutionEnvironment(session.getProject().getId());
+            if (projectEnv != null && !projectEnv.isEmpty()) {
+                pb.environment().putAll(projectEnv);
+            }
+        }
         pb.redirectErrorStream(true);
         pb.redirectOutput(stateDir.resolve("runner-" + session.getId() + ".log").toFile());
 

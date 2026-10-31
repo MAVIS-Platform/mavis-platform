@@ -92,9 +92,16 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const defaultModelId = (staticModels[0] ?? models.data?.[0])?.id ?? "";
 
   const [snapshotId, setSnapshotId] = useState("");
+  const [modelId, setModelId] = useState("");
   const [profileId, setProfileId] = useState("SPRING_BOOT_DOTNET_COMPOSE_V1");
   const [serviceMappings, setServiceMappings] = useState<Record<string, string>>({});
+  const [envVars, setEnvVars] = useState<Record<string, string>>({});
+  const [secretValues, setSecretValues] = useState<Record<string, string>>({});
   const [secretRefs, setSecretRefs] = useState("");
+  const [newEnvKey, setNewEnvKey] = useState("");
+  const [newEnvVal, setNewEnvVal] = useState("");
+  const [newSecretKey, setNewSecretKey] = useState("");
+  const [newSecretVal, setNewSecretVal] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
@@ -111,89 +118,226 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         snapshots.data[0]?.id;
       if (preferredSnapId) setSnapshotId(preferredSnapId);
     }
-  }, [snapshots.data, config.data?.snapshotId, models.data, snapshotId]);
+    if (!modelId && defaultModelId) {
+      setModelId(config.data?.modelId || defaultModelId);
+    }
+  }, [snapshots.data, config.data?.snapshotId, config.data?.modelId, models.data, snapshotId, modelId, defaultModelId]);
+
+  const rawProfile = (config.data?.profile ?? {}) as Record<string, unknown>;
+  const configuredSecretKeys = Array.isArray(rawProfile["configuredSecretKeys"])
+    ? (rawProfile["configuredSecretKeys"] as unknown[]).map(String)
+    : [];
+
+  const activeServices =
+    preflight.data?.detectedServices ??
+    (Array.isArray(rawProfile["detectedServices"])
+      ? (rawProfile["detectedServices"] as unknown[]).map(String)
+      : []);
+  const servicePorts =
+    preflight.data?.servicePorts ??
+    (typeof rawProfile["servicePorts"] === "object" && rawProfile["servicePorts"] !== null
+      ? (rawProfile["servicePorts"] as Record<string, number>)
+      : {});
+  const serviceStacks =
+    preflight.data?.serviceStacks ??
+    (typeof rawProfile["serviceStacks"] === "object" && rawProfile["serviceStacks"] !== null
+      ? (rawProfile["serviceStacks"] as Record<string, string>)
+      : {});
+  const detectedEndpoints =
+    preflight.data?.detectedEndpoints ??
+    (Array.isArray(rawProfile["detectedEndpoints"])
+      ? (rawProfile["detectedEndpoints"] as Array<{
+          service: string;
+          method: string;
+          path: string;
+          source?: string;
+        }>)
+      : []);
+  const databaseChecks =
+    preflight.data?.databaseChecks ??
+    (Array.isArray(rawProfile["databaseChecks"])
+      ? (rawProfile["databaseChecks"] as Array<{
+          service: string;
+          dbType: string;
+          configKey?: string;
+          connectionUrl?: string;
+          requiredEnvVars?: string[];
+          status?: string;
+        }>)
+      : []);
+  const requiredEnvVars =
+    preflight.data?.requiredEnvVars ??
+    (Array.isArray(rawProfile["requiredEnvVars"])
+      ? (rawProfile["requiredEnvVars"] as Array<{
+          name: string;
+          service?: string;
+          category?: string;
+          defaultValue?: string | null;
+          required?: boolean;
+          source?: string;
+        }>)
+      : []);
 
   useEffect(() => {
-    const rawProfile = config.data?.profile as Record<string, unknown> | undefined;
     if (rawProfile && typeof rawProfile["serviceMappings"] === "object" && rawProfile["serviceMappings"] !== null) {
       setServiceMappings((prev) => ({
         ...(rawProfile["serviceMappings"] as Record<string, string>),
         ...prev,
       }));
     }
+    if (rawProfile && typeof rawProfile["environmentVariables"] === "object" && rawProfile["environmentVariables"] !== null) {
+      const savedEnv: Record<string, string> = {};
+      for (const [k, v] of Object.entries(rawProfile["environmentVariables"] as Record<string, unknown>)) {
+        savedEnv[k] = String(v ?? "");
+      }
+      setEnvVars((prev) => ({ ...savedEnv, ...prev }));
+    }
+    if (rawProfile && Array.isArray(rawProfile["secretReferences"])) {
+      const refs = (rawProfile["secretReferences"] as unknown[]).map(String).filter(Boolean);
+      if (refs.length > 0 && !secretRefs) {
+        setSecretRefs(refs.join(", "));
+      }
+    }
   }, [config.data?.profile]);
 
   useEffect(() => {
-    if (preflight.data?.detectedServices?.length) {
+    if (activeServices.length) {
       setServiceMappings((prev) => {
         const next = { ...prev };
-        for (const s of preflight.data?.detectedServices ?? []) {
+        for (const s of activeServices) {
           if (!next[s]) next[s] = s;
         }
         return next;
       });
     }
-  }, [preflight.data?.detectedServices]);
+  }, [activeServices.join(",")]);
+
+  useEffect(() => {
+    if (!requiredEnvVars.length) return;
+    setEnvVars((prev) => {
+      const next = { ...prev };
+      for (const item of requiredEnvVars) {
+        const cat = (item.category ?? "ENV").toUpperCase();
+        if (cat === "ENV" && !(item.name in next)) {
+          next[item.name] = item.defaultValue ?? "";
+        }
+      }
+      return next;
+    });
+    setSecretValues((prev) => {
+      const next = { ...prev };
+      for (const item of requiredEnvVars) {
+        const cat = (item.category ?? "ENV").toUpperCase();
+        if ((cat === "DB_SECRET" || cat === "SECRET") && !(item.name in next)) {
+          next[item.name] = "";
+        }
+      }
+      return next;
+    });
+  }, [requiredEnvVars.length]);
+
+  const allSecretKeys = Array.from(
+    new Set([
+      ...requiredEnvVars
+        .filter((v) => v.category === "DB_SECRET" || v.category === "SECRET")
+        .map((v) => v.name),
+      ...configuredSecretKeys,
+      ...Object.keys(secretValues),
+      ...secretRefs
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ]),
+  );
 
   return (
     <div className="space-y-6">
       <RuntimeStepperBanner currentStep={1} projectId={projectId} />
-      {/* Step 1: Preflight Eligibility */}
-      <DetailPanel title="1. Source Snapshot & Compose Preflight Check">
+      {/* Step 1: Preflight Eligibility & Source Inspection */}
+      <DetailPanel title="1. Source Snapshot, API & Database Inspection (Preflight)">
         <p className="text-sm text-muted-foreground">
-          Validate whether the source snapshot contains a compatible Docker Compose file, detects
-          service ports, and inspects security configurations.
+          Inspect the source snapshot for Docker Compose compatibility, API endpoints, database
+          connections, and required environment/secret variables.
         </p>
 
         <RequestState query={snapshots} empty={!snapshots.data?.length}>
           <div className="mt-4 space-y-4">
-            <SelectField
-              disabled={preflight.isPending}
-              label="Source snapshot"
-              value={snapshotId}
-              onChange={(value) => {
-                setSnapshotId(value);
-                preflight.reset();
-              }}
-              options={(snapshots.data ?? []).map((s) => ({
-                value: s.id,
-                label: `${s.name} · ${s.id.slice(0, 8)}`,
-              }))}
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SelectField
+                disabled={preflight.isPending}
+                label="Source snapshot"
+                value={snapshotId}
+                onChange={(value) => {
+                  setSnapshotId(value);
+                  preflight.reset();
+                }}
+                options={(snapshots.data ?? []).map((s) => ({
+                  value: s.id,
+                  label: `${s.name} · ${s.id.slice(0, 8)}`,
+                }))}
+              />
+              <SelectField
+                disabled={preflight.isPending}
+                label="Target architecture model"
+                value={modelId || defaultModelId}
+                onChange={setModelId}
+                options={(staticModels.length ? staticModels : (models.data ?? [])).map((m) => ({
+                  value: m.id,
+                  label: `Revision ${m.revision} · ${m.id.slice(0, 8)}`,
+                }))}
+              />
+            </div>
 
             <Button
               disabled={!snapshotId || preflight.isPending}
               onClick={() => preflight.mutate({ projectId, snapshotId })}
             >
-              {preflight.isPending ? "Validating Compose..." : "Check runtime eligibility (Compose Preflight)"}
+              {preflight.isPending
+                ? "Inspecting source & Compose..."
+                : "Check runtime eligibility (Compose Preflight)"}
             </Button>
 
             {preflight.isError && <ErrorState error={preflight.error} />}
 
-            {preflight.data && (
-              <div className="rounded-lg border p-4 space-y-3 bg-muted/30">
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold text-sm">Preflight Result:</span>
-                  <StatusBadge
-                    status={preflight.data.compatible ? "Compatible" : "Rejected"}
-                    variant={preflight.data.compatible ? "success" : "destructive"}
-                  />
+            {(preflight.data || activeServices.length > 0) && (
+              <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold text-sm">Preflight Result:</span>
+                    <StatusBadge
+                      status={
+                        (preflight.data ? preflight.data.compatible : config.data?.supported)
+                          ? "Compatible"
+                          : "Rejected"
+                      }
+                      variant={
+                        (preflight.data ? preflight.data.compatible : config.data?.supported)
+                          ? "success"
+                          : "destructive"
+                      }
+                    />
+                  </div>
+                  {(preflight.data?.recommendedProfile || config.data?.profileId) && (
+                    <p className="text-xs text-muted-foreground">
+                      <strong>Recommended Profile:</strong>{" "}
+                      {preflight.data?.recommendedProfile ?? config.data?.profileId}
+                    </p>
+                  )}
                 </div>
-                {preflight.data.recommendedProfile && (
-                  <p className="text-sm">
-                    <strong>Recommended Profile:</strong> {preflight.data.recommendedProfile}
-                  </p>
-                )}
+
+                {/* Detected Services */}
                 <div>
-                  <strong className="text-sm">Detected Services in Compose:</strong>
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {preflight.data.detectedServices?.length ? (
-                      preflight.data.detectedServices.map((svc) => (
+                  <strong className="text-sm">Detected Services & Runtime Stacks:</strong>
+                  <div className="flex flex-wrap gap-2 mt-1.5">
+                    {activeServices.length ? (
+                      activeServices.map((svc) => (
                         <span
                           key={svc}
-                          className="px-2.5 py-0.5 rounded-full text-xs font-mono bg-primary/10 text-primary border border-primary/20"
+                          className="px-2.5 py-1 rounded-md text-xs font-mono bg-primary/10 text-primary border border-primary/20"
                         >
                           {svc}
+                          {servicePorts[svc] ? ` :${servicePorts[svc]}` : ""}
+                          {serviceStacks[svc] ? ` (${serviceStacks[svc]})` : ""}
                         </span>
                       ))
                     ) : (
@@ -202,7 +346,83 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   </div>
                 </div>
 
-                {preflight.data.securityWarnings?.length ? (
+                {/* Discovered API Endpoints */}
+                <div>
+                  <strong className="text-sm">
+                    Discovered API Endpoints ({detectedEndpoints.length}):
+                  </strong>
+                  {detectedEndpoints.length > 0 ? (
+                    <div className="mt-1.5 max-h-44 overflow-y-auto rounded border bg-background/80 divide-y text-xs">
+                      {detectedEndpoints.map((ep, idx) => (
+                        <div
+                          key={`${ep.service}-${ep.method}-${ep.path}-${idx}`}
+                          className="flex items-center justify-between gap-2 px-3 py-1.5"
+                        >
+                          <div className="flex items-center gap-2 font-mono">
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 font-semibold">
+                              {ep.method}
+                            </span>
+                            <span className="font-medium">{ep.path}</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-muted-foreground">
+                            <span className="font-mono text-foreground/80">{ep.service}</span>
+                            {ep.source && (
+                              <span className="hidden sm:inline truncate max-w-48">
+                                · {ep.source}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Run preflight to inspect controller routes and HTTP endpoints from source.
+                    </p>
+                  )}
+                </div>
+
+                {/* Database Checks */}
+                <div>
+                  <strong className="text-sm">
+                    Database & Connection Inspection ({databaseChecks.length}):
+                  </strong>
+                  {databaseChecks.length > 0 ? (
+                    <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
+                      {databaseChecks.map((db, idx) => (
+                        <div
+                          key={`${db.service}-${db.dbType}-${idx}`}
+                          className="rounded border bg-background/80 p-2.5 text-xs space-y-1"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold">
+                              {db.service} → {db.dbType}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 font-mono text-[10px]">
+                              {db.status ?? "DETECTED"}
+                            </span>
+                          </div>
+                          {db.connectionUrl && (
+                            <p className="font-mono text-muted-foreground truncate" title={db.connectionUrl}>
+                              {db.connectionUrl}
+                            </p>
+                          )}
+                          {db.requiredEnvVars && db.requiredEnvVars.length > 0 && (
+                            <p className="text-[11px] text-muted-foreground">
+                              Requires: <span className="font-mono">{db.requiredEnvVars.join(", ")}</span>
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      No external database bindings detected in snapshot config.
+                    </p>
+                  )}
+                </div>
+
+                {preflight.data?.securityWarnings?.length ? (
                   <div className="space-y-1">
                     <strong className="text-sm text-warning">Security Warnings / Prerequisites:</strong>
                     <ul className="list-disc pl-5 text-xs text-warning space-y-0.5">
@@ -218,21 +438,22 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         </RequestState>
       </DetailPanel>
 
-      {/* Step 2: Service-to-Model Mapping & Protected Secrets */}
-      <DetailPanel title="2. Service-to-Model Mapping & Protected Secret References">
+      {/* Step 2: Service-to-Model Mapping, DB Secrets & Environment Variables */}
+      <DetailPanel title="2. Service Mapping, Database Secrets & Environment Variables">
         <p className="text-sm text-muted-foreground">
-          Map each runtime service container to the corresponding Model Element. Specify environment
-          variable names for protected credentials; never paste plaintext secrets here.
+          Map each service container to its Model Element and provide required database credentials,
+          secrets, and environment variables for the sandbox container run.
         </p>
 
-        <div className="mt-4 space-y-4">
+        <div className="mt-4 space-y-6">
+          {/* 2A. Service Mapping */}
           <div>
-            <h4 className="text-sm font-semibold mb-2">Service Mapping</h4>
-            {preflight.data?.detectedServices?.length ? (
+            <h4 className="text-sm font-semibold mb-2">Service-to-Model Mapping</h4>
+            {activeServices.length ? (
               <div className="grid gap-3 sm:grid-cols-2">
-                {preflight.data.detectedServices.map((svc) => (
+                {activeServices.map((svc) => (
                   <div key={svc} className="flex items-center gap-2">
-                    <span className="w-28 font-mono text-xs truncate" title={svc}>
+                    <span className="w-32 font-mono text-xs truncate" title={svc}>
                       {svc}
                     </span>
                     <span className="text-muted-foreground">→</span>
@@ -250,24 +471,195 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">
-                Run preflight above to auto-detect service containers from docker-compose.yml.
+                Run preflight above to auto-detect service containers from source.
               </p>
             )}
           </div>
 
-          <FormField
-            label="Protected Secret References (Allowlist)"
-            hint="Comma-separated environment variable names passed to the runner (e.g. JWT_SECRET, DB_PASSWORD). Plaintext values are strictly prohibited."
-          >
-            {(props) => (
-              <Input
-                {...props}
-                placeholder="JWT_SECRET, STRIPE_API_KEY, DB_PASSWORD"
-                value={secretRefs}
-                onChange={(e) => setSecretRefs(e.target.value)}
-              />
+          {/* 2B. Database Secrets & Protected Credentials */}
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-sm font-semibold">
+                  Database Secrets & Protected Credentials
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Values are stored in runner secret memory and masked on read; never exposed in
+                  public receipts.
+                </p>
+              </div>
+            </div>
+
+            {allSecretKeys.length > 0 && (
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                {allSecretKeys.map((sKey) => {
+                  const isConfigured = configuredSecretKeys.includes(sKey);
+                  const meta = requiredEnvVars.find((r) => r.name === sKey);
+                  return (
+                    <div key={sKey} className="rounded border p-2.5 space-y-1.5 bg-muted/20">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs font-semibold">{sKey}</span>
+                        <div className="flex items-center gap-1.5">
+                          {meta?.service && (
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              {meta.service}
+                            </span>
+                          )}
+                          {isConfigured && (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 text-[10px] font-medium">
+                              Configured ✓
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Input
+                        type="password"
+                        className="font-mono text-xs h-8"
+                        placeholder={
+                          isConfigured
+                            ? "•••••••• (Leave blank to keep existing secret)"
+                            : `Enter secret value for ${sKey}`
+                        }
+                        value={secretValues[sKey] ?? ""}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSecretValues((prev) => ({ ...prev, [sKey]: val }));
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             )}
-          </FormField>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="w-48 font-mono text-xs h-8"
+                placeholder="SECRET_NAME (e.g. DB_PASSWORD)"
+                value={newSecretKey}
+                onChange={(e) => setNewSecretKey(e.target.value.toUpperCase())}
+              />
+              <Input
+                type="password"
+                className="flex-1 min-w-48 font-mono text-xs h-8"
+                placeholder="Secret value"
+                value={newSecretVal}
+                onChange={(e) => setNewSecretVal(e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!newSecretKey.trim()}
+                onClick={() => {
+                  const k = newSecretKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
+                  if (!k) return;
+                  setSecretValues((prev) => ({ ...prev, [k]: newSecretVal }));
+                  const existingRefs = secretRefs
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                  if (!existingRefs.includes(k)) {
+                    setSecretRefs([...existingRefs, k].join(", "));
+                  }
+                  setNewSecretKey("");
+                  setNewSecretVal("");
+                }}
+              >
+                + Add Secret
+              </Button>
+            </div>
+
+            <FormField
+              label="Protected Secret References (Allowlist)"
+              hint="Comma-separated environment variable names passed to the runner (e.g. JWT_SECRET, DB_PASSWORD)."
+            >
+              {(props) => (
+                <Input
+                  {...props}
+                  placeholder="JWT_SECRET, STRIPE_API_KEY, DB_PASSWORD"
+                  value={secretRefs}
+                  onChange={(e) => setSecretRefs(e.target.value)}
+                />
+              )}
+            </FormField>
+          </div>
+
+          {/* 2C. Environment Variables */}
+          <div className="space-y-3 border-t pt-4">
+            <div>
+              <h4 className="text-sm font-semibold">Environment Variables (Non-Secret Config)</h4>
+              <p className="text-xs text-muted-foreground">
+                Database hosts, ports, URLs, and runtime flags injected into Docker Compose override.
+              </p>
+            </div>
+
+            {Object.keys(envVars).length > 0 && (
+              <div className="space-y-2">
+                {Object.entries(envVars).map(([k, v]) => (
+                  <div key={k} className="flex items-center gap-2">
+                    <span className="w-56 font-mono text-xs truncate font-medium" title={k}>
+                      {k}
+                    </span>
+                    <span className="text-muted-foreground">=</span>
+                    <Input
+                      className="flex-1 font-mono text-xs h-8"
+                      placeholder="Value"
+                      value={v}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEnvVars((prev) => ({ ...prev, [k]: val }));
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setEnvVars((prev) => {
+                          const next = { ...prev };
+                          delete next[k];
+                          return next;
+                        })
+                      }
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="w-48 font-mono text-xs h-8"
+                placeholder="ENV_KEY (e.g. DB_HOST)"
+                value={newEnvKey}
+                onChange={(e) => setNewEnvKey(e.target.value.toUpperCase())}
+              />
+              <Input
+                className="flex-1 min-w-48 font-mono text-xs h-8"
+                placeholder="Environment value (e.g. postgres:5432)"
+                value={newEnvVal}
+                onChange={(e) => setNewEnvVal(e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!newEnvKey.trim()}
+                onClick={() => {
+                  const k = newEnvKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
+                  if (!k) return;
+                  setEnvVars((prev) => ({ ...prev, [k]: newEnvVal }));
+                  setNewEnvKey("");
+                  setNewEnvVal("");
+                }}
+              >
+                + Add Environment Variable
+              </Button>
+            </div>
+          </div>
         </div>
       </DetailPanel>
 
@@ -287,39 +679,57 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
             )}
           </FormField>
 
-          <Button
-            disabled={save.isPending}
-            onClick={() => {
-              save.mutate(
-                {
-                  projectId,
-                  profileId,
-                  snapshotId: snapshotId || snapshots.data?.[0]?.id || undefined,
-                  modelId: defaultModelId || undefined,
-                  profile: {
-                    serviceMappings,
-                    secretReferences: secretRefs
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              disabled={save.isPending}
+              onClick={() => {
+                const combinedSecretRefs = Array.from(
+                  new Set([
+                    ...secretRefs
                       .split(",")
                       .map((s) => s.trim())
                       .filter(Boolean),
+                    ...allSecretKeys,
+                  ]),
+                );
+                save.mutate(
+                  {
+                    projectId,
+                    profileId,
+                    snapshotId: snapshotId || snapshots.data?.[0]?.id || undefined,
+                    modelId: modelId || defaultModelId || undefined,
+                    profile: {
+                      serviceMappings,
+                      environmentVariables: envVars,
+                      secretValues,
+                      secretReferences: combinedSecretRefs,
+                    },
+                    expectedRevision: config.data?.revision ?? 0,
                   },
-                  expectedRevision: config.data?.revision ?? 0,
-                },
-                {
-                  onSuccess: () => {
-                    setSaveSuccess(true);
-                    setTimeout(() => setSaveSuccess(false), 4000);
+                  {
+                    onSuccess: () => {
+                      setSaveSuccess(true);
+                      setTimeout(() => setSaveSuccess(false), 4000);
+                    },
                   },
-                },
-              );
-            }}
-          >
-            {save.isPending ? "Saving..." : "Save Runtime Configuration"}
-          </Button>
+                );
+              }}
+            >
+              {save.isPending ? "Saving..." : "Save Runtime Configuration"}
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => router.push(`/scenarios?project=${projectId}`)}
+            >
+              Continue to Step 2: Test Scenarios →
+            </Button>
+          </div>
 
           {saveSuccess && (
             <p className="text-sm text-success font-medium">
-              ✓ Runtime configuration saved successfully!
+              ✓ Runtime configuration, environment variables, and secrets saved successfully!
             </p>
           )}
           {save.isError && <ErrorState error={save.error} />}
@@ -410,8 +820,26 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   };
 
   useEffect(() => {
-    if (!edited.current) setDraftSteps(automatic.steps);
-  }, [automatic]);
+    if (!edited.current) {
+      if (automatic.steps.length > 0) {
+        setDraftSteps(automatic.steps);
+        return;
+      }
+      const discoveredEndpoints = (config.data?.profile as { detectedEndpoints?: Array<{ service?: string; method?: string; path?: string }> } | undefined)?.detectedEndpoints;
+      if (Array.isArray(discoveredEndpoints) && discoveredEndpoints.length > 0) {
+        setDraftSteps(
+          discoveredEndpoints.slice(0, 6).map((ep, idx) => ({
+            service: ep.service || detectedServiceNames[idx % Math.max(1, detectedServiceNames.length)] || defaultSvc,
+            method: (ep.method || "GET").toUpperCase(),
+            path: ep.path || "/health",
+            status: "200",
+          }))
+        );
+      } else {
+        setDraftSteps(automatic.steps);
+      }
+    }
+  }, [automatic, config.data?.profile]);
 
   const addStep = () => {
     setSteps((s) => [...s, { service: defaultSvc, method: "GET", path: "", status: "200" }]);
