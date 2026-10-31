@@ -34,6 +34,7 @@ export function useApiQuery<K extends Operation>(
     queryKey: ["api", operation, input],
     queryFn: ({ signal }) => api.execute(operation, input, signal),
     enabled: options.enabled ?? true,
+    ...(operation === "session" ? { refetchOnWindowFocus: true } : {}),
     refetchInterval: options.refreshMs
       ? Math.max(10000, options.refreshMs)
       : options.poll
@@ -96,6 +97,7 @@ export function useApiMutation<K extends Operation>(operation: K) {
   const api = useApi();
   const client = useQueryClient();
   return useMutation<Response<K>, Error, Request<K>>({
+    mutationKey: ["api", operation],
     onMutate: async () => {
       if (["readNotification", "readAllNotifications"].includes(operation))
         await client.cancelQueries({ queryKey: ["api", "notifications"] });
@@ -246,7 +248,17 @@ export function useApiMutation<K extends Operation>(operation: K) {
           return operation !== "gradeSubmission" || queryOperation !== "submissionReview";
         },
       });
-      if (!["readNotification", "readAllNotifications"].includes(operation))
+      if (
+        ![
+          "readNotification",
+          "readAllNotifications",
+          "register",
+          "verifyEmail",
+          "resendOtp",
+          "forgotPassword",
+          "resetPassword",
+        ].includes(operation)
+      )
         toast.success(
           operation === "signOut"
             ? "Signed out"
@@ -265,7 +277,7 @@ export function useApiMutation<K extends Operation>(operation: K) {
   });
 }
 export function useSession() {
-  return useApiQuery("session", {});
+  return useApiQuery("session", {}, { refreshMs: 60000 });
 }
 export function usePermission(permission: Permission) {
   const session = useSession();

@@ -9,6 +9,8 @@ import com.mavis.common.entity.User;
 import com.mavis.common.entity.UserOtp;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
+import com.mavis.common.exception.AuthException;
+import com.mavis.common.exception.AuthErrorCode;
 import com.mavis.common.repository.RoleRepository;
 import com.mavis.common.repository.UserOtpRepository;
 import com.mavis.common.repository.UserRepository;
@@ -82,7 +84,7 @@ public class AuthServiceImpl implements AuthService {
                 .build();
         userOtpRepository.save(userOtp);
 
-        // Gửi email bất đồng bộ
+        // Confirm SMTP acceptance before returning a successful registration.
         emailService.sendOtpEmail(user.getEmail(), otpCode, "EMAIL_VERIFICATION");
 
         return RegisterResponse.builder()
@@ -97,26 +99,14 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public void verifyEmail(VerifyEmailRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy người dùng với email này"));
+                .orElseThrow(() -> new AuthException(AuthErrorCode.AUTH_CODE_INVALID));
 
-        if ("ACTIVE".equals(user.getStatus())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Tài khoản đã được xác thực trước đó");
-        }
+        if (!"PENDING_VERIFICATION".equals(user.getStatus()) && !"ACTIVE".equals(user.getStatus()))
+            throw new AuthException(AuthErrorCode.AUTH_VERIFICATION_UNAVAILABLE);
 
-        if (!"PENDING_VERIFICATION".equals(user.getStatus())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản không ở trạng thái chờ xác thực");
-        }
-
-        UserOtp userOtp = userOtpRepository.findFirstByUserAndOtpCodeAndIsUsedFalseOrderByCreatedAtDesc(user, request.getOtpCode())
-                .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không hợp lệ hoặc đã được sử dụng"));
-
-        if (!"EMAIL_VERIFICATION".equals(userOtp.getPurpose())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không dùng để xác thực email");
-        }
-
-        if (userOtp.getExpiryTime().isBefore(OffsetDateTime.now(ZoneOffset.UTC))) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP đã hết hạn");
-        }
+        UserOtp userOtp = requireOtp(user, request.getOtpCode(), "EMAIL_VERIFICATION");
+        if (!"PENDING_VERIFICATION".equals(user.getStatus()))
+            throw new AuthException(AuthErrorCode.AUTH_VERIFICATION_UNAVAILABLE);
 
         // Cập nhật trạng thái
         userOtp.setUsed(true);
@@ -129,18 +119,19 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "Sai email hoặc mật khẩu"));
+                .orElseThrow(() -> new AuthException(AuthErrorCode.LOGIN_CREDENTIALS));
+
+        // Verify credentials before disclosing verified/locked account state.
+        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new AuthException(AuthErrorCode.LOGIN_CREDENTIALS);
+        }
 
         if ("PENDING_VERIFICATION".equals(user.getStatus())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Vui lòng xác thực Email trước khi đăng nhập");
+            throw new AuthException(AuthErrorCode.LOGIN_VERIFICATION);
         }
 
         if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa");
-        }
-
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "Sai email hoặc mật khẩu");
+            throw new AuthException(AuthErrorCode.LOGIN_LOCKED);
         }
 
         String token = jwtUtil.generateToken(user.getEmail(), user.getId(), user.getRole().getCode());
@@ -182,7 +173,7 @@ public class AuthServiceImpl implements AuthService {
             if (optionalUser.isPresent()) {
                 user = optionalUser.get();
                 if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
-                    throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa");
+                    throw new AuthException(AuthErrorCode.LOGIN_LOCKED);
                 }
                 // Có thể update status thành ACTIVE nếu trước đó PENDING_VERIFICATION vì Google đã verify mail
                 if ("PENDING_VERIFICATION".equals(user.getStatus())) {
@@ -218,7 +209,7 @@ public class AuthServiceImpl implements AuthService {
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Google login failed", e);
+            log.error("Google login failed ({})", e.getClass().getSimpleName());
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "Lỗi xác thực với Google");
         }
     }
@@ -227,11 +218,10 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public void forgotPassword(com.mavis.platform.auth.dto.ForgotPasswordRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy người dùng với email này"));
+                .orElse(null);
 
-        if (!"ACTIVE".equals(user.getStatus())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Tài khoản chưa được kích hoạt hoặc đã bị khóa");
-        }
+        // One public response for missing, unverified, blocked and active users.
+        if (user == null || !"ACTIVE".equals(user.getStatus())) return;
 
         // Generate OTP
         String otpCode = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
@@ -245,25 +235,16 @@ public class AuthServiceImpl implements AuthService {
         userOtpRepository.save(userOtp);
 
         // Send email
-        emailService.sendOtpEmail(user.getEmail(), otpCode, "PASSWORD_RESET");
+        emailService.requestOtpEmail(user.getEmail(), otpCode, "PASSWORD_RESET");
     }
 
     @Override
     @Transactional
     public void resetPassword(com.mavis.platform.auth.dto.ResetPasswordRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy người dùng với email này"));
+                .orElseThrow(() -> new AuthException(AuthErrorCode.AUTH_RESET_INVALID));
 
-        UserOtp userOtp = userOtpRepository.findFirstByUserAndOtpCodeAndIsUsedFalseOrderByCreatedAtDesc(user, request.getOtpCode())
-                .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không hợp lệ hoặc đã được sử dụng"));
-
-        if (!"PASSWORD_RESET".equals(userOtp.getPurpose())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP không dùng để reset mật khẩu");
-        }
-
-        if (userOtp.getExpiryTime().isBefore(OffsetDateTime.now(ZoneOffset.UTC))) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Mã OTP đã hết hạn");
-        }
+        UserOtp userOtp = requireOtp(user, request.getOtpCode(), "PASSWORD_RESET");
 
         userOtp.setUsed(true);
         userOtpRepository.save(userOtp);
@@ -276,15 +257,9 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public void resendOtp(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy người dùng với email này"));
+                .orElse(null);
 
-        if ("ACTIVE".equals(user.getStatus())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Tài khoản đã được kích hoạt. Bạn có thể đăng nhập bình thường.");
-        }
-
-        if ("LOCKED".equals(user.getStatus()) || "INACTIVE".equals(user.getStatus())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Tài khoản của bạn đã bị khóa.");
-        }
+        if (user == null || !"PENDING_VERIFICATION".equals(user.getStatus())) return;
 
         // Tạo OTP mới
         String otpCode = String.format("%06d", OTP_RANDOM.nextInt(1_000_000));
@@ -298,6 +273,17 @@ public class AuthServiceImpl implements AuthService {
         userOtpRepository.save(userOtp);
 
         // Gửi email
-        emailService.sendOtpEmail(user.getEmail(), otpCode, "EMAIL_VERIFICATION");
+        emailService.requestOtpEmail(user.getEmail(), otpCode, "EMAIL_VERIFICATION");
+    }
+
+    private UserOtp requireOtp(User user, String code, String purpose) {
+        boolean reset = "PASSWORD_RESET".equals(purpose);
+        UserOtp otp = userOtpRepository.findFirstByUserAndOtpCodeAndPurposeOrderByCreatedAtDesc(user, code, purpose)
+                .orElseThrow(() -> new AuthException(reset ? AuthErrorCode.AUTH_RESET_INVALID : AuthErrorCode.AUTH_CODE_INVALID));
+        if (otp.isUsed())
+            throw new AuthException(reset ? AuthErrorCode.AUTH_RESET_USED : AuthErrorCode.AUTH_CODE_USED);
+        if (!otp.getExpiryTime().isAfter(OffsetDateTime.now(ZoneOffset.UTC)))
+            throw new AuthException(reset ? AuthErrorCode.AUTH_RESET_EXPIRED : AuthErrorCode.AUTH_CODE_EXPIRED);
+        return otp;
     }
 }

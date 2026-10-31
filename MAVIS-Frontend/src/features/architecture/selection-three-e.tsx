@@ -7,7 +7,10 @@ import { useApi, useApiQuery } from "@/hooks/use-api";
 import { api as backend } from "@/lib/mainflow-api";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BookOpen, FileCode2, ShieldCheck, X, MessageSquare, Loader2 } from "lucide-react";
+import { BookOpen, FileCode2, ShieldCheck, X, Loader2 } from "lucide-react";
+import { InspectorSection } from "./inspector-section";
+import { StatusLabel } from "@/components/shared/data";
+import { buildPeerConnectionGroups } from "./communication-evidence";
 import { ThreeEEvidence } from "./three-e-evidence";
 import { CommunicationPanel } from "./communication-panel";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -115,6 +118,35 @@ export function SelectionThreeE({
   const { isGroup, canExplain, subject } = ctx;
   const projectedEdge = ctx.effectiveProjectedEdge ?? rawProjectedEdge;
   const { node, edge } = subject;
+  const [sectionState, setSectionState] = useState<{
+    scope: string;
+    open: Record<string, boolean>;
+  }>({ scope: ctx.scopeKey, open: {} });
+  const sectionProps = (id: string, defaultOpen = false) => ({
+    open:
+      sectionState.scope === ctx.scopeKey ? (sectionState.open[id] ?? defaultOpen) : defaultOpen,
+    onOpenChange: (open: boolean) =>
+      setSectionState((previous) => ({
+        scope: ctx.scopeKey,
+        open: { ...(previous.scope === ctx.scopeKey ? previous.open : {}), [id]: open },
+      })),
+  });
+  const meaningTitle =
+    edge || isGroup
+      ? "Meaning of this relationship"
+      : node?.elementType === "SERVICE_CONTAINER"
+        ? "Meaning of this service"
+        : node?.elementType === "DATABASE"
+          ? "Meaning of this data store"
+          : node?.elementType === "QUEUE_BROKER"
+            ? "Meaning of this messaging element"
+            : node?.elementType === "EXTERNAL_SYSTEM"
+              ? "Meaning of this external system"
+              : node?.elementType === "COMPONENT"
+                ? "Meaning of this component"
+                : "Meaning of this element";
+  const communicationId = edge?.id ?? node?.id ?? selectedId;
+  const hasCommunication = buildPeerConnectionGroups(model, communicationId).length > 0;
 
   const evidence = useApiQuery(
     node ? "elementEvidence" : "relationshipEvidence",
@@ -351,18 +383,27 @@ export function SelectionThreeE({
             aria-label="3E sections"
             className="grid h-auto min-h-11 w-full grid-cols-3 items-stretch rounded-xl bg-muted/70"
           >
-            <TabsTrigger value="explain" className="min-w-0 gap-1.5 whitespace-normal rounded-lg px-2 py-2 text-xs leading-4">
+            <TabsTrigger
+              value="explain"
+              className="min-w-0 gap-1.5 whitespace-normal rounded-lg px-2 py-2 text-xs leading-4"
+            >
               <BookOpen className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
               <span className="min-w-0">Explain</span>
             </TabsTrigger>
-            <TabsTrigger value="evidence" className="min-w-0 gap-1.5 whitespace-normal rounded-lg px-2 py-2 text-xs leading-4">
+            <TabsTrigger
+              value="evidence"
+              className="min-w-0 gap-1.5 whitespace-normal rounded-lg px-2 py-2 text-xs leading-4"
+            >
               <FileCode2 className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
               <span className="min-w-0">Evidence</span>
               <span className="shrink-0 rounded bg-background/80 px-1.5 text-[11px]">
                 {concreteEvidences.length}
               </span>
             </TabsTrigger>
-            <TabsTrigger value="evaluate" className="min-w-0 gap-1.5 whitespace-normal rounded-lg px-2 py-2 text-xs leading-4">
+            <TabsTrigger
+              value="evaluate"
+              className="min-w-0 gap-1.5 whitespace-normal rounded-lg px-2 py-2 text-xs leading-4"
+            >
               <ShieldCheck className="hidden h-4 w-4 shrink-0 sm:block" aria-hidden="true" />
               <span className="min-w-0">Evaluate</span>
             </TabsTrigger>
@@ -370,10 +411,13 @@ export function SelectionThreeE({
         </div>
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 py-5 text-sm leading-6 [scrollbar-gutter:stable]">
           <TabsContent value="explain" className="m-0 space-y-5">
-            <section data-ai-three-e-simplified aria-label="Explanation" className="space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold">Understand this selection</h3>
-                {ai3ELoading && (
+            <InspectorSection
+              title={meaningTitle}
+              {...sectionProps("meaning", true)}
+              data-ai-three-e-simplified
+              aria-label="Explanation"
+              meta={
+                ai3ELoading ? (
                   <span
                     role="status"
                     className="flex items-center gap-1.5 text-xs text-muted-foreground"
@@ -381,70 +425,18 @@ export function SelectionThreeE({
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
                     Updating
                   </span>
-                )}
-              </div>
-              <div className="rounded-xl border border-primary/15 bg-primary/[0.04] p-4">
+                ) : null
+              }
+            >
+              <div className="rounded-xl bg-primary/[0.04] p-4">
                 <p className="text-sm leading-7">{active3E.explainSimple}</p>
               </div>
-            </section>
+            </InspectorSection>
 
-            <details className="group rounded-xl border bg-background">
-              <summary className="flex cursor-pointer list-none items-center gap-2 p-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                <MessageSquare className="h-4 w-4 text-primary" aria-hidden="true" />
-                Ask a follow-up
-                <span className="ml-auto text-xs font-normal text-muted-foreground group-open:hidden">
-                  Optional +
-                </span>
-              </summary>
-              <div className="px-3 pb-3">
+            <InspectorSection title="Ask a follow-up" {...sectionProps("follow-up")}>
+              <div className="min-w-0">
                 {" "}
-                <div
-                  data-three-e-ai-chat
-                  className="space-y-2 rounded-md border bg-background p-2.5"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold text-foreground">Ask about this selection</p>
-                    {currentChatMessages.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setChatByScope((prev) => ({
-                            ...prev,
-                            [ctx.scopeKey]: [],
-                          }))
-                        }
-                        className="text-[11px] text-muted-foreground hover:text-foreground underline"
-                      >
-                        Clear chat
-                      </button>
-                    )}
-                  </div>
-
-                  {currentChatMessages.length > 0 && (
-                    <div className="max-h-56 space-y-2 overflow-y-auto rounded border bg-muted/20 p-2">
-                      {currentChatMessages.map((msg, idx) => (
-                        <div
-                          key={idx}
-                          className={`rounded-lg px-2.5 py-1.5 text-xs leading-relaxed ${
-                            msg.role === "user"
-                              ? "ml-6 bg-primary text-primary-foreground"
-                              : "mr-4 border bg-background text-foreground"
-                          }`}
-                        >
-                          <p className="text-[10px] font-semibold opacity-75">
-                            {msg.role === "user" ? "You" : "AI 3E"}
-                          </p>
-                          <p className="mt-0.5 whitespace-pre-wrap">{msg.content}</p>
-                        </div>
-                      ))}
-                      {chatLoading && (
-                        <p className="px-2 py-1 text-[11px] italic text-muted-foreground">
-                          AI is responding…
-                        </p>
-                      )}
-                    </div>
-                  )}
-
+                <div data-three-e-ai-chat className="space-y-2">
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
@@ -473,18 +465,94 @@ export function SelectionThreeE({
                   </form>
                 </div>
               </div>
-            </details>
-            <CommunicationPanel
-              key={`explain-panel-${edge?.id ?? node?.id ?? selectedId}`}
-              projectId={projectId ?? model.projectId}
-              model={model}
-              selectedId={edge?.id ?? node?.id ?? selectedId}
-              onSelect={onSelect}
-            />
+            </InspectorSection>
+            {currentChatMessages.length > 0 && (
+              <InspectorSection
+                title="Conversation history"
+                {...sectionProps("conversation", true)}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-semibold text-foreground">Ask about this selection</p>
+                  {currentChatMessages.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setChatByScope((prev) => ({
+                          ...prev,
+                          [ctx.scopeKey]: [],
+                        }))
+                      }
+                      className="text-[11px] text-muted-foreground hover:text-foreground underline"
+                    >
+                      Clear chat
+                    </button>
+                  )}
+                </div>
+
+                {currentChatMessages.length > 0 && (
+                  <div className="max-h-56 space-y-2 overflow-y-auto rounded border bg-muted/20 p-2">
+                    {currentChatMessages.map((msg, idx) => (
+                      <div
+                        key={idx}
+                        className={`rounded-lg px-2.5 py-1.5 text-xs leading-relaxed ${
+                          msg.role === "user"
+                            ? "ml-6 bg-primary text-primary-foreground"
+                            : "mr-4 border bg-background text-foreground"
+                        }`}
+                      >
+                        <p className="text-[10px] font-semibold opacity-75">
+                          {msg.role === "user" ? "You" : "AI 3E"}
+                        </p>
+                        <p className="mt-0.5 whitespace-pre-wrap">{msg.content}</p>
+                      </div>
+                    ))}
+                    {chatLoading && (
+                      <p className="px-2 py-1 text-[11px] italic text-muted-foreground">
+                        AI is responding…
+                      </p>
+                    )}
+                  </div>
+                )}
+              </InspectorSection>
+            )}
+            {hasCommunication && (
+              <InspectorSection title="Communication" {...sectionProps("communication")}>
+                <CommunicationPanel
+                  key={`explain-panel-${edge?.id ?? node?.id ?? selectedId}`}
+                  projectId={projectId ?? model.projectId}
+                  model={model}
+                  selectedId={edge?.id ?? node?.id ?? selectedId}
+                  onSelect={onSelect}
+                />
+              </InspectorSection>
+            )}
+            {subject.connections.length > 0 && (
+              <InspectorSection title="Related dependencies" {...sectionProps("dependencies")}>
+                <ul className="space-y-2">
+                  {subject.connections.map((connection) => (
+                    <li key={connection.id}>
+                      <Button
+                        variant="link"
+                        className="h-auto min-h-11 whitespace-normal break-words px-0 text-left"
+                        onClick={() => onSelect(connection.id)}
+                      >
+                        {model.elements.find((element) => element.id === connection.from)?.name ??
+                          connection.from}{" "}
+                        →{" "}
+                        {model.elements.find((element) => element.id === connection.to)?.name ??
+                          connection.to}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </InspectorSection>
+            )}
           </TabsContent>
           <TabsContent value="evidence" className="m-0 space-y-5">
-            <section className="space-y-2">
-              <h3 className="text-base font-semibold">Trace it to the source</h3>
+            <InspectorSection
+              title="Evidence overview"
+              {...sectionProps("evidence-overview", true)}
+            >
               <p className="text-sm text-muted-foreground">
                 Inspect the caller, receiver and configuration snippets attached to this selection.
               </p>
@@ -492,7 +560,7 @@ export function SelectionThreeE({
                 Saved snippets are source evidence. Metadata previews are reconstructions. Static
                 evidence does not prove runtime execution.
               </p>
-            </section>
+            </InspectorSection>
             {isGroup && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
                 <p className="font-semibold">Choose one member relationship</p>
@@ -526,17 +594,24 @@ export function SelectionThreeE({
                 </Button>
               </div>
             )}
-            <CommunicationPanel
-              key={`evidence-panel-${edge?.id ?? node?.id ?? selectedId}`}
-              projectId={projectId ?? model.projectId}
-              model={model}
-              selectedId={edge?.id ?? node?.id ?? selectedId}
-              onSelect={onSelect}
-            />
-            <details className="rounded-xl border bg-card/60 p-3">
-              <summary className="cursor-pointer text-xs font-semibold text-muted-foreground hover:text-foreground">
+            {hasCommunication && (
+              <InspectorSection
+                title="Connection evidence"
+                {...sectionProps("connection-evidence")}
+              >
+                <CommunicationPanel
+                  key={`evidence-panel-${edge?.id ?? node?.id ?? selectedId}`}
+                  projectId={projectId ?? model.projectId}
+                  model={model}
+                  selectedId={edge?.id ?? node?.id ?? selectedId}
+                  onSelect={onSelect}
+                />
+              </InspectorSection>
+            )}
+            <InspectorSection title="Source snippets" {...sectionProps("snippets")}>
+              <p className="text-xs text-muted-foreground">
                 Internal declaration evidence ({subject.title})
-              </summary>
+              </p>
               <div className="mt-3">
                 <ThreeEEvidence
                   evidence={concreteEvidences}
@@ -545,11 +620,11 @@ export function SelectionThreeE({
                   defaultOpen={false}
                 />
               </div>
-            </details>
-            <details open={isGroup} className="rounded-xl border bg-muted/20 p-4">
-              <summary className="cursor-pointer text-sm font-semibold">
-                Selection details &amp; relationships
-              </summary>
+            </InspectorSection>
+            <InspectorSection
+              title="Evidence details"
+              {...sectionProps("evidence-details", isGroup)}
+            >
               <div className="mt-4 space-y-4">
                 {" "}
                 {nodeMetadataRows(node).length > 0 && (
@@ -570,7 +645,9 @@ export function SelectionThreeE({
                     </div>
                     <div className="flex min-w-0 flex-wrap gap-x-2">
                       <dt className="shrink-0 font-medium text-muted-foreground">Resolution:</dt>
-                      <dd className="min-w-0 break-words">{edge.resolutionStatus ?? "unknown"}</dd>
+                      <dd className="min-w-0 break-words">
+                        <StatusLabel status={edge.resolutionStatus ?? "unknown"} />
+                      </dd>
                     </div>
 
                     {isGroup && projectedEdge && (
@@ -690,122 +767,158 @@ export function SelectionThreeE({
                       )}
                   </dl>
                 )}
-                {sequenceContext && (
-                  <dl
-                    data-sequence-three-e-meta
-                    className="space-y-1.5 rounded-md border bg-muted/40 p-2 text-xs leading-5"
-                  >
+              </div>
+            </InspectorSection>
+            {sequenceContext && (
+              <InspectorSection
+                title="Interaction details"
+                {...sectionProps("interaction-details")}
+              >
+                <dl
+                  data-sequence-three-e-meta
+                  className="space-y-1.5 rounded-md border bg-muted/40 p-2 text-xs leading-5"
+                >
+                  <div className="flex min-w-0 flex-wrap gap-x-2">
+                    <dt className="shrink-0 font-medium text-muted-foreground">Sequence scope:</dt>
+                    <dd className="min-w-0 break-words font-mono">
+                      {sequenceContext.interactionId} · {sequenceContext.mode}
+                      {sequenceContext.sessionId
+                        ? ` · session ${sequenceContext.sessionId.slice(0, 8)}`
+                        : ""}
+                      {sequenceContext.traceId
+                        ? ` · trace ${sequenceContext.traceId.slice(0, 12)}`
+                        : ""}
+                    </dd>
+                  </div>
+                  {sequenceContext.provenance && (
+                    <div className="flex min-w-0 flex-wrap gap-x-2">
+                      <dt className="shrink-0 font-medium text-muted-foreground">Provenance:</dt>
+                      <dd className="min-w-0 break-words">{sequenceContext.provenance}</dd>
+                    </div>
+                  )}
+                  {sequenceContext.resolutionStatus && (
                     <div className="flex min-w-0 flex-wrap gap-x-2">
                       <dt className="shrink-0 font-medium text-muted-foreground">
-                        Sequence scope:
+                        Sequence resolution:
                       </dt>
-                      <dd className="min-w-0 break-words font-mono">
-                        {sequenceContext.interactionId} · {sequenceContext.mode}
-                        {sequenceContext.sessionId
-                          ? ` · session ${sequenceContext.sessionId.slice(0, 8)}`
-                          : ""}
-                        {sequenceContext.traceId
-                          ? ` · trace ${sequenceContext.traceId.slice(0, 12)}`
-                          : ""}
+                      <dd className="min-w-0 break-words">
+                        <StatusLabel status={sequenceContext.resolutionStatus} />
                       </dd>
                     </div>
-                    {sequenceContext.provenance && (
-                      <div className="flex min-w-0 flex-wrap gap-x-2">
-                        <dt className="shrink-0 font-medium text-muted-foreground">Provenance:</dt>
-                        <dd className="min-w-0 break-words">{sequenceContext.provenance}</dd>
-                      </div>
-                    )}
-                    {sequenceContext.resolutionStatus && (
+                  )}
+                  {sequenceContext.messageSort && (
+                    <div className="flex min-w-0 flex-wrap gap-x-2">
+                      <dt className="shrink-0 font-medium text-muted-foreground">Message sort:</dt>
+                      <dd className="min-w-0 break-words font-mono">
+                        #{sequenceContext.occurrenceIndex ?? "?"} · {sequenceContext.messageSort}
+                        {sequenceContext.guard ? ` [${sequenceContext.guard}]` : ""}
+                      </dd>
+                    </div>
+                  )}
+                  {sequenceContext.operator && (
+                    <div className="flex min-w-0 flex-wrap gap-x-2">
+                      <dt className="shrink-0 font-medium text-muted-foreground">
+                        Fragment operator:
+                      </dt>
+                      <dd className="min-w-0 break-words font-mono">{sequenceContext.operator}</dd>
+                    </div>
+                  )}
+                  {sequenceContext.coveredParticipantLabels &&
+                    sequenceContext.coveredParticipantLabels.length > 0 && (
                       <div className="flex min-w-0 flex-wrap gap-x-2">
                         <dt className="shrink-0 font-medium text-muted-foreground">
-                          Sequence resolution:
+                          Covered lifelines:
                         </dt>
-                        <dd className="min-w-0 break-words">{sequenceContext.resolutionStatus}</dd>
-                      </div>
-                    )}
-                    {sequenceContext.messageSort && (
-                      <div className="flex min-w-0 flex-wrap gap-x-2">
-                        <dt className="shrink-0 font-medium text-muted-foreground">
-                          Message sort:
-                        </dt>
-                        <dd className="min-w-0 break-words font-mono">
-                          #{sequenceContext.occurrenceIndex ?? "?"} · {sequenceContext.messageSort}
-                          {sequenceContext.guard ? ` [${sequenceContext.guard}]` : ""}
+                        <dd className="min-w-0 break-words">
+                          {sequenceContext.coveredParticipantLabels.join(", ")}
                         </dd>
                       </div>
                     )}
-                    {sequenceContext.operator && (
+                  {sequenceContext.operandSummaries &&
+                    sequenceContext.operandSummaries.length > 0 && (
                       <div className="flex min-w-0 flex-wrap gap-x-2">
                         <dt className="shrink-0 font-medium text-muted-foreground">
-                          Fragment operator:
+                          Operands &amp; guards:
                         </dt>
-                        <dd className="min-w-0 break-words font-mono">
-                          {sequenceContext.operator}
+                        <dd className="min-w-0 break-words">
+                          {sequenceContext.operandSummaries.join(" · ")}
                         </dd>
                       </div>
                     )}
-                    {sequenceContext.coveredParticipantLabels &&
-                      sequenceContext.coveredParticipantLabels.length > 0 && (
-                        <div className="flex min-w-0 flex-wrap gap-x-2">
-                          <dt className="shrink-0 font-medium text-muted-foreground">
-                            Covered lifelines:
-                          </dt>
-                          <dd className="min-w-0 break-words">
-                            {sequenceContext.coveredParticipantLabels.join(", ")}
-                          </dd>
-                        </div>
-                      )}
-                    {sequenceContext.operandSummaries &&
-                      sequenceContext.operandSummaries.length > 0 && (
-                        <div className="flex min-w-0 flex-wrap gap-x-2">
-                          <dt className="shrink-0 font-medium text-muted-foreground">
-                            Operands &amp; guards:
-                          </dt>
-                          <dd className="min-w-0 break-words">
-                            {sequenceContext.operandSummaries.join(" · ")}
-                          </dd>
-                        </div>
-                      )}
-                    {sequenceContext.evaluationStatus && (
-                      <div className="flex min-w-0 flex-wrap gap-x-2">
-                        <dt className="shrink-0 font-medium text-muted-foreground">
-                          Static evaluation:
-                        </dt>
-                        <dd className="min-w-0 break-words font-mono">
-                          {sequenceContext.evaluationStatus}
-                        </dd>
-                      </div>
-                    )}
-                    {sequenceContext.runtimeEvidence && (
-                      <div className="flex min-w-0 flex-wrap gap-x-2">
-                        <dt className="shrink-0 font-medium text-muted-foreground">
-                          Runtime span:
-                        </dt>
-                        <dd className="min-w-0 break-words font-mono">
-                          trace={sequenceContext.runtimeEvidence.traceId ?? "n/a"} · span=
-                          {sequenceContext.runtimeEvidence.spanId ?? "n/a"} ·{" "}
-                          {sequenceContext.runtimeEvidence.durationMs ?? "?"}ms · status=
-                          {sequenceContext.runtimeEvidence.statusCode ?? "n/a"}
-                        </dd>
-                      </div>
-                    )}
-                  </dl>
-                )}
-              </div>
-            </details>
+                  {sequenceContext.evaluationStatus && (
+                    <div className="flex min-w-0 flex-wrap gap-x-2">
+                      <dt className="shrink-0 font-medium text-muted-foreground">
+                        Static evaluation:
+                      </dt>
+                      <dd className="min-w-0 break-words font-mono">
+                        <StatusLabel status={sequenceContext.evaluationStatus} />
+                      </dd>
+                    </div>
+                  )}
+                  {sequenceContext.runtimeEvidence && (
+                    <div className="flex min-w-0 flex-wrap gap-x-2">
+                      <dt className="shrink-0 font-medium text-muted-foreground">Runtime span:</dt>
+                      <dd className="min-w-0 break-words font-mono">
+                        trace={sequenceContext.runtimeEvidence.traceId ?? "n/a"} · span=
+                        {sequenceContext.runtimeEvidence.spanId ?? "n/a"} ·{" "}
+                        {sequenceContext.runtimeEvidence.durationMs ?? "?"}ms · status=
+                        {sequenceContext.runtimeEvidence.statusCode ?? "n/a"}
+                      </dd>
+                    </div>
+                  )}
+                </dl>
+              </InspectorSection>
+            )}
           </TabsContent>
           <TabsContent value="evaluate" className="m-0 space-y-5">
-            <section className="space-y-3">
-              <h3 className="text-base font-semibold">Assess what is supported</h3>
+            <InspectorSection title="Assessment summary" {...sectionProps("assessment", true)}>
               <p className="text-sm leading-7">{active3E.evaluateSimple}</p>
+            </InspectorSection>
+            {matching.length > 0 && (
+              <InspectorSection title="Findings" {...sectionProps("findings")}>
+                {matching.map((finding, index) => {
+                  const title =
+                    typeof finding["ruleId"] === "string" ? finding["ruleId"] : "Finding";
+                  const message = typeof finding["message"] === "string" ? finding["message"] : "";
+                  const details = finding["details"];
+                  const ids =
+                    details &&
+                    typeof details === "object" &&
+                    "supportingEvidenceIds" in details &&
+                    Array.isArray(details.supportingEvidenceIds)
+                      ? details.supportingEvidenceIds
+                      : [];
+                  const linked = concreteEvidences.filter((item) => ids.includes(item.id));
+                  return (
+                    <InspectorSection
+                      key={String(finding["id"] ?? index)}
+                      title={title}
+                      {...sectionProps(`finding:${String(finding["id"] ?? index)}`)}
+                      className="border-0"
+                    >
+                      {message && (
+                        <p className="whitespace-pre-wrap break-words text-sm">{message}</p>
+                      )}
+                      {linked.length > 0 && (
+                        <ThreeEEvidence evidence={linked} defaultOpen={false} />
+                      )}
+                    </InspectorSection>
+                  );
+                })}
+              </InspectorSection>
+            )}
+            <InspectorSection title="Assessment limitations" {...sectionProps("limitations")}>
               <p className="rounded-xl border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
                 This assessment uses the selected model and available evidence. It is not a
                 certification of correctness, security or runtime behavior.
               </p>
-            </section>
+            </InspectorSection>
             {!!(active3E.assumptions?.length || active3E.unknowns?.length) && (
-              <section className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
-                <h4 className="text-sm font-semibold">Assumptions &amp; unknowns</h4>
+              <InspectorSection
+                title="Assumptions & unknowns"
+                {...sectionProps("unknowns")}
+                className="border-amber-500/25 bg-amber-500/5"
+              >
                 <ul className="mt-3 list-disc space-y-3 pl-4 text-sm">
                   {active3E.assumptions?.map((text, index) => (
                     <li key={"assumption-" + index}>
@@ -820,7 +933,7 @@ export function SelectionThreeE({
                     </li>
                   ))}
                 </ul>
-              </section>
+              </InspectorSection>
             )}
           </TabsContent>
         </div>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, contextHref, type Project, type Model } from "@/lib/mainflow-api";
 import { useSession } from "@/hooks/use-api";
+import { RequireSession } from "@/features/auth/access";
 import { MainflowProvider } from "./provider";
 export const panel = "rounded-xl border border-border bg-card p-5";
 export function ErrorNotice({ error }: { error: unknown }) {
@@ -59,92 +60,88 @@ function Authenticated({ children, title }: { children: React.ReactNode; title: 
     router.refresh();
   }
   return (
-    <AppShell
-      contextName={projects.data?.find((p) => p.id === project)?.name ?? "Choose a project"}
-      navigationQuery={`?${new URLSearchParams({ project, model })}`}
-    >
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold">{title}</h1>
-        {session.data?.authenticated && (
-          <Button variant="outline" onClick={logout}>
-            Sign out
-          </Button>
-        )}
-      </div>
-      {session.isPending ? (
-        <p>Checking session…</p>
-      ) : !session.data?.authenticated ? (
-        <div className={`${panel} space-y-4`}>
-          <p>Your session is unavailable. Sign in to continue.</p>
-          <Button asChild>
-            <Link href="/login">Sign in</Link>
-          </Button>
-          <ErrorNotice error={session.error} />
+    <RequireSession>
+      <AppShell
+        contextName={projects.data?.find((p) => p.id === project)?.name ?? "Choose a project"}
+        navigationQuery={`?${new URLSearchParams({ project, model })}`}
+      >
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold">{title}</h1>
+          {session.data?.authenticated && (
+            <Button variant="outline" onClick={logout}>
+              Sign out
+            </Button>
+          )}
         </div>
-      ) : (
-        <>
-          <div className={`${panel} mb-5 flex flex-wrap items-center gap-4`}>
-            <label>
-              Project{" "}
-              <select
-                aria-label="Project"
-                disabled={busy}
-                className="ml-2 max-w-64 rounded border bg-background p-2"
-                value={project}
-                onChange={(e) => router.push(contextHref("/import", e.target.value))}
-              >
-                <option value="">Choose a project</option>
-                {projects.data?.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {project && (
+        {session.isPending ? (
+          <p>Checking session…</p>
+        ) : !session.data?.authenticated ? (
+          <p>Checking session…</p>
+        ) : (
+          <>
+            <div className={`${panel} mb-5 flex flex-wrap items-center gap-4`}>
               <label>
-                Model{" "}
+                Project{" "}
                 <select
-                  aria-label="Model"
+                  aria-label="Project"
                   disabled={busy}
-                  className="ml-2 max-w-72 rounded border bg-background p-2"
-                  value={model}
-                  onChange={(e) =>
-                    router.push(contextHref("/architecture", project, e.target.value))
-                  }
+                  className="ml-2 max-w-64 rounded border bg-background p-2"
+                  value={project}
+                  onChange={(e) => router.push(contextHref("/import", e.target.value))}
                 >
-                  <option value="">Choose a model</option>
-                  {models.data?.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      Revision {m.revision} · {m.id.slice(0, 8)}
+                  <option value="">Choose a project</option>
+                  {projects.data?.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
                     </option>
                   ))}
                 </select>
               </label>
-            )}
-            <nav className="flex flex-wrap gap-4">
-              {(
-                [
-                  ["Import", "/import"],
-                  ["Architecture", "/architecture"],
-                  ["Impact", "/impact"],
-                  ["Explain", "/explain"],
-                ] as const
-              ).map(([name, path]) => (
-                <Link
-                  className="text-primary underline"
-                  key={path}
-                  href={contextHref(path, project, model)}
-                >
-                  {name}
-                </Link>
-              ))}
-            </nav>
-          </div>
-          <ErrorNotice error={projects.error || models.error} />
-          {children}
-        </>
-      )}
-    </AppShell>
+              {project && (
+                <label>
+                  Model{" "}
+                  <select
+                    aria-label="Model"
+                    disabled={busy}
+                    className="ml-2 max-w-72 rounded border bg-background p-2"
+                    value={model}
+                    onChange={(e) =>
+                      router.push(contextHref("/architecture", project, e.target.value))
+                    }
+                  >
+                    <option value="">Choose a model</option>
+                    {models.data?.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        Revision {m.revision} · {m.id.slice(0, 8)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <nav className="flex flex-wrap gap-4">
+                {(
+                  [
+                    ["Import", "/import"],
+                    ["Architecture", "/architecture"],
+                    ["Impact", "/impact"],
+                    ["Explain", "/explain"],
+                  ] as const
+                ).map(([name, path]) => (
+                  <Link
+                    className="text-primary underline"
+                    key={path}
+                    href={contextHref(path, project, model)}
+                  >
+                    {name}
+                  </Link>
+                ))}
+              </nav>
+            </div>
+            <ErrorNotice error={projects.error || models.error} />
+            {children}
+          </>
+        )}
+      </AppShell>
+    </RequireSession>
   );
 }

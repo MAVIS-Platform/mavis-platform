@@ -8,6 +8,7 @@ import { SelectField } from "@/components/shared/forms";
 import { RequestState } from "@/components/shared/request-state";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { StatusLabel } from "@/components/shared/data";
 import { SelectablePreview, download } from "./selectable-diagram-preview";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
 import {
@@ -160,10 +161,12 @@ function ObservedScenarioDiagram({
                       <div className="flex flex-wrap items-center gap-1.5">
                         <Badge variant="runtime">OBSERVED RUNTIME</Badge>
                         {sequence.data?.traceStatus && (
-                          <Badge variant="outline">Trace: {sequence.data.traceStatus}</Badge>
+                          <Badge variant="outline">
+                            Trace: <StatusLabel status={sequence.data.traceStatus} />
+                          </Badge>
                         )}
                         <Badge variant="outline">
-                          Semantic: {interaction.semanticStatus}
+                          Semantic: <StatusLabel status={interaction.semanticStatus} />
                         </Badge>
                         {interaction.limitations.map((lim: string) => (
                           <Badge key={lim} variant="secondary" className="font-mono text-[10px]">

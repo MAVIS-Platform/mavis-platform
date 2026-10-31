@@ -1,9 +1,9 @@
 "use client";
 import Link from "next/link";
-import { safeLoginRedirect } from "@/lib/auth/safe-login-redirect";
+import { loginDestination } from "@/lib/auth/login-destination";
 import { GoogleSignIn } from "@/features/auth/google-sign-in";
 import { LoginBackground } from "@/features/auth/login-background";
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -35,37 +35,37 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const submitting = useRef(false);
   const finish = async (session: { user: { role: AppRole } | null }) => {
     await client.cancelQueries();
     client.clear();
     client.setQueryData(["api", "session", {}], session);
-    const next = safeLoginRedirect(params.get("next"));
-    if (next) {
-      router.replace(next);
-      return;
-    }
     router.replace(
-      session.user?.role === "admin"
-        ? "/administration/health"
-        : session.user?.role === "lecturer"
-          ? "/workspaces"
-          : "/",
+      await loginDestination(params.get("next"), session.user?.role ?? "student", api),
     );
   };
   async function sample(role: AppRole) {
+    if (submitting.current) return;
+    submitting.current = true;
     try {
       await finish(await login.mutateAsync({ role }));
     } catch {
       /* Error is shown below. */
+    } finally {
+      submitting.current = false;
     }
   }
   async function signIn() {
+    if (submitting.current) return;
+    submitting.current = true;
     try {
       const session = await real.mutateAsync({ email: email.trim(), password });
       setPassword("");
       await finish(session);
     } catch {
       /* Keep input for correction. */
+    } finally {
+      submitting.current = false;
     }
   }
   return (
@@ -169,7 +169,7 @@ export default function LoginPage() {
             >
               <div className="space-y-2">
                 <label htmlFor="login-email" className="text-sm font-medium">
-                  Email address
+                  Email 
                 </label>
                 <div className="relative">
                   <Mail className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />

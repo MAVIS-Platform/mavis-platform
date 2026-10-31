@@ -25,6 +25,7 @@ export function GoogleSignIn({
   callback.current = onSignedIn;
   const login = useApiMutation("googleSignIn");
   const action = useRef(login);
+  const submitting = useRef(false);
   action.current = login;
   const [enabled, setEnabled] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -41,11 +42,15 @@ export function GoogleSignIn({
       google.accounts.id.initialize({
         client_id: clientId,
         callback: async (response) => {
+          if (submitting.current || !live) return;
+          submitting.current = true;
           try {
             const session = await action.current.mutateAsync({ idToken: response.credential });
             if (live) await callback.current(session);
           } catch {
             /* Error shown below. */
+          } finally {
+            submitting.current = false;
           }
         },
       });

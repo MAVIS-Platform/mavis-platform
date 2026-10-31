@@ -51,7 +51,7 @@ public class AuthController {
     @PostMapping("/forgot-password")
     public ResponseEntity<ApiResponse<Void>> forgotPassword(@Valid @RequestBody com.mavis.platform.auth.dto.ForgotPasswordRequest request) {
         authService.forgotPassword(request);
-        return ResponseEntity.ok(ApiResponse.success("Mã OTP đã được gửi đến email của bạn", null));
+        return ResponseEntity.ok(ApiResponse.success("If this email is registered, you will receive a password reset code.", null));
     }
 
     @PostMapping("/reset-password")
@@ -63,6 +63,6 @@ public class AuthController {
     @PostMapping("/resend-otp")
     public ResponseEntity<ApiResponse<Void>> resendOtp(@Valid @RequestBody com.mavis.platform.auth.dto.ResendOtpRequest request) {
         authService.resendOtp(request.getEmail());
-        return ResponseEntity.ok(ApiResponse.success("Mã OTP mới đã được gửi đến email của bạn", null));
+        return ResponseEntity.ok(ApiResponse.success("If this email needs verification, you will receive a new code.", null));
     }
 }

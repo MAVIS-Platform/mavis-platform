@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
-import { DetailPanel } from "@/components/shared/data";
+import { DetailPanel, StatusLabel } from "@/components/shared/data";
 import { RequestState, ErrorState } from "@/components/shared/request-state";
 import { SelectField } from "@/components/shared/forms";
 import { Button } from "@/components/ui/button";
@@ -243,8 +243,9 @@ function QueueRun({
       </Button>
       {start.data && (
         <p role="status">
-          Session {start.data.id}: {start.data.executionStatus}. The operator must launch the
-          dedicated Runner; execution and cleanup are acknowledged separately.
+          Session {start.data.id}: <StatusLabel status={start.data.executionStatus ?? ""} />. The
+          operator must launch the dedicated Runner; execution and cleanup are acknowledged
+          separately.
         </p>
       )}
       {start.error && <ErrorState error={start.error} />}

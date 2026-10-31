@@ -9,7 +9,8 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.MailException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.MimeMessageHelper;
-import org.springframework.scheduling.annotation.Async;
+import com.mavis.common.exception.AuthException;
+import com.mavis.common.exception.AuthErrorCode;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -22,8 +23,19 @@ public class EmailServiceImpl implements EmailService {
     @Value("${MAIL_FROM:${spring.mail.username:}}")
     private String fromAddress;
 
+    // Public recovery/resend responses must not vary with account existence or
+    // SMTP latency/failure. Delivery remains asynchronous for these requests.
     @Override
-    @Async
+    @org.springframework.scheduling.annotation.Async
+    public void requestOtpEmail(String toEmail, String otpCode, String purpose) {
+        try {
+            sendOtpEmail(toEmail, otpCode, purpose);
+        } catch (AuthException ignored) {
+            // sendOtpEmail already recorded a sanitized diagnostic.
+        }
+    }
+
+    @Override
     public void sendOtpEmail(String toEmail, String otpCode, String purpose) {
         try {
             MimeMessage message = javaMailSender.createMimeMessage();
@@ -71,6 +83,7 @@ public class EmailServiceImpl implements EmailService {
         } catch (MessagingException | MailException e) {
             // SMTP exception text may contain provider/account details; never log OTP or credentials.
             log.error("OTP email delivery failed; check SMTP sender, TLS and credentials ({})", e.getClass().getSimpleName());
+            throw new AuthException(AuthErrorCode.AUTH_EMAIL_DELIVERY);
         }
     }
 }

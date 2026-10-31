@@ -125,7 +125,13 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
     if (error instanceof ApiError && error.code)
       return NextResponse.json(
         { error: "Request unavailable", code: error.code },
-        { status: error.status ?? 502, headers: { "Cache-Control": "no-store" } },
+        {
+          status: error.status ?? 502,
+          headers: {
+            "Cache-Control": "no-store",
+            ...(error.retryAfter ? { "Retry-After": String(error.retryAfter) } : {}),
+          },
+        },
       );
     if (error instanceof ApiError) return fail(error.status ?? 502);
     return fail(502);

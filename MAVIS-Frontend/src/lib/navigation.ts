@@ -137,13 +137,6 @@ export const projectNavigation: readonly NavigationGroup[] = [
         icon: LayoutGrid,
         href: "/project-overview",
       },
-      { id: "snapshots", label: "Source Snapshots", icon: Files, href: "/snapshots" },
-      {
-        id: "analysis-history",
-        label: "Analysis History",
-        icon: FileClock,
-        href: "/analysis-history",
-      },
     ],
   },
   {
@@ -152,6 +145,18 @@ export const projectNavigation: readonly NavigationGroup[] = [
       { id: "graph", label: "Architecture Graph Explorer", icon: Network, href: "/architecture" },
       { id: "diagrams", label: "Architecture Diagrams", icon: Workflow, href: "/diagrams" },
       { id: "model", label: "Architecture Model Editor", icon: Boxes, href: "/model" },
+    ],
+  },
+  {
+    label: "Analysis",
+    items: [
+      { id: "snapshots", label: "Source Snapshots", icon: Files, href: "/snapshots" },
+      {
+        id: "analysis-history",
+        label: "Analysis History",
+        icon: FileClock,
+        href: "/analysis-history",
+      },
       { id: "compare", label: "Compare Model Versions", icon: GitCompareArrows, href: "/compare" },
       { id: "impact", label: "Change Impact Analysis", icon: GitFork, href: "/impact" },
     ],
@@ -170,7 +175,7 @@ export const projectNavigation: readonly NavigationGroup[] = [
     ],
   },
   {
-    label: "Explanations",
+    label: "Insights",
     items: [{ id: "explanations", label: "AI Explanations", icon: Sparkles, href: "/explain" }],
   },
 ];
@@ -271,7 +276,11 @@ export function existingRouteContext(pathname: string) {
     return { scope: "workspace" as const, title: workspacePage.label, activeId: workspacePage.id };
   }
   if (pathname === "/references") {
-    return { scope: "workspace" as const, title: "Reference Source Versions", activeId: "references" };
+    return {
+      scope: "workspace" as const,
+      title: "Reference Source Versions",
+      activeId: "references",
+    };
   }
   if (pathname.startsWith("/submissions/")) {
     return { scope: "review" as const, title: "Submission Details & Review", activeId: "review" };

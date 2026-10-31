@@ -527,6 +527,86 @@ function loadRoutedComponent(relative, overrides = {}, browserGlobals = {}) {
   return exports;
 }
 
+test("project navigation preserves every destination and keeps role menus intact",()=>{
+ const {projectNavigation,globalNavigation,contextualNavigation}=require("../src/lib/navigation.ts");
+ const expected={"project-overview":"/project-overview",snapshots:"/snapshots","analysis-history":"/analysis-history",graph:"/architecture",diagrams:"/diagrams",model:"/model",compare:"/compare",impact:"/impact","runtime-config":"/runtime-config",scenarios:"/scenarios",sessions:"/sessions",explanations:"/explain"};
+ const entries=projectNavigation.flatMap(g=>g.items);assert.equal(entries.length,12);assert.deepEqual(Object.fromEntries(entries.map(i=>[i.id,i.href])),expected);
+ assert.deepEqual(projectNavigation.map(g=>g.label),["Project","Architecture","Analysis","Runtime","Insights"]);
+ assert.equal(globalNavigation.student.flatMap(g=>g.items).filter(i=>i.href==="/").length,1);
+ assert.ok(globalNavigation.admin.flatMap(g=>g.items).some(i=>i.href==="/administration/users"));assert.equal(contextualNavigation("admin","project").length,0);
+});
+
+test("status presentation uses sentence case while retaining data, styling and localized wording",()=>{
+ const {formatStatusLabel,translatedStatusLabel}=require("../src/lib/status-label.ts");
+ for(const [raw,expected] of [["ready","Ready"],["NOT CHECKED","Not checked"],["Not Checked","Not checked"],["not checked","Not checked"],["COMPLETED","Completed"],["Sẵn sàng","Sẵn sàng"],["hoàn tất","Hoàn tất"],["READY_FOR_DISPATCH","Ready_for_dispatch"],["ResolvedSymbol","ResolvedSymbol"],["  running! ","  Running! "],["200","200"],["",""]])assert.equal(formatStatusLabel(raw),expected);
+ const {translateText}=require("../src/lib/i18n/locale-context.tsx");
+ assert.equal(translatedStatusLabel("COMPLETED",v=>translateText(v,"vi")),"Hoàn tất");assert.equal(translatedStatusLabel("ready",v=>translateText(v,"vi")),"Sẵn sàng");
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server"),{StatusBadge}=require("../src/components/shared/data.tsx");
+ const html=renderToStaticMarkup(React.createElement(StatusBadge,{status:"completed",variant:"success"}));assert.ok(html.includes("Completed"));assert.ok(html.includes("bg-success-subtle"));
+ assert.ok(renderToStaticMarkup(React.createElement(StatusBadge,{status:"SWP391",preserveCase:true})).includes("SWP391"));
+ const rows=[{status:"ready"},{status:"failed"}];rows.forEach(r=>formatStatusLabel(r.status));assert.deepEqual(rows.filter(r=>r.status==="ready"),[{status:"ready"}]);
+});
+
+test("project groups persist independently, restore active routes and tolerate denied storage",()=>{
+ const React=require("react"),stored=new Map();let state,cursor=0,effects=[],active="graph",activeGroup="Architecture",role="student",blocked=false;
+ const react={...React,useState:initial=>{state??=initial;return[state,next=>{state=typeof next==="function"?next(state):next;}];},useEffect:fn=>effects.push(fn)};
+ const {useProjectNavigation}=loadRoutedComponent("src/hooks/use-project-navigation.ts",{react},{localStorage:{getItem:key=>{if(blocked)throw Error("denied");return stored.get(key)??null;},setItem:(key,value)=>{if(blocked)throw Error("denied");stored.set(key,value);}}});
+ const render=()=>{effects=[];return useProjectNavigation(role,active,activeGroup,true);};
+ let nav=render();assert.equal(nav.groups.Architecture,true);nav.toggle("Runtime",true);nav=render();assert.equal(nav.groups.Runtime,true);assert.equal(nav.groups.Architecture,true);
+ nav.toggle("Runtime",false);nav=render();assert.equal(nav.groups.Runtime,false);assert.equal(nav.groups.Architecture,true);
+ stored.set("mavis.project-sidebar.groups.student",JSON.stringify({Analysis:false,Runtime:true}));active="compare";activeGroup="Analysis";nav=render();assert.equal(nav.groups.Analysis,true);effects.forEach(fn=>fn());nav=render();assert.equal(nav.groups.Runtime,true);assert.equal(nav.groups.Analysis,true);
+ role="lecturer";nav=render();assert.equal(nav.groups.Runtime,undefined);effects.forEach(fn=>fn());nav=render();assert.equal(nav.groups.Analysis,true);
+ blocked=true;effects=[];render();effects.forEach(fn=>fn());assert.doesNotThrow(()=>render().toggle("Runtime",true));
+});
+
+test("project sidebar renders active group controls and removes only the obsolete footer",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server"),{ThemeProvider}=require("../src/components/theme-provider.tsx");
+ const hooks={useApi:()=>({mode:"backend"}),useApiQuery:()=>({data:[],isSuccess:true}),useSession:()=>({data:{user:{name:"Learner",role:"student"}}}),useSelection:()=>({projectId:"one",workspaceId:""}),useApiMutation:()=>({isPending:false})};
+ const {AppShell}=loadRoutedComponent("src/components/app-shell.tsx",{"@/hooks/use-api":hooks,"@tanstack/react-query":{useQueryClient:()=>({})}});
+ const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AppShell,{role:"student",scope:"project",activeId:"graph",onPreviewNavigate(){}},"Project content")));
+ assert.ok(html.includes('aria-expanded="true"'));assert.ok(html.includes("Architecture Graph Explorer"));assert.ok(html.includes("Project Overview"));assert.ok(html.includes("Project content"));
+ for(const obsolete of ["Design foundation","Stage 1","Source analysis. Runtime evidence.","Explanations with context."])assert.ok(!html.includes(obsolete),obsolete);
+ assert.ok(html.includes("MAVIS home"));assert.ok(html.includes("My Workspaces"));assert.ok(html.includes("My Submissions"));
+});
+
+test("inspector sections expose accessible controls and preserve hidden content",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {InspectorSection}=require("../src/features/architecture/inspector-section.tsx");
+ for(const open of [true,false]){
+  const html=renderToStaticMarkup(React.createElement(InspectorSection,{title:"Source snippets",open,onOpenChange(){}},React.createElement("p",null,"Saved source remains mounted")));
+  assert.ok(html.includes(`aria-expanded="${open}"`));assert.ok(html.includes("aria-controls="));assert.ok(html.includes('type="button"'));assert.ok(html.includes("min-h-11"));assert.ok(html.includes("Saved source remains mounted"));
+  if(!open)assert.ok(html.includes('hidden=""'));assert.ok(html.includes("motion-reduce:transition-none"));
+ }
+});
+
+test("inspector sections retain tab state, reset for selections and preserve evidence drill-down",()=>{
+ const React=require("react"),nodes=node=>!node||typeof node!=="object"?[]:[node,...React.Children.toArray(node.props?.children).flatMap(nodes)];
+ let cursor=0;const states=[],selected=[];
+ const react={...React,useState:initial=>{const i=cursor++;if(!(i in states))states[i]=typeof initial==="function"?initial():initial;return[states[i],next=>{states[i]=typeof next==="function"?next(states[i]):next;}];},useMemo:fn=>fn(),useEffect(){}};
+ const element=(id,type)=>({id,name:id,elementType:type,evidence:[],properties:{},description:"Recorded element"});
+ const model={id:"model",projectId:"project",snapshotId:"snapshot",revision:1,label:"Fixture",elements:[element("orders","SERVICE_CONTAINER"),element("payments","SERVICE_CONTAINER"),element("db","DATABASE"),element("component","COMPONENT")],edges:[{id:"call-1",from:"orders",to:"payments",protocol:"SERVICE_HTTP_CALL",originLayer:"STATIC",evidence:[],uncertain:false},{id:"call-2",from:"orders",to:"payments",protocol:"SERVICE_HTTP_CALL",originLayer:"STATIC",evidence:[],uncertain:false}]};
+ const finding={id:"finding-1",elementId:"orders",ruleId:"RECORDED_RULE",message:"Recorded finding only",details:{supportingEvidenceIds:[]}};
+ const {SelectionThreeE}=loadRoutedComponent("src/features/architecture/selection-three-e.tsx",{react,
+  "@/lib/i18n/locale-context":{useLocale:()=>({locale:"en",t:s=>s})},
+  "@tanstack/react-query":{useMutation:()=>({data:undefined,reset(){},mutate(){}})},
+  "@/hooks/use-api":{useApi:()=>({mode:"backend"}),useApiQuery:op=>({data:op==="evaluationFindings"?[finding]:op==="evaluations"?[{id:"run",result:{createdAt:"2026-01-01"}}]:[],isFetching:false,error:null,refetch(){}})},
+ });
+ let props={model,selectedId:"orders",onSelect:id=>selected.push(id),onClose(){}};
+ const render=()=>{cursor=0;return nodes(SelectionThreeE(props));};
+ const section=title=>render().find(n=>n.props?.title===title);
+ assert.equal(section("Meaning of this service").props.open,true);assert.equal(section("Evidence overview").props.open,true);assert.equal(section("Assessment summary").props.open,true);assert.equal(section("Source snippets").props.open,false);
+ section("Meaning of this service").props.onOpenChange(false);section("Source snippets").props.onOpenChange(true);
+ render().find(n=>n.props?.value==="explain"&&n.props.onValueChange).props.onValueChange("evidence");
+ assert.equal(section("Source snippets").props.open,true);assert.equal(section("Meaning of this service").props.open,false);assert.equal(section("Assessment summary").props.open,true);
+ assert.ok(section("Findings"));assert.ok(section("RECORDED_RULE"));
+ for(const [id,title] of [["db","Meaning of this data store"],["component","Meaning of this component"],["payments","Meaning of this service"],["call-1","Meaning of this relationship"]]) {props={...props,selectedId:id};assert.equal(section(title).props.open,true);assert.equal(section("Source snippets").props.open,false);}
+ let drilled;
+ props={...props,selectedId:"aggregate",projectedEdge:{...model.edges[0],id:"aggregate",underlyingEdgeIds:["call-1","call-2"],evidenceCount:0},onDrilldown:id=>{drilled=id;}};
+ assert.equal(section("Evidence details").props.open,true);
+ render().find(n=>n.props?.children==="Details"&&typeof n.props.onClick==="function").props.onClick();assert.equal(drilled,"call-1");
+ const related=section("Related dependencies");assert.ok(related);assert.equal(related.props.open,false);
+});
+
 test("login background is decorative, throttles pointers and releases observers and frames", () => {
   const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
   const listeners=new Map(),frames=new Map(),mediaListeners=new Set(),properties=new Map();
@@ -565,16 +645,146 @@ test("all auth flows reuse one login background while retaining their forms and 
   }
 });
 
-test("profile renders real long account values and a separate password action without invented email", () => {
+test("session gate redirects only confirmed unauthenticated sessions and retains full route context", () => {
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ let effects=[],redirects=[],state={isPending:false,isError:false,data:{user:null}};
+ const hooks={useSession:()=>state,useApi:()=>({mode:"backend"})};
+ const {RequireSession}=loadRoutedComponent("src/features/auth/access.tsx",{
+  react:{...React,useEffect:fn=>effects.push(fn)},"@/hooks/use-api":hooks,
+  "next/navigation":{usePathname:()=>"/architecture",useSearchParams:()=>new URLSearchParams("project=one&model=two&origin=STATIC"),useRouter:()=>({replace:path=>redirects.push(path)})},
+ },{window:{location:{hash:"#selected"}}});
+ function render(){effects=[];const html=renderToStaticMarkup(React.createElement(RequireSession,null,React.createElement("p",null,"protected content")));effects.forEach(fn=>fn());return html;}
+ let html=render();assert.ok(!html.includes("Sign in required"));assert.ok(!html.includes("protected content"));assert.equal(redirects.length,1);
+ assert.equal(new URL(redirects[0],"http://localhost").searchParams.get("next"),"/architecture?project=one&model=two&origin=STATIC#selected");
+ redirects=[];state={isPending:false,isError:true,error:new Error("offline"),refetch(){}};render();assert.equal(redirects.length,0);
+ state={isPending:true,isError:false};render();assert.equal(redirects.length,0);
+ state={isPending:false,isError:false,data:{user:{role:"student"}}};html=render();assert.ok(html.includes("protected content"));assert.equal(redirects.length,0);
+ const {RequireSession:Blocked}=loadRoutedComponent("src/features/auth/access.tsx",{react:{...React,useEffect:fn=>effects.push(fn)},"@/hooks/use-api":hooks});
+ html=renderToStaticMarkup(React.createElement(Blocked,{permission:"admin:manage"},"private"));assert.ok(html.includes("Access unavailable"));assert.ok(!html.includes("private"));
+});
+
+test("OTP presentation reuses six numeric slots and requires explicit submission",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {VerificationCodeInput}=loadRoutedComponent("src/features/auth/verification-code-input.tsx");
+ const {isCompleteVerificationCode}=require("../src/lib/auth/verification-code.ts");
+ const html=renderToStaticMarkup(React.createElement(VerificationCodeInput,{value:"012345",onChange(){},disabled:false}));
+ assert.ok(html.includes('inputMode="numeric"'));assert.ok(html.includes('autoComplete="one-time-code"'));
+ assert.ok(html.includes('maxLength="6"'));assert.ok(html.includes('minLength="6"'));assert.ok(html.includes('aria-describedby='));
+ assert.equal(isCompleteVerificationCode("012345"),true);for(const code of ["12345","1234567","12345a"])assert.equal(isCompleteVerificationCode(code),false);
+});
+
+test("authentication messages preserve Vietnamese translations",()=>{
+ const {EXACT_VI_DICTIONARY}=require("../src/lib/i18n/locale-context.tsx");
+ const {publicErrors}=require("../src/lib/errors/api-error.ts");
+ for(const [code,message] of Object.entries(publicErrors).filter(([code])=>code.startsWith("AUTH_")||code.startsWith("LOGIN_"))) {
+  assert.ok(EXACT_VI_DICTIONARY[message],code);assert.notEqual(EXACT_VI_DICTIONARY[message],message);
+ }
+});
+
+test("auth forms display approved backend errors accessibly without raw exception text",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {ThemeProvider}=require("../src/components/theme-provider.tsx");
+ const {ApiError,publicErrors}=require("../src/lib/errors/api-error.ts");
+ for(const [flow,op,code] of [["verify","verifyEmail","AUTH_CODE_EXPIRED"],["reset-password","resetPassword","AUTH_RESET_USED"],["forgot-password","forgotPassword","AUTH_SERVER"]]) {
+  const {AuthFlow}=loadRoutedComponent("src/features/auth/auth-flow.tsx",{"@/hooks/use-api":{useApiMutation:name=>({isPending:false,isError:name===op,error:name===op?new ApiError("invalid",400,code):null})}});
+  const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AuthFlow,{flow})));assert.ok(html.includes('role="alert"'));assert.ok(html.includes(publicErrors[code]));assert.ok(!html.includes("stack trace"));
+ }
+});
+
+test("auth form prevents incomplete OTPs and duplicate submissions while preserving separate purposes",async()=>{
+ const React=require("react");
+ const allNodes=node=>!node||typeof node!=="object"?[]:[node,...React.Children.toArray(node.props?.children).flatMap(allNodes)];
+ function harness(flow,initial={},reject){
+  let cursor=0,refCursor=0;const states=[],refs=[],calls=[],routes=[];let release;
+  Object.assign(states,initial);
+  const react={...React,useState:start=>{const i=cursor++;if(!(i in states))states[i]=typeof start==="function"?start():start;return[states[i],v=>{states[i]=typeof v==="function"?v(states[i]):v;}];},useRef:start=>{const i=refCursor++;return refs[i]??=( {current:start} );},useEffect(){}};
+  const {AuthFlow}=loadRoutedComponent("src/features/auth/auth-flow.tsx",{react,
+   "@/lib/i18n/locale-context":{useLocale:()=>({t:v=>v})},
+   "next/navigation":{useSearchParams:()=>new URLSearchParams("email=fixture%40example.org"),useRouter:()=>({push:r=>routes.push(r),replace:r=>routes.push(r)})},
+   "@/hooks/use-api":{useApiMutation:op=>({isPending:false,isError:false,mutateAsync:input=>{calls.push([op,input]);return new Promise((resolve,rejectFn)=>{release=()=>reject?rejectFn(reject):resolve({ok:true});});}})},
+  });
+  const render=()=>{cursor=0;refCursor=0;return allNodes(AuthFlow({flow}));};
+  const submit=()=>render().find(n=>n.type==="form").props.onSubmit({preventDefault(){}});
+  return{states,calls,routes,submit,render,release:()=>release()};
+ }
+ const incomplete=harness("verify",{4:"12345"});incomplete.submit();assert.equal(incomplete.calls.length,0);assert.equal(incomplete.states[6],"Enter exactly six digits.");
+ const verify=harness("verify",{4:"012345"});verify.submit();verify.submit();assert.equal(verify.calls.length,1);assert.equal(verify.calls[0][0],"verifyEmail");assert.equal(verify.calls[0][1].email,"fixture@example.org");assert.equal(verify.calls[0][1].otpCode,"012345");verify.release();await new Promise(setImmediate);assert.deepEqual(verify.routes,["/login?verified=1"]);
+ const reset=harness("reset-password",{2:"valid-password",3:"valid-password",4:"012345"});reset.submit();assert.equal(reset.calls[0][0],"resetPassword");reset.release();await new Promise(setImmediate);assert.deepEqual(reset.routes,["/login?reset=1"]);
+ const {ApiError}=require("../src/lib/errors/api-error.ts");const expired=harness("reset-password",{2:"valid-password",3:"valid-password",4:"012345"},new ApiError("invalid",400,"AUTH_RESET_EXPIRED"));expired.submit();expired.release();await new Promise(setImmediate);assert.equal(expired.states[4],"");assert.equal(expired.states[2],"valid-password");assert.equal(expired.routes.length,0);
+ const forgot=harness("forgot-password");forgot.submit();forgot.release();await new Promise(setImmediate);assert.deepEqual(forgot.routes,["/auth/reset-password?email=fixture%40example.org"]);
+ for(const flow of ["verify","reset-password"]) {
+  const h=harness(flow);const action=h.render().find(n=>n.props?.variant==="link"&&typeof n.props.onClick==="function");
+  action.props.onClick();action.props.onClick();assert.equal(h.calls.length,1);assert.equal(h.calls[0][0],flow==="verify"?"resendOtp":"forgotPassword");h.release();await new Promise(setImmediate);
+  assert.equal(h.states[7],30);assert.equal(h.render().find(n=>n.props?.variant==="link"&&typeof n.props.onClick==="function").props.disabled,true);
+ }
+});
+
+test("profile renders real account data, compact statistics and separate personal/security forms", () => {
   const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
-  const hooks={useApi:()=>({mode:"backend"}),useApiMutation:()=>({isPending:false,error:null})};
+  const hooks={useApi:()=>({mode:"backend"}),useApiMutation:()=>({isPending:false,error:null}),useApiQuery:op=>({data:op==="projectOverviews"?[{services:2},{services:null}]:[{}],isPending:false,isError:false})};
   const {ProfileDetails}=loadRoutedComponent("src/features/profile/profile.tsx",{"@/hooks/use-api":hooks});
   const user={id:"user",name:"A long actual name ".repeat(10),email:"a.long.actual.email.address@example.org",role:"lecturer"};
   const html=renderToStaticMarkup(React.createElement(ProfileDetails,{user}));
   for(const text of [user.email,"Lecturer","Full Name","Email","Role","Change Password"]) assert.ok(html.includes(text),text);
   assert.ok(html.includes("overflow-wrap:anywhere"));
-  assert.ok(!html.includes('id="current-password"'),"password fields are not part of the profile information form");
+  assert.equal((html.match(/<form/g)||[]).length,2);
+  const personal=html.slice(html.indexOf('aria-labelledby="profile-information"'),html.indexOf('aria-labelledby="profile-security"'));
+  assert.ok(!personal.includes('id="current-password"'),"password fields are not part of the personal information form");
+  assert.equal((html.match(/type="password"/g)||[]).length,3);assert.ok(html.includes("2+"));assert.ok(html.includes("Account statistics"));
+  for(const removed of ["Appearance preferences","Role permissions &amp; quick access","Recent projects","Diagram palette","active session"])assert.ok(!html.includes(removed),removed);
+  assert.equal((html.match(/type="email"/g)||[]).length,0,"email remains read-only");
   assert.ok(renderToStaticMarkup(React.createElement(ProfileDetails,{user:{...user,email:null}})).includes("Email not available"));
+});
+
+test("profile statistics distinguish loading, unavailable, partial and real empty data",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ let query={isPending:false,isError:false,data:[{services:null}]};
+ const hooks={useApi:()=>({mode:"backend"}),useApiMutation:()=>({isPending:false,error:null}),useApiQuery:()=>query};
+ const {ProfileDetails}=loadRoutedComponent("src/features/profile/profile.tsx",{"@/hooks/use-api":hooks});
+ const render=()=>renderToStaticMarkup(React.createElement(ProfileDetails,{user:{id:"fixture",name:"Real User",role:"student",email:null}}));
+ const services=html=>/Services indexed<\/dt><dd[^>]*>([^<]*)<\/dd>/.exec(html)?.[1];
+ assert.equal(services(render()),"Not available");
+ query={isPending:false,isError:false,data:[]};assert.equal(services(render()),"0");
+ query={isPending:true,isError:false,data:undefined};assert.equal(services(render()),"Loading…");
+ query={isPending:false,isError:true,data:undefined};const failed=render();assert.equal(services(failed),"Unavailable");assert.ok(failed.includes("Some account statistics could not be loaded."));assert.ok(failed.includes("Retry"));
+});
+
+test("profile name editing uses the existing payload, prevents duplicates and retains input after errors",async()=>{
+ const React=require("react");let cursor=0,calls=[],release,fail=false;const slots=[];
+ const react={...React,useState:initial=>{const i=cursor++;if(!(i in slots))slots[i]=initial;return[slots[i],next=>{slots[i]=typeof next==="function"?next(slots[i]):next;}];},useRef:initial=>{const i=cursor++;return slots[i]??=( {current:initial} );}};
+ const mutation={isPending:false,error:null,reset(){},mutateAsync:input=>{calls.push(input);if(fail)return Promise.reject(Error("temporary failure"));return new Promise(resolve=>release=resolve);}};
+ const {ProfileDetails}=loadRoutedComponent("src/features/profile/profile.tsx",{react,"@/hooks/use-api":{useApi:()=>({mode:"backend"}),useApiMutation:()=>mutation},"@/lib/i18n/locale-context":{useLocale:()=>({t:s=>s})}});
+ const nodes=node=>!node||typeof node!=="object"?[]:[node,...React.Children.toArray(node.props?.children).flatMap(nodes)];
+ const render=()=>{cursor=0;return nodes(ProfileDetails({user:{id:"user",name:"Saved Name",email:"actual@example.org",role:"student"}}));};
+ const input=()=>render().find(n=>n.props?.id==="profile-full-name");
+ const submit=()=>render().find(n=>n.type==="form").props.onSubmit({preventDefault(){}});
+ input().props.onChange({target:{value:"  "}});await submit();assert.equal(calls.length,0);assert.equal(input().props["aria-invalid"],true);
+ input().props.onChange({target:{value:"  Updated Name  "}});const pending=submit();await submit();assert.equal(calls.length,1);assert.equal(JSON.stringify(calls[0]),JSON.stringify({fullName:"Updated Name"}));release({user:{name:"Updated Name"}});await pending;assert.equal(input().props.value,"Updated Name");
+ fail=true;input().props.onChange({target:{value:"Correctable Name"}});await submit();assert.equal(input().props.value,"Correctable Name");
+ render().find(n=>n.props?.children==="Reset").props.onClick();assert.equal(input().props.value,"Saved Name");
+ const security=render().find(n=>n.props?.fullName==="Saved Name");assert.ok(security,"password payload uses the stored name rather than an unsaved edit");
+ security.props.onBusyChange(true);input().props.onChange({target:{value:"Another Name"}});const before=calls.length;await submit();assert.equal(calls.length,before);
+});
+
+test("profile route reuses shared shell and profile feature without appearance or permission panels",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const hooks={useApi:()=>({mode:"backend"}),useApiMutation:()=>({isPending:false,error:null}),useApiQuery:()=>({data:[],isPending:false,isError:false}),useSession:()=>({data:{user:{id:"user",name:"Actual Name",email:"actual@example.org",role:"student"}},isPending:false,error:null})};
+ const feature=loadRoutedComponent("src/features/profile/profile.tsx",{"@/hooks/use-api":hooks});
+ const page=loadRoutedComponent("app/profile/page.tsx",{"@/components/app-shell":{AppShell:({children})=>React.createElement("main",null,children)},"@/features/profile/profile":feature}).default;
+ const html=renderToStaticMarkup(React.createElement(page));
+ for(const text of ["My Profile","Actual Name","actual@example.org","Personal Information","Account Security","Confirm New Password"])assert.ok(html.includes(text),text);
+ for(const text of ["Appearance preferences","Role permissions","Recent projects","Diagram palette","project:read","workspace:read","active session"])assert.ok(!html.includes(text),text);
+ assert.ok(html.indexOf('aria-label="Profile summary"')<html.indexOf('aria-labelledby="profile-information"'));assert.ok(html.indexOf('aria-labelledby="profile-information"')<html.indexOf('aria-labelledby="profile-security"'));
+ const shell=fs.readFileSync(path.join(root,"src/components/app-shell.tsx"),"utf8");assert.ok(shell.includes("<AppearanceSelector"));assert.ok(shell.includes("<RequireSession"));
+});
+
+test("profile labels and password visibility controls use existing Vietnamese localization",()=>{
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server"),{translateText}=require("../src/lib/i18n/locale-context.tsx");
+ const hooks={useApi:()=>({mode:"backend"}),useApiMutation:()=>({isPending:false,error:null}),useApiQuery:()=>({data:[],isPending:false,isError:false})};
+ const {ProfileDetails}=loadRoutedComponent("src/features/profile/profile.tsx",{"@/hooks/use-api":hooks,"@/lib/i18n/locale-context":{useLocale:()=>({t:s=>translateText(s,"vi")})}});
+ const html=renderToStaticMarkup(React.createElement(ProfileDetails,{user:{id:"user",name:"Nguyễn Văn An",email:"actual@example.org",role:"student"}}));
+ for(const text of ["Nguyễn Văn An","actual@example.org","Thông tin cá nhân","Bảo mật tài khoản","Mật khẩu hiện tại","Xác nhận mật khẩu mới","Hiện mật khẩu xác nhận"])assert.ok(html.includes(text),text);
+ assert.ok(!html.includes("Appearance preferences"));
 });
 
 test("password form validates, blocks duplicate submissions, preserves errors, clears on success and cancels without mutation", async () => {
@@ -583,7 +793,7 @@ test("password form validates, blocks duplicate submissions, preserves errors, c
   const slots=[],busy=[];
   const mutation={isPending:false,error:null,reset(){this.error=null;},async mutateAsync(input){calls++;mutation.lastInput=input;return new Promise(resolve=>{resolveRequest=resolve;});}};
   const react={...React,useState(initial){const i=cursor++;if(!(i in slots))slots[i]=initial;return [slots[i],value=>{slots[i]=typeof value==="function"?value(slots[i]):value;}];},useRef(initial){const i=cursor++;return slots[i]??(slots[i]={current:initial});}};
-  const {ChangePasswordForm}=loadRoutedComponent("src/features/profile/profile.tsx",{react,"@/hooks/use-api":{useApiMutation:()=>mutation}});
+  const {ChangePasswordForm}=loadRoutedComponent("src/features/profile/profile.tsx",{react,"@/hooks/use-api":{useApiMutation:()=>mutation},"@/lib/i18n/locale-context":{useLocale:()=>({t:s=>s})}});
   const render=()=>{cursor=0;return ChangePasswordForm({fullName:"Real Name",onBusyChange:value=>busy.push(value),onCancel:()=>cancelled++,onSuccess:()=>successes++});};
   const find=(tree,predicate)=>{if(!tree || typeof tree!=="object")return; if(predicate(tree))return tree;for(const child of React.Children.toArray(tree.props?.children)){const result=find(child,predicate);if(result)return result;}};
   const field=id=>find(render(),e=>e.props?.id===id);
@@ -602,21 +812,26 @@ test("password form validates, blocks duplicate submissions, preserves errors, c
   await submit();assert.equal(calls,0);assert.match(field("current-password").props.error,/required/);assert.match(field("new-password").props.error,/required/);
   field("current-password").props.onChange("old-password");field("new-password").props.onChange("short");await submit();assert.equal(calls,0);assert.match(field("new-password").props.error,/6–100/);
   field("new-password").props.onChange("valid-new-password");
+  await submit();assert.equal(calls,0);assert.match(field("confirm-new-password").props.error,/required/);
+  field("confirm-new-password").props.onChange("different-password");await submit();assert.equal(calls,0);assert.match(field("confirm-new-password").props.error,/do not match/);
+  field("confirm-new-password").props.onChange("valid-new-password");
   const request=submit();await submit();assert.equal(calls,1,"same-tick double submit is blocked");
-  assert.equal(mutation.lastInput.fullName,"Real Name");resolveRequest({user:{name:"Real Name"}});await request;
-  assert.equal(successes,1);assert.equal(field("current-password").props.value,"");assert.equal(field("new-password").props.value,"");assert.deepEqual(busy,[true,false]);
+  assert.equal(mutation.lastInput.fullName,"Real Name");assert.deepEqual(Object.keys(mutation.lastInput).sort(),["currentPassword","fullName","newPassword"]);resolveRequest({user:{name:"Real Name"}});await request;
+  assert.equal(successes,1);assert.equal(field("current-password").props.value,"");assert.equal(field("new-password").props.value,"");assert.equal(field("confirm-new-password").props.value,"");assert.deepEqual(busy,[true,false]);
   const {ApiError}=require("../src/lib/errors/api-error.ts");
   mutation.mutateAsync=async()=>{calls++;throw new ApiError("invalid",400,"PROFILE_CURRENT_PASSWORD");};
-  field("current-password").props.onChange("wrong-password");field("new-password").props.onChange("retained-new-password");await submit();
-  assert.match(field("current-password").props.error,/incorrect/);assert.equal(field("new-password").props.value,"retained-new-password");
-  const before=calls;find(render(),e=>e.props?.children==="Cancel").props.onClick();assert.equal(cancelled,1);assert.equal(calls,before);
+  field("current-password").props.onChange("wrong-password");field("new-password").props.onChange("retained-new-password");field("confirm-new-password").props.onChange("retained-new-password");await submit();
+  assert.match(field("current-password").props.error,/incorrect/);assert.equal(field("current-password").props.value,"wrong-password");assert.equal(field("new-password").props.value,"retained-new-password");assert.equal(field("confirm-new-password").props.value,"retained-new-password");
+  mutation.mutateAsync=async()=>{calls++;mutation.error=new ApiError("network");throw mutation.error;};await submit();assert.equal(field("current-password").props.value,"wrong-password");assert.equal(field("new-password").props.value,"retained-new-password");assert.equal(field("confirm-new-password").props.value,"retained-new-password");assert.ok(find(render(),e=>e.props?.error===mutation.error));
+  const before=calls;find(render(),e=>e.props?.children==="Cancel").props.onClick();assert.equal(cancelled,1);assert.equal(calls,before);assert.equal(field("current-password").props.value,"");assert.equal(field("confirm-new-password").props.value,"");
 });
 
 test("password fields render masked inputs, visibility controls and backend length limits", () => {
   const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
   const {ChangePasswordForm}=loadRoutedComponent("src/features/profile/profile.tsx",{"@/hooks/use-api":{useApiMutation:()=>({isPending:false,error:null})}});
   const html=renderToStaticMarkup(React.createElement(ChangePasswordForm,{fullName:"Name",onBusyChange(){},onCancel(){},onSuccess(){}}));
-  assert.equal((html.match(/type="password"/g)||[]).length,2);
+  assert.equal((html.match(/type="password"/g)||[]).length,3);
+  assert.ok(html.includes("Show confirm new password"));assert.ok(html.includes('maxLength="100"'));
   assert.ok(html.includes("Show current password"));assert.ok(html.includes("Show new password"));assert.ok(html.includes('minLength="6"'));
 });
 

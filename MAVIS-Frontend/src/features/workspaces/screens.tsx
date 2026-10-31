@@ -64,7 +64,7 @@ export function WorkspaceOverview() {
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2.5">
                 <h2 className="text-lg font-semibold text-foreground">{workspace.name}</h2>
-                {workspace.code && <StatusBadge status={workspace.code} />}
+                {workspace.code && <StatusBadge status={workspace.code} preserveCase />}
                 <StatusBadge
                   status={workspace.status ?? "ACTIVE"}
                   variant={workspace.status === "ARCHIVED" ? "secondary" : "default"}
