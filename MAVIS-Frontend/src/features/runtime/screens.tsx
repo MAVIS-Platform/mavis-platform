@@ -58,6 +58,23 @@ import { DetailPanel, StatusBadge } from "@/components/shared/data";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+
+function httpMethodBadgeClass(method: string): string {
+  switch (method.toUpperCase()) {
+    case "GET":
+      return "bg-emerald-500/15 text-emerald-500 border border-emerald-500/30";
+    case "POST":
+      return "bg-sky-500/15 text-sky-400 border border-sky-500/30";
+    case "PUT":
+      return "bg-amber-500/15 text-amber-400 border border-amber-500/30";
+    case "PATCH":
+      return "bg-violet-500/15 text-violet-400 border border-violet-500/30";
+    case "DELETE":
+      return "bg-rose-500/15 text-rose-400 border border-rose-500/30";
+    default:
+      return "bg-muted text-foreground border border-border";
+  }
+}
 import { RuntimeSessionTimeline, RuntimeStatusBadge, TraceViewer } from "./components";
 import { BackendRuntime } from "./backend";
 import type { Response } from "@/lib/api/contracts";
@@ -471,7 +488,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                               className="flex items-center justify-between gap-2 px-3 py-1.5"
                             >
                               <div className="flex items-center gap-2 font-mono">
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 font-semibold">
+                                <span
+                                  className={`inline-flex w-14 justify-center px-1.5 py-0.5 rounded font-semibold ${httpMethodBadgeClass(ep.method)}`}
+                                >
                                   {ep.method}
                                 </span>
                                 <span className="font-medium">{ep.path}</span>
@@ -1444,7 +1463,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                         #{i + 1}
                       </span>
                       <select
-                        className="h-8 rounded border px-2 text-xs font-semibold bg-background"
+                        className={`h-8 rounded px-2 text-xs font-mono font-semibold ${httpMethodBadgeClass(st.method)}`}
                         value={st.method}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -1628,12 +1647,18 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 {steps.length} HTTP steps · {inheritedEnvKeys.length} vars inherited from Step 1
               </span>
             </div>
-            <ul className="space-y-1 font-mono text-muted-foreground">
+            <ul className="space-y-1.5 font-mono text-muted-foreground">
               {steps.map((step, index) => (
-                <li key={index}>
-                  {index + 1}. <strong className="text-foreground">{step.method}</strong>{" "}
-                  {step.service}
-                  {step.path} → Expected {step.status}
+                <li key={index} className="flex items-center gap-2">
+                  <span>{index + 1}.</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${httpMethodBadgeClass(step.method)}`}>
+                    {step.method}
+                  </span>
+                  <span className="text-foreground">
+                    {step.service}
+                    {step.path}
+                  </span>
+                  <span>→ Expected {step.status}</span>
                 </li>
               ))}
             </ul>
@@ -1745,7 +1770,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                             className="inline-flex items-center gap-1.5 px-2 py-1 rounded border bg-background font-mono text-xs"
                           >
                             <span className="text-muted-foreground">#{idx + 1}</span>
-                            <strong className="text-primary">{st.method}</strong>
+                            <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${httpMethodBadgeClass(st.method)}`}>
+                              {st.method}
+                            </span>
                             <span>
                               {st.service}
                               {st.path}
