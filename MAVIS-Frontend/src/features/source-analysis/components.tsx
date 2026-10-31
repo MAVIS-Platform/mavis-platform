@@ -1,4 +1,4 @@
-import { StatusBadge } from "@/components/shared/data";
+import { StatusBadge, StatusLabel } from "@/components/shared/data";
 import type { AnalysisJob } from "@/types/domain";
 
 export function formatAnalysisJobMessage(job: AnalysisJob): string {
@@ -32,7 +32,8 @@ export function AnalysisStatusIndicator({
   job: AnalysisJob;
   compact?: boolean;
 }) {
-  const isActive = job.status === "processing" || job.status === "queued" || job.status === "cancelling";
+  const isActive =
+    job.status === "processing" || job.status === "queued" || job.status === "cancelling";
   const showWorker =
     Boolean(job.workerStatus) &&
     job.workerStatus !== "NOT_APPLICABLE" &&
@@ -75,7 +76,7 @@ export function AnalysisStatusIndicator({
         />
         {showWorker && (
           <span className="font-mono text-xs text-muted-foreground">
-            Worker: {job.workerStatus}
+            Worker: <StatusLabel status={job.workerStatus ?? ""} />
           </span>
         )}
       </div>
@@ -94,4 +95,3 @@ export function AnalysisStatusIndicator({
     </div>
   );
 }
-

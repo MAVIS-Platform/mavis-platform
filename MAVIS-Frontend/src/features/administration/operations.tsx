@@ -13,7 +13,13 @@ import {
 } from "lucide-react";
 import { useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
-import { DetailPanel, StatusBadge, SummaryCard, DataTable } from "@/components/shared/data";
+import {
+  DetailPanel,
+  StatusBadge,
+  StatusLabel,
+  SummaryCard,
+  DataTable,
+} from "@/components/shared/data";
 import { RequestState } from "@/components/shared/request-state";
 import { Pagination } from "@/components/shared/forms";
 
@@ -296,8 +302,16 @@ export function AdminRuntimeSummary() {
                   label: "Execution",
                   render: (r) => <StatusBadge status={r.executionStatus} />,
                 },
-                { key: "evidence", label: "Evidence", render: (r) => r.evidenceStatus },
-                { key: "cleanup", label: "Cleanup", render: (r) => r.cleanupStatus },
+                {
+                  key: "evidence",
+                  label: "Evidence",
+                  render: (r) => <StatusLabel status={r.evidenceStatus} />,
+                },
+                {
+                  key: "cleanup",
+                  label: "Cleanup",
+                  render: (r) => <StatusLabel status={r.cleanupStatus} />,
+                },
               ]}
             />
             <PageResults count={rows.length} page={page} onPage={setPage} />
