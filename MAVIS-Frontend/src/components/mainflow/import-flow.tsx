@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RefreshCw } from "lucide-react";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -299,9 +300,25 @@ export function ImportFlow({
                 !branchesCurrent || !selectedBranch,
               )}
             >
-              <label className="block space-y-2 text-sm font-medium">
-                <span>Branch</span>
+              <div className="block space-y-2 text-sm font-medium">
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor="import-branch-select">Branch</label>
+                  <button
+                    type="button"
+                    aria-label={t("Reload branches", "Tải lại danh sách nhánh")}
+                    title={t("Reload branches", "Tải lại danh sách nhánh")}
+                    disabled={busy || !!importedSnapshot || !repositoryUrl || refs.isFetching}
+                    onClick={() => {
+                      setLookup(repositoryUrl);
+                      if (lookupUrl === repositoryUrl) void refs.refetch();
+                    }}
+                    className="inline-flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                  >
+                    <RefreshCw className={refs.isFetching ? "size-3.5 animate-spin" : "size-3.5"} />
+                  </button>
+                </div>
                 <select
+                  id="import-branch-select"
                   aria-label="Branch"
                   className="h-10 w-full rounded-md border bg-card px-3 text-sm"
                   value={selectedBranch}
@@ -327,7 +344,7 @@ export function ImportFlow({
                     </option>
                   ))}
                 </select>
-              </label>
+              </div>
             </GuidedTarget>
             <GuidedTarget
               {...guide(
@@ -356,18 +373,6 @@ export function ImportFlow({
                 </span>
               </label>
             </GuidedTarget>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={busy || !!importedSnapshot || !repositoryUrl || refs.isFetching}
-              onClick={() => {
-                setLookup(repositoryUrl);
-                if (lookupUrl === repositoryUrl) void refs.refetch();
-              }}
-            >
-              Reload branches
-            </Button>
           </>
           {refs.error && <ErrorState error={refs.error} onRetry={() => void refs.refetch()} />}
           {refs.data?.truncated && (
