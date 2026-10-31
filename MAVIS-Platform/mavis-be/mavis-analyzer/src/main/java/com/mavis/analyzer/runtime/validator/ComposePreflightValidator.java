@@ -218,12 +218,16 @@ public class ComposePreflightValidator {
                 || lower.contains("/test/") || lower.contains("/tests/");
     }
 
+    private static final Pattern CODE_GETENV_PATTERN = Pattern.compile(
+            "(?:System\\.getenv|Environment\\.GetEnvironmentVariable)\\s*\\(\\s*\"([A-Za-z_][A-Za-z0-9_]*)\"\\s*\\)");
+
     private boolean isInspectableSourceOrConfig(String path) {
         String lower = path.toLowerCase(Locale.ROOT);
         return lower.endsWith(".yml") || lower.endsWith(".yaml") || lower.endsWith(".properties")
                 || lower.endsWith(".json") || lower.endsWith(".env") || lower.endsWith(".env.example")
-                || lower.endsWith("controller.java") || lower.endsWith("resource.java") || lower.endsWith("endpoint.java")
-                || lower.endsWith("controller.cs") || lower.endsWith("program.cs") || lower.endsWith("endpoints.cs");
+                || lower.endsWith("pom.xml") || lower.endsWith("build.gradle") || lower.endsWith("build.gradle.kts")
+                || lower.endsWith(".csproj") || lower.endsWith("directory.packages.props")
+                || lower.endsWith(".java") || lower.endsWith(".cs");
     }
 
     private void inspectFileContent(
@@ -237,29 +241,39 @@ public class ComposePreflightValidator {
 
         String lowerPath = relativePath.toLowerCase(Locale.ROOT);
         String inferredService = inferServiceFromPath(relativePath, dto.getDetectedServices());
+        String lowerContent = content.toLowerCase(Locale.ROOT);
 
-        // 1. Config files (.yml, .yaml, .properties, .json, .env)
-        if (lowerPath.endsWith(".yml") || lowerPath.endsWith(".yaml") || lowerPath.endsWith(".properties")
-                || lowerPath.endsWith(".json") || lowerPath.endsWith(".env") || lowerPath.endsWith(".env.example")) {
-
+        // 0. Quét placeholder ${VAR:default} và System.getenv / Environment.GetEnvironmentVariable
+        if (!lowerPath.endsWith(".xml") && !lowerPath.endsWith(".csproj")) {
             Matcher m = ENV_PLACEHOLDER_PATTERN.matcher(content);
             while (m.find()) {
                 String varName = m.group(1);
                 String defaultVal = m.group(2);
                 registerEnvVar(envMap, varName, inferredService, defaultVal, relativePath);
             }
+        }
+        Matcher envCallMatcher = CODE_GETENV_PATTERN.matcher(content);
+        while (envCallMatcher.find()) {
+            registerEnvVar(envMap, envCallMatcher.group(1), inferredService, null, relativePath);
+        }
+
+        // 1. Config files (.yml, .yaml, .properties, .json, .env)
+        if (lowerPath.endsWith(".yml") || lowerPath.endsWith(".yaml") || lowerPath.endsWith(".properties")
+                || lowerPath.endsWith(".json") || lowerPath.endsWith(".env") || lowerPath.endsWith(".env.example")) {
 
             for (String rawLine : content.split("\r?\n")) {
                 String line = rawLine.trim();
                 if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) continue;
                 String lowerLine = line.toLowerCase(Locale.ROOT);
 
-                if (lowerLine.contains("datasource.url") || lowerLine.contains("jdbc:") || lowerLine.contains("connectionstrings") || lowerLine.contains("defaultconnection")) {
+                if (lowerLine.contains("datasource.url") || lowerLine.contains("jdbc:") || lowerLine.contains("r2dbc:")
+                        || lowerLine.contains("connectionstrings") || lowerLine.contains("defaultconnection")
+                        || lowerLine.contains("mongodb.uri") || lowerLine.contains("database_url")) {
                     List<String> lineVars = extractPlaceholderNames(line);
                     String dbType = inferDbTypeFromLine(lowerLine);
-                    if (lineVars.isEmpty() && (lowerLine.contains("datasource") || lowerLine.contains("connection"))) {
-                        registerEnvVar(envMap, "DB_PASSWORD", inferredService, null, relativePath);
-                        lineVars.add("DB_PASSWORD");
+                    if (lineVars.isEmpty()) {
+                        registerEnvVar(envMap, "DB_CONNECTION_STRING", inferredService, null, relativePath);
+                        lineVars.add("DB_CONNECTION_STRING");
                     }
                     boolean exists = dbChecks.stream().anyMatch(d -> Objects.equals(d.getService(), inferredService) && Objects.equals(d.getDbType(), dbType));
                     if (!exists) {
@@ -269,20 +283,54 @@ public class ComposePreflightValidator {
                                 .configKey(relativePath)
                                 .connectionUrl(sanitizeConnectionPreview(line))
                                 .requiredEnvVars(lineVars)
-                                .status(lineVars.isEmpty() ? "CONFIGURED_IN_SOURCE" : "REQUIRES_ENV_OR_SECRET")
+                                .status("REQUIRES_ENV_OR_SECRET")
                                 .build());
                     }
                 }
-                if (lowerLine.contains("datasource.password") || lowerLine.contains("jwt.secret") || lowerLine.contains("jwt_secret")) {
+                if (lowerLine.contains("jwt.secret") || lowerLine.contains("jwt_secret")) {
                     List<String> lineVars = extractPlaceholderNames(line);
                     if (lineVars.isEmpty()) {
-                        String keyName = lowerLine.contains("jwt") ? "JWT_SECRET" : "SPRING_DATASOURCE_PASSWORD";
-                        registerEnvVar(envMap, keyName, inferredService, null, relativePath);
+                        registerEnvVar(envMap, "JWT_SECRET", inferredService, null, relativePath);
+                    }
+                }
+                if (containsAiIndicator(lowerLine)) {
+                    List<String> lineVars = extractPlaceholderNames(line);
+                    if (lineVars.isEmpty() && envMap.keySet().stream().noneMatch(k -> k.toUpperCase(Locale.ROOT).contains("API_KEY"))) {
+                        registerEnvVar(envMap, "API_KEY", inferredService, null, relativePath);
                     }
                 }
             }
         }
 
+        // 1B. Phát hiện Database & AI từ build manifest (pom.xml, build.gradle, .csproj) hoặc code (.java, .cs)
+        if (lowerPath.endsWith("pom.xml") || lowerPath.endsWith("build.gradle") || lowerPath.endsWith("build.gradle.kts")
+                || lowerPath.endsWith(".csproj") || lowerPath.endsWith("directory.packages.props")
+                || lowerPath.endsWith(".java") || lowerPath.endsWith(".cs")) {
+
+            if (containsDbDependencyOrCode(lowerPath, content, lowerContent)) {
+                String dbType = inferDbTypeFromLine(lowerContent);
+                if (!envMap.containsKey("DB_CONNECTION_STRING")
+                        && envMap.values().stream().noneMatch(v -> "DB_SECRET".equals(v.getCategory()))) {
+                    registerEnvVar(envMap, "DB_CONNECTION_STRING", inferredService, null, relativePath);
+                }
+                boolean exists = dbChecks.stream().anyMatch(d -> Objects.equals(d.getService(), inferredService));
+                if (!exists) {
+                    dbChecks.add(DatabaseCheckDTO.builder()
+                            .service(inferredService)
+                            .dbType(dbType)
+                            .configKey(relativePath)
+                            .connectionUrl("Detected " + dbType + " integration in " + relativePath)
+                            .requiredEnvVars(List.of("DB_CONNECTION_STRING"))
+                            .status("DETECTED_IN_SOURCE")
+                            .build());
+                }
+            }
+
+            if (containsAiIndicator(lowerContent)
+                    && envMap.keySet().stream().noneMatch(k -> k.toUpperCase(Locale.ROOT).contains("API_KEY"))) {
+                registerEnvVar(envMap, "API_KEY", inferredService, null, relativePath);
+            }
+        }
         // 2. Java Controller endpoints
         if (lowerPath.endsWith(".java") && content.contains("Mapping")) {
             String basePath = "";
@@ -472,7 +520,8 @@ public class ComposePreflightValidator {
         if (u.contains("DB_PASS") || u.contains("DATASOURCE_PASSWORD") || u.contains("POSTGRES_PASSWORD")
                 || u.contains("MYSQL_PASSWORD") || u.contains("MYSQL_ROOT_PASSWORD")
                 || u.contains("MONGO_INITDB_ROOT_PASSWORD") || u.contains("REDIS_PASSWORD")
-                || u.contains("CONNECTIONSTRING")) {
+                || u.contains("CONNECTIONSTRING") || u.contains("CONNECTION_STRING")
+                || u.equals("DATABASE_URL") || u.equals("SPRING_DATASOURCE_URL")) {
             return "DB_SECRET";
         }
         if (u.contains("SECRET") || u.contains("PASSWORD") || u.contains("TOKEN") || u.contains("API_KEY") || u.contains("PRIVATE_KEY") || u.contains("CREDENTIAL")) {
@@ -481,6 +530,36 @@ public class ComposePreflightValidator {
         return "ENV";
     }
 
+    private static boolean containsDbDependencyOrCode(String lowerPath, String content, String lowerContent) {
+        if (lowerPath.endsWith("pom.xml") || lowerPath.endsWith("build.gradle") || lowerPath.endsWith("build.gradle.kts")
+                || lowerPath.endsWith(".csproj") || lowerPath.endsWith("directory.packages.props")) {
+            return lowerContent.contains("spring-boot-starter-data-jpa")
+                    || lowerContent.contains("spring-boot-starter-jdbc")
+                    || lowerContent.contains("mybatis")
+                    || lowerContent.contains("druid")
+                    || lowerContent.contains("mysql-connector")
+                    || lowerContent.contains("postgresql")
+                    || lowerContent.contains("npgsql")
+                    || lowerContent.contains("mssql-jdbc")
+                    || lowerContent.contains("sqlclient")
+                    || lowerContent.contains("entityframeworkcore")
+                    || lowerContent.contains("dapper")
+                    || lowerContent.contains("spring-boot-starter-data-mongodb");
+        }
+        return content.contains("@Entity") || content.contains("@Table") || content.contains("JpaRepository")
+                || content.contains("CrudRepository") || content.contains("JdbcTemplate")
+                || content.contains("@Mapper") || content.contains("DbContext") || content.contains("SqlConnection");
+    }
+
+    public static boolean containsAiIndicator(String lower) {
+        if (lower == null || lower.isEmpty()) return false;
+        return lower.contains("spring-ai") || lower.contains("langchain4j") || lower.contains("openai")
+                || lower.contains("gemini") || lower.contains("generativelanguage") || lower.contains("anthropic")
+                || lower.contains("dashscope") || lower.contains("qianwen") || lower.contains("tongyi")
+                || lower.contains("semantickernel") || lower.contains("azure.ai.openai")
+                || lower.contains("ai.api-key") || lower.contains("api_key") || lower.contains("apikey")
+                || lower.contains("chatclient") || lower.contains("chatmodel");
+    }
     private static boolean isDatabaseContainer(String lowerName, String lowerImage) {
         return lowerName.equals("db") || lowerName.endsWith("-db") || lowerName.contains("postgres")
                 || lowerName.contains("mysql") || lowerName.contains("mariadb") || lowerName.contains("mongo")

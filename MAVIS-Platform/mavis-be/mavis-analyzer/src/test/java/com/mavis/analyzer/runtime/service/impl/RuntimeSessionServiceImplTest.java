@@ -520,4 +520,44 @@ class RuntimeSessionServiceImplTest {
                 .contains("- DB_PASSWORD=${DB_PASSWORD:-}")
                 .doesNotContain("super-secret-db-pass");
     }
+
+    @Test
+    @DisplayName("STEP 1: Tự động nhận diện hệ thống có DB và AI để trả về mặc định 2 box DB_CONNECTION_STRING và API_KEY")
+    void testAutoDetectDbAndAiProducesTwoDefaultBoxes(@TempDir Path tempDir) throws IOException {
+        Path pomFile = tempDir.resolve("pom.xml");
+        Files.writeString(pomFile, """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>org.springframework.boot</groupId>
+                      <artifactId>spring-boot-starter-data-jpa</artifactId>
+                    </dependency>
+                    <dependency>
+                      <groupId>com.mysql</groupId>
+                      <artifactId>mysql-connector-j</artifactId>
+                    </dependency>
+                    <dependency>
+                      <groupId>org.springframework.ai</groupId>
+                      <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """);
+        Path composeFile = tempDir.resolve("docker-compose.yml");
+        Files.writeString(composeFile, """
+                services:
+                  ai-order-service:
+                    image: ai-order-service:1.0
+                    ports:
+                      - "8080:8080"
+                """);
+        snapshot.setStoragePath(composeFile.toString());
+        when(sourceSnapshotRepository.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+
+        PreflightCheckResponseDTO preflight = runtimeSessionService.runComposePreflight(snapshotId);
+        assertThat(preflight.isCompatible()).isTrue();
+        assertThat(preflight.getRequiredEnvVars())
+                .extracting(PreflightCheckResponseDTO.RequiredEnvVarDTO::getName)
+                .containsExactly("DB_CONNECTION_STRING", "API_KEY");
+    }
 }

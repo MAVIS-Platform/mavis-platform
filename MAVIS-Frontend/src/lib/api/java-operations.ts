@@ -559,6 +559,9 @@ export async function executeJava(
       return javaRequest(`analyzer/projects/${id(input,"projectId")}/runtime-plan/scenarios/${id(input,"scenarioId")}`, token,
         { method: "PUT", body: JSON.stringify(input), signal });
     }
+    case "generateRuntimeScenario": {
+      return post(`analyzer/projects/${id(input,"projectId")}/runtime-plan/scenarios/generate`, input);
+    }
     case "startRuntime": {
       return courseworkRuntime(await post(`analyzer/projects/${id(input,"projectId")}/runtime-plan/start`, input), input);
     }

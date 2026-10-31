@@ -125,8 +125,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     Enumeration<? extends ZipEntry> entries = zipFile.entries();
                     while (entries.hasMoreElements()) {
                         ZipEntry entry = entries.nextElement();
-                        String entryName = entry.getName().toLowerCase();
-                        if (entryName.endsWith("docker-compose.yml") || entryName.endsWith("docker-compose.yaml")) {
+                        String entryName = entry.getName().replace('\\', '/').toLowerCase(Locale.ROOT);
+                        String baseName = entryName.contains("/") ? entryName.substring(entryName.lastIndexOf('/') + 1) : entryName;
+                        if (!entry.isDirectory() && (baseName.equals("docker-compose.yml") || baseName.equals("docker-compose.yaml")
+                                || baseName.equals("compose.yml") || baseName.equals("compose.yaml"))) {
                             try (InputStream is = zipFile.getInputStream(entry)) {
                                 String yamlContent = new String(readBounded(is), StandardCharsets.UTF_8);
                                 result = composePreflightValidator.validate(yamlContent);
@@ -137,11 +139,26 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 } catch (Exception e) {
                     log.error("Lỗi khi đọc file zip snapshot: {}", path, e);
                 }
+                if (result == null) {
+                    result = PreflightCheckResponseDTO.builder()
+                            .compatible(false)
+                            .detectedServices(new ArrayList<>())
+                            .securityWarnings(new ArrayList<>(List.of("Snapshot chưa có file docker-compose.yml; đang tổng hợp thông tin service từ Model tĩnh")))
+                            .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
+                            .build();
+                }
             }
         } else if (Files.isDirectory(path)) {
             Optional<Path> composePath = findComposeFileInDirectory(path);
             if (composePath.isPresent()) {
                 result = composePreflightValidator.validate(composePath.get());
+            } else {
+                result = PreflightCheckResponseDTO.builder()
+                        .compatible(false)
+                        .detectedServices(new ArrayList<>())
+                        .securityWarnings(new ArrayList<>(List.of("Thư mục snapshot chưa có file docker-compose.yml; đang tổng hợp thông tin service từ Model tĩnh")))
+                        .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
+                        .build();
             }
         }
 
@@ -153,6 +170,11 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         try {
             composePreflightValidator.inspectSnapshotSource(path, result);
             enrichPreflightFromModel(snapshot, result);
+            if (!result.isCompatible() && result.getDetectedServices() != null && !result.getDetectedServices().isEmpty()
+                    && result.getSecurityWarnings() != null
+                    && result.getSecurityWarnings().stream().allMatch(w -> w.contains("chưa có file docker-compose.yml"))) {
+                result.setCompatible(true);
+            }
         } catch (Exception e) {
             log.warn("Không thể làm giàu thông tin preflight từ model cho snapshot {}: {}", snapshotId, e.getMessage());
         }
@@ -167,11 +189,18 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         UUID projectId = snapshot.getProject() != null ? snapshot.getProject().getId() : null;
         if (projectId == null) return;
 
-        ModelVersion model = modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId)
-                .orElseGet(() -> {
-                    List<ModelVersion> all = modelVersionRepository.findByProjectIdOrderByRevisionDesc(projectId);
-                    return all != null && !all.isEmpty() ? all.get(0) : null;
-                });
+        List<ModelVersion> allModels = modelVersionRepository.findByProjectIdOrderByRevisionDesc(projectId);
+        ModelVersion model = null;
+        if (allModels != null && snapshot.getId() != null) {
+            model = allModels.stream()
+                    .filter(m -> m.getSourceSnapshot() != null && snapshot.getId().equals(m.getSourceSnapshot().getId()))
+                    .findFirst()
+                    .orElse(null);
+        }
+        if (model == null) {
+            model = modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(projectId)
+                    .orElse(allModels != null && !allModels.isEmpty() ? allModels.get(0) : null);
+        }
 
         if (model == null || model.getId() == null) return;
 
@@ -214,16 +243,38 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 String protocol = el.getProperties() != null ? el.getProperties().path("protocol").asText("SQL") : "SQL";
                 boolean dbExists = dbChecks.stream().anyMatch(d -> d.getService().equalsIgnoreCase(ownerSvc));
                 if (!dbExists) {
-                    ComposePreflightValidator.registerEnvVar(envMap, "DB_PASSWORD", ownerSvc, null, "STATIC_MODEL");
-                    ComposePreflightValidator.registerEnvVar(envMap, "DB_HOST", ownerSvc, host, "STATIC_MODEL");
+                    if (envMap.values().stream().noneMatch(v -> "DB_SECRET".equals(v.getCategory()))) {
+                        ComposePreflightValidator.registerEnvVar(envMap, "DB_CONNECTION_STRING", ownerSvc, null, "STATIC_MODEL");
+                    }
                     dbChecks.add(DatabaseCheckDTO.builder()
                             .service(ownerSvc)
                             .dbType(protocol.toUpperCase(Locale.ROOT))
                             .configKey("model:DATABASE:" + el.getName())
                             .connectionUrl(host + "/" + dbName)
-                            .requiredEnvVars(List.of("DB_HOST", "DB_PASSWORD"))
+                            .requiredEnvVars(List.of("DB_CONNECTION_STRING"))
                             .status("DETECTED_IN_MODEL")
                             .build());
+                }
+            } else if (el.getName() != null) {
+                String lowerEl = (el.getName() + " " + (el.getProperties() != null ? el.getProperties().toString() : "")).toLowerCase(Locale.ROOT);
+                if (("EXTERNAL_SYSTEM".equalsIgnoreCase(el.getElementType()) || ComposePreflightValidator.containsAiIndicator(lowerEl))
+                        && envMap.keySet().stream().noneMatch(k -> k.toUpperCase(Locale.ROOT).contains("API_KEY"))) {
+                    ComposePreflightValidator.registerEnvVar(envMap, "API_KEY", el.getName(), null, "STATIC_MODEL");
+                }
+                if ((lowerEl.contains("repository") || lowerEl.contains("mapper") || lowerEl.contains("dao") || lowerEl.contains("datasource"))
+                        && envMap.values().stream().noneMatch(v -> "DB_SECRET".equals(v.getCategory()))) {
+                    String svcName = services.isEmpty() ? "default-service" : services.get(0);
+                    ComposePreflightValidator.registerEnvVar(envMap, "DB_CONNECTION_STRING", svcName, null, "STATIC_MODEL");
+                    if (dbChecks.isEmpty()) {
+                        dbChecks.add(DatabaseCheckDTO.builder()
+                                .service(svcName)
+                                .dbType("SQL")
+                                .configKey("model:DATA_ACCESS:" + el.getName())
+                                .connectionUrl("Detected data access component " + el.getName())
+                                .requiredEnvVars(List.of("DB_CONNECTION_STRING"))
+                                .status("DETECTED_IN_MODEL")
+                                .build());
+                    }
                 }
             }
         }
@@ -259,13 +310,15 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                             String svcName = src.getName();
                             boolean dbExists = dbChecks.stream().anyMatch(d -> d.getService().equalsIgnoreCase(svcName));
                             if (!dbExists) {
-                                ComposePreflightValidator.registerEnvVar(envMap, "DB_PASSWORD", svcName, null, "STATIC_MODEL");
+                                if (envMap.values().stream().noneMatch(v -> "DB_SECRET".equals(v.getCategory()))) {
+                                    ComposePreflightValidator.registerEnvVar(envMap, "DB_CONNECTION_STRING", svcName, null, "STATIC_MODEL");
+                                }
                                 dbChecks.add(DatabaseCheckDTO.builder()
                                         .service(svcName)
                                         .dbType("SQL")
                                         .configKey("model:DATABASE_ACCESS")
                                         .connectionUrl(tgt != null && tgt.getName() != null ? tgt.getName() : "database")
-                                        .requiredEnvVars(List.of("DB_PASSWORD"))
+                                        .requiredEnvVars(List.of("DB_CONNECTION_STRING"))
                                         .status("DETECTED_IN_MODEL")
                                         .build());
                             }
@@ -274,7 +327,6 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 }
             }
         }
-
         if (evidenceRepository != null) {
             List<Evidence> evidences = evidenceRepository.findByModelVersionId(model.getId());
             if (evidences != null) {
