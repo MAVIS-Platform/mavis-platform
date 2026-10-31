@@ -1391,36 +1391,36 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             );
           })()}
 
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex-1 min-w-64">
-              <FormField
-                label="AI Testing Goal (Optional)"
-                hint="Example: Verify cross-service organization, department, and employee creation flow"
-              >
-                {(props) => (
-                  <Input
-                    {...props}
-                    placeholder="Enter a specific test objective or leave blank for comprehensive auto-generation..."
-                    value={aiGoal}
-                    onChange={(e) => setAiGoal(e.target.value)}
-                  />
-                )}
-              </FormField>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!snapshotId || generateAiDraft.isPending}
-              onClick={() => {
-                edited.current = false;
-                triggerSystemAiGeneration(aiGoal);
-              }}
-            >
-              {generateAiDraft.isPending
-                ? "✨ System + AI analyzing..."
-                : "✨ Regenerate Scenario with System + AI"}
-            </Button>
-          </div>
+          <FormField
+            label="AI Testing Goal (Optional)"
+            hint="Example: Verify cross-service organization, department, and employee creation flow"
+          >
+            {(props) => (
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Input
+                  {...props}
+                  className="flex-1 min-w-64"
+                  placeholder="Enter a specific test objective or leave blank for comprehensive auto-generation..."
+                  value={aiGoal}
+                  onChange={(e) => setAiGoal(e.target.value)}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="shrink-0 h-10"
+                  disabled={!snapshotId || generateAiDraft.isPending}
+                  onClick={() => {
+                    edited.current = false;
+                    triggerSystemAiGeneration(aiGoal);
+                  }}
+                >
+                  {generateAiDraft.isPending
+                    ? "✨ System + AI analyzing..."
+                    : "✨ Regenerate Scenario with System + AI"}
+                </Button>
+              </div>
+            )}
+          </FormField>
 
           <div className="rounded-lg border p-3.5 bg-muted/30 space-y-2 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
