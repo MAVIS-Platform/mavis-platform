@@ -3,7 +3,7 @@ import { ArchitectureLoading } from "@/features/architecture/architecture-loadin
 import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { canonicalNineDiagramCatalog } from "@/features/architecture/diagram-catalog";
+import { canonicalDiagramCatalog, resolveDiagramKind } from "@/features/architecture/diagram-catalog";
 import { useLocale } from "@/lib/i18n/locale-context";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -39,8 +39,7 @@ export function ArchitectureWorkspace({
   const returnHref = adminJobsReturnHref(params);
   const reviewContext = isAdmin ? { returnTo: returnHref } : {};
   const { t } = useLocale();
-  const requestedKind = params.get("kind") === "SCENARIOS" ? "UML_SEQUENCE" : params.get("kind");
-  const activeKind = canonicalNineDiagramCatalog.find((item) => item.kind === requestedKind)?.kind ?? "CONTEXT";
+  const activeKind = resolveDiagramKind(params.get("kind"));
   const project = useApiQuery(
     "project",
     { projectId: state.projectId },
@@ -116,7 +115,7 @@ export function ArchitectureWorkspace({
               <Link href={`/architecture?${new URLSearchParams({ project: state.projectId, model: state.model.id, ...reviewContext })}`}
                 aria-current={resolvedMode === "graph" ? "page" : undefined}>{t("Graph Explorer")}</Link>
             </Button>
-            {canonicalNineDiagramCatalog.map((item) => (
+            {canonicalDiagramCatalog.map((item) => (
               <Button key={item.id} asChild size="sm"
                 variant={resolvedMode === "diagram" && activeKind === item.kind ? "default" : "outline"}>
                 <Link href={`/diagrams?${new URLSearchParams({ project: state.projectId, model: state.model!.id, kind: item.kind, ...reviewContext })}`}
