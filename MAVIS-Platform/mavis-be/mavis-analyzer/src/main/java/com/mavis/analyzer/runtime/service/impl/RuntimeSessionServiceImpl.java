@@ -228,14 +228,17 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         for (ModelElement el : elements) {
             if (el.getId() != null) elementById.put(el.getId(), el);
             if ("SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType()) && el.getName() != null) {
-                String sName = el.getName();
-                boolean exists = services.stream().anyMatch(s -> s.equalsIgnoreCase(sName));
-                if (!exists) {
-                    services.add(sName);
+                String sName = ComposePreflightValidator.cleanServiceCandidate(el.getName());
+                if (!sName.isBlank() && sName.matches("[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}")) {
+                    boolean isFallbackContainer = "UNCERTAIN_MAPPING".equalsIgnoreCase(el.getStatus());
+                    boolean exists = services.stream().anyMatch(s -> s.equalsIgnoreCase(sName));
+                    if (!exists && (!isFallbackContainer || services.isEmpty()) && services.size() < 10) {
+                        services.add(sName);
+                    }
+                    ports.putIfAbsent(sName, 8080);
+                    String lang = el.getLanguageStack() != null ? el.getLanguageStack().toLowerCase(Locale.ROOT) : "";
+                    stacks.putIfAbsent(sName, (lang.contains("csharp") || lang.contains("dotnet")) ? "dotnet" : "java");
                 }
-                ports.putIfAbsent(sName, 8080);
-                String lang = el.getLanguageStack() != null ? el.getLanguageStack().toLowerCase(Locale.ROOT) : "";
-                stacks.putIfAbsent(sName, (lang.contains("csharp") || lang.contains("dotnet")) ? "dotnet" : "java");
             } else if ("DATABASE".equalsIgnoreCase(el.getElementType()) && el.getName() != null) {
                 String ownerSvc = el.getProperties() != null ? el.getProperties().path("ownerService").asText("database") : "database";
                 String host = el.getProperties() != null ? el.getProperties().path("physicalHost").asText(el.getName()) : el.getName();
@@ -357,6 +360,28 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        if (!services.isEmpty()) {
+            for (DetectedEndpointDTO ep : endpoints) {
+                String cleanSvc = ComposePreflightValidator.cleanServiceCandidate(ep.getService());
+                String matched = services.stream()
+                        .filter(s -> s.equalsIgnoreCase(cleanSvc)
+                                || s.toLowerCase(Locale.ROOT).startsWith(cleanSvc.toLowerCase(Locale.ROOT))
+                                || cleanSvc.toLowerCase(Locale.ROOT).startsWith(s.toLowerCase(Locale.ROOT)))
+                        .findFirst()
+                        .orElse(null);
+                if (matched != null) {
+                    ep.setService(matched);
+                } else if (!cleanSvc.isBlank() && cleanSvc.matches("[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}") && services.size() < 10) {
+                    services.add(cleanSvc);
+                    ports.putIfAbsent(cleanSvc, 8080);
+                    stacks.putIfAbsent(cleanSvc, "java");
+                    ep.setService(cleanSvc);
+                } else {
+                    ep.setService(services.get(0));
                 }
             }
         }

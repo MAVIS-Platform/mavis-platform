@@ -811,6 +811,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const start = useApiMutation("startRuntime");
   const saveDraft = useApiMutation("createScenario");
   const generateAiDraft = useApiMutation("generateRuntimeScenario");
+  const autoSaveConfig = useApiMutation("saveRuntimeConfiguration");
   const submitting = useRef(false);
   const autoGenTriggered = useRef<string>("");
   const persistedDraft = useRef<{ fingerprint: string; scenario: { id: string; revision: number } } | null>(null);
@@ -981,16 +982,47 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           | undefined
       )?.detectedEndpoints;
       if (Array.isArray(discoveredEndpoints) && discoveredEndpoints.length > 0) {
-        setDraftSteps(
-          discoveredEndpoints.slice(0, 6).map((ep, idx) => ({
-            service: ep.service || detectedServiceNames[idx % Math.max(1, detectedServiceNames.length)] || defaultSvc,
-            method: (ep.method || "GET").toUpperCase(),
-            path: ep.path || "/health",
+        const sampleEnv: Record<string, string> = {};
+        const synthesized = discoveredEndpoints.slice(0, 6).map((ep, idx) => {
+          const rawSvc =
+            ep.service ||
+            detectedServiceNames[idx % Math.max(1, detectedServiceNames.length)] ||
+            defaultSvc ||
+            "gateway";
+          const cleanSvc = rawSvc.replace(/-[0-9a-f]{7,40}$/i, "");
+          const serviceKey = cleanSvc.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32);
+          const method = (ep.method || "GET").toUpperCase();
+          const vars: Record<string, string> = {};
+          const rawPath = ep.path || "/health";
+          const rewrittenPath = rawPath.replace(/\{([^}/]+)\}/g, (_, param: string) => {
+            const alias = `V${Object.keys(vars).length}`;
+            const envName = `${serviceKey}_${param.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}`.slice(0, 60);
+            vars[alias] = envName;
+            sampleEnv[envName] = sampleEnv[envName] ?? "1";
+            return `{{${alias}}}`;
+          });
+          let bodyRef: string | undefined;
+          if (["POST", "PUT", "PATCH"].includes(method)) {
+            bodyRef = `${serviceKey}_BODY_${idx + 1}`;
+            sampleEnv[bodyRef] =
+              sampleEnv[bodyRef] ??
+              JSON.stringify({ name: "sample-entity", organizationId: 1, departmentId: 1 });
+          }
+          return {
+            service: cleanSvc,
+            method,
+            path: rewrittenPath,
             status: "200",
             rationale: `Tự động trích xuất từ Step 1 (${ep.source ?? "source snapshot"})`,
             source: ep.source ?? "Step 1 Preflight",
-          })),
-        );
+            ...(Object.keys(vars).length > 0 ? { environmentVariables: vars } : {}),
+            ...(bodyRef ? { bodyReference: bodyRef } : {}),
+          } as RuntimeDraftStep;
+        });
+        setDraftSteps(synthesized);
+        if (Object.keys(sampleEnv).length > 0) {
+          setEnvironment((prev) => ({ ...sampleEnv, ...prev }));
+        }
       }
     }
   }, [automatic, config.data?.profile]);
@@ -1087,16 +1119,43 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       setRunMessage("Complete request services, paths, parameter values and expected status codes.");
       return;
     }
+    let activeConfigRevision = config.data?.revision ?? 0;
     if (
       approveAndDispatch &&
       (!config.data?.ready ||
         config.data.modelId !== chosenModel.id ||
         config.data.snapshotId !== effectiveSnapshotId)
     ) {
-      setRunMessage(
-        "Runtime configuration must be ready and pinned to this source/model before approval.",
-      );
-      return;
+      try {
+        setRunMessage("Đang tự động đồng bộ & chốt cấu hình Step 1 cho Snapshot/Model hiện tại...");
+        const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
+        const pinned = await autoSaveConfig.mutateAsync({
+          projectId,
+          profileId: config.data?.profileId || "SPRING_BOOT_DOTNET_COMPOSE_V1",
+          snapshotId: effectiveSnapshotId,
+          modelId: chosenModel.id,
+          profile: {
+            serviceMappings:
+              rawProf["serviceMappings"] && typeof rawProf["serviceMappings"] === "object"
+                ? rawProf["serviceMappings"]
+                : {},
+            environmentVariables:
+              rawProf["environmentVariables"] && typeof rawProf["environmentVariables"] === "object"
+                ? rawProf["environmentVariables"]
+                : {},
+            secretReferences: Array.isArray(rawProf["secretReferences"])
+              ? rawProf["secretReferences"]
+              : [],
+          },
+          expectedRevision: activeConfigRevision,
+        });
+        activeConfigRevision = pinned.revision;
+      } catch (pinErr) {
+        setRunMessage(
+          `Không thể tự động lưu cấu hình Step 1: ${pinErr instanceof Error ? pinErr.message : String(pinErr)}`,
+        );
+        return;
+      }
     }
     const required = activeInputs;
     if (approveAndDispatch && required.length && !config.data?.protectedInputsReady) {
@@ -1169,7 +1228,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         modelId: chosenModel.id,
         scenarioId: saved.id,
         scenarioName: draft.name,
-        configurationRevision: config.data!.revision,
+        configurationRevision: activeConfigRevision,
         scenarioRevision: saved.revision,
         approved: true,
         environment: protectedValues,
@@ -1199,7 +1258,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             <SelectField
               label="Source snapshot"
               value={snapshotId}
-              onChange={setSnapshotId}
+              onChange={(nextSnapId) => {
+                edited.current = false;
+                autoGenTriggered.current = "";
+                setSnapshotId(nextSnapId);
+                const matchedModel = selectableModels.find((m) => m.snapshotId === nextSnapId);
+                if (matchedModel) {
+                  setModelId(matchedModel.id);
+                }
+              }}
               options={(snapshots.data ?? []).map((s) => ({
                 value: s.id,
                 label: `${s.name} · ${s.id.slice(0, 8)}`,
@@ -1210,10 +1277,17 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               label="Model version"
               value={modelId}
               onChange={handleModelChange}
-              options={selectableModels.map((m) => ({
-                value: m.id,
-                label: `${"label" in m && m.label ? m.label : `Revision ${m.revision}`} · ${m.id.slice(0, 8)}`,
-              }))}
+              options={(() => {
+                const matching = selectableModels.filter((m) => !snapshotId || m.snapshotId === snapshotId);
+                const list = matching.length ? matching : selectableModels;
+                return list.map((m) => {
+                  const snapName = (snapshots.data ?? []).find((s) => s.id === m.snapshotId)?.name;
+                  return {
+                    value: m.id,
+                    label: `${"label" in m && m.label ? m.label : `Revision ${m.revision}`} · ${m.id.slice(0, 8)}${snapName ? ` (${snapName})` : ""}`,
+                  };
+                });
+              })()}
             />
           </div>
 
@@ -1554,18 +1628,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 !userConfirmed ||
                 !modelId ||
                 !steps.length ||
-                !config.data?.ready ||
-                config.data.modelId !== modelId ||
-                config.data.snapshotId !== snapshotId ||
-                (activeInputs.length > 0 && !config.data.protectedInputsReady) ||
                 activeInputs.some((input) => !environment[input.name]?.trim()) ||
+                autoSaveConfig.isPending ||
                 saveDraft.isPending ||
                 start.isPending
               }
               onClick={() => handleCreateAndRun(true)}
             >
-              {start.isPending
-                ? "Đang khởi chạy..."
+              {autoSaveConfig.isPending || start.isPending
+                ? "Đang đồng bộ & khởi chạy..."
                 : "✅ Xác nhận & Chạy phiên kiểm thử (Confirm & Start Run)"}
             </Button>
             <Button
@@ -1586,52 +1657,81 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       <DetailPanel title="Kịch bản đã xác nhận & lưu trước đó (Saved Scenarios)">
         <RequestState query={scenarios} empty={!scenarios.data?.length}>
           <div className="space-y-3">
-            {scenarios.data?.map((sc) => (
-              <div key={sc.id} className="rounded border p-3 space-y-2">
-                <div className="flex justify-between items-center gap-2">
-                  <div>
-                    <span className="font-semibold text-sm">{sc.name}</span>
-                    <span className="ml-2 text-xs text-muted-foreground">
-                      Revision {sc.revision}
-                    </span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setScenarioName(sc.name);
-                      const parsed = sc.steps
-                        .map((raw) => {
-                          try {
-                            const obj = JSON.parse(raw) as Record<string, unknown>;
-                            return {
-                              service: String(obj["service"] ?? defaultSvc),
-                              method: String(obj["method"] ?? "GET").toUpperCase(),
-                              path: String(obj["path"] ?? "/health"),
-                              status: String(obj["expectedStatus"] ?? 200),
-                              rationale: "Nạp từ kịch bản đã lưu",
-                              source: `Saved Rev ${sc.revision}`,
-                            } as RuntimeDraftStep;
-                          } catch {
-                            return null;
+            {scenarios.data?.map((sc) => {
+              const parsedSteps = sc.steps
+                .map((raw) => {
+                  try {
+                    const obj = JSON.parse(raw) as Record<string, unknown>;
+                    return {
+                      service: String(obj["service"] ?? defaultSvc),
+                      method: String(obj["method"] ?? "GET").toUpperCase(),
+                      path: String(obj["path"] ?? "/health"),
+                      status: String(obj["expectedStatus"] ?? 200),
+                      rationale: "Nạp từ kịch bản đã lưu",
+                      source: `Saved Rev ${sc.revision}`,
+                      ...(obj["environmentVariables"] && typeof obj["environmentVariables"] === "object"
+                        ? { environmentVariables: obj["environmentVariables"] as Record<string, string> }
+                        : {}),
+                      ...(obj["bodyReference"] && typeof obj["bodyReference"] === "string"
+                        ? { bodyReference: obj["bodyReference"] }
+                        : {}),
+                    } as RuntimeDraftStep;
+                  } catch {
+                    return null;
+                  }
+                })
+                .filter((x): x is RuntimeDraftStep => x !== null);
+              return (
+                <div key={sc.id} className="rounded-lg border p-3.5 space-y-2.5 bg-muted/10">
+                  <div className="flex flex-wrap justify-between items-center gap-2">
+                    <div>
+                      <span className="font-semibold text-sm">{sc.name}</span>
+                      <span className="ml-2 px-1.5 py-0.5 rounded bg-muted text-xs text-muted-foreground font-mono">
+                        Revision {sc.revision} · {parsedSteps.length || sc.steps.length} steps
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setScenarioName(sc.name);
+                          if (parsedSteps.length > 0) {
+                            setSteps(parsedSteps);
+                            persistedDraft.current = null;
+                            setRunMessage(`✓ Đã nạp kịch bản "${sc.name}" (Revision ${sc.revision}) lên trình chỉnh sửa.`);
                           }
-                        })
-                        .filter((x): x is RuntimeDraftStep => x !== null);
-                      if (parsed.length > 0) {
-                        setSteps(parsed);
-                      }
-                    }}
-                  >
-                    Nạp kịch bản này
-                  </Button>
+                        }}
+                      >
+                        📥 Nạp lên trình sửa
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {parsedSteps.length > 0
+                      ? parsedSteps.map((st, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded border bg-background font-mono text-xs"
+                          >
+                            <span className="text-muted-foreground">#{idx + 1}</span>
+                            <strong className="text-primary">{st.method}</strong>
+                            <span>
+                              {st.service}
+                              {st.path}
+                            </span>
+                            <span className="text-muted-foreground">→ {st.status}</span>
+                          </span>
+                        ))
+                      : sc.steps.map((st, idx) => (
+                          <span key={idx} className="font-mono text-xs text-muted-foreground">
+                            {st}
+                          </span>
+                        ))}
+                  </div>
                 </div>
-                <ul className="list-disc pl-5 text-xs text-muted-foreground font-mono space-y-0.5">
-                  {sc.steps.map((st, idx) => (
-                    <li key={idx}>{st}</li>
-                  ))}
-                </ul>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </RequestState>
       </DetailPanel>

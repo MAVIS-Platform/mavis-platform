@@ -560,4 +560,47 @@ class RuntimeSessionServiceImplTest {
                 .extracting(PreflightCheckResponseDTO.RequiredEnvVarDTO::getName)
                 .containsExactly("DB_CONNECTION_STRING", "API_KEY");
     }
+
+    @Test
+    @DisplayName("STEP 1 & 2: GitHub ZIP multi-module tự động bỏ tên folder hash gốc và nhận diện đúng từng microservice")
+    void testGitHubZipStripsRootHashAndDetectsMultiModuleServices(@TempDir Path tempDir) throws IOException {
+        Path zipPath = tempDir.resolve("alibaba-snapshot.zip");
+        try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(Files.newOutputStream(zipPath))) {
+            zos.putNextEntry(new java.util.zip.ZipEntry("sample-spring-microservices-new-ea3924065d5e328246381c4932306cce6feb9757/employee-service/src/main/java/pl/piomin/EmployeeController.java"));
+            zos.write("""
+                    @RestController
+                    public class EmployeeController {
+                        @PostMapping("/")
+                        public void add() {}
+                        @GetMapping("/{id}")
+                        public void findById() {}
+                    }
+                    """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zos.closeEntry();
+
+            zos.putNextEntry(new java.util.zip.ZipEntry("sample-spring-microservices-new-ea3924065d5e328246381c4932306cce6feb9757/organization-service/src/main/java/pl/piomin/OrganizationController.java"));
+            zos.write("""
+                    @RestController
+                    @RequestMapping("/organization")
+                    public class OrganizationController {
+                        @GetMapping("/{organizationId}/with-employees")
+                        public void findByIdWithEmployees() {}
+                    }
+                    """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zos.closeEntry();
+        }
+
+        snapshot.setStoragePath(zipPath.toString());
+        when(sourceSnapshotRepository.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+
+        PreflightCheckResponseDTO preflight = runtimeSessionService.runComposePreflight(snapshotId);
+        assertThat(preflight.isCompatible()).isTrue();
+        assertThat(preflight.getDetectedServices())
+                .contains("employee-service", "organization-service")
+                .doesNotContain("sample-spring-microservices-new-ea3924065d5e328246381c4932306cce6feb9757");
+        assertThat(preflight.getDetectedEndpoints())
+                .extracting(PreflightCheckResponseDTO.DetectedEndpointDTO::getService)
+                .contains("employee-service", "organization-service")
+                .doesNotContain("sample-spring-microservices-new-ea3924065d5e328246381c4932306cce6feb9757");
+    }
 }
