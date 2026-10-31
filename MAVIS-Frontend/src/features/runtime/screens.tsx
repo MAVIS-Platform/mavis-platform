@@ -48,7 +48,7 @@ export function RuntimeStepperBanner({ currentStep, projectId }: { currentStep: 
 
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { suggestRuntimeScenarios, automaticRuntimeDraft, parseRuntimeEnvFile, type RuntimeDraftStep } from "./scenario-suggestions";
+import { suggestRuntimeScenarios, automaticRuntimeDraft, parseRuntimeEnvFile, type RuntimeDraftStep, type RuntimeInput } from "./scenario-suggestions";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useApi, useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
@@ -105,10 +105,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
-    if (config.data?.profileId) {
+    if (preflight.data?.recommendedProfile) {
+      setProfileId(preflight.data.recommendedProfile);
+    } else if (config.data?.profileId) {
       setProfileId(config.data.profileId);
     }
-  }, [config.data?.profileId]);
+  }, [preflight.data?.recommendedProfile, config.data?.profileId]);
 
   useEffect(() => {
     if (!snapshotId && snapshots.data?.length) {
@@ -213,7 +215,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   }, [activeServices.join(",")]);
 
   useEffect(() => {
-    if (!requiredEnvVars.length) return;
+    if (!projectId || !snapshotId) return;
+    preflight.mutate({ projectId, snapshotId });
+  }, [projectId, snapshotId]);
+
+  const detectedVarSignature = requiredEnvVars.map((r) => `${r.name}:${r.category}`).join("|");
+
+  useEffect(() => {
+    if (!requiredEnvVars.length && !databaseChecks.length) return;
     setEnvVars((prev) => {
       const next = { ...prev };
       for (const item of requiredEnvVars) {
@@ -225,28 +234,40 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       return next;
     });
     setSecretValues((prev) => {
-      const next = { ...prev };
+      const next: Record<string, string> = {};
       for (const item of requiredEnvVars) {
         const cat = (item.category ?? "ENV").toUpperCase();
-        if ((cat === "DB_SECRET" || cat === "SECRET") && !(item.name in next)) {
-          next[item.name] = "";
+        if (cat === "DB_SECRET" || cat === "SECRET") {
+          next[item.name] = prev[item.name] ?? "";
         }
+      }
+      if (
+        databaseChecks.length > 0 &&
+        !Object.keys(next).some((k) => k.includes("DB_") || k.includes("DATASOURCE") || k.includes("CONNECTION"))
+      ) {
+        next["DB_CONNECTION_STRING"] = prev["DB_CONNECTION_STRING"] ?? "";
       }
       return next;
     });
-  }, [requiredEnvVars.length]);
+  }, [detectedVarSignature, databaseChecks.length, snapshotId]);
 
-  const allSecretKeys = Array.from(
+  const autoDetectedSecretKeys = Array.from(
     new Set([
       ...requiredEnvVars
         .filter((v) => v.category === "DB_SECRET" || v.category === "SECRET")
         .map((v) => v.name),
+      ...(databaseChecks.length > 0 &&
+      !requiredEnvVars.some((v) => v.category === "DB_SECRET")
+        ? ["DB_CONNECTION_STRING"]
+        : []),
+    ]),
+  );
+
+  const allSecretKeys = Array.from(
+    new Set([
+      ...autoDetectedSecretKeys,
       ...configuredSecretKeys,
       ...Object.keys(secretValues),
-      ...secretRefs
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean),
     ]),
   );
 
@@ -270,6 +291,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 onChange={(value) => {
                   setSnapshotId(value);
                   preflight.reset();
+                  const candidateModels = staticModels.length ? staticModels : (models.data ?? []);
+                  const matchedModel = candidateModels.find((m) => m.snapshotId === value);
+                  if (matchedModel) {
+                    setModelId(matchedModel.id);
+                  }
                 }}
                 options={(snapshots.data ?? []).map((s) => ({
                   value: s.id,
@@ -280,11 +306,27 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 disabled={preflight.isPending}
                 label="Target architecture model"
                 value={modelId || defaultModelId}
-                onChange={setModelId}
-                options={(staticModels.length ? staticModels : (models.data ?? [])).map((m) => ({
-                  value: m.id,
-                  label: `Revision ${m.revision} · ${m.id.slice(0, 8)}`,
-                }))}
+                onChange={(nextModelId) => {
+                  setModelId(nextModelId);
+                  const candidateModels = staticModels.length ? staticModels : (models.data ?? []);
+                  const chosen = candidateModels.find((m) => m.id === nextModelId);
+                  if (chosen?.snapshotId && chosen.snapshotId !== snapshotId) {
+                    setSnapshotId(chosen.snapshotId);
+                    preflight.reset();
+                  }
+                }}
+                options={(() => {
+                  const all = staticModels.length ? staticModels : (models.data ?? []);
+                  const forSnap = snapshotId ? all.filter((m) => !m.snapshotId || m.snapshotId === snapshotId) : all;
+                  const list = forSnap.length > 0 ? forSnap : all;
+                  return list.map((m) => {
+                    const snapName = (snapshots.data ?? []).find((s) => s.id === m.snapshotId)?.name;
+                    return {
+                      value: m.id,
+                      label: `Revision ${m.revision} · ${m.id.slice(0, 8)}${snapName ? ` (${snapName})` : ""}`,
+                    };
+                  });
+                })()}
               />
             </div>
 
@@ -422,11 +464,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   )}
                 </div>
 
-                {preflight.data?.securityWarnings?.length ? (
+                {(preflight.data?.securityWarnings?.length || config.data?.prerequisites?.length) ? (
                   <div className="space-y-1">
                     <strong className="text-sm text-warning">Security Warnings / Prerequisites:</strong>
                     <ul className="list-disc pl-5 text-xs text-warning space-y-0.5">
-                      {preflight.data.securityWarnings.map((w, i) => (
+                      {(preflight.data?.securityWarnings ?? config.data?.prerequisites ?? []).map((w, i) => (
                         <li key={i}>{w}</li>
                       ))}
                     </ul>
@@ -476,32 +518,64 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
             )}
           </div>
 
-          {/* 2B. Database Secrets & Protected Credentials */}
+          {/* 2B. Auto-Detected Connections, Database & API Keys */}
           <div className="space-y-3 border-t pt-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h4 className="text-sm font-semibold">
-                  Database Secrets & Protected Credentials
+                  Auto-Detected Required Connections & API Keys ({allSecretKeys.length} box{allSecretKeys.length === 1 ? "" : "es"})
                 </h4>
                 <p className="text-xs text-muted-foreground">
-                  Values are stored in runner secret memory and masked on read; never exposed in
-                  public receipts.
+                  Hệ thống tự động nhận diện từ mã nguồn & kiến trúc tĩnh (ví dụ: có Database → hiện box{" "}
+                  <code>DB_CONNECTION_STRING</code>, có AI/External API → hiện box <code>API_KEY</code>).
                 </p>
               </div>
+              <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs font-medium">
+                Auto-Detected: {allSecretKeys.length}
+              </span>
             </div>
 
-            {allSecretKeys.length > 0 && (
-              <div className="grid gap-2.5 sm:grid-cols-2">
+            {allSecretKeys.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2">
                 {allSecretKeys.map((sKey) => {
                   const isConfigured = configuredSecretKeys.includes(sKey);
                   const meta = requiredEnvVars.find((r) => r.name === sKey);
+                  const upper = sKey.toUpperCase();
+                  const isDbConn =
+                    upper.includes("CONNECTION_STRING") ||
+                    upper.includes("CONNECTIONSTRING") ||
+                    upper.includes("DATABASE_URL") ||
+                    upper.includes("DATASOURCE_URL");
+                  const isAiOrApi = upper.includes("API_KEY") || upper.includes("OPENAI") || upper.includes("GEMINI");
+                  const friendlyLabel = isDbConn
+                    ? "🗄️ Database Connection String"
+                    : isAiOrApi
+                      ? "🤖 AI / External Service API Key"
+                      : upper.includes("JWT")
+                        ? "🔐 JWT Signing Secret"
+                        : upper.includes("DB_") || upper.includes("DATASOURCE")
+                          ? "🗄️ Database Credential"
+                          : "🔑 Protected Secret";
+                  const defaultPlaceholder = isConfigured
+                    ? "•••••••• (Đã lưu — để trống nếu giữ nguyên)"
+                    : isDbConn
+                      ? "jdbc:postgresql://host:5432/db?user=...&password=... (hoặc Server=...)"
+                      : isAiOrApi
+                        ? "sk-... / AIza... (Nhập API Key cho AI / External API)"
+                        : `Nhập giá trị cho ${sKey}`;
                   return (
-                    <div key={sKey} className="rounded border p-2.5 space-y-1.5 bg-muted/20">
+                    <div key={sKey} className="rounded-lg border p-3 space-y-2 bg-muted/20">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-xs font-semibold">{sKey}</span>
+                        <div>
+                          <div className="text-xs font-semibold">{friendlyLabel}</div>
+                          <div className="font-mono text-[11px] text-muted-foreground">
+                            {sKey}
+                            {meta?.source ? ` · từ ${meta.source}` : ""}
+                          </div>
+                        </div>
                         <div className="flex items-center gap-1.5">
                           {meta?.service && (
-                            <span className="text-[10px] text-muted-foreground font-mono">
+                            <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground font-mono">
                               {meta.service}
                             </span>
                           )}
@@ -513,13 +587,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                         </div>
                       </div>
                       <Input
-                        type="password"
-                        className="font-mono text-xs h-8"
-                        placeholder={
-                          isConfigured
-                            ? "•••••••• (Leave blank to keep existing secret)"
-                            : `Enter secret value for ${sKey}`
-                        }
+                        type={isDbConn ? "text" : "password"}
+                        className="font-mono text-xs h-9"
+                        placeholder={defaultPlaceholder}
                         value={secretValues[sKey] ?? ""}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -530,19 +600,23 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   );
                 })}
               </div>
+            ) : (
+              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+                Không phát hiện yêu cầu Database Connection hay API Key bắt buộc trong snapshot này. Bạn vẫn có thể thêm biến thủ công bên dưới nếu cần.
+              </div>
             )}
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 pt-1">
               <Input
-                className="w-48 font-mono text-xs h-8"
-                placeholder="SECRET_NAME (e.g. DB_PASSWORD)"
+                className="w-56 font-mono text-xs h-8"
+                placeholder="Thêm box khác (VD: DB_CONNECTION_STRING, API_KEY)"
                 value={newSecretKey}
                 onChange={(e) => setNewSecretKey(e.target.value.toUpperCase())}
               />
               <Input
                 type="password"
                 className="flex-1 min-w-48 font-mono text-xs h-8"
-                placeholder="Secret value"
+                placeholder="Giá trị..."
                 value={newSecretVal}
                 onChange={(e) => setNewSecretVal(e.target.value)}
               />
@@ -555,36 +629,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   const k = newSecretKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
                   if (!k) return;
                   setSecretValues((prev) => ({ ...prev, [k]: newSecretVal }));
-                  const existingRefs = secretRefs
-                    .split(",")
-                    .map((s) => s.trim())
-                    .filter(Boolean);
-                  if (!existingRefs.includes(k)) {
-                    setSecretRefs([...existingRefs, k].join(", "));
-                  }
                   setNewSecretKey("");
                   setNewSecretVal("");
                 }}
               >
-                + Add Secret
+                + Thêm Box
               </Button>
             </div>
-
-            <FormField
-              label="Protected Secret References (Allowlist)"
-              hint="Comma-separated environment variable names passed to the runner (e.g. JWT_SECRET, DB_PASSWORD)."
-            >
-              {(props) => (
-                <Input
-                  {...props}
-                  placeholder="JWT_SECRET, STRIPE_API_KEY, DB_PASSWORD"
-                  value={secretRefs}
-                  onChange={(e) => setSecretRefs(e.target.value)}
-                />
-              )}
-            </FormField>
           </div>
-
           {/* 2C. Environment Variables */}
           <div className="space-y-3 border-t pt-4">
             <div>
@@ -666,18 +718,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       {/* Step 3: Save Configuration */}
       <DetailPanel title="3. Execution Profile & Save Configuration">
         <div className="space-y-4">
-          <FormField
-            label="Execution Profile ID"
-            hint="The containerized sandbox profile installed on the runner host."
-          >
-            {(props) => (
-              <Input
-                {...props}
-                value={profileId}
-                onChange={(e) => setProfileId(e.target.value)}
-              />
-            )}
-          </FormField>
+          <div className="flex items-center justify-between rounded-lg border px-3 py-2 bg-muted/20 text-xs">
+            <span className="text-muted-foreground">
+              Sandbox Execution Profile (Auto-selected from detected stack):
+            </span>
+            <span className="font-mono font-semibold">{profileId}</span>
+          </div>
 
           <div className="flex flex-wrap items-center gap-3">
             <Button
@@ -755,6 +801,7 @@ export function RuntimeScenarios() {
   return <RuntimeScenariosView key={projectId} projectId={projectId} />;
 }
 
+
 function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const router = useRouter();
   const snapshots = useApiQuery("snapshots", { projectId });
@@ -763,7 +810,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const config = useApiQuery("runtimeConfiguration", { projectId });
   const start = useApiMutation("startRuntime");
   const saveDraft = useApiMutation("createScenario");
+  const generateAiDraft = useApiMutation("generateRuntimeScenario");
   const submitting = useRef(false);
+  const autoGenTriggered = useRef<string>("");
   const persistedDraft = useRef<{ fingerprint: string; scenario: { id: string; revision: number } } | null>(null);
 
   const [snapshotId, setSnapshotId] = useState("");
@@ -774,20 +823,43 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const defaultSvc = detectedServiceNames[0] ?? "";
 
   const [scenarioName, setScenarioName] = useState("Backend API smoke scenario");
+  const [aiGoal, setAiGoal] = useState("");
+  const [aiSummary, setAiSummary] = useState("");
+  const [generatorMode, setGeneratorMode] = useState<"AI_ASSISTED" | "SYSTEM_STATIC" | "LOCAL_STATIC">("LOCAL_STATIC");
+  const [aiModelName, setAiModelName] = useState("");
+  const [inheritedEnvKeys, setInheritedEnvKeys] = useState<string[]>([]);
+  const [userConfirmed, setUserConfirmed] = useState(true);
+
   const [steps, setDraftSteps] = useState<RuntimeDraftStep[]>([]);
   const edited = useRef(false);
-  const setSteps: typeof setDraftSteps = value => { edited.current = true; setDraftSteps(value); };
-  const suggestions = useMemo(() => modelDetail.data ? suggestRuntimeScenarios(modelDetail.data, config.data?.profile) : [], [modelDetail.data, config.data?.profile]);
-  const automatic = useMemo(() => automaticRuntimeDraft(suggestions, config.data?.profile), [suggestions, config.data?.profile]);
-  const [environment, setEnvironment] = useState<Record<string,string>>({});
-  useEffect(() => { setEnvironment({}); }, [modelId]);
-  const applySuggestions = () => setSteps(automatic.steps);
+  const setSteps: typeof setDraftSteps = (value) => {
+    edited.current = true;
+    setDraftSteps(value);
+  };
+  const suggestions = useMemo(
+    () => (modelDetail.data ? suggestRuntimeScenarios(modelDetail.data, config.data?.profile) : []),
+    [modelDetail.data, config.data?.profile],
+  );
+  const automatic = useMemo(
+    () => automaticRuntimeDraft(suggestions, config.data?.profile),
+    [suggestions, config.data?.profile],
+  );
+  const [environment, setEnvironment] = useState<Record<string, string>>({});
   const [runMessage, setRunMessage] = useState("");
 
   const staticModels = (models.data ?? []).filter(
     (m) => !("origin" in m) || (m as any).origin !== "RUNTIME_ENRICHED",
   );
   const selectableModels = staticModels.length > 0 ? staticModels : (models.data ?? []);
+
+  useEffect(() => {
+    if (config.data?.modelId && !modelId) {
+      setModelId(config.data.modelId);
+    }
+    if (config.data?.snapshotId && !snapshotId) {
+      setSnapshotId(config.data.snapshotId);
+    }
+  }, [config.data?.modelId, config.data?.snapshotId]);
 
   useEffect(() => {
     if (!modelId && selectableModels.length > 0) {
@@ -810,6 +882,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   const handleModelChange = (nextModelId: string) => {
     edited.current = false;
+    autoGenTriggered.current = "";
     setEnvironment({});
     setDraftSteps([]);
     setModelId(nextModelId);
@@ -820,12 +893,93 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   };
 
   useEffect(() => {
-    if (!edited.current) {
+    const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
+    const step1Env =
+      rawProf["environmentVariables"] && typeof rawProf["environmentVariables"] === "object"
+        ? (rawProf["environmentVariables"] as Record<string, unknown>)
+        : {};
+    const step1Secrets = Array.isArray(rawProf["configuredSecretKeys"])
+      ? (rawProf["configuredSecretKeys"] as unknown[]).map(String)
+      : [];
+    const inherited = Array.from(new Set([...Object.keys(step1Env), ...step1Secrets]));
+    if (inherited.length > 0) {
+      setInheritedEnvKeys((prev) => Array.from(new Set([...prev, ...inherited])));
+    }
+    if (Object.keys(step1Env).length > 0) {
+      setEnvironment((prev) => {
+        const next = { ...prev };
+        for (const [k, v] of Object.entries(step1Env)) {
+          if (!(k in next) && v !== null && v !== undefined) {
+            next[k] = String(v);
+          }
+        }
+        return next;
+      });
+    }
+  }, [config.data?.profile]);
+
+  const triggerSystemAiGeneration = (explicitGoal?: string) => {
+    if (!snapshotId) return;
+    generateAiDraft.mutate(
+      {
+        projectId,
+        snapshotId,
+        modelId: modelId || undefined,
+        goal: explicitGoal?.trim() || aiGoal.trim() || undefined,
+      },
+      {
+        onSuccess: (res) => {
+          setGeneratorMode(res.generatorMode);
+          setAiModelName(res.aiModelName ?? "");
+          setAiSummary(res.summary);
+          if (res.inheritedEnvKeys?.length) {
+            setInheritedEnvKeys(res.inheritedEnvKeys);
+          }
+          if (res.suggestedName) {
+            setScenarioName(res.suggestedName);
+          }
+          if (res.steps && res.steps.length > 0) {
+            setDraftSteps(
+              res.steps.map((st) => ({
+                service: st.service,
+                method: st.method.toUpperCase(),
+                path: st.path,
+                status: String(st.expectedStatus ?? 200),
+                rationale: st.rationale,
+                source: st.source,
+                ...(st.environmentVariables ? { environmentVariables: st.environmentVariables } : {}),
+                ...(st.envHeaders ? { envHeaders: st.envHeaders } : {}),
+                ...(st.bodyReference ? { bodyReference: st.bodyReference } : {}),
+              })),
+            );
+          }
+          if (res.sampleInputs) {
+            setEnvironment((prev) => ({ ...res.sampleInputs, ...prev }));
+          }
+        },
+      },
+    );
+  };
+
+  useEffect(() => {
+    const key = `${projectId}:${snapshotId}:${modelId}`;
+    if (snapshotId && modelId && autoGenTriggered.current !== key && !edited.current) {
+      autoGenTriggered.current = key;
+      triggerSystemAiGeneration();
+    }
+  }, [projectId, snapshotId, modelId]);
+
+  useEffect(() => {
+    if (!edited.current && steps.length === 0) {
       if (automatic.steps.length > 0) {
         setDraftSteps(automatic.steps);
         return;
       }
-      const discoveredEndpoints = (config.data?.profile as { detectedEndpoints?: Array<{ service?: string; method?: string; path?: string }> } | undefined)?.detectedEndpoints;
+      const discoveredEndpoints = (
+        config.data?.profile as
+          | { detectedEndpoints?: Array<{ service?: string; method?: string; path?: string; source?: string }> }
+          | undefined
+      )?.detectedEndpoints;
       if (Array.isArray(discoveredEndpoints) && discoveredEndpoints.length > 0) {
         setDraftSteps(
           discoveredEndpoints.slice(0, 6).map((ep, idx) => ({
@@ -833,16 +987,73 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             method: (ep.method || "GET").toUpperCase(),
             path: ep.path || "/health",
             status: "200",
-          }))
+            rationale: `Tự động trích xuất từ Step 1 (${ep.source ?? "source snapshot"})`,
+            source: ep.source ?? "Step 1 Preflight",
+          })),
         );
-      } else {
-        setDraftSteps(automatic.steps);
       }
     }
   }, [automatic, config.data?.profile]);
 
+  const activeInputs = useMemo(() => {
+    const map = new Map<string, RuntimeInput>();
+    for (const inp of automatic.inputs) {
+      map.set(inp.name, inp);
+    }
+    for (const [idx, st] of steps.entries()) {
+      if (st.environmentVariables) {
+        for (const [alias, envName] of Object.entries(st.environmentVariables)) {
+          if (!map.has(envName)) {
+            map.set(envName, {
+              name: envName,
+              label: `${st.service} ${st.path} (${alias})`,
+              kind: "text",
+              source: st.source ?? "Scenario step",
+            });
+          }
+        }
+      }
+      if (st.bodyReference && !map.has(st.bodyReference)) {
+        map.set(st.bodyReference, {
+          name: st.bodyReference,
+          label: `Step ${idx + 1} (${st.method} ${st.path}): JSON request body`,
+          kind: "json",
+          source: st.source ?? "Scenario step",
+        });
+      }
+      if (st.envHeaders) {
+        for (const h of st.envHeaders) {
+          if (!map.has(h.reference)) {
+            map.set(h.reference, {
+              name: h.reference,
+              label: `${st.service}: ${h.name} header`,
+              kind: "credential",
+              source: st.source ?? "Scenario step",
+            });
+          }
+        }
+      }
+    }
+    return Array.from(map.values()).filter((inp) => !inheritedEnvKeys.includes(inp.name));
+  }, [automatic.inputs, steps, inheritedEnvKeys]);
+
+  const applySuggestions = () => {
+    edited.current = false;
+    triggerSystemAiGeneration();
+  };
+
   const addStep = () => {
-    setSteps((s) => [...s, { service: defaultSvc, method: "GET", path: "", status: "200" }]);
+    setSteps((s) => [
+      ...s,
+      {
+        service: defaultSvc || (config.data?.profile as { detectedServices?: string[] } | undefined)?.detectedServices?.[0] || "gateway",
+        method: "GET",
+        path: "/health",
+        status: "200",
+        rationale: "Bước kiểm thử bổ sung bởi người dùng",
+        source: "User defined",
+      },
+    ]);
   };
 
   const removeStep = (index: number) => {
@@ -851,47 +1062,136 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   const handleCreateAndRun = async (approveAndDispatch: boolean) => {
     if (submitting.current) return;
-    const chosenModel = selectableModels.find(m => m.id === modelId);
-    const effectiveSnapshotId = chosenModel?.snapshotId;
-    if (!chosenModel || !effectiveSnapshotId || !steps.length) { setRunMessage("Select an analyzed model and at least one request."); return; }
-    if (steps.some(step => !step.service || !step.path.startsWith("/") || step.path.startsWith("//") || /[\r\n]/.test(step.path) || !/^\d{3}$/.test(step.status) || Number(step.status) < 100 || Number(step.status) > 599)) {
-      setRunMessage("Complete request services, paths, parameter values and expected status codes."); return;
+    if (!userConfirmed) {
+      setRunMessage("Vui lòng tích xác nhận kịch bản trước khi lưu hoặc chạy.");
+      return;
     }
-    if (approveAndDispatch && (!config.data?.ready || config.data.modelId !== chosenModel.id || config.data.snapshotId !== effectiveSnapshotId)) {
-      setRunMessage("Runtime configuration must be ready and pinned to this source/model before approval."); return;
+    const chosenModel = selectableModels.find((m) => m.id === modelId);
+    const effectiveSnapshotId = chosenModel?.snapshotId || snapshotId;
+    if (!chosenModel || !effectiveSnapshotId || !steps.length) {
+      setRunMessage("Select an analyzed model and at least one request.");
+      return;
     }
-    const required = automatic.inputs;
-    if (approveAndDispatch && required.length && !config.data?.protectedInputsReady) { setRunMessage("Protected runtime inputs are not ready. An administrator must complete runtime setup."); return; }
-    if (approveAndDispatch && required.some(input => !environment[input.name]?.trim())) { setRunMessage("Fill the required environment and test inputs before approval."); return; }
-    if (approveAndDispatch && required.some(input => { if(input.kind!=="json")return false;try{JSON.parse(environment[input.name]!);return false;}catch{return true;} })) {setRunMessage("A JSON test body is not valid JSON.");return;}
-    const protectedValues = Object.fromEntries(required.filter(input => environment[input.name] !== undefined).map(input => [input.name, environment[input.name]!]));
-    if (new TextEncoder().encode(JSON.stringify(protectedValues)).length > 65536) { setRunMessage("Runtime inputs exceed the supported size."); return; }
-    const draft = { projectId, name: scenarioName.trim() || "Backend API smoke scenario",
-      steps: steps.map((step, index) => JSON.stringify({ id: `step-${index+1}`, service: step.service, method: step.method, path: step.path, expectedStatus: Number(step.status), ...(step.environmentVariables ? { environmentVariables: step.environmentVariables } : {}), ...(step.envHeaders ? { envHeaders: step.envHeaders } : {}), ...(step.bodyReference ? { bodyReference: step.bodyReference } : {}) })) };
+    if (
+      steps.some(
+        (step) =>
+          !step.service ||
+          !step.path.startsWith("/") ||
+          step.path.startsWith("//") ||
+          /[\r\n]/.test(step.path) ||
+          !/^\d{3}$/.test(step.status) ||
+          Number(step.status) < 100 ||
+          Number(step.status) > 599,
+      )
+    ) {
+      setRunMessage("Complete request services, paths, parameter values and expected status codes.");
+      return;
+    }
+    if (
+      approveAndDispatch &&
+      (!config.data?.ready ||
+        config.data.modelId !== chosenModel.id ||
+        config.data.snapshotId !== effectiveSnapshotId)
+    ) {
+      setRunMessage(
+        "Runtime configuration must be ready and pinned to this source/model before approval.",
+      );
+      return;
+    }
+    const required = activeInputs;
+    if (approveAndDispatch && required.length && !config.data?.protectedInputsReady) {
+      setRunMessage(
+        "Protected runtime inputs are not ready. An administrator must complete runtime setup.",
+      );
+      return;
+    }
+    if (approveAndDispatch && required.some((input) => !environment[input.name]?.trim())) {
+      setRunMessage("Fill the required environment and test inputs before approval.");
+      return;
+    }
+    if (
+      approveAndDispatch &&
+      required.some((input) => {
+        if (input.kind !== "json") return false;
+        try {
+          JSON.parse(environment[input.name]!);
+          return false;
+        } catch {
+          return true;
+        }
+      })
+    ) {
+      setRunMessage("A JSON test body is not valid JSON.");
+      return;
+    }
+    const protectedValues = Object.fromEntries(
+      required
+        .filter((input) => environment[input.name] !== undefined)
+        .map((input) => [input.name, environment[input.name]!]),
+    );
+    if (new TextEncoder().encode(JSON.stringify(protectedValues)).length > 65536) {
+      setRunMessage("Runtime inputs exceed the supported size.");
+      return;
+    }
+    const draft = {
+      projectId,
+      name: scenarioName.trim() || "Backend API smoke scenario",
+      steps: steps.map((step, index) =>
+        JSON.stringify({
+          id: `step-${index + 1}`,
+          service: step.service,
+          method: step.method,
+          path: step.path,
+          expectedStatus: Number(step.status),
+          ...(step.environmentVariables ? { environmentVariables: step.environmentVariables } : {}),
+          ...(step.envHeaders ? { envHeaders: step.envHeaders } : {}),
+          ...(step.bodyReference ? { bodyReference: step.bodyReference } : {}),
+        }),
+      ),
+    };
     const fingerprint = JSON.stringify(draft);
     submitting.current = true;
     try {
-      setRunMessage("Saving scenario...");
-      const saved = persistedDraft.current?.fingerprint === fingerprint ? persistedDraft.current.scenario : await saveDraft.mutateAsync(draft);
+      setRunMessage("Saving confirmed scenario...");
+      const saved =
+        persistedDraft.current?.fingerprint === fingerprint
+          ? persistedDraft.current.scenario
+          : await saveDraft.mutateAsync(draft);
       persistedDraft.current = { fingerprint, scenario: saved };
-      if (!approveAndDispatch) { setRunMessage("Scenario saved for review. No runtime session was started."); return; }
-      setRunMessage("Approving the saved scenario and requesting execution...");
-      const session = await start.mutateAsync({ projectId, snapshotId: effectiveSnapshotId, modelId: chosenModel.id,
-        scenarioId: saved.id, scenarioName: draft.name, configurationRevision: config.data!.revision,
-        scenarioRevision: saved.revision, approved: true, environment: protectedValues });
+      if (!approveAndDispatch) {
+        setRunMessage("✓ Đã xác nhận và lưu kịch bản thành công (chưa chạy phiên Runtime).");
+        return;
+      }
+      setRunMessage("Approving the confirmed scenario and dispatching execution...");
+      const session = await start.mutateAsync({
+        projectId,
+        snapshotId: effectiveSnapshotId,
+        modelId: chosenModel.id,
+        scenarioId: saved.id,
+        scenarioName: draft.name,
+        configurationRevision: config.data!.revision,
+        scenarioRevision: saved.revision,
+        approved: true,
+        environment: protectedValues,
+      });
       router.push(`/sessions?project=${projectId}&session=${session.id}`);
     } catch (error) {
-      setRunMessage(`Request failed: ${error instanceof Error ? error.message : String(error)}. Check sessions before retrying an execution request.`);
-    } finally { submitting.current = false; }
+      setRunMessage(
+        `Request failed: ${error instanceof Error ? error.message : String(error)}. Check sessions before retrying an execution request.`,
+      );
+    } finally {
+      submitting.current = false;
+    }
   };
 
   return (
     <div className="space-y-6">
       <RuntimeStepperBanner currentStep={2} projectId={projectId} />
-      <DetailPanel title="Create & Approve Runtime Scenario Session">
+
+      <DetailPanel title="1. Hệ thống + AI Tự động Sinh Kịch bản Kiểm thử (Auto-Generate Scenario)">
         <p className="text-sm text-muted-foreground">
-          Define HTTP scenario steps to execute inside the isolated Docker sandbox network. OpenTelemetry
-          agents will capture trace spans between services.
+          Kết hợp dữ liệu phân tích tĩnh ở Step 1 (Services, Endpoints, Relationships, DB/Env) và AI để
+          tự động đề xuất chuỗi bước kiểm thử HTTP hợp lý trước khi bạn xác nhận.
         </p>
 
         <div className="mt-4 space-y-4">
@@ -917,7 +1217,81 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             />
           </div>
 
-          <FormField label="Scenario Name">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-64">
+              <FormField
+                label="Mục tiêu kiểm thử cho AI (Tùy chọn)"
+                hint="Ví dụ: Kiểm thử luồng tạo đơn hàng và thanh toán liên service"
+              >
+                {(props) => (
+                  <Input
+                    {...props}
+                    placeholder="Nhập mục tiêu kiểm thử cụ thể hoặc để trống để AI tự đề xuất toàn diện..."
+                    value={aiGoal}
+                    onChange={(e) => setAiGoal(e.target.value)}
+                  />
+                )}
+              </FormField>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!snapshotId || generateAiDraft.isPending}
+              onClick={() => {
+                edited.current = false;
+                triggerSystemAiGeneration(aiGoal);
+              }}
+            >
+              {generateAiDraft.isPending
+                ? "✨ Hệ thống + AI đang phân tích..."
+                : "✨ Tạo lại kịch bản bằng Hệ thống + AI"}
+            </Button>
+          </div>
+
+          <div className="rounded-lg border p-3.5 bg-muted/30 space-y-2 text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">Nguồn đề xuất kịch bản:</span>
+                {generatorMode === "AI_ASSISTED" ? (
+                  <span className="px-2 py-0.5 rounded bg-primary/15 text-primary text-xs font-semibold">
+                    ✨ AI + System Generated ({aiModelName || "Gemini"})
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 text-xs font-semibold">
+                    ⚙️ System Static Analysis ({aiModelName || "Deterministic"})
+                  </span>
+                )}
+              </div>
+              {inheritedEnvKeys.length > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  Kế thừa từ Step 1:{" "}
+                  <strong className="font-mono text-foreground">
+                    {inheritedEnvKeys.length} biến Env/Secret ({inheritedEnvKeys.slice(0, 4).join(", ")}
+                    {inheritedEnvKeys.length > 4 ? "..." : ""})
+                  </strong>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {aiSummary ||
+                "Requests are drafts synthesized from extracted endpoints and architecture relationships. Review and confirm below before running."}
+            </p>
+            {!config.data?.ready && (
+              <p className="text-xs text-amber-600 font-medium">
+                ⚠ Cấu hình Step 1 chưa lưu hoặc chưa khớp Snapshot/Model hiện tại.{" "}
+                <Link className="underline" href={`/runtime-config?project=${projectId}`}>
+                  Quay lại hoàn tất Step 1
+                </Link>{" "}
+                trước khi bấm chạy.
+              </p>
+            )}
+          </div>
+        </div>
+      </DetailPanel>
+
+      <DetailPanel title="2. Kiểm tra & Chỉnh sửa Kịch bản Đề xuất (Review Scenario Steps)">
+        <div className="space-y-4">
+          <FormField label="Tên Kịch bản (Scenario Name)">
             {(props) => (
               <Input
                 {...props}
@@ -927,141 +1301,329 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             )}
           </FormField>
 
-          <div className="space-y-2 rounded-lg border p-3 text-sm">
-            <p className="font-medium">Suggested from this backend</p>
-            <p className="text-muted-foreground">Requests are drafts from extracted endpoints. HTTP 200 is a test expectation, not an observed result. Review before approval.</p>
-            {!suggestions.length && <p>No endpoint declarations are available. Analyze the source or add a request explicitly.</p>}
-            {suggestions.filter(s => s.missing.length).map(s => <p key={s.key} className="text-xs"><strong>{s.method} {s.path}</strong>: {s.missing.join("; ")}</p>)}
-            {!config.data?.ready && <p><Link className="underline" href={`/runtime-config?project=${projectId}`}>Complete runtime prerequisites</Link> before running.</p>}
-          </div>
-          <section className="space-y-3 rounded-lg border p-3" aria-label="Environment and test inputs">
-            <h3 className="font-medium">Environment and test inputs</h3>
-            <p className="text-sm text-muted-foreground">MAVIS builds the requests. Enter only missing values, then review and approve. Values are sent separately from the saved scenario.</p>
-            {automatic.inputs.length>0 && <FormField label="Import .env values" hint="Processed locally. Only inputs required by this draft are included when you approve.">{props=><Input {...props} type="file" onChange={async event=>{
-              const file=event.target.files?.[0];if(!file)return;
-              try{if(file.size>65536)throw new Error("Environment file exceeds the supported size");const parsed=parseRuntimeEnvFile(await file.text());setEnvironment(current=>({...current,...Object.fromEntries(automatic.inputs.filter(input=>Object.hasOwn(parsed,input.name)).map(input=>[input.name,parsed[input.name]!]))}));setRunMessage("Environment inputs imported. Review the generated scenario before approval.");}
-              catch(error){setRunMessage(error instanceof Error?error.message:"Could not import environment inputs");}
-              finally{event.target.value="";}
-            }}/>}</FormField>}
-            {automatic.inputs.map(input => <FormField key={input.name} label={input.label} hint={input.name}>{props => input.kind==="json" ?
-              <Textarea {...props} value={environment[input.name]??""} onChange={event=>setEnvironment(current=>({...current,[input.name]:event.target.value}))} autoComplete="off" /> :
-              <Input {...props} type={input.kind==="credential"?"password":"text"} value={environment[input.name]??""} onChange={event=>setEnvironment(current=>({...current,[input.name]:event.target.value}))} autoComplete="off" />}</FormField>)}
-            {automatic.inputs.length>0 && !config.data?.protectedInputsReady && <p className="text-sm">An administrator must prepare protected runtime inputs before this draft can run.</p>}
-            {!automatic.inputs.length && <p className="text-sm">No extra values are required for this draft.</p>}
-            {automatic.blocked.map((message,index)=><p className="text-xs text-muted-foreground" key={index}>{message}</p>)}
-            <ul className="space-y-1 text-xs">{steps.map((step,index)=><li key={index}>{step.method} {step.service}{step.path}</li>)}</ul>
-          </section>
-          <details className="rounded-lg border p-3"><summary className="cursor-pointer text-sm">Advanced request editor</summary>
-          {/* HTTP Steps Editor */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-sm font-semibold">HTTP Scenario Steps</label>
+              <div>
+                <h4 className="text-sm font-semibold">
+                  Chuỗi bước HTTP đề xuất ({steps.length} bước)
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Bạn có thể chỉnh sửa trực tiếp Method, Service, Path, Status kỳ vọng hoặc xóa/thêm bước.
+                </p>
+              </div>
               <div className="flex gap-2">
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={applySuggestions}
-                  disabled={!automatic.steps.length}
+                  disabled={generateAiDraft.isPending}
                 >
-                  Rebuild automatic draft
+                  ↺ Khôi phục đề xuất mặc định
                 </Button>
                 <Button size="sm" variant="outline" onClick={addStep}>
-                  + Add Step
+                  + Thêm bước HTTP
                 </Button>
               </div>
             </div>
 
-            <div className="space-y-2">
-              {steps.map((st, i) => (
-                <div key={i} className="flex items-center gap-2 rounded border p-2 bg-muted/20">
-                  <span className="w-6 text-xs text-muted-foreground text-center">{i + 1}</span>
-                  <select
-                    className="h-9 rounded border px-2 text-xs font-semibold bg-background"
-                    value={st.method}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setSteps((arr) => arr.map((item, idx) => (idx === i ? { ...item, method: val } : item)));
-                    }}
-                  >
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                    <option value="PUT">PUT</option>
-                    <option value="DELETE">DELETE</option>
-                  </select>
-                  <Input
-                    className="w-32 font-mono text-xs"
-                    placeholder="Service"
-                    value={st.service}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setSteps((arr) => arr.map((item, idx) => (idx === i ? { ...item, service: val } : item)));
-                    }}
-                  />
-                  <Input
-                    className="flex-1 font-mono text-xs"
-                    placeholder="/path"
-                    value={st.path}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setSteps((arr) => arr.map((item, idx) => (idx === i ? { ...item, path: val } : item)));
-                    }}
-                  />
-                  <Input
-                    className="w-20 font-mono text-xs"
-                    placeholder="200"
-                    value={st.status}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setSteps((arr) => arr.map((item, idx) => (idx === i ? { ...item, status: val } : item)));
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-destructive px-2"
-                    onClick={() => removeStep(i)}
-                  >
-                    ✕
-                  </Button>
-                </div>
-              ))}
-            </div>
+            {steps.length === 0 ? (
+              <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
+                Chưa có bước kịch bản nào. Bấm <strong>✨ Tạo lại kịch bản bằng Hệ thống + AI</strong> hoặc{" "}
+                <strong>+ Thêm bước HTTP</strong> để bắt đầu.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {steps.map((st, i) => (
+                  <div key={i} className="rounded-lg border p-3 bg-muted/20 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-muted text-xs font-mono font-semibold">
+                        #{i + 1}
+                      </span>
+                      <select
+                        className="h-8 rounded border px-2 text-xs font-semibold bg-background"
+                        value={st.method}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSteps((arr) =>
+                            arr.map((item, idx) => (idx === i ? { ...item, method: val } : item)),
+                          );
+                        }}
+                      >
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="PATCH">PATCH</option>
+                        <option value="DELETE">DELETE</option>
+                      </select>
+                      <Input
+                        className="w-36 font-mono text-xs h-8"
+                        placeholder="Service"
+                        value={st.service}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSteps((arr) =>
+                            arr.map((item, idx) => (idx === i ? { ...item, service: val } : item)),
+                          );
+                        }}
+                      />
+                      <Input
+                        className="flex-1 min-w-48 font-mono text-xs h-8"
+                        placeholder="/api/path"
+                        value={st.path}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSteps((arr) =>
+                            arr.map((item, idx) => (idx === i ? { ...item, path: val } : item)),
+                          );
+                        }}
+                      />
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-muted-foreground">→</span>
+                        <Input
+                          className="w-16 font-mono text-xs h-8 text-center"
+                          placeholder="200"
+                          title="Expected HTTP Status"
+                          value={st.status}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSteps((arr) =>
+                              arr.map((item, idx) => (idx === i ? { ...item, status: val } : item)),
+                            );
+                          }}
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive px-2 h-8"
+                        onClick={() => removeStep(i)}
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                    {(st.rationale || st.source) && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pl-1">
+                        {st.rationale && <span>💡 {st.rationale}</span>}
+                        {st.source && <span className="font-mono text-[11px]">Nguồn: {st.source}</span>}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
-          </details>
-          <div className="flex gap-3 pt-2">
-            <Button
-              disabled={!modelId || !steps.length || !config.data?.ready || config.data.modelId !== modelId || config.data.snapshotId !== snapshotId || (automatic.inputs.length>0 && !config.data.protectedInputsReady) || automatic.inputs.some(input=>!environment[input.name]?.trim()) || saveDraft.isPending || start.isPending}
-              onClick={() => handleCreateAndRun(true)}
-            >
-              {start.isPending ? "Starting..." : "🚀 Create & Approve Run"}
-            </Button>
-            <Button
-              variant="outline"
-              disabled={!modelId || !steps.length || saveDraft.isPending || start.isPending}
-              onClick={() => handleCreateAndRun(false)}
-            >
-              Save scenario without running
-            </Button>
-          </div>
-
-          {runMessage && (
-            <p className="text-sm font-medium text-primary mt-2">
-              {runMessage}
+          <section className="space-y-3 rounded-lg border p-3.5" aria-label="Environment and test inputs">
+            <h3 className="text-sm font-semibold">
+              Dữ liệu đầu vào cho kịch bản (Path Params / JSON Body mẫu)
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              Hệ thống + AI đã điền sẵn giá trị mẫu cho các tham số đường dẫn hoặc JSON request body. Bạn có thể
+              kiểm tra hoặc sửa lại trước khi xác nhận.
             </p>
-          )}
+            {activeInputs.length > 0 && (
+              <FormField
+                label="Import .env values"
+                hint="Processed locally. Only inputs required by this draft are included when you approve."
+              >
+                {(props) => (
+                  <Input
+                    {...props}
+                    type="file"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      if (!file) return;
+                      try {
+                        if (file.size > 65536)
+                          throw new Error("Environment file exceeds the supported size");
+                        const parsed = parseRuntimeEnvFile(await file.text());
+                        setEnvironment((current) => ({
+                          ...current,
+                          ...Object.fromEntries(
+                            activeInputs
+                              .filter((input) => Object.hasOwn(parsed, input.name))
+                              .map((input) => [input.name, parsed[input.name]!]),
+                          ),
+                        }));
+                        setRunMessage(
+                          "Environment inputs imported. Review the generated scenario before approval.",
+                        );
+                      } catch (error) {
+                        setRunMessage(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not import environment inputs",
+                        );
+                      } finally {
+                        event.target.value = "";
+                      }
+                    }}
+                  />
+                )}
+              </FormField>
+            )}
+            {activeInputs.map((input) => (
+              <FormField key={input.name} label={input.label} hint={input.name}>
+                {(props) =>
+                  input.kind === "json" ? (
+                    <Textarea
+                      {...props}
+                      className="font-mono text-xs"
+                      value={environment[input.name] ?? ""}
+                      onChange={(event) =>
+                        setEnvironment((current) => ({
+                          ...current,
+                          [input.name]: event.target.value,
+                        }))
+                      }
+                      autoComplete="off"
+                    />
+                  ) : (
+                    <Input
+                      {...props}
+                      className="font-mono text-xs"
+                      type={input.kind === "credential" ? "password" : "text"}
+                      value={environment[input.name] ?? ""}
+                      onChange={(event) =>
+                        setEnvironment((current) => ({
+                          ...current,
+                          [input.name]: event.target.value,
+                        }))
+                      }
+                      autoComplete="off"
+                    />
+                  )
+                }
+              </FormField>
+            ))}
+            {activeInputs.length > 0 && !config.data?.protectedInputsReady && (
+              <p className="text-xs text-amber-600">
+                An administrator must prepare protected runtime inputs before this draft can run.
+              </p>
+            )}
+            {!activeInputs.length && (
+              <p className="text-xs text-emerald-600 font-medium">
+                ✓ Không cần nhập thêm tham số phụ cho kịch bản này (các biến môi trường & secret từ Step 1 sẽ được tự động nạp).
+              </p>
+            )}
+            {automatic.blocked.map((message, index) => (
+              <p className="text-xs text-muted-foreground" key={index}>
+                {message}
+              </p>
+            ))}
+          </section>
         </div>
       </DetailPanel>
 
-      {/* Saved scenarios list */}
-      <DetailPanel title="Saved Scenarios">
+      <DetailPanel title="3. Xác nhận của Người dùng & Thực thi (User Confirmation & Dispatch)">
+        <div className="space-y-4">
+          <div className="rounded-lg border p-3.5 bg-muted/20 space-y-2 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-semibold text-sm">Tóm tắt kịch bản chờ xác nhận:</span>
+              <span className="font-mono">
+                {steps.length} HTTP steps · {inheritedEnvKeys.length} biến kế thừa từ Step 1
+              </span>
+            </div>
+            <ul className="space-y-1 font-mono text-muted-foreground">
+              {steps.map((step, index) => (
+                <li key={index}>
+                  {index + 1}. <strong className="text-foreground">{step.method}</strong>{" "}
+                  {step.service}
+                  {step.path} → Expected {step.status}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <label className="flex items-start gap-2.5 cursor-pointer text-sm select-none">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border"
+              checked={userConfirmed}
+              onChange={(e) => setUserConfirmed(e.target.checked)}
+            />
+            <span>
+              <strong>Tôi xác nhận kịch bản kiểm thử trên:</strong> Cho phép MAVIS lưu kịch bản đã
+              duyệt và khởi chạy các container trong mạng Docker Sandbox cô lập để thu thập trace thực tế.
+            </span>
+          </label>
+
+          <div className="flex flex-wrap gap-3 pt-1">
+            <Button
+              disabled={
+                !userConfirmed ||
+                !modelId ||
+                !steps.length ||
+                !config.data?.ready ||
+                config.data.modelId !== modelId ||
+                config.data.snapshotId !== snapshotId ||
+                (activeInputs.length > 0 && !config.data.protectedInputsReady) ||
+                activeInputs.some((input) => !environment[input.name]?.trim()) ||
+                saveDraft.isPending ||
+                start.isPending
+              }
+              onClick={() => handleCreateAndRun(true)}
+            >
+              {start.isPending
+                ? "Đang khởi chạy..."
+                : "✅ Xác nhận & Chạy phiên kiểm thử (Confirm & Start Run)"}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={
+                !userConfirmed || !modelId || !steps.length || saveDraft.isPending || start.isPending
+              }
+              onClick={() => handleCreateAndRun(false)}
+            >
+              💾 Xác nhận & Chỉ lưu kịch bản
+            </Button>
+          </div>
+
+          {runMessage && <p className="text-sm font-medium text-primary mt-2">{runMessage}</p>}
+        </div>
+      </DetailPanel>
+
+      <DetailPanel title="Kịch bản đã xác nhận & lưu trước đó (Saved Scenarios)">
         <RequestState query={scenarios} empty={!scenarios.data?.length}>
           <div className="space-y-3">
             {scenarios.data?.map((sc) => (
-              <div key={sc.id} className="rounded border p-3 space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold text-sm">{sc.name}</span>
-                  <span className="text-xs text-muted-foreground">Revision {sc.revision}</span>
+              <div key={sc.id} className="rounded border p-3 space-y-2">
+                <div className="flex justify-between items-center gap-2">
+                  <div>
+                    <span className="font-semibold text-sm">{sc.name}</span>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      Revision {sc.revision}
+                    </span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setScenarioName(sc.name);
+                      const parsed = sc.steps
+                        .map((raw) => {
+                          try {
+                            const obj = JSON.parse(raw) as Record<string, unknown>;
+                            return {
+                              service: String(obj["service"] ?? defaultSvc),
+                              method: String(obj["method"] ?? "GET").toUpperCase(),
+                              path: String(obj["path"] ?? "/health"),
+                              status: String(obj["expectedStatus"] ?? 200),
+                              rationale: "Nạp từ kịch bản đã lưu",
+                              source: `Saved Rev ${sc.revision}`,
+                            } as RuntimeDraftStep;
+                          } catch {
+                            return null;
+                          }
+                        })
+                        .filter((x): x is RuntimeDraftStep => x !== null);
+                      if (parsed.length > 0) {
+                        setSteps(parsed);
+                      }
+                    }}
+                  >
+                    Nạp kịch bản này
+                  </Button>
                 </div>
                 <ul className="list-disc pl-5 text-xs text-muted-foreground font-mono space-y-0.5">
                   {sc.steps.map((st, idx) => (

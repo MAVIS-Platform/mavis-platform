@@ -14,5 +14,6 @@ public class RuntimePlanningController {
  @GetMapping("/scenarios") public ApiResponse<?> scenarios(@PathVariable UUID projectId){return ApiResponse.success(planning.scenarios(projectId));}
  @PostMapping("/scenarios") public ApiResponse<?> create(@PathVariable UUID projectId,@Valid @RequestBody ScenarioRequest r){return ApiResponse.success(planning.saveScenario(projectId,null,r));}
  @PutMapping("/scenarios/{scenarioId}") public ApiResponse<?> update(@PathVariable UUID projectId,@PathVariable UUID scenarioId,@Valid @RequestBody ScenarioRequest r){return ApiResponse.success(planning.saveScenario(projectId,scenarioId,r));}
+ @PostMapping("/scenarios/generate") public ApiResponse<?> generate(@PathVariable UUID projectId,@RequestBody(required=false) GenerateScenarioRequest r){return ApiResponse.success(planning.generateScenario(projectId,r));}
  @PostMapping("/start") public ApiResponse<?> start(@PathVariable UUID projectId,@Valid @RequestBody StartRequest r){return ApiResponse.success(planning.start(projectId,r));}
 }
