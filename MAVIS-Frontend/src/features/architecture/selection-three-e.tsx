@@ -292,9 +292,11 @@ export function SelectionThreeE({
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     setAi3ELoading(true);
     fetch("/api/ai-diagram-semantics", {
       method: "POST",
+      signal: controller.signal,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         threeEContext: threeEAiCtx,
@@ -316,6 +318,7 @@ export function SelectionThreeE({
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [threeEAiCtx.contextHash, locale]);
 

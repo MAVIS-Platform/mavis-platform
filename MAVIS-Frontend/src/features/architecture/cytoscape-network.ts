@@ -43,10 +43,12 @@ export function networkColor(type?: string) {
 // Renderer IDs are namespaced; source IDs remain unchanged for evidence and 3E.
 export function networkElements(
   model: ArchitecturalModel,
-  aspectRatio = 2,
+  aspectRatio: number | null = 2,
   connections?: NetworkConnection[],
 ): ElementDefinition[] {
-  const positions = networkPositions(model, aspectRatio);
+  // Interactive canvases supply viewport-aware positions when they mount.
+  // Other callers retain the existing standalone preset layout.
+  const positions = aspectRatio === null ? undefined : networkPositions(model, aspectRatio);
   const appearance = exploreAppearance(model);
   const nodes = new Map(model.elements.map((node) => [node.id, node]));
   const degree = new Map<string, number>();
@@ -60,7 +62,7 @@ export function networkElements(
     ...model.elements.map((node) => ({
       group: "nodes" as const,
       classes: (degree.get(node.id) ?? 0) >= hubThreshold ? "hub" : "",
-      position: positions.get(node.id)!,
+      ...(positions ? { position: positions.get(node.id)! } : {}),
       data: {
         id: `node:${node.id}`,
         sourceId: node.id,
