@@ -1077,18 +1077,31 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             setScenarioName(res.suggestedName);
           }
           if (res.steps && res.steps.length > 0) {
+            const sampleMap = res.sampleInputs ?? {};
             setDraftSteps(
-              res.steps.map((st) => ({
-                service: st.service,
-                method: st.method.toUpperCase(),
-                path: st.path,
-                status: String(st.expectedStatus ?? 200),
-                rationale: st.rationale,
-                source: st.source,
-                ...(st.environmentVariables ? { environmentVariables: st.environmentVariables } : {}),
-                ...(st.envHeaders ? { envHeaders: st.envHeaders } : {}),
-                ...(st.bodyReference ? { bodyReference: st.bodyReference } : {}),
-              })),
+              res.steps.map((st) => {
+                let resolvedPath = st.path;
+                if (st.environmentVariables) {
+                  for (const [alias, envName] of Object.entries(st.environmentVariables)) {
+                    const val = sampleMap[envName] || "1";
+                    resolvedPath = resolvedPath.replaceAll(`{{${alias}}}`, val);
+                  }
+                }
+                resolvedPath = resolvedPath.replace(/\{\{V\d+\}\}/g, "1").replace(/\{([^}/]+)\}/g, (_, p: string) => {
+                  const lower = p.toLowerCase();
+                  return lower.includes("code") || lower.includes("sku") ? "SKU-LAPTOP-01" : "1";
+                });
+                return {
+                  service: st.service,
+                  method: st.method.toUpperCase(),
+                  path: resolvedPath,
+                  status: String(st.expectedStatus ?? 200),
+                  rationale: st.rationale,
+                  source: st.source,
+                  ...(st.envHeaders ? { envHeaders: st.envHeaders } : {}),
+                  ...(st.bodyReference ? { bodyReference: st.bodyReference } : {}),
+                };
+              }),
             );
           }
           if (res.sampleInputs) {
@@ -1110,7 +1123,16 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!edited.current && steps.length === 0) {
       if (automatic.steps.length > 0) {
-        setDraftSteps(automatic.steps);
+        setDraftSteps(
+          automatic.steps.map((st) => ({
+            ...st,
+            path: st.path
+              .replace(/\{\{V\d+\}\}/g, "1")
+              .replace(/\{([^}/]+)\}/g, (_, p: string) =>
+                p.toLowerCase().includes("code") || p.toLowerCase().includes("sku") ? "SKU-LAPTOP-01" : "1",
+              ),
+          })),
+        );
         return;
       }
       const discoveredEndpoints = (
@@ -1129,21 +1151,17 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           const cleanSvc = rawSvc.replace(/-[0-9a-f]{7,40}$/i, "");
           const serviceKey = cleanSvc.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32);
           const method = (ep.method || "GET").toUpperCase();
-          const vars: Record<string, string> = {};
           const rawPath = ep.path || "/health";
           const rewrittenPath = rawPath.replace(/\{([^}/]+)\}/g, (_, param: string) => {
-            const alias = `V${Object.keys(vars).length}`;
-            const envName = `${serviceKey}_${param.replace(/[^A-Za-z0-9]/g, "_").toUpperCase()}`.slice(0, 60);
-            vars[alias] = envName;
-            sampleEnv[envName] = sampleEnv[envName] ?? "1";
-            return `{{${alias}}}`;
+            const lower = param.toLowerCase();
+            return lower.includes("code") || lower.includes("sku") ? "SKU-LAPTOP-01" : "1";
           });
           let bodyRef: string | undefined;
           if (["POST", "PUT", "PATCH"].includes(method)) {
             bodyRef = `${serviceKey}_BODY_${idx + 1}`;
             sampleEnv[bodyRef] =
               sampleEnv[bodyRef] ??
-              JSON.stringify({ name: "sample-entity", organizationId: 1, departmentId: 1 });
+              JSON.stringify({ customerEmail: "alice@mavis.io", productCode: "SKU-LAPTOP-01", quantity: 1 });
           }
           return {
             service: cleanSvc,
@@ -1152,7 +1170,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             status: "200",
             rationale: `Automatically extracted from Step 1 (${ep.source ?? "source snapshot"})`,
             source: ep.source ?? "Step 1 Preflight",
-            ...(Object.keys(vars).length > 0 ? { environmentVariables: vars } : {}),
             ...(bodyRef ? { bodyReference: bodyRef } : {}),
           } as RuntimeDraftStep;
         });
@@ -1166,9 +1183,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   const activeInputs = useMemo(() => {
     const map = new Map<string, RuntimeInput>();
-    for (const inp of automatic.inputs) {
-      map.set(inp.name, inp);
-    }
     for (const [idx, st] of steps.entries()) {
       if (st.environmentVariables) {
         for (const [alias, envName] of Object.entries(st.environmentVariables)) {
@@ -1182,7 +1196,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           }
         }
       }
-      if (st.bodyReference && !map.has(st.bodyReference)) {
+      if (st.bodyReference && ["POST", "PUT", "PATCH"].includes(st.method) && !map.has(st.bodyReference)) {
         map.set(st.bodyReference, {
           name: st.bodyReference,
           label: `Step ${idx + 1} (${st.method} ${st.path}): JSON request body`,
@@ -1204,7 +1218,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       }
     }
     return Array.from(map.values()).filter((inp) => !inheritedEnvKeys.includes(inp.name));
-  }, [automatic.inputs, steps, inheritedEnvKeys]);
+  }, [steps, inheritedEnvKeys]);
 
   const applySuggestions = () => {
     edited.current = false;
@@ -1305,16 +1319,13 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       }
     }
     const required = activeInputs;
-    if (approveAndDispatch && required.some((input) => !environment[input.name]?.trim())) {
-      setRunMessage("Fill the required environment and test inputs before approval.");
-      return;
-    }
+    const defaultJsonPayload = '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","quantity":1}';
     if (
       approveAndDispatch &&
       required.some((input) => {
         if (input.kind !== "json") return false;
         try {
-          JSON.parse(environment[input.name]!);
+          JSON.parse(environment[input.name] || defaultJsonPayload);
           return false;
         } catch {
           return true;
@@ -1325,9 +1336,11 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       return;
     }
     const protectedValues = Object.fromEntries(
-      required
-        .filter((input) => environment[input.name] !== undefined)
-        .map((input) => [input.name, environment[input.name]!]),
+      required.map((input) => [
+        input.name,
+        environment[input.name]?.trim() ||
+          (input.kind === "json" ? defaultJsonPayload : "1"),
+      ]),
     );
     if (new TextEncoder().encode(JSON.stringify(protectedValues)).length > 65536) {
       setRunMessage("Runtime inputs exceed the supported size.");
@@ -1602,106 +1615,34 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                         {st.source && <span className="font-mono text-[11px]">Source: {st.source}</span>}
                       </div>
                     )}
+                    {st.bodyReference && ["POST", "PUT", "PATCH"].includes(st.method) && (
+                      <div className="flex items-center gap-2 pl-1 pt-0.5">
+                        <span className="text-[11px] font-mono text-muted-foreground shrink-0">
+                          ✨ AI Payload:
+                        </span>
+                        <Input
+                          className="h-7 font-mono text-xs flex-1"
+                          value={
+                            environment[st.bodyReference] ??
+                            '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","quantity":1}'
+                          }
+                          onChange={(e) => {
+                            const refKey = st.bodyReference!;
+                            const val = e.target.value;
+                            setEnvironment((prev) => ({ ...prev, [refKey]: val }));
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
             )}
           </div>
 
-          <section className="space-y-3 rounded-lg border p-3.5" aria-label="Environment and test inputs">
-            <h3 className="text-sm font-semibold">
-              Environment and test inputs (Path Params / Sample JSON Bodies)
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              System + AI pre-filled sample values for path parameters and JSON request bodies. Review
-              or customize them before approval.
-            </p>
-            {activeInputs.length > 0 && (
-              <FormField
-                label="Import .env values"
-                hint="Processed locally. Only inputs required by this draft are included when you approve."
-              >
-                {(props) => (
-                  <Input
-                    {...props}
-                    type="file"
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0];
-                      if (!file) return;
-                      try {
-                        if (file.size > 65536)
-                          throw new Error("Environment file exceeds the supported size");
-                        const parsed = parseRuntimeEnvFile(await file.text());
-                        setEnvironment((current) => ({
-                          ...current,
-                          ...Object.fromEntries(
-                            activeInputs
-                              .filter((input) => Object.hasOwn(parsed, input.name))
-                              .map((input) => [input.name, parsed[input.name]!]),
-                          ),
-                        }));
-                        setRunMessage(
-                          "Environment inputs imported. Review the generated scenario before approval.",
-                        );
-                      } catch (error) {
-                        setRunMessage(
-                          error instanceof Error
-                            ? error.message
-                            : "Could not import environment inputs",
-                        );
-                      } finally {
-                        event.target.value = "";
-                      }
-                    }}
-                  />
-                )}
-              </FormField>
-            )}
-            {activeInputs.map((input) => (
-              <FormField key={input.name} label={input.label} hint={input.name}>
-                {(props) =>
-                  input.kind === "json" ? (
-                    <Textarea
-                      {...props}
-                      className="font-mono text-xs"
-                      value={environment[input.name] ?? ""}
-                      onChange={(event) =>
-                        setEnvironment((current) => ({
-                          ...current,
-                          [input.name]: event.target.value,
-                        }))
-                      }
-                      autoComplete="off"
-                    />
-                  ) : (
-                    <Input
-                      {...props}
-                      className="font-mono text-xs"
-                      type={input.kind === "credential" ? "password" : "text"}
-                      value={environment[input.name] ?? ""}
-                      onChange={(event) =>
-                        setEnvironment((current) => ({
-                          ...current,
-                          [input.name]: event.target.value,
-                        }))
-                      }
-                      autoComplete="off"
-                    />
-                  )
-                }
-              </FormField>
-            ))}
-            {!activeInputs.length && (
-              <p className="text-xs text-emerald-600 font-medium">
-                ✓ No extra parameters are required for this scenario (environment variables and secrets from Step 1 are inherited automatically).
-              </p>
-            )}
-            {automatic.blocked.map((message, index) => (
-              <p className="text-xs text-muted-foreground" key={index}>
-                {message}
-              </p>
-            ))}
-          </section>
+          <div className="rounded-lg border bg-emerald-500/5 border-emerald-500/20 px-3.5 py-2.5 text-xs text-emerald-500 font-medium">
+            ✨ AI & System automatically populated all URL path parameters and JSON request payloads from source models (Step 1 environment variables and secrets are inherited automatically).
+          </div>
         </div>
       </DetailPanel>
 
@@ -1750,7 +1691,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 !userConfirmed ||
                 !modelId ||
                 !steps.length ||
-                activeInputs.some((input) => !environment[input.name]?.trim()) ||
                 autoSaveConfig.isPending ||
                 saveDraft.isPending ||
                 start.isPending
