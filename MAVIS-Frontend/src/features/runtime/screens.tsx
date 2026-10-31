@@ -283,52 +283,48 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
 
         <RequestState query={snapshots} empty={!snapshots.data?.length}>
           <div className="mt-4 space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <SelectField
-                disabled={preflight.isPending}
-                label="Source snapshot"
-                value={snapshotId}
-                onChange={(value) => {
-                  setSnapshotId(value);
-                  preflight.reset();
-                  const candidateModels = staticModels.length ? staticModels : (models.data ?? []);
-                  const matchedModel = candidateModels.find((m) => m.snapshotId === value);
-                  if (matchedModel) {
-                    setModelId(matchedModel.id);
-                  }
-                }}
-                options={(snapshots.data ?? []).map((s) => ({
-                  value: s.id,
-                  label: `${s.name} · ${s.id.slice(0, 8)}`,
-                }))}
-              />
-              <SelectField
-                disabled={preflight.isPending}
-                label="Target architecture model"
-                value={modelId || defaultModelId}
-                onChange={(nextModelId) => {
-                  setModelId(nextModelId);
-                  const candidateModels = staticModels.length ? staticModels : (models.data ?? []);
-                  const chosen = candidateModels.find((m) => m.id === nextModelId);
-                  if (chosen?.snapshotId && chosen.snapshotId !== snapshotId) {
-                    setSnapshotId(chosen.snapshotId);
+            {(() => {
+              const candidateModels = staticModels.length ? staticModels : (models.data ?? []);
+              if (candidateModels.length > 0) {
+                return (
+                  <SelectField
+                    disabled={preflight.isPending}
+                    label="Target revision"
+                    value={modelId || defaultModelId}
+                    onChange={(nextModelId) => {
+                      setModelId(nextModelId);
+                      const chosen = candidateModels.find((m) => m.id === nextModelId);
+                      if (chosen?.snapshotId && chosen.snapshotId !== snapshotId) {
+                        setSnapshotId(chosen.snapshotId);
+                        preflight.reset();
+                      }
+                    }}
+                    options={candidateModels.map((m) => {
+                      const snap = (snapshots.data ?? []).find((s) => s.id === m.snapshotId);
+                      return {
+                        value: m.id,
+                        label: `Revision ${m.revision}${m.latest ? " (Latest)" : ""} · ${snap ? snap.name : m.id.slice(0, 8)}`,
+                      };
+                    })}
+                  />
+                );
+              }
+              return (
+                <SelectField
+                  disabled={preflight.isPending}
+                  label="Target revision"
+                  value={snapshotId}
+                  onChange={(value) => {
+                    setSnapshotId(value);
                     preflight.reset();
-                  }
-                }}
-                options={(() => {
-                  const all = staticModels.length ? staticModels : (models.data ?? []);
-                  const forSnap = snapshotId ? all.filter((m) => !m.snapshotId || m.snapshotId === snapshotId) : all;
-                  const list = forSnap.length > 0 ? forSnap : all;
-                  return list.map((m) => {
-                    const snapName = (snapshots.data ?? []).find((s) => s.id === m.snapshotId)?.name;
-                    return {
-                      value: m.id,
-                      label: `Revision ${m.revision} · ${m.id.slice(0, 8)}${snapName ? ` (${snapName})` : ""}`,
-                    };
-                  });
-                })()}
-              />
-            </div>
+                  }}
+                  options={(snapshots.data ?? []).map((s, idx) => ({
+                    value: s.id,
+                    label: `Snapshot #${(snapshots.data?.length ?? idx) - idx} · ${s.name}`,
+                  }))}
+                />
+              );
+            })()}
 
             <Button
               disabled={!snapshotId || preflight.isPending}
@@ -1254,42 +1250,18 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         </p>
 
         <div className="mt-4 space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <SelectField
-              label="Source snapshot"
-              value={snapshotId}
-              onChange={(nextSnapId) => {
-                edited.current = false;
-                autoGenTriggered.current = "";
-                setSnapshotId(nextSnapId);
-                const matchedModel = selectableModels.find((m) => m.snapshotId === nextSnapId);
-                if (matchedModel) {
-                  setModelId(matchedModel.id);
-                }
-              }}
-              options={(snapshots.data ?? []).map((s) => ({
-                value: s.id,
-                label: `${s.name} · ${s.id.slice(0, 8)}`,
-              }))}
-            />
-
-            <SelectField
-              label="Model version"
-              value={modelId}
-              onChange={handleModelChange}
-              options={(() => {
-                const matching = selectableModels.filter((m) => !snapshotId || m.snapshotId === snapshotId);
-                const list = matching.length ? matching : selectableModels;
-                return list.map((m) => {
-                  const snapName = (snapshots.data ?? []).find((s) => s.id === m.snapshotId)?.name;
-                  return {
-                    value: m.id,
-                    label: `${"label" in m && m.label ? m.label : `Revision ${m.revision}`} · ${m.id.slice(0, 8)}${snapName ? ` (${snapName})` : ""}`,
-                  };
-                });
-              })()}
-            />
-          </div>
+          <SelectField
+            label="Target revision"
+            value={modelId}
+            onChange={handleModelChange}
+            options={selectableModels.map((m) => {
+              const snap = (snapshots.data ?? []).find((s) => s.id === m.snapshotId);
+              return {
+                value: m.id,
+                label: `${"label" in m && m.label ? m.label : `Revision ${m.revision}`}${m.latest ? " (Latest)" : ""} · ${snap ? snap.name : m.id.slice(0, 8)}`,
+              };
+            })}
+          />
 
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-64">

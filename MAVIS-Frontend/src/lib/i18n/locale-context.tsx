@@ -1257,6 +1257,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Target": "Mục tiêu",
   "Target element (Callee)": "Phần tử đích (Bên được gọi)",
   "Target element to analyze": "Chọn phần tử mục tiêu cần phân tích (Giả lập sập/thay đổi)",
+  "Target revision": "Phiên bản kiểm thử (Revision)",
   "Target service:": "Service đích:",
   "Target type to remove": "Loại phần tử đích cần xóa",
   "Target:": "Mục tiêu:",
