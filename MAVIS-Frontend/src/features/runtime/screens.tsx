@@ -48,7 +48,15 @@ export function RuntimeStepperBanner({ currentStep, projectId }: { currentStep: 
 
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { suggestRuntimeScenarios, automaticRuntimeDraft, type RuntimeDraftStep, type RuntimeInput } from "./scenario-suggestions";
+import {
+  suggestRuntimeScenarios,
+  automaticRuntimeDraft,
+  toServiceEnvPrefix,
+  boundRuntimeEnvironment,
+  resolveRuntimeTargetModel,
+  type RuntimeDraftStep,
+  type RuntimeInput,
+} from "./scenario-suggestions";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useApi, useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
@@ -187,23 +195,26 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     const stored = readStep1Target(projectId);
+    const allModels = models.data ?? [];
+    const candidateModels = staticModels.length ? staticModels : allModels;
+    const preferredModel = resolveRuntimeTargetModel(allModels, stored.modelId, config.data?.modelId);
+    if (preferredModel) {
+      const activeModel =
+        (modelId ? candidateModels.find((m) => m.id === modelId) : undefined) ?? preferredModel;
+      if (modelId !== activeModel.id) setModelId(activeModel.id);
+      if (activeModel.snapshotId && snapshotId !== activeModel.snapshotId) {
+        setSnapshotId(activeModel.snapshotId);
+      }
+      return;
+    }
     if (!snapshotId && snapshots.data?.length) {
       const preferredSnapId =
         (stored.snapshotId && snapshots.data.some((s) => s.id === stored.snapshotId) ? stored.snapshotId : "") ||
         config.data?.snapshotId ||
-        (staticModels[0] ?? models.data?.[0])?.snapshotId ||
         snapshots.data[0]?.id;
       if (preferredSnapId) setSnapshotId(preferredSnapId);
     }
-    if (!modelId && defaultModelId) {
-      const allModels = models.data ?? [];
-      const preferredModelId =
-        (stored.modelId && allModels.some((m) => m.id === stored.modelId) ? stored.modelId : "") ||
-        config.data?.modelId ||
-        defaultModelId;
-      setModelId(preferredModelId);
-    }
-  }, [projectId, snapshots.data, config.data?.snapshotId, config.data?.modelId, models.data, snapshotId, modelId, defaultModelId]);
+  }, [projectId, snapshots.data, config.data?.snapshotId, config.data?.modelId, models.data, staticModels.length, snapshotId, modelId]);
 
   useEffect(() => {
     const stored = readStep1Target(projectId);
@@ -507,8 +518,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         ...allSecretKeys,
       ]),
     ).filter((k) => !dismissedSecretKeys.includes(k));
-    const effectiveModelId = modelId || defaultModelId;
-    const effectiveSnapshotId = snapshotId || snapshots.data?.[0]?.id || "";
+    const candidateModels = staticModels.length ? staticModels : (models.data ?? []);
+    const activeModel =
+      candidateModels.find((m) => m.id === (modelId || defaultModelId)) ?? candidateModels[0];
+    const effectiveModelId = activeModel?.id ?? "";
+    const effectiveSnapshotId = activeModel?.snapshotId || snapshotId || snapshots.data?.[0]?.id || "";
     writeStep1Target(projectId, {
       modelId: effectiveModelId,
       snapshotId: effectiveSnapshotId,
@@ -1657,12 +1671,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     const stored = readStep1Target(projectId);
-    if (!modelId) {
-      if (stored.modelId && selectableModels.some((m) => m.id === stored.modelId)) {
-        setModelId(stored.modelId);
-      } else if (config.data?.modelId) {
-        setModelId(config.data.modelId);
+    if (selectableModels.length > 0 && (!modelId || !selectableModels.some((m) => m.id === modelId))) {
+      const preferred = resolveRuntimeTargetModel(models.data ?? [], stored.modelId, config.data?.modelId);
+      if (preferred) {
+        setModelId(preferred.id);
+        if (preferred.snapshotId) {
+          setSnapshotId(preferred.snapshotId);
+        }
       }
+      return;
     }
     if (!snapshotId) {
       if (stored.snapshotId && (snapshots.data ?? []).some((s) => s.id === stored.snapshotId)) {
@@ -1671,23 +1688,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         setSnapshotId(config.data.snapshotId);
       }
     }
-  }, [projectId, config.data?.modelId, config.data?.snapshotId, selectableModels, snapshots.data, modelId, snapshotId]);
-
-  useEffect(() => {
-    const stored = readStep1Target(projectId);
-    if (!modelId && selectableModels.length > 0) {
-      const preferred =
-        (stored.modelId ? selectableModels.find((m) => m.id === stored.modelId) : undefined) ??
-        selectableModels.find((m) => m.latest) ??
-        selectableModels[0];
-      if (preferred) {
-        setModelId(preferred.id);
-        if (preferred.snapshotId) {
-          setSnapshotId(preferred.snapshotId);
-        }
-      }
-    }
-  }, [projectId, selectableModels, modelId]);
+  }, [projectId, config.data?.modelId, config.data?.snapshotId, models.data, selectableModels, snapshots.data, modelId, snapshotId]);
 
   useEffect(() => {
     if (!snapshotId && snapshots.data?.length) {
@@ -1774,7 +1775,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   return lower.includes("code") || lower.includes("sku") ? "SKU-LAPTOP-01" : "1";
                 });
                 const method = st.method.toUpperCase();
-                const serviceKey = st.service.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+                const serviceKey = toServiceEnvPrefix(st.service);
                 let bodyRef = st.bodyReference ?? undefined;
                 if (["POST", "PUT", "PATCH"].includes(method)) {
                   bodyRef = bodyRef || `${serviceKey}_BODY_${idx + 1}`;
@@ -1821,7 +1822,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         setDraftSteps(
           automatic.steps.map((st, idx) => {
             const cleanSvc = runnableServices.includes(st.service) ? st.service : (runnableServices[0] || st.service);
-            const serviceKey = cleanSvc.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+            const serviceKey = toServiceEnvPrefix(cleanSvc);
             const resolvedPath = st.path
               .replace(/\{\{V\d+\}\}/g, "1")
               .replace(/\{([^}/]+)\}/g, (_, p: string) =>
@@ -1860,7 +1861,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             runnableServices[idx % Math.max(1, runnableServices.length)] ||
             defaultSvc ||
             "gateway";
-          const serviceKey = cleanSvc.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+          const serviceKey = toServiceEnvPrefix(cleanSvc);
           const method = (ep.method || "GET").toUpperCase();
           const rawPath = ep.path || "/health";
           const rewrittenPath = rawPath.replace(/\{([^}/]+)\}/g, (_, param: string) => {
@@ -1947,7 +1948,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         const method = String(obj["method"] ?? "GET").toUpperCase();
         const svc = String(obj["service"] ?? defaultSvc);
         const path = String(obj["path"] ?? "/health");
-        const serviceKey = svc.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+        const serviceKey = toServiceEnvPrefix(svc);
         let bodyRef = typeof obj["bodyReference"] === "string" ? obj["bodyReference"] : undefined;
         if (["POST", "PUT", "PATCH"].includes(method)) {
           bodyRef = bodyRef || `${serviceKey}_BODY_${idx + 1}`;
@@ -2029,7 +2030,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       arr.map((item, idx) => {
         if (idx !== index) return item;
         if (["POST", "PUT", "PATCH"].includes(upper)) {
-          const serviceKey = (item.service || "SVC").replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+          const serviceKey = toServiceEnvPrefix(item.service);
           const bodyRef = item.bodyReference || `${serviceKey}_BODY_${idx + 1}`;
           createdRef = bodyRef;
           defaultBody = inferStepSampleBody(item.path, item.service, upper, discoveredEndpoints);
@@ -2057,7 +2058,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           const { envHeaders: _old, ...rest } = item;
           return remaining.length ? { ...rest, envHeaders: remaining } : rest;
         }
-        const serviceKey = (item.service || "SVC").replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+        const serviceKey = toServiceEnvPrefix(item.service);
         const ref = `${serviceKey}_AUTHORIZATION`;
         createdRef = ref;
         return {
@@ -2263,8 +2264,12 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     const normalizedName = scenarioName.trim() || "Auto-generated Architecture Verification Scenario";
     const serializedSteps = steps.map((step, index) => {
       const isWrite = ["POST", "PUT", "PATCH"].includes(step.method);
-      const serviceKey = step.service.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
-      const bodyRef = isWrite ? step.bodyReference || `${serviceKey}_BODY_${index + 1}` : undefined;
+      const serviceKey = toServiceEnvPrefix(step.service);
+      const bodyRef = isWrite
+        ? step.bodyReference && /^[A-Z][A-Z0-9_]{0,63}$/.test(step.bodyReference)
+          ? step.bodyReference
+          : `${serviceKey}_BODY_${index + 1}`
+        : undefined;
       if (bodyRef && !protectedValues[bodyRef]) {
         protectedValues[bodyRef] =
           environment[bodyRef]?.trim() || inferStepSampleBody(step.path, step.service, step.method, discoveredEndpoints);
@@ -2284,6 +2289,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         ...(bodyRef ? { bodyReference: bodyRef } : {}),
       });
     });
+    const boundedEnv = boundRuntimeEnvironment(protectedValues);
     const draft = {
       projectId,
       name: normalizedName,
@@ -2323,16 +2329,18 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         return;
       }
       setRunMessage("Approving the confirmed scenario and dispatching execution...");
+      const isEnrichedChoice =
+        "origin" in chosenModel && (chosenModel as { origin?: string | null }).origin === "RUNTIME_ENRICHED";
       const session = await start.mutateAsync({
         projectId,
         snapshotId: effectiveSnapshotId,
-        modelId: chosenModel.id,
+        ...(!isEnrichedChoice ? { modelId: chosenModel.id } : {}),
         scenarioId: saved.id,
         scenarioName: draft.name,
         configurationRevision: activeConfigRevision,
         scenarioRevision: saved.revision,
         approved: true,
-        environment: protectedValues,
+        ...(Object.keys(boundedEnv).length > 0 ? { environment: boundedEnv } : {}),
       });
       router.push(`/sessions?project=${projectId}&session=${session.id}`);
     } catch (error) {

@@ -1029,24 +1029,54 @@ public class ComposePreflightValidator {
         if (lowerPath.endsWith(".yml") || lowerPath.endsWith(".yaml") || lowerPath.endsWith(".properties")
                 || lowerPath.endsWith(".json") || lowerPath.endsWith(".env") || lowerPath.endsWith(".env.example")) {
 
+            String topYamlKey = "";
+            String secondYamlKey = "";
+            int secondYamlIndent = -1;
             for (String rawLine : content.split("\r?\n")) {
+                int indent = 0;
+                while (indent < rawLine.length() && rawLine.charAt(indent) == ' ') indent++;
                 String line = rawLine.trim();
                 if (line.isEmpty() || line.startsWith("#") || line.startsWith("//")) continue;
                 String lowerLine = line.toLowerCase(Locale.ROOT);
+                if (lowerLine.endsWith(":")) {
+                    String sectionKey = lowerLine.substring(0, lowerLine.length() - 1).trim();
+                    if (indent == 0) {
+                        topYamlKey = sectionKey;
+                        secondYamlKey = "";
+                        secondYamlIndent = -1;
+                    } else if (secondYamlIndent < 0 || indent <= secondYamlIndent) {
+                        secondYamlKey = sectionKey;
+                        secondYamlIndent = indent;
+                    }
+                    if ("management".equals(topYamlKey) && ("endpoints".equals(secondYamlKey) || "endpoint".equals(secondYamlKey))) {
+                        actuatorServices.add(inferredService);
+                    }
+                } else if (indent == 0) {
+                    topYamlKey = "";
+                    secondYamlKey = "";
+                    secondYamlIndent = -1;
+                }
 
                 // P1.1 Context-path, actuator base-path, actuator port, and server port
                 if (lowerLine.startsWith("server.servlet.context-path") || lowerLine.startsWith("spring.webflux.base-path") || lowerLine.startsWith("context-path:")) {
                     String val = extractConfigScalarValue(line);
                     if (val != null && val.startsWith("/")) contextPaths.put(inferredService, val);
-                } else if (lowerLine.startsWith("management.endpoints.web.base-path") || (lowerContent.contains("management:") && lowerLine.startsWith("base-path:"))) {
+                } else if (lowerLine.startsWith("management.endpoints.web.base-path") || ("management".equals(topYamlKey) && lowerLine.startsWith("base-path:"))) {
+                    actuatorServices.add(inferredService);
                     String val = extractConfigScalarValue(line);
                     if (val != null && val.startsWith("/")) actuatorBasePaths.put(inferredService, val);
-                } else if (lowerLine.startsWith("management.server.port")) {
+                } else if (lowerLine.startsWith("management.server.port")
+                        || ("management".equals(topYamlKey) && "server".equals(secondYamlKey) && indent > secondYamlIndent && lowerLine.matches("port\\s*[:=].*"))) {
+                    actuatorServices.add(inferredService);
                     Integer p = parseConfigPort(extractConfigScalarValue(line));
                     if (p != null) actuatorPorts.put(inferredService, p);
-                } else if (lowerLine.startsWith("server.port") || (lowerContent.contains("server:") && lowerLine.matches("port\\s*[:=].*"))) {
+                } else if (lowerLine.startsWith("server.port")
+                        || ("server".equals(topYamlKey) && secondYamlKey.isEmpty() && indent > 0 && lowerLine.matches("port\\s*[:=].*"))) {
                     Integer p = parseConfigPort(extractConfigScalarValue(line));
                     if (p != null) sourcePorts.putIfAbsent(inferredService, p);
+                }
+                if (lowerLine.startsWith("management.endpoints.") || lowerLine.startsWith("management.endpoint.health")) {
+                    actuatorServices.add(inferredService);
                 }
 
                 if (lowerLine.contains("datasource.url") || lowerLine.contains("jdbc:") || lowerLine.contains("r2dbc:")

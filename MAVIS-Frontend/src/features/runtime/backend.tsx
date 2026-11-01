@@ -22,6 +22,7 @@ import {
   writeStep1Target,
   httpMethodBadgeClass,
 } from "./screens";
+import { boundRuntimeEnvironment, resolveRuntimeTargetModel } from "./scenario-suggestions";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { DetailPanel, StatusLabel } from "@/components/shared/data";
@@ -1013,11 +1014,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     setQuickRunError("");
 
     const stored = readStep1Target(projectId);
-    const chosenModel =
-      (stored.modelId ? (models.data ?? []).find((m) => m.id === stored.modelId) : undefined) ??
-      staticModelsList.find((m) => m.latest) ??
-      staticModelsList[0] ??
-      models.data?.[0];
+    const chosenModel = resolveRuntimeTargetModel(models.data ?? [], stored.modelId, config.data?.modelId);
     const chosenSnapshotId =
       chosenModel?.snapshotId ||
       stored.snapshotId ||
@@ -1194,17 +1191,21 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         stored.plannedSteps && stored.plannedSteps.length > 0
           ? stored.plannedSteps.map((st, idx) => {
               const method = (st.method || "GET").toUpperCase();
-              if (st.bodyReference && ["POST", "PUT", "PATCH"].includes(method)) {
+              if (
+                st.bodyReference &&
+                /^[A-Z][A-Z0-9_]{0,63}$/.test(st.bodyReference) &&
+                ["POST", "PUT", "PATCH"].includes(method)
+              ) {
                 environment[st.bodyReference] =
                   stored.plannedInputs?.[st.bodyReference]?.trim() || defaultBody;
               }
               for (const hdr of st.envHeaders ?? []) {
-                if (hdr.reference && !environment[hdr.reference]) {
+                if (hdr.reference && /^[A-Z][A-Z0-9_]{0,63}$/.test(hdr.reference) && !environment[hdr.reference]) {
                   environment[hdr.reference] = "Bearer sandbox-verification-token";
                 }
               }
               for (const refKey of Object.values(st.environmentVariables ?? {})) {
-                if (refKey && !environment[refKey]) {
+                if (refKey && /^[A-Z][A-Z0-9_]{0,63}$/.test(refKey) && !environment[refKey]) {
                   environment[refKey] = "1";
                 }
               }
@@ -1218,7 +1219,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 path: normalizedPath,
                 expectedStatus: Number(st.status) || 200,
                 allowClientError: st.allowClientError ?? true,
-                ...(st.bodyReference ? { bodyReference: st.bodyReference } : {}),
+                ...(st.bodyReference && /^[A-Z][A-Z0-9_]{0,63}$/.test(st.bodyReference)
+                  ? { bodyReference: st.bodyReference }
+                  : {}),
                 ...(st.environmentVariables && Object.keys(st.environmentVariables).length
                   ? { environmentVariables: st.environmentVariables }
                   : {}),
@@ -1254,6 +1257,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 }),
               ];
 
+      const boundedEnv = boundRuntimeEnvironment(environment);
+
       const scenarioName = stored.scenarioName || "Architecture Verification Scenario";
       const exactMatch = (scenarios.data ?? []).find(
         (sc) => sc.name === scenarioName && JSON.stringify(sc.steps) === JSON.stringify(draftSteps),
@@ -1272,16 +1277,18 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           : await saveDraft.mutateAsync({ projectId, name: scenarioName, steps: draftSteps }));
 
       // 3. Dispatch runtime session
+      const isEnrichedChoice =
+        "origin" in chosenModel && (chosenModel as { origin?: string | null }).origin === "RUNTIME_ENRICHED";
       const res = await startRuntime.mutateAsync({
         projectId,
         snapshotId: chosenSnapshotId,
-        modelId: chosenModel.id,
+        ...(!isEnrichedChoice ? { modelId: chosenModel.id } : {}),
         scenarioId: savedScenario.id,
         scenarioName: savedScenario.name,
         configurationRevision: pinnedConfig.revision,
         scenarioRevision: savedScenario.revision,
         approved: true,
-        ...(Object.keys(environment).length ? { environment } : {}),
+        ...(Object.keys(boundedEnv).length ? { environment: boundedEnv } : {}),
       });
 
       setSelected(res.id);

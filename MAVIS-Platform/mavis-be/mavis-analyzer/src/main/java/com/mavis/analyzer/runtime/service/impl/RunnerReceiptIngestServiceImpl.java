@@ -306,7 +306,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 && !hasStructuralTraceWarning
                 && correspondenceOk
                 && modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(session.getProject().getId())
-                    .map(latest -> latest.getId().equals(session.getModelVersion().getId())).orElse(false);
+                    .map(latest -> isSessionBaseStillCurrentLatest(latest, session)).orElse(false);
 
         // Nếu spans rỗng -> không tạo ModelVersion mới
         if (spans.isEmpty()) {
@@ -1252,6 +1252,23 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             List<String> causalParentMessageIds) {}
 
     private record IngestResult(ModelVersion enrichedVersion, ReceiptIngestAckDTO ack) {}
+
+    private static boolean isSessionBaseStillCurrentLatest(ModelVersion latest, RuntimeSession session) {
+        if (latest == null || session == null || session.getModelVersion() == null || session.getModelVersion().getId() == null) {
+            return false;
+        }
+        UUID pinnedBaseId = session.getModelVersion().getId();
+        if (pinnedBaseId.equals(latest.getId())) {
+            return true;
+        }
+        if ("RUNTIME_ENRICHED".equalsIgnoreCase(latest.getOrigin())
+                && latest.getBaseModelVersion() != null
+                && pinnedBaseId.equals(latest.getBaseModelVersion().getId())) {
+            return !(latest.getCreatedAt() != null && session.getCreatedAt() != null
+                    && latest.getCreatedAt().isAfter(session.getCreatedAt()));
+        }
+        return false;
+    }
 
     private ModelElement resolveContainer(ModelElement element) {
         if (element == null) return null;
