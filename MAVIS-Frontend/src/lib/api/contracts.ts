@@ -504,7 +504,7 @@ export const contracts = {
       modelId: id.nullable().optional(),
       suggestedName: z.string(),
       generatorMode: z.enum(["AI_ASSISTED", "SYSTEM_STATIC"]),
-      aiModelName: z.string().optional(),
+      aiModelName: z.string().nullable().optional(),
       summary: z.string(),
       steps: z.array(
         z.object({
@@ -518,10 +518,12 @@ export const contracts = {
           environmentVariables: z.record(z.string()).nullable().optional(),
           envHeaders: z.array(z.object({ name: z.string(), reference: z.string() })).nullable().optional(),
           bodyReference: z.string().nullable().optional(),
+          allowClientError: z.boolean().nullable().optional(),
         }),
       ),
-      sampleInputs: z.record(z.string()).optional(),
-      inheritedEnvKeys: z.array(z.string()).optional(),
+      sampleInputs: z.record(z.string()).nullable().optional(),
+      inheritedEnvKeys: z.array(z.string()).nullable().optional(),
+      runnableServices: z.array(z.string()).nullable().optional(),
     }),
     true,
   ),

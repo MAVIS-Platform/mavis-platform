@@ -61,7 +61,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             "memoryMiB", "cpus", "timeoutSeconds", "approvedForLocalPoc", "scenarioRunnerImage",
             "dotnetInstrumentationVersion", "javaInstrumentationVersion", "environmentBindings");
     private static final List<String> RUNNER_STEP_FIELDS = List.of("id", "service", "method", "path", "expectedStatus", "jsonBody",
-            "headers", "secretHeaders", "extract", "environmentVariables", "bodyReference", "envHeaders");
+            "headers", "secretHeaders", "extract", "environmentVariables", "bodyReference", "envHeaders", "allowClientError");
     private static final Pattern EXCERPT_MAPPING_PATTERN = Pattern.compile("@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?");
 
     private final RuntimeSessionRepository runtimeSessionRepository;
@@ -126,24 +126,47 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         Path path = Path.of(storagePathStr);
+        Map<String, String> savedOverrides = new LinkedHashMap<>();
+        try {
+            if (runtimeConfigurationRepository != null && snapshot.getProject() != null && snapshot.getProject().getId() != null) {
+                var savedCfg = runtimeConfigurationRepository.findById(snapshot.getProject().getId()).orElse(null);
+                if (savedCfg != null && savedCfg.getProfile() != null && savedCfg.getProfile().path("serviceImageOverrides").isObject()) {
+                    savedCfg.getProfile().path("serviceImageOverrides").fields().forEachRemaining(e -> {
+                        String val = e.getValue().asText("").trim();
+                        if (!val.isEmpty()) savedOverrides.put(e.getKey(), val);
+                    });
+                }
+            }
+        } catch (Exception ignored) {}
+
         PreflightCheckResponseDTO result = null;
+        String rawYamlContent = null;
+        String composeEntryDir = null;
+        Map<String, String> envFiles = Map.of();
+
         if (Files.isRegularFile(path)) {
-            String fileName = path.getFileName().toString().toLowerCase();
+            String fileName = path.getFileName().toString().toLowerCase(Locale.ROOT);
             if (fileName.endsWith(".yml") || fileName.endsWith(".yaml")) {
-                result = composePreflightValidator.validate(path);
+                try {
+                    rawYamlContent = Files.readString(path, StandardCharsets.UTF_8);
+                    envFiles = composePreflightValidator.collectDirectoryEnvFiles(path.getParent());
+                    result = composePreflightValidator.validate(rawYamlContent, savedOverrides, envFiles);
+                } catch (Exception e) {
+                    result = composePreflightValidator.validate(path);
+                }
             } else if (fileName.endsWith(".zip")) {
-                // Đọc file docker-compose bên trong zip
                 try (ZipFile zipFile = new ZipFile(path.toFile())) {
                     Enumeration<? extends ZipEntry> entries = zipFile.entries();
                     while (entries.hasMoreElements()) {
                         ZipEntry entry = entries.nextElement();
-                        String entryName = entry.getName().replace('\\', '/').toLowerCase(Locale.ROOT);
+                        String rawEntryName = entry.getName().replace('\\', '/');
+                        String entryName = rawEntryName.toLowerCase(Locale.ROOT);
                         String baseName = entryName.contains("/") ? entryName.substring(entryName.lastIndexOf('/') + 1) : entryName;
                         if (!entry.isDirectory() && (baseName.equals("docker-compose.yml") || baseName.equals("docker-compose.yaml")
                                 || baseName.equals("compose.yml") || baseName.equals("compose.yaml"))) {
                             try (InputStream is = zipFile.getInputStream(entry)) {
-                                String yamlContent = new String(readBounded(is), StandardCharsets.UTF_8);
-                                result = composePreflightValidator.validate(yamlContent);
+                                rawYamlContent = new String(readBounded(is), StandardCharsets.UTF_8);
+                                composeEntryDir = rawEntryName.contains("/") ? rawEntryName.substring(0, rawEntryName.lastIndexOf('/')) : "";
                                 break;
                             }
                         }
@@ -151,7 +174,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 } catch (Exception e) {
                     log.error("Lỗi khi đọc file zip snapshot: {}", path, e);
                 }
-                if (result == null) {
+                envFiles = composePreflightValidator.collectSnapshotEnvFiles(path, composeEntryDir);
+                if (rawYamlContent != null) {
+                    result = composePreflightValidator.validate(rawYamlContent, savedOverrides, envFiles);
+                } else {
                     result = PreflightCheckResponseDTO.builder()
                             .compatible(false)
                             .detectedServices(new ArrayList<>())
@@ -164,8 +190,15 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         } else if (Files.isDirectory(path)) {
             Optional<Path> composePath = findComposeFileInDirectory(path);
             if (composePath.isPresent()) {
-                result = composePreflightValidator.validate(composePath.get());
+                try {
+                    rawYamlContent = Files.readString(composePath.get(), StandardCharsets.UTF_8);
+                    envFiles = composePreflightValidator.collectDirectoryEnvFiles(composePath.get().getParent());
+                    result = composePreflightValidator.validate(rawYamlContent, savedOverrides, envFiles);
+                } catch (Exception e) {
+                    result = composePreflightValidator.validate(composePath.get());
+                }
             } else {
+                envFiles = composePreflightValidator.collectDirectoryEnvFiles(path);
                 result = PreflightCheckResponseDTO.builder()
                         .compatible(false)
                         .detectedServices(new ArrayList<>())
@@ -182,28 +215,11 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         try {
-            if (runtimeConfigurationRepository != null && snapshot.getProject() != null && snapshot.getProject().getId() != null
-                    && result.getSandboxComposeYaml() != null && !result.getSandboxComposeYaml().isBlank()) {
-                var savedCfg = runtimeConfigurationRepository.findById(snapshot.getProject().getId()).orElse(null);
-                if (savedCfg != null && savedCfg.getProfile() != null && savedCfg.getProfile().path("serviceImageOverrides").isObject()) {
-                    Map<String, String> savedOverrides = new LinkedHashMap<>();
-                    savedCfg.getProfile().path("serviceImageOverrides").fields().forEachRemaining(e -> {
-                        String val = e.getValue().asText("").trim();
-                        if (!val.isEmpty()) savedOverrides.put(e.getKey(), val);
-                    });
-                    if (!savedOverrides.isEmpty()) {
-                        var rem = composePreflightValidator.remediateCompose(result.getSandboxComposeYaml(), savedOverrides);
-                        if (rem != null && !rem.yaml().isBlank()) {
-                            result.setSandboxComposeYaml(rem.yaml());
-                            if (result.getSandboxComposeChanges() != null) result.getSandboxComposeChanges().addAll(rem.changes());
-                            result.setUnresolvableRunnerIssues(new ArrayList<>(rem.unresolvableIssues()));
-                        }
-                    }
-                }
-            }
             result.setLocalImageBuildAvailable(sandboxImageBuilderService != null && sandboxImageBuilderService.isLocalBuildAvailable());
             composePreflightValidator.inspectSnapshotSource(path, result);
             enrichPreflightFromModel(snapshot, result);
+            composePreflightValidator.finalizeSandboxTopology(path, result, rawYamlContent, savedOverrides, envFiles);
+            refreshRecommendedMappingsForSynthesizedServices(result);
             if (!result.isCompatible() && result.getDetectedServices() != null && !result.getDetectedServices().isEmpty()
                     && result.getSecurityWarnings() != null
                     && result.getSecurityWarnings().stream().allMatch(w -> w.contains("chưa có file docker-compose.yml"))) {
@@ -214,6 +230,34 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         return result;
+    }
+
+    private static void refreshRecommendedMappingsForSynthesizedServices(PreflightCheckResponseDTO dto) {
+        if (dto == null || dto.getModelServiceNames() == null || dto.getModelServiceNames().isEmpty()
+                || dto.getComposeServices() == null || dto.getComposeServices().isEmpty()) {
+            return;
+        }
+        Set<String> infra = new HashSet<>(dto.getInfrastructureServices() != null ? dto.getInfrastructureServices() : List.of());
+        List<String> appCompose = dto.getComposeServices().stream().filter(s -> !infra.contains(s)).toList();
+        Map<String, String> mappings = dto.getRecommendedServiceMappings() != null
+                ? new LinkedHashMap<>(dto.getRecommendedServiceMappings())
+                : new LinkedHashMap<>();
+        boolean singleFallback = appCompose.size() == 1 && dto.getModelServiceNames().size() == 1;
+        for (String svc : appCompose) {
+            if (mappings.containsKey(svc)) continue;
+            for (Map.Entry<String, String> entry : dto.getModelServiceNames().entrySet()) {
+                if (entry.getValue().equalsIgnoreCase(svc)
+                        || ComposePreflightValidator.cleanServiceCandidate(entry.getValue()).equalsIgnoreCase(svc)
+                        || ComposePreflightValidator.matchDetectedService(entry.getValue(), List.of(svc)) != null) {
+                    mappings.put(svc, entry.getKey());
+                    break;
+                }
+            }
+            if (!mappings.containsKey(svc) && singleFallback) {
+                mappings.put(svc, dto.getModelServiceNames().keySet().iterator().next());
+            }
+        }
+        dto.setRecommendedServiceMappings(mappings);
     }
 
     private void enrichPreflightFromModel(SourceSnapshot snapshot, PreflightCheckResponseDTO dto) {
@@ -680,8 +724,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             if (sNames.isEmpty()) {
                 try {
                     PreflightCheckResponseDTO preflight = runComposePreflight(snapshot.getId());
+                    Set<String> infra = new HashSet<>(preflight.getInfrastructureServices() != null ? preflight.getInfrastructureServices() : List.of());
                     if (preflight.getDetectedServices() != null) {
-                        sNames.addAll(preflight.getDetectedServices());
+                        preflight.getDetectedServices().stream().filter(s -> !infra.contains(s)).forEach(sNames::add);
                     }
                 } catch (Exception ignored) {}
             }
@@ -1023,8 +1068,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                         Enumeration<? extends ZipEntry> entries = zipFile.entries();
                         while (entries.hasMoreElements()) {
                             ZipEntry entry = entries.nextElement();
-                            String entryName = entry.getName().toLowerCase();
-                            if (entryName.endsWith("docker-compose.yml") || entryName.endsWith("docker-compose.yaml")) {
+                            String entryName = entry.getName().replace('\\', '/').toLowerCase();
+                            String base = entryName.contains("/") ? entryName.substring(entryName.lastIndexOf('/') + 1) : entryName;
+                            if (base.equals("docker-compose.yml") || base.equals("docker-compose.yaml")
+                                    || base.equals("compose.yml") || base.equals("compose.yaml")) {
                                 try (InputStream is = zipFile.getInputStream(entry)) {
                                     composeYaml = new String(readBounded(is), StandardCharsets.UTF_8);
                                     break;
@@ -1032,6 +1079,16 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                             }
                         }
                     } catch (Exception ignored) {}
+                }
+            } else if (Files.isDirectory(path)) {
+                for (String candidate : List.of("docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml")) {
+                    Path f = path.resolve(candidate);
+                    if (Files.isRegularFile(f)) {
+                        try {
+                            composeYaml = Files.readString(f, StandardCharsets.UTF_8);
+                            break;
+                        } catch (Exception ignored) {}
+                    }
                 }
             }
         }
@@ -1041,13 +1098,28 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 ? scenarioConfig.path("profile")
                 : null;
 
+        Map<String, String> overrides = new LinkedHashMap<>();
+        if (profileNode != null && profileNode.path("serviceImageOverrides").isObject()) {
+            profileNode.path("serviceImageOverrides").fields().forEachRemaining(e -> overrides.put(e.getKey(), e.getValue().asText("")));
+        }
+
         if (profileNode != null && profileNode.hasNonNull("sandboxCompose") && !profileNode.get("sandboxCompose").asText().isBlank()) {
             composeYaml = profileNode.get("sandboxCompose").asText();
-        } else if (!composeYaml.isBlank() && composePreflightValidator != null) {
-            Map<String, String> overrides = new LinkedHashMap<>();
-            if (profileNode != null && profileNode.path("serviceImageOverrides").isObject()) {
-                profileNode.path("serviceImageOverrides").fields().forEachRemaining(e -> overrides.put(e.getKey(), e.getValue().asText("")));
+        } else if (snapshot != null && snapshot.getId() != null && sourceSnapshotRepository.findById(snapshot.getId()).isPresent()) {
+            PreflightCheckResponseDTO check = runComposePreflight(snapshot.getId());
+            String candidate = check.getSandboxComposeYaml();
+            List<String> unresolved = check.getUnresolvableRunnerIssues();
+            if (!overrides.isEmpty() && composePreflightValidator != null && candidate != null && !candidate.isBlank()) {
+                var rem = composePreflightValidator.remediateCompose(candidate, overrides);
+                if (!rem.yaml().isBlank()) {
+                    candidate = rem.yaml();
+                    unresolved = rem.unresolvableIssues();
+                }
             }
+            if ((unresolved == null || unresolved.isEmpty()) && candidate != null && !candidate.isBlank()) {
+                composeYaml = candidate;
+            }
+        } else if (!composeYaml.isBlank() && composePreflightValidator != null) {
             PreflightCheckResponseDTO check = composePreflightValidator.validate(composeYaml, overrides);
             if (check.getRunnerIssues() != null && !check.getRunnerIssues().isEmpty()
                     && (check.getUnresolvableRunnerIssues() == null || check.getUnresolvableRunnerIssues().isEmpty())

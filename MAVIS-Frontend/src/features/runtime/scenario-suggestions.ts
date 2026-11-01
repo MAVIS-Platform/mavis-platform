@@ -1,6 +1,6 @@
 import type { ArchitecturalModel } from "@/types/domain";
 export type RuntimeDraftStep = { service: string; method: string; path: string; status: string; rationale?: string | undefined; source?: string | undefined;
- environmentVariables?: Record<string,string>; envHeaders?: Array<{ name: string; reference: string }>; bodyReference?: string };
+ environmentVariables?: Record<string,string>; envHeaders?: Array<{ name: string; reference: string }>; bodyReference?: string; allowClientError?: boolean };
 export type RuntimeInput = { name:string; label:string; kind:"text"|"credential"|"json"; source:string };
 export function automaticRuntimeDraft(suggestions:ScenarioSuggestion[],profile?:Record<string,unknown>):{steps:RuntimeDraftStep[];inputs:RuntimeInput[];blocked:string[]} {
  const inputs:RuntimeInput[]=[],blocked:string[]=[],steps:RuntimeDraftStep[]=[];

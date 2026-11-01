@@ -48,17 +48,24 @@ public class ImageDigestResolver {
     private final String registryBaseOverride;
     private final boolean allowLocalDockerFallback;
     private final Map<String, String> operatorPins;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Map<String, String> registryAuth;
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private final Map<String, String> resolvedCache = new ConcurrentHashMap<>();
 
     public ImageDigestResolver() {
-        this("");
+        this("", "");
+    }
+
+    public ImageDigestResolver(String configuredPins) {
+        this(configuredPins, "");
     }
 
     @Autowired
-    public ImageDigestResolver(@Value("${mavis.runner.pinned-images:}") String configuredPins) {
+    public ImageDigestResolver(
+            @Value("${mavis.runner.pinned-images:}") String configuredPins,
+            @Value("${mavis.runner.registry-auth:}") String configuredRegistryAuth) {
         this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).followRedirects(HttpClient.Redirect.NORMAL).build(),
-                null, true, parseOperatorPins(configuredPins));
+                null, true, parseOperatorPins(configuredPins), parseRegistryAuth(configuredRegistryAuth, System.getenv("DOCKER_AUTH_CONFIG")));
     }
 
     public ImageDigestResolver(
@@ -66,10 +73,20 @@ public class ImageDigestResolver {
             String registryBaseOverride,
             boolean allowLocalDockerFallback,
             Map<String, String> operatorPins) {
+        this(httpClient, registryBaseOverride, allowLocalDockerFallback, operatorPins, Map.of());
+    }
+
+    public ImageDigestResolver(
+            HttpClient httpClient,
+            String registryBaseOverride,
+            boolean allowLocalDockerFallback,
+            Map<String, String> operatorPins,
+            Map<String, String> registryAuth) {
         this.httpClient = httpClient;
         this.registryBaseOverride = registryBaseOverride;
         this.allowLocalDockerFallback = allowLocalDockerFallback;
         this.operatorPins = operatorPins != null ? Map.copyOf(operatorPins) : Map.of();
+        this.registryAuth = registryAuth != null ? Map.copyOf(registryAuth) : Map.of();
     }
 
     public Optional<String> resolve(String rawImage) {
@@ -141,15 +158,23 @@ public class ImageDigestResolver {
             }
 
             URI manifestUri = URI.create(baseUrl + "/v2/" + parsed.apiRepository() + "/manifests/" + parsed.tag());
+            String cred = matchRegistryCredential(parsed.registry());
             HttpResponse<Void> resp = sendManifestHead(manifestUri, null);
 
             if (resp.statusCode() == 401) {
                 Optional<String> wwwAuth = resp.headers().firstValue("WWW-Authenticate");
                 if (wwwAuth.isPresent()) {
-                    String token = fetchBearerToken(wwwAuth.get());
-                    if (token != null && !token.isBlank()) {
-                        resp = sendManifestHead(manifestUri, token);
+                    String challenge = wwwAuth.get();
+                    if (challenge.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                        String token = fetchBearerToken(challenge, cred);
+                        if (token != null && !token.isBlank()) {
+                            resp = sendManifestHead(manifestUri, "Bearer " + token);
+                        }
+                    } else if (challenge.regionMatches(true, 0, "Basic ", 0, 6) && cred != null && !cred.isBlank()) {
+                        resp = sendManifestHead(manifestUri, toBasicAuthHeader(cred));
                     }
+                } else if (cred != null && !cred.isBlank()) {
+                    resp = sendManifestHead(manifestUri, toBasicAuthHeader(cred));
                 }
             }
 
@@ -165,18 +190,34 @@ public class ImageDigestResolver {
         return Optional.empty();
     }
 
-    private HttpResponse<Void> sendManifestHead(URI uri, String bearerToken) throws Exception {
+    private String matchRegistryCredential(String registry) {
+        if (registry == null || registryAuth.isEmpty()) return null;
+        String lower = registry.toLowerCase(Locale.ROOT);
+        if (registryAuth.containsKey(lower)) return registryAuth.get(lower);
+        if ("registry-1.docker.io".equals(lower)) {
+            if (registryAuth.containsKey("docker.io")) return registryAuth.get("docker.io");
+            if (registryAuth.containsKey("index.docker.io")) return registryAuth.get("index.docker.io");
+        }
+        return null;
+    }
+
+    private static String toBasicAuthHeader(String cred) {
+        String pair = cred.contains(":") ? cred : ("token:" + cred);
+        return "Basic " + java.util.Base64.getEncoder().encodeToString(pair.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private HttpResponse<Void> sendManifestHead(URI uri, String authorizationHeader) throws Exception {
         HttpRequest.Builder req = HttpRequest.newBuilder(uri)
                 .timeout(Duration.ofSeconds(4))
                 .header("Accept", MANIFEST_ACCEPT)
                 .method("HEAD", HttpRequest.BodyPublishers.noBody());
-        if (bearerToken != null && !bearerToken.isBlank()) {
-            req.header("Authorization", "Bearer " + bearerToken);
+        if (authorizationHeader != null && !authorizationHeader.isBlank()) {
+            req.header("Authorization", authorizationHeader);
         }
         return httpClient.send(req.build(), HttpResponse.BodyHandlers.discarding());
     }
 
-    private String fetchBearerToken(String challenge) {
+    private String fetchBearerToken(String challenge, String registryCred) {
         if (!challenge.regionMatches(true, 0, "Bearer ", 0, 7)) return null;
         Map<String, String> params = new LinkedHashMap<>();
         Matcher m = BEARER_PARAM.matcher(challenge);
@@ -198,13 +239,15 @@ public class ImageDigestResolver {
             }
         }
         try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url.toString()))
+            HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(url.toString()))
                     .timeout(Duration.ofSeconds(3))
-                    .GET()
-                    .build();
-            HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                    .GET();
+            if (registryCred != null && !registryCred.isBlank()) {
+                req.header("Authorization", toBasicAuthHeader(registryCred));
+            }
+            HttpResponse<String> resp = httpClient.send(req.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (resp.statusCode() >= 200 && resp.statusCode() < 300 && resp.body() != null) {
-                JsonNode node = objectMapper.readTree(resp.body());
+                JsonNode node = OBJECT_MAPPER.readTree(resp.body());
                 String token = node.path("token").asText("");
                 if (token.isBlank()) token = node.path("access_token").asText("");
                 return token.isBlank() ? null : token;
@@ -290,5 +333,55 @@ public class ImageDigestResolver {
             }
         }
         return map;
+    }
+
+    static Map<String, String> parseRegistryAuth(String configuredRegistryAuth, String dockerAuthConfigJson) {
+        Map<String, String> map = new LinkedHashMap<>();
+        if (configuredRegistryAuth != null && !configuredRegistryAuth.isBlank()) {
+            for (String entry : configuredRegistryAuth.split("[,;\\r\\n]")) {
+                String trimmed = entry.trim();
+                int eq = trimmed.indexOf('=');
+                if (eq > 0) {
+                    String host = normalizeRegistryHost(trimmed.substring(0, eq));
+                    String secret = trimmed.substring(eq + 1).trim();
+                    if (!host.isEmpty() && !secret.isEmpty()) {
+                        map.put(host, secret);
+                    }
+                }
+            }
+        }
+        if (dockerAuthConfigJson != null && !dockerAuthConfigJson.isBlank()) {
+            try {
+                JsonNode auths = OBJECT_MAPPER.readTree(dockerAuthConfigJson).path("auths");
+                if (auths.isObject()) {
+                    auths.fields().forEachRemaining(e -> {
+                        String host = normalizeRegistryHost(e.getKey());
+                        if (host.isEmpty() || map.containsKey(host)) return;
+                        String b64 = e.getValue().path("auth").asText("").trim();
+                        if (!b64.isEmpty()) {
+                            try {
+                                String decoded = new String(java.util.Base64.getDecoder().decode(b64), StandardCharsets.UTF_8);
+                                if (!decoded.isBlank()) map.put(host, decoded);
+                            } catch (IllegalArgumentException ignored) {}
+                        } else {
+                            String user = e.getValue().path("username").asText("").trim();
+                            String pass = e.getValue().path("password").asText("").trim();
+                            if (!user.isEmpty() && !pass.isEmpty()) map.put(host, user + ":" + pass);
+                        }
+                    });
+                }
+            } catch (Exception ignored) {}
+        }
+        return map;
+    }
+
+    private static String normalizeRegistryHost(String raw) {
+        if (raw == null) return "";
+        String s = raw.trim().toLowerCase(Locale.ROOT);
+        if (s.startsWith("https://")) s = s.substring(8);
+        else if (s.startsWith("http://")) s = s.substring(7);
+        int slash = s.indexOf('/');
+        if (slash > 0) s = s.substring(0, slash);
+        return s.trim();
     }
 }

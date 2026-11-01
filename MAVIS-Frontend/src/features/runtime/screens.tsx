@@ -87,6 +87,7 @@ export interface Step1Draft {
   secretReferences?: string[];
   dismissedSecretKeys?: string[];
   savedRevision?: number;
+  plannedSnapshotId?: string;
   scenarioName?: string;
   plannedSteps?: RuntimeDraftStep[];
   plannedInputs?: Record<string, string>;
@@ -447,7 +448,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const rawUnresolved =
     sandboxComposeChanges.length > 0 || Boolean(sandboxComposeYaml) ? unresolvableRunnerIssues : runnerIssues;
   const effectiveUnresolvedIssues = rawUnresolved.filter((issue) => {
-    const m = /^Service '([^']+)' (?:uses build:|image )/.exec(issue);
+    const m = /^Service '([^']+)' (?:uses build:|image |has no image)/.exec(issue);
     if (!m) return true;
     const svc = m[1] ?? "";
     const override = serviceImageOverrides[svc]?.trim() ?? "";
@@ -456,7 +457,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const servicesNeedingImage = Array.from(
     new Set(
       rawUnresolved
-        .map((issue) => /^Service '([^']+)' (?:uses build:|image )/.exec(issue)?.[1])
+        .map((issue) => /^Service '([^']+)' (?:uses build:|image |has no image)/.exec(issue)?.[1])
         .filter((s): s is string => Boolean(s)),
     ),
   );
@@ -859,7 +860,15 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                                 Requires: <strong className="font-mono text-foreground">{chosenDb.requiredEnvVars.join(", ")}</strong>
                               </span>
                             )}
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 font-mono text-[10px]">
+                            <span
+                              className={`px-1.5 py-0.5 rounded font-mono text-[10px] ${
+                                chosenDb.status === "AUTO_PROVISIONED_SANDBOX_DB" ||
+                                chosenDb.status === "DETECTED_CONTAINER" ||
+                                chosenDb.status === "CONFIGURED_IN_COMPOSE"
+                                  ? "bg-emerald-500/10 text-emerald-600"
+                                  : "bg-amber-500/10 text-amber-600"
+                              }`}
+                            >
                               {chosenDb.status ?? "DETECTED"}
                             </span>
                           </div>
@@ -1424,6 +1433,58 @@ export function RuntimeScenarios() {
 }
 
 
+function inferStepSampleBody(
+  path: string,
+  service: string,
+  method: string,
+  discovered?: Array<{ service?: string; method?: string; path?: string; sampleJsonBody?: string }>,
+): string {
+  const matched = (discovered ?? []).find(
+    (ep) =>
+      (!ep.service || ep.service === service) &&
+      (ep.method ?? "POST").toUpperCase() === method.toUpperCase() &&
+      ep.path === path &&
+      ep.sampleJsonBody,
+  );
+  if (matched?.sampleJsonBody) return matched.sampleJsonBody;
+  const lower = (path || "").toLowerCase();
+  if (lower.includes("login") || lower.includes("signin")) {
+    return '{"username":"alice","email":"alice@example.org","password":"SandboxPass123!"}';
+  }
+  if (lower.includes("register") || lower.includes("signup")) {
+    return '{"name":"Alice","username":"alice","email":"alice@example.org","password":"SandboxPass123!"}';
+  }
+  if (lower.includes("employee")) {
+    return '{"name":"Nguyen Van A","age":28,"position":"Developer","departmentId":1,"organizationId":1}';
+  }
+  if (lower.includes("department")) return '{"name":"Engineering","organizationId":1}';
+  if (lower.includes("organization")) return '{"name":"MAVIS Corp","address":"Hanoi"}';
+  if (lower.includes("status")) return '{"status":"COMPLETED"}';
+  if (lower.includes("payment") || lower.includes("charge")) {
+    return '{"orderId":1,"amount":1299.00,"paymentMethod":"CREDIT_CARD"}';
+  }
+  if (lower.includes("product") || lower.includes("catalog") || lower.includes("inventory") || lower.includes("item")) {
+    return '{"code":"SKU-MOUSE-02","name":"Wireless Mouse","price":49.00,"stock":20,"quantity":1,"categoryId":1}';
+  }
+  if (lower.includes("user") || lower.includes("account") || lower.includes("customer")) {
+    return '{"name":"Test User","email":"user@example.org"}';
+  }
+  if (lower.includes("order") || lower.includes("checkout")) {
+    return '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","itemId":"item-1","quantity":1}';
+  }
+  return '{"name":"sample-entity","organizationId":1,"departmentId":1}';
+}
+
+function isValidJsonPayloadString(raw: string | undefined): boolean {
+  if (!raw || !raw.trim()) return false;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Boolean(parsed && typeof parsed === "object");
+  } catch {
+    return false;
+  }
+}
+
 function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const router = useRouter();
   const snapshots = useApiQuery("snapshots", { projectId });
@@ -1432,26 +1493,66 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const config = useApiQuery("runtimeConfiguration", { projectId });
   const start = useApiMutation("startRuntime");
   const saveDraft = useApiMutation("createScenario");
+  const updateDraft = useApiMutation("saveScenario");
+  const buildImages = useApiMutation("buildRuntimeSandboxImages");
   const generateAiDraft = useApiMutation("generateRuntimeScenario");
   const autoSaveConfig = useApiMutation("saveRuntimeConfiguration");
   const submitting = useRef(false);
   const autoGenTriggered = useRef<string>("");
+  const restoredDraftRef = useRef(false);
   const persistedDraft = useRef<{ fingerprint: string; scenario: { id: string; revision: number } } | null>(null);
 
   const [snapshotId, setSnapshotId] = useState("");
   const [modelId, setModelId] = useState("");
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
   const modelDetail = useApiQuery("model", { modelId }, { enabled: Boolean(modelId) });
   const realServices = (modelDetail.data?.elements ?? []).filter((e) => e.elementType === "SERVICE_CONTAINER");
   const detectedServiceNames = realServices.map((s) => s.name);
-  const defaultSvc = detectedServiceNames[0] ?? "";
 
-  const [scenarioName, setScenarioName] = useState("Backend API smoke scenario");
+  const [generatedRunnableServices, setGeneratedRunnableServices] = useState<string[]>([]);
+  const runnableServices = useMemo(() => {
+    if (generatedRunnableServices.length > 0) return generatedRunnableServices;
+    const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
+    const stored = readStep1Target(projectId);
+    const roleMap: Record<string, string> = {
+      ...(rawProf["serviceRoles"] && typeof rawProf["serviceRoles"] === "object"
+        ? (rawProf["serviceRoles"] as Record<string, string>)
+        : {}),
+      ...(stored.serviceRoles ?? {}),
+    };
+    const infra = new Set<string>(
+      Array.isArray(rawProf["infrastructureServices"])
+        ? (rawProf["infrastructureServices"] as unknown[])
+            .map(String)
+            .filter((svc) => roleMap[svc]?.toUpperCase() !== "APP")
+        : [],
+    );
+    for (const [svc, role] of Object.entries(roleMap)) {
+      if (role?.toUpperCase() === "INFRA") infra.add(svc);
+    }
+    const composeList = Array.isArray(rawProf["composeServices"]) && rawProf["composeServices"].length > 0
+      ? (rawProf["composeServices"] as unknown[]).map(String)
+      : Array.isArray(rawProf["detectedServices"])
+        ? (rawProf["detectedServices"] as unknown[]).map(String)
+        : [];
+    const filteredCompose = composeList.filter((s) => Boolean(s) && !infra.has(s));
+    if (filteredCompose.length > 0) return filteredCompose;
+    if (rawProf["applications"] && typeof rawProf["applications"] === "object") {
+      const appKeys = Object.keys(rawProf["applications"] as Record<string, unknown>).filter((s) => !infra.has(s));
+      if (appKeys.length > 0) return appKeys;
+    }
+    return detectedServiceNames;
+  }, [generatedRunnableServices, config.data?.profile, projectId, detectedServiceNames]);
+
+  const defaultSvc = runnableServices[0] ?? detectedServiceNames[0] ?? "gateway";
+
+  const [scenarioName, setScenarioName] = useState("Auto-generated Architecture Verification Scenario");
   const [aiGoal, setAiGoal] = useState("");
   const [aiSummary, setAiSummary] = useState("");
   const [generatorMode, setGeneratorMode] = useState<"AI_ASSISTED" | "SYSTEM_STATIC" | "LOCAL_STATIC">("LOCAL_STATIC");
   const [aiModelName, setAiModelName] = useState("");
   const [inheritedEnvKeys, setInheritedEnvKeys] = useState<string[]>([]);
-  const [userConfirmed, setUserConfirmed] = useState(false);
+  const [userConfirmed, setUserConfirmed] = useState(true);
 
   const [steps, setDraftSteps] = useState<RuntimeDraftStep[]>([]);
   const edited = useRef(false);
@@ -1470,16 +1571,74 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const [environment, setEnvironment] = useState<Record<string, string>>({});
   const [runMessage, setRunMessage] = useState("");
 
+  const discoveredEndpoints = useMemo(() => {
+    const raw = (config.data?.profile as { detectedEndpoints?: Array<{ service?: string; method?: string; path?: string; source?: string; expectedStatus?: number; sampleJsonBody?: string }> } | undefined)?.detectedEndpoints;
+    return Array.isArray(raw) ? raw : [];
+  }, [config.data?.profile]);
+
+  const step1Readiness = useMemo(() => {
+    const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
+    const stored = readStep1Target(projectId);
+    const overrides = {
+      ...(rawProf["serviceImageOverrides"] && typeof rawProf["serviceImageOverrides"] === "object"
+        ? (rawProf["serviceImageOverrides"] as Record<string, string>)
+        : {}),
+      ...(stored.serviceImageOverrides ?? {}),
+    };
+    const rawIssues = Array.isArray(rawProf["unresolvableRunnerIssues"])
+      ? (rawProf["unresolvableRunnerIssues"] as unknown[]).map(String)
+      : [];
+    const remainingIssues = rawIssues.filter((issue) => {
+      const m = /^Service '([^']+)' has no image/i.exec(issue);
+      return !(m?.[1] && overrides[m[1]]?.trim());
+    });
+    const missingBuildServices = remainingIssues
+      .map((issue) => /^Service '([^']+)' has no image/i.exec(issue)?.[1])
+      .filter((s): s is string => Boolean(s));
+    const localBuildAvailable = Boolean(rawProf["localImageBuildAvailable"]);
+    const prerequisites = (config.data?.prerequisites ?? []).filter(
+      (w) => w.includes("MAVIS_RUNNER_COLLECTOR_IMAGE") || w.includes("MAVIS_RUNTIME_ENVIRONMENT_KEY") || w.includes("Execution profile is disabled"),
+    );
+    return { remainingIssues, missingBuildServices, localBuildAvailable, prerequisites };
+  }, [config.data?.profile, config.data?.prerequisites, projectId]);
+
+  useEffect(() => {
+    if (restoredDraftRef.current) return;
+    const stored = readStep1Target(projectId);
+    const matchesCurrentSnapshot =
+      !stored.plannedSnapshotId || !stored.snapshotId || stored.plannedSnapshotId === stored.snapshotId;
+    if (matchesCurrentSnapshot && stored.plannedSteps && stored.plannedSteps.length > 0) {
+      restoredDraftRef.current = true;
+      edited.current = true;
+      setDraftSteps(stored.plannedSteps);
+      if (stored.scenarioName) setScenarioName(stored.scenarioName);
+      if (stored.plannedInputs && Object.keys(stored.plannedInputs).length > 0) {
+        setEnvironment((prev) => ({ ...stored.plannedInputs, ...prev }));
+      }
+    }
+  }, [projectId]);
+
   useEffect(() => {
     if (projectId && steps.length > 0) {
+      const referencedKeys = new Set<string>();
+      for (const st of steps) {
+        if (st.bodyReference) referencedKeys.add(st.bodyReference);
+        if (st.environmentVariables) Object.values(st.environmentVariables).forEach((k) => referencedKeys.add(k));
+        if (st.envHeaders) st.envHeaders.forEach((h) => referencedKeys.add(h.reference));
+      }
       const plannedInputs = Object.fromEntries(
-        steps
-          .filter((st) => st.bodyReference && environment[st.bodyReference])
-          .map((st) => [st.bodyReference!, environment[st.bodyReference!]!]),
+        Array.from(referencedKeys)
+          .filter((k) => Boolean(environment[k]))
+          .map((k) => [k, environment[k]!]),
       );
-      writeStep1Target(projectId, { scenarioName, plannedSteps: steps, plannedInputs });
+      writeStep1Target(projectId, {
+        ...(snapshotId ? { plannedSnapshotId: snapshotId } : {}),
+        scenarioName,
+        plannedSteps: steps,
+        plannedInputs,
+      });
     }
-  }, [projectId, scenarioName, steps, environment]);
+  }, [projectId, snapshotId, scenarioName, steps, environment]);
 
   const staticModels = (models.data ?? []).filter(
     (m) => !("origin" in m) || (m as any).origin !== "RUNTIME_ENRICHED",
@@ -1578,16 +1737,20 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           setGeneratorMode(res.generatorMode);
           setAiModelName(res.aiModelName ?? "");
           setAiSummary(res.summary);
+          if (res.runnableServices?.length) {
+            setGeneratedRunnableServices(res.runnableServices);
+          }
           if (res.inheritedEnvKeys?.length) {
-            setInheritedEnvKeys(res.inheritedEnvKeys);
+            setInheritedEnvKeys((prev) => Array.from(new Set([...prev, ...res.inheritedEnvKeys!])));
           }
           if (res.suggestedName) {
             setScenarioName(res.suggestedName);
           }
           if (res.steps && res.steps.length > 0) {
             const sampleMap = res.sampleInputs ?? {};
+            const extraInputs: Record<string, string> = {};
             setDraftSteps(
-              res.steps.map((st) => {
+              res.steps.map((st, idx) => {
                 let resolvedPath = st.path;
                 if (st.environmentVariables) {
                   for (const [alias, envName] of Object.entries(st.environmentVariables)) {
@@ -1597,23 +1760,36 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 }
                 resolvedPath = resolvedPath.replace(/\{\{V\d+\}\}/g, "1").replace(/\{([^}/]+)\}/g, (_, p: string) => {
                   const lower = p.toLowerCase();
+                  if (lower.includes("uuid") || lower.includes("guid")) return "00000000-0000-0000-0000-000000000001";
                   return lower.includes("code") || lower.includes("sku") ? "SKU-LAPTOP-01" : "1";
                 });
+                const method = st.method.toUpperCase();
+                const serviceKey = st.service.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+                let bodyRef = st.bodyReference ?? undefined;
+                if (["POST", "PUT", "PATCH"].includes(method)) {
+                  bodyRef = bodyRef || `${serviceKey}_BODY_${idx + 1}`;
+                  if (!sampleMap[bodyRef]) {
+                    extraInputs[bodyRef] = inferStepSampleBody(resolvedPath, st.service, method, discoveredEndpoints);
+                  }
+                } else {
+                  bodyRef = undefined;
+                }
                 return {
                   service: st.service,
-                  method: st.method.toUpperCase(),
+                  method,
                   path: resolvedPath,
                   status: String(st.expectedStatus ?? 200),
                   rationale: st.rationale,
                   source: st.source,
+                  allowClientError: st.allowClientError ?? true,
                   ...(st.envHeaders ? { envHeaders: st.envHeaders } : {}),
-                  ...(st.bodyReference ? { bodyReference: st.bodyReference } : {}),
+                  ...(bodyRef ? { bodyReference: bodyRef } : {}),
                 };
               }),
             );
-          }
-          if (res.sampleInputs) {
-            setEnvironment((prev) => ({ ...res.sampleInputs, ...prev }));
+            setEnvironment((prev) => ({ ...prev, ...extraInputs, ...sampleMap }));
+          } else if (res.sampleInputs) {
+            setEnvironment((prev) => ({ ...prev, ...res.sampleInputs }));
           }
         },
       },
@@ -1631,53 +1807,71 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (!edited.current && steps.length === 0) {
       if (automatic.steps.length > 0) {
+        const sampleEnv: Record<string, string> = {};
         setDraftSteps(
-          automatic.steps.map((st) => ({
-            ...st,
-            path: st.path
+          automatic.steps.map((st, idx) => {
+            const cleanSvc = runnableServices.includes(st.service) ? st.service : (runnableServices[0] || st.service);
+            const serviceKey = cleanSvc.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+            const resolvedPath = st.path
               .replace(/\{\{V\d+\}\}/g, "1")
               .replace(/\{([^}/]+)\}/g, (_, p: string) =>
                 p.toLowerCase().includes("code") || p.toLowerCase().includes("sku") ? "SKU-LAPTOP-01" : "1",
-              ),
-          })),
+              );
+            let bodyRef = st.bodyReference;
+            if (["POST", "PUT", "PATCH"].includes(st.method)) {
+              bodyRef = bodyRef || `${serviceKey}_BODY_${idx + 1}`;
+              sampleEnv[bodyRef] = inferStepSampleBody(resolvedPath, cleanSvc, st.method, discoveredEndpoints);
+            }
+            const { environmentVariables: _droppedVars, ...restStep } = st;
+            return {
+              ...restStep,
+              service: cleanSvc,
+              path: resolvedPath,
+              allowClientError: st.allowClientError ?? true,
+              ...(bodyRef ? { bodyReference: bodyRef } : {}),
+            };
+          }),
         );
+        if (Object.keys(sampleEnv).length > 0) {
+          setEnvironment((prev) => ({ ...sampleEnv, ...prev }));
+        }
         return;
       }
-      const discoveredEndpoints = (
-        config.data?.profile as
-          | { detectedEndpoints?: Array<{ service?: string; method?: string; path?: string; source?: string }> }
-          | undefined
-      )?.detectedEndpoints;
-      if (Array.isArray(discoveredEndpoints) && discoveredEndpoints.length > 0) {
+      if (discoveredEndpoints.length > 0) {
         const sampleEnv: Record<string, string> = {};
-        const synthesized = discoveredEndpoints.slice(0, 6).map((ep, idx) => {
-          const rawSvc =
-            ep.service ||
-            detectedServiceNames[idx % Math.max(1, detectedServiceNames.length)] ||
+        const nonHealth = discoveredEndpoints.filter(
+          (ep) => !["/health", "/actuator/health", "/ready", "/readyz"].includes((ep.path || "").toLowerCase()),
+        );
+        const pool = nonHealth.length > 0 ? nonHealth : discoveredEndpoints;
+        const synthesized = pool.slice(0, 8).map((ep, idx) => {
+          const candidateSvc = (ep.service || "").replace(/-[0-9a-f]{7,40}$/i, "");
+          const cleanSvc =
+            (candidateSvc && runnableServices.includes(candidateSvc) ? candidateSvc : undefined) ||
+            runnableServices[idx % Math.max(1, runnableServices.length)] ||
             defaultSvc ||
             "gateway";
-          const cleanSvc = rawSvc.replace(/-[0-9a-f]{7,40}$/i, "");
-          const serviceKey = cleanSvc.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32);
+          const serviceKey = cleanSvc.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
           const method = (ep.method || "GET").toUpperCase();
           const rawPath = ep.path || "/health";
           const rewrittenPath = rawPath.replace(/\{([^}/]+)\}/g, (_, param: string) => {
             const lower = param.toLowerCase();
+            if (lower.includes("uuid") || lower.includes("guid")) return "00000000-0000-0000-0000-000000000001";
             return lower.includes("code") || lower.includes("sku") ? "SKU-LAPTOP-01" : "1";
           });
           let bodyRef: string | undefined;
           if (["POST", "PUT", "PATCH"].includes(method)) {
             bodyRef = `${serviceKey}_BODY_${idx + 1}`;
             sampleEnv[bodyRef] =
-              sampleEnv[bodyRef] ??
-              JSON.stringify({ customerEmail: "alice@mavis.io", productCode: "SKU-LAPTOP-01", quantity: 1 });
+              ep.sampleJsonBody || inferStepSampleBody(rewrittenPath, cleanSvc, method, discoveredEndpoints);
           }
           return {
             service: cleanSvc,
             method,
             path: rewrittenPath,
-            status: "200",
+            status: String(ep.expectedStatus ?? 200),
             rationale: `Automatically extracted from Step 1 (${ep.source ?? "source snapshot"})`,
             source: ep.source ?? "Step 1 Preflight",
+            allowClientError: true,
             ...(bodyRef ? { bodyReference: bodyRef } : {}),
           } as RuntimeDraftStep;
         });
@@ -1687,7 +1881,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         }
       }
     }
-  }, [automatic, config.data?.profile]);
+  }, [automatic, discoveredEndpoints, runnableServices, defaultSvc]);
 
   const activeInputs = useMemo(() => {
     const map = new Map<string, RuntimeInput>();
@@ -1729,26 +1923,175 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   }, [steps, inheritedEnvKeys]);
 
   const applySuggestions = () => {
+    setSelectedScenarioId("");
     edited.current = false;
     triggerSystemAiGeneration();
+  };
+
+  const loadSavedScenario = (savedItem: { id: string; name: string; steps: string[]; revision: number }) => {
+    const parsedSteps: RuntimeDraftStep[] = [];
+    const newEnv: Record<string, string> = {};
+    savedItem.steps.forEach((rawStr, idx) => {
+      try {
+        const obj = JSON.parse(rawStr) as Record<string, unknown>;
+        const method = String(obj["method"] ?? "GET").toUpperCase();
+        const svc = String(obj["service"] ?? defaultSvc);
+        const path = String(obj["path"] ?? "/health");
+        const serviceKey = svc.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+        let bodyRef = typeof obj["bodyReference"] === "string" ? obj["bodyReference"] : undefined;
+        if (["POST", "PUT", "PATCH"].includes(method)) {
+          bodyRef = bodyRef || `${serviceKey}_BODY_${idx + 1}`;
+          if (!environment[bodyRef]) {
+            newEnv[bodyRef] =
+              typeof obj["jsonBody"] === "string" && isValidJsonPayloadString(obj["jsonBody"])
+                ? obj["jsonBody"]
+                : inferStepSampleBody(path, svc, method, discoveredEndpoints);
+          }
+        }
+        const envHeaders = Array.isArray(obj["envHeaders"])
+          ? (obj["envHeaders"] as Array<{ name: string; reference: string }>).filter(
+              (h) => h && typeof h.name === "string" && typeof h.reference === "string",
+            )
+          : undefined;
+        const envVars =
+          obj["environmentVariables"] && typeof obj["environmentVariables"] === "object"
+            ? (obj["environmentVariables"] as Record<string, string>)
+            : undefined;
+        parsedSteps.push({
+          service: svc,
+          method,
+          path,
+          status: String(obj["expectedStatus"] ?? 200),
+          rationale: `Loaded from saved scenario "${savedItem.name}" (rev ${savedItem.revision})`,
+          source: "Saved scenario",
+          allowClientError: typeof obj["allowClientError"] === "boolean" ? obj["allowClientError"] : true,
+          ...(envVars ? { environmentVariables: envVars } : {}),
+          ...(envHeaders?.length ? { envHeaders } : {}),
+          ...(bodyRef ? { bodyReference: bodyRef } : {}),
+        });
+      } catch {
+        // Ignore malformed legacy step string
+      }
+    });
+    if (parsedSteps.length > 0) {
+      setSelectedScenarioId(savedItem.id);
+      setScenarioName(savedItem.name);
+      setSteps(parsedSteps);
+      if (Object.keys(newEnv).length > 0) {
+        setEnvironment((prev) => ({ ...newEnv, ...prev }));
+      }
+      persistedDraft.current = null;
+      setRunMessage(`Loaded saved scenario "${savedItem.name}" (${parsedSteps.length} steps).`);
+    }
   };
 
   const addStep = () => {
     setSteps((s) => [
       ...s,
       {
-        service: defaultSvc || (config.data?.profile as { detectedServices?: string[] } | undefined)?.detectedServices?.[0] || "gateway",
+        service: defaultSvc,
         method: "GET",
         path: "/health",
         status: "200",
         rationale: "Custom HTTP test step added by user",
         source: "User defined",
+        allowClientError: true,
       },
     ]);
   };
 
+  const moveStep = (index: number, delta: -1 | 1) => {
+    setSteps((arr) => {
+      const target = index + delta;
+      if (target < 0 || target >= arr.length) return arr;
+      const copy = [...arr];
+      const [moved] = copy.splice(index, 1);
+      if (moved) copy.splice(target, 0, moved);
+      return copy;
+    });
+  };
+
+  const updateStepMethod = (index: number, nextMethod: string) => {
+    const upper = nextMethod.toUpperCase();
+    let createdRef: string | undefined;
+    let defaultBody: string | undefined;
+    setSteps((arr) =>
+      arr.map((item, idx) => {
+        if (idx !== index) return item;
+        if (["POST", "PUT", "PATCH"].includes(upper)) {
+          const serviceKey = (item.service || "SVC").replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+          const bodyRef = item.bodyReference || `${serviceKey}_BODY_${idx + 1}`;
+          createdRef = bodyRef;
+          defaultBody = inferStepSampleBody(item.path, item.service, upper, discoveredEndpoints);
+          return { ...item, method: upper, bodyReference: bodyRef };
+        }
+        const { bodyReference: _removed, ...rest } = item;
+        return { ...rest, method: upper };
+      }),
+    );
+    if (createdRef && defaultBody) {
+      const refKey = createdRef;
+      const fallback = defaultBody;
+      setEnvironment((prev) => (prev[refKey] ? prev : { ...prev, [refKey]: fallback }));
+    }
+  };
+
+  const toggleStepAuthHeader = (index: number) => {
+    let createdRef: string | undefined;
+    setSteps((arr) =>
+      arr.map((item, idx) => {
+        if (idx !== index) return item;
+        const hasAuth = item.envHeaders?.some((h) => h.name.toLowerCase() === "authorization");
+        if (hasAuth) {
+          const remaining = (item.envHeaders ?? []).filter((h) => h.name.toLowerCase() !== "authorization");
+          const { envHeaders: _old, ...rest } = item;
+          return remaining.length ? { ...rest, envHeaders: remaining } : rest;
+        }
+        const serviceKey = (item.service || "SVC").replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+        const ref = `${serviceKey}_AUTHORIZATION`;
+        createdRef = ref;
+        return {
+          ...item,
+          envHeaders: [...(item.envHeaders ?? []), { name: "Authorization", reference: ref }],
+        };
+      }),
+    );
+    if (createdRef) {
+      const refKey = createdRef;
+      setEnvironment((prev) => (prev[refKey] ? prev : { ...prev, [refKey]: "Bearer sandbox-verification-token" }));
+    }
+  };
+
   const removeStep = (index: number) => {
     setSteps((s) => s.filter((_, i) => i !== index));
+  };
+
+  const handleBuildMissingImagesInStep2 = async () => {
+    const chosenModel = selectableModels.find((m) => m.id === modelId);
+    const effectiveSnapshotId = chosenModel?.snapshotId || snapshotId;
+    if (!effectiveSnapshotId) return;
+    try {
+      setRunMessage("🔨 Building local Docker images from snapshot Dockerfiles...");
+      const res = await buildImages.mutateAsync({
+        projectId,
+        snapshotId: effectiveSnapshotId,
+        services: step1Readiness.missingBuildServices.length ? step1Readiness.missingBuildServices : undefined,
+      });
+      if (Object.keys(res.builtImages).length > 0) {
+        const stored = readStep1Target(projectId);
+        writeStep1Target(projectId, {
+          serviceImageOverrides: { ...(stored.serviceImageOverrides ?? {}), ...res.builtImages },
+        });
+        await config.refetch();
+      }
+      if (res.errors.length > 0) {
+        setRunMessage(`Image build completed with warnings: ${res.errors.join("; ")}`);
+      } else {
+        setRunMessage(`✓ Built & pinned ${Object.keys(res.builtImages).length} sandbox image(s). Ready to run!`);
+      }
+    } catch (err) {
+      setRunMessage(`Local image build failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handleCreateAndRun = async (approveAndDispatch: boolean) => {
@@ -1769,18 +2112,41 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           !step.service ||
           !step.path.startsWith("/") ||
           step.path.startsWith("//") ||
+          step.path.includes("\\") ||
           /[\r\n]/.test(step.path) ||
           !/^\d{3}$/.test(step.status) ||
           Number(step.status) < 100 ||
           Number(step.status) > 599,
       )
     ) {
-      setRunMessage("Complete request services, paths, parameter values and expected status codes.");
+      setRunMessage("Complete request services, relative paths (starting with '/', no '\\'), and 3-digit status codes.");
       return;
     }
     let activeConfigRevision = Math.max(config.data?.revision ?? 0, readStep1Target(projectId).savedRevision ?? 0);
     if (approveAndDispatch) {
       try {
+        let autoBuiltOverrides: Record<string, string> = {};
+        if (step1Readiness.missingBuildServices.length > 0 && step1Readiness.localBuildAvailable) {
+          setRunMessage(
+            `🔨 Auto-building ${step1Readiness.missingBuildServices.length} local image(s) (${step1Readiness.missingBuildServices.join(", ")}) before launching...`,
+          );
+          const buildRes = await buildImages.mutateAsync({
+            projectId,
+            snapshotId: effectiveSnapshotId,
+            services: step1Readiness.missingBuildServices,
+          });
+          autoBuiltOverrides = buildRes.builtImages ?? {};
+          if (Object.keys(autoBuiltOverrides).length > 0) {
+            const curStored = readStep1Target(projectId);
+            writeStep1Target(projectId, {
+              serviceImageOverrides: { ...(curStored.serviceImageOverrides ?? {}), ...autoBuiltOverrides },
+            });
+            const refreshed = await config.refetch();
+            if (refreshed.data?.revision !== undefined) {
+              activeConfigRevision = Math.max(activeConfigRevision, refreshed.data.revision);
+            }
+          }
+        }
         setRunMessage("Saving complete Step 1 & Step 2 runtime configuration...");
         const stored = readStep1Target(projectId);
         const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
@@ -1816,7 +2182,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             ? (rawProf["serviceImageOverrides"] as Record<string, string>)
             : {}),
           ...(stored.serviceImageOverrides ?? {}),
+          ...autoBuiltOverrides,
         };
+        const expectedRev = config.data?.revision ?? activeConfigRevision;
         const pinned = await autoSaveConfig.mutateAsync({
           projectId,
           profileId: stored.profileId || config.data?.profileId || "SPRING_BOOT_DOTNET_COMPOSE_V1",
@@ -1830,7 +2198,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             secretValues: stored.secretValues ?? {},
             secretReferences: mergedSecretRefs,
           },
-          expectedRevision: activeConfigRevision,
+          expectedRevision: expectedRev,
         });
         activeConfigRevision = pinned.revision;
         writeStep1Target(projectId, { savedRevision: pinned.revision });
@@ -1844,58 +2212,86 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     const required = activeInputs;
     const defaultJsonPayload = '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","quantity":1}';
     if (
-      approveAndDispatch &&
       required.some((input) => {
         if (input.kind !== "json") return false;
-        try {
-          JSON.parse(environment[input.name] || defaultJsonPayload);
-          return false;
-        } catch {
-          return true;
-        }
+        return !isValidJsonPayloadString(environment[input.name] || defaultJsonPayload);
       })
     ) {
-      setRunMessage("A JSON test body is not valid JSON.");
+      setRunMessage("A JSON request body is not valid JSON. Fix or click Format on the highlighted payload.");
       return;
     }
     const protectedValues = Object.fromEntries(
       required.map((input) => [
         input.name,
         environment[input.name]?.trim() ||
-          (input.kind === "json" ? defaultJsonPayload : "1"),
+          (input.kind === "json"
+            ? defaultJsonPayload
+            : input.kind === "credential"
+              ? "Bearer sandbox-verification-token"
+              : "1"),
       ]),
     );
     if (new TextEncoder().encode(JSON.stringify(protectedValues)).length > 65536) {
       setRunMessage("Runtime inputs exceed the supported size.");
       return;
     }
+    const normalizedName = scenarioName.trim() || "Auto-generated Architecture Verification Scenario";
+    const serializedSteps = steps.map((step, index) => {
+      const isWrite = ["POST", "PUT", "PATCH"].includes(step.method);
+      const serviceKey = step.service.replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+      const bodyRef = isWrite ? step.bodyReference || `${serviceKey}_BODY_${index + 1}` : undefined;
+      if (bodyRef && !protectedValues[bodyRef]) {
+        protectedValues[bodyRef] =
+          environment[bodyRef]?.trim() || inferStepSampleBody(step.path, step.service, step.method, discoveredEndpoints);
+      }
+      return JSON.stringify({
+        id: `step-${index + 1}`,
+        service: step.service,
+        method: step.method,
+        path: step.path,
+        expectedStatus: Number(step.status),
+        allowClientError: step.allowClientError !== false,
+        ...(step.environmentVariables ? { environmentVariables: step.environmentVariables } : {}),
+        ...(step.envHeaders?.length ? { envHeaders: step.envHeaders } : {}),
+        ...(bodyRef ? { bodyReference: bodyRef } : {}),
+      });
+    });
     const draft = {
       projectId,
-      name: scenarioName.trim() || "Backend API smoke scenario",
-      steps: steps.map((step, index) =>
-        JSON.stringify({
-          id: `step-${index + 1}`,
-          service: step.service,
-          method: step.method,
-          path: step.path,
-          expectedStatus: Number(step.status),
-          ...(step.environmentVariables ? { environmentVariables: step.environmentVariables } : {}),
-          ...(step.envHeaders ? { envHeaders: step.envHeaders } : {}),
-          ...(step.bodyReference ? { bodyReference: step.bodyReference } : {}),
-        }),
-      ),
+      name: normalizedName,
+      steps: serializedSteps,
     };
     const fingerprint = JSON.stringify(draft);
     submitting.current = true;
     try {
       setRunMessage("Saving confirmed scenario...");
-      const saved =
-        persistedDraft.current?.fingerprint === fingerprint
-          ? persistedDraft.current.scenario
-          : await saveDraft.mutateAsync(draft);
+      let saved: { id: string; revision: number };
+      if (persistedDraft.current?.fingerprint === fingerprint) {
+        saved = persistedDraft.current.scenario;
+      } else {
+        const existingScenario =
+          (scenarios.data ?? []).find((sc) => sc.id === selectedScenarioId) ??
+          (scenarios.data ?? []).find((sc) => sc.name.trim().toLowerCase() === normalizedName.toLowerCase());
+        if (existingScenario && existingScenario.revision > 0) {
+          try {
+            saved = await updateDraft.mutateAsync({
+              scenarioId: existingScenario.id,
+              projectId,
+              expectedRevision: existingScenario.revision,
+              name: draft.name,
+              steps: draft.steps,
+            });
+          } catch {
+            saved = await saveDraft.mutateAsync(draft);
+          }
+        } else {
+          saved = await saveDraft.mutateAsync(draft);
+        }
+        setSelectedScenarioId(saved.id);
+      }
       persistedDraft.current = { fingerprint, scenario: saved };
       if (!approveAndDispatch) {
-        setRunMessage("✓ Scenario confirmed and saved without starting a runtime session.");
+        setRunMessage(`✓ Scenario "${draft.name}" (rev ${saved.revision}) saved.`);
         return;
       }
       setRunMessage("Approving the confirmed scenario and dispatching execution...");
@@ -1924,10 +2320,54 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     <div className="space-y-6">
       <RuntimeStepperBanner currentStep={2} projectId={projectId} />
 
+      {(step1Readiness.remainingIssues.length > 0 || step1Readiness.prerequisites.length > 0) && (
+        <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 text-xs space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="font-semibold text-amber-400">
+              ⚠️ Sandbox Readiness Check (from Step 1)
+            </span>
+            <div className="flex items-center gap-2">
+              {step1Readiness.missingBuildServices.length > 0 && step1Readiness.localBuildAvailable && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs border-amber-500/40"
+                  disabled={buildImages.isPending}
+                  onClick={handleBuildMissingImagesInStep2}
+                >
+                  {buildImages.isPending
+                    ? "🔨 Building images..."
+                    : `🔨 Build ${step1Readiness.missingBuildServices.length} Missing Image(s)`}
+                </Button>
+              )}
+              <Link
+                href={`/runtime-config?project=${projectId}`}
+                className="text-amber-300 hover:underline font-medium"
+              >
+                Open Step 1 →
+              </Link>
+            </div>
+          </div>
+          <ul className="list-disc pl-4 space-y-0.5 text-amber-200/90">
+            {step1Readiness.remainingIssues.map((iss, idx) => (
+              <li key={`iss-${idx}`}>
+                {iss}
+                {step1Readiness.localBuildAvailable && /has no image/i.test(iss)
+                  ? " (will auto-build from snapshot Dockerfile when you click Confirm & Run)"
+                  : ""}
+              </li>
+            ))}
+            {step1Readiness.prerequisites.map((preReq, idx) => (
+              <li key={`pre-${idx}`}>{preReq}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <DetailPanel title="1. System + AI Auto-Generate Test Scenario">
         <p className="text-sm text-muted-foreground">
-          Combines Step 1 static analysis (Services, Endpoints, Relationships, DB/Env) with AI to
-          automatically propose an ordered HTTP test workflow before user confirmation.
+          Combines Step 1 static analysis (Runnable Compose Services, DTO Payloads, Causal CRUD Ordering, Relationships, DB/Env) with AI to
+          automatically propose an ordered HTTP test workflow.
         </p>
 
         <div className="mt-4 space-y-4">
@@ -1943,9 +2383,14 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 : "Inheriting from Step 1...";
             return (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3.5 py-2.5 text-xs">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-muted-foreground">Target revision (from Step 1):</span>
                   <span className="font-mono font-semibold text-foreground">{revLabel}</span>
+                  {runnableServices.length > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono text-[11px]">
+                      {runnableServices.length} runnable app{runnableServices.length === 1 ? "" : "s"}: {runnableServices.join(", ")}
+                    </span>
+                  )}
                 </div>
                 <Link
                   href={`/runtime-config?project=${projectId}`}
@@ -1956,6 +2401,26 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               </div>
             );
           })()}
+
+          {(scenarios.data ?? []).length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/15 px-3 py-2 text-xs">
+              <span className="text-muted-foreground font-medium">Saved scenarios:</span>
+              {(scenarios.data ?? []).slice(0, 8).map((sc) => (
+                <button
+                  key={sc.id}
+                  type="button"
+                  onClick={() => loadSavedScenario(sc)}
+                  className={`px-2.5 py-1 rounded-md border font-mono transition ${
+                    selectedScenarioId === sc.id
+                      ? "border-primary bg-primary/15 text-primary font-semibold"
+                      : "border-border bg-background hover:bg-muted/60 text-foreground"
+                  }`}
+                >
+                  {sc.name} (v{sc.revision})
+                </button>
+              ))}
+            </div>
+          )}
 
           <FormField
             label="AI Testing Goal (Optional)"
@@ -1976,6 +2441,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   className="shrink-0 h-10"
                   disabled={!snapshotId || generateAiDraft.isPending}
                   onClick={() => {
+                    setSelectedScenarioId("");
                     edited.current = false;
                     triggerSystemAiGeneration(aiGoal);
                   }}
@@ -2014,7 +2480,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             </div>
             <p className="text-xs text-muted-foreground">
               {aiSummary ||
-                "Requests are drafts synthesized from extracted endpoints and architecture relationships. Review and confirm below before running."}
+                "Requests are drafts synthesized from extracted endpoints, DTO schemas, and architecture relationships. Review and confirm below before running."}
             </p>
           </div>
         </div>
@@ -2034,13 +2500,34 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
           {steps.length > 0 && (() => {
             const uniqueEntryServices = Array.from(new Set(steps.map((s) => s.service)));
-            const nameById = new Map((modelDetail.data?.elements ?? []).map((e) => [e.id, e.name]));
+            const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
+            const stored = readStep1Target(projectId);
+            const mappings: Record<string, string> = {
+              ...(rawProf["recommendedServiceMappings"] && typeof rawProf["recommendedServiceMappings"] === "object"
+                ? (rawProf["recommendedServiceMappings"] as Record<string, string>)
+                : {}),
+              ...(rawProf["serviceMappings"] && typeof rawProf["serviceMappings"] === "object"
+                ? (rawProf["serviceMappings"] as Record<string, string>)
+                : {}),
+              ...(stored.serviceMappings ?? {}),
+            };
+            const composeByElementId = new Map<string, string>();
+            for (const el of modelDetail.data?.elements ?? []) {
+              composeByElementId.set(el.id, el.name);
+            }
+            for (const [composeSvc, elId] of Object.entries(mappings)) {
+              if (elId) composeByElementId.set(elId, composeSvc);
+            }
+            const knownRunnableOrModel = new Set([...runnableServices, ...detectedServiceNames]);
             const downstreamServices = Array.from(
               new Set(
                 (modelDetail.data?.edges ?? [])
-                  .filter((e) => uniqueEntryServices.includes(nameById.get(e.from) ?? ""))
-                  .map((e) => nameById.get(e.to))
-                  .filter((n): n is string => Boolean(n) && detectedServiceNames.includes(n!) && !uniqueEntryServices.includes(n!)),
+                  .filter((e) => uniqueEntryServices.includes(composeByElementId.get(e.from) ?? ""))
+                  .map((e) => composeByElementId.get(e.to))
+                  .filter(
+                    (n): n is string =>
+                      Boolean(n) && knownRunnableOrModel.has(n!) && !uniqueEntryServices.includes(n!),
+                  ),
               ),
             );
             const allDetectedServices = [...uniqueEntryServices, ...downstreamServices];
@@ -2096,7 +2583,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   Proposed HTTP Sequence ({steps.length} step{steps.length === 1 ? "" : "s"})
                 </h4>
                 <p className="text-xs text-muted-foreground">
-                  Edit the HTTP Method, Service, Path, or expected Status directly, or add/remove steps.
+                  Edit Method, Runnable Service, Path, Payload, or Status Mode (Trace 2xx–4xx vs Strict) directly.
                 </p>
               </div>
               <div className="flex gap-2">
@@ -2121,107 +2608,237 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               </div>
             ) : (
               <div className="space-y-2.5">
-                {steps.map((st, i) => (
-                  <div key={i} className="rounded-lg border p-3 bg-muted/20 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2 py-0.5 rounded bg-muted text-xs font-mono font-semibold">
-                        #{i + 1}
-                      </span>
-                      <select
-                        className={`h-8 rounded px-2 text-xs font-mono font-semibold ${httpMethodBadgeClass(st.method)}`}
-                        value={st.method}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSteps((arr) =>
-                            arr.map((item, idx) => (idx === i ? { ...item, method: val } : item)),
-                          );
-                        }}
-                      >
-                        <option value="GET">GET</option>
-                        <option value="POST">POST</option>
-                        <option value="PUT">PUT</option>
-                        <option value="PATCH">PATCH</option>
-                        <option value="DELETE">DELETE</option>
-                      </select>
-                      <Input
-                        className="w-36 font-mono text-xs h-8"
-                        placeholder="Service"
-                        value={st.service}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSteps((arr) =>
-                            arr.map((item, idx) => (idx === i ? { ...item, service: val } : item)),
-                          );
-                        }}
-                      />
-                      <Input
-                        className="flex-1 min-w-48 font-mono text-xs h-8"
-                        placeholder="/api/path"
-                        value={st.path}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSteps((arr) =>
-                            arr.map((item, idx) => (idx === i ? { ...item, path: val } : item)),
-                          );
-                        }}
-                      />
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-muted-foreground">→</span>
+                {steps.map((st, i) => {
+                  const isWrite = ["POST", "PUT", "PATCH"].includes(st.method);
+                  const serviceKey = (st.service || "SVC").replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
+                  const effectiveBodyRef = isWrite ? st.bodyReference || `${serviceKey}_BODY_${i + 1}` : undefined;
+                  const payloadText = effectiveBodyRef
+                    ? environment[effectiveBodyRef] ??
+                      inferStepSampleBody(st.path, st.service, st.method, discoveredEndpoints)
+                    : "";
+                  const payloadValid = !isWrite || isValidJsonPayloadString(payloadText);
+                  const authHeader = st.envHeaders?.find((h) => h.name.toLowerCase() === "authorization");
+                  const serviceOptions = Array.from(new Set([...runnableServices, ...(st.service ? [st.service] : [])]));
+
+                  return (
+                    <div key={i} className="rounded-lg border p-3 bg-muted/20 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-2 py-0.5 rounded bg-muted text-xs font-mono font-semibold">
+                          #{i + 1}
+                        </span>
+                        <div className="flex items-center">
+                          <button
+                            type="button"
+                            title="Move step up"
+                            disabled={i === 0}
+                            onClick={() => moveStep(i, -1)}
+                            className="px-1.5 h-7 text-xs rounded-l border bg-background hover:bg-muted disabled:opacity-30"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            title="Move step down"
+                            disabled={i === steps.length - 1}
+                            onClick={() => moveStep(i, 1)}
+                            className="px-1.5 h-7 text-xs rounded-r border-y border-r bg-background hover:bg-muted disabled:opacity-30"
+                          >
+                            ↓
+                          </button>
+                        </div>
+                        <select
+                          className={`h-8 rounded px-2 text-xs font-mono font-semibold ${httpMethodBadgeClass(st.method)}`}
+                          value={st.method}
+                          onChange={(e) => updateStepMethod(i, e.target.value)}
+                        >
+                          <option value="GET">GET</option>
+                          <option value="POST">POST</option>
+                          <option value="PUT">PUT</option>
+                          <option value="PATCH">PATCH</option>
+                          <option value="DELETE">DELETE</option>
+                        </select>
+                        {serviceOptions.length > 0 ? (
+                          <select
+                            className="h-8 rounded border bg-background px-2 font-mono text-xs min-w-36"
+                            title="Runnable Compose Application Service"
+                            value={st.service}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSteps((arr) =>
+                                arr.map((item, idx) => (idx === i ? { ...item, service: val } : item)),
+                              );
+                            }}
+                          >
+                            {serviceOptions.map((svcOpt) => (
+                              <option key={svcOpt} value={svcOpt}>
+                                {svcOpt}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <Input
+                            className="w-36 font-mono text-xs h-8"
+                            placeholder="Service"
+                            value={st.service}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSteps((arr) =>
+                                arr.map((item, idx) => (idx === i ? { ...item, service: val } : item)),
+                              );
+                            }}
+                          />
+                        )}
                         <Input
-                          className="w-16 font-mono text-xs h-8 text-center"
-                          placeholder="200"
-                          title="Expected HTTP Status"
-                          value={st.status}
+                          className="flex-1 min-w-48 font-mono text-xs h-8"
+                          placeholder="/api/path"
+                          value={st.path}
                           onChange={(e) => {
                             const val = e.target.value;
                             setSteps((arr) =>
-                              arr.map((item, idx) => (idx === i ? { ...item, status: val } : item)),
+                              arr.map((item, idx) => (idx === i ? { ...item, path: val } : item)),
                             );
                           }}
                         />
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-muted-foreground">→</span>
+                          <Input
+                            className="w-16 font-mono text-xs h-8 text-center"
+                            placeholder="200"
+                            title="Expected HTTP Status"
+                            value={st.status}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSteps((arr) =>
+                                arr.map((item, idx) => (idx === i ? { ...item, status: val } : item)),
+                              );
+                            }}
+                          />
+                          <button
+                            type="button"
+                            title={
+                              st.allowClientError !== false
+                                ? "Trace Mode (2xx–4xx pass & continue capturing spans; only 5xx/timeout fails). Click to require Strict exact status."
+                                : "Strict Mode (must equal exact expected status code). Click to switch to resilient 2xx–4xx Trace Mode."
+                            }
+                            onClick={() =>
+                              setSteps((arr) =>
+                                arr.map((item, idx) =>
+                                  idx === i ? { ...item, allowClientError: item.allowClientError === false } : item,
+                                ),
+                              )
+                            }
+                            className={`h-8 px-2 rounded border text-[11px] font-mono font-medium transition ${
+                              st.allowClientError !== false
+                                ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-400"
+                                : "border-amber-500/40 bg-amber-500/15 text-amber-300"
+                            }`}
+                          >
+                            {st.allowClientError !== false ? "2xx–4xx" : "Strict"}
+                          </button>
+                        </div>
+                        <button
+                          type="button"
+                          title="Toggle encrypted Authorization header for this step"
+                          onClick={() => toggleStepAuthHeader(i)}
+                          className={`h-8 px-2 rounded border text-[11px] font-mono transition ${
+                            authHeader
+                              ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
+                              : "border-border bg-background text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          🔑 Auth
+                        </button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive px-2 h-8"
+                          onClick={() => removeStep(i)}
+                        >
+                          ✕
+                        </Button>
                       </div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive px-2 h-8"
-                        onClick={() => removeStep(i)}
-                      >
-                        ✕
-                      </Button>
+                      {(st.rationale || st.source) && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pl-1">
+                          {st.rationale && <span>💡 {st.rationale}</span>}
+                          {st.source && <span className="font-mono text-[11px]">Source: {st.source}</span>}
+                        </div>
+                      )}
+                      {authHeader && (
+                        <div className="flex items-center gap-2 pl-1 pt-0.5">
+                          <span className="text-[11px] font-mono text-sky-400 shrink-0">
+                            🔑 Authorization:
+                          </span>
+                          <Input
+                            type="password"
+                            className="h-7 font-mono text-xs flex-1"
+                            placeholder="Bearer <jwt-or-token> (encrypted per-session)"
+                            value={environment[authHeader.reference] ?? ""}
+                            onChange={(e) => {
+                              const refKey = authHeader.reference;
+                              const val = e.target.value;
+                              setEnvironment((prev) => ({ ...prev, [refKey]: val }));
+                            }}
+                          />
+                        </div>
+                      )}
+                      {isWrite && effectiveBodyRef && (
+                        <div className="flex flex-wrap items-center gap-2 pl-1 pt-0.5">
+                          <span className="text-[11px] font-mono text-muted-foreground shrink-0">
+                            ✨ JSON Payload:
+                          </span>
+                          <Input
+                            className={`h-7 font-mono text-xs flex-1 min-w-56 ${
+                              payloadValid ? "" : "border-rose-500 focus-visible:ring-rose-500"
+                            }`}
+                            value={payloadText}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (!st.bodyReference) {
+                                setSteps((arr) =>
+                                  arr.map((item, idx) =>
+                                    idx === i ? { ...item, bodyReference: effectiveBodyRef } : item,
+                                  ),
+                                );
+                              }
+                              setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: val }));
+                            }}
+                          />
+                          <span
+                            className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${
+                              payloadValid
+                                ? "bg-emerald-500/10 text-emerald-400"
+                                : "bg-rose-500/15 text-rose-400 font-semibold"
+                            }`}
+                          >
+                            {payloadValid ? "✓ JSON" : "⚠ Invalid"}
+                          </span>
+                          {payloadValid && (
+                            <button
+                              type="button"
+                              className="text-[11px] font-mono px-2 py-0.5 rounded border bg-background hover:bg-muted"
+                              onClick={() => {
+                                try {
+                                  const normalized = JSON.stringify(JSON.parse(payloadText));
+                                  setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: normalized }));
+                                } catch {
+                                  // no-op
+                                }
+                              }}
+                            >
+                              Compact
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                    {(st.rationale || st.source) && (
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pl-1">
-                        {st.rationale && <span>💡 {st.rationale}</span>}
-                        {st.source && <span className="font-mono text-[11px]">Source: {st.source}</span>}
-                      </div>
-                    )}
-                    {st.bodyReference && ["POST", "PUT", "PATCH"].includes(st.method) && (
-                      <div className="flex items-center gap-2 pl-1 pt-0.5">
-                        <span className="text-[11px] font-mono text-muted-foreground shrink-0">
-                          ✨ AI Payload:
-                        </span>
-                        <Input
-                          className="h-7 font-mono text-xs flex-1"
-                          value={
-                            environment[st.bodyReference] ??
-                            '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","quantity":1}'
-                          }
-                          onChange={(e) => {
-                            const refKey = st.bodyReference!;
-                            const val = e.target.value;
-                            setEnvironment((prev) => ({ ...prev, [refKey]: val }));
-                          }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
 
           <div className="rounded-lg border bg-emerald-500/5 border-emerald-500/20 px-3.5 py-2.5 text-xs text-emerald-500 font-medium">
-            ✨ AI & System automatically populated all URL path parameters and JSON request payloads from source models (Step 1 environment variables and secrets are inherited automatically).
+            ✨ AI & System automatically synthesized URL path parameters, source-grounded DTO JSON payloads, and causal workflow ordering (Step 1 environment variables and secrets are inherited automatically).
           </div>
         </div>
       </DetailPanel>
@@ -2230,14 +2847,14 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         <div className="space-y-4">
           <div className="rounded-lg border p-3.5 bg-muted/20 space-y-2 text-xs">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-semibold text-sm">Scenario Summary Awaiting Confirmation:</span>
+              <span className="font-semibold text-sm">Scenario Summary Ready for Execution:</span>
               <span className="font-mono">
                 {steps.length} HTTP steps · {inheritedEnvKeys.length} vars inherited from Step 1
               </span>
             </div>
             <ul className="space-y-1.5 font-mono text-muted-foreground">
               {steps.map((step, index) => (
-                <li key={index} className="flex items-center gap-2">
+                <li key={index} className="flex flex-wrap items-center gap-2">
                   <span>{index + 1}.</span>
                   <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${httpMethodBadgeClass(step.method)}`}>
                     {step.method}
@@ -2246,7 +2863,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                     {step.service}
                     {step.path}
                   </span>
-                  <span>→ Expected {step.status}</span>
+                  <span>
+                    → Expected {step.status} ({step.allowClientError !== false ? "2xx–4xx Trace" : "Strict"})
+                  </span>
                 </li>
               ))}
             </ul>
@@ -2271,15 +2890,32 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 !userConfirmed ||
                 !modelId ||
                 !steps.length ||
+                buildImages.isPending ||
                 autoSaveConfig.isPending ||
                 saveDraft.isPending ||
+                updateDraft.isPending ||
                 start.isPending
               }
               onClick={() => handleCreateAndRun(true)}
             >
-              {autoSaveConfig.isPending || start.isPending
+              {buildImages.isPending || autoSaveConfig.isPending || start.isPending
                 ? "Saving & launching into Step 3..."
                 : "🚀 Confirm & Run in Step 3"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={
+                !userConfirmed ||
+                !modelId ||
+                !steps.length ||
+                saveDraft.isPending ||
+                updateDraft.isPending ||
+                start.isPending
+              }
+              onClick={() => handleCreateAndRun(false)}
+            >
+              {saveDraft.isPending || updateDraft.isPending ? "Saving..." : "💾 Save Scenario Draft"}
             </Button>
           </div>
 

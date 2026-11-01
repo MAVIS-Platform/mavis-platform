@@ -647,4 +647,70 @@ class RuntimeSessionServiceImplTest {
                     assertThat(ep.getPath()).isEqualTo("/owners/{ownerId}/pets/{petId}");
                 });
     }
+
+    @Test
+    @DisplayName("STEP 2 100%: exportRunDefinition giữ nguyên allowClientError cho C# Runner và tự tổng hợp composeYaml cho repo chỉ có Dockerfile")
+    void testExportRunDefinition_PreservesAllowClientErrorAndSynthesizesDockerfileOnlyCompose(@TempDir Path tempDir) throws IOException {
+        Path appDir = Files.createDirectories(tempDir.resolve("order-service"));
+        Files.writeString(appDir.resolve("Dockerfile"), """
+                FROM eclipse-temurin:21-jre
+                EXPOSE 8080
+                ENTRYPOINT ["java", "-jar", "/app.jar"]
+                """);
+        snapshot.setStoragePath(tempDir.toString());
+        when(sourceSnapshotRepository.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+
+        String pinnedAppImage = "mavis-sandbox/order-service@sha256:" + "a".repeat(64);
+        ObjectNode scenarioConfig = objectMapper.createObjectNode();
+        ObjectNode profile = scenarioConfig.putObject("profile");
+        profile.put("collectorImage", "otel/collector@sha256:" + "1".repeat(64));
+        profile.put("scenarioRunnerImage", "mavis/runner@sha256:" + "2".repeat(64));
+        profile.put("instrumentationVolume", "mavis-agents-v1");
+        profile.putObject("serviceImageOverrides").put("order-service", pinnedAppImage);
+        profile.putObject("applications").putObject("order-service")
+                .put("runtime", "java")
+                .put("containerPort", 8080)
+                .put("readinessPath", "/")
+                .put("allowClientErrorReadiness", true);
+
+        ObjectNode scenario = scenarioConfig.putObject("scenario");
+        ArrayNode steps = scenario.putArray("steps");
+        steps.addObject()
+                .put("id", "step-1")
+                .put("service", "order-service")
+                .put("method", "POST")
+                .put("path", "/api/orders")
+                .put("expectedStatus", 201)
+                .put("allowClientError", true)
+                .put("bodyReference", "ORDER_SERVICE_BODY_1")
+                .put("rationale", "UI-only field that must be stripped before C# UnmappedMemberHandling.Disallow");
+
+        UUID sessionId = UUID.randomUUID();
+        String resourceProject = "mavisrun-0123456789abcdef0123456789abcdef";
+        RuntimeSession session = RuntimeSession.builder()
+                .id(sessionId)
+                .project(project)
+                .sourceSnapshot(snapshot)
+                .modelVersion(validModel)
+                .resourceProject(resourceProject)
+                .profileVersionId("sha256:" + "3".repeat(64))
+                .runConfigurationVersionId("sha256:" + "4".repeat(64))
+                .scenarioVersionId("sha256:" + "5".repeat(64))
+                .scenarioConfig(scenarioConfig)
+                .confirmedServiceMappings(Map.of("order-service", UUID.randomUUID().toString()))
+                .build();
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
+        RunnerDefinitionExportDTO exported = runtimeSessionService.exportRunDefinition(sessionId);
+
+        assertThat(exported.getComposeYaml())
+                .contains("order-service:")
+                .contains(pinnedAppImage)
+                .doesNotContain("build:");
+        JsonNode exportedStep = exported.getScenario().path("steps").get(0);
+        assertThat(exportedStep.path("allowClientError").asBoolean()).isTrue();
+        assertThat(exportedStep.path("bodyReference").asText()).isEqualTo("ORDER_SERVICE_BODY_1");
+        assertThat(exportedStep.has("rationale")).isFalse();
+        assertThat(exported.getProfile().has("serviceImageOverrides")).isFalse();
+    }
 }

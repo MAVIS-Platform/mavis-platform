@@ -48,6 +48,22 @@ public class ComposePreflightValidator {
     private static final Pattern RUNNER_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_-]{1,63}");
     private static final Pattern JDBC_HOST_PATTERN = Pattern.compile("(?:jdbc:[a-z0-9]+://|r2dbc:[a-z0-9]+://|mongodb(?:\\+srv)?://|redis://|postgres(?:ql)?://|mysql://)([A-Za-z0-9_.-]+)");
     private static final Pattern KV_HOST_PATTERN = Pattern.compile("(?i)(?:host|server|data source)\\s*=\\s*([A-Za-z0-9_.-]+)");
+    private static final Pattern URL_DB_NAME_PATTERN = Pattern.compile("(?:jdbc:[a-z0-9]+://|r2dbc:[a-z0-9]+://|mongodb(?:\\+srv)?://|postgres(?:ql)?://|mysql://)[^/?;\\s]+/([A-Za-z0-9_-]{1,48})");
+    private static final Pattern KV_DB_NAME_PATTERN = Pattern.compile("(?i)(?:database|initial catalog)\\s*=\\s*([A-Za-z0-9_-]{1,48})");
+    private static final Pattern DOCKERFILE_EXPOSE_PATTERN = Pattern.compile("(?im)^\\s*EXPOSE\\s+(\\d{2,5})(?:/tcp)?\\b");
+    private static final Pattern DOCKERFILE_VOLUME_LINE_PATTERN = Pattern.compile("(?im)^\\s*VOLUME\\s+(.+)$");
+    private static final Pattern URI_USERINFO_SECRET_PATTERN = Pattern.compile("[a-zA-Z][a-zA-Z0-9+.-]*://[^/\\s]*:[^@/\\s]+@");
+    private static final Pattern JAVA_RECORD_PATTERN = Pattern.compile("\\brecord\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:<[^>]+>)?\\s*\\(([^)]*)\\)");
+    private static final Pattern JAVA_ENUM_PATTERN = Pattern.compile("\\benum\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:implements[^{]+)?\\{\\s*(?:/\\*[\\s\\S]*?\\*/\\s*|//[^\\n]*\\n\\s*)*([A-Z_][A-Z0-9_]*)");
+    private static final Pattern JAVA_CLASS_NAME_PATTERN = Pattern.compile("\\bclass\\s+([A-Za-z_][A-Za-z0-9_]*)");
+    private static final Pattern JAVA_FIELD_PATTERN = Pattern.compile("(?m)^[ \\t]*((?:@[A-Za-z0-9_.]+(?:\\([^)\\n]*\\))?[ \\t\\r\\n]*)*)(?:private|protected)[ \\t]+(?!static\\b|final\\b)([A-Za-z_][A-Za-z0-9_<>, ?.\\[\\]]*?)[ \\t]+([a-zA-Z_][A-Za-z0-9_]*)[ \\t]*(?:=[^;\\n]+)?;");
+    private static final Pattern JAVA_REQUEST_BODY_PATTERN = Pattern.compile("@RequestBody\\b(?:\\s+@[A-Za-z0-9_.]+(?:\\([^)]*\\))?)*(?:\\s+final)?\\s+([A-Za-z_][A-Za-z0-9_<>, ?.\\[\\]]*)\\s+[A-Za-z_][A-Za-z0-9_]*");
+    private static final Pattern CSHARP_ENUM_PATTERN = Pattern.compile("\\benum\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?::[^{]+)?\\{\\s*([A-Za-z_][A-Za-z0-9_]*)");
+    private static final Pattern CSHARP_RECORD_PATTERN = Pattern.compile("\\brecord\\s+(?:class\\s+|struct\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*\\(([^)]*)\\)");
+    private static final Pattern CSHARP_CLASS_NAME_PATTERN = Pattern.compile("\\bclass\\s+([A-Za-z_][A-Za-z0-9_]*)");
+    private static final Pattern CSHARP_PROP_PATTERN = Pattern.compile("(?m)^[ \\t]*((?:\\[[^\\]\\n]+\\][ \\t\\r\\n]*)*)public[ \\t]+(?!static\\b|const\\b|class\\b|record\\b|interface\\b|enum\\b|override\\b|virtual\\s+ICollection)([A-Za-z_][A-Za-z0-9_<>?.\\[\\]]*)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)[ \\t]*\\{[ \\t]*get;");
+    private static final Pattern CSHARP_FROM_BODY_PATTERN = Pattern.compile("\\[FromBody\\]\\s*([A-Za-z_][A-Za-z0-9_<>?.\\[\\]]*)\\s+[A-Za-z_][A-Za-z0-9_]*");
+    private static final com.fasterxml.jackson.databind.ObjectMapper DTO_JSON_MAPPER = new com.fasterxml.jackson.databind.ObjectMapper();
     // Mirrors MAVIS.Worker/src/MAVIS.Runner/ComposePreflight.cs so Step 1 reports exactly what the runner will reject.
     private static final Set<String> RUNNER_ROOT_KEYS = Set.of("services", "volumes");
     private static final Set<String> RUNNER_SERVICE_KEYS = Set.of("image", "command", "entrypoint", "environment", "depends_on",
@@ -66,6 +82,7 @@ public class ComposePreflightValidator {
             "HUGGINGFACE", "DEEPSEEK", "MISTRAL", "COHERE");
 
     private final ImageDigestResolver imageDigestResolver;
+    private final java.security.SecureRandom secureRandom = new java.security.SecureRandom();
 
     public ComposePreflightValidator() {
         this(new ImageDigestResolver());
@@ -77,10 +94,16 @@ public class ComposePreflightValidator {
     }
 
     public PreflightCheckResponseDTO validate(String yamlContent) {
-        return validate(yamlContent, Map.of());
+        return validate(yamlContent, Map.of(), Map.of());
     }
 
     public PreflightCheckResponseDTO validate(String yamlContent, Map<String, String> imageOverrides) {
+        return validate(yamlContent, imageOverrides, Map.of());
+    }
+
+    public PreflightCheckResponseDTO validate(String yamlContent, Map<String, String> imageOverrides, Map<String, String> envFiles) {
+        Map<String, String> safeEnvFiles = envFiles != null ? envFiles : Map.of();
+        Map<String, String> rootDotEnv = parseDotEnvContent(safeEnvFiles.get(".env"));
         List<String> detectedServices = new ArrayList<>();
         List<String> securityWarnings = new ArrayList<>();
         Map<String, Integer> servicePorts = new HashMap<>();
@@ -97,6 +120,7 @@ public class ComposePreflightValidator {
         Map<String, Map<String, String>> serviceDbCredentials = new LinkedHashMap<>();
         Map<String, List<String>> serviceDependencies = new LinkedHashMap<>();
         Map<String, Map<String, String>> composeEnvAliases = new LinkedHashMap<>();
+        Map<String, Map<String, String>> composeEnvTemplates = new LinkedHashMap<>();
         Map<String, Map<String, String>> relocatedComposeSecrets = new LinkedHashMap<>();
         String sandboxComposeYaml = null;
         List<String> sandboxComposeChanges = new ArrayList<>();
@@ -125,17 +149,18 @@ public class ComposePreflightValidator {
 
                             if (entry.getValue() instanceof Map<?, ?> serviceConfig) {
                                 checkServiceSecurity(serviceName, serviceConfig, securityWarnings);
-                                servicePorts.put(serviceName, extractTargetPort(serviceConfig));
+                                servicePorts.put(serviceName, extractTargetPort(serviceConfig, safeEnvFiles, rootDotEnv));
                                 String stack = extractStack(serviceName, serviceConfig);
                                 serviceStacks.put(serviceName, stack);
                                 List<String> deps = extractServiceDependencies(serviceConfig);
                                 if (!deps.isEmpty()) serviceDependencies.put(serviceName, deps);
-                                inspectComposeServiceEnvironmentAndDb(serviceName, serviceConfig, databaseChecks, envVarMap, serviceDependencies, composeEnvAliases);
+                                inspectComposeServiceEnvironmentAndDb(serviceName, serviceConfig, databaseChecks, envVarMap,
+                                        serviceDependencies, composeEnvAliases, composeEnvTemplates, safeEnvFiles, rootDotEnv);
                                 String image = serviceConfig.get("image") != null ? String.valueOf(serviceConfig.get("image")) : "";
                                 if (isInfrastructureService(serviceName, image)) {
                                     infrastructureServices.add(serviceName);
                                     Map<String, String> svcCreds = new LinkedHashMap<>();
-                                    collectDatabaseCredentials(image, serviceConfig, svcCreds);
+                                    collectDatabaseCredentials(image, serviceConfig, svcCreds, safeEnvFiles, rootDotEnv);
                                     if (!svcCreds.isEmpty()) {
                                         serviceDbCredentials.put(serviceName, svcCreds);
                                         svcCreds.forEach(databaseCredentials::putIfAbsent);
@@ -161,7 +186,12 @@ public class ComposePreflightValidator {
                     }
                     runnerIssues.addAll(runnerCompatibilityIssues(yamlContent, rootMap));
                     if ((!runnerIssues.isEmpty() || needsSandboxRemediation(rootMap, imageOverrides)) && securityWarnings.isEmpty()) {
-                        SandboxComposeResult rem = generateSandboxCompose(rootMap, imageOverrides != null ? imageOverrides : Map.of(), imageDigestResolver);
+                        SandboxComposeResult rem = generateSandboxCompose(
+                                rootMap,
+                                imageOverrides != null ? imageOverrides : Map.of(),
+                                imageDigestResolver,
+                                safeEnvFiles,
+                                Map.of());
                         sandboxComposeYaml = rem.yaml();
                         sandboxComposeChanges.addAll(rem.changes());
                         unresolvableRunnerIssues.addAll(rem.unresolvableIssues());
@@ -201,6 +231,7 @@ public class ComposePreflightValidator {
                 .serviceDatabaseCredentials(serviceDbCredentials)
                 .serviceDependencies(serviceDependencies)
                 .composeEnvAliases(composeEnvAliases)
+                .composeEnvTemplates(composeEnvTemplates)
                 .relocatedComposeSecrets(relocatedComposeSecrets)
                 .build();
     }
@@ -219,7 +250,8 @@ public class ComposePreflightValidator {
 
         try {
             String content = Files.readString(composeFile, StandardCharsets.UTF_8);
-            return validate(content);
+            Map<String, String> siblingEnvFiles = collectDirectoryEnvFiles(composeFile.getParent());
+            return validate(content, Map.of(), siblingEnvFiles);
         } catch (IOException e) {
             log.error("Không thể đọc file docker-compose: {}", composeFile, e);
             return PreflightCheckResponseDTO.builder()
@@ -244,6 +276,7 @@ public class ComposePreflightValidator {
     }
 
     private record StatefulInfraSpec(String defaultUser, List<String> writablePaths) {}
+    public record DiscoveredDockerfile(String serviceName, String context, String dockerfile) {}
 
     public SandboxComposeResult remediateCompose(String yamlContent, Map<String, String> imageOverrides) {
         if (yamlContent == null || yamlContent.isBlank()) {
@@ -256,21 +289,30 @@ public class ComposePreflightValidator {
             if (!(loaded instanceof Map<?, ?> rootMap)) {
                 return new SandboxComposeResult("", List.of(), List.of("docker-compose.yml is not a YAML mapping"));
             }
-            return generateSandboxCompose(rootMap, imageOverrides != null ? imageOverrides : Map.of(), imageDigestResolver);
+            return generateSandboxCompose(rootMap, imageOverrides != null ? imageOverrides : Map.of(), imageDigestResolver, Map.of(), Map.of());
         } catch (Exception e) {
             return new SandboxComposeResult("", List.of(), List.of("docker-compose.yml could not be parsed"));
         }
     }
 
     public static SandboxComposeResult generateSandboxCompose(Map<?, ?> rootMap, Map<String, String> imageOverrides) {
-        return generateSandboxCompose(rootMap, imageOverrides, new ImageDigestResolver());
+        return generateSandboxCompose(rootMap, imageOverrides, new ImageDigestResolver(), Map.of(), Map.of());
+    }
+
+    public static SandboxComposeResult generateSandboxCompose(
+            Map<?, ?> rootMap,
+            Map<String, String> imageOverrides,
+            ImageDigestResolver resolver) {
+        return generateSandboxCompose(rootMap, imageOverrides, resolver, Map.of(), Map.of());
     }
 
     @SuppressWarnings("unchecked")
     public static SandboxComposeResult generateSandboxCompose(
             Map<?, ?> rootMap,
             Map<String, String> imageOverrides,
-            ImageDigestResolver resolver) {
+            ImageDigestResolver resolver,
+            Map<String, String> envFiles,
+            Map<String, List<String>> dockerfileVolumes) {
         List<String> changes = new ArrayList<>();
         Map<String, Object> outRoot = new LinkedHashMap<>();
         Map<String, Map<String, String>> relocatedSecrets = new LinkedHashMap<>();
@@ -299,6 +341,10 @@ public class ComposePreflightValidator {
             }
         }
 
+        Map<String, String> safeEnvFiles = envFiles != null ? envFiles : Map.of();
+        Map<String, String> rootDotEnv = parseDotEnvContent(safeEnvFiles.get(".env"));
+        Map<String, List<String>> safeDockerfileVols = dockerfileVolumes != null ? dockerfileVolumes : Map.of();
+
         Map<String, Object> outServices = new LinkedHashMap<>();
         if (rootMap.get("services") instanceof Map<?, ?> services) {
             for (Map.Entry<?, ?> entry : services.entrySet()) {
@@ -319,7 +365,7 @@ public class ComposePreflightValidator {
                     outSvc.put("image", finalOverride);
                     changes.add("Applied image override for '" + svc + "'");
                 } else if (!imgStr.isEmpty()) {
-                    String resolvedImg = resolveDefaultPlaceholders(imgStr);
+                    String resolvedImg = resolvePlaceholders(imgStr, rootDotEnv);
                     if (!PINNED_IMAGE_PATTERN.matcher(resolvedImg).matches() && resolver != null) {
                         Optional<String> pinned = resolver.resolve(resolvedImg);
                         if (pinned.isPresent()) {
@@ -332,18 +378,21 @@ public class ComposePreflightValidator {
                         outSvc.put("image", resolvedImg);
                     }
                 } else if (cfg.containsKey("build")) {
-                    outSvc.put("build", String.valueOf(cfg.get("build")));
+                    outSvc.put("build", cfg.get("build"));
                 }
 
                 // 2. Ports -> expose conversion
                 List<String> exposedPorts = new ArrayList<>();
                 if (cfg.get("expose") instanceof List<?> expList) {
                     for (Object p : expList) {
-                        if (p != null) exposedPorts.add(String.valueOf(p).trim());
+                        if (p != null) {
+                            String ep = resolvePlaceholders(String.valueOf(p).trim(), rootDotEnv);
+                            if (!ep.contains("$") && !ep.isBlank()) exposedPorts.add(ep);
+                        }
                     }
                 }
                 if (cfg.containsKey("ports")) {
-                    Integer targetPort = firstPort(cfg.get("ports"));
+                    Integer targetPort = firstPort(cfg.get("ports"), rootDotEnv);
                     String portStr = String.valueOf(targetPort != null ? targetPort : 8080);
                     if (!exposedPorts.contains(portStr)) exposedPorts.add(portStr);
                     changes.add("Converted host 'ports' to internal 'expose: [\"" + portStr + "\"]' on '" + svc + "'");
@@ -352,16 +401,20 @@ public class ComposePreflightValidator {
                     outSvc.put("expose", exposedPorts);
                 }
 
-                // 3. Environment normalization (list -> map, ${VAR:-default} -> default, sensitive literals -> relocatedSecrets)
-                if (cfg.containsKey("environment")) {
-                    Map<String, String> rawEnv = composeEnvironment(cfg.get("environment"));
+                // 3. Environment & env_file normalization (env_file -> base map, list -> map, ${VAR:-default} / .env -> value, secrets -> relocatedSecrets)
+                boolean hasEnvFile = cfg.containsKey("env_file");
+                if (hasEnvFile || cfg.containsKey("environment")) {
+                    Map<String, String> rawEnv = mergedServiceEnvironment(cfg, safeEnvFiles);
                     Map<String, String> cleanEnv = new LinkedHashMap<>();
                     boolean listConverted = cfg.get("environment") instanceof List<?>;
+                    if (hasEnvFile) {
+                        changes.add("Merged env_file entries on '" + svc + "' into sandbox environment");
+                    }
                     for (Map.Entry<String, String> e : rawEnv.entrySet()) {
                         String k = e.getKey();
                         String v = e.getValue() == null ? "" : e.getValue();
                         if (v.contains("$")) {
-                            String resolved = resolveDefaultPlaceholders(v);
+                            String resolved = resolvePlaceholders(v, rootDotEnv);
                             if (resolved.contains("$") || resolved.isBlank()) {
                                 changes.add("Moved unresolved interpolation on '" + svc + "." + k + "' to per-run encrypted binding");
                                 continue;
@@ -369,7 +422,8 @@ public class ComposePreflightValidator {
                             changes.add("Inlined default value for '" + svc + "." + k + "'");
                             v = resolved;
                         }
-                        if (!v.isBlank() && v.equals(SecretRedactor.redactString(v)) && !SecretRedactor.isSensitiveKey(k)) {
+                        if (!v.isBlank() && v.equals(SecretRedactor.redactString(v))
+                                && !SecretRedactor.isSensitiveKey(k) && !URI_USERINFO_SECRET_PATTERN.matcher(v).find()) {
                             cleanEnv.put(k, v);
                         } else if (!v.isBlank()) {
                             relocatedSecrets.computeIfAbsent(svc, s -> new LinkedHashMap<>()).put(k, v);
@@ -422,16 +476,16 @@ public class ComposePreflightValidator {
                 // 5. Copy remaining allowed keys (stripping any '$' interpolation)
                 for (String key : List.of("command", "entrypoint", "depends_on", "healthcheck", "user", "working_dir", "init", "stop_grace_period")) {
                     if (cfg.containsKey(key) && cfg.get(key) != null) {
-                        Object sanitized = sanitizeYamlNode(cfg.get(key));
+                        Object sanitized = sanitizeYamlNode(cfg.get(key), rootDotEnv);
                         if (sanitized != null) outSvc.put(key, sanitized);
                     }
                 }
 
-                // 5b. Stateful infra compatibility under read_only: true + cap_drop: ALL (ephemeral named volumes + non-root user)
+                // 5b. Stateful infra & Dockerfile VOLUME compatibility under read_only: true + cap_drop: ALL
                 String effectiveImg = String.valueOf(outSvc.getOrDefault("image", imgStr));
                 StatefulInfraSpec infraSpec = statefulInfraSpec(svc, effectiveImg);
+                int volIdx = 0;
                 if (infraSpec != null) {
-                    int volIdx = 0;
                     for (String targetPath : infraSpec.writablePaths()) {
                         boolean covered = cleanMounts.stream().anyMatch(m -> targetPath.equals(m.get("target")));
                         if (!covered) {
@@ -447,9 +501,25 @@ public class ComposePreflightValidator {
                         }
                         volIdx++;
                     }
-                    if (!outSvc.containsKey("user")) {
+                    if (!outSvc.containsKey("user") && infraSpec.defaultUser() != null && !infraSpec.defaultUser().isBlank()) {
                         outSvc.put("user", infraSpec.defaultUser());
                         changes.add("Configured non-root user '" + infraSpec.defaultUser() + "' on '" + svc + "' for cap_drop: ALL compatibility");
+                    }
+                }
+                for (String appVolTarget : safeDockerfileVols.getOrDefault(svc, List.of())) {
+                    if (!isSafeWritableVolumeTarget(appVolTarget)) continue;
+                    boolean covered = cleanMounts.stream().anyMatch(m -> appVolTarget.equals(m.get("target")));
+                    if (!covered) {
+                        String volName = safeSandboxVolumeName(svc, Math.max(volIdx, 2));
+                        validVolumes.add(volName);
+                        outVolumes.putIfAbsent(volName, new LinkedHashMap<>());
+                        Map<String, Object> cm = new LinkedHashMap<>();
+                        cm.put("type", "volume");
+                        cm.put("source", volName);
+                        cm.put("target", appVolTarget);
+                        cleanMounts.add(cm);
+                        changes.add("Mounted Dockerfile VOLUME '" + volName + "' -> '" + appVolTarget + "' on '" + svc + "' for read_only rootfs compatibility");
+                        volIdx++;
                     }
                 }
 
@@ -460,7 +530,7 @@ public class ComposePreflightValidator {
                 // 6. Log stripped unsupported service options
                 for (Object rawKey : cfg.keySet()) {
                     String k = String.valueOf(rawKey);
-                    if (!RUNNER_SERVICE_KEYS.contains(k) && !"ports".equals(k) && !"build".equals(k)) {
+                    if (!RUNNER_SERVICE_KEYS.contains(k) && !"ports".equals(k) && !"build".equals(k) && !"env_file".equals(k)) {
                         changes.add("Removed unsupported option '" + k + "' on '" + svc + "'");
                     }
                 }
@@ -482,23 +552,39 @@ public class ComposePreflightValidator {
         return new SandboxComposeResult(generatedYaml, changes, remainingIssues, relocatedSecrets);
     }
 
+    private static boolean isSafeWritableVolumeTarget(String target) {
+        if (target == null || !target.startsWith("/") || target.equals("/") || target.equals("/tmp")
+                || target.startsWith("/tmp/") || target.startsWith("/mavis-otel") || target.contains("$") || target.contains("..")) {
+            return false;
+        }
+        String lower = target.toLowerCase(Locale.ROOT);
+        if (lower.contains("docker.sock")) return false;
+        for (String dangerous : DANGEROUS_MOUNT_PREFIXES) {
+            if (target.equals(dangerous) || target.startsWith(dangerous + "/")) return false;
+        }
+        return true;
+    }
+
     private static boolean needsSandboxRemediation(Map<?, ?> rootMap, Map<String, String> imageOverrides) {
         if (imageOverrides != null && !imageOverrides.isEmpty()) return true;
         if (!(rootMap.get("services") instanceof Map<?, ?> services)) return false;
         for (Map.Entry<?, ?> entry : services.entrySet()) {
             String svc = String.valueOf(entry.getKey());
             if (!(entry.getValue() instanceof Map<?, ?> cfg)) continue;
+            if (cfg.containsKey("env_file")) return true;
             Map<String, String> env = composeEnvironment(cfg.get("environment"));
             for (Map.Entry<String, String> e : env.entrySet()) {
                 String v = e.getValue() == null ? "" : e.getValue();
-                if (!v.isBlank() && (!v.equals(SecretRedactor.redactString(v)) || SecretRedactor.isSensitiveKey(e.getKey()))) {
+                if (!v.isBlank() && (!v.equals(SecretRedactor.redactString(v))
+                        || SecretRedactor.isSensitiveKey(e.getKey())
+                        || URI_USERINFO_SECRET_PATTERN.matcher(v).find())) {
                     return true;
                 }
             }
             String img = cfg.get("image") != null ? String.valueOf(cfg.get("image")) : "";
             StatefulInfraSpec spec = statefulInfraSpec(svc, img);
             if (spec != null) {
-                if (!cfg.containsKey("user")) return true;
+                if (spec.defaultUser() != null && !cfg.containsKey("user")) return true;
                 List<?> mounts = cfg.get("volumes") instanceof List<?> l ? l : List.of();
                 for (String targetPath : spec.writablePaths()) {
                     boolean covered = mounts.stream().anyMatch(m -> m instanceof Map<?, ?> mm && targetPath.equals(String.valueOf(mm.get("target"))));
@@ -529,6 +615,39 @@ public class ComposePreflightValidator {
         if (shortName.contains("rabbitmq")) {
             return new StatefulInfraSpec("rabbitmq", List.of("/var/lib/rabbitmq", "/var/log/rabbitmq"));
         }
+        if (shortName.contains("kafka")) {
+            return new StatefulInfraSpec("1000:1000", List.of("/var/lib/kafka/data", "/bitnami/kafka"));
+        }
+        if (shortName.contains("zookeeper")) {
+            return new StatefulInfraSpec("1000:1000", List.of("/data", "/datalog", "/logs", "/bitnami/zookeeper"));
+        }
+        if (shortName.contains("mssql") || shortName.contains("sqlserver")) {
+            return new StatefulInfraSpec("10001:0", List.of("/var/opt/mssql"));
+        }
+        if (shortName.contains("elasticsearch")) {
+            return new StatefulInfraSpec("1000:1000", List.of("/usr/share/elasticsearch/data", "/usr/share/elasticsearch/logs"));
+        }
+        if (shortName.contains("opensearch")) {
+            return new StatefulInfraSpec("1000:1000", List.of("/usr/share/opensearch/data", "/usr/share/opensearch/logs"));
+        }
+        if (shortName.contains("minio")) {
+            return new StatefulInfraSpec("1000:1000", List.of("/data"));
+        }
+        if (shortName.contains("keycloak")) {
+            return new StatefulInfraSpec("1000:1000", List.of("/opt/keycloak/data"));
+        }
+        if (shortName.contains("nginx")) {
+            return new StatefulInfraSpec("101:101", List.of("/var/cache/nginx", "/var/run"));
+        }
+        if (shortName.contains("memcached")) {
+            return new StatefulInfraSpec("11211:11211", List.of());
+        }
+        if (shortName.contains("nats")) {
+            return new StatefulInfraSpec("1000:1000", List.of("/data"));
+        }
+        if (shortName.contains("consul")) {
+            return new StatefulInfraSpec("100:1000", List.of("/consul/data"));
+        }
         return null;
     }
 
@@ -543,13 +662,21 @@ public class ComposePreflightValidator {
         return base + suffix;
     }
 
-    private static String resolveDefaultPlaceholders(String input) {
+    public static String resolveDefaultPlaceholders(String input) {
+        return resolvePlaceholders(input, Map.of());
+    }
+
+    public static String resolvePlaceholders(String input, Map<String, String> dotEnv) {
         if (input == null || !input.contains("${")) return input;
         Matcher m = ENV_PLACEHOLDER_PATTERN.matcher(input);
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
+            String varName = m.group(1);
             String defVal = m.group(2);
-            if (defVal != null && !defVal.isBlank()) {
+            String envVal = dotEnv != null ? dotEnv.get(varName) : null;
+            if (envVal != null && !envVal.isBlank()) {
+                m.appendReplacement(sb, Matcher.quoteReplacement(envVal));
+            } else if (defVal != null && !defVal.isBlank()) {
                 m.appendReplacement(sb, Matcher.quoteReplacement(defVal));
             }
         }
@@ -557,16 +684,15 @@ public class ComposePreflightValidator {
         return sb.toString();
     }
 
-    private static Object sanitizeYamlNode(Object node) {
+    private static Object sanitizeYamlNode(Object node, Map<String, String> dotEnv) {
         if (node == null) return null;
         if (node instanceof String s) {
-            String clean = resolveDefaultPlaceholders(s).replace("$$", "").replaceAll("\\$[A-Za-z_][A-Za-z0-9_]*", "").replace("$", "");
-            return clean;
+            return resolvePlaceholders(s, dotEnv).replace("$$", "").replaceAll("\\$[A-Za-z_][A-Za-z0-9_]*", "").replace("$", "");
         }
         if (node instanceof List<?> list) {
             List<Object> copy = new ArrayList<>();
             for (Object item : list) {
-                Object c = sanitizeYamlNode(item);
+                Object c = sanitizeYamlNode(item, dotEnv);
                 if (c != null) copy.add(c);
             }
             return copy;
@@ -574,7 +700,7 @@ public class ComposePreflightValidator {
         if (node instanceof Map<?, ?> map) {
             Map<String, Object> copy = new LinkedHashMap<>();
             for (Map.Entry<?, ?> e : map.entrySet()) {
-                Object c = sanitizeYamlNode(e.getValue());
+                Object c = sanitizeYamlNode(e.getValue(), dotEnv);
                 if (c != null) copy.put(String.valueOf(e.getKey()), c);
             }
             return copy;
@@ -619,6 +745,8 @@ public class ComposePreflightValidator {
         Map<String, String> actuatorBasePaths = new HashMap<>();
         Map<String, Integer> actuatorPorts = new HashMap<>();
         Map<String, Integer> sourcePorts = new HashMap<>();
+        Map<String, Map<String, String>> dtoSchemas = new LinkedHashMap<>();
+        Map<String, String> enumFirstValues = new LinkedHashMap<>();
 
         try {
             if (Files.isRegularFile(storagePath) && storagePath.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".zip")) {
@@ -642,7 +770,8 @@ public class ComposePreflightValidator {
                         try (InputStream is = zipFile.getInputStream(entry)) {
                             String content = new String(is.readNBytes(256_000), StandardCharsets.UTF_8);
                             inspectFileContent(entryName, content, dto, envMap, dbChecks, endpoints, endpointKeys,
-                                    explicitHealth, actuatorServices, contextPaths, actuatorBasePaths, actuatorPorts, sourcePorts);
+                                    explicitHealth, actuatorServices, contextPaths, actuatorBasePaths, actuatorPorts, sourcePorts,
+                                    dtoSchemas, enumFirstValues);
                         }
                     }
                 }
@@ -653,7 +782,7 @@ public class ComposePreflightValidator {
                     try (Stream<Path> stream = Files.walk(dirToScan, 8)) {
                         candidates = stream.filter(Files::isRegularFile)
                                 .filter(p -> !isIgnoredArchiveEntry(dirToScan.relativize(p).toString().replace('\\', '/')))
-                                .filter(p -> isInspectableSourceOrConfig(p.getFileName().toString()))
+                                .filter(p -> isInspectableSourceOrConfig(dirToScan.relativize(p).toString().replace('\\', '/')))
                                 .limit(10_000)
                                 .sorted(Comparator
                                         .comparingInt((Path p) -> sourceScanPriority(dirToScan.relativize(p).toString().replace('\\', '/')))
@@ -667,7 +796,8 @@ public class ComposePreflightValidator {
                                 String rel = dirToScan.relativize(file).toString().replace('\\', '/');
                                 String content = Files.readString(file, StandardCharsets.UTF_8);
                                 inspectFileContent(rel, content, dto, envMap, dbChecks, endpoints, endpointKeys,
-                                        explicitHealth, actuatorServices, contextPaths, actuatorBasePaths, actuatorPorts, sourcePorts);
+                                        explicitHealth, actuatorServices, contextPaths, actuatorBasePaths, actuatorPorts, sourcePorts,
+                                        dtoSchemas, enumFirstValues);
                             }
                         } catch (Exception ignored) {}
                     }
@@ -675,6 +805,16 @@ public class ComposePreflightValidator {
             }
         } catch (Exception e) {
             log.warn("Không thể quét bổ sung source snapshot tại {}: {}", storagePath, e.getMessage());
+        }
+
+        for (DetectedEndpointDTO ep : endpoints) {
+            if (ep.getSampleJsonBody() == null && ep.getRequestBodyType() != null
+                    && ep.getMethod() != null && Set.of("POST", "PUT", "PATCH").contains(ep.getMethod())) {
+                String synthesized = synthesizeDtoJson(ep.getRequestBodyType(), dtoSchemas, enumFirstValues);
+                if (synthesized != null && !synthesized.isBlank()) {
+                    ep.setSampleJsonBody(synthesized);
+                }
+            }
         }
 
         List<String> services = dto.getDetectedServices() != null ? new ArrayList<>(dto.getDetectedServices()) : new ArrayList<>();
@@ -704,9 +844,9 @@ public class ComposePreflightValidator {
             }
         }
 
-        // Apply source-configured ports when Compose fell back to default 8080
+        // Apply source-configured ports when Compose fell back to default 8080 or was absent
         for (Map.Entry<String, Integer> sp : sourcePorts.entrySet()) {
-            if (Objects.equals(ports.get(sp.getKey()), 8080)) {
+            if (!ports.containsKey(sp.getKey()) || Objects.equals(ports.get(sp.getKey()), 8080)) {
                 ports.put(sp.getKey(), sp.getValue());
             }
         }
@@ -753,7 +893,7 @@ public class ComposePreflightValidator {
         dto.setDetectedEndpoints(endpoints);
     }
 
-    private boolean isIgnoredArchiveEntry(String path) {
+    private static boolean isIgnoredArchiveEntry(String path) {
         String lower = path.replace('\\', '/').toLowerCase(Locale.ROOT);
         return lower.contains("/node_modules/") || lower.contains("/target/") || lower.contains("/build/")
                 || lower.contains("/bin/") || lower.contains("/obj/") || lower.contains("/.git/")
@@ -777,6 +917,7 @@ public class ComposePreflightValidator {
                 || (base.startsWith("application") && (base.endsWith(".yml") || base.endsWith(".yaml") || base.endsWith(".properties")))
                 || (base.startsWith("bootstrap") && (base.endsWith(".yml") || base.endsWith(".yaml") || base.endsWith(".properties")))
                 || (base.startsWith("appsettings") && base.endsWith(".json"))
+                || base.endsWith(".sql") || lower.contains("db/migration/") || lower.contains("db/changelog/") || lower.contains("changelog")
                 || base.equals(".env") || base.equals(".env.example")) {
             return 0;
         }
@@ -798,6 +939,7 @@ public class ComposePreflightValidator {
                 || lower.endsWith("pom.xml") || lower.endsWith("build.gradle") || lower.endsWith("build.gradle.kts")
                 || lower.endsWith(".csproj") || lower.endsWith("directory.packages.props")
                 || lower.endsWith("go.mod") || lower.endsWith("requirements.txt") || lower.endsWith("pyproject.toml")
+                || lower.endsWith(".sql") || lower.contains("changelog")
                 || baseName.equals("dockerfile") || baseName.startsWith("dockerfile.")
                 || lower.endsWith(".java") || lower.endsWith(".cs")
                 || lower.endsWith(".js") || lower.endsWith(".ts") || lower.endsWith(".py") || lower.endsWith(".go");
@@ -816,7 +958,9 @@ public class ComposePreflightValidator {
             Map<String, String> contextPaths,
             Map<String, String> actuatorBasePaths,
             Map<String, Integer> actuatorPorts,
-            Map<String, Integer> sourcePorts) {
+            Map<String, Integer> sourcePorts,
+            Map<String, Map<String, String>> dtoSchemas,
+            Map<String, String> enumFirstValues) {
 
         String cleanRelPath = stripGitHubRootPrefix(relativePath);
         String lowerPath = cleanRelPath.toLowerCase(Locale.ROOT);
@@ -843,6 +987,27 @@ public class ComposePreflightValidator {
                 else if (lowerContent.contains("microsoft.com/dotnet")) {
                     dto.getServiceStacks().put(inferredService, lowerContent.contains("alpine") ? "dotnet-musl" : "dotnet");
                 }
+            }
+        }
+        if ((baseName.equals("dockerfile") || baseName.startsWith("dockerfile.")) && inferredService != null) {
+            Matcher exposeMatcher = DOCKERFILE_EXPOSE_PATTERN.matcher(content);
+            if (exposeMatcher.find()) {
+                Integer p = parseConfigPort(exposeMatcher.group(1));
+                if (p != null) sourcePorts.putIfAbsent(inferredService, p);
+            }
+            List<String> vols = parseDockerfileVolumes(content);
+            if (!vols.isEmpty() && dto.getServiceDockerfileVolumes() != null) {
+                List<String> targetList = dto.getServiceDockerfileVolumes().computeIfAbsent(inferredService, k -> new ArrayList<>());
+                for (String v : vols) {
+                    if (!targetList.contains(v)) targetList.add(v);
+                }
+            }
+        }
+        if (inferredService != null && dto.getMigrationManagedServices() != null) {
+            if (lowerPath.contains("db/migration/") || lowerPath.contains("db/changelog/")
+                    || ((lowerPath.endsWith("pom.xml") || lowerPath.endsWith("build.gradle") || lowerPath.endsWith("build.gradle.kts"))
+                    && (lowerContent.contains("flyway") || lowerContent.contains("liquibase")))) {
+                dto.getMigrationManagedServices().add(inferredService);
             }
         }
 
@@ -983,10 +1148,17 @@ public class ComposePreflightValidator {
             }
         }
 
+        if (lowerPath.endsWith(".java")) {
+            extractJavaDtoSchemas(content, dtoSchemas, enumFirstValues);
+        } else if (lowerPath.endsWith(".cs")) {
+            extractCsharpDtoSchemas(content, dtoSchemas, enumFirstValues);
+        }
+
         // 2. Java Controller endpoints (skip @FeignClient / @HttpExchange client interfaces)
         if (lowerPath.endsWith(".java") && content.contains("Mapping") && !content.contains("@FeignClient") && !content.contains("@HttpExchange")) {
             int classDeclIdx = content.indexOf("class ");
             if (classDeclIdx < 0) classDeclIdx = content.indexOf("interface ");
+            String classHeader = classDeclIdx > 0 ? content.substring(0, classDeclIdx) : "";
             String basePath = "";
             Matcher classMapping = Pattern.compile("@RequestMapping\\s*\\(\\s*(?:(?:value|path)\\s*=\\s*)?\\{?\\s*\"([^\"]+)\"").matcher(content);
             if (classMapping.find() && (classDeclIdx < 0 || classMapping.start() < classDeclIdx)) {
@@ -1027,11 +1199,15 @@ public class ComposePreflightValidator {
                 String fullPath = normalizeEndpointPath(basePath, subPath);
                 String key = (inferredService + ":" + method + ":" + fullPath).toLowerCase(Locale.ROOT);
                 if (endpointKeys.add(key)) {
+                    String handlerWindow = extractHandlerWindow(content, matcher.start(), matcher.end(), SPRING_MAPPING_PATTERN);
                     endpoints.add(DetectedEndpointDTO.builder()
                             .service(inferredService)
                             .method(method)
                             .path(fullPath)
                             .source(cleanRelPath)
+                            .expectedStatus(inferExpectedHttpStatus(method, handlerWindow))
+                            .requestBodyType(extractJavaRequestBodyType(handlerWindow))
+                            .requiresAuth(detectEndpointAuth(classHeader, handlerWindow))
                             .build());
                 }
             }
@@ -1039,6 +1215,8 @@ public class ComposePreflightValidator {
 
         // 3. C# Controller / Minimal API endpoints
         if (lowerPath.endsWith(".cs")) {
+            int csClassIdx = content.indexOf("class ");
+            String csClassHeader = csClassIdx > 0 ? content.substring(0, csClassIdx) : "";
             String baseRoute = "";
             Matcher routeAttr = Pattern.compile("\\[Route\\s*\\(\\s*\"([^\"]+)\"\\s*\\)\\]").matcher(content);
             if (routeAttr.find()) {
@@ -1054,11 +1232,15 @@ public class ComposePreflightValidator {
                 String fullPath = normalizeEndpointPath(baseRoute, sub);
                 String key = (inferredService + ":" + method + ":" + fullPath).toLowerCase(Locale.ROOT);
                 if (endpointKeys.add(key)) {
+                    String handlerWindow = extractHandlerWindow(content, attrMatcher.start(), attrMatcher.end(), DOTNET_ROUTE_ATTR_PATTERN);
                     endpoints.add(DetectedEndpointDTO.builder()
                             .service(inferredService)
                             .method(method)
                             .path(fullPath)
                             .source(cleanRelPath)
+                            .expectedStatus(inferExpectedHttpStatus(method, handlerWindow))
+                            .requestBodyType(extractCsharpRequestBodyType(handlerWindow))
+                            .requiresAuth(detectEndpointAuth(csClassHeader, handlerWindow))
                             .build());
                 }
             }
@@ -1068,15 +1250,270 @@ public class ComposePreflightValidator {
                 String fullPath = normalizeEndpointPath("", minimalMatcher.group(2));
                 String key = (inferredService + ":" + method + ":" + fullPath).toLowerCase(Locale.ROOT);
                 if (endpointKeys.add(key)) {
+                    String handlerWindow = extractHandlerWindow(content, minimalMatcher.start(), minimalMatcher.end(), DOTNET_MINIMAL_API_PATTERN);
                     endpoints.add(DetectedEndpointDTO.builder()
                             .service(inferredService)
                             .method(method)
                             .path(fullPath)
                             .source(cleanRelPath)
+                            .expectedStatus(inferExpectedHttpStatus(method, handlerWindow))
+                            .requestBodyType(extractCsharpRequestBodyType(handlerWindow))
+                            .requiresAuth(detectEndpointAuth("", handlerWindow))
                             .build());
                 }
             }
         }
+    }
+
+    private static String extractHandlerWindow(String content, int matchStart, int matchEnd, Pattern nextEndpointPattern) {
+        int preStart = Math.max(0, matchStart - 160);
+        int lastBrace = content.lastIndexOf('}', matchStart);
+        if (lastBrace >= preStart) preStart = lastBrace + 1;
+        int end = Math.min(content.length(), matchEnd + 900);
+        Matcher next = nextEndpointPattern.matcher(content);
+        if (next.find(matchEnd) && next.start() < end) {
+            end = next.start();
+        }
+        return content.substring(preStart, end);
+    }
+
+    private static Integer inferExpectedHttpStatus(String method, String window) {
+        if (window == null || window.isEmpty()) return null;
+        if (window.contains("HttpStatus.CREATED") || window.contains("ResponseEntity.created(")
+                || window.contains(".status(201)") || window.contains("Status201Created")
+                || window.contains("CreatedAtAction(") || window.contains("CreatedAtRoute(")
+                || window.contains("Results.Created(") || window.contains("TypedResults.Created(")) {
+            return 201;
+        }
+        if ("DELETE".equals(method) && (window.contains("HttpStatus.NO_CONTENT")
+                || window.contains(".noContent()") || window.contains("NoContent(")
+                || window.contains("Status204NoContent") || window.contains("Results.NoContent("))) {
+            return 204;
+        }
+        if (window.contains("HttpStatus.ACCEPTED") || window.contains(".accepted()") || window.contains("Status202Accepted")) {
+            return 202;
+        }
+        return null;
+    }
+
+    private static Boolean detectEndpointAuth(String classHeader, String handlerWindow) {
+        String combined = (classHeader == null ? "" : classHeader) + "\n" + (handlerWindow == null ? "" : handlerWindow);
+        if (handlerWindow != null && (handlerWindow.contains("PermitAll") || handlerWindow.contains("AllowAnonymous"))) {
+            return null;
+        }
+        if (combined.contains("@PreAuthorize") || combined.contains("@Secured") || combined.contains("@RolesAllowed")
+                || combined.contains("[Authorize") || combined.contains(".RequireAuthorization(")) {
+            return Boolean.TRUE;
+        }
+        return null;
+    }
+
+    private static String extractJavaRequestBodyType(String window) {
+        if (window == null) return null;
+        Matcher m = JAVA_REQUEST_BODY_PATTERN.matcher(window);
+        return m.find() ? simplifyDtoTypeName(m.group(1)) : null;
+    }
+
+    private static String extractCsharpRequestBodyType(String window) {
+        if (window == null) return null;
+        Matcher fb = CSHARP_FROM_BODY_PATTERN.matcher(window);
+        if (fb.find()) return simplifyDtoTypeName(fb.group(1));
+        Matcher lambdaParam = Pattern.compile("\\(\\s*(?:\\[FromServices\\]\\s+[^,)]+,\\s*)*([A-Z][A-Za-z0-9_]*)(?:Request|Dto|DTO|Command|Payload|Input|Model)\\b").matcher(window);
+        if (lambdaParam.find()) {
+            Matcher full = Pattern.compile("\\b([A-Z][A-Za-z0-9_]*(?:Request|Dto|DTO|Command|Payload|Input|Model))\\b").matcher(lambdaParam.group(0));
+            if (full.find()) return full.group(1);
+        }
+        return null;
+    }
+
+    private static String simplifyDtoTypeName(String rawType) {
+        if (rawType == null) return null;
+        String t = rawType.trim().replace("?", "").replace("[]", "");
+        int lt = t.indexOf('<');
+        if (lt > 0) t = t.substring(0, lt).trim();
+        int dot = t.lastIndexOf('.');
+        if (dot >= 0) t = t.substring(dot + 1).trim();
+        return t.isEmpty() || Set.of("String", "string", "Object", "object", "JsonNode", "JsonElement", "Map", "Dictionary", "List", "Set").contains(t)
+                ? null : t;
+    }
+
+    private static void extractJavaDtoSchemas(String content, Map<String, Map<String, String>> dtoSchemas, Map<String, String> enumFirstValues) {
+        Matcher em = JAVA_ENUM_PATTERN.matcher(content);
+        while (em.find()) {
+            String enumName = em.group(1);
+            String firstConst = em.group(2);
+            if (!enumName.isBlank() && !firstConst.isBlank()) enumFirstValues.putIfAbsent(enumName, firstConst);
+        }
+        Matcher rm = JAVA_RECORD_PATTERN.matcher(content);
+        while (rm.find()) {
+            String recName = rm.group(1);
+            Map<String, String> fields = parseRecordComponents(rm.group(2), false);
+            if (!fields.isEmpty()) dtoSchemas.putIfAbsent(recName, fields);
+        }
+        if (content.contains("@RestController") || content.contains("@Controller") || content.contains("@Service")
+                || content.contains("@Repository") || content.contains("@Configuration")) {
+            return;
+        }
+        Matcher cm = JAVA_CLASS_NAME_PATTERN.matcher(content);
+        if (!cm.find()) return;
+        String className = cm.group(1);
+        if (className.endsWith("Application") || className.endsWith("Exception") || className.endsWith("Test")) return;
+        Map<String, String> fields = new LinkedHashMap<>();
+        Matcher fm = JAVA_FIELD_PATTERN.matcher(content);
+        while (fm.find() && fields.size() < 16) {
+            String annotations = fm.group(1) != null ? fm.group(1) : "";
+            String fieldType = fm.group(2).trim();
+            String fieldName = fm.group(3).trim();
+            if ("serialVersionUID".equals(fieldName) || annotations.contains("@JsonIgnore") || annotations.contains("@Transient")) continue;
+            if (annotations.contains("@GeneratedValue") || (annotations.contains("@Id") && "id".equalsIgnoreCase(fieldName))) continue;
+            if (annotations.contains("@OneToMany") || annotations.contains("@ManyToMany") || annotations.contains("@ManyToOne") || annotations.contains("@OneToOne")) continue;
+            fields.putIfAbsent(fieldName, fieldType);
+        }
+        if (!fields.isEmpty()) dtoSchemas.putIfAbsent(className, fields);
+    }
+
+    private static void extractCsharpDtoSchemas(String content, Map<String, Map<String, String>> dtoSchemas, Map<String, String> enumFirstValues) {
+        Matcher em = CSHARP_ENUM_PATTERN.matcher(content);
+        while (em.find()) {
+            enumFirstValues.putIfAbsent(em.group(1), em.group(2));
+        }
+        Matcher rm = CSHARP_RECORD_PATTERN.matcher(content);
+        while (rm.find()) {
+            Map<String, String> fields = parseRecordComponents(rm.group(2), true);
+            if (!fields.isEmpty()) dtoSchemas.putIfAbsent(rm.group(1), fields);
+        }
+        if (content.contains("ControllerBase") || content.contains(": Controller") || content.contains(": DbContext")) return;
+        Matcher cm = CSHARP_CLASS_NAME_PATTERN.matcher(content);
+        if (!cm.find()) return;
+        String className = cm.group(1);
+        if (className.endsWith("Program") || className.endsWith("Startup") || className.endsWith("Middleware")) return;
+        Map<String, String> fields = new LinkedHashMap<>();
+        Matcher pm = CSHARP_PROP_PATTERN.matcher(content);
+        while (pm.find() && fields.size() < 16) {
+            String attrs = pm.group(1) != null ? pm.group(1) : "";
+            String propType = pm.group(2).trim();
+            String rawName = pm.group(3).trim();
+            if (attrs.contains("JsonIgnore")) continue;
+            if ("Id".equals(rawName) && !className.endsWith("Request") && !className.endsWith("Dto") && !className.endsWith("DTO") && !className.endsWith("Command")) continue;
+            String camelName = Character.toLowerCase(rawName.charAt(0)) + rawName.substring(1);
+            fields.putIfAbsent(camelName, propType);
+        }
+        if (!fields.isEmpty()) dtoSchemas.putIfAbsent(className, fields);
+    }
+
+    private static Map<String, String> parseRecordComponents(String rawParams, boolean camelCaseNames) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        if (rawParams == null || rawParams.isBlank()) return fields;
+        List<String> parts = new ArrayList<>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < rawParams.length(); i++) {
+            char c = rawParams.charAt(i);
+            if (c == '<' || c == '(' || c == '[') depth++;
+            else if (c == '>' || c == ')' || c == ']') depth = Math.max(0, depth - 1);
+            else if (c == ',' && depth == 0) {
+                parts.add(rawParams.substring(start, i));
+                start = i + 1;
+            }
+        }
+        parts.add(rawParams.substring(start));
+        for (String part : parts) {
+            if (fields.size() >= 16) break;
+            String cleaned = part.replaceAll("@[A-Za-z0-9_.]+(?:\\([^)]*\\))?", "")
+                    .replaceAll("\\[[^\\]]+\\]", "")
+                    .replaceAll("=.*$", "")
+                    .trim();
+            if (cleaned.isEmpty()) continue;
+            int lastSpace = cleaned.lastIndexOf(' ');
+            if (lastSpace <= 0) continue;
+            String type = cleaned.substring(0, lastSpace).replaceAll("\\bfinal\\b", "").trim();
+            String name = cleaned.substring(lastSpace + 1).trim();
+            if (type.isEmpty() || !name.matches("[A-Za-z_][A-Za-z0-9_]*")) continue;
+            if (camelCaseNames) name = Character.toLowerCase(name.charAt(0)) + name.substring(1);
+            fields.putIfAbsent(name, type);
+        }
+        return fields;
+    }
+
+    static String synthesizeDtoJson(String dtoTypeName, Map<String, Map<String, String>> dtoSchemas, Map<String, String> enumFirstValues) {
+        Map<String, Object> obj = synthesizeDtoMap(dtoTypeName, dtoSchemas, enumFirstValues, 0);
+        if (obj == null || obj.isEmpty()) return null;
+        try {
+            return DTO_JSON_MAPPER.writeValueAsString(obj);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static Map<String, Object> synthesizeDtoMap(String dtoTypeName, Map<String, Map<String, String>> dtoSchemas, Map<String, String> enumFirstValues, int depth) {
+        if (dtoTypeName == null || depth > 2 || dtoSchemas == null) return null;
+        Map<String, String> fields = dtoSchemas.get(dtoTypeName);
+        if (fields == null || fields.isEmpty()) return null;
+        Map<String, Object> out = new LinkedHashMap<>();
+        int count = 0;
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            if (count >= 12) break;
+            Object val = synthesizeFieldValue(entry.getKey(), entry.getValue(), dtoSchemas, enumFirstValues, depth);
+            if (val != null) {
+                out.put(entry.getKey(), val);
+                count++;
+            }
+        }
+        return out;
+    }
+
+    private static Object synthesizeFieldValue(String fieldName, String rawType, Map<String, Map<String, String>> dtoSchemas, Map<String, String> enumFirstValues, int depth) {
+        String type = rawType == null ? "String" : rawType.trim().replace("?", "");
+        String lowerName = fieldName == null ? "" : fieldName.toLowerCase(Locale.ROOT);
+        if (type.endsWith("[]") || type.startsWith("List<") || type.startsWith("Set<") || type.startsWith("Collection<")
+                || type.startsWith("IList<") || type.startsWith("IEnumerable<") || type.startsWith("ICollection<")) {
+            String elemType = type.endsWith("[]") ? type.substring(0, type.length() - 2)
+                    : (type.contains("<") && type.endsWith(">") ? type.substring(type.indexOf('<') + 1, type.length() - 1).trim() : "String");
+            Object elem = synthesizeFieldValue(fieldName, elemType, dtoSchemas, enumFirstValues, depth + 1);
+            return elem != null ? List.of(elem) : List.of();
+        }
+        if (type.startsWith("Map<") || type.startsWith("Dictionary<") || type.startsWith("IDictionary<")) {
+            return Map.of();
+        }
+        String simple = type.contains(".") ? type.substring(type.lastIndexOf('.') + 1) : type;
+        if (enumFirstValues != null && enumFirstValues.containsKey(simple)) {
+            return enumFirstValues.get(simple);
+        }
+        return switch (simple) {
+            case "boolean", "Boolean", "bool" -> !lowerName.contains("deleted") && !lowerName.contains("disabled");
+            case "int", "Integer", "long", "Long", "short", "Short", "byte", "Byte", "Int32", "Int64", "BigInteger" -> {
+                if (lowerName.contains("age")) yield 28;
+                if (lowerName.contains("port")) yield 8080;
+                if (lowerName.contains("year")) yield 2026;
+                if (lowerName.contains("stock") || lowerName.contains("inventory")) yield 20;
+                yield 1;
+            }
+            case "double", "Double", "float", "Float", "BigDecimal", "decimal", "Decimal" -> {
+                if (lowerName.contains("rate") || lowerName.contains("discount")) yield 0.1;
+                yield 99.5;
+            }
+            case "UUID", "Guid" -> "00000000-0000-0000-0000-000000000001";
+            case "LocalDate", "DateOnly" -> "2026-01-15";
+            case "LocalTime", "TimeOnly" -> "10:00:00";
+            case "Instant", "OffsetDateTime", "ZonedDateTime", "Date", "DateTime", "DateTimeOffset" -> "2026-01-15T10:00:00Z";
+            case "LocalDateTime" -> "2026-01-15T10:00:00";
+            case "String", "string", "CharSequence" -> {
+                if (lowerName.contains("email")) yield "alice@example.org";
+                if (lowerName.contains("phone") || lowerName.contains("mobile")) yield "+84901234567";
+                if (lowerName.contains("url") || lowerName.contains("uri") || lowerName.contains("website")) yield "https://example.org";
+                if (lowerName.contains("uuid") || lowerName.contains("guid")) yield "00000000-0000-0000-0000-000000000001";
+                if (lowerName.contains("code") || lowerName.contains("sku")) yield "SKU-LAPTOP-01";
+                if (lowerName.contains("currency")) yield "USD";
+                if (lowerName.contains("country")) yield "VN";
+                if (lowerName.contains("status")) yield "ACTIVE";
+                if (lowerName.contains("role")) yield "USER";
+                if (lowerName.contains("password") || lowerName.contains("pwd")) yield "SandboxPass123!";
+                if (lowerName.contains("username") || lowerName.contains("login")) yield "alice";
+                if (lowerName.contains("name")) yield "Sample " + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+                yield "sample-" + fieldName;
+            }
+            default -> depth < 2 ? synthesizeDtoMap(simple, dtoSchemas, enumFirstValues, depth + 1) : null;
+        };
     }
 
     private static String extractConfigScalarValue(String line) {
@@ -1115,7 +1552,10 @@ public class ComposePreflightValidator {
             List<DatabaseCheckDTO> databaseChecks,
             Map<String, RequiredEnvVarDTO> envVarMap,
             Map<String, List<String>> serviceDependencies,
-            Map<String, Map<String, String>> composeEnvAliases) {
+            Map<String, Map<String, String>> composeEnvAliases,
+            Map<String, Map<String, String>> composeEnvTemplates,
+            Map<String, String> envFiles,
+            Map<String, String> rootDotEnv) {
 
         String lowerName = serviceName.toLowerCase(Locale.ROOT);
         String image = serviceConfig.get("image") != null ? String.valueOf(serviceConfig.get("image")).toLowerCase(Locale.ROOT) : "";
@@ -1132,24 +1572,18 @@ public class ComposePreflightValidator {
                     .build());
         }
 
-        Object envObj = serviceConfig.get("environment");
-        if (envObj instanceof Map<?, ?> envMapNode) {
-            for (Map.Entry<?, ?> e : envMapNode.entrySet()) {
-                String key = String.valueOf(e.getKey()).trim();
-                String val = e.getValue() != null ? String.valueOf(e.getValue()).trim() : "";
-                processComposeEnvEntry(serviceName, key, val, databaseChecks, envVarMap, serviceDependencies, composeEnvAliases);
-            }
-        } else if (envObj instanceof List<?> envList) {
+        Map<String, String> merged = mergedServiceEnvironment(serviceConfig, envFiles);
+        for (Map.Entry<String, String> e : merged.entrySet()) {
+            processComposeEnvEntry(serviceName, e.getKey(), e.getValue(), databaseChecks, envVarMap,
+                    serviceDependencies, composeEnvAliases, composeEnvTemplates, rootDotEnv);
+        }
+        if (serviceConfig.get("environment") instanceof List<?> envList) {
             for (Object item : envList) {
                 if (item == null) continue;
                 String raw = String.valueOf(item).trim();
-                int idx = raw.indexOf('=');
-                if (idx > 0) {
-                    String key = raw.substring(0, idx).trim();
-                    String val = raw.substring(idx + 1).trim();
-                    processComposeEnvEntry(serviceName, key, val, databaseChecks, envVarMap, serviceDependencies, composeEnvAliases);
-                } else if (!raw.isEmpty()) {
-                    registerEnvVar(envVarMap, raw, serviceName, null, "docker-compose.yml");
+                if (!raw.isEmpty() && raw.indexOf('=') < 0) {
+                    String dotVal = rootDotEnv != null ? rootDotEnv.get(raw) : null;
+                    registerEnvVar(envVarMap, raw, serviceName, dotVal, "docker-compose.yml");
                 }
             }
         }
@@ -1162,18 +1596,29 @@ public class ComposePreflightValidator {
             List<DatabaseCheckDTO> databaseChecks,
             Map<String, RequiredEnvVarDTO> envVarMap,
             Map<String, List<String>> serviceDependencies,
-            Map<String, Map<String, String>> composeEnvAliases) {
+            Map<String, Map<String, String>> composeEnvAliases,
+            Map<String, Map<String, String>> composeEnvTemplates,
+            Map<String, String> rootDotEnv) {
 
-        recordHostDependency(serviceName, val, serviceDependencies);
+        recordHostDependency(serviceName, resolvePlaceholders(val, rootDotEnv), serviceDependencies);
         Matcher m = ENV_PLACEHOLDER_PATTERN.matcher(val);
         List<String> placeholders = new ArrayList<>();
         while (m.find()) {
             String pName = m.group(1);
             String defVal = m.group(2);
+            String dotVal = rootDotEnv != null ? rootDotEnv.get(pName) : null;
+            String effectiveDef = (dotVal != null && !dotVal.isBlank()) ? dotVal : defVal;
             placeholders.add(pName);
-            registerEnvVar(envVarMap, pName, serviceName, defVal, "docker-compose.yml");
-            if (!key.equals(pName) && val.trim().equals("${" + pName + "}")) {
-                composeEnvAliases.computeIfAbsent(serviceName, k -> new LinkedHashMap<>()).put(key, pName);
+            registerEnvVar(envVarMap, pName, serviceName, effectiveDef, "docker-compose.yml");
+        }
+        if (!placeholders.isEmpty()) {
+            String partiallyResolved = resolvePlaceholders(val, rootDotEnv);
+            if (partiallyResolved.contains("${")) {
+                if (placeholders.size() == 1 && !key.equals(placeholders.get(0)) && val.trim().equals("${" + placeholders.get(0) + "}")) {
+                    composeEnvAliases.computeIfAbsent(serviceName, k -> new LinkedHashMap<>()).put(key, placeholders.get(0));
+                } else {
+                    composeEnvTemplates.computeIfAbsent(serviceName, k -> new LinkedHashMap<>()).put(key, partiallyResolved);
+                }
             }
         }
 
@@ -1188,13 +1633,14 @@ public class ComposePreflightValidator {
 
         if (upperKey.contains("DATASOURCE_URL") || upperKey.contains("DATABASE_URL") || upperKey.contains("CONNECTIONSTRINGS") || val.toLowerCase(Locale.ROOT).startsWith("jdbc:")) {
             String dbType = inferDbTypeFromLine(val.toLowerCase(Locale.ROOT));
+            String resolvedVal = resolvePlaceholders(val, rootDotEnv);
             databaseChecks.add(DatabaseCheckDTO.builder()
                     .service(serviceName)
                     .dbType(dbType)
                     .configKey("docker-compose.yml:" + key)
                     .connectionUrl(sanitizeConnectionPreview(val))
                     .requiredEnvVars(placeholders)
-                    .status(placeholders.isEmpty() ? "CONFIGURED_IN_COMPOSE" : "REQUIRES_ENV_OR_SECRET")
+                    .status(!resolvedVal.contains("${") ? "CONFIGURED_IN_COMPOSE" : "REQUIRES_ENV_OR_SECRET")
                     .build());
         }
     }
@@ -1370,13 +1816,13 @@ public class ComposePreflightValidator {
     }
 
     private static String inferDbTypeFromLine(String lower) {
-        if (lower.contains("postgres")) return "PostgreSQL";
-        if (lower.contains("mysql")) return "MySQL";
+        if (lower.contains("h2:") || lower.contains("com.h2database") || lower.contains(">h2<")) return "H2 In-Memory";
+        if (lower.contains("postgres") || lower.contains("npgsql")) return "PostgreSQL";
         if (lower.contains("mariadb")) return "MariaDB";
+        if (lower.contains("mysql")) return "MySQL";
         if (lower.contains("mongo")) return "MongoDB";
         if (lower.contains("redis")) return "Redis";
-        if (lower.contains("sqlserver") || lower.contains("mssql")) return "SQL Server";
-        if (lower.contains("h2:")) return "H2 In-Memory";
+        if (lower.contains("sqlserver") || lower.contains("mssql") || lower.contains("sqlclient")) return "SQL Server";
         return "SQL Database";
     }
 
@@ -1474,7 +1920,7 @@ public class ComposePreflightValidator {
                 }
             }
         }
-        for (int i = startIdx; i < parts.length; i++) {
+        for (int i = startIdx; i < parts.length - 1; i++) {
             String part = parts[i];
             if (!part.isBlank() && !part.equalsIgnoreCase("src") && !part.equalsIgnoreCase("main")
                     && !part.equalsIgnoreCase("java") && !part.equalsIgnoreCase("resources")
@@ -1566,21 +2012,23 @@ public class ComposePreflightValidator {
         return null;
     }
 
-    private Integer extractTargetPort(Map<?, ?> serviceConfig) {
-        Integer exposed = firstPort(serviceConfig.get("expose"));
+    private Integer extractTargetPort(Map<?, ?> serviceConfig, Map<String, String> envFiles, Map<String, String> rootDotEnv) {
+        Integer exposed = firstPort(serviceConfig.get("expose"), rootDotEnv);
         if (exposed != null) return exposed;
-        Integer published = firstPort(serviceConfig.get("ports"));
+        Integer published = firstPort(serviceConfig.get("ports"), rootDotEnv);
         if (published != null) return published;
-        Integer fromEnv = portFromEnvironment(composeEnvironment(serviceConfig.get("environment")));
+        Map<String, String> resolvedEnv = new LinkedHashMap<>();
+        mergedServiceEnvironment(serviceConfig, envFiles).forEach((k, v) -> resolvedEnv.put(k, resolvePlaceholders(v, rootDotEnv)));
+        Integer fromEnv = portFromEnvironment(resolvedEnv);
         return fromEnv != null ? fromEnv : 8080;
     }
 
-    private static Integer firstPort(Object node) {
+    private static Integer firstPort(Object node, Map<String, String> dotEnv) {
         if (!(node instanceof List<?> list)) return null;
         for (Object p : list) {
             if (p == null) continue;
             String str = p instanceof Map<?, ?> longSyntax ? String.valueOf(longSyntax.get("target")) : String.valueOf(p).trim();
-            str = str.replaceAll("/(tcp|udp)$", "");
+            str = resolvePlaceholders(str, dotEnv).replaceAll("/(tcp|udp)$", "");
             String[] parts = str.split(":");
             String target = parts[parts.length - 1];
             if (target.contains("-")) target = target.substring(0, target.indexOf('-'));
@@ -1635,13 +2083,19 @@ public class ComposePreflightValidator {
         return false;
     }
 
-    private static void collectDatabaseCredentials(String image, Map<?, ?> serviceConfig, Map<String, String> credentials) {
-        Map<String, String> env = composeEnvironment(serviceConfig.get("environment"));
+    private static void collectDatabaseCredentials(
+            String image,
+            Map<?, ?> serviceConfig,
+            Map<String, String> credentials,
+            Map<String, String> envFiles,
+            Map<String, String> rootDotEnv) {
+        Map<String, String> env = mergedServiceEnvironment(serviceConfig, envFiles);
         List<String> keys = new ArrayList<>(DB_PASSWORD_KEYS);
         keys.addAll(DB_USER_KEYS);
         keys.addAll(DB_NAME_KEYS);
         for (String key : keys) {
-            String value = env.get(key);
+            String raw = env.get(key);
+            String value = raw != null ? resolvePlaceholders(raw, rootDotEnv) : null;
             if (value != null && !value.isBlank() && !value.contains("$")) credentials.putIfAbsent(key, value);
         }
         String img = image == null ? "" : image.toLowerCase(Locale.ROOT);
@@ -1782,5 +2236,814 @@ public class ComposePreflightValidator {
             return "go";
         }
         return "java";
+    }
+
+    public static Map<String, String> parseDotEnvContent(String content) {
+        if (content == null || content.isBlank()) return Map.of();
+        Map<String, String> out = new LinkedHashMap<>();
+        for (String rawLine : content.split("\\r?\\n")) {
+            String line = rawLine.trim();
+            if (line.isEmpty() || line.startsWith("#")) continue;
+            if (line.startsWith("export ") && line.length() > 7) {
+                line = line.substring(7).trim();
+            }
+            int eq = line.indexOf('=');
+            if (eq <= 0) continue;
+            String key = line.substring(0, eq).trim();
+            if (!key.matches("[A-Za-z_][A-Za-z0-9_]*")) continue;
+            String val = line.substring(eq + 1).trim();
+            if (val.length() >= 2 && ((val.startsWith("\"") && val.endsWith("\"")) || (val.startsWith("'") && val.endsWith("'")))) {
+                val = val.substring(1, val.length() - 1);
+            } else {
+                int hashIdx = val.indexOf(" #");
+                if (hashIdx >= 0) val = val.substring(0, hashIdx).trim();
+            }
+            out.put(key, val);
+        }
+        return out;
+    }
+
+    static String normalizeRelativeEnvPath(String rawPath) {
+        if (rawPath == null) return null;
+        String norm = rawPath.trim().replace('\\', '/');
+        while (norm.startsWith("./")) norm = norm.substring(2);
+        if (norm.isEmpty() || norm.startsWith("/") || norm.contains("../") || norm.equals("..")) {
+            return null;
+        }
+        return norm;
+    }
+
+    static List<String> extractEnvFilePaths(Object envFileNode) {
+        if (envFileNode == null) return List.of();
+        List<String> paths = new ArrayList<>();
+        if (envFileNode instanceof String s) {
+            String norm = normalizeRelativeEnvPath(s);
+            if (norm != null) paths.add(norm);
+        } else if (envFileNode instanceof List<?> list) {
+            for (Object item : list) {
+                String raw = null;
+                if (item instanceof String s) raw = s;
+                else if (item instanceof Map<?, ?> m && m.get("path") != null) raw = String.valueOf(m.get("path"));
+                String norm = normalizeRelativeEnvPath(raw);
+                if (norm != null && !paths.contains(norm)) paths.add(norm);
+            }
+        }
+        return paths;
+    }
+
+    static Map<String, String> mergedServiceEnvironment(Map<?, ?> serviceConfig, Map<String, String> envFiles) {
+        Map<String, String> merged = new LinkedHashMap<>();
+        if (serviceConfig == null) return merged;
+        if (envFiles != null && !envFiles.isEmpty()) {
+            for (String relPath : extractEnvFilePaths(serviceConfig.get("env_file"))) {
+                String fileContent = envFiles.get(relPath);
+                if (fileContent != null) {
+                    merged.putAll(parseDotEnvContent(fileContent));
+                }
+            }
+        }
+        merged.putAll(composeEnvironment(serviceConfig.get("environment")));
+        return merged;
+    }
+
+    private static boolean isDotEnvFileName(String baseName) {
+        if (baseName == null) return false;
+        String lower = baseName.toLowerCase(Locale.ROOT);
+        return lower.equals(".env") || lower.startsWith(".env.") || lower.endsWith(".env");
+    }
+
+    public Map<String, String> collectDirectoryEnvFiles(Path baseDir) {
+        if (baseDir == null || !Files.isDirectory(baseDir)) return Map.of();
+        Map<String, String> out = new LinkedHashMap<>();
+        try (Stream<Path> stream = Files.walk(baseDir, 4)) {
+            List<Path> files = stream.filter(Files::isRegularFile)
+                    .filter(p -> isDotEnvFileName(p.getFileName().toString()))
+                    .filter(p -> !isIgnoredArchiveEntry(baseDir.relativize(p).toString()))
+                    .limit(32)
+                    .toList();
+            for (Path f : files) {
+                try {
+                    if (Files.size(f) <= 65_536) {
+                        String rel = normalizeRelativeEnvPath(baseDir.relativize(f).toString());
+                        if (rel != null) out.put(rel, Files.readString(f, StandardCharsets.UTF_8));
+                    }
+                } catch (IOException ignored) {}
+            }
+        } catch (IOException ignored) {}
+        return out;
+    }
+
+    public Map<String, String> collectSnapshotEnvFiles(Path storagePath, String composeEntryDir) {
+        if (storagePath == null || !Files.exists(storagePath)) return Map.of();
+        if (Files.isDirectory(storagePath)) {
+            Path targetDir = (composeEntryDir == null || composeEntryDir.isBlank())
+                    ? storagePath
+                    : storagePath.resolve(composeEntryDir).normalize();
+            return (targetDir.startsWith(storagePath) && Files.isDirectory(targetDir))
+                    ? collectDirectoryEnvFiles(targetDir)
+                    : collectDirectoryEnvFiles(storagePath);
+        }
+        String fileName = storagePath.getFileName().toString().toLowerCase(Locale.ROOT);
+        if (fileName.endsWith(".yml") || fileName.endsWith(".yaml")) {
+            return collectDirectoryEnvFiles(storagePath.getParent());
+        }
+        if (!fileName.endsWith(".zip")) return Map.of();
+        Map<String, String> out = new LinkedHashMap<>();
+        String prefix = (composeEntryDir == null || composeEntryDir.isBlank())
+                ? ""
+                : (composeEntryDir.replace('\\', '/').replaceAll("/+$", "") + "/");
+        try (ZipFile zipFile = new ZipFile(storagePath.toFile())) {
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+            while (entries.hasMoreElements() && out.size() < 32) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory() || entry.getSize() > 65_536) continue;
+                String entryName = entry.getName().replace('\\', '/');
+                if (isIgnoredArchiveEntry(entryName)) continue;
+                String baseName = entryName.contains("/") ? entryName.substring(entryName.lastIndexOf('/') + 1) : entryName;
+                if (!isDotEnvFileName(baseName)) continue;
+                String rel;
+                if (!prefix.isEmpty()) {
+                    if (!entryName.startsWith(prefix)) continue;
+                    rel = normalizeRelativeEnvPath(entryName.substring(prefix.length()));
+                } else {
+                    rel = normalizeRelativeEnvPath(stripGitHubRootPrefix(entryName));
+                }
+                if (rel == null) continue;
+                try (InputStream is = zipFile.getInputStream(entry)) {
+                    out.put(rel, new String(is.readNBytes(65_536), StandardCharsets.UTF_8));
+                }
+            }
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    static List<String> parseDockerfileVolumes(String dockerfileContent) {
+        if (dockerfileContent == null || dockerfileContent.isBlank()) return List.of();
+        List<String> vols = new ArrayList<>();
+        Matcher m = DOCKERFILE_VOLUME_LINE_PATTERN.matcher(dockerfileContent);
+        while (m.find()) {
+            String spec = m.group(1).trim();
+            if (spec.startsWith("[") && spec.contains("]")) {
+                Matcher qm = Pattern.compile("[\"']([^\"']+)[\"']").matcher(spec);
+                while (qm.find()) {
+                    String candidate = qm.group(1).trim();
+                    if (isSafeWritableVolumeTarget(candidate) && !vols.contains(candidate)) vols.add(candidate);
+                }
+            } else {
+                for (String token : spec.split("[\\s,]+")) {
+                    String candidate = token.replaceAll("^[\"']|[\"']$", "").trim();
+                    if (isSafeWritableVolumeTarget(candidate) && !vols.contains(candidate)) vols.add(candidate);
+                }
+            }
+        }
+        return vols;
+    }
+
+    private static boolean isCandidateDockerfileName(String baseName) {
+        if (baseName == null) return false;
+        String lower = baseName.toLowerCase(Locale.ROOT);
+        if (lower.equals("dockerfile")) return true;
+        if (!lower.startsWith("dockerfile.")) return false;
+        return !lower.endsWith(".bak") && !lower.endsWith(".orig") && !lower.contains("test");
+    }
+
+    public static List<DiscoveredDockerfile> discoverDockerfilesInDirectory(Path root) {
+        if (root == null || !Files.isDirectory(root)) return List.of();
+        List<String> relPaths = new ArrayList<>();
+        try (Stream<Path> stream = Files.walk(root, 6)) {
+            stream.filter(Files::isRegularFile)
+                    .forEach(p -> {
+                        String rel = root.relativize(p).toString().replace('\\', '/');
+                        if (!isIgnoredArchiveEntry(rel) && isCandidateDockerfileName(p.getFileName().toString())) {
+                            relPaths.add(rel);
+                        }
+                    });
+        } catch (IOException ignored) {}
+        return buildDiscoveredDockerfiles(relPaths, false);
+    }
+
+    public List<DiscoveredDockerfile> discoverDockerfilesInSnapshot(Path storagePath) {
+        if (storagePath == null || !Files.exists(storagePath)) return List.of();
+        if (Files.isDirectory(storagePath)) {
+            return discoverDockerfilesInDirectory(storagePath);
+        }
+        if (!storagePath.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".zip")) {
+            return List.of();
+        }
+        List<String> relPaths = new ArrayList<>();
+        try (ZipFile zipFile = new ZipFile(storagePath.toFile())) {
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
+            while (entries.hasMoreElements() && relPaths.size() < 200) {
+                ZipEntry entry = entries.nextElement();
+                if (entry.isDirectory()) continue;
+                String entryName = entry.getName().replace('\\', '/');
+                if (isIgnoredArchiveEntry(entryName)) continue;
+                String baseName = entryName.contains("/") ? entryName.substring(entryName.lastIndexOf('/') + 1) : entryName;
+                if (isCandidateDockerfileName(baseName)) {
+                    relPaths.add(entryName);
+                }
+            }
+        } catch (Exception ignored) {}
+        return buildDiscoveredDockerfiles(relPaths, true);
+    }
+
+    private static List<DiscoveredDockerfile> buildDiscoveredDockerfiles(List<String> rawRelPaths, boolean stripArchiveRootFromContext) {
+        if (rawRelPaths == null || rawRelPaths.isEmpty()) return List.of();
+        List<String> sorted = new ArrayList<>(rawRelPaths);
+        sorted.sort(Comparator.comparingInt((String p) -> p.split("/").length).thenComparing(Comparator.naturalOrder()));
+
+        Set<String> dirsWithPlainDockerfile = new HashSet<>();
+        for (String p : sorted) {
+            int slash = p.lastIndexOf('/');
+            String dir = slash >= 0 ? p.substring(0, slash) : ".";
+            String base = slash >= 0 ? p.substring(slash + 1) : p;
+            if ("dockerfile".equalsIgnoreCase(base)) dirsWithPlainDockerfile.add(dir);
+        }
+
+        List<DiscoveredDockerfile> out = new ArrayList<>();
+        Set<String> usedNames = new HashSet<>();
+        for (String p : sorted) {
+            if (out.size() >= 20) break;
+            int slash = p.lastIndexOf('/');
+            String rawDir = slash >= 0 ? p.substring(0, slash) : ".";
+            String base = slash >= 0 ? p.substring(slash + 1) : p;
+            if (!"dockerfile".equalsIgnoreCase(base) && dirsWithPlainDockerfile.contains(rawDir)) {
+                continue;
+            }
+            String cleanRel = stripGitHubRootPrefix(p);
+            int cleanSlash = cleanRel.lastIndexOf('/');
+            String cleanDir = cleanSlash >= 0 ? cleanRel.substring(0, cleanSlash) : ".";
+            String svcCandidate;
+            if (!".".equals(cleanDir)) {
+                String lastFolder = cleanDir.contains("/") ? cleanDir.substring(cleanDir.lastIndexOf('/') + 1) : cleanDir;
+                svcCandidate = cleanServiceCandidate(lastFolder);
+            } else {
+                int firstSlash = p.indexOf('/');
+                String firstSeg = firstSlash > 0 ? p.substring(0, firstSlash) : "";
+                svcCandidate = (!firstSeg.isEmpty() && GITHUB_ZIP_ROOT_PATTERN.matcher(firstSeg).matches())
+                        ? cleanServiceCandidate(firstSeg)
+                        : "default-service";
+            }
+            if (svcCandidate.isBlank() || !RUNNER_NAME_PATTERN.matcher(svcCandidate).matches()) {
+                svcCandidate = "default-service";
+            }
+            if (!"dockerfile".equalsIgnoreCase(base) && base.indexOf('.') > 0) {
+                String suffix = cleanServiceCandidate(base.substring(base.indexOf('.') + 1));
+                if (!suffix.isBlank() && !"prod".equalsIgnoreCase(suffix) && !"production".equalsIgnoreCase(suffix)
+                        && usedNames.contains(svcCandidate.toLowerCase(Locale.ROOT))) {
+                    svcCandidate = cleanServiceCandidate(svcCandidate + "-" + suffix);
+                }
+            }
+            String uniqueName = svcCandidate;
+            int idx = 2;
+            while (!usedNames.add(uniqueName.toLowerCase(Locale.ROOT))) {
+                uniqueName = cleanServiceCandidate(svcCandidate + "-" + (idx++));
+            }
+            String context = stripArchiveRootFromContext ? cleanDir : rawDir;
+            out.add(new DiscoveredDockerfile(uniqueName, context.isEmpty() ? "." : context, base));
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    public void finalizeSandboxTopology(
+            Path storagePath,
+            PreflightCheckResponseDTO dto,
+            String rawComposeYaml,
+            Map<String, String> imageOverrides,
+            Map<String, String> envFiles) {
+        if (dto == null) return;
+        List<String> warnings = dto.getSecurityWarnings() != null ? new ArrayList<>(dto.getSecurityWarnings()) : new ArrayList<>();
+        boolean hasHardSecurityViolation = warnings.stream().anyMatch(w ->
+                !w.contains("chưa có file docker-compose.yml")
+                && !w.contains("Không tìm thấy file docker-compose")
+                && !w.contains("Nội dung docker-compose rỗng"));
+        if (hasHardSecurityViolation) {
+            return;
+        }
+
+        Map<String, String> safeOverrides = imageOverrides != null ? imageOverrides : Map.of();
+        Map<String, String> safeEnvFiles = envFiles != null ? envFiles : Map.of();
+        Map<String, Object> rootMap = null;
+        boolean synthesizedFromDockerfiles = false;
+        List<String> topologyChanges = new ArrayList<>();
+
+        if (rawComposeYaml == null || rawComposeYaml.isBlank()) {
+            List<DiscoveredDockerfile> discovered = discoverDockerfilesInSnapshot(storagePath);
+            if (discovered.isEmpty()) {
+                return;
+            }
+            rootMap = new LinkedHashMap<>();
+            Map<String, Object> synthServices = new LinkedHashMap<>();
+            Set<String> infraSet = new HashSet<>(dto.getInfrastructureServices() != null ? dto.getInfrastructureServices() : List.of());
+            List<String> existingApps = (dto.getDetectedServices() != null ? dto.getDetectedServices() : List.<String>of())
+                    .stream().filter(s -> !infraSet.contains(s)).toList();
+
+            List<String> finalDetected = new ArrayList<>();
+            for (DiscoveredDockerfile df : discovered) {
+                String canonicalName = df.serviceName();
+                if (discovered.size() == 1 && existingApps.size() == 1) {
+                    canonicalName = existingApps.get(0);
+                } else {
+                    String matched = matchDetectedService(df.serviceName(), existingApps);
+                    if (matched != null && !synthServices.containsKey(matched)) {
+                        canonicalName = matched;
+                    }
+                }
+                if (!canonicalName.equals(df.serviceName())) {
+                    migrateServiceMetadata(dto, df.serviceName(), canonicalName);
+                }
+                if (!"default-service".equals(canonicalName) && discovered.size() == 1) {
+                    migrateServiceMetadata(dto, "default-service", canonicalName);
+                }
+
+                int port = dto.getServicePorts() != null ? dto.getServicePorts().getOrDefault(canonicalName, 8080) : 8080;
+                Map<String, Object> buildNode = new LinkedHashMap<>();
+                buildNode.put("context", df.context());
+                buildNode.put("dockerfile", df.dockerfile());
+                Map<String, Object> svcNode = new LinkedHashMap<>();
+                svcNode.put("build", buildNode);
+                svcNode.put("expose", new ArrayList<>(List.of(String.valueOf(port))));
+                synthServices.put(canonicalName, svcNode);
+                finalDetected.add(canonicalName);
+
+                dto.getServicePorts().putIfAbsent(canonicalName, port);
+                dto.getServiceStacks().putIfAbsent(canonicalName, "java");
+                if (!dto.getServiceHealthPaths().containsKey(canonicalName)) {
+                    dto.getServiceHealthPaths().put(canonicalName, "/");
+                    dto.getServiceHealthConfidence().put(canonicalName, "ASSUMED");
+                    dto.getServiceHealthReasons().put(canonicalName, "Synthesized from Dockerfile; probing '/'");
+                }
+            }
+            for (String existing : existingApps) {
+                if (!finalDetected.contains(existing) && !"default-service".equals(existing)) {
+                    finalDetected.add(existing);
+                }
+            }
+            rootMap.put("services", synthServices);
+            synthesizedFromDockerfiles = true;
+            topologyChanges.add("Synthesized sandbox Compose topology from " + synthServices.size() + " discovered Dockerfile(s)");
+
+            warnings.removeIf(w -> w.contains("chưa có file docker-compose.yml")
+                    || w.contains("Không tìm thấy file docker-compose")
+                    || w.contains("Nội dung docker-compose rỗng"));
+            dto.setSecurityWarnings(warnings);
+            dto.setCompatible(warnings.isEmpty());
+            dto.setDetectedServices(finalDetected);
+            dto.setComposeServices(new ArrayList<>(synthServices.keySet()));
+        } else {
+            try {
+                Object loaded = new Yaml(new SafeConstructor(new LoaderOptions())).load(rawComposeYaml);
+                if (loaded instanceof Map<?, ?> parsed) {
+                    rootMap = deepCopyYamlMap(parsed);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (rootMap == null || !(rootMap.get("services") instanceof Map<?, ?> rawServices)) {
+            return;
+        }
+        Map<String, Object> servicesMap = (Map<String, Object>) rawServices;
+        boolean provisionedDb = autoProvisionMissingSandboxDatabases(dto, servicesMap, safeEnvFiles, topologyChanges);
+
+        boolean hasDockerfileVols = dto.getServiceDockerfileVolumes() != null && !dto.getServiceDockerfileVolumes().isEmpty();
+        if (synthesizedFromDockerfiles || provisionedDb || hasDockerfileVols || !safeOverrides.isEmpty()) {
+            if (synthesizedFromDockerfiles) {
+                DumperOptions rawDumpOpts = new DumperOptions();
+                rawDumpOpts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
+                String rawSynthYaml = new Yaml(rawDumpOpts).dump(rootMap);
+                dto.setRunnerIssues(new ArrayList<>(runnerCompatibilityIssues(rawSynthYaml, rootMap)));
+            }
+            SandboxComposeResult rem = generateSandboxCompose(
+                    rootMap,
+                    safeOverrides,
+                    imageDigestResolver,
+                    safeEnvFiles,
+                    dto.getServiceDockerfileVolumes());
+            dto.setSandboxComposeYaml(rem.yaml());
+            List<String> mergedChanges = new ArrayList<>(topologyChanges);
+            mergedChanges.addAll(rem.changes());
+            dto.setSandboxComposeChanges(mergedChanges);
+            dto.setUnresolvableRunnerIssues(new ArrayList<>(rem.unresolvableIssues()));
+            dto.setRelocatedComposeSecrets(new LinkedHashMap<>(rem.relocatedSecrets()));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean autoProvisionMissingSandboxDatabases(
+            PreflightCheckResponseDTO dto,
+            Map<String, Object> servicesMap,
+            Map<String, String> envFiles,
+            List<String> topologyChanges) {
+        List<DatabaseCheckDTO> checks = dto.getDatabaseChecks();
+        if (checks == null || checks.isEmpty() || servicesMap.isEmpty()) return false;
+
+        Set<String> infraSet = new LinkedHashSet<>(dto.getInfrastructureServices() != null ? dto.getInfrastructureServices() : List.of());
+        Map<String, RequiredEnvVarDTO> envByName = new LinkedHashMap<>();
+        if (dto.getRequiredEnvVars() != null) {
+            for (RequiredEnvVarDTO v : dto.getRequiredEnvVars()) envByName.put(v.getName(), v);
+        }
+
+        Map<String, List<DatabaseCheckDTO>> missingByFamily = new LinkedHashMap<>();
+        for (DatabaseCheckDTO check : checks) {
+            if (check == null || check.getService() == null || infraSet.contains(check.getService())) continue;
+            if (!servicesMap.containsKey(check.getService())) continue;
+            if ("DETECTED_CONTAINER".equals(check.getStatus())) continue;
+            String family = dbFamilyForType(check.getDbType());
+            if (family == null || hasDbContainerForFamily(servicesMap, family)) continue;
+            missingByFamily.computeIfAbsent(family, k -> new ArrayList<>()).add(check);
+        }
+
+        if (missingByFamily.isEmpty()) return false;
+        boolean provisionedAny = false;
+        Set<String> autoWiredServices = new HashSet<>();
+
+        for (Map.Entry<String, List<DatabaseCheckDTO>> entry : missingByFamily.entrySet()) {
+            if (servicesMap.size() >= 20) break;
+            String family = entry.getKey();
+            List<DatabaseCheckDTO> familyChecks = entry.getValue();
+            String containerName = "sandbox-" + family;
+            if (servicesMap.containsKey(containerName)) continue;
+
+            String dbName = inferProvisionedDbName(familyChecks, envByName);
+            String dbUser = inferProvisionedDbUser(family, familyChecks, servicesMap, envFiles, envByName);
+            String dbPass = "redis".equals(family) ? null : randomAlphanumeric(28);
+
+            Map<String, Object> dbNode = new LinkedHashMap<>();
+            Map<String, String> dbEnv = new LinkedHashMap<>();
+            Map<String, String> creds = new LinkedHashMap<>();
+            int port;
+
+            switch (family) {
+                case "postgres" -> {
+                    port = 5432;
+                    dbNode.put("image", "postgres:16-alpine");
+                    dbEnv.put("POSTGRES_USER", dbUser);
+                    dbEnv.put("POSTGRES_DB", dbName);
+                    dbEnv.put("POSTGRES_PASSWORD", dbPass);
+                    creds.put("POSTGRES_USER", dbUser);
+                    creds.put("POSTGRES_DB", dbName);
+                    creds.put("POSTGRES_PASSWORD", dbPass);
+                }
+                case "mysql" -> {
+                    port = 3306;
+                    dbNode.put("image", "mysql:8.4");
+                    dbEnv.put("MYSQL_DATABASE", dbName);
+                    dbEnv.put("MYSQL_ROOT_PASSWORD", dbPass);
+                    if (!"root".equalsIgnoreCase(dbUser)) {
+                        dbEnv.put("MYSQL_USER", dbUser);
+                        dbEnv.put("MYSQL_PASSWORD", dbPass);
+                    }
+                    creds.put("MYSQL_USER", dbUser);
+                    creds.put("MYSQL_DATABASE", dbName);
+                    creds.put("MYSQL_PASSWORD", dbPass);
+                    creds.put("MYSQL_ROOT_PASSWORD", dbPass);
+                }
+                case "mariadb" -> {
+                    port = 3306;
+                    dbNode.put("image", "mariadb:11");
+                    dbEnv.put("MARIADB_DATABASE", dbName);
+                    dbEnv.put("MARIADB_ROOT_PASSWORD", dbPass);
+                    if (!"root".equalsIgnoreCase(dbUser)) {
+                        dbEnv.put("MARIADB_USER", dbUser);
+                        dbEnv.put("MARIADB_PASSWORD", dbPass);
+                    }
+                    creds.put("MARIADB_USER", dbUser);
+                    creds.put("MARIADB_DATABASE", dbName);
+                    creds.put("MARIADB_PASSWORD", dbPass);
+                    creds.put("MARIADB_ROOT_PASSWORD", dbPass);
+                }
+                case "mongo" -> {
+                    port = 27017;
+                    dbNode.put("image", "mongo:7");
+                    dbEnv.put("MONGO_INITDB_ROOT_USERNAME", dbUser);
+                    dbEnv.put("MONGO_INITDB_ROOT_PASSWORD", dbPass);
+                    dbEnv.put("MONGO_INITDB_DATABASE", dbName);
+                    creds.put("MONGO_INITDB_ROOT_USERNAME", dbUser);
+                    creds.put("MONGO_INITDB_ROOT_PASSWORD", dbPass);
+                    creds.put("MONGO_INITDB_DATABASE", dbName);
+                }
+                case "redis" -> {
+                    port = 6379;
+                    dbNode.put("image", "redis:7-alpine");
+                }
+                default -> {
+                    continue;
+                }
+            }
+
+            dbNode.put("expose", new ArrayList<>(List.of(String.valueOf(port))));
+            if (!dbEnv.isEmpty()) dbNode.put("environment", dbEnv);
+            servicesMap.put(containerName, dbNode);
+            provisionedAny = true;
+
+            infraSet.add(containerName);
+            if (!dto.getDetectedServices().contains(containerName)) dto.getDetectedServices().add(containerName);
+            if (!dto.getComposeServices().contains(containerName)) dto.getComposeServices().add(containerName);
+            dto.getServicePorts().put(containerName, port);
+            if (!creds.isEmpty()) {
+                dto.getServiceDatabaseCredentials().put(containerName, creds);
+                creds.forEach(dto.getSandboxDatabaseCredentials()::putIfAbsent);
+            }
+
+            Set<String> targetServices = new LinkedHashSet<>();
+            for (DatabaseCheckDTO c : familyChecks) targetServices.add(c.getService());
+
+            for (String appSvc : targetServices) {
+                if (!(servicesMap.get(appSvc) instanceof Map<?, ?> rawAppCfg)) continue;
+                Map<String, Object> appCfg = (Map<String, Object>) rawAppCfg;
+                addServiceDependency(appCfg, containerName);
+                List<String> depList = dto.getServiceDependencies().computeIfAbsent(appSvc, k -> new ArrayList<>());
+                depList.remove(containerName);
+                depList.add(0, containerName);
+
+                Map<String, String> appEnv = composeEnvironment(appCfg.get("environment"));
+                String stack = dto.getServiceStacks() != null ? dto.getServiceStacks().getOrDefault(appSvc, "java") : "java";
+                String previewUrl = wireAppServiceToSandboxDb(dto, appSvc, stack, family, containerName, port, dbName, dbUser, dbPass, appEnv, envByName);
+                appCfg.put("environment", appEnv);
+                autoWiredServices.add(appSvc);
+
+                for (DatabaseCheckDTO c : familyChecks) {
+                    if (appSvc.equals(c.getService())) {
+                        c.setStatus("AUTO_PROVISIONED_SANDBOX_DB");
+                        c.setConnectionUrl(previewUrl);
+                    }
+                }
+            }
+            topologyChanges.add("Auto-provisioned ephemeral '" + containerName + "' container and wired " + String.join(", ", targetServices) + " for air-gapped sandbox execution");
+        }
+
+        if (provisionedAny) {
+            dto.setInfrastructureServices(new ArrayList<>(infraSet));
+            Set<String> autoSatisfiedUrlVars = Set.of("DB_CONNECTION_STRING", "SPRING_DATASOURCE_URL", "DATABASE_URL",
+                    "CONNECTIONSTRINGS__DEFAULTCONNECTION", "MONGODB_URI", "SPRING_DATA_MONGODB_URI", "REDIS_URL");
+            if (dto.getRequiredEnvVars() != null) {
+                for (RequiredEnvVarDTO v : dto.getRequiredEnvVars()) {
+                    if (autoSatisfiedUrlVars.contains(v.getName().toUpperCase(Locale.ROOT))) {
+                        List<String> owners = (v.getServices() != null && !v.getServices().isEmpty())
+                                ? v.getServices()
+                                : (v.getService() != null ? List.of(v.getService()) : List.of());
+                        if (owners.isEmpty() || autoWiredServices.containsAll(owners)) {
+                            v.setDefaultPresent(true);
+                            v.setRequired(false);
+                        }
+                    }
+                }
+            }
+        }
+        return provisionedAny;
+    }
+
+    private static String wireAppServiceToSandboxDb(
+            PreflightCheckResponseDTO dto,
+            String appSvc,
+            String stack,
+            String family,
+            String host,
+            int port,
+            String dbName,
+            String dbUser,
+            String dbPass,
+            Map<String, String> appEnv,
+            Map<String, RequiredEnvVarDTO> envByName) {
+        Set<String> clearedKeys = new HashSet<>();
+        String previewUrl;
+        if ("redis".equals(family)) {
+            previewUrl = "redis://" + host + ":" + port;
+            if (stack.startsWith("dotnet")) {
+                appEnv.put("CONNECTIONSTRINGS__REDIS", host + ":" + port);
+                clearedKeys.add("CONNECTIONSTRINGS__REDIS");
+            } else if ("node".equals(stack) || "python".equals(stack) || "go".equals(stack)) {
+                appEnv.put("REDIS_URL", previewUrl);
+                clearedKeys.add("REDIS_URL");
+            } else {
+                appEnv.put("SPRING_DATA_REDIS_HOST", host);
+                appEnv.put("SPRING_DATA_REDIS_PORT", String.valueOf(port));
+                clearedKeys.addAll(List.of("SPRING_DATA_REDIS_HOST", "SPRING_DATA_REDIS_PORT"));
+            }
+            if (envByName.containsKey("REDIS_HOST")) appEnv.put("REDIS_HOST", host);
+            if (envByName.containsKey("REDIS_PORT")) appEnv.put("REDIS_PORT", String.valueOf(port));
+        } else if ("mongo".equals(family)) {
+            String authUri = "mongodb://" + dbUser + ":" + dbPass + "@" + host + ":" + port + "/" + dbName + "?authSource=admin";
+            previewUrl = "mongodb://" + host + ":" + port + "/" + dbName;
+            if (stack.startsWith("dotnet")) {
+                appEnv.put("CONNECTIONSTRINGS__MONGODB", authUri);
+                clearedKeys.add("CONNECTIONSTRINGS__MONGODB");
+            } else if ("node".equals(stack) || "python".equals(stack) || "go".equals(stack)) {
+                appEnv.put("MONGODB_URI", authUri);
+                appEnv.put("DATABASE_URL", authUri);
+                clearedKeys.addAll(List.of("MONGODB_URI", "DATABASE_URL"));
+            } else {
+                appEnv.put("SPRING_DATA_MONGODB_URI", authUri);
+                clearedKeys.add("SPRING_DATA_MONGODB_URI");
+            }
+        } else {
+            String jdbcScheme = "postgres".equals(family) ? "postgresql" : family;
+            String jdbcParams = "mysql".equals(family) ? "?useSSL=false&allowPublicKeyRetrieval=true" : "";
+            String jdbcUrl = "jdbc:" + jdbcScheme + "://" + host + ":" + port + "/" + dbName + jdbcParams;
+            String uriScheme = "postgres".equals(family) ? "postgresql" : "mysql";
+            String authUri = uriScheme + "://" + dbUser + ":" + dbPass + "@" + host + ":" + port + "/" + dbName;
+            String dotnetConn = "postgres".equals(family)
+                    ? "Host=" + host + ";Port=" + port + ";Database=" + dbName + ";Username=" + dbUser + ";Password=" + dbPass
+                    : "Server=" + host + ";Port=" + port + ";Database=" + dbName + ";Uid=" + dbUser + ";Pwd=" + dbPass;
+
+            if (stack.startsWith("dotnet")) {
+                appEnv.put("CONNECTIONSTRINGS__DEFAULTCONNECTION", dotnetConn);
+                clearedKeys.add("CONNECTIONSTRINGS__DEFAULTCONNECTION");
+                previewUrl = "Host=" + host + ";Port=" + port + ";Database=" + dbName;
+            } else if ("node".equals(stack) || "python".equals(stack) || "go".equals(stack)) {
+                appEnv.put("DATABASE_URL", authUri);
+                clearedKeys.add("DATABASE_URL");
+                previewUrl = uriScheme + "://" + host + ":" + port + "/" + dbName;
+            } else {
+                appEnv.put("SPRING_DATASOURCE_URL", jdbcUrl);
+                appEnv.put("SPRING_DATASOURCE_USERNAME", dbUser);
+                appEnv.put("SPRING_DATASOURCE_PASSWORD", dbPass);
+                if (dto.getMigrationManagedServices() == null || !dto.getMigrationManagedServices().contains(appSvc)) {
+                    appEnv.putIfAbsent("SPRING_JPA_HIBERNATE_DDL_AUTO", "update");
+                }
+                clearedKeys.addAll(List.of("SPRING_DATASOURCE_URL", "SPRING_DATASOURCE_USERNAME", "SPRING_DATASOURCE_PASSWORD"));
+                previewUrl = jdbcUrl;
+            }
+            if (envByName.containsKey("DB_HOST")) appEnv.put("DB_HOST", host);
+            if (envByName.containsKey("DB_PORT")) appEnv.put("DB_PORT", String.valueOf(port));
+            if (envByName.containsKey("DB_NAME")) appEnv.put("DB_NAME", dbName);
+            if (envByName.containsKey("DB_USER")) appEnv.put("DB_USER", dbUser);
+            if (envByName.containsKey("DB_USERNAME")) appEnv.put("DB_USERNAME", dbUser);
+        }
+        if (dto.getComposeEnvAliases() != null && dto.getComposeEnvAliases().containsKey(appSvc)) {
+            clearedKeys.forEach(dto.getComposeEnvAliases().get(appSvc)::remove);
+        }
+        if (dto.getComposeEnvTemplates() != null && dto.getComposeEnvTemplates().containsKey(appSvc)) {
+            clearedKeys.forEach(dto.getComposeEnvTemplates().get(appSvc)::remove);
+        }
+        return previewUrl;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void addServiceDependency(Map<String, Object> appCfg, String depName) {
+        Object existing = appCfg.get("depends_on");
+        if (existing instanceof List<?> list) {
+            List<Object> copy = new ArrayList<>(list);
+            if (copy.stream().noneMatch(x -> depName.equals(String.valueOf(x)))) copy.add(depName);
+            appCfg.put("depends_on", copy);
+        } else if (existing instanceof Map<?, ?> map) {
+            Map<String, Object> copy = new LinkedHashMap<>((Map<String, Object>) map);
+            copy.putIfAbsent(depName, Map.of("condition", "service_started"));
+            appCfg.put("depends_on", copy);
+        } else {
+            appCfg.put("depends_on", new ArrayList<>(List.of(depName)));
+        }
+    }
+
+    private static String dbFamilyForType(String dbType) {
+        if (dbType == null || dbType.isBlank()) return null;
+        String u = dbType.toUpperCase(Locale.ROOT);
+        if (u.contains("H2")) return null;
+        if (u.contains("POSTGRES")) return "postgres";
+        if (u.contains("MARIADB")) return "mariadb";
+        if (u.contains("MYSQL")) return "mysql";
+        if (u.contains("MONGO")) return "mongo";
+        if (u.contains("REDIS")) return "redis";
+        return null;
+    }
+
+    private static boolean hasDbContainerForFamily(Map<String, Object> servicesMap, String family) {
+        for (Map.Entry<String, Object> e : servicesMap.entrySet()) {
+            String name = e.getKey().toLowerCase(Locale.ROOT);
+            String img = (e.getValue() instanceof Map<?, ?> m && m.get("image") != null)
+                    ? String.valueOf(m.get("image")).toLowerCase(Locale.ROOT)
+                    : "";
+            if (!isInfrastructureService(name, img)) continue;
+            boolean match = switch (family) {
+                case "postgres" -> name.contains("postgres") || name.equals("db") || name.endsWith("-db") || img.contains("postgres") || img.contains("postgis");
+                case "mysql", "mariadb" -> name.contains("mysql") || name.contains("mariadb") || name.equals("db") || name.endsWith("-db") || img.contains("mysql") || img.contains("mariadb");
+                case "mongo" -> name.contains("mongo") || img.contains("mongo");
+                case "redis" -> name.contains("redis") || img.contains("redis");
+                default -> false;
+            };
+            if (match) return true;
+        }
+        return false;
+    }
+
+    private static String inferProvisionedDbName(List<DatabaseCheckDTO> checks, Map<String, RequiredEnvVarDTO> envByName) {
+        for (String key : List.of("DB_NAME", "POSTGRES_DB", "MYSQL_DATABASE", "MARIADB_DATABASE", "MONGO_INITDB_DATABASE")) {
+            RequiredEnvVarDTO v = envByName.get(key);
+            if (v != null && v.getDefaultValue() != null && v.getDefaultValue().matches("[A-Za-z0-9_-]{1,48}")) {
+                return v.getDefaultValue();
+            }
+        }
+        for (DatabaseCheckDTO c : checks) {
+            String url = c.getConnectionUrl();
+            if (url == null) continue;
+            for (Pattern p : List.of(URL_DB_NAME_PATTERN, KV_DB_NAME_PATTERN)) {
+                Matcher m = p.matcher(url);
+                if (m.find() && m.group(1).matches("[A-Za-z0-9_-]{1,48}")) {
+                    return m.group(1);
+                }
+            }
+        }
+        return "mavis_sandbox";
+    }
+
+    private static String inferProvisionedDbUser(
+            String family,
+            List<DatabaseCheckDTO> checks,
+            Map<String, Object> servicesMap,
+            Map<String, String> envFiles,
+            Map<String, RequiredEnvVarDTO> envByName) {
+        for (String key : List.of("DB_USERNAME", "DB_USER", "SPRING_DATASOURCE_USERNAME", "POSTGRES_USER", "MYSQL_USER", "MARIADB_USER", "MONGO_INITDB_ROOT_USERNAME")) {
+            RequiredEnvVarDTO v = envByName.get(key);
+            if (v != null && v.getDefaultValue() != null && v.getDefaultValue().matches("[A-Za-z_][A-Za-z0-9_-]{0,30}")) {
+                return v.getDefaultValue();
+            }
+        }
+        Map<String, String> rootDotEnv = parseDotEnvContent(envFiles.get(".env"));
+        for (DatabaseCheckDTO c : checks) {
+            if (servicesMap.get(c.getService()) instanceof Map<?, ?> cfg) {
+                Map<String, String> env = mergedServiceEnvironment(cfg, envFiles);
+                for (String key : List.of("SPRING_DATASOURCE_USERNAME", "DB_USERNAME", "DB_USER")) {
+                    String val = env.get(key);
+                    if (val != null) {
+                        String resolved = resolvePlaceholders(val, rootDotEnv);
+                        if (resolved.matches("[A-Za-z_][A-Za-z0-9_-]{0,30}")) return resolved;
+                    }
+                }
+            }
+        }
+        return switch (family) {
+            case "postgres" -> "postgres";
+            case "mongo" -> "mongo";
+            default -> "root";
+        };
+    }
+
+    private String randomAlphanumeric(int len) {
+        final String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        StringBuilder sb = new StringBuilder(len);
+        for (int i = 0; i < len; i++) {
+            sb.append(alphabet.charAt(secureRandom.nextInt(alphabet.length())));
+        }
+        return sb.toString();
+    }
+
+    private static void migrateServiceMetadata(PreflightCheckResponseDTO dto, String fromSvc, String toSvc) {
+        if (fromSvc == null || toSvc == null || fromSvc.equals(toSvc)) return;
+        if (dto.getServicePorts() != null && dto.getServicePorts().containsKey(fromSvc)) {
+            Integer p = dto.getServicePorts().remove(fromSvc);
+            if (!dto.getServicePorts().containsKey(toSvc) || Objects.equals(dto.getServicePorts().get(toSvc), 8080)) {
+                dto.getServicePorts().put(toSvc, p);
+            }
+        }
+        if (dto.getServiceStacks() != null && dto.getServiceStacks().containsKey(fromSvc)) {
+            dto.getServiceStacks().put(toSvc, dto.getServiceStacks().remove(fromSvc));
+        }
+        if (dto.getServiceDockerfileVolumes() != null && dto.getServiceDockerfileVolumes().containsKey(fromSvc)) {
+            List<String> vols = dto.getServiceDockerfileVolumes().remove(fromSvc);
+            List<String> dest = dto.getServiceDockerfileVolumes().computeIfAbsent(toSvc, k -> new ArrayList<>());
+            for (String v : vols) if (!dest.contains(v)) dest.add(v);
+        }
+        if (dto.getServiceHealthPaths() != null && dto.getServiceHealthPaths().containsKey(fromSvc)) {
+            dto.getServiceHealthPaths().putIfAbsent(toSvc, dto.getServiceHealthPaths().remove(fromSvc));
+        }
+        if (dto.getServiceHealthConfidence() != null && dto.getServiceHealthConfidence().containsKey(fromSvc)) {
+            dto.getServiceHealthConfidence().putIfAbsent(toSvc, dto.getServiceHealthConfidence().remove(fromSvc));
+        }
+        if (dto.getServiceHealthReasons() != null && dto.getServiceHealthReasons().containsKey(fromSvc)) {
+            dto.getServiceHealthReasons().putIfAbsent(toSvc, dto.getServiceHealthReasons().remove(fromSvc));
+        }
+        if (dto.getMigrationManagedServices() != null && dto.getMigrationManagedServices().remove(fromSvc)) {
+            dto.getMigrationManagedServices().add(toSvc);
+        }
+        if (dto.getDatabaseChecks() != null) {
+            for (DatabaseCheckDTO c : dto.getDatabaseChecks()) {
+                if (fromSvc.equals(c.getService())) c.setService(toSvc);
+            }
+        }
+        if (dto.getDetectedEndpoints() != null) {
+            for (DetectedEndpointDTO ep : dto.getDetectedEndpoints()) {
+                if (fromSvc.equals(ep.getService())) ep.setService(toSvc);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> deepCopyYamlMap(Map<?, ?> src) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> e : src.entrySet()) {
+            out.put(String.valueOf(e.getKey()), deepCopyYamlValue(e.getValue()));
+        }
+        return out;
+    }
+
+    private static Object deepCopyYamlValue(Object val) {
+        if (val instanceof Map<?, ?> m) return deepCopyYamlMap(m);
+        if (val instanceof List<?> l) {
+            List<Object> out = new ArrayList<>(l.size());
+            for (Object item : l) out.add(deepCopyYamlValue(item));
+            return out;
+        }
+        return val;
     }
 }

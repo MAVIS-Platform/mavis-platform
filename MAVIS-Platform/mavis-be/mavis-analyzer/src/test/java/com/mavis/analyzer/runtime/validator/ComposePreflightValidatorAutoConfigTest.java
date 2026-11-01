@@ -231,4 +231,264 @@ class ComposePreflightValidatorAutoConfigTest {
         assertThat(ComposePreflightValidator.isGeneratableSandboxSecret("JWT_SECRET")).isTrue();
         assertThat(ComposePreflightValidator.isGeneratableSandboxSecret("DB_CONNECTION_STRING")).isFalse();
     }
+
+    @Test
+    void cloudExternalPostgresRepoAutoProvisionsEphemeralSandboxDbWithInferredDbNameAndUser(@TempDir Path tempDir) throws Exception {
+        String rawCompose = """
+                services:
+                  api-gateway:
+                    image: demo/gateway@sha256:%s
+                    ports: ["8080:8080"]
+                  order-service:
+                    image: demo/order@sha256:%s
+                    ports: ["8081:8081"]
+                    environment:
+                      DB_PASSWORD: ${DB_PASSWORD}
+                  catalog-service:
+                    image: demo/catalog@sha256:%s
+                    ports: ["8082:8082"]
+                    environment:
+                      DB_PASSWORD: ${DB_PASSWORD}
+                """.formatted("1".repeat(64), "2".repeat(64), "3".repeat(64));
+        Files.writeString(tempDir.resolve("docker-compose.yml"), rawCompose);
+
+        Path orderRes = Files.createDirectories(tempDir.resolve("order-service/src/main/resources"));
+        Files.writeString(orderRes.resolve("application.yml"), """
+                spring:
+                  datasource:
+                    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://dpg-cloud.oregon-postgres.render.com:5432/testseed}
+                    username: ${DB_USERNAME:testseed_user}
+                    password: ${DB_PASSWORD}
+                """);
+        Path catalogRes = Files.createDirectories(tempDir.resolve("catalog-service/src/main/resources"));
+        Files.writeString(catalogRes.resolve("application.yml"), """
+                spring:
+                  datasource:
+                    url: jdbc:postgresql://dpg-cloud.oregon-postgres.render.com:5432/testseed
+                    username: ${DB_USERNAME:testseed_user}
+                    password: ${DB_PASSWORD}
+                """);
+        Files.createDirectories(tempDir.resolve("catalog-service/src/main/resources/db/migration"));
+        Files.writeString(tempDir.resolve("catalog-service/src/main/resources/db/migration/V1__init.sql"), "CREATE TABLE items(id INT);");
+
+        PreflightCheckResponseDTO dto = validator.validate(rawCompose);
+        validator.inspectSnapshotSource(tempDir, dto);
+        validator.finalizeSandboxTopology(tempDir, dto, rawCompose, Map.of(), Map.of());
+
+        assertThat(dto.getInfrastructureServices()).contains("sandbox-postgres");
+        assertThat(dto.getComposeServices()).contains("sandbox-postgres");
+        assertThat(dto.getUnresolvableRunnerIssues()).isEmpty();
+        assertThat(dto.getSandboxComposeYaml())
+                .contains("sandbox-postgres:")
+                .contains("POSTGRES_USER: testseed_user")
+                .contains("POSTGRES_DB: testseed")
+                .contains("jdbc:postgresql://sandbox-postgres:5432/testseed")
+                .contains("SPRING_JPA_HIBERNATE_DDL_AUTO: update")
+                .doesNotContain("dpg-cloud.oregon-postgres.render.com")
+                .doesNotContain("POSTGRES_PASSWORD")
+                .doesNotContain("$");
+        // Flyway-managed catalog-service does not force hibernate ddl-auto=update, while non-Flyway order-service gets it
+        assertThat(dto.getMigrationManagedServices()).contains("catalog-service").doesNotContain("order-service");
+        assertThat(dto.getRelocatedComposeSecrets().get("sandbox-postgres")).containsKey("POSTGRES_PASSWORD");
+        String generatedPw = dto.getRelocatedComposeSecrets().get("sandbox-postgres").get("POSTGRES_PASSWORD");
+        assertThat(generatedPw).hasSize(28);
+        assertThat(dto.getRelocatedComposeSecrets().get("order-service")).containsEntry("SPRING_DATASOURCE_PASSWORD", generatedPw);
+        assertThat(ComposePreflightValidator.databaseCredentialFor("DB_PASSWORD", "order-service", dto)).isEqualTo(generatedPw);
+        assertThat(dto.getDatabaseChecks())
+                .filteredOn(c -> "order-service".equals(c.getService()))
+                .allSatisfy(c -> assertThat(c.getStatus()).isEqualTo("AUTO_PROVISIONED_SANDBOX_DB"));
+    }
+
+    @Test
+    void standaloneDockerfileOnlySnapshotSynthesizesSandboxComposeAndMountsDockerfileVolumes(@TempDir Path tempDir) throws Exception {
+        Path orderDir = Files.createDirectories(tempDir.resolve("order-service"));
+        Files.writeString(orderDir.resolve("Dockerfile"), """
+                FROM eclipse-temurin:21-jre
+                EXPOSE 8089
+                VOLUME ["/app/uploads", "/tmp"]
+                ENTRYPOINT ["java", "-jar", "/app.jar"]
+                """);
+        Path gatewayDir = Files.createDirectories(tempDir.resolve("gateway-service"));
+        Files.writeString(gatewayDir.resolve("Dockerfile"), """
+                FROM node:20-alpine
+                EXPOSE 3000
+                VOLUME /var/cache/gateway
+                CMD ["node", "index.js"]
+                """);
+
+        PreflightCheckResponseDTO dto = PreflightCheckResponseDTO.builder()
+                .compatible(false)
+                .securityWarnings(new java.util.ArrayList<>(List.of("Thư mục snapshot chưa có file docker-compose.yml")))
+                .runnerIssues(new java.util.ArrayList<>(List.of("No docker-compose.yml was found in the snapshot")))
+                .build();
+
+        validator.inspectSnapshotSource(tempDir, dto);
+        validator.finalizeSandboxTopology(tempDir, dto, null, Map.of(
+                "order-service", "local/order@sha256:" + "a".repeat(64),
+                "gateway-service", "local/gateway@sha256:" + "b".repeat(64)
+        ), Map.of());
+
+        assertThat(dto.isCompatible()).isTrue();
+        assertThat(dto.getSecurityWarnings()).isEmpty();
+        assertThat(dto.getComposeServices()).containsExactlyInAnyOrder("order-service", "gateway-service");
+        assertThat(dto.getServicePorts()).containsEntry("order-service", 8089).containsEntry("gateway-service", 3000);
+        assertThat(dto.getServiceStacks()).containsEntry("gateway-service", "node");
+        assertThat(dto.getUnresolvableRunnerIssues()).isEmpty();
+        assertThat(dto.getSandboxComposeYaml())
+                .contains("/app/uploads")
+                .contains("/var/cache/gateway")
+                .doesNotContain("target: /tmp");
+        assertThat(validator.validate(dto.getSandboxComposeYaml()).getRunnerIssues()).isEmpty();
+    }
+
+    @Test
+    void envFileDotEnvAndCompositeTemplatesMergeInlineDefaultsRelocateSecretsAndExpandInfraSpecs() {
+        String rawCompose = """
+                services:
+                  order-service:
+                    image: demo/order@sha256:%s
+                    env_file:
+                      - ./config/app.env
+                    environment:
+                      SPRING_DATASOURCE_URL: jdbc:postgresql://orders-db:5432/${DB_NAME}
+                      EXTERNAL_DB_URI: postgresql://admin:SuperSecret123@legacy-db:5432/app
+                  kafka:
+                    image: bitnami/kafka@sha256:%s
+                  nginx:
+                    image: nginx@sha256:%s
+                """.formatted("1".repeat(64), "2".repeat(64), "3".repeat(64));
+
+        Map<String, String> envFiles = Map.of(
+                ".env", "LOG_LEVEL=INFO\n",
+                "config/app.env", "APP_REGION=ap-southeast-1\nSTRIPE_API_KEY=sk_test_999\nLOG_OVERRIDE=${LOG_LEVEL}\n"
+        );
+
+        PreflightCheckResponseDTO dto = validator.validate(rawCompose, Map.of(), envFiles);
+
+        assertThat(dto.getUnresolvableRunnerIssues()).isEmpty();
+        assertThat(dto.getComposeEnvTemplates().get("order-service"))
+                .containsEntry("SPRING_DATASOURCE_URL", "jdbc:postgresql://orders-db:5432/${DB_NAME}");
+        assertThat(dto.getRelocatedComposeSecrets().get("order-service"))
+                .containsEntry("STRIPE_API_KEY", "sk_test_999")
+                .containsEntry("EXTERNAL_DB_URI", "postgresql://admin:SuperSecret123@legacy-db:5432/app");
+        assertThat(dto.getSandboxComposeYaml())
+                .contains("APP_REGION: ap-southeast-1")
+                .contains("LOG_OVERRIDE: INFO")
+                .contains("/var/lib/kafka/data")
+                .contains("/var/cache/nginx")
+                .contains("user: 101:101")
+                .doesNotContain("sk_test_999")
+                .doesNotContain("SuperSecret123");
+        assertThat(validator.validate(dto.getSandboxComposeYaml()).getRunnerIssues()).isEmpty();
+    }
+
+    @Test
+    void javaAndCsharpDtoSchemasExpectedStatusAndAuthMetadataAreSynthesizedFromSource(@TempDir Path tempDir) throws Exception {
+        PreflightCheckResponseDTO dto = PreflightCheckResponseDTO.builder()
+                .detectedServices(List.of("reservation-service", "payment-service"))
+                .servicePorts(new LinkedHashMap<>(Map.of("reservation-service", 8080, "payment-service", 8081)))
+                .serviceStacks(new LinkedHashMap<>(Map.of("reservation-service", "java", "payment-service", "dotnet")))
+                .build();
+
+        Path resJava = Files.createDirectories(tempDir.resolve("reservation-service/src/main/java/hotel"));
+        Files.writeString(resJava.resolve("RoomType.java"), """
+                package hotel;
+                public enum RoomType { SUITE, DELUXE, STANDARD }
+                """);
+        Files.writeString(resJava.resolve("GuestProfile.java"), """
+                package hotel;
+                public record GuestProfile(String fullName, String phone) {}
+                """);
+        Files.writeString(resJava.resolve("CreateReservationRequest.java"), """
+                package hotel;
+                import java.math.BigDecimal;
+                public record CreateReservationRequest(
+                        String guestEmail,
+                        RoomType roomType,
+                        int nights,
+                        BigDecimal totalAmount,
+                        GuestProfile primaryGuest
+                ) {}
+                """);
+        Files.writeString(resJava.resolve("ReservationController.java"), """
+                package hotel;
+                import org.springframework.http.HttpStatus;
+                import org.springframework.http.ResponseEntity;
+                import org.springframework.security.access.prepost.PreAuthorize;
+                import org.springframework.web.bind.annotation.*;
+
+                @RestController
+                @RequestMapping("/api/reservations")
+                @PreAuthorize("hasRole('USER')")
+                public class ReservationController {
+                    @PostMapping
+                    @ResponseStatus(HttpStatus.CREATED)
+                    public ResponseEntity<?> create(@Valid @RequestBody CreateReservationRequest request) {
+                        return ResponseEntity.status(HttpStatus.CREATED).build();
+                    }
+
+                    @DeleteMapping("/{id}")
+                    public ResponseEntity<Void> cancel(@PathVariable Long id) {
+                        return ResponseEntity.noContent().build();
+                    }
+                }
+                """);
+
+        Path payCs = Files.createDirectories(tempDir.resolve("payment-service/Controllers"));
+        Files.writeString(payCs.resolve("ChargePaymentDto.cs"), """
+                using System;
+                namespace PaymentService.Models;
+                public record ChargePaymentDto(Guid OrderId, decimal Amount, string Currency, bool CaptureImmediately);
+                """);
+        Files.writeString(payCs.resolve("PaymentsController.cs"), """
+                using Microsoft.AspNetCore.Authorization;
+                using Microsoft.AspNetCore.Mvc;
+                using PaymentService.Models;
+
+                [ApiController]
+                [Route("api/[controller]")]
+                [Authorize]
+                public class PaymentsController : ControllerBase {
+                    [HttpPost("charge")]
+                    public IActionResult Charge([FromBody] ChargePaymentDto dto) {
+                        return CreatedAtAction(nameof(Charge), new { id = 1 }, dto);
+                    }
+                }
+                """);
+
+        validator.inspectSnapshotSource(tempDir, dto);
+
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        var javaCreate = dto.getDetectedEndpoints().stream()
+                .filter(ep -> "reservation-service".equals(ep.getService()) && "POST".equals(ep.getMethod()) && "/api/reservations".equals(ep.getPath()))
+                .findFirst().orElseThrow();
+        assertThat(javaCreate.getExpectedStatus()).isEqualTo(201);
+        assertThat(javaCreate.getRequiresAuth()).isTrue();
+        assertThat(javaCreate.getRequestBodyType()).isEqualTo("CreateReservationRequest");
+        var javaBody = mapper.readTree(javaCreate.getSampleJsonBody());
+        assertThat(javaBody.path("guestEmail").asText()).contains("@");
+        assertThat(javaBody.path("roomType").asText()).isEqualTo("SUITE");
+        assertThat(javaBody.path("nights").isNumber()).isTrue();
+        assertThat(javaBody.path("totalAmount").isNumber()).isTrue();
+        assertThat(javaBody.path("primaryGuest").path("fullName").asText()).isNotBlank();
+
+        var javaDelete = dto.getDetectedEndpoints().stream()
+                .filter(ep -> "reservation-service".equals(ep.getService()) && "DELETE".equals(ep.getMethod()))
+                .findFirst().orElseThrow();
+        assertThat(javaDelete.getExpectedStatus()).isEqualTo(204);
+        assertThat(javaDelete.getRequiresAuth()).isTrue();
+
+        var csCharge = dto.getDetectedEndpoints().stream()
+                .filter(ep -> "payment-service".equals(ep.getService()) && "POST".equals(ep.getMethod()) && "/api/payments/charge".equals(ep.getPath()))
+                .findFirst().orElseThrow();
+        assertThat(csCharge.getExpectedStatus()).isEqualTo(201);
+        assertThat(csCharge.getRequiresAuth()).isTrue();
+        assertThat(csCharge.getRequestBodyType()).isEqualTo("ChargePaymentDto");
+        var csBody = mapper.readTree(csCharge.getSampleJsonBody());
+        assertThat(csBody.path("orderId").asText()).hasSize(36);
+        assertThat(csBody.path("amount").isNumber()).isTrue();
+        assertThat(csBody.path("currency").asText()).isNotBlank();
+        assertThat(csBody.path("captureImmediately").isBoolean()).isTrue();
+    }
 }
