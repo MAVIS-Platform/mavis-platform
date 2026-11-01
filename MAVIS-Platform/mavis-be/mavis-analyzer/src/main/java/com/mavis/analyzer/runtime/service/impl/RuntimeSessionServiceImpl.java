@@ -56,6 +56,12 @@ import java.util.zip.ZipFile;
 public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
     private static final Pattern RESOURCE_PROJECT_PATTERN = Pattern.compile("^mavisrun-[0-9a-f]{32}$");
+    // MAVIS.Runner reads the run definition with UnmappedMemberHandling.Disallow; export only the members its records declare.
+    private static final List<String> RUNNER_PROFILE_FIELDS = List.of("collectorImage", "instrumentationVolume", "applications",
+            "memoryMiB", "cpus", "timeoutSeconds", "approvedForLocalPoc", "scenarioRunnerImage",
+            "dotnetInstrumentationVersion", "javaInstrumentationVersion", "environmentBindings");
+    private static final List<String> RUNNER_STEP_FIELDS = List.of("id", "service", "method", "path", "expectedStatus", "jsonBody",
+            "headers", "secretHeaders", "extract", "environmentVariables", "bodyReference", "envHeaders");
     private static final Pattern EXCERPT_MAPPING_PATTERN = Pattern.compile("@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?");
 
     private final RuntimeSessionRepository runtimeSessionRepository;
@@ -144,6 +150,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                             .compatible(false)
                             .detectedServices(new ArrayList<>())
                             .securityWarnings(new ArrayList<>(List.of("Snapshot chưa có file docker-compose.yml; đang tổng hợp thông tin service từ Model tĩnh")))
+                            .runnerIssues(new ArrayList<>(List.of("No docker-compose.yml was found in the snapshot; the sandbox runner needs a Compose file")))
                             .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
                             .build();
                 }
@@ -157,6 +164,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                         .compatible(false)
                         .detectedServices(new ArrayList<>())
                         .securityWarnings(new ArrayList<>(List.of("Thư mục snapshot chưa có file docker-compose.yml; đang tổng hợp thông tin service từ Model tĩnh")))
+                        .runnerIssues(new ArrayList<>(List.of("No docker-compose.yml was found in the snapshot; the sandbox runner needs a Compose file")))
                         .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
                         .build();
             }
@@ -965,6 +973,8 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         ObjectNode scenarioCopy = scenarioNode.deepCopy();
+        scenarioCopy.retain("sessionId", "steps", "timeoutSeconds");
+        scenarioCopy.get("steps").forEach(step -> { if (step instanceof ObjectNode s) s.retain(RUNNER_STEP_FIELDS); });
         if (!scenarioCopy.hasNonNull("sessionId") || !scenarioCopy.get("sessionId").asText().equalsIgnoreCase(session.getId().toString())) {
             scenarioCopy.put("sessionId", session.getId().toString());
         }
@@ -982,7 +992,12 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         String modelVersionIdStr = session.getModelVersion().getId().toString();
 
         var exportedProfile = profileNode.deepCopy();
-        if (exportedProfile instanceof ObjectNode object) object.remove(java.util.List.of("serviceMappings", "secretReferences"));
+        if (exportedProfile instanceof ObjectNode object) {
+            object.retain(RUNNER_PROFILE_FIELDS);
+            if (object.get("applications") instanceof ObjectNode applications) {
+                applications.elements().forEachRemaining(app -> { if (app instanceof ObjectNode a) a.retain("runtime", "containerPort", "readinessPath"); });
+            }
+        }
         return RunnerDefinitionExportDTO.builder()
                 .sessionId(session.getId().toString())
                 .modelVersionId(modelVersionIdStr)
