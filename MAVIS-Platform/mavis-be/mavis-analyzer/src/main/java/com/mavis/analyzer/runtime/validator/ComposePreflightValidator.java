@@ -75,6 +75,7 @@ public class ComposePreflightValidator {
     private static final List<String> DB_PASSWORD_KEYS = List.of("POSTGRES_PASSWORD", "MYSQL_PASSWORD", "MARIADB_PASSWORD",
             "MYSQL_ROOT_PASSWORD", "MARIADB_ROOT_PASSWORD", "MONGO_INITDB_ROOT_PASSWORD", "MSSQL_SA_PASSWORD", "SA_PASSWORD");
     private static final List<String> DB_USER_KEYS = List.of("POSTGRES_USER", "MYSQL_USER", "MARIADB_USER", "MONGO_INITDB_ROOT_USERNAME", "MSSQL_USER");
+    private static final List<String> REDIS_PASSWORD_VARS = List.of("REDIS_PASSWORD", "SPRING_DATA_REDIS_PASSWORD", "SPRING_REDIS_PASSWORD");
     private static final List<String> DB_NAME_KEYS = List.of("POSTGRES_DB", "MYSQL_DATABASE", "MARIADB_DATABASE", "MONGO_INITDB_DATABASE");
     private static final List<String> EXTERNAL_SECRET_MARKERS = List.of("OPENAI", "GEMINI", "ANTHROPIC", "CLAUDE", "AZURE", "AWS_",
             "GOOGLE", "GCP", "STRIPE", "PAYPAL", "TWILIO", "SENDGRID", "MAILGUN", "SMTP", "MAIL_", "SLACK", "GITHUB", "DISCORD",
@@ -616,7 +617,7 @@ public class ComposePreflightValidator {
             return new StatefulInfraSpec("rabbitmq", List.of("/var/lib/rabbitmq", "/var/log/rabbitmq"));
         }
         if (shortName.contains("kafka")) {
-            return new StatefulInfraSpec("1000:1000", List.of("/var/lib/kafka/data", "/bitnami/kafka"));
+            return new StatefulInfraSpec("1000:1000", List.of("/var/lib/kafka/data", "/bitnami/kafka", "/opt/kafka/config"));
         }
         if (shortName.contains("zookeeper")) {
             return new StatefulInfraSpec("1000:1000", List.of("/data", "/datalog", "/logs", "/bitnami/zookeeper"));
@@ -1127,7 +1128,7 @@ public class ComposePreflightValidator {
                         && envMap.values().stream().noneMatch(v -> "DB_SECRET".equals(v.getCategory()))) {
                     registerEnvVar(envMap, "DB_CONNECTION_STRING", inferredService, null, cleanRelPath);
                 }
-                boolean exists = dbChecks.stream().anyMatch(d -> Objects.equals(d.getService(), inferredService));
+                boolean exists = dbChecks.stream().anyMatch(d -> Objects.equals(d.getService(), inferredService) && !isCacheOrBrokerType(d.getDbType()));
                 if (!exists) {
                     dbChecks.add(DatabaseCheckDTO.builder()
                             .service(inferredService)
@@ -1143,6 +1144,22 @@ public class ComposePreflightValidator {
             if (containsAiIndicator(lowerContent)
                     && envMap.keySet().stream().noneMatch(k -> k.toUpperCase(Locale.ROOT).contains("API_KEY"))) {
                 registerEnvVar(envMap, "API_KEY", inferredService, null, cleanRelPath);
+            }
+        }
+        // 1B'. Cache/broker clients the sandbox can provision when Compose does not declare them.
+        if (isDependencyManifestOrConfig(lowerPath)) {
+            for (String infraType : detectCacheAndBrokerTypes(lowerContent)) {
+                boolean exists = dbChecks.stream().anyMatch(d -> Objects.equals(d.getService(), inferredService) && infraType.equals(d.getDbType()));
+                if (!exists) {
+                    dbChecks.add(DatabaseCheckDTO.builder()
+                            .service(inferredService)
+                            .dbType(infraType)
+                            .configKey(cleanRelPath)
+                            .connectionUrl("Detected " + infraType + " client in " + cleanRelPath)
+                            .requiredEnvVars(new ArrayList<>())
+                            .status("DETECTED_IN_SOURCE")
+                            .build());
+                }
             }
         }
         // 1C. Readiness signals: actuator dependency, explicit /health routes, ASP.NET MapHealthChecks / UseHealthChecks
@@ -1742,6 +1759,24 @@ public class ComposePreflightValidator {
                 && !(u.contains("CONNECTION") || u.contains("URL") || u.contains("URI") || u.contains("DSN") || u.contains("HOST"));
     }
 
+    /** Single source of truth for how each variable is satisfied at run time; the UI only renders this. */
+    public static void assignEnvResolutions(PreflightCheckResponseDTO dto) {
+        if (dto == null || dto.getRequiredEnvVars() == null) return;
+        for (RequiredEnvVarDTO v : dto.getRequiredEnvVars()) {
+            if (v == null || v.getName() == null || v.getResolution() != null) continue;
+            List<String> owners = v.getServices() != null && !v.getServices().isEmpty()
+                    ? v.getServices()
+                    : (v.getService() != null ? List.of(v.getService()) : List.of());
+            boolean secret = "SECRET".equals(v.getCategory()) || "DB_SECRET".equals(v.getCategory());
+            boolean fromInfra = secret && owners.stream().anyMatch(s -> databaseCredentialFor(v.getName(), s, dto) != null);
+            v.setResolution(fromInfra ? "SANDBOX_INFRA"
+                    : v.isDefaultPresent() ? "DEFAULT"
+                    : !secret ? "ENV"
+                    : isGeneratableSandboxSecret(v.getName()) ? "GENERATED"
+                    : "USER_REQUIRED");
+        }
+    }
+
     /** Reuses a sandbox database container credential for an application variable, matching the specific DB container for the service first. */
     public static String databaseCredentialFor(String name, String appService, PreflightCheckResponseDTO pre) {
         if (name == null || pre == null) return null;
@@ -1780,6 +1815,13 @@ public class ComposePreflightValidator {
     public static String databaseCredentialFor(String name, Map<String, String> credentials) {
         if (name == null || credentials == null || credentials.isEmpty()) return null;
         String u = name.toUpperCase(Locale.ROOT);
+        boolean rabbit = u.contains("RABBIT") || u.contains("AMQP");
+        if (u.contains("REDIS") || rabbit) {
+            // Cache/broker credentials never leak into DB_* variables and vice versa.
+            String key = u.contains("PASS") ? (rabbit ? "RABBITMQ_PASSWORD" : "REDIS_PASSWORD")
+                    : (rabbit && u.contains("USER")) ? "RABBITMQ_DEFAULT_USER" : null;
+            return key == null ? null : credentials.get(key);
+        }
         if (!u.matches(".*(DB|DATASOURCE|DATABASE|POSTGRES|MYSQL|MARIADB|MONGO|SQL|PG).*")) return null;
         List<String> keys = u.contains("PASS") ? DB_PASSWORD_KEYS
                 : u.contains("USER") ? DB_USER_KEYS
@@ -1843,6 +1885,43 @@ public class ComposePreflightValidator {
                 || lowerName.contains("redis") || lowerName.contains("mssql")
                 || lowerImage.contains("postgres") || lowerImage.contains("mysql") || lowerImage.contains("mariadb")
                 || lowerImage.contains("mongo") || lowerImage.contains("redis") || lowerImage.contains("mssql");
+    }
+
+    private static final Pattern PY_REDIS_REQ = Pattern.compile("(?m)^\\s*redis\\s*([=<>~!]|$)");
+    private static final Pattern PY_PIKA_REQ = Pattern.compile("(?m)^\\s*pika\\s*([=<>~!]|$)");
+
+    public static boolean isCacheOrBrokerType(String dbType) {
+        return "Redis".equals(dbType) || "Kafka".equals(dbType) || "RabbitMQ".equals(dbType);
+    }
+
+    private static boolean isDependencyManifestOrConfig(String lowerPath) {
+        if (lowerPath.contains("docker-compose") || lowerPath.endsWith("compose.yml") || lowerPath.endsWith("compose.yaml")) return false;
+        String base = lowerPath.contains("/") ? lowerPath.substring(lowerPath.lastIndexOf('/') + 1) : lowerPath;
+        return base.equals("pom.xml") || base.equals("build.gradle") || base.equals("build.gradle.kts") || base.equals("package.json")
+                || base.endsWith(".csproj") || base.equals("directory.packages.props") || base.equals("requirements.txt")
+                || base.equals("pyproject.toml") || base.equals("go.mod") || base.startsWith("appsettings")
+                || base.endsWith(".yml") || base.endsWith(".yaml") || base.endsWith(".properties") || base.endsWith(".env");
+    }
+
+    /** Client libraries / config keys that prove an app talks to Redis, Kafka or RabbitMQ. */
+    static List<String> detectCacheAndBrokerTypes(String lower) {
+        List<String> out = new ArrayList<>();
+        if (lower.contains("spring-boot-starter-data-redis") || lower.contains("spring.data.redis") || lower.contains("spring.redis")
+                || lower.contains("redis://") || lower.contains("\"ioredis\"") || lower.contains("\"redis\":") || lower.contains("stackexchange.redis")
+                || lower.contains("go-redis") || lower.contains("redis_host") || lower.contains("redis_url") || PY_REDIS_REQ.matcher(lower).find()) {
+            out.add("Redis");
+        }
+        if (lower.contains("spring-kafka") || lower.contains("spring.kafka") || lower.contains("\"kafkajs\"") || lower.contains("confluent.kafka")
+                || lower.contains("confluent-kafka") || lower.contains("kafka-python") || lower.contains("segmentio/kafka-go")
+                || lower.contains("kafka_bootstrap_servers") || lower.contains("kafka_brokers")) {
+            out.add("Kafka");
+        }
+        if (lower.contains("spring-boot-starter-amqp") || lower.contains("spring.rabbitmq") || lower.contains("\"amqplib\"")
+                || lower.contains("rabbitmq.client") || lower.contains("masstransit.rabbitmq") || lower.contains("amqp://")
+                || lower.contains("rabbitmq_host") || lower.contains("amqp_url") || PY_PIKA_REQ.matcher(lower).find()) {
+            out.add("RabbitMQ");
+        }
+        return out;
     }
 
     private static String inferDbTypeFromLine(String lower) {
@@ -2729,8 +2808,9 @@ public class ComposePreflightValidator {
             if (servicesMap.containsKey(containerName)) continue;
 
             String dbName = inferProvisionedDbName(familyChecks, envByName);
-            String dbUser = inferProvisionedDbUser(family, familyChecks, servicesMap, envFiles, envByName);
-            String dbPass = "redis".equals(family) ? null : randomAlphanumeric(28);
+            String dbUser = "rabbitmq".equals(family) ? "mavis" : inferProvisionedDbUser(family, familyChecks, servicesMap, envFiles, envByName);
+            boolean redisAuth = "redis".equals(family) && REDIS_PASSWORD_VARS.stream().anyMatch(envByName::containsKey);
+            String dbPass = ("redis".equals(family) && !redisAuth) || "kafka".equals(family) ? null : randomAlphanumeric(28);
 
             Map<String, Object> dbNode = new LinkedHashMap<>();
             Map<String, String> dbEnv = new LinkedHashMap<>();
@@ -2789,6 +2869,39 @@ public class ComposePreflightValidator {
                 case "redis" -> {
                     port = 6379;
                     dbNode.put("image", "redis:7-alpine");
+                    if (redisAuth) {
+                        // Password stays in a relocated env var; '$' interpolation is stripped from sandbox Compose.
+                        dbEnv.put("REDIS_PASSWORD", dbPass);
+                        dbNode.put("command", new ArrayList<>(List.of("sh", "-c", "printenv REDIS_PASSWORD | xargs redis-server --requirepass")));
+                        creds.put("REDIS_PASSWORD", dbPass);
+                    }
+                }
+                case "kafka" -> {
+                    port = 9092;
+                    dbNode.put("image", "apache/kafka-native:3.9.0");
+                    dbEnv.put("KAFKA_NODE_ID", "1");
+                    dbEnv.put("KAFKA_PROCESS_ROLES", "broker,controller");
+                    dbEnv.put("KAFKA_LISTENERS", "PLAINTEXT://:9092,CONTROLLER://:9093");
+                    dbEnv.put("KAFKA_ADVERTISED_LISTENERS", "PLAINTEXT://" + containerName + ":9092");
+                    dbEnv.put("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER");
+                    dbEnv.put("KAFKA_LISTENER_SECURITY_PROTOCOL_MAP", "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT");
+                    dbEnv.put("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@" + containerName + ":9093");
+                    dbEnv.put("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1");
+                    dbEnv.put("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1");
+                    dbEnv.put("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1");
+                    dbEnv.put("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "true");
+                    // kafka-native only ships /opt/kafka/config owned by appuser; a fresh mount elsewhere is root-owned under cap_drop ALL.
+                    dbEnv.put("KAFKA_LOG_DIRS", "/opt/kafka/config/kraft-logs");
+                }
+                case "rabbitmq" -> {
+                    port = 5672;
+                    dbNode.put("image", "rabbitmq:4-alpine");
+                    dbEnv.put("RABBITMQ_DEFAULT_USER", dbUser);
+                    // RABBITMQ_DEFAULT_PASS is not a "sensitive" key name, so the value travels as RABBITMQ_PASSWORD (relocated) instead.
+                    dbEnv.put("RABBITMQ_PASSWORD", dbPass);
+                    dbNode.put("command", new ArrayList<>(List.of("sh", "-c", "RABBITMQ_DEFAULT_PASS=`printenv RABBITMQ_PASSWORD` exec docker-entrypoint.sh rabbitmq-server")));
+                    creds.put("RABBITMQ_DEFAULT_USER", dbUser);
+                    creds.put("RABBITMQ_PASSWORD", dbPass);
                 }
                 default -> {
                     continue;
@@ -2839,7 +2952,9 @@ public class ComposePreflightValidator {
         if (provisionedAny) {
             dto.setInfrastructureServices(new ArrayList<>(infraSet));
             Set<String> autoSatisfiedUrlVars = Set.of("DB_CONNECTION_STRING", "SPRING_DATASOURCE_URL", "DATABASE_URL",
-                    "CONNECTIONSTRINGS__DEFAULTCONNECTION", "MONGODB_URI", "SPRING_DATA_MONGODB_URI", "REDIS_URL");
+                    "CONNECTIONSTRINGS__DEFAULTCONNECTION", "MONGODB_URI", "SPRING_DATA_MONGODB_URI", "REDIS_URL",
+                    "SPRING_KAFKA_BOOTSTRAP_SERVERS", "KAFKA_BOOTSTRAP_SERVERS", "KAFKA_BROKERS", "AMQP_URL", "RABBITMQ_URL", "CLOUDAMQP_URL",
+                    "REDIS_HOST", "RABBITMQ_HOST");
             if (dto.getRequiredEnvVars() != null) {
                 for (RequiredEnvVarDTO v : dto.getRequiredEnvVars()) {
                     if (autoSatisfiedUrlVars.contains(v.getName().toUpperCase(Locale.ROOT))) {
@@ -2849,6 +2964,7 @@ public class ComposePreflightValidator {
                         if (owners.isEmpty() || autoWiredServices.containsAll(owners)) {
                             v.setDefaultPresent(true);
                             v.setRequired(false);
+                            v.setResolution("SANDBOX_INFRA");
                         }
                     }
                 }
@@ -2873,19 +2989,67 @@ public class ComposePreflightValidator {
         String previewUrl;
         if ("redis".equals(family)) {
             previewUrl = "redis://" + host + ":" + port;
+            String authUrl = dbPass == null ? previewUrl : "redis://:" + dbPass + "@" + host + ":" + port;
             if (stack.startsWith("dotnet")) {
-                appEnv.put("CONNECTIONSTRINGS__REDIS", host + ":" + port);
+                appEnv.put("CONNECTIONSTRINGS__REDIS", host + ":" + port + (dbPass == null ? "" : ",password=" + dbPass));
                 clearedKeys.add("CONNECTIONSTRINGS__REDIS");
             } else if ("node".equals(stack) || "python".equals(stack) || "go".equals(stack)) {
-                appEnv.put("REDIS_URL", previewUrl);
+                appEnv.put("REDIS_URL", authUrl);
                 clearedKeys.add("REDIS_URL");
             } else {
                 appEnv.put("SPRING_DATA_REDIS_HOST", host);
                 appEnv.put("SPRING_DATA_REDIS_PORT", String.valueOf(port));
                 clearedKeys.addAll(List.of("SPRING_DATA_REDIS_HOST", "SPRING_DATA_REDIS_PORT"));
+                if (dbPass != null) {
+                    appEnv.put("SPRING_DATA_REDIS_PASSWORD", dbPass);
+                    clearedKeys.add("SPRING_DATA_REDIS_PASSWORD");
+                }
             }
             if (envByName.containsKey("REDIS_HOST")) appEnv.put("REDIS_HOST", host);
             if (envByName.containsKey("REDIS_PORT")) appEnv.put("REDIS_PORT", String.valueOf(port));
+            if (envByName.containsKey("REDIS_URL")) appEnv.put("REDIS_URL", authUrl);
+            if (dbPass != null) {
+                for (String k : REDIS_PASSWORD_VARS) {
+                    if (envByName.containsKey(k)) {
+                        appEnv.put(k, dbPass);
+                        clearedKeys.add(k);
+                    }
+                }
+            }
+        } else if ("kafka".equals(family)) {
+            previewUrl = host + ":" + port;
+            if (stack.startsWith("dotnet")) appEnv.put("KAFKA__BOOTSTRAPSERVERS", previewUrl);
+            else if ("node".equals(stack) || "python".equals(stack) || "go".equals(stack)) appEnv.put("KAFKA_BROKERS", previewUrl);
+            else appEnv.put("SPRING_KAFKA_BOOTSTRAP_SERVERS", previewUrl);
+            for (String k : List.of("KAFKA_BOOTSTRAP_SERVERS", "KAFKA_BROKERS", "KAFKA_BROKER", "KAFKA_HOST", "SPRING_KAFKA_BOOTSTRAP_SERVERS", "EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS")) {
+                if (envByName.containsKey(k)) appEnv.put(k, previewUrl);
+            }
+            clearedKeys.addAll(List.of("KAFKA__BOOTSTRAPSERVERS", "KAFKA_BROKERS", "SPRING_KAFKA_BOOTSTRAP_SERVERS", "KAFKA_BOOTSTRAP_SERVERS", "KAFKA_BROKER", "KAFKA_HOST", "EVENTUATELOCAL_KAFKA_BOOTSTRAP_SERVERS"));
+        } else if ("rabbitmq".equals(family)) {
+            previewUrl = "amqp://" + host + ":" + port;
+            String authUrl = "amqp://" + dbUser + ":" + dbPass + "@" + host + ":" + port;
+            if (stack.startsWith("dotnet")) {
+                appEnv.put("RABBITMQ__HOST", host);
+                appEnv.put("RABBITMQ__USERNAME", dbUser);
+                appEnv.put("RABBITMQ__PASSWORD", dbPass);
+                appEnv.put("CONNECTIONSTRINGS__RABBITMQ", authUrl);
+            } else if ("node".equals(stack) || "python".equals(stack) || "go".equals(stack)) {
+                appEnv.put("AMQP_URL", authUrl);
+                appEnv.put("RABBITMQ_URL", authUrl);
+            } else {
+                appEnv.put("SPRING_RABBITMQ_HOST", host);
+                appEnv.put("SPRING_RABBITMQ_PORT", String.valueOf(port));
+                appEnv.put("SPRING_RABBITMQ_USERNAME", dbUser);
+                appEnv.put("SPRING_RABBITMQ_PASSWORD", dbPass);
+            }
+            if (envByName.containsKey("RABBITMQ_HOST")) appEnv.put("RABBITMQ_HOST", host);
+            if (envByName.containsKey("RABBITMQ_PORT")) appEnv.put("RABBITMQ_PORT", String.valueOf(port));
+            for (String k : List.of("RABBITMQ_USER", "RABBITMQ_USERNAME", "RABBITMQ_DEFAULT_USER")) if (envByName.containsKey(k)) appEnv.put(k, dbUser);
+            for (String k : List.of("RABBITMQ_PASS", "RABBITMQ_PASSWORD", "RABBITMQ_DEFAULT_PASS")) if (envByName.containsKey(k)) appEnv.put(k, dbPass);
+            for (String k : List.of("AMQP_URL", "RABBITMQ_URL", "CLOUDAMQP_URL")) if (envByName.containsKey(k)) appEnv.put(k, authUrl);
+            clearedKeys.addAll(List.of("RABBITMQ__HOST", "RABBITMQ__USERNAME", "RABBITMQ__PASSWORD", "CONNECTIONSTRINGS__RABBITMQ", "AMQP_URL", "RABBITMQ_URL",
+                    "CLOUDAMQP_URL", "SPRING_RABBITMQ_HOST", "SPRING_RABBITMQ_PORT", "SPRING_RABBITMQ_USERNAME", "SPRING_RABBITMQ_PASSWORD",
+                    "RABBITMQ_HOST", "RABBITMQ_PORT", "RABBITMQ_USER", "RABBITMQ_USERNAME", "RABBITMQ_DEFAULT_USER", "RABBITMQ_PASS", "RABBITMQ_PASSWORD", "RABBITMQ_DEFAULT_PASS"));
         } else if ("mongo".equals(family)) {
             String authUri = "mongodb://" + dbUser + ":" + dbPass + "@" + host + ":" + port + "/" + dbName + "?authSource=admin";
             previewUrl = "mongodb://" + host + ":" + port + "/" + dbName;
@@ -2968,6 +3132,8 @@ public class ComposePreflightValidator {
         if (u.contains("MYSQL")) return "mysql";
         if (u.contains("MONGO")) return "mongo";
         if (u.contains("REDIS")) return "redis";
+        if (u.contains("KAFKA")) return "kafka";
+        if (u.contains("RABBIT")) return "rabbitmq";
         return null;
     }
 
@@ -2983,6 +3149,8 @@ public class ComposePreflightValidator {
                 case "mysql", "mariadb" -> name.contains("mysql") || name.contains("mariadb") || name.equals("db") || name.endsWith("-db") || img.contains("mysql") || img.contains("mariadb");
                 case "mongo" -> name.contains("mongo") || img.contains("mongo");
                 case "redis" -> name.contains("redis") || img.contains("redis");
+                case "kafka" -> name.contains("kafka") || img.contains("kafka") || name.contains("redpanda") || img.contains("redpanda");
+                case "rabbitmq" -> name.contains("rabbit") || img.contains("rabbitmq");
                 default -> false;
             };
             if (match) return true;

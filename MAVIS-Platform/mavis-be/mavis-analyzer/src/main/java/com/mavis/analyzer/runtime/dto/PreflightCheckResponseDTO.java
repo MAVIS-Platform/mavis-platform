@@ -182,5 +182,7 @@ public class PreflightCheckResponseDTO {
         private String scope;
         /** True when source or Compose already provides a value/default, so no input is needed. */
         private boolean defaultPresent;
+        /** Backend-owned outcome: SANDBOX_INFRA, DEFAULT, GENERATED, USER_REQUIRED or ENV. Never carries a value. */
+        private String resolution;
     }
 }

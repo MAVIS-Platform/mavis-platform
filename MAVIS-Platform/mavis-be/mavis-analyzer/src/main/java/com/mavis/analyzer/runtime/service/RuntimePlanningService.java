@@ -1338,6 +1338,7 @@ public class RuntimePlanningService {
   Set<String> infra=new HashSet<>(pre.getInfrastructureServices()==null?List.of():pre.getInfrastructureServices());
   List<PreflightCheckResponseDTO.RequiredEnvVarDTO> orderedVars=new ArrayList<>(known.values());
   orderedVars.sort(Comparator.comparingInt(v->owningServices(v,composeServices,appServices).stream().anyMatch(infra::contains)?0:1));
+  java.security.KeyPair[] rsaPair=new java.security.KeyPair[1];
   for(var v:orderedVars){
    String key=v.getName();
    if(userOverriddenKeys.contains(key)||v.isDefaultPresent()||!isBindableEnvName(key))continue;
@@ -1352,7 +1353,7 @@ public class RuntimePlanningService {
     if(serviceBindings.getOrDefault(svc,Map.of()).containsKey(key))continue;
     String val=ComposePreflightValidator.databaseCredentialFor(key,svc,perServiceCreds,pre.getServiceDependencies(),credentials);
     if(val==null&&secret&&ComposePreflightValidator.isGeneratableSandboxSecret(key)){
-     if(sharedGenerated==null)sharedGenerated=randomSecret();
+     if(sharedGenerated==null)sharedGenerated=randomSecretFor(key,rsaPair);
      val=sharedGenerated;
     }
     if(val!=null){
@@ -1545,6 +1546,23 @@ public class RuntimePlanningService {
  }
 
  private String randomSecret(){byte[] bytes=new byte[32];secureRandom.nextBytes(bytes);return Base64.getEncoder().encodeToString(bytes);}
+
+ /** Format follows the variable's job: HS512-safe JWT/HMAC keys, hex keys, and one shared RSA PEM pair for *_PRIVATE_KEY / *_PUBLIC_KEY. */
+ String randomSecretFor(String key,java.security.KeyPair[] rsa){
+  String u=key==null?"":key.toUpperCase(Locale.ROOT);
+  boolean priv=u.contains("PRIVATE_KEY"),pub=u.contains("PUBLIC_KEY");
+  if(priv||pub){
+   try{
+    if(rsa[0]==null){java.security.KeyPairGenerator g=java.security.KeyPairGenerator.getInstance("RSA");g.initialize(2048,secureRandom);rsa[0]=g.generateKeyPair();}
+    String type=priv?"PRIVATE KEY":"PUBLIC KEY";
+    byte[] der=priv?rsa[0].getPrivate().getEncoded():rsa[0].getPublic().getEncoded();
+    return "-----BEGIN "+type+"-----\n"+Base64.getMimeEncoder(64,new byte[]{'\n'}).encodeToString(der)+"\n-----END "+type+"-----";
+   }catch(java.security.GeneralSecurityException e){throw new IllegalStateException("RSA key generation unavailable",e);}
+  }
+  if(u.contains("HEX")){byte[] b=new byte[32];secureRandom.nextBytes(b);return HexFormat.of().formatHex(b);}
+  if(u.contains("JWT")||u.contains("HMAC")||u.contains("SIGN")){byte[] b=new byte[64];secureRandom.nextBytes(b);return Base64.getEncoder().encodeToString(b);}
+  return randomSecret();
+ }
 
  private void validateProfile(JsonNode p){if(!p.isObject()||p.toString().length()>50000||!p.equals(SecretRedactor.redactJson(p)))throw new BusinessException(ErrorCode.BAD_REQUEST,"Profile must be a bounded object without literal secrets");
   if(p.hasNonNull("collectorImage")&&(!p.path("collectorImage").isTextual()||!p.path("collectorImage").asText().matches("[A-Za-z0-9./:_-]+@sha256:[0-9a-f]{64}")))throw new BusinessException(ErrorCode.BAD_REQUEST,"collectorImage must be digest-pinned");

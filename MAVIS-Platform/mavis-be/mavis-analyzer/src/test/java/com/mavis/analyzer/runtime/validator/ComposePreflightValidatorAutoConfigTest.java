@@ -233,6 +233,113 @@ class ComposePreflightValidatorAutoConfigTest {
     }
 
     @Test
+    void resolutionIsBackendOwnedPerVariable() {
+        Map<String, RequiredEnvVarDTO> env = new LinkedHashMap<>();
+        ComposePreflightValidator.registerEnvVar(env, "JWT_SECRET", "order-service", null, "application.yml");
+        ComposePreflightValidator.registerEnvVar(env, "OPENAI_API_KEY", "order-service", null, "application.yml");
+        ComposePreflightValidator.registerEnvVar(env, "DB_PASSWORD", "order-service", null, "application.yml");
+        ComposePreflightValidator.registerEnvVar(env, "DATABASE_URL", "billing-service", null, "application.yml");
+        ComposePreflightValidator.registerEnvVar(env, "MAIL_FROM_NAME", "order-service", "MAVIS", "application.yml");
+        ComposePreflightValidator.registerEnvVar(env, "SESSION_SECRET", "order-service", "dev-only", "application.yml");
+
+        PreflightCheckResponseDTO dto = new PreflightCheckResponseDTO();
+        dto.setRequiredEnvVars(new java.util.ArrayList<>(env.values()));
+        dto.setServiceDatabaseCredentials(new LinkedHashMap<>(Map.of("sandbox-postgres", Map.of("POSTGRES_PASSWORD", "generated"))));
+        dto.setServiceDependencies(new LinkedHashMap<>(Map.of("order-service", List.of("sandbox-postgres"))));
+        dto.setSandboxDatabaseCredentials(new LinkedHashMap<>());
+
+        ComposePreflightValidator.assignEnvResolutions(dto);
+
+        assertThat(env.get("JWT_SECRET").getResolution()).isEqualTo("GENERATED");
+        assertThat(env.get("OPENAI_API_KEY").getResolution()).isEqualTo("USER_REQUIRED");
+        assertThat(env.get("DB_PASSWORD").getResolution()).isEqualTo("SANDBOX_INFRA");
+        // A connection URL with no sandbox database cannot be generated, so the UI must ask instead of claiming "auto".
+        assertThat(env.get("DATABASE_URL").getResolution()).isEqualTo("USER_REQUIRED");
+        assertThat(env.get("MAIL_FROM_NAME").getResolution()).isEqualTo("DEFAULT");
+        assertThat(env.get("SESSION_SECRET").getResolution()).isEqualTo("DEFAULT");
+    }
+
+    @Test
+    void redisKafkaRabbitDetectedFromSourceAreProvisionedWithCredentialParityAndNoLeakedSecrets(@TempDir Path tempDir) throws Exception {
+        ComposePreflightValidator infraValidator = new ComposePreflightValidator(new ImageDigestResolver(null, null, false, Map.of(
+                "redis", "redis@sha256:" + "4".repeat(64),
+                "apache/kafka-native", "apache/kafka-native@sha256:" + "5".repeat(64),
+                "rabbitmq", "rabbitmq@sha256:" + "6".repeat(64))));
+        String rawCompose = """
+                services:
+                  order-service:
+                    image: demo/order@sha256:%s
+                    ports: ["8081:8081"]
+                  notify-service:
+                    image: demo/notify@sha256:%s
+                    ports: ["3000:3000"]
+                """.formatted("1".repeat(64), "2".repeat(64));
+        Files.writeString(tempDir.resolve("docker-compose.yml"), rawCompose);
+        Path order = Files.createDirectories(tempDir.resolve("order-service"));
+        Files.writeString(order.resolve("pom.xml"), """
+                <project><dependencies>
+                  <dependency><artifactId>spring-boot-starter-data-redis</artifactId></dependency>
+                  <dependency><artifactId>spring-kafka</artifactId></dependency>
+                </dependencies></project>
+                """);
+        Files.createDirectories(order.resolve("src/main/resources"));
+        Files.writeString(order.resolve("src/main/resources/application.properties"), """
+                spring.data.redis.password=${REDIS_PASSWORD}
+                app.jwt.secret=${JWT_SECRET}
+                """);
+        Path notify = Files.createDirectories(tempDir.resolve("notify-service"));
+        Files.writeString(notify.resolve("package.json"), """
+                {"name":"notify","dependencies":{"amqplib":"^0.10.4","express":"^4.19.0"}}
+                """);
+        Files.writeString(notify.resolve("index.js"), "const url = process.env.AMQP_URL;");
+
+        PreflightCheckResponseDTO dto = infraValidator.validate(rawCompose);
+        infraValidator.inspectSnapshotSource(tempDir, dto);
+        dto.getServiceStacks().put("notify-service", "node");
+        infraValidator.finalizeSandboxTopology(tempDir, dto, rawCompose, Map.of(), Map.of());
+        ComposePreflightValidator.assignEnvResolutions(dto);
+
+        assertThat(dto.getComposeServices()).contains("sandbox-redis", "sandbox-kafka", "sandbox-rabbitmq");
+        assertThat(dto.getUnresolvableRunnerIssues()).isEmpty();
+        String yaml = dto.getSandboxComposeYaml();
+        assertThat(yaml)
+                .contains("requirepass")
+                .contains("SPRING_KAFKA_BOOTSTRAP_SERVERS: sandbox-kafka:9092")
+                .contains("KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://sandbox-kafka:9092")
+                .contains("SPRING_DATA_REDIS_HOST: sandbox-redis")
+                .contains("RABBITMQ_DEFAULT_USER: mavis")
+                .doesNotContain("$");
+
+        String redisPw = dto.getRelocatedComposeSecrets().get("sandbox-redis").get("REDIS_PASSWORD");
+        String rabbitPw = dto.getRelocatedComposeSecrets().get("sandbox-rabbitmq").get("RABBITMQ_PASSWORD");
+        assertThat(redisPw).hasSize(28);
+        assertThat(rabbitPw).hasSize(28);
+        assertThat(yaml).doesNotContain(redisPw).doesNotContain(rabbitPw);
+        assertThat(dto.getRelocatedComposeSecrets().get("order-service"))
+                .containsEntry("SPRING_DATA_REDIS_PASSWORD", redisPw)
+                .containsEntry("REDIS_PASSWORD", redisPw);
+        assertThat(dto.getRelocatedComposeSecrets().get("notify-service"))
+                .containsEntry("AMQP_URL", "amqp://mavis:" + rabbitPw + "@sandbox-rabbitmq:5672");
+        // Redis password never satisfies a DB_* variable and vice versa.
+        assertThat(ComposePreflightValidator.databaseCredentialFor("DB_PASSWORD", "order-service", dto)).isNull();
+        assertThat(ComposePreflightValidator.databaseCredentialFor("REDIS_PASSWORD", "order-service", dto)).isEqualTo(redisPw);
+
+        Map<String, String> resolutions = new LinkedHashMap<>();
+        dto.getRequiredEnvVars().forEach(v -> resolutions.put(v.getName(), v.getResolution()));
+        assertThat(resolutions)
+                .containsEntry("REDIS_PASSWORD", "SANDBOX_INFRA")
+                .containsEntry("JWT_SECRET", "GENERATED");
+        assertThat(resolutions).doesNotContainValue("USER_REQUIRED");
+    }
+
+    @Test
+    void cacheAndBrokerClientsAreDetectedWithoutSqlFalsePositives() {
+        assertThat(ComposePreflightValidator.detectCacheAndBrokerTypes("<artifactid>spring-kafka</artifactid> \"amqplib\": \"1\"\nredis==5.0"))
+                .containsExactly("Redis", "Kafka", "RabbitMQ");
+        assertThat(ComposePreflightValidator.detectCacheAndBrokerTypes("spring.datasource.url=jdbc:postgresql://db/app")).isEmpty();
+    }
+
+    @Test
     void cloudExternalPostgresRepoAutoProvisionsEphemeralSandboxDbWithInferredDbNameAndUser(@TempDir Path tempDir) throws Exception {
         String rawCompose = """
                 services:
