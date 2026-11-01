@@ -1878,21 +1878,54 @@ public class ComposePreflightValidator {
         for (String svc : detectedServices) {
             if (svc.equalsIgnoreCase(candLower)) return svc;
         }
+        String candAlpha = candLower.replaceAll("[^a-z0-9]", "");
+        if (!candAlpha.isEmpty()) {
+            for (String svc : detectedServices) {
+                if (candAlpha.equals(svc.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", ""))) {
+                    return svc;
+                }
+            }
+        }
+        String candStem = serviceAlphanumericStem(candLower);
+        if (candStem.length() >= 3) {
+            String uniqueStemMatch = null;
+            int stemMatches = 0;
+            for (String svc : detectedServices) {
+                if (candStem.equals(serviceAlphanumericStem(svc))) {
+                    uniqueStemMatch = svc;
+                    stemMatches++;
+                }
+            }
+            if (stemMatches == 1) return uniqueStemMatch;
+        }
         String bestMatch = null;
         for (String svc : detectedServices) {
             String svcLower = svc.toLowerCase(Locale.ROOT);
+            String svcAlpha = svcLower.replaceAll("[^a-z0-9]", "");
+            boolean alphaContains = candAlpha.length() >= 4 && svcAlpha.length() >= 4
+                    && (candAlpha.contains(svcAlpha) || svcAlpha.contains(candAlpha));
             if (candLower.endsWith("-" + svcLower)
                     || svcLower.endsWith("-" + candLower)
                     || candLower.startsWith(svcLower + "-")
                     || svcLower.startsWith(candLower + "-")
                     || candLower.contains(svcLower)
-                    || svcLower.contains(candLower)) {
+                    || svcLower.contains(candLower)
+                    || alphaContains) {
                 if (bestMatch == null || svc.length() > bestMatch.length()) {
                     bestMatch = svc;
                 }
             }
         }
         return bestMatch;
+    }
+
+    private static String serviceAlphanumericStem(String raw) {
+        if (raw == null || raw.isBlank()) return "";
+        String lower = cleanServiceCandidate(raw).toLowerCase(Locale.ROOT)
+                .replaceFirst("^fruit[-_]", "")
+                .replaceAll("[^a-z0-9]", "")
+                .replaceFirst("(services|service|api|app|svc|server|backend|container)$", "");
+        return lower;
     }
 
     private static String inferServiceFromPath(String relativePath, List<String> detectedServices) {

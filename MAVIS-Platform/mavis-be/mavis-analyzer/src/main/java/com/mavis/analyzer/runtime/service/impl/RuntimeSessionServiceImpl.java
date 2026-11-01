@@ -720,35 +720,91 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 : profile.putObject("applications");
 
         if (apps.isEmpty()) {
-            Set<String> sNames = new LinkedHashSet<>(serviceMappings.keySet());
-            if (sNames.isEmpty()) {
-                try {
-                    PreflightCheckResponseDTO preflight = runComposePreflight(snapshot.getId());
-                    Set<String> infra = new HashSet<>(preflight.getInfrastructureServices() != null ? preflight.getInfrastructureServices() : List.of());
-                    if (preflight.getDetectedServices() != null) {
-                        preflight.getDetectedServices().stream().filter(s -> !infra.contains(s)).forEach(sNames::add);
+            PreflightCheckResponseDTO preflight = null;
+            try {
+                if (snapshot != null && snapshot.getId() != null) {
+                    preflight = runComposePreflight(snapshot.getId());
+                }
+            } catch (Exception ignored) {}
+
+            Set<String> infra = new HashSet<>(preflight != null && preflight.getInfrastructureServices() != null
+                    ? preflight.getInfrastructureServices()
+                    : List.of());
+            List<String> composeList = preflight != null && preflight.getComposeServices() != null && !preflight.getComposeServices().isEmpty()
+                    ? preflight.getComposeServices()
+                    : (preflight != null && preflight.getDetectedServices() != null ? preflight.getDetectedServices() : List.of());
+            List<String> runnableCompose = composeList.stream().filter(s -> s != null && !infra.contains(s)).toList();
+
+            Set<String> sNames = new LinkedHashSet<>();
+            if (!runnableCompose.isEmpty()) {
+                sNames.addAll(runnableCompose);
+                if (request.getConfirmedServiceMappings() == null || request.getConfirmedServiceMappings().isEmpty()) {
+                    Map<String, String> rec = preflight.getRecommendedServiceMappings() != null
+                            ? preflight.getRecommendedServiceMappings()
+                            : Map.of();
+                    Map<String, String> aligned = new LinkedHashMap<>();
+                    for (String svc : runnableCompose) {
+                        String mapped = serviceMappings.get(svc);
+                        if (mapped == null || !isUuid(mapped)) {
+                            String recId = rec.get(svc);
+                            if (isUuid(recId)) {
+                                mapped = recId;
+                            } else if (!containerEls.isEmpty()) {
+                                ModelElement matched = matchContainerElement(svc, containerEls, runnableCompose.size() == 1 && containerEls.size() == 1);
+                                if (matched != null && matched.getId() != null) {
+                                    mapped = matched.getId().toString();
+                                }
+                            }
+                        }
+                        if (mapped != null && !mapped.isBlank()) {
+                            aligned.put(svc, mapped);
+                        }
                     }
-                } catch (Exception ignored) {}
+                    if (!aligned.isEmpty()) {
+                        serviceMappings = aligned;
+                    }
+                }
+            } else {
+                sNames.addAll(serviceMappings.keySet());
             }
             if (sNames.isEmpty()) {
                 sNames.add("gateway");
             }
             for (String sName : sNames) {
                 ObjectNode appNode = apps.putObject(sName);
-                boolean isDotnet = false;
-                String elId = serviceMappings.get(sName);
-                if (elId != null) {
-                    try {
-                        var el = modelElementRepository.findById(UUID.fromString(elId)).orElse(null);
-                        if (el != null && el.getLanguageStack() != null &&
-                                (el.getLanguageStack().toLowerCase().contains("csharp") || el.getLanguageStack().toLowerCase().contains("dotnet"))) {
-                            isDotnet = true;
-                        }
-                    } catch (Exception ignored) {}
+                String detectedStack = preflight != null && preflight.getServiceStacks() != null
+                        ? preflight.getServiceStacks().get(sName)
+                        : null;
+                if (detectedStack == null || detectedStack.isBlank()) {
+                    String elId = serviceMappings.get(sName);
+                    if (elId != null) {
+                        try {
+                            var el = modelElementRepository.findById(UUID.fromString(elId)).orElse(null);
+                            if (el != null && el.getLanguageStack() != null) {
+                                detectedStack = el.getLanguageStack();
+                            }
+                        } catch (Exception ignored) {}
+                    }
                 }
-                appNode.put("runtime", isDotnet ? "dotnet" : "java");
-                appNode.put("containerPort", 8080);
-                appNode.put("readinessPath", "/health");
+                String lowerStack = detectedStack != null ? detectedStack.toLowerCase(Locale.ROOT) : "java";
+                String runnerRuntime = (lowerStack.contains("dotnet") || lowerStack.contains("csharp") || lowerStack.contains("aspnet") || lowerStack.contains("net8"))
+                        ? "dotnet8-linux-x64-glibc"
+                        : ((lowerStack.contains("java") || lowerStack.contains("spring") || lowerStack.contains("kotlin"))
+                                ? "java"
+                                : "passthrough");
+                int port = preflight != null && preflight.getServicePorts() != null && preflight.getServicePorts().get(sName) != null
+                        ? preflight.getServicePorts().get(sName)
+                        : 8080;
+                String readinessPath = preflight != null && preflight.getServiceHealthPaths() != null && preflight.getServiceHealthPaths().get(sName) != null
+                        ? preflight.getServiceHealthPaths().get(sName)
+                        : "/health";
+                appNode.put("runtime", runnerRuntime);
+                appNode.put("containerPort", (port >= 1 && port <= 65535) ? port : 8080);
+                appNode.put("readinessPath", readinessPath.startsWith("/") ? readinessPath : "/health");
+                if (preflight != null && preflight.getServiceHealthConfidence() != null
+                        && "ASSUMED".equalsIgnoreCase(preflight.getServiceHealthConfidence().get(sName))) {
+                    appNode.put("allowClientErrorReadiness", true);
+                }
             }
         }
 
@@ -759,6 +815,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         if (!scenarioNode.has("steps") || !scenarioNode.get("steps").isArray() || scenarioNode.get("steps").isEmpty()) {
             ArrayNode stepsArr = scenarioNode.putArray("steps");
+            String defaultAppService = apps.fieldNames().hasNext()
+                    ? apps.fieldNames().next()
+                    : serviceMappings.keySet().stream().findFirst().orElse("gateway");
             List<String> rawStringSteps = new ArrayList<>();
             if (rawScenarioConfig != null && rawScenarioConfig.has("steps") && rawScenarioConfig.get("steps").isArray()) {
                 for (JsonNode sn : rawScenarioConfig.get("steps")) {
@@ -771,7 +830,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     String method = "GET";
                     String path = "/health";
                     int expectedStatus = 200;
-                    String targetService = serviceMappings.keySet().stream().findFirst().orElse("gateway");
+                    String targetService = defaultAppService;
                     String[] parts = raw.split("->");
                     if (parts.length > 1) {
                         try {
@@ -794,10 +853,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     stepItem.put("expectedStatus", expectedStatus);
                 }
             } else {
-                String firstService = serviceMappings.keySet().stream().findFirst().orElse("gateway");
                 ObjectNode step1 = stepsArr.addObject();
                 step1.put("id", "step-1");
-                step1.put("service", firstService);
+                step1.put("service", defaultAppService);
                 step1.put("method", "GET");
                 step1.put("path", "/health");
                 step1.put("expectedStatus", 200);
@@ -1154,7 +1212,14 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         ObjectNode scenarioCopy = scenarioNode.deepCopy();
         scenarioCopy.retain("sessionId", "steps", "timeoutSeconds");
-        scenarioCopy.get("steps").forEach(step -> { if (step instanceof ObjectNode s) s.retain(RUNNER_STEP_FIELDS); });
+        scenarioCopy.get("steps").forEach(step -> {
+            if (step instanceof ObjectNode s) {
+                s.retain(RUNNER_STEP_FIELDS);
+                if (s.get("envHeaders") instanceof ArrayNode hdrs) {
+                    hdrs.forEach(h -> { if (h instanceof ObjectNode ho) ho.retain("name", "reference"); });
+                }
+            }
+        });
         if (!scenarioCopy.hasNonNull("sessionId") || !scenarioCopy.get("sessionId").asText().equalsIgnoreCase(session.getId().toString())) {
             scenarioCopy.put("sessionId", session.getId().toString());
         }
@@ -1178,6 +1243,13 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 applications.elements().forEachRemaining(app -> {
                     if (app instanceof ObjectNode a) {
                         a.retain("runtime", "containerPort", "readinessPath", "allowClientErrorReadiness");
+                    }
+                });
+            }
+            if (object.get("environmentBindings") instanceof ObjectNode bindings) {
+                bindings.elements().forEachRemaining(arr -> {
+                    if (arr instanceof ArrayNode list) {
+                        list.forEach(item -> { if (item instanceof ObjectNode bo) bo.retain("name", "reference"); });
                     }
                 });
             }
