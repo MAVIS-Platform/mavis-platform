@@ -1208,11 +1208,14 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   environment[refKey] = "1";
                 }
               }
+              const normalizedPath = (st.path || "/health").replace(/(?<!\{)\{([^{}/]+)\}(?!\})/g, (_, p: string) =>
+                /uuid|guid/i.test(p) ? "00000000-0000-0000-0000-000000000001" : /code|sku/i.test(p) ? "SKU-LAPTOP-01" : "1",
+              );
               return JSON.stringify({
                 id: `step-${idx + 1}`,
                 service: st.service || defaultSvc,
                 method,
-                path: st.path || "/health",
+                path: normalizedPath,
                 expectedStatus: Number(st.status) || 200,
                 allowClientError: st.allowClientError ?? true,
                 ...(st.bodyReference ? { bodyReference: st.bodyReference } : {}),

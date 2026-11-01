@@ -402,24 +402,29 @@ public class RuntimeRunnerDispatcher {
             if (!Files.isRegularFile(collectorPath)) {
                 return false;
             }
-            Process checkDotnet = new ProcessBuilder("dotnet", "--version")
-                    .redirectErrorStream(true)
-                    .start();
-            if (!checkDotnet.waitFor(10, TimeUnit.SECONDS)) {
-                checkDotnet.destroyForcibly();
+            boolean hasPrebuiltDll = resolvePrebuiltRunnerDll(projPath, false).isPresent();
+            if (!probeCommandZeroExit(hasPrebuiltDll ? List.of("dotnet", "--list-runtimes") : List.of("dotnet", "--version"), 10)) {
                 return false;
             }
-            if (checkDotnet.exitValue() != 0) {
+            return probeCommandZeroExit(List.of("docker", "info"), 10);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    static boolean probeCommandZeroExit(List<String> cmd, int timeoutSeconds) {
+        try {
+            Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+            Thread.ofVirtual().start(() -> {
+                try (var in = proc.getInputStream()) {
+                    in.transferTo(java.io.OutputStream.nullOutputStream());
+                } catch (Exception ignored) {}
+            });
+            if (!proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+                proc.destroyForcibly();
                 return false;
             }
-            Process checkDocker = new ProcessBuilder("docker", "info")
-                    .redirectErrorStream(true)
-                    .start();
-            if (!checkDocker.waitFor(10, TimeUnit.SECONDS)) {
-                checkDocker.destroyForcibly();
-                return false;
-            }
-            return checkDocker.exitValue() == 0;
+            return proc.exitValue() == 0;
         } catch (Exception ignored) {
             return false;
         }

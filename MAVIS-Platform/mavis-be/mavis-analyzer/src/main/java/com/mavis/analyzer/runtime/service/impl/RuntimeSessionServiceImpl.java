@@ -914,6 +914,13 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         accessPolicyService.requireProjectWriteAccess(session.getProject());
 
+        String currentExec = session.getExecutionStatus() != null ? session.getExecutionStatus().toUpperCase(Locale.ROOT) : "";
+        if (session.getReceiptDigest() != null || session.getRunnerReceiptJson() != null || session.getCompletedAt() != null
+                || Set.of("ALLOCATED", "RUNNING", "CANCELLING", "COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEOUT").contains(currentExec)) {
+            log.info("Phiên thực nghiệm {} đã ở trạng thái {}, trả về idempotent khi approve", sessionId, currentExec);
+            return RuntimeSessionResponseDTO.fromEntity(session);
+        }
+
         validateAdministrativeLimits(session);
         // [CHẶNG 11]: Kiểm tra preflight (Hỗ trợ fallback từ SERVICE_CONTAINER của Model nếu snapshot không chứa file compose vật lý)
         PreflightCheckResponseDTO preflight = runComposePreflight(session.getSourceSnapshot().getId());

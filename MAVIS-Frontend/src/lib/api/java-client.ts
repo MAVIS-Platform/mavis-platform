@@ -20,8 +20,11 @@ export async function javaRequest(
       cache: "no-store",
       redirect: "error",
       signal: init.signal
-        ? AbortSignal.any([init.signal, AbortSignal.timeout(120000)])
-        : AbortSignal.timeout(120000),
+        ? AbortSignal.any([
+            init.signal,
+            AbortSignal.timeout(path.endsWith("/runtime-plan/build-images") ? 600000 : 120000),
+          ])
+        : AbortSignal.timeout(path.endsWith("/runtime-plan/build-images") ? 600000 : 120000),
     });
   } catch (error) {
     if (error instanceof DOMException && ["AbortError", "TimeoutError"].includes(error.name))

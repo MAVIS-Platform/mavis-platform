@@ -89,6 +89,7 @@ public class SandboxImageBuilderService {
             Optional<Path> composeFileOpt = findComposeFile(workspace);
             Path baseDir;
             Map<String, BuildSpec> targetsToBuild = new LinkedHashMap<>();
+            List<String> errors = new ArrayList<>();
 
             if (composeFileOpt.isPresent()) {
                 Path composeFile = composeFileOpt.get();
@@ -103,11 +104,43 @@ public class SandboxImageBuilderService {
                 if (!(loaded instanceof Map<?, ?> rootMap) || !(rootMap.get("services") instanceof Map<?, ?> servicesMap)) {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "docker-compose.yml does not contain a valid services mapping");
                 }
+                List<String> unpinnedNoBuildApps = new ArrayList<>();
+                for (Map.Entry<?, ?> entry : servicesMap.entrySet()) {
+                    String svc = String.valueOf(entry.getKey());
+                    if (!(entry.getValue() instanceof Map<?, ?> cfg) || cfg.containsKey("build")) continue;
+                    String img = cfg.get("image") != null
+                            ? ComposePreflightValidator.resolvePlaceholders(String.valueOf(cfg.get("image")).trim(), rootDotEnv)
+                            : "";
+                    if (!img.contains("@sha256:") && !ComposePreflightValidator.isInfrastructureService(svc, img)) {
+                        unpinnedNoBuildApps.add(svc);
+                    }
+                }
+                List<ComposePreflightValidator.DiscoveredDockerfile> discoveredFallback = null;
                 for (Map.Entry<?, ?> entry : servicesMap.entrySet()) {
                     String svc = String.valueOf(entry.getKey());
                     if (!filter.isEmpty() && !filter.contains(svc)) continue;
-                    if (!(entry.getValue() instanceof Map<?, ?> cfg) || !cfg.containsKey("build")) continue;
-                    targetsToBuild.put(svc, parseBuildSpec(cfg.get("build"), rootDotEnv));
+                    if (entry.getValue() instanceof Map<?, ?> cfg && cfg.containsKey("build")) {
+                        targetsToBuild.put(svc, parseBuildSpec(cfg.get("build"), rootDotEnv));
+                        continue;
+                    }
+                    if (filter.isEmpty() && !unpinnedNoBuildApps.contains(svc)) continue;
+                    if (discoveredFallback == null) {
+                        discoveredFallback = ComposePreflightValidator.discoverDockerfilesInDirectory(workspace);
+                    }
+                    ComposePreflightValidator.DiscoveredDockerfile matchedDf = matchDiscoveredDockerfile(
+                            svc, discoveredFallback, unpinnedNoBuildApps.size() == 1);
+                    if (matchedDf != null) {
+                        Path dfDir = workspace.resolve(matchedDf.context()).normalize();
+                        String relCtx = baseDir != null ? baseDir.relativize(dfDir).toString().replace('\\', '/') : matchedDf.context();
+                        targetsToBuild.put(svc, new BuildSpec(relCtx.isEmpty() ? "." : relCtx, matchedDf.dockerfile(), null, Map.of()));
+                    } else if (!filter.isEmpty()) {
+                        errors.add("Service '" + svc + "': no build section or matching Dockerfile found in snapshot");
+                    }
+                }
+                for (String reqSvc : filter) {
+                    if (!servicesMap.containsKey(reqSvc)) {
+                        errors.add("Service '" + reqSvc + "': service not found in docker-compose.yml");
+                    }
                 }
             } else {
                 baseDir = workspace;
@@ -129,7 +162,6 @@ public class SandboxImageBuilderService {
             }
 
             Map<String, String> builtImages = new LinkedHashMap<>();
-            List<String> errors = new ArrayList<>();
             String projPrefix = projectId.toString().replace("-", "").substring(0, 8).toLowerCase(Locale.ROOT);
 
             for (Map.Entry<String, BuildSpec> entry : targetsToBuild.entrySet()) {
@@ -176,6 +208,26 @@ public class SandboxImageBuilderService {
     }
 
     protected record BuildSpec(String context, String dockerfile, String target, Map<String, String> args) {}
+
+    private static ComposePreflightValidator.DiscoveredDockerfile matchDiscoveredDockerfile(
+            String serviceName,
+            List<ComposePreflightValidator.DiscoveredDockerfile> candidates,
+            boolean singleUnpinnedApp) {
+        if (candidates == null || candidates.isEmpty()) return null;
+        for (ComposePreflightValidator.DiscoveredDockerfile d : candidates) {
+            if (d.serviceName().equalsIgnoreCase(serviceName)
+                    || ComposePreflightValidator.cleanServiceCandidate(d.serviceName()).equalsIgnoreCase(
+                            ComposePreflightValidator.cleanServiceCandidate(serviceName))) {
+                return d;
+            }
+        }
+        for (ComposePreflightValidator.DiscoveredDockerfile d : candidates) {
+            if (ComposePreflightValidator.matchDetectedService(d.serviceName(), List.of(serviceName)) != null) {
+                return d;
+            }
+        }
+        return (singleUnpinnedApp && candidates.size() == 1) ? candidates.get(0) : null;
+    }
 
     static BuildSpec parseBuildSpec(Object buildNode, Map<String, String> rootDotEnv) {
         if (buildNode instanceof Map<?, ?> map) {

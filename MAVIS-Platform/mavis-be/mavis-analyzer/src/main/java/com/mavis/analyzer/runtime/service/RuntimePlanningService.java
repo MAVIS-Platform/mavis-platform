@@ -948,6 +948,21 @@ public class RuntimePlanningService {
     stepObj.put("service",resolvedSvc);
    }
   }
+  normalizeAndBindScenarioVariables(normalizedSteps);
+  // Values the containers need beyond Compose: edited env, relocated compose secrets, user secrets and per-service sandbox secrets.
+  var execEnv=buildExecutionEnvironment(id,c.getProfile(),pre,apps);
+  Map<String,String> step1Defaults=collectProjectInputDefaults(id,c.getProfile(),pre);
+  Map<String,String> protectedEnv=new LinkedHashMap<>(execEnv.protectedEnvironment());
+  if(r.environment()!=null){
+   r.environment().forEach((k,v)->{
+    if(k!=null&&k.matches("[A-Z][A-Z0-9_]{0,63}")&&v!=null&&v.length()<=16000&&v.indexOf('\0')<0){
+     protectedEnv.put(k,v);
+    }
+   });
+  }
+  ensureScenarioStepReferences(normalizedSteps,pre,step1Defaults,protectedEnv);
+  Map<String,String> boundedProtectedEnv=capProtectedEnvironment(protectedEnv,execEnv.bindings(),normalizedSteps);
+
   var config=json.createObjectNode();
   ObjectNode profileCopy=c.getProfile().deepCopy();
   profileCopy.remove("sealedInputs");
@@ -959,12 +974,10 @@ public class RuntimePlanningService {
   if(!profileCopy.hasNonNull("sandboxCompose")&&pre.getSandboxComposeYaml()!=null&&!pre.getSandboxComposeYaml().isBlank()&&(pre.getUnresolvableRunnerIssues()==null||pre.getUnresolvableRunnerIssues().isEmpty())){
    profileCopy.put("sandboxCompose",pre.getSandboxComposeYaml());
   }
+  if(!execEnv.bindings().isEmpty())profileCopy.set("environmentBindings",execEnv.bindings());
   config.set("profile",profileCopy);
   var scenario=config.putObject("scenario");scenario.set("steps",normalizedSteps);scenario.put("timeoutSeconds",settings.requireProfile(c.getProfileId()).timeoutSeconds());
   var planning=config.putObject("planning");planning.put("scenarioId",s.getId().toString());planning.put("scenarioRevision",s.getRevision());planning.put("configurationRevision",c.getRevision());
-  // Values the containers need beyond Compose: edited env, relocated compose secrets, user secrets and per-service sandbox secrets.
-  var execEnv=buildExecutionEnvironment(id,c.getProfile(),pre,apps);
-  if(!execEnv.bindings().isEmpty())((ObjectNode)config.get("profile")).set("environmentBindings",execEnv.bindings());
   Map<String,String> confirmedMappings=resolveConfirmedServiceMappings(c.getModelVersionId(),c.getProfile(),pre,apps);
   var createBuilder=RuntimeSessionCreateRequest.builder()
    .projectId(id)
@@ -976,12 +989,148 @@ public class RuntimePlanningService {
   if(!confirmedMappings.isEmpty())createBuilder.confirmedServiceMappings(confirmedMappings);
   var created=runtime.createRuntimeSession(createBuilder.build());
 
-  Map<String,String> protectedEnv=new LinkedHashMap<>(execEnv.protectedEnvironment());
-  if(r.environment()!=null)protectedEnv.putAll(r.environment());
-  ensureScenarioStepReferences(normalizedSteps,pre,protectedEnv);
   // Fails (and rolls back the session) when MAVIS_RUNTIME_ENVIRONMENT_KEY is missing instead of silently dropping inputs.
-  if(!protectedEnv.isEmpty())environments.store(created.getId(),protectedEnv);
+  if(!boundedProtectedEnv.isEmpty())environments.store(created.getId(),boundedProtectedEnv);
   return runtime.approveAndStartSession(created.getId());
+ }
+
+ private static final Pattern SINGLE_BRACE_PATH_PARAM=Pattern.compile("(?<!\\{)\\{([^{}/]+)}(?!})");
+ private static final Pattern SCENARIO_VAR_PATTERN=Pattern.compile("\\{\\{([a-zA-Z][a-zA-Z0-9_]*)}}");
+
+ private static String toScenarioEnvKey(String raw){
+  String s=(raw==null?"VAR":raw).replaceAll("([a-z0-9])([A-Z])","$1_$2").replaceAll("[^A-Za-z0-9_]","_").toUpperCase(Locale.ROOT).replaceAll("_+","_").replaceAll("^_|_$","");
+  if(s.isEmpty()||!Character.isLetter(s.charAt(0)))s="V_"+s;
+  return s.length()>64?s.substring(0,64):s;
+ }
+
+ private static void collectUnboundScenarioVars(String text,Set<String> available,Map<String,String> rewrites){
+  if(text==null||text.isEmpty())return;
+  Matcher m=SCENARIO_VAR_PATTERN.matcher(text);
+  while(m.find()){
+   String varName=m.group(1);
+   if(!available.contains(varName)&&!rewrites.containsKey(varName)){
+    rewrites.put(varName,toScenarioEnvKey(varName));
+   }
+  }
+ }
+
+ private void normalizeAndBindScenarioVariables(ArrayNode steps){
+  if(steps==null)return;
+  Set<String> available=new HashSet<>();
+  for(JsonNode node:steps){
+   if(!(node instanceof ObjectNode step))continue;
+   if(step.path("path").isTextual()){
+    String rawPath=step.get("path").asText();
+    Matcher single=SINGLE_BRACE_PATH_PARAM.matcher(rawPath);
+    StringBuilder sb=new StringBuilder();
+    while(single.find()){
+     single.appendReplacement(sb,Matcher.quoteReplacement(inferSampleParamValue(single.group(1))));
+    }
+    single.appendTail(sb);
+    step.put("path",sb.toString());
+   }
+   if(step.path("environmentVariables").isObject()){
+    step.path("environmentVariables").fieldNames().forEachRemaining(available::add);
+   }
+   Map<String,String> rewrites=new LinkedHashMap<>();
+   collectUnboundScenarioVars(step.path("path").asText(""),available,rewrites);
+   if(step.hasNonNull("jsonBody")&&step.get("jsonBody").isTextual()){
+    collectUnboundScenarioVars(step.get("jsonBody").asText(),available,rewrites);
+   }
+   if(step.path("headers").isObject()){
+    step.path("headers").fields().forEachRemaining(e->collectUnboundScenarioVars(e.getValue().asText(""),available,rewrites));
+   }
+   if(!rewrites.isEmpty()){
+    ObjectNode envVars=(step.has("environmentVariables")&&step.get("environmentVariables").isObject())
+      ?(ObjectNode)step.get("environmentVariables")
+      :step.putObject("environmentVariables");
+    for(Map.Entry<String,String> rw:rewrites.entrySet()){
+     String orig=rw.getKey();
+     String envKey=rw.getValue();
+     if(envVars.size()<64&&!envVars.has(envKey)){
+      envVars.put(envKey,envKey);
+     }
+     available.add(envKey);
+     if(!orig.equals(envKey)){
+      String from="{{"+orig+"}}",to="{{"+envKey+"}}";
+      if(step.path("path").isTextual())step.put("path",step.get("path").asText().replace(from,to));
+      if(step.hasNonNull("jsonBody")&&step.get("jsonBody").isTextual())step.put("jsonBody",step.get("jsonBody").asText().replace(from,to));
+      if(step.path("headers").isObject()){
+       ObjectNode hdrs=(ObjectNode)step.get("headers");
+       List<String> hNames=new ArrayList<>();
+       hdrs.fieldNames().forEachRemaining(hNames::add);
+       for(String hn:hNames){
+        if(hdrs.path(hn).isTextual())hdrs.put(hn,hdrs.get(hn).asText().replace(from,to));
+       }
+      }
+     }
+    }
+   }
+   if(step.path("extract").isObject()){
+    ObjectNode ext=(ObjectNode)step.get("extract");
+    List<String> extKeys=new ArrayList<>();
+    ext.fieldNames().forEachRemaining(extKeys::add);
+    for(String ek:extKeys){
+     String ptr=ext.path(ek).asText("").trim();
+     if(ptr.startsWith("$."))ext.put(ek,"/"+ptr.substring(2).replace('.','/'));
+     else if(!ptr.isEmpty()&&!ptr.startsWith("/"))ext.put(ek,"/"+ptr.replace('.','/'));
+     if(!ek.isBlank())available.add(ek);
+    }
+   }
+  }
+ }
+
+ private Map<String,String> collectProjectInputDefaults(UUID projectId,JsonNode profile,PreflightCheckResponseDTO pre){
+  Map<String,String> defaults=new LinkedHashMap<>();
+  if(pre!=null&&pre.getRequiredEnvVars()!=null){
+   for(var v:pre.getRequiredEnvVars()){
+    if(v!=null&&v.getName()!=null&&v.getDefaultValue()!=null&&!v.getDefaultValue().isBlank()){
+     defaults.put(v.getName(),v.getDefaultValue());
+    }
+   }
+  }
+  if(profile!=null&&profile.path("environmentVariables").isObject()){
+   profile.path("environmentVariables").fields().forEachRemaining(e->{
+    String val=e.getValue().asText("");
+    if(!val.isBlank())defaults.put(e.getKey(),val);
+   });
+  }
+  if(profile!=null&&profile.hasNonNull("sealedInputs")){
+   Map<String,String> unsealed=environments.unsealProjectInputs(projectId,profile.get("sealedInputs").asText(""));
+   if(unsealed!=null)unsealed.forEach((k,v)->{if(v!=null&&!v.isBlank())defaults.put(k,v);});
+  }
+  Map<String,String> step1=runtime.getProjectExecutionEnvironment(projectId);
+  if(step1!=null)step1.forEach((k,v)->{if(v!=null&&!v.isBlank())defaults.put(k,v);});
+  return defaults;
+ }
+
+ private static Map<String,String> capProtectedEnvironment(Map<String,String> protectedEnv,ObjectNode bindings,ArrayNode steps){
+  if(protectedEnv.size()<=64)return protectedEnv;
+  Set<String> required=new LinkedHashSet<>();
+  if(bindings!=null&&bindings.isObject()){
+   bindings.elements().forEachRemaining(arr->{
+    if(arr.isArray())arr.forEach(b->{String ref=b.path("reference").asText("");if(!ref.isBlank())required.add(ref);});
+   });
+  }
+  if(steps!=null){
+   for(JsonNode step:steps){
+    if(step==null||!step.isObject())continue;
+    if(step.hasNonNull("bodyReference"))required.add(step.get("bodyReference").asText(""));
+    if(step.path("environmentVariables").isObject())step.path("environmentVariables").elements().forEachRemaining(v->required.add(v.asText("")));
+    if(step.path("envHeaders").isArray())step.path("envHeaders").forEach(h->required.add(h.path("reference").asText("")));
+    if(step.path("secretHeaders").isObject())step.path("secretHeaders").elements().forEachRemaining(v->required.add(v.asText("")));
+   }
+  }
+  Map<String,String> capped=new LinkedHashMap<>();
+  for(String k:required){
+   if(capped.size()>=64)break;
+   if(protectedEnv.containsKey(k)&&k.matches("[A-Z][A-Z0-9_]{0,63}"))capped.put(k,protectedEnv.get(k));
+  }
+  for(Map.Entry<String,String> e:protectedEnv.entrySet()){
+   if(capped.size()>=64)break;
+   if(e.getKey()!=null&&e.getKey().matches("[A-Z][A-Z0-9_]{0,63}"))capped.putIfAbsent(e.getKey(),e.getValue());
+  }
+  return capped;
  }
 
  private static String canonicalRouteKey(String service,String method,String path){
@@ -989,7 +1138,7 @@ public class RuntimePlanningService {
   return (ComposePreflightValidator.cleanServiceCandidate(service)+":"+(method==null?"GET":method)+":"+cleanPath).toLowerCase(Locale.ROOT);
  }
 
- private void ensureScenarioStepReferences(ArrayNode steps,PreflightCheckResponseDTO pre,Map<String,String> protectedEnv){
+ private void ensureScenarioStepReferences(ArrayNode steps,PreflightCheckResponseDTO pre,Map<String,String> step1Defaults,Map<String,String> protectedEnv){
   if(steps==null||protectedEnv==null)return;
   Map<String,String> detectedBodyByRoute=new HashMap<>();
   if(pre!=null&&pre.getDetectedEndpoints()!=null){
@@ -1008,7 +1157,8 @@ public class RuntimePlanningService {
    if(step.hasNonNull("bodyReference")){
     String bodyRef=step.get("bodyReference").asText("");
     if(!bodyRef.isBlank()&&!isValidJsonObject(protectedEnv.get(bodyRef))){
-     String fallback=detectedBodyByRoute.get((svc+":"+method+":"+path).toLowerCase(Locale.ROOT));
+     String defBody=step1Defaults!=null?step1Defaults.get(bodyRef):null;
+     String fallback=isValidJsonObject(defBody)?defBody:detectedBodyByRoute.get((svc+":"+method+":"+path).toLowerCase(Locale.ROOT));
      if(fallback==null)fallback=detectedBodyByRoute.get(canonicalRouteKey(svc,method,path));
      protectedEnv.put(bodyRef,isValidJsonObject(fallback)?fallback:inferSampleJsonBody(path));
     }
@@ -1016,8 +1166,9 @@ public class RuntimePlanningService {
    if(step.path("environmentVariables").isObject()){
     step.path("environmentVariables").fields().forEachRemaining(e->{
      String envRef=e.getValue().asText("");
-     if(!envRef.isBlank()&&(protectedEnv.get(envRef)==null||protectedEnv.get(envRef).isBlank())){
-      protectedEnv.put(envRef,inferSampleParamValue(envRef));
+     if(!envRef.isBlank()&&envRef.matches("[A-Z][A-Z0-9_]{0,63}")&&(protectedEnv.get(envRef)==null||protectedEnv.get(envRef).isBlank())){
+      String defVal=step1Defaults!=null?step1Defaults.get(envRef):null;
+      protectedEnv.put(envRef,(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0)?defVal:inferSampleParamValue(envRef));
      }
     });
    }
@@ -1025,16 +1176,18 @@ public class RuntimePlanningService {
     for(JsonNode h:step.path("envHeaders")){
      String hName=h.path("name").asText("");
      String hRef=h.path("reference").asText("");
-     if(!hRef.isBlank()&&(protectedEnv.get(hRef)==null||protectedEnv.get(hRef).isBlank())){
-      protectedEnv.put(hRef,"Authorization".equalsIgnoreCase(hName)?"Bearer sandbox-verification-token":"sandbox-verification-value");
+     if(!hRef.isBlank()&&hRef.matches("[A-Z][A-Z0-9_]{0,63}")&&(protectedEnv.get(hRef)==null||protectedEnv.get(hRef).isBlank())){
+      String defVal=step1Defaults!=null?step1Defaults.get(hRef):null;
+      protectedEnv.put(hRef,(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0)?defVal:("Authorization".equalsIgnoreCase(hName)?"Bearer sandbox-verification-token":"sandbox-verification-value"));
      }
     }
    }
    if(step.path("secretHeaders").isObject()){
     step.path("secretHeaders").fields().forEachRemaining(e->{
      String sRef=e.getValue().asText("");
-     if(!sRef.isBlank()&&(protectedEnv.get(sRef)==null||protectedEnv.get(sRef).isBlank())){
-      protectedEnv.put(sRef,"Authorization".equalsIgnoreCase(e.getKey())?"Bearer sandbox-verification-token":"sandbox-verification-value");
+     if(!sRef.isBlank()&&sRef.matches("[A-Z][A-Z0-9_]{0,63}")&&(protectedEnv.get(sRef)==null||protectedEnv.get(sRef).isBlank())){
+      String defVal=step1Defaults!=null?step1Defaults.get(sRef):null;
+      protectedEnv.put(sRef,(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0)?defVal:("Authorization".equalsIgnoreCase(e.getKey())?"Bearer sandbox-verification-token":"sandbox-verification-value"));
      }
     });
    }
