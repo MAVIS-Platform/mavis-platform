@@ -166,6 +166,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [dismissedSecretKeys, setDismissedSecretKeys] = useState<string[]>([]);
   const [showMappingInputs, setShowMappingInputs] = useState(false);
   const [showEnvInputs, setShowEnvInputs] = useState(false);
+  const [showSecretOverrides, setShowSecretOverrides] = useState(false);
 
   useEffect(() => {
     if (preflight.data?.recommendedProfile) {
@@ -277,8 +278,18 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
           defaultValue?: string | null;
           required?: boolean;
           source?: string;
+          scope?: string | null;
+          defaultPresent?: boolean;
         }>)
       : []);
+  const stringList = (value: unknown) => (Array.isArray(value) ? value.map(String) : []);
+  const runnerIssues = preflight.data?.runnerIssues ?? stringList(rawProfile["runnerIssues"]);
+  const infrastructureServices = preflight.data?.infrastructureServices ?? stringList(rawProfile["infrastructureServices"]);
+  const serviceHealthPaths =
+    preflight.data?.serviceHealthPaths ??
+    (typeof rawProfile["serviceHealthPaths"] === "object" && rawProfile["serviceHealthPaths"] !== null
+      ? (rawProfile["serviceHealthPaths"] as Record<string, string>)
+      : {});
 
   useEffect(() => {
     if (rawProfile && typeof rawProfile["serviceMappings"] === "object" && rawProfile["serviceMappings"] !== null) {
@@ -341,12 +352,6 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
           next[item.name] = prev[item.name] ?? "";
         }
       }
-      if (
-        databaseChecks.length > 0 &&
-        !Object.keys(next).some((k) => k.includes("DB_") || k.includes("DATASOURCE") || k.includes("CONNECTION"))
-      ) {
-        next["DB_CONNECTION_STRING"] = prev["DB_CONNECTION_STRING"] ?? "";
-      }
       return next;
     });
   }, [detectedVarSignature, databaseChecks.length, snapshotId]);
@@ -356,10 +361,6 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       ...requiredEnvVars
         .filter((v) => v.category === "DB_SECRET" || v.category === "SECRET")
         .map((v) => v.name),
-      ...(databaseChecks.length > 0 &&
-      !requiredEnvVars.some((v) => v.category === "DB_SECRET")
-        ? ["DB_CONNECTION_STRING"]
-        : []),
     ]),
   );
 
@@ -370,6 +371,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       ...Object.keys(secretValues),
     ]),
   ).filter((k) => !dismissedSecretKeys.includes(k));
+
+  // Sandbox-internal secrets (JWT keys, DB passwords) are generated per run or reused from the sandbox DB container.
+  const externalSecretKeys = allSecretKeys.filter((k) => {
+    const meta = requiredEnvVars.find((r) => r.name === k);
+    return !meta || configuredSecretKeys.includes(k) || (meta.scope === "EXTERNAL" && !meta.defaultPresent);
+  });
+  const autoSecretKeys = allSecretKeys.filter((k) => !externalSecretKeys.includes(k));
+  const renderedSecretKeys = showSecretOverrides ? allSecretKeys : externalSecretKeys;
 
   return (
     <div className="space-y-6">
@@ -426,14 +435,23 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
               );
             })()}
 
-            <Button
-              disabled={!snapshotId || preflight.isPending}
-              onClick={() => preflight.mutate({ projectId, snapshotId })}
-            >
-              {preflight.isPending
-                ? "Inspecting source & Compose..."
-                : "Check runtime eligibility (Compose Preflight)"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                {preflight.isPending
+                  ? "Inspecting source & Compose automatically..."
+                  : "Preflight runs automatically for the selected revision."}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                disabled={!snapshotId || preflight.isPending}
+                onClick={() => preflight.mutate({ projectId, snapshotId })}
+              >
+                ↻ Re-check
+              </Button>
+            </div>
 
             {preflight.isError && <ErrorState error={preflight.error} />}
 
@@ -442,18 +460,21 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <span className="font-semibold text-sm">Preflight Result:</span>
-                    <StatusBadge
-                      status={
-                        (preflight.data ? preflight.data.compatible : config.data?.supported)
-                          ? "Compatible"
-                          : "Rejected"
-                      }
-                      variant={
-                        (preflight.data ? preflight.data.compatible : config.data?.supported)
-                          ? "success"
-                          : "destructive"
-                      }
-                    />
+                    {(() => {
+                      const secure = preflight.data ? preflight.data.compatible : config.data?.supported;
+                      return (
+                        <StatusBadge
+                          status={
+                            !secure
+                              ? "Rejected"
+                              : runnerIssues.length
+                                ? `Needs changes (${runnerIssues.length})`
+                                : "Ready for sandbox run"
+                          }
+                          variant={!secure ? "destructive" : runnerIssues.length ? "warning" : "success"}
+                        />
+                      );
+                    })()}
                   </div>
                   {(preflight.data?.recommendedProfile || config.data?.profileId) && (
                     <p className="text-xs text-muted-foreground">
@@ -462,6 +483,19 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     </p>
                   )}
                 </div>
+
+                {runnerIssues.length > 0 && (
+                  <div role="alert" className="rounded border border-amber-500/30 bg-amber-500/5 p-3 text-xs space-y-1">
+                    <p className="font-semibold text-amber-500">
+                      The sandbox runner will reject this Compose file until these are fixed:
+                    </p>
+                    <ul className="list-disc pl-5 space-y-0.5 text-amber-400">
+                      {runnerIssues.map((issue, idx) => (
+                        <li key={idx}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {/* Detected Services & Database Checks Dropdowns */}
                 {(() => {
@@ -599,7 +633,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   <div className="space-y-1">
                     <strong className="text-sm text-warning">Security Warnings / Prerequisites:</strong>
                     <ul className="list-disc pl-5 text-xs text-warning space-y-0.5">
-                      {(preflight.data?.securityWarnings ?? config.data?.prerequisites ?? []).map((w, i) => (
+                      {Array.from(
+                        new Set([...(preflight.data?.securityWarnings ?? []), ...(config.data?.prerequisites ?? [])]),
+                      ).map((w, i) => (
                         <li key={i}>{w}</li>
                       ))}
                     </ul>
@@ -663,7 +699,18 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-2 pt-0.5">
-                  {activeServices.map((svc) => (
+                  {activeServices.map((svc) =>
+                    infrastructureServices.includes(svc) ? (
+                      <div
+                        key={svc}
+                        title="Started by Compose; not instrumented or health-checked"
+                        className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-1.5 text-xs font-mono text-muted-foreground"
+                      >
+                        <span className="h-2 w-2 rounded-full bg-slate-500" />
+                        <span className="font-semibold">{svc}</span>
+                        <span>infrastructure</span>
+                      </div>
+                    ) : (
                     <div
                       key={svc}
                       className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs font-mono"
@@ -677,8 +724,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                       <span className="text-emerald-400 font-semibold">
                         {serviceMappings[svc] ?? svc}
                       </span>
+                      <span className="text-muted-foreground" title="Readiness check path">
+                        {serviceHealthPaths[svc] ?? "/health"}
+                      </span>
                     </div>
-                  ))}
+                    ),
+                  )}
                 </div>
               )
             ) : (
@@ -693,11 +744,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h4 className="text-sm font-semibold">
-                  Auto-Detected Required Connections & API Keys ({allSecretKeys.length} box{allSecretKeys.length === 1 ? "" : "es"})
+                  Secrets & API Keys ({externalSecretKeys.length} optional input · {autoSecretKeys.length} automatic)
                 </h4>
                 <p className="text-xs text-muted-foreground">
-                  Automatically detected from source code and static architecture (e.g. Database detected →{" "}
-                  <code>DB_CONNECTION_STRING</code> box appears; AI/External API detected → <code>API_KEY</code> box appears).
+                  Sandbox-internal secrets (JWT keys, database passwords) are generated for each run or reused from the
+                  sandbox database container. External service keys are optional: the sandbox has no internet access.
                 </p>
               </div>
               <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs font-medium">
@@ -705,9 +756,44 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
               </span>
             </div>
 
-            {allSecretKeys.length > 0 ? (
+            {autoSecretKeys.length > 0 && (
+              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-emerald-500">
+                    🔒 Provided automatically for the sandbox ({autoSecretKeys.length})
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setShowSecretOverrides((prev) => !prev)}
+                  >
+                    {showSecretOverrides ? "Hide overrides" : "Override values"}
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {autoSecretKeys.map((k) => {
+                    const meta = requiredEnvVars.find((r) => r.name === k);
+                    return (
+                      <span
+                        key={k}
+                        className="inline-flex items-center gap-1 rounded border bg-background/80 px-2 py-0.5 font-mono text-[11px]"
+                      >
+                        <strong className="text-foreground">{k}</strong>
+                        <span className="text-muted-foreground">
+                          {meta?.defaultPresent ? "· default in source/compose" : "· generated per run"}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {renderedSecretKeys.length > 0 ? (
               <div className="grid gap-3 sm:grid-cols-2">
-                {allSecretKeys.map((sKey) => {
+                {renderedSecretKeys.map((sKey) => {
                   const isConfigured = configuredSecretKeys.includes(sKey);
                   const meta = requiredEnvVars.find((r) => r.name === sKey);
                   const upper = sKey.toUpperCase();
@@ -791,7 +877,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
               </div>
             ) : (
               <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-                No required Database Connection or API Key detected in this snapshot. You can still add custom boxes below if needed.
+                No input needed: every detected secret is provided automatically. You can still add a custom value below.
               </div>
             )}
 

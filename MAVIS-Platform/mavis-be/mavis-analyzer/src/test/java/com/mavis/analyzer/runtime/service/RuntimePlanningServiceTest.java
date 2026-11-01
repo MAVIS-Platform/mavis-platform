@@ -26,6 +26,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -38,6 +39,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -203,5 +205,109 @@ class RuntimePlanningServiceTest {
                 "SPRING_PROFILES_ACTIVE", "staging",
                 "ORDERS_API_BODY_1", "{\"qty\":1}"
         )));
+    }
+
+    private RuntimeConfiguration savedConfig(String... appNames) {
+        ObjectNode profile = json.createObjectNode();
+        ObjectNode apps = profile.putObject("applications");
+        for (String app : appNames) apps.putObject(app).put("runtime", "java").put("containerPort", 8080);
+        RuntimeConfiguration cfg = new RuntimeConfiguration();
+        cfg.setProjectId(projectId);
+        cfg.setSourceSnapshotId(snapshotId);
+        cfg.setModelVersionId(modelId);
+        cfg.setProfileId("SPRING_BOOT_DOTNET_COMPOSE_V1");
+        cfg.setProfile(profile);
+        cfg.setRevision(1);
+        return cfg;
+    }
+
+    private UUID savedScenario(String service) {
+        UUID scenarioId = UUID.randomUUID();
+        RuntimeScenario scenario = new RuntimeScenario();
+        scenario.setId(scenarioId);
+        scenario.setProjectId(projectId);
+        scenario.setName("Auto");
+        scenario.setRevision(1);
+        var steps = json.createArrayNode();
+        steps.addObject().put("id", "s1").put("service", service).put("method", "GET").put("path", "/health").put("expectedStatus", 200);
+        scenario.setSteps(steps);
+        when(scenarios.findById(scenarioId)).thenReturn(Optional.of(scenario));
+        return scenarioId;
+    }
+
+    @Test
+    @DisplayName("STEP 1 AUTO: sandbox secrets are generated or reused from the DB container and bound to the owning service")
+    void testStart_ProvidesSandboxSecretsWithoutUserInput() {
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(configurations.findById(projectId)).thenReturn(Optional.of(savedConfig("orders-api")));
+        UUID scenarioId = savedScenario("orders-api");
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("orders-api", "orders-db"))
+                .infrastructureServices(List.of("orders-db"))
+                .sandboxDatabaseCredentials(Map.of("POSTGRES_PASSWORD", "pg-literal"))
+                .requiredEnvVars(List.of(
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder().name("JWT_SECRET").service("orders-api").category("SECRET").scope("SANDBOX").build(),
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder().name("DB_PASSWORD").service("orders-api").category("DB_SECRET").scope("SANDBOX").build(),
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder().name("OPENAI_API_KEY").service("orders-api").category("SECRET").scope("EXTERNAL").build(),
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder().name("SERVER_PORT").service("orders-api").category("ENV").defaultValue("8080").defaultPresent(true).build()))
+                .build());
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of("SERVER_PORT", "8080"));
+        UUID sessionId = UUID.randomUUID();
+        when(runtime.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+        when(runtime.approveAndStartSession(sessionId)).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+
+        planningService.start(projectId, new StartRequest(snapshotId, scenarioId, 1, 1, true, null));
+
+        ArgumentCaptor<com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest> created = ArgumentCaptor.forClass(com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest.class);
+        verify(runtime).createRuntimeSession(created.capture());
+        var bindings = created.getValue().getScenarioConfig().path("profile").path("environmentBindings").path("orders-api");
+        assertThat(bindings.findValuesAsText("name")).containsExactlyInAnyOrder("JWT_SECRET", "DB_PASSWORD");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> stored = ArgumentCaptor.forClass(Map.class);
+        verify(environments).store(eq(sessionId), stored.capture());
+        assertThat(stored.getValue()).containsEntry("DB_PASSWORD", "pg-literal").doesNotContainKeys("OPENAI_API_KEY", "SERVER_PORT");
+        assertThat(stored.getValue().get("JWT_SECRET")).hasSize(44);
+    }
+
+    @Test
+    @DisplayName("STEP 1 AUTO: Compose files the runner would reject are refused before a session is created")
+    void testStart_RejectsComposeTheRunnerCannotExecute() {
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(configurations.findById(projectId)).thenReturn(Optional.of(savedConfig("orders-api")));
+        UUID scenarioId = savedScenario("orders-api");
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("orders-api"))
+                .runnerIssues(List.of("Service 'orders-api' uses build:"))
+                .build());
+
+        assertThatThrownBy(() -> planningService.start(projectId, new StartRequest(snapshotId, scenarioId, 1, 1, true, null)))
+                .hasMessageContaining("uses build:");
+        verify(runtime, org.mockito.Mockito.never()).createRuntimeSession(any());
+    }
+
+    @Test
+    @DisplayName("STEP 1 AUTO: profile excludes infrastructure, uses detected port/health and operator images")
+    void testNormalizeStep1Profile_BuildsRunnableApplicationsAutomatically() {
+        ReflectionTestUtils.setField(planningService, "runnerCollectorImage", "otel/collector@sha256:" + "d".repeat(64));
+        ReflectionTestUtils.setField(planningService, "runnerScenarioImage", "mavis/scenario-runner@sha256:" + "e".repeat(64));
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .detectedServices(List.of("order-service", "orders-db"))
+                .infrastructureServices(List.of("orders-db"))
+                .servicePorts(Map.of("order-service", 8081, "orders-db", 5432))
+                .serviceHealthPaths(Map.of("order-service", "/actuator/health"))
+                .build());
+        ObjectNode raw = json.createObjectNode();
+        raw.putObject("serviceMappings").put("order-service", "order-service").put("orders-db", "orders-db");
+
+        ObjectNode profile = (ObjectNode) ReflectionTestUtils.invokeMethod(planningService, "normalizeStep1Profile",
+                projectId, snapshotId, "SPRING_BOOT_DOTNET_COMPOSE_V1", raw);
+
+        assertThat(profile.path("applications").has("orders-db")).isFalse();
+        assertThat(profile.path("applications").path("order-service").path("containerPort").asInt()).isEqualTo(8081);
+        assertThat(profile.path("applications").path("order-service").path("readinessPath").asText()).isEqualTo("/actuator/health");
+        assertThat(profile.path("collectorImage").asText()).endsWith("d".repeat(64));
+        assertThat(profile.path("scenarioRunnerImage").asText()).endsWith("e".repeat(64));
     }
 }

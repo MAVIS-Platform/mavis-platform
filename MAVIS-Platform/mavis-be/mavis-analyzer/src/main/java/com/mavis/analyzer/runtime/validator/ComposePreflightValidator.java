@@ -37,6 +37,28 @@ public class ComposePreflightValidator {
     private static final Pattern QUOTED_STRING_PATTERN = Pattern.compile("\"([^\"]+)\"");
     private static final Pattern DOTNET_ROUTE_ATTR_PATTERN = Pattern.compile("\\[(HttpGet|HttpPost|HttpPut|HttpDelete|HttpPatch|Route)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?\\]");
     private static final Pattern DOTNET_MINIMAL_API_PATTERN = Pattern.compile("\\.Map(Get|Post|Put|Delete|Patch)\\s*\\(\\s*\"([^\"]+)\"");
+    private static final Pattern MAP_HEALTH_CHECKS_PATTERN = Pattern.compile("\\.MapHealthChecks\\s*\\(\\s*\"(/[^\"]*)\"");
+    private static final Pattern JAVA_HEALTH_ROUTE_PATTERN = Pattern.compile("(?:@(?:GetMapping|RequestMapping)\\s*\\(\\s*(?:value\\s*=\\s*|path\\s*=\\s*)?|createContext\\s*\\(\\s*)\"(/health[A-Za-z/]*)\"");
+    private static final Pattern HEALTHCHECK_URL_PATTERN = Pattern.compile("https?://(?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0)(?::\\d+)?(/[^\\s\"'|;&]*)");
+    private static final Pattern ASPNETCORE_URL_PORT_PATTERN = Pattern.compile(":(\\d{2,5})");
+    private static final Pattern PINNED_IMAGE_PATTERN = Pattern.compile(".+@sha256:[0-9a-fA-F]{64}|sha256:[0-9a-fA-F]{64}");
+    private static final Pattern RUNNER_NAME_PATTERN = Pattern.compile("[A-Za-z0-9_-]{1,63}");
+    // Mirrors MAVIS.Worker/src/MAVIS.Runner/ComposePreflight.cs so Step 1 reports exactly what the runner will reject.
+    private static final Set<String> RUNNER_ROOT_KEYS = Set.of("services", "volumes");
+    private static final Set<String> RUNNER_SERVICE_KEYS = Set.of("image", "command", "entrypoint", "environment", "depends_on",
+            "healthcheck", "expose", "volumes", "user", "working_dir", "init", "stop_grace_period");
+    private static final List<String> INFRASTRUCTURE_KEYWORDS = List.of("kafka", "zookeeper", "rabbitmq", "activemq", "nats",
+            "elasticsearch", "opensearch", "kibana", "logstash", "keycloak", "jaeger", "zipkin", "prometheus", "grafana",
+            "otel-collector", "opentelemetry-collector", "consul", "vault", "minio", "localstack", "mailhog", "mailpit",
+            "adminer", "pgadmin", "memcached", "cassandra", "neo4j", "influxdb", "nginx", "traefik", "envoy", "haproxy");
+    private static final List<String> DB_PASSWORD_KEYS = List.of("POSTGRES_PASSWORD", "MYSQL_PASSWORD", "MARIADB_PASSWORD",
+            "MYSQL_ROOT_PASSWORD", "MARIADB_ROOT_PASSWORD", "MONGO_INITDB_ROOT_PASSWORD", "MSSQL_SA_PASSWORD", "SA_PASSWORD");
+    private static final List<String> DB_USER_KEYS = List.of("POSTGRES_USER", "MYSQL_USER", "MARIADB_USER", "MONGO_INITDB_ROOT_USERNAME", "MSSQL_USER");
+    private static final List<String> DB_NAME_KEYS = List.of("POSTGRES_DB", "MYSQL_DATABASE", "MARIADB_DATABASE", "MONGO_INITDB_DATABASE");
+    private static final List<String> EXTERNAL_SECRET_MARKERS = List.of("OPENAI", "GEMINI", "ANTHROPIC", "CLAUDE", "AZURE", "AWS_",
+            "GOOGLE", "GCP", "STRIPE", "PAYPAL", "TWILIO", "SENDGRID", "MAILGUN", "SMTP", "MAIL_", "SLACK", "GITHUB", "DISCORD",
+            "FIREBASE", "CLOUDINARY", "S3_", "MAPS", "OAUTH", "CLIENT_SECRET", "API_KEY", "APIKEY", "ACCESS_KEY", "DASHSCOPE",
+            "HUGGINGFACE", "DEEPSEEK", "MISTRAL", "COHERE");
 
     public PreflightCheckResponseDTO validate(String yamlContent) {
         List<String> detectedServices = new ArrayList<>();
@@ -46,65 +68,58 @@ public class ComposePreflightValidator {
         List<DetectedEndpointDTO> detectedEndpoints = new ArrayList<>();
         List<DatabaseCheckDTO> databaseChecks = new ArrayList<>();
         Map<String, RequiredEnvVarDTO> envVarMap = new LinkedHashMap<>();
+        List<String> runnerIssues = new ArrayList<>();
+        List<String> infrastructureServices = new ArrayList<>();
+        Map<String, String> healthPaths = new HashMap<>();
+        Map<String, String> databaseCredentials = new HashMap<>();
 
         if (yamlContent == null || yamlContent.isBlank()) {
             securityWarnings.add("Nội dung docker-compose rỗng hoặc không tồn tại");
-            return PreflightCheckResponseDTO.builder()
-                    .compatible(false)
-                    .detectedServices(detectedServices)
-                    .securityWarnings(securityWarnings)
-                    .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
-                    .servicePorts(servicePorts)
-                    .serviceStacks(serviceStacks)
-                    .detectedEndpoints(detectedEndpoints)
-                    .databaseChecks(databaseChecks)
-                    .requiredEnvVars(new ArrayList<>(envVarMap.values()))
-                    .build();
-        }
+            runnerIssues.add("No docker-compose.yml content was found; the sandbox runner needs a Compose file");
+        } else {
+            try {
+                LoaderOptions options = new LoaderOptions();
+                Yaml yaml = new Yaml(new SafeConstructor(options));
+                Object loaded = yaml.load(yamlContent);
 
-        try {
-            LoaderOptions options = new LoaderOptions();
-            Yaml yaml = new Yaml(new SafeConstructor(options));
-            Object loaded = yaml.load(yamlContent);
+                if (!(loaded instanceof Map<?, ?> rootMap)) {
+                    securityWarnings.add("Cấu trúc docker-compose không phải là YAML hợp lệ");
+                    runnerIssues.add("docker-compose.yml is not a YAML mapping");
+                } else {
+                    Object servicesObj = rootMap.get("services");
+                    if (servicesObj instanceof Map<?, ?> servicesMap) {
+                        for (Map.Entry<?, ?> entry : servicesMap.entrySet()) {
+                            String serviceName = String.valueOf(entry.getKey());
+                            detectedServices.add(serviceName);
 
-            if (!(loaded instanceof Map<?, ?> rootMap)) {
-                securityWarnings.add("Cấu trúc docker-compose không phải là YAML hợp lệ");
-                return PreflightCheckResponseDTO.builder()
-                        .compatible(false)
-                        .detectedServices(detectedServices)
-                        .securityWarnings(securityWarnings)
-                        .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
-                        .servicePorts(servicePorts)
-                        .serviceStacks(serviceStacks)
-                        .detectedEndpoints(detectedEndpoints)
-                        .databaseChecks(databaseChecks)
-                        .requiredEnvVars(new ArrayList<>(envVarMap.values()))
-                        .build();
-            }
-
-            Object servicesObj = rootMap.get("services");
-            if (servicesObj instanceof Map<?, ?> servicesMap) {
-                for (Map.Entry<?, ?> entry : servicesMap.entrySet()) {
-                    String serviceName = String.valueOf(entry.getKey());
-                    detectedServices.add(serviceName);
-
-                    if (entry.getValue() instanceof Map<?, ?> serviceConfig) {
-                        checkServiceSecurity(serviceName, serviceConfig, securityWarnings);
-                        servicePorts.put(serviceName, extractTargetPort(serviceConfig));
-                        String stack = extractStack(serviceName, serviceConfig);
-                        serviceStacks.put(serviceName, stack);
-                        inspectComposeServiceEnvironmentAndDb(serviceName, serviceConfig, databaseChecks, envVarMap);
+                            if (entry.getValue() instanceof Map<?, ?> serviceConfig) {
+                                checkServiceSecurity(serviceName, serviceConfig, securityWarnings);
+                                servicePorts.put(serviceName, extractTargetPort(serviceConfig));
+                                String stack = extractStack(serviceName, serviceConfig);
+                                serviceStacks.put(serviceName, stack);
+                                inspectComposeServiceEnvironmentAndDb(serviceName, serviceConfig, databaseChecks, envVarMap);
+                                String image = serviceConfig.get("image") != null ? String.valueOf(serviceConfig.get("image")) : "";
+                                if (isInfrastructureService(serviceName, image)) {
+                                    infrastructureServices.add(serviceName);
+                                    collectDatabaseCredentials(image, serviceConfig, databaseCredentials);
+                                }
+                                String healthPath = extractHealthcheckPath(serviceConfig.get("healthcheck"));
+                                if (healthPath != null) healthPaths.put(serviceName, healthPath);
+                            } else {
+                                servicePorts.put(serviceName, 8080);
+                                serviceStacks.put(serviceName, "java");
+                            }
+                        }
                     } else {
-                        servicePorts.put(serviceName, 8080);
-                        serviceStacks.put(serviceName, "java");
+                        securityWarnings.add("Không tìm thấy khối 'services:' trong docker-compose.yml");
                     }
+                    runnerIssues.addAll(runnerCompatibilityIssues(yamlContent, rootMap));
                 }
-            } else {
-                securityWarnings.add("Không tìm thấy khối 'services:' trong docker-compose.yml");
+            } catch (Exception e) {
+                log.error("Lỗi khi phân tích cú pháp docker-compose YAML", e);
+                securityWarnings.add("Lỗi cú pháp YAML: " + e.getMessage());
+                runnerIssues.add("docker-compose.yml could not be parsed");
             }
-        } catch (Exception e) {
-            log.error("Lỗi khi phân tích cú pháp docker-compose YAML", e);
-            securityWarnings.add("Lỗi cú pháp YAML: " + e.getMessage());
         }
 
         boolean compatible = securityWarnings.isEmpty();
@@ -119,6 +134,10 @@ public class ComposePreflightValidator {
                 .detectedEndpoints(detectedEndpoints)
                 .databaseChecks(databaseChecks)
                 .requiredEnvVars(new ArrayList<>(envVarMap.values()))
+                .runnerIssues(runnerIssues)
+                .infrastructureServices(infrastructureServices)
+                .serviceHealthPaths(healthPaths)
+                .sandboxDatabaseCredentials(databaseCredentials)
                 .build();
     }
 
@@ -128,6 +147,7 @@ public class ComposePreflightValidator {
                     .compatible(false)
                     .detectedServices(Collections.emptyList())
                     .securityWarnings(List.of("Không tìm thấy file docker-compose tại đường dẫn: " + composeFile))
+                    .runnerIssues(new ArrayList<>(List.of("No docker-compose.yml was found; the sandbox runner needs a Compose file")))
                     .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
                     .build();
         }
@@ -141,6 +161,7 @@ public class ComposePreflightValidator {
                     .compatible(false)
                     .detectedServices(Collections.emptyList())
                     .securityWarnings(List.of("Lỗi I/O khi đọc file compose: " + e.getMessage()))
+                    .runnerIssues(new ArrayList<>(List.of("docker-compose.yml could not be read")))
                     .recommendedProfile("SPRING_BOOT_DOTNET_COMPOSE_V1")
                     .build();
         }
@@ -162,6 +183,8 @@ public class ComposePreflightValidator {
         for (DetectedEndpointDTO ep : endpoints) {
             endpointKeys.add((ep.getService() + ":" + ep.getMethod() + ":" + ep.getPath()).toLowerCase(Locale.ROOT));
         }
+        Map<String, String> explicitHealth = new HashMap<>();
+        Set<String> actuatorServices = new HashSet<>();
 
         try {
             if (Files.isRegularFile(storagePath) && storagePath.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".zip")) {
@@ -177,7 +200,7 @@ public class ComposePreflightValidator {
                             inspectedFiles++;
                             try (InputStream is = zipFile.getInputStream(entry)) {
                                 String content = new String(is.readNBytes(256_000), StandardCharsets.UTF_8);
-                                inspectFileContent(entryName, content, dto, envMap, dbChecks, endpoints, endpointKeys);
+                                inspectFileContent(entryName, content, dto, envMap, dbChecks, endpoints, endpointKeys, explicitHealth, actuatorServices);
                             }
                         }
                     }
@@ -195,7 +218,7 @@ public class ComposePreflightValidator {
                                         if (Files.size(file) <= 256_000) {
                                             String rel = dirToScan.relativize(file).toString().replace('\\', '/');
                                             String content = Files.readString(file, StandardCharsets.UTF_8);
-                                            inspectFileContent(rel, content, dto, envMap, dbChecks, endpoints, endpointKeys);
+                                            inspectFileContent(rel, content, dto, envMap, dbChecks, endpoints, endpointKeys, explicitHealth, actuatorServices);
                                         }
                                     } catch (Exception ignored) {}
                                 });
@@ -224,6 +247,14 @@ public class ComposePreflightValidator {
             dto.setServicePorts(ports);
             dto.setServiceStacks(stacks);
         }
+        Map<String, String> health = new HashMap<>(dto.getServiceHealthPaths() != null ? dto.getServiceHealthPaths() : Map.of());
+        Set<String> infra = new HashSet<>(dto.getInfrastructureServices() != null ? dto.getInfrastructureServices() : List.of());
+        for (String svc : services) {
+            if (infra.contains(svc)) continue;
+            health.computeIfAbsent(svc, s -> explicitHealth.getOrDefault(s, actuatorServices.contains(s) ? "/actuator/health" : "/health"));
+        }
+        dto.setServiceHealthPaths(health);
+        pruneSpeculativeConnectionString(envMap, dbChecks);
         dto.setRequiredEnvVars(new ArrayList<>(envMap.values()));
         dto.setDatabaseChecks(dbChecks);
         dto.setDetectedEndpoints(endpoints);
@@ -258,7 +289,9 @@ public class ComposePreflightValidator {
             Map<String, RequiredEnvVarDTO> envMap,
             List<DatabaseCheckDTO> dbChecks,
             List<DetectedEndpointDTO> endpoints,
-            Set<String> endpointKeys) {
+            Set<String> endpointKeys,
+            Map<String, String> explicitHealth,
+            Set<String> actuatorServices) {
 
         String cleanRelPath = stripGitHubRootPrefix(relativePath);
         String lowerPath = cleanRelPath.toLowerCase(Locale.ROOT);
@@ -353,6 +386,20 @@ public class ComposePreflightValidator {
                 registerEnvVar(envMap, "API_KEY", inferredService, null, cleanRelPath);
             }
         }
+        // 1C. Readiness signals: actuator dependency, explicit /health routes, ASP.NET MapHealthChecks
+        if ((lowerPath.endsWith("pom.xml") || lowerPath.endsWith("build.gradle") || lowerPath.endsWith("build.gradle.kts"))
+                && lowerContent.contains("spring-boot-starter-actuator")) {
+            actuatorServices.add(inferredService);
+        }
+        if (lowerPath.endsWith(".java")) {
+            Matcher healthRoute = JAVA_HEALTH_ROUTE_PATTERN.matcher(content);
+            if (healthRoute.find()) explicitHealth.putIfAbsent(inferredService, healthRoute.group(1));
+        }
+        if (lowerPath.endsWith(".cs")) {
+            Matcher healthChecks = MAP_HEALTH_CHECKS_PATTERN.matcher(content);
+            if (healthChecks.find()) explicitHealth.putIfAbsent(inferredService, healthChecks.group(1));
+        }
+
         // 2. Java Controller endpoints (skip @FeignClient / @HttpExchange client interfaces)
         if (lowerPath.endsWith(".java") && content.contains("Mapping") && !content.contains("@FeignClient") && !content.contains("@HttpExchange")) {
             int classDeclIdx = content.indexOf("class ");
@@ -541,15 +588,57 @@ public class ComposePreflightValidator {
         String cleanName = name.trim();
         if (cleanName.startsWith("OTEL_") || cleanName.startsWith("JAVA_TOOL_OPTIONS")) return;
         String category = classifyEnvCategory(cleanName);
-        boolean required = defaultValue == null || defaultValue.isBlank() || "DB_SECRET".equals(category) || "SECRET".equals(category);
-        envVarMap.computeIfAbsent(cleanName, k -> RequiredEnvVarDTO.builder()
+        boolean secret = "DB_SECRET".equals(category) || "SECRET".equals(category);
+        boolean hasDefault = defaultValue != null && !defaultValue.isBlank();
+        RequiredEnvVarDTO existing = envVarMap.get(cleanName);
+        if (existing != null) {
+            // A later reference with a default (e.g. ${DB_PASSWORD:postgres}) means no input is needed.
+            if (hasDefault && !existing.isDefaultPresent()) {
+                existing.setDefaultPresent(true);
+                existing.setRequired(false);
+                if (!secret && existing.getDefaultValue() == null) existing.setDefaultValue(defaultValue);
+            }
+            return;
+        }
+        envVarMap.put(cleanName, RequiredEnvVarDTO.builder()
                 .name(cleanName)
                 .service(service != null && !service.isBlank() ? service : "global")
                 .category(category)
-                .defaultValue("DB_SECRET".equals(category) || "SECRET".equals(category) ? null : defaultValue)
-                .required(required)
+                .defaultValue(secret ? null : defaultValue)
+                .required(!hasDefault)
                 .source(source)
+                .scope(secret ? classifySecretScope(cleanName) : null)
+                .defaultPresent(hasDefault)
                 .build());
+    }
+
+    /** EXTERNAL secrets belong to third-party services (unreachable from the sandbox); everything else is sandbox-internal. */
+    public static String classifySecretScope(String name) {
+        String u = name == null ? "" : name.toUpperCase(Locale.ROOT);
+        return EXTERNAL_SECRET_MARKERS.stream().anyMatch(u::contains) ? "EXTERNAL" : "SANDBOX";
+    }
+
+    /** Sandbox secrets that are plain random material (passwords, signing keys), never URLs or connection strings. */
+    public static boolean isGeneratableSandboxSecret(String name) {
+        String u = name == null ? "" : name.toUpperCase(Locale.ROOT);
+        return "SANDBOX".equals(classifySecretScope(u))
+                && !(u.contains("CONNECTION") || u.contains("URL") || u.contains("URI") || u.contains("DSN") || u.contains("HOST"));
+    }
+
+    /** Reuses a sandbox database container credential for an application variable such as DB_PASSWORD or DB_USERNAME. */
+    public static String databaseCredentialFor(String name, Map<String, String> credentials) {
+        if (name == null || credentials == null || credentials.isEmpty()) return null;
+        String u = name.toUpperCase(Locale.ROOT);
+        if (!u.matches(".*(DB|DATASOURCE|DATABASE|POSTGRES|MYSQL|MARIADB|MONGO|SQL|PG).*")) return null;
+        List<String> keys = u.contains("PASS") ? DB_PASSWORD_KEYS
+                : u.contains("USER") ? DB_USER_KEYS
+                : (u.endsWith("_NAME") || u.endsWith("_DB") || u.endsWith("DATABASE")) ? DB_NAME_KEYS
+                : List.of();
+        // shortcut: with several database containers the first credential wins; extend with per-service matching if needed.
+        for (String key : keys) {
+            if (credentials.containsKey(key)) return credentials.get(key);
+        }
+        return null;
     }
 
     public static String classifyEnvCategory(String name) {
@@ -597,7 +686,7 @@ public class ComposePreflightValidator {
                 || lower.contains("ai.api-key") || lower.contains("api_key") || lower.contains("apikey")
                 || lower.contains("chatclient") || lower.contains("chatmodel");
     }
-    private static boolean isDatabaseContainer(String lowerName, String lowerImage) {
+    public static boolean isDatabaseContainer(String lowerName, String lowerImage) {
         return lowerName.equals("db") || lowerName.endsWith("-db") || lowerName.contains("postgres")
                 || lowerName.contains("mysql") || lowerName.contains("mariadb") || lowerName.contains("mongo")
                 || lowerName.contains("redis") || lowerName.contains("mssql")
@@ -803,27 +892,199 @@ public class ComposePreflightValidator {
     }
 
     private Integer extractTargetPort(Map<?, ?> serviceConfig) {
-        Object portsObj = serviceConfig.get("ports");
-        if (portsObj instanceof List<?> portList && !portList.isEmpty()) {
-            for (Object p : portList) {
-                if (p != null) {
-                    String str = String.valueOf(p).trim();
-                    if (str.contains(":")) {
-                        String[] parts = str.split(":");
-                        String target = parts[parts.length - 1].replaceAll("[^0-9]", "");
-                        if (!target.isBlank()) {
-                            try { return Integer.parseInt(target); } catch (Exception ignored) {}
-                        }
-                    } else {
-                        String target = str.replaceAll("[^0-9]", "");
-                        if (!target.isBlank()) {
-                            try { return Integer.parseInt(target); } catch (Exception ignored) {}
-                        }
-                    }
+        Integer exposed = firstPort(serviceConfig.get("expose"));
+        if (exposed != null) return exposed;
+        Integer published = firstPort(serviceConfig.get("ports"));
+        if (published != null) return published;
+        Integer fromEnv = portFromEnvironment(composeEnvironment(serviceConfig.get("environment")));
+        return fromEnv != null ? fromEnv : 8080;
+    }
+
+    private static Integer firstPort(Object node) {
+        if (!(node instanceof List<?> list)) return null;
+        for (Object p : list) {
+            if (p == null) continue;
+            String str = p instanceof Map<?, ?> longSyntax ? String.valueOf(longSyntax.get("target")) : String.valueOf(p).trim();
+            str = str.replaceAll("/(tcp|udp)$", "");
+            String[] parts = str.split(":");
+            String target = parts[parts.length - 1];
+            if (target.contains("-")) target = target.substring(0, target.indexOf('-'));
+            target = target.replaceAll("[^0-9]", "");
+            try {
+                int port = Integer.parseInt(target);
+                if (port >= 1 && port <= 65535) return port;
+            } catch (NumberFormatException ignored) {}
+        }
+        return null;
+    }
+
+    private static Integer portFromEnvironment(Map<String, String> env) {
+        for (String key : List.of("SERVER_PORT", "PORT", "HTTP_PORT", "ASPNETCORE_HTTP_PORTS")) {
+            String value = env.get(key);
+            if (value != null && value.trim().matches("\\d{2,5}")) return Integer.parseInt(value.trim());
+        }
+        String urls = env.get("ASPNETCORE_URLS");
+        if (urls != null) {
+            Matcher m = ASPNETCORE_URL_PORT_PATTERN.matcher(urls);
+            if (m.find()) return Integer.parseInt(m.group(1));
+        }
+        return null;
+    }
+
+    static Map<String, String> composeEnvironment(Object envObj) {
+        Map<String, String> env = new LinkedHashMap<>();
+        if (envObj instanceof Map<?, ?> map) {
+            map.forEach((k, v) -> env.put(String.valueOf(k).trim(), v == null ? "" : String.valueOf(v).trim()));
+        } else if (envObj instanceof List<?> list) {
+            for (Object item : list) {
+                String raw = item == null ? "" : String.valueOf(item).trim();
+                int idx = raw.indexOf('=');
+                if (idx > 0) env.put(raw.substring(0, idx).trim(), raw.substring(idx + 1).trim());
+            }
+        }
+        return env;
+    }
+
+    public static boolean isInfrastructureService(String serviceName, String image) {
+        String name = serviceName == null ? "" : serviceName.toLowerCase(Locale.ROOT);
+        String img = image == null ? "" : image.toLowerCase(Locale.ROOT);
+        if (name.contains("service") || name.endsWith("-api") || name.endsWith("-app")) return false;
+        if (isDatabaseContainer(name, img)) return true;
+        String repo = img.contains("@") ? img.substring(0, img.indexOf('@')) : img;
+        String lastSegment = repo.contains("/") ? repo.substring(repo.lastIndexOf('/') + 1) : repo;
+        for (String keyword : INFRASTRUCTURE_KEYWORDS) {
+            if (name.equals(keyword) || name.startsWith(keyword + "-") || name.endsWith("-" + keyword) || lastSegment.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void collectDatabaseCredentials(String image, Map<?, ?> serviceConfig, Map<String, String> credentials) {
+        Map<String, String> env = composeEnvironment(serviceConfig.get("environment"));
+        List<String> keys = new ArrayList<>(DB_PASSWORD_KEYS);
+        keys.addAll(DB_USER_KEYS);
+        keys.addAll(DB_NAME_KEYS);
+        for (String key : keys) {
+            String value = env.get(key);
+            if (value != null && !value.isBlank() && !value.contains("$")) credentials.putIfAbsent(key, value);
+        }
+        String img = image == null ? "" : image.toLowerCase(Locale.ROOT);
+        // Image defaults used when Compose sets only the password.
+        if (img.contains("postgres") && credentials.containsKey("POSTGRES_PASSWORD")) {
+            credentials.putIfAbsent("POSTGRES_USER", "postgres");
+            credentials.putIfAbsent("POSTGRES_DB", credentials.get("POSTGRES_USER"));
+        }
+        if ((img.contains("mysql") || img.contains("mariadb")) && !credentials.containsKey("MYSQL_USER") && !credentials.containsKey("MARIADB_USER")
+                && (credentials.containsKey("MYSQL_ROOT_PASSWORD") || credentials.containsKey("MARIADB_ROOT_PASSWORD"))) {
+            credentials.putIfAbsent("MYSQL_USER", "root");
+        }
+        if (img.contains("mssql") && (credentials.containsKey("MSSQL_SA_PASSWORD") || credentials.containsKey("SA_PASSWORD"))) {
+            credentials.putIfAbsent("MSSQL_USER", "sa");
+        }
+    }
+
+    private static String extractHealthcheckPath(Object healthcheck) {
+        if (!(healthcheck instanceof Map<?, ?> hc)) return null;
+        Object test = hc.get("test");
+        String text = test instanceof List<?> parts ? String.join(" ", parts.stream().map(String::valueOf).toList()) : String.valueOf(test);
+        Matcher m = HEALTHCHECK_URL_PATTERN.matcher(text);
+        return m.find() ? m.group(1) : null;
+    }
+
+    private static void pruneSpeculativeConnectionString(Map<String, RequiredEnvVarDTO> envMap, List<DatabaseCheckDTO> dbChecks) {
+        RequiredEnvVarDTO conn = envMap.get("DB_CONNECTION_STRING");
+        if (conn == null) return;
+        String src = conn.getSource() == null ? "" : conn.getSource().toLowerCase(Locale.ROOT);
+        boolean guessed = src.endsWith("pom.xml") || src.endsWith(".gradle") || src.endsWith(".kts") || src.endsWith(".csproj")
+                || src.endsWith(".props") || src.endsWith(".java") || src.endsWith(".cs") || src.equals("static_model");
+        boolean realDbVariables = envMap.values().stream().anyMatch(v -> v != conn && (v.getName().toUpperCase(Locale.ROOT).startsWith("DB_")
+                || v.getName().toUpperCase(Locale.ROOT).contains("DATASOURCE") || "DB_SECRET".equals(v.getCategory())));
+        // The guessed box is never read by the application when it already references its own DB variables.
+        if (guessed && realDbVariables) {
+            envMap.remove("DB_CONNECTION_STRING");
+            for (DatabaseCheckDTO check : dbChecks) {
+                if (check.getRequiredEnvVars() != null && check.getRequiredEnvVars().contains("DB_CONNECTION_STRING")) {
+                    check.setRequiredEnvVars(new ArrayList<>(check.getRequiredEnvVars().stream().filter(n -> !"DB_CONNECTION_STRING".equals(n)).toList()));
                 }
             }
         }
-        return 8080;
+    }
+
+    static List<String> runnerCompatibilityIssues(String yamlContent, Map<?, ?> rootMap) {
+        List<String> issues = new ArrayList<>();
+        if (yamlContent.length() > 1_048_576) issues.add("Compose file is larger than 1 MiB");
+        for (Object key : rootMap.keySet()) {
+            if (!RUNNER_ROOT_KEYS.contains(String.valueOf(key))) {
+                issues.add("Top-level '" + key + "' is not supported; remove it (the runner creates its own isolated network)");
+            }
+        }
+        String[] lines = yamlContent.split("\\r?\\n");
+        for (int i = 0; i < lines.length; i++) {
+            if (!lines[i].trim().startsWith("#") && lines[i].contains("$")) {
+                issues.add("Line " + (i + 1) + " uses '$' interpolation; use a literal value (changed values and secrets are injected per run)");
+                break;
+            }
+        }
+        Set<String> declaredVolumes = new HashSet<>();
+        Object volumes = rootMap.get("volumes");
+        if (volumes instanceof Map<?, ?> volumeMap) {
+            for (Map.Entry<?, ?> v : volumeMap.entrySet()) {
+                String name = String.valueOf(v.getKey());
+                boolean plain = v.getValue() == null || (v.getValue() instanceof Map<?, ?> m && m.isEmpty());
+                if (!RUNNER_NAME_PATTERN.matcher(name).matches() || name.startsWith("mavis-") || !plain) {
+                    issues.add("Volume '" + name + "' must be a plain named volume (no driver, external or 'mavis-' prefix)");
+                } else {
+                    declaredVolumes.add(name);
+                }
+            }
+        } else if (volumes != null) {
+            issues.add("Top-level 'volumes' must be a mapping of named volumes");
+        }
+        if (!(rootMap.get("services") instanceof Map<?, ?> services) || services.isEmpty() || services.size() > 20) {
+            issues.add("Compose must declare between 1 and 20 services");
+            return issues;
+        }
+        for (Map.Entry<?, ?> entry : services.entrySet()) {
+            String svc = String.valueOf(entry.getKey());
+            if (!RUNNER_NAME_PATTERN.matcher(svc).matches()) issues.add("Service name '" + svc + "' must use letters, digits, '-' or '_' (max 63)");
+            if (!(entry.getValue() instanceof Map<?, ?> config)) {
+                issues.add("Service '" + svc + "' must be a mapping");
+                continue;
+            }
+            for (Object rawKey : config.keySet()) {
+                String key = String.valueOf(rawKey);
+                if (RUNNER_SERVICE_KEYS.contains(key)) continue;
+                issues.add(switch (key) {
+                    case "build" -> "Service '" + svc + "' uses build:; the runner only runs published images, so push the image and reference it as name@sha256:<digest>";
+                    case "ports" -> "Service '" + svc + "' uses ports:; replace it with expose: (the runner never publishes host ports)";
+                    default -> "Service '" + svc + "' option '" + key + "' is not supported by the sandbox runner";
+                });
+            }
+            Object image = config.get("image");
+            if (image == null) {
+                if (!config.containsKey("build")) issues.add("Service '" + svc + "' has no image");
+            } else if (!String.valueOf(image).contains("$") && !PINNED_IMAGE_PATTERN.matcher(String.valueOf(image)).matches()) {
+                issues.add("Service '" + svc + "' image '" + image + "' must be pinned by digest (e.g. " + String.valueOf(image).split(":")[0] + "@sha256:<64 hex>)");
+            }
+            Object environment = config.get("environment");
+            if (environment != null && !(environment instanceof Map<?, ?>)) {
+                issues.add("Service '" + svc + "' environment must use the 'KEY: value' map form, not a list");
+            } else if (environment instanceof Map<?, ?> envMap && envMap.values().stream().anyMatch(Objects::isNull)) {
+                issues.add("Service '" + svc + "' has environment variables without a value");
+            }
+            Object mounts = config.get("volumes");
+            if (mounts != null) {
+                boolean ok = mounts instanceof List<?> list && list.stream().allMatch(m -> m instanceof Map<?, ?> mount
+                        && "volume".equals(String.valueOf(mount.get("type")))
+                        && declaredVolumes.contains(String.valueOf(mount.get("source")))
+                        && String.valueOf(mount.get("target")).startsWith("/")
+                        && !String.valueOf(mount.get("target")).toLowerCase(Locale.ROOT).contains("docker.sock")
+                        && Set.of("type", "source", "target", "read_only").containsAll(mount.keySet().stream().map(String::valueOf).toList()));
+                if (!ok) issues.add("Service '" + svc + "' mounts a host path or short-form volume; only long-form named volumes are allowed");
+            }
+        }
+        return issues;
     }
 
     private String extractStack(String serviceName, Map<?, ?> serviceConfig) {
