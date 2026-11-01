@@ -518,4 +518,214 @@ class RunnerReceiptIngestServiceImplTest {
   var result=runnerReceiptIngestService.ingestRunnerReceipt(sessionId,createValidReceiptBuilder().outcome(outcome).build());
   assertThat(result.getIsLatestValid()).isFalse();assertThat(session.getPublicationGateStatus()).isEqualTo("HELD_NON_PROMOTED");verify(modelVersionRepository,never()).invalidatePreviousVersions(any(),any());
  }
+
+    @Test
+    @DisplayName("Step 3: Case/slug service resolution upgrades Partial/UNMAPPED_SERVICE without creating UNCERTAIN_MAPPING placeholders")
+    void caseAndSlugServiceMappingUpgradesPartialReceiptWithoutCreatingUncertainPlaceholder() {
+        session.setConfirmedServiceMappings(Map.of("order-service", serviceAId.toString()));
+
+        RunnerCorrelatedSpanDTO spanA = RunnerCorrelatedSpanDTO.builder()
+                .traceId("4bf92f3577b34da6a3ce929d0e0e4736")
+                .spanId("00f067aa0ba902b7")
+                .runtimeService("OrderService")
+                .modelServiceId(null)
+                .durationNanoseconds("12000000")
+                .httpStatusCode(200)
+                .build();
+
+        RunnerCorrelatedSpanDTO spanB = RunnerCorrelatedSpanDTO.builder()
+                .traceId("4bf92f3577b34da6a3ce929d0e0e4736")
+                .spanId("5fb397be34d23b0f")
+                .parentSpanId("00f067aa0ba902b7")
+                .runtimeService("PaymentService")
+                .modelServiceId(null)
+                .durationNanoseconds("25000000")
+                .httpStatusCode(200)
+                .build();
+
+        RunnerTraceCorrelationDTO trace = RunnerTraceCorrelationDTO.builder()
+                .sessionId(sessionId.toString())
+                .modelVersionId(modelVersionId.toString())
+                .spans(List.of(spanA, spanB))
+                .causalEdges(List.of(new RunnerCausalEdgeDTO("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", "5fb397be34d23b0f")))
+                .warnings(List.of("UNMAPPED_SERVICE", "ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION"))
+                .build();
+
+        RunnerOutcomeDTO outcome = RunnerOutcomeDTO.builder()
+                .executionStatus("Completed")
+                .scenarioStatus("Passed")
+                .evidenceStatus("Available")
+                .cleanupStatus("Confirmed")
+                .traceQuality("Partial")
+                .mappingStatus("Partial")
+                .trace(trace)
+                .build();
+
+        ReceiptIngestAckDTO ack = runnerReceiptIngestService.ingestRunnerReceiptAck(
+                sessionId,
+                createValidReceiptBuilder().imageSourceCorrespondence("Verified").outcome(outcome).build());
+
+        assertThat(session.getTraceStatus()).isEqualTo("COMPLETE");
+        assertThat(session.getMappingStatus()).isEqualTo("MAPPED");
+        assertThat(ack.getPublicationGateStatus()).isEqualTo("PROMOTED");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelElement>> elemCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelElementRepository, atLeastOnce()).saveAll(elemCaptor.capture());
+        List<ModelElement> savedElements = elemCaptor.getValue();
+        assertThat(savedElements).hasSize(2);
+        assertThat(savedElements).noneMatch(el -> el.getProperties() != null
+                && "UNCERTAIN_MAPPING".equals(el.getProperties().path("resolutionStatus").asText()));
+    }
+
+    @Test
+    @DisplayName("Step 3: Single-service external root projects observed UML_SEQUENCE with redacted pinned route and zero bogus elements")
+    void singleServiceExternalRootProjectsObservedSequenceWithRedactedStepMetadata() {
+        String extTraceId = "4bf92f3577b34da6a3ce929d0e0e4736";
+        String extParentSpanId = "0000000000000099";
+        String rootSpanId = "00f067aa0ba902b7";
+
+        ObjectNode pinnedConfig = objectMapper.createObjectNode();
+        ObjectNode pinnedScenario = pinnedConfig.putObject("scenario");
+        ArrayNode pinnedSteps = pinnedScenario.putArray("steps");
+        ObjectNode pinnedStep = pinnedSteps.addObject();
+        pinnedStep.put("id", "step-orders");
+        pinnedStep.put("service", "order-service");
+        pinnedStep.put("method", "GET");
+        pinnedStep.put("path", "/api/orders?api_key=secret-value-999");
+        pinnedStep.put("expectedStatus", 200);
+        session.setScenarioConfig(pinnedConfig);
+
+        ObjectNode outcomeScenario = objectMapper.createObjectNode();
+        ArrayNode outcomeSteps = outcomeScenario.putArray("steps");
+        ObjectNode outcomeStep = outcomeSteps.addObject();
+        outcomeStep.put("stepId", "step-orders");
+        outcomeStep.put("status", "Passed");
+        outcomeStep.put("statusCode", 200);
+        outcomeStep.put("traceId", extTraceId);
+        outcomeStep.put("parentSpanId", extParentSpanId);
+        outcomeStep.put("elapsedMilliseconds", 18);
+
+        RunnerCorrelatedSpanDTO rootSpan = RunnerCorrelatedSpanDTO.builder()
+                .traceId(extTraceId)
+                .spanId(rootSpanId)
+                .parentSpanId(extParentSpanId)
+                .runtimeService("order-service")
+                .modelServiceId(serviceAId.toString())
+                .durationNanoseconds("18000000")
+                .httpStatusCode(null)
+                .build();
+
+        RunnerTraceCorrelationDTO trace = RunnerTraceCorrelationDTO.builder()
+                .sessionId(sessionId.toString())
+                .modelVersionId(modelVersionId.toString())
+                .spans(List.of(rootSpan))
+                .warnings(List.of("MISSING_PARENT_SPAN", "ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION"))
+                .build();
+
+        RunnerOutcomeDTO outcome = RunnerOutcomeDTO.builder()
+                .executionStatus("Completed")
+                .scenarioStatus("Passed")
+                .evidenceStatus("Available")
+                .cleanupStatus("Confirmed")
+                .traceQuality("Partial")
+                .mappingStatus("Mapped")
+                .scenario(outcomeScenario)
+                .trace(trace)
+                .build();
+
+        runnerReceiptIngestService.ingestRunnerReceiptAck(
+                sessionId,
+                createValidReceiptBuilder().imageSourceCorrespondence("Verified").outcome(outcome).build());
+
+        ArgumentCaptor<DiagramVersion> diagCaptor = ArgumentCaptor.forClass(DiagramVersion.class);
+        verify(diagramVersionRepository).save(diagCaptor.capture());
+        DiagramVersion savedDiagram = diagCaptor.getValue();
+        assertThat(savedDiagram.getNotation()).isEqualTo("UML_SEQUENCE");
+        assertThat(savedDiagram.getLayoutJson().path("totalSteps").asInt()).isEqualTo(1);
+        var step0 = savedDiagram.getLayoutJson().path("steps").get(0);
+        assertThat(step0.path("callerService").asText()).isEqualTo("scenario-runner");
+        assertThat(step0.path("calleeService").asText()).isEqualTo("order-service");
+        assertThat(step0.path("httpMethod").asText()).isEqualTo("GET");
+        assertThat(step0.path("httpStatusCode").asInt()).isEqualTo(200);
+        assertThat(step0.path("operation").asText()).startsWith("/api/orders");
+        assertThat(step0.path("operation").asText()).doesNotContain("secret-value-999");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelElement>> elemCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelElementRepository, atLeastOnce()).saveAll(elemCaptor.capture());
+        List<ModelElement> allElements = elemCaptor.getAllValues().stream().flatMap(List::stream).toList();
+        assertThat(allElements).noneMatch(el -> "scenario-runner".equalsIgnoreCase(el.getName()));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Evidence>> evCaptor = ArgumentCaptor.forClass(List.class);
+        verify(evidenceRepository, atLeastOnce()).saveAll(evCaptor.capture());
+        List<Evidence> allEv = evCaptor.getAllValues().stream().flatMap(List::stream).toList();
+        assertThat(allEv).anyMatch(ev -> "RUNTIME_TRACE".equals(ev.getSourceType())
+                && ev.getElement() != null
+                && "order-service".equals(ev.getElement().getName())
+                && ev.getRelationship() == null);
+    }
+
+    @Test
+    @DisplayName("Step 3: RuntimeSessionResponseDTO extracts per-step results, span counts, and redacted diagnostics")
+    void runtimeSessionResponseDtoExtractsStepResultsSpanCountAndRedactedDiagnostics() {
+        ObjectNode pinnedConfig = objectMapper.createObjectNode();
+        ArrayNode pinnedSteps = pinnedConfig.putObject("scenario").putArray("steps");
+        pinnedSteps.addObject()
+                .put("id", "step-1")
+                .put("service", "order-service")
+                .put("method", "GET")
+                .put("path", "/api/orders")
+                .put("expectedStatus", 200);
+        pinnedSteps.addObject()
+                .put("id", "step-2")
+                .put("service", "payment-service")
+                .put("method", "POST")
+                .put("path", "/api/payments?token=secret777")
+                .put("expectedStatus", 201);
+
+        ObjectNode receiptJson = objectMapper.createObjectNode();
+        ObjectNode outcomeJson = receiptJson.putObject("outcome");
+        outcomeJson.putArray("diagnostics").add("WaitUntilReadyAsync: password=hidden123");
+        ArrayNode outSteps = outcomeJson.putObject("scenario").putArray("steps");
+        outSteps.addObject()
+                .put("stepId", "step-1")
+                .put("status", "Passed")
+                .put("statusCode", 200)
+                .put("elapsedMilliseconds", 14)
+                .put("traceId", "4bf92f3577b34da6a3ce929d0e0e4736")
+                .put("parentSpanId", "0000000000000001");
+        outSteps.addObject()
+                .put("stepId", "step-2")
+                .put("status", "Failed")
+                .put("statusCode", 500)
+                .put("elapsedMilliseconds", 45);
+        ArrayNode spansArr = outcomeJson.putObject("trace").putArray("spans");
+        spansArr.addObject().put("spanId", "s1");
+        spansArr.addObject().put("spanId", "s2");
+
+        session.setScenarioConfig(pinnedConfig);
+        session.setRunnerReceiptJson(receiptJson);
+        session.setExecutionStatus("COMPLETED");
+        session.setScenarioStatus("FAILED");
+        session.setPublicationGateStatus("HELD_NON_PROMOTED");
+        UUID enrichedId = UUID.randomUUID();
+        session.setEnrichedModelVersionId(enrichedId);
+
+        RuntimeSessionResponseDTO dto = RuntimeSessionResponseDTO.fromEntity(session);
+        assertThat(dto.getEnrichedModelVersionId()).isEqualTo(enrichedId);
+        assertThat(dto.getPublicationGateStatus()).isEqualTo("HELD_NON_PROMOTED");
+        assertThat(dto.getCapturedSpanCount()).isEqualTo(2);
+        assertThat(dto.getStepResults()).hasSize(2);
+        assertThat(dto.getStepResults().get(0).getStatus()).isEqualTo("PASSED");
+        assertThat(dto.getStepResults().get(0).getStatusCode()).isEqualTo(200);
+        assertThat(dto.getStepResults().get(0).getDurationMs()).isEqualTo(14L);
+        assertThat(dto.getStepResults().get(1).getStatus()).isEqualTo("FAILED");
+        assertThat(dto.getStepResults().get(1).getStatusCode()).isEqualTo(500);
+        assertThat(dto.getStepResults().get(1).getFailureReason()).contains("HTTP 500 (expected 201)");
+        assertThat(dto.getStepResults().get(1).getPath()).doesNotContain("secret777");
+        assertThat(dto.getFailureReason()).doesNotContain("secret777").doesNotContain("hidden123");
+        assertThat(String.join(" ", dto.getDiagnostics())).doesNotContain("hidden123");
+    }
 }

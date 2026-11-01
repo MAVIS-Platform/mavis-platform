@@ -12,18 +12,22 @@ import {
   GitCommit,
   Layers,
   Play,
+  RotateCcw,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import {
   RuntimeStepperBanner,
   readStep1Target,
+  writeStep1Target,
   httpMethodBadgeClass,
 } from "./screens";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { DetailPanel, StatusLabel } from "@/components/shared/data";
 import { translatedStatusLabel } from "@/lib/status-label";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { RequestState, ErrorState } from "@/components/shared/request-state";
+import { ErrorState } from "@/components/shared/request-state";
 import { SelectField, ConfirmDialog, SearchInput } from "@/components/shared/forms";
 import { AdminToolbar } from "@/features/administration/operations";
 import { Button } from "@/components/ui/button";
@@ -37,6 +41,20 @@ const active = new Set([
   "RUNNING",
   "CANCELLING",
 ]);
+
+function isRunnerActor(serviceName: string | null | undefined): boolean {
+  const s = (serviceName ?? "").trim().toLowerCase();
+  return s === "mavis-runner" || s === "scenario-runner";
+}
+
+function cleanServiceSlug(raw: string | null | undefined): string {
+  return (raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^fruit[-_]/i, "")
+    .replace(/[-_\s]*(service|services|api|app|svc|server|backend|container)$/i, "")
+    .replace(/[^a-z0-9]/g, "");
+}
 
 interface ObservedStepItem {
   stepOrder?: number | null | undefined;
@@ -105,31 +123,133 @@ export function deriveWorkflowSteps(
   plannedRequests: Array<{ service: string; method: string; path: string }>,
   modelData:
     | {
-        elements?: Array<{ id: string; name: string }>;
+        elements?: Array<{
+          id: string;
+          name: string;
+          elementType?: string | null | undefined;
+          parentId?: string | null | undefined;
+        }>;
         edges?: Array<{ from: string; to: string }>;
       }
     | undefined,
+  serviceMappings?: Record<string, string>,
 ): { steps: ObservedStepItem[]; mode: WorkflowMode } {
   if (observedSteps && observedSteps.length > 0) {
     return { steps: observedSteps, mode: "OBSERVED" };
   }
-  const elById = new Map((modelData?.elements ?? []).map((e) => [e.id, e.name]));
-  const targetsBySource = new Map<string, Set<string>>();
-  for (const edge of modelData?.edges ?? []) {
-    const from = elById.get(edge.from);
-    const to = elById.get(edge.to);
-    if (!from || !to || from === to) continue;
-    targetsBySource.set(from, (targetsBySource.get(from) ?? new Set()).add(to));
+
+  const elements = modelData?.elements ?? [];
+  const elemById = new Map(elements.map((e) => [e.id, e]));
+  const resolveContainerId = (rawId: string): string | null => {
+    let cur = elemById.get(rawId);
+    const seen = new Set<string>();
+    while (cur && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      if (!cur.elementType || cur.elementType === "SERVICE_CONTAINER" || !cur.parentId) {
+        return cur.id;
+      }
+      const parent = elemById.get(cur.parentId);
+      if (!parent) return cur.id;
+      cur = parent;
+    }
+    return cur?.id ?? null;
+  };
+
+  const slugToElementIds = new Map<string, string[]>();
+  const lowerNameToId = new Map<string, string>();
+  for (const el of elements) {
+    if (el.elementType && el.elementType !== "SERVICE_CONTAINER") continue;
+    lowerNameToId.set(el.name.trim().toLowerCase(), el.id);
+    const slug = cleanServiceSlug(el.name);
+    if (slug) {
+      slugToElementIds.set(slug, [...(slugToElementIds.get(slug) ?? []), el.id]);
+    }
   }
+  if (lowerNameToId.size === 0) {
+    for (const el of elements) {
+      lowerNameToId.set(el.name.trim().toLowerCase(), el.id);
+      const slug = cleanServiceSlug(el.name);
+      if (slug) {
+        slugToElementIds.set(slug, [...(slugToElementIds.get(slug) ?? []), el.id]);
+      }
+    }
+  }
+
+  const elementIdToDisplayName = new Map<string, string>();
+  for (const el of elements) {
+    elementIdToDisplayName.set(el.id, el.name);
+  }
+  const mappingEntries = Object.entries(serviceMappings ?? {});
+  const serviceToElementId = (svcName: string): string | null => {
+    const trimmed = svcName.trim();
+    if (!trimmed) return null;
+    const directMapped =
+      serviceMappings?.[trimmed] ??
+      mappingEntries.find(([k]) => k.trim().toLowerCase() === trimmed.toLowerCase())?.[1];
+    if (directMapped) {
+      if (elemById.has(directMapped)) return resolveContainerId(directMapped);
+      const byMappedName = lowerNameToId.get(directMapped.trim().toLowerCase());
+      if (byMappedName) return byMappedName;
+    }
+    const byName = lowerNameToId.get(trimmed.toLowerCase());
+    if (byName) return byName;
+    const slug = cleanServiceSlug(trimmed);
+    const slugMatches = slug ? slugToElementIds.get(slug) : undefined;
+    if (slugMatches && slugMatches.length === 1) return slugMatches[0]!;
+    return null;
+  };
+
+  for (const [composeSvc, targetToken] of mappingEntries) {
+    const resolvedId = elemById.has(targetToken)
+      ? resolveContainerId(targetToken)
+      : lowerNameToId.get(targetToken.trim().toLowerCase()) ?? null;
+    if (resolvedId && composeSvc.trim()) {
+      elementIdToDisplayName.set(resolvedId, composeSvc.trim());
+    }
+  }
+
+  const targetIdsBySourceId = new Map<string, Set<string>>();
+  for (const edge of modelData?.edges ?? []) {
+    const fromId = resolveContainerId(edge.from);
+    const toId = resolveContainerId(edge.to);
+    if (!fromId || !toId || fromId === toId) continue;
+    targetIdsBySourceId.set(fromId, (targetIdsBySourceId.get(fromId) ?? new Set()).add(toId));
+  }
+
   const planned: ObservedStepItem[] = [];
   for (const req of plannedRequests) {
     const method = (req.method || "GET").toUpperCase();
-    planned.push({ stepOrder: planned.length + 1, callerService: "mavis-runner", calleeService: req.service, operation: req.path, httpMethod: method, provenanceType: "PLANNED" });
+    planned.push({
+      stepOrder: planned.length + 1,
+      callerService: "mavis-runner",
+      calleeService: req.service,
+      operation: req.path,
+      httpMethod: method,
+      provenanceType: "PLANNED",
+    });
     const lowerPath = req.path.toLowerCase();
-    for (const target of targetsBySource.get(req.service) ?? []) {
-      // Only hops backed by a real model edge whose service name appears in the route.
-      if (!lowerPath.includes(target.replace(/[-_]service$/i, "").toLowerCase())) continue;
-      planned.push({ stepOrder: planned.length + 1, callerService: req.service, calleeService: target, operation: req.path, httpMethod: method, provenanceType: "PLANNED" });
+    const srcId = serviceToElementId(req.service);
+    if (!srcId) continue;
+    for (const targetId of targetIdsBySourceId.get(srcId) ?? []) {
+      const targetElem = elemById.get(targetId);
+      const displayTarget = elementIdToDisplayName.get(targetId) ?? targetElem?.name;
+      if (!displayTarget || displayTarget === req.service) continue;
+      const candidateTokens = [
+        displayTarget.replace(/[-_]service$/i, "").toLowerCase(),
+        (targetElem?.name ?? "").replace(/[-_]service$/i, "").toLowerCase(),
+        cleanServiceSlug(displayTarget),
+        cleanServiceSlug(targetElem?.name),
+      ].filter((tok) => tok.length >= 2);
+      // Only hops backed by a real model edge whose service name/slug appears in the route.
+      if (!candidateTokens.some((tok) => lowerPath.includes(tok))) continue;
+      planned.push({
+        stepOrder: planned.length + 1,
+        callerService: req.service,
+        calleeService: displayTarget,
+        operation: req.path,
+        httpMethod: method,
+        provenanceType: "PLANNED",
+      });
     }
   }
   return { steps: planned, mode: "PLANNED" };
@@ -224,8 +344,8 @@ function buildRuntimeSequenceSvgString(
     const bx = cx - headerBoxWidth / 2;
     const by = 50;
     const footerY = lifelineBottomY;
-    const displayLabel = svc === "mavis-runner" ? "⚡ mavis-runner" : `:${svc}`;
-    const isRunner = svc === "mavis-runner";
+    const isRunner = isRunnerActor(svc);
+    const displayLabel = isRunner ? `⚡ ${svc}` : `:${svc}`;
 
     parts.push(
       `<line x1="${cx}" y1="${lifelineTopY}" x2="${cx}" y2="${lifelineBottomY}" stroke="#475569" stroke-width="1.5" stroke-dasharray="6 5" />`,
@@ -367,7 +487,7 @@ function RuntimeWorkflowTopologyCanvas({
     }
 
     const allServices = Array.from(svcSet);
-    const tier0 = allServices.filter((s) => s === "mavis-runner" || s.toLowerCase().includes("client"));
+    const tier0 = allServices.filter((s) => isRunnerActor(s) || s.toLowerCase().includes("client"));
     const tier1 = allServices.filter(
       (s) => !tier0.includes(s) && (s.toLowerCase().includes("gateway") || s.toLowerCase().includes("bff")),
     );
@@ -478,7 +598,6 @@ function RuntimeWorkflowTopologyCanvas({
 
             return (
               <g key={idx} opacity={isDimmed ? 0.25 : 1}>
-                {/* Base glow line */}
                 <line
                   x1={x1}
                   y1={y1}
@@ -488,7 +607,6 @@ function RuntimeWorkflowTopologyCanvas({
                   strokeWidth="2"
                   strokeOpacity="0.3"
                 />
-                {/* Animated flow particles line */}
                 <line
                   x1={x1}
                   y1={y1}
@@ -515,7 +633,6 @@ function RuntimeWorkflowTopologyCanvas({
                     />
                   )}
                 </line>
-                {/* Edge Badge */}
                 <rect
                   x={midX - 58}
                   y={midY - 14}
@@ -542,7 +659,7 @@ function RuntimeWorkflowTopologyCanvas({
 
           {/* Service Nodes */}
           {nodes.map((node) => {
-            const isRunner = node.name === "mavis-runner";
+            const isRunner = isRunnerActor(node.name);
             const isGateway = node.name.toLowerCase().includes("gateway");
             const isSelected = selectedService === node.name;
             const borderCol = isSelected
@@ -682,7 +799,7 @@ function RuntimeSequenceDiagramCanvas({
           >
             ⬇️ Download .SVG
           </Button>
-          {sessionId !== "preview" && (
+          {sessionId !== "preview" && projectId && (
             <Button
               type="button"
               size="sm"
@@ -691,7 +808,7 @@ function RuntimeSequenceDiagramCanvas({
               asChild
             >
               <Link
-                href={`/diagrams?project=${projectId}${targetGraphModelId ? `&model=${targetGraphModelId}` : ""}&kind=UML_SEQUENCE&mode=observed&session=${sessionId}`}
+                href={`/diagrams?project=${encodeURIComponent(projectId)}${targetGraphModelId ? `&model=${encodeURIComponent(targetGraphModelId)}` : ""}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(sessionId)}`}
               >
                 📐 Open in Full Diagram Workspace
               </Link>
@@ -726,7 +843,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: !!projectId });
   const config = useApiQuery("runtimeConfiguration", { projectId }, { enabled: !!projectId });
   const autoSaveConfig = useApiMutation("saveRuntimeConfiguration");
+  const buildImages = useApiMutation("buildRuntimeSandboxImages");
   const saveDraft = useApiMutation("createScenario");
+  const updateScenario = useApiMutation("saveScenario");
   const list = useApiQuery(
     "runtimeReadSessions",
     { projectId: administrative ? "*" : projectId },
@@ -758,17 +877,19 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     session.data && !visible.some((s) => s.id === session.data?.id)
       ? [session.data, ...visible]
       : visible;
+
+  const upperEvidenceStatus = (session.data?.evidenceStatus ?? "").toUpperCase();
+  const upperExecStatus = (session.data?.executionStatus ?? "").toUpperCase();
+  const sequenceEnabled =
+    !!selectedId &&
+    (["CAPTURED", "AVAILABLE", "COMPLETE", "COMPLETED", "PARTIAL"].includes(upperEvidenceStatus) ||
+      ["COMPLETED", "COMPLETE"].includes(upperExecStatus) ||
+      Boolean(session.data?.enrichedModelId));
+
   const sequence = useApiQuery(
     "runtimeSequence",
     { sessionId: selectedId },
-    {
-      enabled:
-        !!selectedId &&
-        (["CAPTURED", "AVAILABLE", "COMPLETE", "COMPLETED", "PARTIAL"].includes(
-          session.data?.evidenceStatus ?? "",
-        ) ||
-          ["COMPLETED", "COMPLETE"].includes(session.data?.executionStatus ?? "")),
-    },
+    { enabled: sequenceEnabled },
   );
   const stop = useApiMutation("runtimeStop");
   const approve = useApiMutation("runtimeApprove");
@@ -776,7 +897,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const models = useApiQuery("modelVersions", { projectId }, { enabled: !!projectId });
   const scenarios = useApiQuery("scenarios", { projectId }, { enabled: !!projectId });
   const staticModelsList = (models.data ?? []).filter(
-    (m) => !("origin" in m) || (m as any).origin !== "RUNTIME_ENRICHED",
+    (m) => !("origin" in m) || (m as { origin?: string | null }).origin !== "RUNTIME_ENRICHED",
   );
   const storedDraft = useMemo(() => (projectId ? readStep1Target(projectId) : {}), [projectId]);
   const targetModelId =
@@ -792,13 +913,59 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const [quickRunMsg, setQuickRunMsg] = useState("");
   const [quickRunError, setQuickRunError] = useState("");
 
+  useEffect(() => {
+    setSelectedServiceFilter(null);
+  }, [selectedId]);
+
+  const lastSyncedSignature = useRef("");
+  useEffect(() => {
+    if (!selectedId || !session.data) return;
+    const sig = `${selectedId}:${upperExecStatus}:${upperEvidenceStatus}:${session.data.enrichedModelId ?? ""}`;
+    if (sig === lastSyncedSignature.current) return;
+    lastSyncedSignature.current = sig;
+    if (!active.has(upperExecStatus) || session.data.enrichedModelId) {
+      void list.refetch();
+      if (projectId) void models.refetch();
+      if (sequenceEnabled) void sequence.refetch();
+    }
+  }, [
+    selectedId,
+    upperExecStatus,
+    upperEvidenceStatus,
+    session.data,
+    sequenceEnabled,
+    projectId,
+    list,
+    models,
+    sequence,
+  ]);
+
   const rawProfile = (config.data?.profile ?? {}) as Record<string, unknown>;
   const detectedEndpoints = useMemo(
     () =>
       Array.isArray(rawProfile["detectedEndpoints"])
-        ? (rawProfile["detectedEndpoints"] as Array<{ service: string; method: string; path: string }>)
+        ? (rawProfile["detectedEndpoints"] as Array<{
+            service: string;
+            method: string;
+            path: string;
+            sampleJsonBody?: string;
+          }>)
         : [],
     [config.data?.profile],
+  );
+
+  const effectiveServiceMappings = useMemo(
+    () => ({
+      ...(rawProfile["recommendedServiceMappings"] &&
+      typeof rawProfile["recommendedServiceMappings"] === "object"
+        ? (rawProfile["recommendedServiceMappings"] as Record<string, string>)
+        : {}),
+      ...(rawProfile["serviceMappings"] && typeof rawProfile["serviceMappings"] === "object"
+        ? (rawProfile["serviceMappings"] as Record<string, string>)
+        : {}),
+      ...(storedDraft.serviceMappings ?? {}),
+    }),
+    [config.data?.profile, storedDraft.serviceMappings],
   );
 
   const plannedRequests = useMemo(() => {
@@ -815,8 +982,14 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   }, [storedDraft.plannedSteps, scenarios.data, detectedEndpoints]);
 
   const workflowData = useMemo(
-    () => deriveWorkflowSteps(sequence.data?.steps, plannedRequests, modelDetail.data),
-    [sequence.data?.steps, plannedRequests, modelDetail.data],
+    () =>
+      deriveWorkflowSteps(
+        sequence.data?.steps,
+        plannedRequests,
+        modelDetail.data,
+        effectiveServiceMappings,
+      ),
+    [sequence.data?.steps, plannedRequests, modelDetail.data, effectiveServiceMappings],
   );
   const observed = workflowData.mode === "OBSERVED";
 
@@ -834,9 +1007,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   );
 
   const handleQuickRun = async () => {
-    if (!projectId || !snapshots.data?.length) return;
+    if (!projectId || !snapshots.data?.length || quickRunRunning) return;
     setQuickRunRunning(true);
-    setQuickRunMsg("Saving Step 1 & Step 2 draft configuration and launching runtime workflow...");
+    setQuickRunMsg("Saving Step 1 & Step 2 runtime configuration and launching workflow...");
     setQuickRunError("");
 
     const stored = readStep1Target(projectId);
@@ -846,8 +1019,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       staticModelsList[0] ??
       models.data?.[0];
     const chosenSnapshotId =
-      stored.snapshotId ||
       chosenModel?.snapshotId ||
+      stored.snapshotId ||
       config.data?.snapshotId ||
       snapshots.data[0]?.id;
 
@@ -858,8 +1031,73 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     }
 
     try {
-      // 1. Save complete Step 1 configuration
+      const infraSet = new Set(
+        Array.isArray(rawProfile["infrastructureServices"])
+          ? (rawProfile["infrastructureServices"] as unknown[]).map(String)
+          : [],
+      );
+      const mergedRoles: Record<string, "APP" | "INFRA"> = {
+        ...(rawProfile["serviceRoles"] && typeof rawProfile["serviceRoles"] === "object"
+          ? (rawProfile["serviceRoles"] as Record<string, "APP" | "INFRA">)
+          : {}),
+        ...(stored.serviceRoles ?? {}),
+      };
+      const existingImageOverrides: Record<string, string> = {
+        ...(rawProfile["serviceImageOverrides"] &&
+        typeof rawProfile["serviceImageOverrides"] === "object"
+          ? (rawProfile["serviceImageOverrides"] as Record<string, string>)
+          : {}),
+        ...(stored.serviceImageOverrides ?? {}),
+      };
+
+      const runnerIssues = Array.isArray(rawProfile["runnerIssues"])
+        ? (rawProfile["runnerIssues"] as unknown[]).map(String)
+        : [];
+      const localBuildAvailable = rawProfile["localImageBuildAvailable"] === true;
+      const missingBuildServices = Array.from(
+        new Set(
+          runnerIssues
+            .map((iss) => {
+              const m = /^(?:LOCAL_BUILD_ONLY|UNPINNED_LOCAL_IMAGE):([^:\s]+)/.exec(iss);
+              return m?.[1] ?? "";
+            })
+            .filter(
+              (svc) =>
+                Boolean(svc) &&
+                !existingImageOverrides[svc] &&
+                mergedRoles[svc] !== "INFRA",
+            ),
+        ),
+      );
+
+      let autoBuiltOverrides: Record<string, string> = {};
+      let activeConfigRevision = Math.max(config.data?.revision ?? 0, stored.savedRevision ?? 0);
+      if (missingBuildServices.length > 0 && localBuildAvailable) {
+        setQuickRunMsg(
+          `🔨 Auto-building ${missingBuildServices.length} local sandbox image(s) (${missingBuildServices.join(", ")})...`,
+        );
+        const buildRes = await buildImages.mutateAsync({
+          projectId,
+          snapshotId: chosenSnapshotId,
+          services: missingBuildServices,
+        });
+        autoBuiltOverrides = buildRes.builtImages ?? {};
+        if (Object.keys(autoBuiltOverrides).length > 0) {
+          writeStep1Target(projectId, {
+            serviceImageOverrides: { ...existingImageOverrides, ...autoBuiltOverrides },
+          });
+          const refreshed = await config.refetch();
+          if (refreshed.data?.revision !== undefined) {
+            activeConfigRevision = Math.max(activeConfigRevision, refreshed.data.revision);
+          }
+        }
+      }
+
       const mergedMappings = {
+        ...(rawProfile["recommendedServiceMappings"] &&
+        typeof rawProfile["recommendedServiceMappings"] === "object"
+          ? (rawProfile["recommendedServiceMappings"] as Record<string, string>)
+          : {}),
         ...(rawProfile["serviceMappings"] && typeof rawProfile["serviceMappings"] === "object"
           ? (rawProfile["serviceMappings"] as Record<string, string>)
           : {}),
@@ -881,6 +1119,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           ...Object.keys(stored.secretValues ?? {}),
         ]),
       ).filter((k) => !(stored.dismissedSecretKeys ?? []).includes(k));
+      const mergedImageOverrides = {
+        ...existingImageOverrides,
+        ...autoBuiltOverrides,
+      };
 
       const pinnedConfig = await autoSaveConfig.mutateAsync({
         projectId,
@@ -889,40 +1131,94 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         modelId: chosenModel.id,
         profile: {
           serviceMappings: mergedMappings,
+          serviceRoles: mergedRoles,
+          serviceImageOverrides: mergedImageOverrides,
           environmentVariables: mergedEnvVars,
           secretValues: stored.secretValues ?? {},
           secretReferences: mergedSecretRefs,
         },
-        expectedRevision: config.data?.revision ?? 0,
+        expectedRevision: config.data?.revision ?? activeConfigRevision,
       });
+      writeStep1Target(projectId, { savedRevision: pinnedConfig.revision });
 
-      // 2. Save Step 2 scenario steps
+      // 2. Resolve runnable application service & Step 2 scenario steps
+      const detectedSvcs = Array.isArray(rawProfile["detectedServices"])
+        ? (rawProfile["detectedServices"] as unknown[]).map(String)
+        : [];
+      const runnableComposeSvcs = detectedSvcs.filter(
+        (svc) => (!infraSet.has(svc) && mergedRoles[svc] !== "INFRA") || mergedRoles[svc] === "APP",
+      );
       const realServices = (modelDetail.data?.elements ?? []).filter(
         (e) => e.elementType === "SERVICE_CONTAINER",
       );
-      const defaultSvc = realServices[0]?.name ?? "api-gateway";
+      const defaultSvc =
+        runnableComposeSvcs[0] ??
+        Object.keys(mergedMappings)[0] ??
+        realServices[0]?.name ??
+        "api-gateway";
+
+      const defaultBody = '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","quantity":1}';
+      const environment: Record<string, string> = {};
+      for (const [k, v] of Object.entries(stored.plannedInputs ?? {})) {
+        if (/^[A-Z][A-Z0-9_]{0,63}$/.test(k) && typeof v === "string" && v.trim()) {
+          environment[k] = v.trim();
+        }
+      }
+
+      const runnableEndpoints = detectedEndpoints.filter(
+        (ep) => !ep.service || (!infraSet.has(ep.service) && mergedRoles[ep.service] !== "INFRA"),
+      );
+
       const draftSteps =
         stored.plannedSteps && stored.plannedSteps.length > 0
-          ? stored.plannedSteps.map((st, idx) =>
-              JSON.stringify({
+          ? stored.plannedSteps.map((st, idx) => {
+              const method = (st.method || "GET").toUpperCase();
+              if (st.bodyReference && ["POST", "PUT", "PATCH"].includes(method)) {
+                environment[st.bodyReference] =
+                  stored.plannedInputs?.[st.bodyReference]?.trim() || defaultBody;
+              }
+              for (const hdr of st.envHeaders ?? []) {
+                if (hdr.reference && !environment[hdr.reference]) {
+                  environment[hdr.reference] = "Bearer sandbox-verification-token";
+                }
+              }
+              for (const refKey of Object.values(st.environmentVariables ?? {})) {
+                if (refKey && !environment[refKey]) {
+                  environment[refKey] = "1";
+                }
+              }
+              return JSON.stringify({
                 id: `step-${idx + 1}`,
                 service: st.service || defaultSvc,
-                method: st.method || "GET",
+                method,
                 path: st.path || "/health",
                 expectedStatus: Number(st.status) || 200,
+                allowClientError: st.allowClientError ?? true,
                 ...(st.bodyReference ? { bodyReference: st.bodyReference } : {}),
-              }),
-            )
-          : detectedEndpoints.length > 0
-            ? detectedEndpoints.slice(0, 6).map((ep, idx) =>
-                JSON.stringify({
+                ...(st.environmentVariables && Object.keys(st.environmentVariables).length
+                  ? { environmentVariables: st.environmentVariables }
+                  : {}),
+                ...(st.envHeaders && st.envHeaders.length ? { envHeaders: st.envHeaders } : {}),
+              });
+            })
+          : runnableEndpoints.length > 0
+            ? runnableEndpoints.slice(0, 6).map((ep, idx) => {
+                const method = (ep.method || "GET").toUpperCase();
+                const isWrite = ["POST", "PUT", "PATCH"].includes(method);
+                const bodyRef = isWrite ? `STEP_${idx + 1}_BODY` : undefined;
+                if (bodyRef) {
+                  environment[bodyRef] = ep.sampleJsonBody?.trim() || defaultBody;
+                }
+                return JSON.stringify({
                   id: `step-${idx + 1}`,
                   service: ep.service || defaultSvc,
-                  method: ep.method || "GET",
+                  method,
                   path: ep.path.replace(/\{[^}/]+\}/g, "1"),
                   expectedStatus: 200,
-                }),
-              )
+                  allowClientError: true,
+                  ...(bodyRef ? { bodyReference: bodyRef } : {}),
+                });
+              })
             : [
                 JSON.stringify({
                   id: "step-1",
@@ -930,21 +1226,26 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   method: "GET",
                   path: "/health",
                   expectedStatus: 200,
+                  allowClientError: true,
                 }),
               ];
 
       const scenarioName = stored.scenarioName || "Architecture Verification Scenario";
-      // Reuse an identical saved scenario instead of piling up a new one on every click.
-      const savedScenario =
-        (scenarios.data ?? []).find(
-          (sc) => sc.name === scenarioName && JSON.stringify(sc.steps) === JSON.stringify(draftSteps),
-        ) ?? (await saveDraft.mutateAsync({ projectId, name: scenarioName, steps: draftSteps }));
-      const defaultBody = '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","quantity":1}';
-      const environment = Object.fromEntries(
-        (stored.plannedSteps ?? [])
-          .filter((st) => st.bodyReference && ["POST", "PUT", "PATCH"].includes(st.method))
-          .map((st) => [st.bodyReference!, stored.plannedInputs?.[st.bodyReference!] || defaultBody]),
+      const exactMatch = (scenarios.data ?? []).find(
+        (sc) => sc.name === scenarioName && JSON.stringify(sc.steps) === JSON.stringify(draftSteps),
       );
+      const sameNameScenario = (scenarios.data ?? []).find((sc) => sc.name === scenarioName);
+      const savedScenario =
+        exactMatch ??
+        (sameNameScenario
+          ? await updateScenario.mutateAsync({
+              projectId,
+              scenarioId: sameNameScenario.id,
+              name: scenarioName,
+              steps: draftSteps,
+              expectedRevision: sameNameScenario.revision,
+            })
+          : await saveDraft.mutateAsync({ projectId, name: scenarioName, steps: draftSteps }));
 
       // 3. Dispatch runtime session
       const res = await startRuntime.mutateAsync({
@@ -982,19 +1283,70 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       </DetailPanel>
     );
 
-  const execStatus = (session.data?.executionStatus ?? "").toUpperCase();
+  const execStatus = upperExecStatus;
+  const scenarioStatus = (session.data?.scenarioStatus ?? "").toUpperCase();
   const isCompleted = ["COMPLETED", "COMPLETE"].includes(execStatus);
-  const isRunning = active.has(execStatus);
-
-  const evidence = (session.data?.evidenceStatus ?? "").toUpperCase();
-  const isFailed = ["FAILED", "TIMED_OUT", "TIMEOUT", "CANCELLED"].includes(execStatus);
+  const isCancelled = execStatus === "CANCELLED" || scenarioStatus === "CANCELLED";
+  const isTimedOut = ["TIMED_OUT", "TIMEOUT"].includes(execStatus) || scenarioStatus === "TIMEOUT";
+  const isExecFailed = execStatus === "FAILED";
+  const isScenarioFailed = isCompleted && scenarioStatus === "FAILED";
+  const isTerminalProblem = isExecFailed || isTimedOut || isCancelled || isScenarioFailed;
+  const isAwaitingDispatch = ["NOT_STARTED", "PENDING", "APPROVED", "READY_FOR_DISPATCH"].includes(
+    execStatus,
+  );
+  const evidence = upperEvidenceStatus;
   const hasSession = Boolean(session.data);
+  const enrichedModelId = session.data?.enrichedModelId ?? null;
+  const publicationGate = (session.data?.publicationGateStatus ?? "").toUpperCase();
+  const stepResults = session.data?.stepResults ?? [];
+  const diagnostics = session.data?.diagnostics ?? [];
+  const capturedSpans = session.data?.capturedSpanCount;
+
   const pipelineStages = [
-    { num: 1, title: "Configuration pinned", desc: hasSession ? "Revision & profile saved" : "Saved when you run", done: hasSession, current: false },
-    { num: 2, title: "Runner dispatched", desc: hasSession ? execStatus || "Queued" : "Not started", done: hasSession && !["NOT_STARTED", "PENDING"].includes(execStatus), current: ["APPROVED", "READY_FOR_DISPATCH", "ALLOCATED"].includes(execStatus) },
-    { num: 3, title: "Scenario executing", desc: `${plannedRequests.length} planned requests`, done: isCompleted, current: execStatus === "RUNNING" },
-    { num: 4, title: "Trace captured", desc: observed ? `${workflowData.steps.length} observed spans` : evidence || "No trace yet", done: observed, current: false },
-    { num: 5, title: "Model enriched", desc: session.data?.enrichedModelId ? "RUNTIME_ENRICHED ready" : "Pending", done: Boolean(session.data?.enrichedModelId), current: false },
+    {
+      num: 1,
+      title: "Configuration pinned",
+      desc: hasSession ? "Revision & profile saved" : "Saved when you run",
+      done: hasSession,
+      current: false,
+    },
+    {
+      num: 2,
+      title: "Runner dispatched",
+      desc: hasSession ? execStatus || "Queued" : "Not started",
+      done: hasSession && !["NOT_STARTED", "PENDING"].includes(execStatus),
+      current: ["APPROVED", "READY_FOR_DISPATCH", "ALLOCATED"].includes(execStatus),
+    },
+    {
+      num: 3,
+      title: "Scenario executing",
+      desc:
+        stepResults.length > 0
+          ? `${stepResults.filter((s) => s.status === "PASSED").length}/${stepResults.length} steps passed`
+          : `${plannedRequests.length} planned requests`,
+      done: isCompleted && scenarioStatus === "PASSED",
+      current: execStatus === "RUNNING",
+    },
+    {
+      num: 4,
+      title: "Trace captured",
+      desc: observed
+        ? `${workflowData.steps.length} observed hop(s)${capturedSpans != null ? ` · ${capturedSpans} spans` : ""}`
+        : evidence || "No trace yet",
+      done: observed || (capturedSpans != null && capturedSpans > 0),
+      current: false,
+    },
+    {
+      num: 5,
+      title: "Model enriched",
+      desc: enrichedModelId
+        ? publicationGate === "PROMOTED"
+          ? "PROMOTED latest valid"
+          : "RUNTIME_ENRICHED ready"
+        : "Pending",
+      done: Boolean(enrichedModelId),
+      current: false,
+    },
   ];
 
   return (
@@ -1010,7 +1362,13 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 <h4 className="font-bold text-sm text-foreground">
                   Step 3: Live Runtime Workflow Execution & Architecture Visualization
                 </h4>
-                <span className={`px-2 py-0.5 rounded-full border text-[11px] font-mono font-semibold ${observed ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" : "bg-slate-500/15 text-slate-300 border-slate-500/30"}`}>
+                <span
+                  className={`px-2 py-0.5 rounded-full border text-[11px] font-mono font-semibold ${
+                    observed
+                      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                      : "bg-slate-500/15 text-slate-300 border-slate-500/30"
+                  }`}
+                >
                   {observed ? "🟢 Observed trace" : "◌ Planned workflow (not executed)"}
                 </span>
               </div>
@@ -1021,19 +1379,17 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 <p className="text-xs font-medium text-emerald-400 mt-1">{quickRunMsg}</p>
               )}
               {quickRunError && (
-                <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive flex items-center gap-2 mt-2">
+                <div
+                  role="alert"
+                  className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive flex items-center gap-2 mt-2"
+                >
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   <span>{quickRunError}</span>
                 </div>
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs h-9"
-                asChild
-              >
+              <Button variant="outline" size="sm" className="text-xs h-9" asChild>
                 <Link href={`/scenarios?project=${projectId}`}>← Edit Scenario in Step 2</Link>
               </Button>
               <Button
@@ -1053,13 +1409,13 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               <div
                 key={st.num}
                 className={`rounded-lg border p-2.5 text-xs transition ${
-                  isFailed && !st.done && st.num > 1
+                  (isExecFailed || isTimedOut) && !st.done && st.num > 1
                     ? "border-destructive/40 bg-destructive/5 text-destructive"
                     : st.current
-                    ? "border-sky-400 bg-sky-500/15 text-sky-200 shadow-sm"
-                    : st.done
-                      ? "border-emerald-500/30 bg-emerald-500/5 text-foreground"
-                      : "border-border/60 bg-background/40 text-muted-foreground"
+                      ? "border-sky-400 bg-sky-500/15 text-sky-200 shadow-sm"
+                      : st.done
+                        ? "border-emerald-500/30 bg-emerald-500/5 text-foreground"
+                        : "border-border/60 bg-background/40 text-muted-foreground"
                 }`}
               >
                 <div className="flex items-center gap-2 font-semibold">
@@ -1109,6 +1465,57 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             />
           </div>
         </>
+      )}
+
+      {/* Runtime-Enriched Architecture Hub */}
+      {enrichedModelId && projectId && (
+        <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">
+                Runtime-Enriched Architecture Revision Ready
+              </span>
+              {publicationGate && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border border-emerald-400/40 bg-emerald-500/15 text-emerald-200">
+                  {publicationGate}
+                </span>
+              )}
+              {capturedSpans != null && (
+                <span className="text-[11px] font-mono text-muted-foreground">
+                  {capturedSpans} correlated span(s)
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Model <code className="font-mono text-foreground">{enrichedModelId.slice(0, 8)}</code> combines static source analysis with real OpenTelemetry trace provenance.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white" asChild>
+              <Link
+                href={`/architecture?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}`}
+              >
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Enriched C4 Graph
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-xs border-emerald-500/40 text-emerald-300" asChild>
+              <Link
+                href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(selectedId)}`}
+              >
+                📐 Observed Sequence
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-xs" asChild>
+              <Link
+                href={`/model?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}`}
+              >
+                Model Elements
+              </Link>
+            </Button>
+          </div>
+        </div>
       )}
 
       {/* Main Visualization & Session Workspace */}
@@ -1164,23 +1571,25 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   ))}
                 </select>
               )}
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
-                asChild
-              >
-                <Link
-                  href={`/architecture?project=${projectId}${
-                    (session.data?.enrichedModelId ?? targetModelId)
-                      ? `&model=${session.data?.enrichedModelId ?? targetModelId}`
-                      : ""
-                  }`}
+              {projectId && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+                  asChild
                 >
-                  <ExternalLink className="h-3 w-3 mr-1" />
-                  Open Architecture Graph Explorer
-                </Link>
-              </Button>
+                  <Link
+                    href={`/architecture?project=${encodeURIComponent(projectId)}${
+                      (enrichedModelId ?? targetModelId)
+                        ? `&model=${encodeURIComponent((enrichedModelId ?? targetModelId)!)}`
+                        : ""
+                    }`}
+                  >
+                    <ExternalLink className="h-3 w-3 mr-1" />
+                    Open Architecture Graph Explorer
+                  </Link>
+                </Button>
+              )}
             </div>
           </div>
 
@@ -1193,13 +1602,89 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               No runtime session yet. The diagram below is the planned workflow; run it to capture a real trace.
             </p>
           )}
-          {isFailed && (
-            <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>
-                Session {execStatus}: no trace was captured, so nothing below is observed evidence. The runner host
-                needs Docker and the .NET SDK to execute scenarios.
-              </span>
+
+          {hasSession && isAwaitingDispatch && !administrative && (
+            <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-xs flex flex-wrap items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <p className="font-semibold text-sky-300">
+                  Session {selectedId.slice(0, 8)} is queued ({execStatus})
+                </p>
+                <p className="text-muted-foreground">
+                  Waiting for runner execution or receipt sync. You can trigger immediate dispatch / outbox sync now.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                className="h-8 text-xs"
+                disabled={approve.isPending}
+                onClick={() =>
+                  approve.mutate(
+                    { sessionId: selectedId },
+                    {
+                      onSuccess: () => {
+                        void session.refetch();
+                        void list.refetch();
+                        void sequence.refetch();
+                      },
+                    },
+                  )
+                }
+              >
+                <Play className="h-3 w-3 mr-1" />
+                {approve.isPending ? "Dispatching..." : "Dispatch / Sync Runner"}
+              </Button>
+            </div>
+          )}
+
+          {isTerminalProblem && (
+            <div
+              role="alert"
+              className={`rounded-lg border p-3 text-xs space-y-2 ${
+                isCancelled
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                  : isTimedOut
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+                    : "border-destructive/30 bg-destructive/10 text-destructive"
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className="space-y-1 flex-1 min-w-0">
+                  <p className="font-semibold">
+                    {isCancelled
+                      ? "Session cancelled"
+                      : isTimedOut
+                        ? "Session timed out"
+                        : isScenarioFailed
+                          ? "Scenario verification failed (HTTP expectation mismatch)"
+                          : `Session ${execStatus}`}{" "}
+                    —{" "}
+                    {session.data?.failureReason ||
+                      (observed
+                        ? "Execution did not pass all assertions, though captured spans were preserved below."
+                        : "No observed trace spans were captured; no synthetic trace was generated.")}
+                  </p>
+                  <p className="text-[11px] opacity-90">
+                    {observed
+                      ? "Captured OpenTelemetry spans from executed steps are shown below (held non-promoted so your baseline latest model remains protected)."
+                      : "Because no OpenTelemetry spans were recorded, the topology below shows only the PLANNED workflow without invented latency or status."}
+                  </p>
+                </div>
+              </div>
+              {diagnostics.length > 0 && (
+                <div className="pl-6 space-y-1">
+                  <p className="text-[10px] font-mono uppercase tracking-wider opacity-80">
+                    Runner Diagnostics ({diagnostics.length})
+                  </p>
+                  <div className="rounded bg-slate-950/60 border border-border/40 p-2 font-mono text-[11px] text-slate-300 space-y-0.5 max-h-28 overflow-y-auto">
+                    {diagnostics.map((d, idx) => (
+                      <div key={idx} className="break-words">
+                        • {d}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1216,7 +1701,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             return (
               <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3.5 text-xs space-y-0.5">
                 <p className="font-semibold text-foreground">
-                  Trace summary: {workflowData.steps.length} observed calls across {services.length} services
+                  Trace summary: {workflowData.steps.length} observed call(s) across {services.length} participant(s)
                 </p>
                 {slowest && (
                   <p className="text-muted-foreground">
@@ -1255,15 +1740,96 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 "Architecture Verification Workflow"
               }
               projectId={projectId}
-              targetGraphModelId={session.data?.enrichedModelId ?? targetModelId}
+              targetGraphModelId={enrichedModelId ?? targetModelId}
               sessionId={selectedId || "preview"}
             />
           )}
         </div>
       </DetailPanel>
 
+      {/* Per-Step HTTP Scenario Execution Verification */}
+      {stepResults.length > 0 && (
+        <DetailPanel
+          title={`2. Scenario HTTP Step Verification (${stepResults.filter((s) => s.status === "PASSED").length}/${stepResults.length} Passed)`}
+        >
+          <div className="space-y-2">
+            {stepResults.map((sr, idx) => {
+              const stUpper = (sr.status || "PENDING").toUpperCase();
+              const passed = stUpper === "PASSED";
+              const failed = stUpper === "FAILED" || stUpper === "TIMED_OUT";
+              const verb = (sr.method || "GET").toUpperCase();
+              return (
+                <div
+                  key={`${sr.id}:${idx}`}
+                  className={`rounded-lg border p-2.5 text-xs flex flex-wrap items-center justify-between gap-2 ${
+                    passed
+                      ? "border-emerald-500/30 bg-emerald-500/5"
+                      : failed
+                        ? "border-rose-500/30 bg-rose-500/5"
+                        : "border-border/70 bg-muted/15"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center gap-2 font-mono min-w-0">
+                    {passed ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    ) : failed ? (
+                      <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                    ) : (
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    )}
+                    <span className="text-[11px] text-muted-foreground">#{idx + 1}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${httpMethodBadgeClass(verb)}`}>
+                      {verb}
+                    </span>
+                    {sr.service && (
+                      <span className="rounded bg-sky-500/15 text-sky-300 border border-sky-500/30 px-1.5 py-0.5 font-semibold">
+                        {sr.service}
+                      </span>
+                    )}
+                    <span className="text-foreground font-semibold truncate">{sr.path ?? "/"}</span>
+                    {sr.failureReason && (
+                      <span className="text-rose-300 font-sans text-[11px]">— {sr.failureReason}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 font-mono text-[11px] shrink-0">
+                    {sr.expectedStatus != null && (
+                      <span className="text-muted-foreground">exp {sr.expectedStatus}</span>
+                    )}
+                    <span
+                      className={`px-1.5 py-0.5 rounded font-bold border ${
+                        passed
+                          ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                          : failed
+                            ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
+                            : "bg-muted text-muted-foreground border-border"
+                      }`}
+                    >
+                      {sr.statusCode != null ? `HTTP ${sr.statusCode}` : stUpper}
+                    </span>
+                    {sr.durationMs != null && (
+                      <span className="text-muted-foreground">{sr.durationMs} ms</span>
+                    )}
+                    {sr.traceId && (
+                      <span className="text-[10px] text-slate-400" title={`W3C traceId: ${sr.traceId}`}>
+                        trace:{sr.traceId.slice(0, 8)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </DetailPanel>
+      )}
+
       {/* Step-by-Step Waterfall Timeline & Session Controls */}
-      <DetailPanel title={observed ? "2. Observed HTTP Calls" : "2. Planned HTTP Calls (not executed)"}>
+      <DetailPanel
+        title={
+          observed
+            ? `${stepResults.length > 0 ? "3" : "2"}. Observed Trace Calls`
+            : `${stepResults.length > 0 ? "3" : "2"}. Planned HTTP Calls (not executed)`
+        }
+      >
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-semibold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
@@ -1338,7 +1904,6 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     </div>
                   </div>
 
-                  {/* Relative duration bar (observed calls only) */}
                   {dur != null && (
                     <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
                       <div
@@ -1382,23 +1947,33 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   {session.data.modelId ?? "Not reported"} · Profile:{" "}
                   {session.data.profileName ?? "SPRING_BOOT_DOTNET_COMPOSE_V1"}
                 </span>
-                <div className="flex gap-2">
-                  {["NOT_STARTED", "PENDING"].includes(session.data.executionStatus) && (
+                <div className="flex flex-wrap gap-2">
+                  {["NOT_STARTED", "PENDING", "APPROVED", "READY_FOR_DISPATCH"].includes(execStatus) && (
                     <Button size="sm" disabled={approve.isPending} onClick={() => setAction("approve")}>
-                      Approve operator session
+                      Approve & Dispatch Runner
                     </Button>
                   )}
-                  {active.has(session.data.executionStatus) &&
-                    session.data.executionStatus !== "CANCELLING" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={stop.isPending}
-                        onClick={() => setAction("stop")}
-                      >
-                        Stop session
-                      </Button>
-                    )}
+                  {active.has(execStatus) && execStatus !== "CANCELLING" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={stop.isPending}
+                      onClick={() => setAction("stop")}
+                    >
+                      Stop session
+                    </Button>
+                  )}
+                  {!active.has(execStatus) && !administrative && snapshots.data?.length ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={quickRunRunning}
+                      onClick={handleQuickRun}
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1" />
+                      Re-run Workflow
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -1411,10 +1986,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         onOpenChange={(open) => {
           if (!open) setAction(null);
         }}
-        title={action === "approve" ? "Approve this pinned session?" : "Stop this runtime session?"}
+        title={action === "approve" ? "Approve & dispatch this pinned session?" : "Stop this runtime session?"}
         description={
           action === "approve"
-            ? "The operator must launch the approved workload. Status changes only after actual Runner lifecycle acknowledgements."
+            ? "Approves the pinned workload, syncs any completed receipt in the runner outbox, or dispatches the managed runner."
             : "The request is scoped to this session. Cleanup is confirmed separately after the Runner finishes."
         }
         pending={stop.isPending || approve.isPending}
@@ -1427,7 +2002,17 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         }
         onConfirm={() => {
           const mutation = action === "approve" ? approve : stop;
-          mutation.mutate({ sessionId: selectedId }, { onSuccess: () => setAction(null) });
+          mutation.mutate(
+            { sessionId: selectedId },
+            {
+              onSuccess: () => {
+                setAction(null);
+                void session.refetch();
+                void list.refetch();
+                void sequence.refetch();
+              },
+            },
+          );
         }}
       />
     </div>

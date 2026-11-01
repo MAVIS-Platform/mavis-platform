@@ -491,6 +491,27 @@ export async function executeJava(
         evidenceStatus: z.string().nullish(),
         cleanupStatus: z.string().nullish(),
         traceQuality: z.string().nullish(),
+        publicationGateStatus: z.string().nullish(),
+        failureReason: z.string().nullish(),
+        diagnostics: z.array(z.string()).nullish(),
+        capturedSpanCount: z.number().nullish(),
+        stepResults: z
+          .array(
+            z.object({
+              id: z.string(),
+              service: z.string().nullish(),
+              method: z.string().nullish(),
+              path: z.string().nullish(),
+              expectedStatus: z.number().nullish(),
+              statusCode: z.number().nullish(),
+              status: z.string().nullish(),
+              durationMs: z.number().nullish(),
+              failureReason: z.string().nullish(),
+              traceId: z.string().nullish(),
+              parentSpanId: z.string().nullish(),
+            }),
+          )
+          .nullish(),
         traceStatus: z.string().nullish(),
         mappingStatus: z.string().nullish(),
         createdAt: z.string().nullish(),
@@ -513,6 +534,31 @@ export async function executeJava(
       traceQuality: value.traceQuality ?? "UNKNOWN",
       traceStatus: value.traceStatus ?? "NONE",
       mappingStatus: value.mappingStatus ?? "UNKNOWN",
+      ...(value.publicationGateStatus !== undefined
+        ? { publicationGateStatus: value.publicationGateStatus ?? null }
+        : {}),
+      ...(value.failureReason !== undefined ? { failureReason: value.failureReason ?? null } : {}),
+      ...(value.diagnostics !== undefined ? { diagnostics: value.diagnostics ?? [] } : {}),
+      ...(value.capturedSpanCount !== undefined
+        ? { capturedSpanCount: value.capturedSpanCount ?? null }
+        : {}),
+      ...(value.stepResults !== undefined
+        ? {
+            stepResults: (value.stepResults ?? []).map((st) => ({
+              id: st.id,
+              service: st.service ?? null,
+              method: st.method ?? null,
+              path: st.path ?? null,
+              expectedStatus: st.expectedStatus ?? null,
+              statusCode: st.statusCode ?? null,
+              status: st.status ?? "PENDING",
+              durationMs: st.durationMs ?? null,
+              failureReason: st.failureReason ?? null,
+              traceId: st.traceId ?? null,
+              parentSpanId: st.parentSpanId ?? null,
+            })),
+          }
+        : {}),
       createdAt: value.createdAt ?? null,
       startedAt: value.startedAt ?? null,
       completedAt: value.completedAt ?? null,

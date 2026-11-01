@@ -946,3 +946,97 @@ test("generateRuntimeScenario, createScenario and saveScenario validate Step 2 c
  assert.equal(updated.revision,2);
  assert.equal(updated.name,"Updated Step 2 Flow");
 });
+
+test("Step 3 runtimeReadSession, permissions and MockAdapter validate enriched diagnostics, stepResults and sequence flows",async t=>{
+ environment(t);
+ const sessionId="66666666-6666-4666-8666-666666666666",enrichedId="77777777-7777-4777-8777-777777777777";
+ t.mock.method(globalThis,"fetch",async()=>Response.json({code:200,data:{
+  id:sessionId,
+  projectId:project,
+  sourceSnapshotId:snapshot,
+  modelVersionId:model,
+  enrichedModelVersionId:enrichedId,
+  executionStatus:"COMPLETED",
+  scenarioStatus:"PASSED",
+  evidenceStatus:"AVAILABLE",
+  cleanupStatus:"CONFIRMED",
+  traceQuality:"CompleteForCapturedData",
+  mappingStatus:"MAPPED",
+  traceStatus:"COMPLETE",
+  publicationGateStatus:"PROMOTED",
+  failureReason:null,
+  diagnostics:["CLEANUP_VERIFIED"],
+  capturedSpanCount:3,
+  stepResults:[{
+   id:"step-1",
+   service:"order-service",
+   method:"POST",
+   path:"/api/orders",
+   expectedStatus:201,
+   statusCode:201,
+   status:"PASSED",
+   durationMs:19,
+   failureReason:null,
+   traceId:"4bf92f3577b34da6a3ce929d0e0e4736",
+   parentSpanId:"0000000000000001"
+  }]
+ }}));
+ const readRes=validateResponse("runtimeReadSession",{sessionId},await executeJava("runtimeReadSession",{sessionId},"jwt",new AbortController().signal));
+ assert.equal("outcome" in readRes,false);
+ assert.equal(readRes.enrichedModelId,enrichedId);
+ assert.equal(readRes.publicationGateStatus,"PROMOTED");
+ assert.equal(readRes.capturedSpanCount,3);
+ assert.equal(readRes.stepResults.length,1);
+ assert.equal(readRes.stepResults[0].statusCode,201);
+ assert.equal(readRes.stepResults[0].durationMs,19);
+
+ const {operationPermission,hasPermission}=require("../src/lib/auth/permissions.ts");
+ for(const op of ["runtimeReadSessions","runtimeReadSession","runtimeStop","runtimeSequence"]){
+  assert.equal(operationPermission(op),undefined,op);
+ }
+ assert.equal(operationPermission("runtimeApprove"),"project:write");
+ assert.equal(hasPermission("student","project:write"),true);
+ assert.equal(hasPermission("admin","project:write"),false);
+
+ const {MockAdapter}=require("../src/lib/api/mock-adapter.ts");
+ const mock=new MockAdapter("normal",0);
+ assert.deepEqual(validateResponse("runtimeReadSessions",{projectId:"*"},await mock.execute("runtimeReadSessions",{projectId:"*"})),[]);
+
+ const cfg=await mock.execute("runtimeConfiguration",{projectId:"sample-checkout"});
+ const scenarios=await mock.execute("scenarios",{projectId:"sample-checkout"});
+ const started1=await mock.execute("startRuntime",{
+  projectId:"sample-checkout",
+  snapshotId:"source-1",
+  scenarioId:scenarios[0].id,
+  configurationRevision:cfg.revision,
+  scenarioRevision:scenarios[0].revision,
+  approved:true
+ });
+ const allSessions=validateResponse("runtimeReadSessions",{projectId:"*"},await mock.execute("runtimeReadSessions",{projectId:"*"}));
+ assert.equal(allSessions.length,1);
+ const projectSessions=validateResponse("runtimeReadSessions",{projectId:"sample-checkout"},await mock.execute("runtimeReadSessions",{projectId:"sample-checkout"}));
+ assert.equal(projectSessions.length,1);
+
+ const targetId=started1.id;
+ const single=validateResponse("runtimeReadSession",{sessionId:targetId},await mock.execute("runtimeReadSession",{sessionId:targetId}));
+ assert.equal("outcome" in single,false);
+ const approved=validateResponse("runtimeApprove",{sessionId:targetId},await mock.execute("runtimeApprove",{sessionId:targetId}));
+ assert.equal(approved.executionStatus,"COMPLETED");
+ assert.ok(approved.enrichedModelId);
+ assert.ok(Array.isArray(approved.stepResults)&&approved.stepResults.length>0);
+ const seq=validateResponse("runtimeSequence",{sessionId:targetId},await mock.execute("runtimeSequence",{sessionId:targetId}));
+ assert.equal(seq.sessionId,targetId);
+ assert.equal(seq.steps.length,1);
+
+ const started2=await mock.execute("startRuntime",{
+  projectId:"sample-checkout",
+  snapshotId:"source-1",
+  scenarioId:scenarios[0].id,
+  configurationRevision:cfg.revision,
+  scenarioRevision:scenarios[0].revision,
+  approved:true
+ });
+ const stopped=validateResponse("runtimeStop",{sessionId:started2.id},await mock.execute("runtimeStop",{sessionId:started2.id}));
+ assert.equal("outcome" in stopped,false);
+ assert.equal(stopped.executionStatus,"CANCELLED");
+});

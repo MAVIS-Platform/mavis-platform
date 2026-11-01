@@ -352,7 +352,27 @@ export const evaluationSchema = z.object({
   result: z.record(z.unknown()),
 });
 
+export const runtimeStepResultSchema = z.object({
+  id: z.string(),
+  service: z.string().nullable().optional(),
+  method: z.string().nullable().optional(),
+  path: z.string().nullable().optional(),
+  expectedStatus: z.number().nullable().optional(),
+  statusCode: z.number().nullable().optional(),
+  status: z.string(),
+  durationMs: z.number().nullable().optional(),
+  failureReason: z.string().nullable().optional(),
+  traceId: z.string().nullable().optional(),
+  parentSpanId: z.string().nullable().optional(),
+});
+export type RuntimeStepResult = z.infer<typeof runtimeStepResultSchema>;
+
 export const runtimeReadSchema = z.object({
+  publicationGateStatus: z.string().nullable().optional(),
+  failureReason: z.string().nullable().optional(),
+  diagnostics: z.array(z.string()).optional(),
+  capturedSpanCount: z.number().nullable().optional(),
+  stepResults: z.array(runtimeStepResultSchema).optional(),
   id: z.string(),
   projectId: z.string(),
   snapshotId: z.string(),

@@ -2334,4 +2334,23 @@ test("runtime workflow without observed trace is planned only and never invents 
  assert.ok(planned.steps.every(s=>s.durationMs==null&&s.httpStatusCode==null&&s.traceId==null&&s.provenanceType==="PLANNED"));
  const real=[{callerService:"api-gateway",calleeService:"order-service",durationMs:12,httpStatusCode:200,traceId:"t"}];
  assert.deepEqual(deriveWorkflowSteps(real,[],model),{steps:real,mode:"OBSERVED"});
+
+ const mappedModel={
+  elements:[
+   {id:"gw-container",name:"ApiGateway",elementType:"SERVICE_CONTAINER",parentId:null},
+   {id:"gw-ctrl",name:"GatewayController",elementType:"COMPONENT",parentId:"gw-container"},
+   {id:"ord-container",name:"OrderService",elementType:"SERVICE_CONTAINER",parentId:null},
+   {id:"ord-svc",name:"OrderAppService",elementType:"COMPONENT",parentId:"ord-container"}
+  ],
+  edges:[{from:"gw-ctrl",to:"ord-svc"}]
+ };
+ const mappedPlanned=deriveWorkflowSteps(
+  undefined,
+  [{service:"gateway",method:"POST",path:"/api/orders"}],
+  mappedModel,
+  {gateway:"gw-container",orders:"ord-container"}
+ );
+ assert.equal(mappedPlanned.mode,"PLANNED");
+ assert.deepEqual(mappedPlanned.steps.map(s=>[s.callerService,s.calleeService]),[["mavis-runner","gateway"],["gateway","orders"]]);
+ assert.ok(mappedPlanned.steps.every(s=>s.durationMs==null&&s.httpStatusCode==null&&s.traceId==null));
 });
