@@ -661,50 +661,6 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         onStep2Click={() => void proceedToStep2()}
         blockedReason={step1BlockedReason}
       />
-
-      {/* P3: One-Card Readiness Summary Banner with Immediate Continue CTA */}
-      {(preflight.data || activeServices.length > 0) && (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <StatusBadge
-                status={
-                  !isPreflightSecure
-                    ? "Rejected"
-                    : effectiveUnresolvedIssues.length
-                      ? `Needs ${effectiveUnresolvedIssues.length} input(s)`
-                      : sandboxComposeChanges.length > 0
-                        ? "Ready (Auto-Remediated Compose)"
-                        : "Ready for Sandbox Run"
-                }
-                variant={!isPreflightSecure ? "destructive" : effectiveUnresolvedIssues.length ? "warning" : "success"}
-              />
-              <span className="text-xs font-mono text-foreground font-semibold">
-                {appServicesCount} app service(s)
-                {infraServicesCount > 0 ? ` · ${infraServicesCount} infra` : ""} · {detectedEndpoints.length} endpoint(s) ·{" "}
-                {databaseChecks.length} DB binding(s) · 0 required inputs
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {autoSecretKeys.length > 0
-                ? `${autoSecretKeys.length} sandbox secret(s) (${autoSecretKeys.join(", ")}) are provided automatically per run.`
-                : "All service mappings, ports, and readiness checks are configured automatically."}{" "}
-              {externalSecretKeys.length > 0
-                ? `${externalSecretKeys.length} external key(s) optional.`
-                : ""}
-            </p>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            disabled={!isStep1Ready || save.isPending}
-            title={!isStep1Ready ? step1BlockedReason : undefined}
-            onClick={() => void proceedToStep2()}
-          >
-            {save.isPending ? "Saving & Continuing..." : "Continue to Step 2: Test Scenarios →"}
-          </Button>
-        </div>
-      )}
       {step1StatusMsg && (
         <div role="status" className="rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs text-foreground">
           {step1StatusMsg}
