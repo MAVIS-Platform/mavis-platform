@@ -210,4 +210,31 @@ class RuntimeRunnerDispatcherTest {
         assertThat(serializedRecovery).doesNotContain("topsecret-jwt-token");
         assertThat(serializedRecovery).doesNotContain("my_db_secret");
     }
+
+    @Test
+    void dispatchSessionAsyncCompletesWithoutCallingAuthenticatedSessionRead() {
+        var sessions = mock(RuntimeSessionRepository.class);
+        var receipt = mock(RunnerReceiptIngestService.class);
+        var service = mock(RuntimeSessionService.class);
+        var dispatcher = newDispatcher(sessions, receipt, service);
+
+        // Simulate unauthenticated async ForkJoinPool thread where service.getSessionById would throw UNAUTHORIZED
+        when(service.getSessionById(any())).thenThrow(
+                new BusinessException(com.mavis.common.exception.ErrorCode.UNAUTHORIZED, "Yêu cầu đăng nhập hợp lệ"));
+
+        UUID sessionId = UUID.randomUUID();
+        RuntimeSession completed = RuntimeSession.builder()
+                .id(sessionId)
+                .executionStatus("COMPLETED")
+                .scenarioStatus("PASSED")
+                .cleanupStatus("CONFIRMED")
+                .receiptDigest("sha256:committed")
+                .build();
+        when(sessions.findById(sessionId)).thenReturn(Optional.of(completed));
+
+        dispatcher.dispatchSessionAsync(sessionId).join();
+
+        verifyNoInteractions(service);
+        verify(sessions, never()).save(any());
+    }
 }

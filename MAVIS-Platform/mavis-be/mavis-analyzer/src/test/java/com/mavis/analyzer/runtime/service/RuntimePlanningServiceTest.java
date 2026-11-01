@@ -742,4 +742,58 @@ class RuntimePlanningServiceTest {
                 .containsEntry("ORDER_ID", "1")
                 .containsEntry("ORDER_AUTH", "Bearer sandbox-verification-token");
     }
+
+    @Test
+    @DisplayName("STEP 2 AI: OpenAI sk- key routes to chat/completions with Bearer auth and parses gpt-5-mini JSON")
+    void testGenerateScenario_OpenAiKeyRouting() throws Exception {
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("api-gateway"))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/gateway/checkout").source("GatewayServer.java").build()
+                ))
+                .build());
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
+
+        HttpServer mockOpenAi = HttpServer.create(new InetSocketAddress(0), 0);
+        String[] authHeader = new String[1];
+        mockOpenAi.createContext("/v1/chat/completions", exchange -> {
+            authHeader[0] = exchange.getRequestHeaders().getFirst("Authorization");
+            String openAiResp = """
+                    {
+                      "choices": [{
+                        "message": {
+                          "content": "{\\"suggestedName\\":\\"OpenAI Checkout Flow\\",\\"summary\\":\\"End-to-end checkout\\",\\"steps\\":[{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/gateway/checkout\\",\\"expectedStatus\\":201,\\"rationale\\":\\"Submit checkout\\",\\"sampleJsonBody\\":\\"{\\\\\\"sku\\\\\\":\\\\\\"SKU-1\\\\\\",\\\\\\"qty\\\\\\":1}\\"}]}"
+                        }
+                      }]
+                    }
+                    """;
+            byte[] bytes = openAiResp.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        mockOpenAi.start();
+        try {
+            int port = mockOpenAi.getAddress().getPort();
+            ReflectionTestUtils.setField(planningService, "customAiEndpointUrl", "http://127.0.0.1:" + port + "/v1/chat/completions");
+            when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.of("sk-proj-test-key"));
+
+            GeneratedScenarioDraftView aiDraft = planningService.generateScenario(
+                    projectId, new GenerateScenarioRequest(snapshotId, modelId, "Verify checkout"));
+
+            assertThat(authHeader[0]).isEqualTo("Bearer sk-proj-test-key");
+            assertThat(aiDraft.generatorMode()).isEqualTo("AI_ASSISTED");
+            assertThat(aiDraft.aiModelName()).isEqualTo("gpt-5-mini");
+            assertThat(aiDraft.suggestedName()).isEqualTo("OpenAI Checkout Flow");
+            assertThat(aiDraft.steps()).hasSize(1);
+            assertThat(aiDraft.steps().get(0).expectedStatus()).isEqualTo(201);
+        } finally {
+            mockOpenAi.stop(0);
+        }
+    }
 }

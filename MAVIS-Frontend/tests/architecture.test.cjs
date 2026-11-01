@@ -2373,4 +2373,5 @@ test("runtime Step 1-2-3 source guards: Quick Run matches ComposePreflightValida
  assert.ok(adapterSrc.includes('operation === "buildRuntimeSandboxImages"')&&adapterSrc.includes("600000"),"BackendAdapter must allow 600s for local Docker image builds");
  assert.ok(adapterSrc.includes('"generateRuntimeScenario"')&&adapterSrc.includes('"runtimePreflight"')&&adapterSrc.includes('"startRuntime"'),"BackendAdapter must allow 120s for heavy runtime operations");
  assert.ok(javaClientSrc.includes('path.endsWith("/runtime-plan/build-images") ? 600000 : 120000'),"javaRequest must allow 600s for build-images BFF proxy");
+ assert.ok(backendSrc.includes("models.refetch()")&&backendSrc.includes("fallbackSavedScenario"),"Step 3 Quick Run must await pending queries and reuse saved scenarios after cold reload");
 });

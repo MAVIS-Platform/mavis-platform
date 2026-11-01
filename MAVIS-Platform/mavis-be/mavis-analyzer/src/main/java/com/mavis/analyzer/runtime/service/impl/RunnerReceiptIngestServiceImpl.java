@@ -544,7 +544,17 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 : Collections.emptyList();
 
         if (!interactions.isEmpty()) {
-            for (RunnerObservedInteractionDTO interaction : interactions) {
+            List<Integer> orderedIndices = new ArrayList<>(interactions.size());
+            for (int i = 0; i < interactions.size(); i++) orderedIndices.add(i);
+            orderedIndices.sort((a, b) -> {
+                RunnerObservedInteractionDTO ia = interactions.get(a);
+                RunnerObservedInteractionDTO ib = interactions.get(b);
+                RunnerCorrelatedSpanDTO ca = spanMap.get((ia.getTraceId() + ":" + ia.getChildSpanId()).toLowerCase(Locale.ROOT));
+                RunnerCorrelatedSpanDTO cb = spanMap.get((ib.getTraceId() + ":" + ib.getChildSpanId()).toLowerCase(Locale.ROOT));
+                return compareCausalSpanOrder(ca, a, cb, b, spanMap);
+            });
+            for (int idx : orderedIndices) {
+                RunnerObservedInteractionDTO interaction = interactions.get(idx);
                 String edgeKey = interaction.getParentSpanId() + "->" + interaction.getChildSpanId();
                 if (processedEdgeKeys.add(edgeKey)) {
                     RunnerCorrelatedSpanDTO parentSpan = spanMap.get((interaction.getTraceId() + ":" + interaction.getParentSpanId()).toLowerCase(Locale.ROOT));
@@ -572,7 +582,17 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 }
             }
         } else if (!causalEdges.isEmpty()) {
-            for (RunnerCausalEdgeDTO edge : causalEdges) {
+            List<Integer> orderedIndices = new ArrayList<>(causalEdges.size());
+            for (int i = 0; i < causalEdges.size(); i++) orderedIndices.add(i);
+            orderedIndices.sort((a, b) -> {
+                RunnerCausalEdgeDTO ea = causalEdges.get(a);
+                RunnerCausalEdgeDTO eb = causalEdges.get(b);
+                RunnerCorrelatedSpanDTO ca = spanMap.get((ea.getTraceId() + ":" + ea.getChildSpanId()).toLowerCase(Locale.ROOT));
+                RunnerCorrelatedSpanDTO cb = spanMap.get((eb.getTraceId() + ":" + eb.getChildSpanId()).toLowerCase(Locale.ROOT));
+                return compareCausalSpanOrder(ca, a, cb, b, spanMap);
+            });
+            for (int idx : orderedIndices) {
+                RunnerCausalEdgeDTO edge = causalEdges.get(idx);
                 String edgeKey = edge.getParentSpanId() + "->" + edge.getChildSpanId();
                 if (processedEdgeKeys.add(edgeKey)) {
                     RunnerCorrelatedSpanDTO parentSpan = spanMap.get((edge.getTraceId() + ":" + edge.getParentSpanId()).toLowerCase(Locale.ROOT));
@@ -596,7 +616,11 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             }
         } else {
             // Fallback sang spans có parentSpanId
-            for (RunnerCorrelatedSpanDTO childSpan : spans) {
+            List<Integer> orderedIndices = new ArrayList<>(spans.size());
+            for (int i = 0; i < spans.size(); i++) orderedIndices.add(i);
+            orderedIndices.sort((a, b) -> compareCausalSpanOrder(spans.get(a), a, spans.get(b), b, spanMap));
+            for (int idx : orderedIndices) {
+                RunnerCorrelatedSpanDTO childSpan = spans.get(idx);
                 if (childSpan.getParentSpanId() != null && !childSpan.getParentSpanId().isBlank()) {
                     String edgeKey = childSpan.getParentSpanId() + "->" + childSpan.getSpanId();
                     if (processedEdgeKeys.add(edgeKey)) {
@@ -1174,6 +1198,85 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         }
         try {
             return Long.parseUnsignedLong(durationNanoseconds) / 1_000_000L;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static int compareCausalSpanOrder(RunnerCorrelatedSpanDTO childA,
+                                              int idxA,
+                                              RunnerCorrelatedSpanDTO childB,
+                                              int idxB,
+                                              Map<String, RunnerCorrelatedSpanDTO> spanMap) {
+        Long startA = effectiveCausalStartNanos(childA, spanMap);
+        Long startB = effectiveCausalStartNanos(childB, spanMap);
+        if (startA != null && startB != null && !startA.equals(startB)) {
+            return Long.compareUnsigned(startA, startB);
+        }
+        if (childA != null && childB != null
+                && childA.getTraceId() != null
+                && childA.getTraceId().equalsIgnoreCase(childB.getTraceId())) {
+            int depthCmp = Integer.compare(spanCausalDepth(childA, spanMap), spanCausalDepth(childB, spanMap));
+            if (depthCmp != 0) {
+                return depthCmp;
+            }
+        }
+        return Integer.compare(idxA, idxB);
+    }
+
+    private static Long effectiveCausalStartNanos(RunnerCorrelatedSpanDTO span,
+                                                  Map<String, RunnerCorrelatedSpanDTO> spanMap) {
+        if (span == null) {
+            return null;
+        }
+        Long maxStart = null;
+        Set<String> visited = new HashSet<>();
+        RunnerCorrelatedSpanDTO curr = span;
+        while (curr != null && visited.size() < 64) {
+            Long ts = parseUnsignedNanos(curr.getStartTimeUnixNano());
+            if (ts != null && (maxStart == null || Long.compareUnsigned(ts, maxStart) > 0)) {
+                maxStart = ts;
+            }
+            if (curr.getTraceId() == null || curr.getParentSpanId() == null || curr.getParentSpanId().isBlank()) {
+                break;
+            }
+            String parentKey = (curr.getTraceId() + ":" + curr.getParentSpanId()).toLowerCase(Locale.ROOT);
+            if (!visited.add(parentKey)) {
+                break;
+            }
+            curr = spanMap.get(parentKey);
+        }
+        return maxStart;
+    }
+
+    private static int spanCausalDepth(RunnerCorrelatedSpanDTO span,
+                                       Map<String, RunnerCorrelatedSpanDTO> spanMap) {
+        int depth = 0;
+        Set<String> visited = new HashSet<>();
+        RunnerCorrelatedSpanDTO curr = span;
+        while (curr != null && curr.getTraceId() != null
+                && curr.getParentSpanId() != null && !curr.getParentSpanId().isBlank()
+                && visited.size() < 64) {
+            String parentKey = (curr.getTraceId() + ":" + curr.getParentSpanId()).toLowerCase(Locale.ROOT);
+            if (!visited.add(parentKey)) {
+                break;
+            }
+            RunnerCorrelatedSpanDTO parent = spanMap.get(parentKey);
+            if (parent == null) {
+                break;
+            }
+            depth++;
+            curr = parent;
+        }
+        return depth;
+    }
+
+    private static Long parseUnsignedNanos(String rawNanos) {
+        if (rawNanos == null || rawNanos.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseUnsignedLong(rawNanos.trim());
         } catch (NumberFormatException e) {
             return null;
         }

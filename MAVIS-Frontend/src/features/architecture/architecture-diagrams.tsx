@@ -198,12 +198,19 @@ export function ArchitectureDiagrams({
   const saved = useApiQuery(
     "architectureDocument",
     { modelId: model.id, viewId: key },
-    { enabled: api.mode === "backend" && !!document && !isUmlWorkspaceKind },
+    {
+      enabled:
+        api.mode === "backend" &&
+        !!document &&
+        !isUmlWorkspaceKind &&
+        kind !== "SCENARIOS" &&
+        kind !== "UML_SEQUENCE",
+    },
   );
   useEffect(() => {
     let live = true;
     setError("");
-    if (!document || isUmlWorkspaceKind) return;
+    if (!document || isUmlWorkspaceKind || kind === "SCENARIOS" || kind === "UML_SEQUENCE") return;
     void generateDrawio(document, "clean", layoutLocally)
       .catch(() =>
         selection.document

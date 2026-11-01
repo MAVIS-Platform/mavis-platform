@@ -205,7 +205,14 @@ public sealed class RunnerComponentTests
         Assert.Equal("node-api", nodeEnv.GetProperty("OTEL_SERVICE_NAME").GetString());
         Assert.Equal("http://mavis-collector:4318", nodeEnv.GetProperty("OTEL_EXPORTER_OTLP_ENDPOINT").GetString());
         Assert.False(nodeEnv.TryGetProperty("JAVA_TOOL_OPTIONS", out _));
+        Assert.False(nodeEnv.TryGetProperty("OTEL_JAVAAGENT_ENABLED", out _));
         Assert.False(nodeEnv.TryGetProperty("CORECLR_ENABLE_PROFILING", out _));
+        var javaOverride = JsonDocument.Parse(ComposeOverrideBuilder.Build(
+            preflight,
+            profile with { Applications = new Dictionary<string, RuntimeServiceProfile> { ["node-api"] = new("java", 8080), ["order-svc"] = new("passthrough", 3001) } },
+            Path.Combine(Path.GetTempPath(), "collector.yaml"),
+            values));
+        Assert.Equal("true", javaOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment").GetProperty("OTEL_JAVAAGENT_ENABLED").GetString());
         Assert.Equal("node_secret_1", nodeEnv.GetProperty("DB_PASSWORD").GetString());
         Assert.Equal("order_secret_2", overrideDoc.RootElement.GetProperty("services").GetProperty("order-svc").GetProperty("environment").GetProperty("DB_PASSWORD").GetString());
         Assert.False(overrideDoc.RootElement.GetProperty("volumes").TryGetProperty("mavis-instrumentation", out _));
