@@ -1,5 +1,19 @@
 "use client";
-export function RuntimeStepperBanner({ currentStep, projectId }: { currentStep: 1 | 2 | 3; projectId?: string }) {
+export function RuntimeStepperBanner({
+  currentStep,
+  projectId,
+  canProceedToStep2 = true,
+  canProceedToStep3 = true,
+  onStep2Click,
+  blockedReason,
+}: {
+  currentStep: 1 | 2 | 3;
+  projectId?: string | undefined;
+  canProceedToStep2?: boolean | undefined;
+  canProceedToStep3?: boolean | undefined;
+  onStep2Click?: (() => void) | undefined;
+  blockedReason?: string | undefined;
+}) {
   const steps = [
     { num: 1, title: "Step 1: Configure Sandbox", path: "/runtime-config", desc: "Set resource limits and discover services" },
     { num: 2, title: "Step 2: Test Scenarios", path: "/scenarios", desc: "Define API request steps" },
@@ -11,6 +25,54 @@ export function RuntimeStepperBanner({ currentStep, projectId }: { currentStep: 
         {steps.map((s) => {
           const isActive = s.num === currentStep;
           const isDone = s.num < currentStep;
+          const isLocked =
+            (s.num === 2 && currentStep === 1 && !canProceedToStep2) ||
+            (s.num === 3 && ((currentStep === 1 && !canProceedToStep2) || (currentStep <= 2 && !canProceedToStep3)));
+          const inner = (
+            <>
+              <div
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : isDone
+                    ? "bg-emerald-500 text-white"
+                    : "bg-muted text-muted-foreground"
+                }`}
+              >
+                {isDone ? "✓" : isLocked ? "🔒" : s.num}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-semibold leading-tight">{s.title}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                  {isLocked && blockedReason ? blockedReason : s.desc}
+                </p>
+              </div>
+            </>
+          );
+          if (isLocked) {
+            return (
+              <div
+                key={s.num}
+                aria-disabled="true"
+                title={blockedReason || "Complete the current step below before continuing"}
+                className="rounded-lg border border-border/40 bg-muted/10 p-3 flex items-start gap-3 text-muted-foreground opacity-55 cursor-not-allowed select-none"
+              >
+                {inner}
+              </div>
+            );
+          }
+          if (s.num === 2 && currentStep === 1 && onStep2Click) {
+            return (
+              <button
+                key={s.num}
+                type="button"
+                onClick={onStep2Click}
+                className="rounded-lg border border-border/60 bg-muted/20 p-3 text-left transition flex items-start gap-3 text-muted-foreground hover:bg-muted/40"
+              >
+                {inner}
+              </button>
+            );
+          }
           return (
             <Link
               key={s.num}
@@ -23,21 +85,7 @@ export function RuntimeStepperBanner({ currentStep, projectId }: { currentStep: 
                   : "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40"
               }`}
             >
-              <div
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : isDone
-                    ? "bg-emerald-500 text-white"
-                    : "bg-muted text-muted-foreground"
-                }`}
-              >
-                {isDone ? "✓" : s.num}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold leading-tight">{s.title}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{s.desc}</p>
-              </div>
+              {inner}
             </Link>
           );
         })}
@@ -579,10 +627,40 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   };
 
   const isPreflightSecure = preflight.data ? preflight.data.compatible : (config.data?.supported ?? true);
+  const hasInspectedStep1 = Boolean(preflight.data) || activeServices.length > 0;
+  const isStep1Ready =
+    hasInspectedStep1 &&
+    !snapshots.isPending &&
+    !preflight.isPending &&
+    !buildImages.isPending &&
+    isPreflightSecure &&
+    effectiveUnresolvedIssues.length === 0;
+  const step1BlockedReason = snapshots.isPending
+    ? "Loading project snapshots..."
+    : !snapshots.data?.length
+      ? "Import a source snapshot first"
+      : preflight.isPending
+        ? "Inspecting source snapshot & Compose..."
+        : buildImages.isPending
+          ? "Building sandbox images..."
+          : !hasInspectedStep1
+            ? "Waiting for Step 1 preflight inspection..."
+            : !isPreflightSecure
+              ? "Compose preflight rejected — fix the issues below first"
+              : effectiveUnresolvedIssues.length > 0
+                ? `Resolve ${effectiveUnresolvedIssues.length} Compose/image issue(s) below first`
+                : "";
 
   return (
     <div className="space-y-6">
-      <RuntimeStepperBanner currentStep={1} projectId={projectId} />
+      <RuntimeStepperBanner
+        currentStep={1}
+        projectId={projectId}
+        canProceedToStep2={isStep1Ready && !save.isPending}
+        canProceedToStep3={isStep1Ready && !save.isPending && Boolean(config.data?.revision || readStep1Target(projectId).savedRevision)}
+        onStep2Click={() => void proceedToStep2()}
+        blockedReason={step1BlockedReason}
+      />
 
       {/* P3: One-Card Readiness Summary Banner with Immediate Continue CTA */}
       {(preflight.data || activeServices.length > 0) && (
@@ -616,7 +694,13 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 : ""}
             </p>
           </div>
-          <Button type="button" size="sm" disabled={save.isPending} onClick={() => void proceedToStep2()}>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!isStep1Ready || save.isPending}
+            title={!isStep1Ready ? step1BlockedReason : undefined}
+            onClick={() => void proceedToStep2()}
+          >
             {save.isPending ? "Saving & Continuing..." : "Continue to Step 2: Test Scenarios →"}
           </Button>
         </div>
@@ -1437,9 +1521,19 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" disabled={save.isPending} onClick={() => void proceedToStep2()}>
+            <Button
+              type="button"
+              disabled={!isStep1Ready || save.isPending}
+              title={!isStep1Ready ? step1BlockedReason : undefined}
+              onClick={() => void proceedToStep2()}
+            >
               {save.isPending ? "Saving & Continuing..." : "Continue to Step 2: Test Scenarios →"}
             </Button>
+            {!isStep1Ready && step1BlockedReason && (
+              <span className="text-xs text-amber-500 font-medium">
+                🔒 {step1BlockedReason}
+              </span>
+            )}
           </div>
         </div>
       </DetailPanel>
@@ -2391,7 +2485,20 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   return (
     <div className="space-y-6">
-      <RuntimeStepperBanner currentStep={2} projectId={projectId} />
+      <RuntimeStepperBanner
+        currentStep={2}
+        projectId={projectId}
+        canProceedToStep3={Boolean(modelId && steps.length > 0 && userConfirmed && !generateAiDraft.isPending)}
+        blockedReason={
+          generateAiDraft.isPending
+            ? "Generating test scenario..."
+            : !steps.length
+              ? "Generate or add at least 1 HTTP step below"
+              : !userConfirmed
+                ? "Confirm the scenario below to unlock Step 3"
+                : undefined
+        }
+      />
 
       {(step1Readiness.remainingIssues.length > 0 || step1Readiness.prerequisites.length > 0) && (
         <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 text-xs space-y-2">
