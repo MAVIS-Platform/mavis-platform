@@ -1193,5 +1193,110 @@ class RuntimeFullPipelineAdversarialTest {
             CliOutcome directPlan = invokeRealCSharpRunner(runnerDllOpt.get(), "plan", directDefPath.toString(), collectorOpt.get().toString());
             assertThat(directPlan.exitCode()).as("Direct createRuntimeSession C# plan: %s", directPlan.stdout()).isZero();
         }
+
+        // 3J. User-edited {param}, unbound camelCase {{customVar}}, JSONPath extract pointer, >64 mixed-case StartRequest.environment(),
+        //     and duplicate approveAndStartSession idempotency on an already-running session
+        newerStatic.setIsLatestValid(false);
+        baseModel.setIsLatestValid(true);
+        ObjectNode profileWithStep1Env = safeStep1Form.deepCopy();
+        profileWithStep1Env.putObject("environmentVariables").put("CUSTOM_VAR", "step1-tag-alpha");
+        ConfigurationView cfgWithEnv = runtimePlanningService.saveConfiguration(
+                projectId, new ConfigurationRequest(snapshotId, baseModelId, "SPRING_BOOT_DOTNET_COMPOSE_V1", profileWithStep1Env, cfg.revision()));
+        ScenarioView userEditedScenario = runtimePlanningService.saveScenario(
+                projectId,
+                null,
+                new ScenarioRequest(
+                        "User Edited Edge Case Scenario",
+                        List.of(
+                                "{\"id\":\"step-1\",\"service\":\"api-gateway\",\"method\":\"POST\",\"path\":\"/api/orders/{orderUuid}?tag={{customVar}}\",\"expectedStatus\":201,\"bodyReference\":\"CREATE_ORDER_BODY\",\"extract\":{\"createdId\":\"$.data.id\"}}",
+                                "{\"id\":\"step-2\",\"service\":\"api-gateway\",\"method\":\"GET\",\"path\":\"/api/orders/{{createdId}}\",\"expectedStatus\":200}"
+                        ),
+                        0));
+
+        Map<String, String> noisyEnv = new LinkedHashMap<>();
+        noisyEnv.put("ConnectionStrings__DefaultConnection", "Host=db;Database=orders");
+        noisyEnv.put("invalid-lower-key", "ignored");
+        for (int i = 0; i < 68; i++) {
+            noisyEnv.put("UNREFERENCED_EXTRA_" + i, "val-" + i);
+        }
+
+        RuntimeSessionResponseDTO s5 = runtimePlanningService.start(
+                projectId,
+                new StartRequest(snapshotId, userEditedScenario.id(), cfgWithEnv.revision(), userEditedScenario.revision(), true, noisyEnv));
+        RunnerDefinitionExportDTO s5Export = runtimeSessionService.exportRunDefinition(s5.getId());
+        var exportedSteps = s5Export.getScenario().path("steps");
+        assertThat(exportedSteps).hasSize(2);
+        assertThat(exportedSteps.get(0).path("path").asText())
+                .isEqualTo("/api/orders/00000000-0000-0000-0000-000000000001?tag={{CUSTOM_VAR}}");
+        assertThat(exportedSteps.get(0).path("environmentVariables").path("CUSTOM_VAR").asText())
+                .isEqualTo("CUSTOM_VAR");
+        assertThat(exportedSteps.get(0).path("extract").path("createdId").asText())
+                .isEqualTo("/data/id");
+        assertThat(exportedSteps.get(1).path("path").asText())
+                .isEqualTo("/api/orders/{{createdId}}");
+
+        bindRunnerHeader(RUNNER_KEY);
+        Map<String, String> storedProtectedEnv = environmentService.readForRunner(s5.getId()).values();
+        assertThat(storedProtectedEnv.size()).isLessThanOrEqualTo(64);
+        assertThat(storedProtectedEnv)
+                .containsEntry("CUSTOM_VAR", "step1-tag-alpha")
+                .containsKey("CREATE_ORDER_BODY")
+                .doesNotContainKey("ConnectionStrings__DefaultConnection")
+                .doesNotContainKey("invalid-lower-key");
+
+        // Idempotent duplicate approve when session is already RUNNING must NOT reset executionStatus to READY_FOR_DISPATCH
+        RuntimeSession liveS5 = sessionsStore.get(s5.getId());
+        liveS5.setExecutionStatus("RUNNING");
+        liveS5.setScenarioStatus("RUNNING");
+        RuntimeSessionResponseDTO duplicateApprove = runtimeSessionService.approveAndStartSession(s5.getId());
+        assertThat(duplicateApprove.getExecutionStatus()).isEqualTo("RUNNING");
+        assertThat(liveS5.getExecutionStatus()).isEqualTo("RUNNING");
+
+        if (runnerDllOpt.isPresent() && collectorOpt.isPresent()) {
+            ObjectNode s5PlanTree = ((ObjectNode) objectMapper.valueToTree(s5Export)).deepCopy();
+            if (s5PlanTree.path("profile") instanceof ObjectNode profObj) {
+                profObj.remove("environmentBindings");
+            }
+            Path s5DefPath = tempDir.resolve("case3j-user-edited-def.json");
+            Files.writeString(s5DefPath, objectMapper.writeValueAsString(s5PlanTree));
+            CliOutcome s5Plan = invokeRealCSharpRunner(runnerDllOpt.get(), "plan", s5DefPath.toString(), collectorOpt.get().toString());
+            assertThat(s5Plan.exitCode()).as("User-edited scenario C# plan: %s", s5Plan.stdout()).isZero();
+
+            // Also execute real C# HttpScenarioRunner (`stdin-scenario`) end-to-end against a live loopback HTTP server
+            List<String> observedUris = Collections.synchronizedList(new ArrayList<>());
+            var server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/api/orders", exchange -> {
+                observedUris.add(exchange.getRequestMethod() + " " + exchange.getRequestURI().toString());
+                byte[] resp = "{\"data\":{\"id\":\"ord-777\"}}".getBytes(StandardCharsets.UTF_8);
+                int code = "POST".equalsIgnoreCase(exchange.getRequestMethod()) ? 201 : 200;
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(code, resp.length);
+                try (var os = exchange.getResponseBody()) { os.write(resp); }
+            });
+            server.start();
+            try {
+                int port = server.getAddress().getPort();
+                ObjectNode envelope = objectMapper.createObjectNode();
+                envelope.set("scenario", s5Export.getScenario());
+                envelope.putObject("endpoints").put("api-gateway", "http://127.0.0.1:" + port + "/");
+                envelope.set("secrets", objectMapper.valueToTree(storedProtectedEnv));
+
+                ProcessBuilder pb = new ProcessBuilder("dotnet", runnerDllOpt.get().toString(), "stdin-scenario");
+                pb.environment().put("MAVIS_RUNNER_INTERNAL_NETWORK", "1");
+                pb.redirectErrorStream(true);
+                Process proc = pb.start();
+                try (var stdin = proc.getOutputStream()) {
+                    stdin.write(objectMapper.writeValueAsBytes(envelope));
+                }
+                String out = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                assertThat(proc.waitFor(20, TimeUnit.SECONDS)).isTrue();
+                assertThat(proc.exitValue()).as("Real C# HttpScenarioRunner output: %s", out).isZero();
+                assertThat(observedUris).containsExactly(
+                        "POST /api/orders/00000000-0000-0000-0000-000000000001?tag=step1-tag-alpha",
+                        "GET /api/orders/ord-777");
+            } finally {
+                server.stop(0);
+            }
+        }
     }
 }

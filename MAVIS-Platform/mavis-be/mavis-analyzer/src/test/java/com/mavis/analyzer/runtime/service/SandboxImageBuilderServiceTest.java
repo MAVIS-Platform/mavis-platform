@@ -97,4 +97,43 @@ class SandboxImageBuilderServiceTest {
                 .containsEntry("order-service", digestA)
                 .containsEntry("catalog-service", digestB);
     }
+
+    @Test
+    void buildsComposeServiceWithUnpinnedImageUsingDiscoveredDockerfileAndReportsMissingOnes(@TempDir Path tempDir) throws Exception {
+        Files.writeString(tempDir.resolve("docker-compose.yml"), """
+                services:
+                  postgres:
+                    image: postgres:16-alpine
+                  order-service:
+                    image: myorg/order-service:latest
+                  closed-vendor-api:
+                    image: vendor/closed-api:latest
+                """);
+        Path svcDir = Files.createDirectories(tempDir.resolve("order-service"));
+        Files.writeString(svcDir.resolve("Dockerfile"), "FROM eclipse-temurin:21-jre\nEXPOSE 8080\n");
+
+        String fakeDigest = "sha256:" + "d".repeat(64);
+        SandboxImageBuilderService builder = new SandboxImageBuilderService() {
+            @Override
+            protected String runDockerBuild(UUID projectId, String tag, Path dockerfile, Path contextDir, String target, Map<String, String> buildArgs) {
+                assertThat(Files.isRegularFile(dockerfile)).isTrue();
+                return null;
+            }
+
+            @Override
+            protected String inspectImageId(String tag) {
+                return fakeDigest;
+            }
+        };
+
+        SandboxImageBuilderService.BuildImagesResult built = builder.buildSnapshotImages(
+                UUID.randomUUID(), tempDir, List.of("order-service"));
+        assertThat(built.errors()).isEmpty();
+        assertThat(built.builtImages()).containsEntry("order-service", fakeDigest);
+
+        SandboxImageBuilderService.BuildImagesResult missing = builder.buildSnapshotImages(
+                UUID.randomUUID(), tempDir, List.of("closed-vendor-api"));
+        assertThat(missing.builtImages()).isEmpty();
+        assertThat(missing.errors()).anyMatch(e -> e.contains("closed-vendor-api") && e.contains("no build section or matching Dockerfile"));
+    }
 }

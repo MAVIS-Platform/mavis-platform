@@ -28,17 +28,29 @@ export class BackendAdapter implements ApiAdapter {
         timedOut = true;
         controller.abort();
       },
-      ["importSource", "importGithub", "renderArchitectureView"].includes(operation)
-        ? 120000
+      operation === "buildRuntimeSandboxImages"
+        ? 600000
         : [
-              "explain",
-              "elementEvidenceContext",
-              "model",
-              "reviewContext",
-              "contextCandidates",
+              "importSource",
+              "importGithub",
+              "renderArchitectureView",
+              "generateRuntimeScenario",
+              "runtimePreflight",
+              "runtimeConfiguration",
+              "saveRuntimeConfiguration",
+              "startRuntime",
+              "runtimeApprove",
             ].includes(operation)
-          ? 60000
-          : 20000,
+          ? 120000
+          : [
+                "explain",
+                "elementEvidenceContext",
+                "model",
+                "reviewContext",
+                "contextCandidates",
+              ].includes(operation)
+            ? 60000
+            : 20000,
     );
     try {
       const mutation = contracts[operation].mutation;

@@ -2366,4 +2366,11 @@ test("runtime Step 1-2-3 source guards: Quick Run matches ComposePreflightValida
  assert.ok(backendSrc.includes('rawProfile["composeServices"]'),"Step 3 Quick Run must prefer composeServices over model-enriched detectedServices");
  assert.ok(!backendSrc.includes("config.data?.revision ?? activeConfigRevision"),"Step 3 Quick Run must not shadow activeConfigRevision with stale closure revision 0");
  assert.ok(!screensSrc.includes("config.data?.revision ?? activeConfigRevision"),"Step 2 Run must not shadow activeConfigRevision with stale closure revision 0");
+ assert.ok(screensSrc.includes("(?<!\\{)\\{([^{}/]+)\\}(?!\\})"),"Step 2 Run must normalize single-brace path params while preserving {{VAR}}");
+ assert.ok(backendSrc.includes("(?<!\\{)\\{([^{}/]+)\\}(?!\\})"),"Step 3 Quick Run must normalize single-brace path params while preserving {{VAR}}");
+ const adapterSrc=fs.readFileSync(path.join(__dirname,"../src/lib/api/backend-adapter.ts"),"utf8");
+ const javaClientSrc=fs.readFileSync(path.join(__dirname,"../src/lib/api/java-client.ts"),"utf8");
+ assert.ok(adapterSrc.includes('operation === "buildRuntimeSandboxImages"')&&adapterSrc.includes("600000"),"BackendAdapter must allow 600s for local Docker image builds");
+ assert.ok(adapterSrc.includes('"generateRuntimeScenario"')&&adapterSrc.includes('"runtimePreflight"')&&adapterSrc.includes('"startRuntime"'),"BackendAdapter must allow 120s for heavy runtime operations");
+ assert.ok(javaClientSrc.includes('path.endsWith("/runtime-plan/build-images") ? 600000 : 120000'),"javaRequest must allow 600s for build-images BFF proxy");
 });

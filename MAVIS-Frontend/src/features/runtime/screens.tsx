@@ -2269,11 +2269,14 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         protectedValues[bodyRef] =
           environment[bodyRef]?.trim() || inferStepSampleBody(step.path, step.service, step.method, discoveredEndpoints);
       }
+      const normalizedPath = step.path.replace(/(?<!\{)\{([^{}/]+)\}(?!\})/g, (_, p: string) =>
+        /uuid|guid/i.test(p) ? "00000000-0000-0000-0000-000000000001" : /code|sku/i.test(p) ? "SKU-LAPTOP-01" : "1",
+      );
       return JSON.stringify({
         id: `step-${index + 1}`,
         service: step.service,
         method: step.method,
-        path: step.path,
+        path: normalizedPath,
         expectedStatus: Number(step.status),
         allowClientError: step.allowClientError !== false,
         ...(step.environmentVariables ? { environmentVariables: step.environmentVariables } : {}),
