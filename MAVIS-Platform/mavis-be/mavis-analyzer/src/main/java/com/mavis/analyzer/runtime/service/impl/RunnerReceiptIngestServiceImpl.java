@@ -10,6 +10,7 @@ import com.mavis.analyzer.runtime.security.RunnerServiceAuthGuard;
 import com.mavis.analyzer.runtime.service.RunnerReceiptIngestService;
 import com.mavis.analyzer.runtime.util.SecretRedactor;
 import com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils;
+import com.mavis.analyzer.runtime.validator.ComposePreflightValidator;
 import com.mavis.common.entity.*;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
@@ -205,36 +206,64 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
         // [CHẶNG 12]: Tập hợp danh sách externalRootSpanIds từ outcome.scenario.steps
         Set<String> externalRootSpanIds = new HashSet<>();
+        Map<String, JsonNode> externalRootStepByTraceParent = new LinkedHashMap<>();
         if (outcome.getScenario() != null && outcome.getScenario().has("steps") && outcome.getScenario().get("steps").isArray()) {
             for (JsonNode stepNode : outcome.getScenario().get("steps")) {
                 if (stepNode.hasNonNull("parentSpanId")) {
-                    String pSpanId = stepNode.get("parentSpanId").asText().toLowerCase();
+                    String pSpanId = stepNode.get("parentSpanId").asText().toLowerCase(Locale.ROOT);
                     externalRootSpanIds.add(pSpanId);
                     if (stepNode.hasNonNull("traceId")) {
-                        externalRootSpanIds.add((stepNode.get("traceId").asText() + ":" + pSpanId).toLowerCase());
+                        String traceParentKey = (stepNode.get("traceId").asText() + ":" + pSpanId).toLowerCase(Locale.ROOT);
+                        externalRootSpanIds.add(traceParentKey);
+                        externalRootStepByTraceParent.put(traceParentKey, stepNode);
                     }
                 }
                 if (stepNode.hasNonNull("spanId")) {
-                    String sSpanId = stepNode.get("spanId").asText().toLowerCase();
+                    String sSpanId = stepNode.get("spanId").asText().toLowerCase(Locale.ROOT);
                     // External parent identity is scoped to its trace, never spanId alone.
                     if (stepNode.hasNonNull("traceId")) {
-                        externalRootSpanIds.add((stepNode.get("traceId").asText() + ":" + sSpanId).toLowerCase());
+                        externalRootSpanIds.add((stepNode.get("traceId").asText() + ":" + sSpanId).toLowerCase(Locale.ROOT));
                     }
                 }
             }
+        }
+
+        List<ModelElement> baseElements = Collections.emptyList();
+        BaseElementResolutionIndex baseIndex = BaseElementResolutionIndex.empty();
+        int resolvedSpanCount = 0;
+        if (!spans.isEmpty()) {
+            List<ModelElement> loaded = modelElementRepository.findByModelVersionId(session.getModelVersion().getId());
+            baseElements = loaded != null ? loaded : Collections.emptyList();
+            baseIndex = BaseElementResolutionIndex.from(baseElements, session.getConfirmedServiceMappings());
+            for (RunnerCorrelatedSpanDTO s : spans) {
+                if (!baseElements.isEmpty()) {
+                    if (baseIndex.resolve(s.getModelServiceId(), s.getRuntimeService()) != null) {
+                        resolvedSpanCount++;
+                    }
+                } else if (s.getModelServiceId() != null && !s.getModelServiceId().isBlank()) {
+                    resolvedSpanCount++;
+                }
+            }
+        }
+        boolean allSpansResolved = !spans.isEmpty() && resolvedSpanCount == spans.size();
+        boolean anySpanResolved = resolvedSpanCount > 0;
+        if (allSpansResolved && ("Partial".equalsIgnoreCase(outcome.getMappingStatus())
+                || "Unmapped".equalsIgnoreCase(outcome.getMappingStatus()))) {
+            session.setMappingStatus("MAPPED");
         }
 
         // [CHẶNG 12]: hasStructuralTraceWarning
         List<String> warnings = (trace != null && trace.getWarnings() != null) ? trace.getWarnings() : Collections.emptyList();
         boolean hasStructuralTraceWarning = warnings.stream().anyMatch(w ->
                 !"MISSING_PARENT_SPAN".equalsIgnoreCase(w)
-                && !"ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION".equalsIgnoreCase(w));
+                && !"ATTRIBUTES_EVENTS_AND_SPAN_NAMES_OMITTED_FOR_REDACTION".equalsIgnoreCase(w)
+                && !(allSpansResolved && "UNMAPPED_SERVICE".equalsIgnoreCase(w)));
 
         // Build spanMap với khóa (traceId + ":" + spanId).toLowerCase()
         Map<String, RunnerCorrelatedSpanDTO> spanMap = new HashMap<>();
         for (RunnerCorrelatedSpanDTO s : spans) {
             if (s.getSpanId() != null && s.getTraceId() != null) {
-                spanMap.put((s.getTraceId() + ":" + s.getSpanId()).toLowerCase(), s);
+                spanMap.put((s.getTraceId() + ":" + s.getSpanId()).toLowerCase(Locale.ROOT), s);
             }
         }
 
@@ -242,8 +271,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         boolean hasBrokenInternalParent = false;
         for (RunnerCorrelatedSpanDTO span : spans) {
             if (span.getParentSpanId() != null && !span.getParentSpanId().isBlank()) {
-                String parentKey = (span.getTraceId() + ":" + span.getParentSpanId()).toLowerCase();
-                String pSpanId = span.getParentSpanId().toLowerCase();
+                String parentKey = (span.getTraceId() + ":" + span.getParentSpanId()).toLowerCase(Locale.ROOT);
                 if (!spanMap.containsKey(parentKey) && !externalRootSpanIds.contains(parentKey)) {
                     hasBrokenInternalParent = true;
                     break;
@@ -254,9 +282,10 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         // [CHẶNG 12]: Tính traceStatus theo ranh giới Capture Boundary
         if (!"Available".equalsIgnoreCase(outcome.getEvidenceStatus()) || spans.isEmpty()) {
             session.setTraceStatus("NONE");
-        } else if ("Unmapped".equalsIgnoreCase(outcome.getMappingStatus()) || spans.stream().noneMatch(s -> s.getModelServiceId() != null && !s.getModelServiceId().isBlank())) {
+        } else if (!anySpanResolved || ("Unmapped".equalsIgnoreCase(outcome.getMappingStatus()) && !allSpansResolved)) {
             session.setTraceStatus("UNMAPPED");
-        } else if ("Partial".equalsIgnoreCase(outcome.getMappingStatus()) || hasBrokenInternalParent || hasStructuralTraceWarning) {
+        } else if (!allSpansResolved || ("Partial".equalsIgnoreCase(outcome.getMappingStatus()) && !allSpansResolved)
+                || hasBrokenInternalParent || hasStructuralTraceWarning) {
             session.setTraceStatus("PARTIAL");
         } else {
             session.setTraceStatus("COMPLETE");
@@ -267,16 +296,17 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
         // [CHẶNG 11 & 12]: Đánh giá điều kiện Publication Gate
         boolean correspondenceOk = "Verified".equalsIgnoreCase(receipt.getImageSourceCorrespondence());
+        boolean effectivelyMapped = "Mapped".equalsIgnoreCase(outcome.getMappingStatus()) || allSpansResolved;
         boolean canPromoteLatest = "Completed".equalsIgnoreCase(outcome.getExecutionStatus())
                 && "Passed".equalsIgnoreCase(outcome.getScenarioStatus())
                 && "Available".equalsIgnoreCase(outcome.getEvidenceStatus())
                 && "Confirmed".equalsIgnoreCase(outcome.getCleanupStatus())
                 && Boolean.TRUE.equals(receipt.getSandboxEnforcementConfirmed())
-                && "Mapped".equalsIgnoreCase(outcome.getMappingStatus())
+                && effectivelyMapped
                 && !hasStructuralTraceWarning
                 && correspondenceOk
                 && modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(session.getProject().getId())
-                    .map(latest->latest.getId().equals(session.getModelVersion().getId())).orElse(false);
+                    .map(latest -> latest.getId().equals(session.getModelVersion().getId())).orElse(false);
 
         // Nếu spans rỗng -> không tạo ModelVersion mới
         if (spans.isEmpty()) {
@@ -335,9 +365,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         runtimeSessionRepository.save(session);
 
         // (4.1) Sao chép elements từ baseVersion sang enrichedVersion (bảo toàn properties và parentElement)
-        List<ModelElement> baseElements = modelElementRepository.findByModelVersionId(baseVersion.getId());
         Map<UUID, ModelElement> oldToNewElementMap = new HashMap<>();
         Map<String, ModelElement> serviceNameToElementMap = new HashMap<>();
+        Map<String, UUID> runtimeAliasToBaseIdMap = new HashMap<>();
         List<ModelElement> newElements = new ArrayList<>();
 
         for (ModelElement baseEl : baseElements) {
@@ -353,7 +383,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             newElements.add(copy);
             oldToNewElementMap.put(baseEl.getId(), copy);
             if (baseEl.getName() != null) {
-                serviceNameToElementMap.put(baseEl.getName().toLowerCase(), copy);
+                serviceNameToElementMap.put(baseEl.getName().toLowerCase(Locale.ROOT), copy);
             }
         }
 
@@ -362,18 +392,16 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             String serviceName = span.getRuntimeService();
             String modelServiceId = span.getModelServiceId();
 
-            boolean matched = false;
-            if (modelServiceId != null && !modelServiceId.isBlank()) {
-                try {
-                    UUID elId = UUID.fromString(modelServiceId);
-                    if (oldToNewElementMap.containsKey(elId)) {
-                        matched = true;
-                    }
-                } catch (IllegalArgumentException ignored) {}
+            ModelElement resolvedBase = baseIndex.resolve(modelServiceId, serviceName);
+            boolean matched = resolvedBase != null && oldToNewElementMap.containsKey(resolvedBase.getId());
+            if (matched && serviceName != null && !serviceName.isBlank()) {
+                String aliasKey = serviceName.toLowerCase(Locale.ROOT);
+                serviceNameToElementMap.put(aliasKey, oldToNewElementMap.get(resolvedBase.getId()));
+                runtimeAliasToBaseIdMap.put(aliasKey, resolvedBase.getId());
             }
 
             if (!matched && serviceName != null && !serviceName.isBlank()) {
-                if (serviceNameToElementMap.containsKey(serviceName.toLowerCase())) {
+                if (serviceNameToElementMap.containsKey(serviceName.toLowerCase(Locale.ROOT))) {
                     matched = true;
                 }
             }
@@ -384,7 +412,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 props.put("traceId", span.getTraceId());
 
                 ModelElement uncertainEl = ModelElement.builder()
-                            .modelVersion(enrichedVersion)
+                        .modelVersion(enrichedVersion)
                         .name(serviceName)
                         .elementType("SERVICE_CONTAINER")
                         .status("UNCERTAIN_MAPPING")
@@ -392,7 +420,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                         .build();
 
                 newElements.add(uncertainEl);
-                serviceNameToElementMap.put(serviceName.toLowerCase(), uncertainEl);
+                serviceNameToElementMap.put(serviceName.toLowerCase(Locale.ROOT), uncertainEl);
             }
         }
 
@@ -401,11 +429,17 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             ModelElement el = newElements.get(i);
             ModelElement saved = savedElements.get(i);
             if (el.getName() != null) {
-                serviceNameToElementMap.put(el.getName().toLowerCase(), saved);
+                serviceNameToElementMap.put(el.getName().toLowerCase(Locale.ROOT), saved);
             }
         }
         for (int i = 0; i < baseElements.size(); i++) {
             oldToNewElementMap.put(baseElements.get(i).getId(), savedElements.get(i));
+        }
+        for (Map.Entry<String, UUID> aliasEntry : runtimeAliasToBaseIdMap.entrySet()) {
+            ModelElement savedTarget = oldToNewElementMap.get(aliasEntry.getValue());
+            if (savedTarget != null) {
+                serviceNameToElementMap.put(aliasEntry.getKey(), savedTarget);
+            }
         }
 
         for (int i = 0; i < baseElements.size(); i++) {
@@ -430,7 +464,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
 
             if (newSrc != null && newTgt != null) {
                 ModelRelationship copyRel = ModelRelationship.builder()
-                            .modelVersion(enrichedVersion)
+                        .modelVersion(enrichedVersion)
                         .sourceElement(newSrc)
                         .targetElement(newTgt)
                         .relationType(baseRel.getRelationType())
@@ -442,16 +476,16 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 newRelationships.add(copyRel);
                 oldToNewRelMap.put(baseRel.getId(), copyRel);
                 // Khóa ghép bằng UUID
-                String pairKey = (newSrc.getId().toString() + "->" + newTgt.getId().toString()).toLowerCase();
+                String pairKey = (newSrc.getId().toString() + "->" + newTgt.getId().toString()).toLowerCase(Locale.ROOT);
                 relByPairKey.put(pairKey, copyRel);
                 // Khóa phụ bằng tên
-                relByPairKey.put((newSrc.getName() + "->" + newTgt.getName()).toLowerCase(), copyRel);
+                relByPairKey.put((newSrc.getName() + "->" + newTgt.getName()).toLowerCase(Locale.ROOT), copyRel);
 
                 ModelElement srcContainer = resolveContainer(newSrc);
                 ModelElement tgtContainer = resolveContainer(newTgt);
                 if (srcContainer != null && tgtContainer != null) {
-                    relByPairKey.put((srcContainer.getId().toString() + "->" + tgtContainer.getId().toString()).toLowerCase(), copyRel);
-                    relByPairKey.put((srcContainer.getName() + "->" + tgtContainer.getName()).toLowerCase(), copyRel);
+                    relByPairKey.put((srcContainer.getId().toString() + "->" + tgtContainer.getId().toString()).toLowerCase(Locale.ROOT), copyRel);
+                    relByPairKey.put((srcContainer.getName() + "->" + tgtContainer.getName()).toLowerCase(Locale.ROOT), copyRel);
                 }
             }
         }
@@ -513,8 +547,8 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             for (RunnerObservedInteractionDTO interaction : interactions) {
                 String edgeKey = interaction.getParentSpanId() + "->" + interaction.getChildSpanId();
                 if (processedEdgeKeys.add(edgeKey)) {
-                    RunnerCorrelatedSpanDTO parentSpan = spanMap.get((interaction.getTraceId() + ":" + interaction.getParentSpanId()).toLowerCase());
-                    RunnerCorrelatedSpanDTO childSpan = spanMap.get((interaction.getTraceId() + ":" + interaction.getChildSpanId()).toLowerCase());
+                    RunnerCorrelatedSpanDTO parentSpan = spanMap.get((interaction.getTraceId() + ":" + interaction.getParentSpanId()).toLowerCase(Locale.ROOT));
+                    RunnerCorrelatedSpanDTO childSpan = spanMap.get((interaction.getTraceId() + ":" + interaction.getChildSpanId()).toLowerCase(Locale.ROOT));
 
                     String fromModelServiceId = interaction.getFromModelServiceId() != null ? interaction.getFromModelServiceId() : (parentSpan != null ? parentSpan.getModelServiceId() : null);
                     String toModelServiceId = interaction.getToModelServiceId() != null ? interaction.getToModelServiceId() : (childSpan != null ? childSpan.getModelServiceId() : null);
@@ -532,7 +566,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                             String msgId = "msg-obs-" + ord;
                             List<String> causalParents = resolveReceiptCausalParents(parentSpan, spanMap, childSpanKeyToMessageId);
                             sequenceSteps.add(new CausalStepRecord(ord, msgId, parentSpan, childSpan, durationMs, caller, callee, persisted.relationship, persisted.evidence, causalParents));
-                            childSpanKeyToMessageId.put((childSpan.getTraceId() + ":" + childSpan.getSpanId()).toLowerCase(), msgId);
+                            childSpanKeyToMessageId.put((childSpan.getTraceId() + ":" + childSpan.getSpanId()).toLowerCase(Locale.ROOT), msgId);
                         }
                     }
                 }
@@ -541,8 +575,8 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             for (RunnerCausalEdgeDTO edge : causalEdges) {
                 String edgeKey = edge.getParentSpanId() + "->" + edge.getChildSpanId();
                 if (processedEdgeKeys.add(edgeKey)) {
-                    RunnerCorrelatedSpanDTO parentSpan = spanMap.get((edge.getTraceId() + ":" + edge.getParentSpanId()).toLowerCase());
-                    RunnerCorrelatedSpanDTO childSpan = spanMap.get((edge.getTraceId() + ":" + edge.getChildSpanId()).toLowerCase());
+                    RunnerCorrelatedSpanDTO parentSpan = spanMap.get((edge.getTraceId() + ":" + edge.getParentSpanId()).toLowerCase(Locale.ROOT));
+                    RunnerCorrelatedSpanDTO childSpan = spanMap.get((edge.getTraceId() + ":" + edge.getChildSpanId()).toLowerCase(Locale.ROOT));
 
                     if (parentSpan != null && childSpan != null) {
                         ModelElement caller = resolveElement(parentSpan.getModelServiceId(), parentSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
@@ -555,7 +589,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                             String msgId = "msg-obs-" + ord;
                             List<String> causalParents = resolveReceiptCausalParents(parentSpan, spanMap, childSpanKeyToMessageId);
                             sequenceSteps.add(new CausalStepRecord(ord, msgId, parentSpan, childSpan, durationMs, caller, callee, persisted.relationship, persisted.evidence, causalParents));
-                            childSpanKeyToMessageId.put((childSpan.getTraceId() + ":" + childSpan.getSpanId()).toLowerCase(), msgId);
+                            childSpanKeyToMessageId.put((childSpan.getTraceId() + ":" + childSpan.getSpanId()).toLowerCase(Locale.ROOT), msgId);
                         }
                     }
                 }
@@ -566,7 +600,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 if (childSpan.getParentSpanId() != null && !childSpan.getParentSpanId().isBlank()) {
                     String edgeKey = childSpan.getParentSpanId() + "->" + childSpan.getSpanId();
                     if (processedEdgeKeys.add(edgeKey)) {
-                        RunnerCorrelatedSpanDTO parentSpan = spanMap.get((childSpan.getTraceId() + ":" + childSpan.getParentSpanId()).toLowerCase());
+                        RunnerCorrelatedSpanDTO parentSpan = spanMap.get((childSpan.getTraceId() + ":" + childSpan.getParentSpanId()).toLowerCase(Locale.ROOT));
                         if (parentSpan != null) {
                             ModelElement caller = resolveElement(parentSpan.getModelServiceId(), parentSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
                             ModelElement callee = resolveElement(childSpan.getModelServiceId(), childSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
@@ -578,7 +612,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                                 String msgId = "msg-obs-" + ord;
                                 List<String> causalParents = resolveReceiptCausalParents(parentSpan, spanMap, childSpanKeyToMessageId);
                                 sequenceSteps.add(new CausalStepRecord(ord, msgId, parentSpan, childSpan, durationMs, caller, callee, persisted.relationship, persisted.evidence, causalParents));
-                                childSpanKeyToMessageId.put((childSpan.getTraceId() + ":" + childSpan.getSpanId()).toLowerCase(), msgId);
+                                childSpanKeyToMessageId.put((childSpan.getTraceId() + ":" + childSpan.getSpanId()).toLowerCase(Locale.ROOT), msgId);
                             }
                         }
                     }
@@ -586,8 +620,53 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             }
         }
 
+        // Single-service / entry-only W3C traceparent projection: causally proven external root hop from scenario-runner
+        if (sequenceSteps.isEmpty() && !spans.isEmpty() && !externalRootStepByTraceParent.isEmpty()) {
+            Set<String> emittedEntryKeys = new HashSet<>();
+            for (RunnerCorrelatedSpanDTO entrySpan : spans) {
+                if (entrySpan.getTraceId() == null || entrySpan.getSpanId() == null
+                        || entrySpan.getParentSpanId() == null || entrySpan.getParentSpanId().isBlank()) {
+                    continue;
+                }
+                String extParentKey = (entrySpan.getTraceId() + ":" + entrySpan.getParentSpanId()).toLowerCase(Locale.ROOT);
+                JsonNode outcomeStep = externalRootStepByTraceParent.get(extParentKey);
+                if (outcomeStep == null) {
+                    continue;
+                }
+                ModelElement callee = resolveElement(entrySpan.getModelServiceId(), entrySpan.getRuntimeService(),
+                        oldToNewElementMap, serviceNameToElementMap);
+                if (callee == null) {
+                    continue;
+                }
+                String dedupKey = extParentKey + "->" + (callee.getId() != null ? callee.getId() : callee.getName());
+                if (!emittedEntryKeys.add(dedupKey)) {
+                    continue;
+                }
+                Long durationMs = parseDurationMs(entrySpan.getDurationNanoseconds());
+                if (durationMs == null && outcomeStep.hasNonNull("elapsedMilliseconds") && outcomeStep.get("elapsedMilliseconds").isNumber()) {
+                    durationMs = outcomeStep.get("elapsedMilliseconds").asLong();
+                }
+                Evidence entryEvidence = buildExternalEntryEvidence(enrichedVersion, session, callee, entrySpan,
+                        durationMs != null ? durationMs : 0L, trace, outcome);
+                newEvidences.add(entryEvidence);
+
+                RunnerCorrelatedSpanDTO externalCallerSpan = RunnerCorrelatedSpanDTO.builder()
+                        .traceId(entrySpan.getTraceId())
+                        .spanId(entrySpan.getParentSpanId())
+                        .runtimeService("scenario-runner")
+                        .build();
+                int ord = stepOrder++;
+                String msgId = "msg-obs-" + ord;
+                sequenceSteps.add(new CausalStepRecord(ord, msgId, externalCallerSpan, entrySpan, durationMs,
+                        null, callee, null, entryEvidence, Collections.emptyList()));
+                childSpanKeyToMessageId.put((entrySpan.getTraceId() + ":" + entrySpan.getSpanId()).toLowerCase(Locale.ROOT), msgId);
+            }
+        }
+
         modelRelationshipRepository.saveAll(newRelationships);
         evidenceRepository.saveAll(newEvidences);
+
+        Map<String, JsonNode> pinnedStepById = extractPinnedStepsById(session.getScenarioConfig());
 
         // (4.5) Sinh UML Sequence Diagram
         ObjectNode sequenceLayout = objectMapper.createObjectNode();
@@ -643,7 +722,29 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             if (calleeBaseId != null) stepNode.put("calleeBaseElementId", calleeBaseId.toString()); else stepNode.putNull("calleeBaseElementId");
             stepNode.put("callerResolutionStatus", callerStatus);
             stepNode.put("calleeResolutionStatus", calleeStatus);
+
+            JsonNode directEntryOutcomeStep = null;
+            JsonNode directEntryPinnedStep = null;
+            if (step.childSpan.getTraceId() != null && step.childSpan.getParentSpanId() != null) {
+                String extKey = (step.childSpan.getTraceId() + ":" + step.childSpan.getParentSpanId()).toLowerCase(Locale.ROOT);
+                directEntryOutcomeStep = externalRootStepByTraceParent.get(extKey);
+                if (directEntryOutcomeStep != null) {
+                    String stepId = directEntryOutcomeStep.hasNonNull("stepId")
+                            ? directEntryOutcomeStep.get("stepId").asText()
+                            : (directEntryOutcomeStep.hasNonNull("id") ? directEntryOutcomeStep.get("id").asText() : step.childSpan.getScenarioStepId());
+                    if (stepId != null) {
+                        directEntryPinnedStep = pinnedStepById.get(stepId);
+                    }
+                }
+            }
+
             String rawRoute = step.childSpan.getRoute() != null ? step.childSpan.getRoute().trim() : "";
+            if (rawRoute.isEmpty() && directEntryPinnedStep != null && directEntryPinnedStep.hasNonNull("path")) {
+                String pinnedPath = SecretRedactor.redactString(directEntryPinnedStep.get("path").asText("").trim());
+                if (pinnedPath != null) {
+                    rawRoute = pinnedPath;
+                }
+            }
             String operation;
             if (rawRoute.startsWith("/")) {
                 operation = rawRoute;
@@ -661,11 +762,17 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             stepNode.put("messageSort", "UNKNOWN");
             String httpMethod = step.childSpan.getHttpMethod() != null && !step.childSpan.getHttpMethod().isBlank()
                     ? step.childSpan.getHttpMethod()
-                    : "POST";
+                    : (directEntryPinnedStep != null && directEntryPinnedStep.hasNonNull("method")
+                            ? directEntryPinnedStep.get("method").asText("POST").trim().toUpperCase(Locale.ROOT)
+                            : "POST");
             stepNode.put("httpMethod", httpMethod);
-            int httpStatusCode = (step.childSpan.getHttpStatusCode() == null || step.childSpan.getHttpStatusCode() < 100)
-                    ? 200
-                    : step.childSpan.getHttpStatusCode();
+            Integer outcomeStatusCode = (directEntryOutcomeStep != null && directEntryOutcomeStep.hasNonNull("statusCode")
+                    && directEntryOutcomeStep.get("statusCode").isInt())
+                    ? directEntryOutcomeStep.get("statusCode").asInt()
+                    : null;
+            int httpStatusCode = (step.childSpan.getHttpStatusCode() != null && step.childSpan.getHttpStatusCode() >= 100)
+                    ? step.childSpan.getHttpStatusCode()
+                    : (outcomeStatusCode != null && outcomeStatusCode >= 100 && outcomeStatusCode <= 599 ? outcomeStatusCode : 200);
             stepNode.put("httpStatusCode", httpStatusCode);
             if (step.durationMs != null) {
                 stepNode.put("durationMs", step.durationMs);
@@ -713,6 +820,230 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         return new IngestResult(enrichedVersion, ack);
     }
 
+    private Evidence buildExternalEntryEvidence(ModelVersion enrichedVersion,
+                                                RuntimeSession session,
+                                                ModelElement callee,
+                                                RunnerCorrelatedSpanDTO entrySpan,
+                                                long durationMs,
+                                                RunnerTraceCorrelationDTO trace,
+                                                RunnerOutcomeDTO outcome) {
+        ObjectNode provenance = objectMapper.createObjectNode();
+        provenance.put("entryBoundary", "SCENARIO_RUNNER_W3C_TRACEPARENT");
+        if (trace != null && trace.getWarnings() != null) {
+            ArrayNode warnArr = provenance.putArray("warnings");
+            trace.getWarnings().forEach(warnArr::add);
+        }
+        if (outcome != null && outcome.getDiagnostics() != null) {
+            ArrayNode diagArr = provenance.putArray("diagnostics");
+            outcome.getDiagnostics().forEach(diagArr::add);
+        }
+        if (entrySpan != null && entrySpan.getScenarioStepId() != null) {
+            provenance.put("scenarioStepId", entrySpan.getScenarioStepId());
+        }
+        String locator = entrySpan != null ? (entrySpan.getTraceId() + ":" + entrySpan.getSpanId()) : "unknown";
+        String excerpt = "scenario-runner -> " + callee.getName() + " (" + durationMs + "ms)";
+        return Evidence.builder()
+                .modelVersion(enrichedVersion)
+                .sourceSnapshot(enrichedVersion.getSourceSnapshot())
+                .runtimeSession(session)
+                .element(callee)
+                .sourceType("RUNTIME_TRACE")
+                .adapterVersion("MAVIS_RUNNER_1.0")
+                .locator(locator)
+                .excerpt(excerpt)
+                .provenance(provenance)
+                .build();
+    }
+
+    private static Map<String, JsonNode> extractPinnedStepsById(JsonNode scenarioConfig) {
+        Map<String, JsonNode> map = new LinkedHashMap<>();
+        if (scenarioConfig == null || !scenarioConfig.isObject()) {
+            return map;
+        }
+        JsonNode stepsNode = scenarioConfig.path("scenario").path("steps");
+        if (!stepsNode.isArray()) {
+            stepsNode = scenarioConfig.path("steps");
+        }
+        if (!stepsNode.isArray()) {
+            return map;
+        }
+        int idx = 1;
+        for (JsonNode item : stepsNode) {
+            if (item != null && item.isObject()) {
+                String id = item.hasNonNull("id") ? item.get("id").asText("").trim() : "";
+                if (id.isEmpty()) {
+                    id = "step-" + idx;
+                }
+                map.put(id, item);
+            }
+            idx++;
+        }
+        return map;
+    }
+
+    private static final class BaseElementResolutionIndex {
+        private final Map<UUID, ModelElement> byId;
+        private final Map<String, ModelElement> uniqueByLowerName;
+        private final Map<String, ModelElement> uniqueContainerBySlug;
+        private final Map<String, String> confirmedByLower;
+        private final Map<String, String> uniqueConfirmedBySlug;
+
+        private BaseElementResolutionIndex(Map<UUID, ModelElement> byId,
+                                           Map<String, ModelElement> uniqueByLowerName,
+                                           Map<String, ModelElement> uniqueContainerBySlug,
+                                           Map<String, String> confirmedByLower,
+                                           Map<String, String> uniqueConfirmedBySlug) {
+            this.byId = byId;
+            this.uniqueByLowerName = uniqueByLowerName;
+            this.uniqueContainerBySlug = uniqueContainerBySlug;
+            this.confirmedByLower = confirmedByLower;
+            this.uniqueConfirmedBySlug = uniqueConfirmedBySlug;
+        }
+
+        static BaseElementResolutionIndex empty() {
+            return new BaseElementResolutionIndex(
+                    Collections.emptyMap(),
+                    Collections.emptyMap(),
+                    Collections.emptyMap(),
+                    Collections.emptyMap(),
+                    Collections.emptyMap());
+        }
+
+        static BaseElementResolutionIndex from(List<ModelElement> baseElements, Map<String, String> confirmedMappings) {
+            Map<UUID, ModelElement> byId = new HashMap<>();
+            Map<String, List<ModelElement>> byLower = new HashMap<>();
+            Map<String, List<ModelElement>> containersBySlug = new HashMap<>();
+
+            for (ModelElement el : baseElements) {
+                if (el == null) continue;
+                if (el.getId() != null) {
+                    byId.put(el.getId(), el);
+                }
+                if (el.getName() != null && !el.getName().isBlank()) {
+                    String lower = el.getName().trim().toLowerCase(Locale.ROOT);
+                    byLower.computeIfAbsent(lower, k -> new ArrayList<>()).add(el);
+                    if ("SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType())) {
+                        String slug = normalizeServiceSlug(el.getName());
+                        if (!slug.isBlank()) {
+                            containersBySlug.computeIfAbsent(slug, k -> new ArrayList<>()).add(el);
+                        }
+                    }
+                }
+            }
+
+            Map<String, ModelElement> uniqueByLower = new HashMap<>();
+            for (Map.Entry<String, List<ModelElement>> entry : byLower.entrySet()) {
+                List<ModelElement> list = entry.getValue();
+                if (list.size() == 1) {
+                    uniqueByLower.put(entry.getKey(), list.get(0));
+                } else {
+                    List<ModelElement> containers = list.stream()
+                            .filter(e -> "SERVICE_CONTAINER".equalsIgnoreCase(e.getElementType()))
+                            .toList();
+                    if (containers.size() == 1) {
+                        uniqueByLower.put(entry.getKey(), containers.get(0));
+                    }
+                }
+            }
+
+            Map<String, ModelElement> uniqueBySlug = new HashMap<>();
+            for (Map.Entry<String, List<ModelElement>> entry : containersBySlug.entrySet()) {
+                if (entry.getValue().size() == 1) {
+                    uniqueBySlug.put(entry.getKey(), entry.getValue().get(0));
+                }
+            }
+
+            Map<String, String> confirmedLower = new HashMap<>();
+            Map<String, List<String>> confirmedSlugTargets = new HashMap<>();
+            if (confirmedMappings != null) {
+                for (Map.Entry<String, String> entry : confirmedMappings.entrySet()) {
+                    if (entry.getKey() == null || entry.getValue() == null || entry.getValue().isBlank()) continue;
+                    String keyLower = entry.getKey().trim().toLowerCase(Locale.ROOT);
+                    String target = entry.getValue().trim();
+                    confirmedLower.put(keyLower, target);
+                    String slug = normalizeServiceSlug(entry.getKey());
+                    if (!slug.isBlank()) {
+                        confirmedSlugTargets.computeIfAbsent(slug, k -> new ArrayList<>()).add(target);
+                    }
+                }
+            }
+
+            Map<String, String> uniqueConfirmedSlug = new HashMap<>();
+            for (Map.Entry<String, List<String>> entry : confirmedSlugTargets.entrySet()) {
+                Set<String> distinct = new HashSet<>(entry.getValue());
+                if (distinct.size() == 1) {
+                    uniqueConfirmedSlug.put(entry.getKey(), distinct.iterator().next());
+                }
+            }
+
+            return new BaseElementResolutionIndex(byId, uniqueByLower, uniqueBySlug, confirmedLower, uniqueConfirmedSlug);
+        }
+
+        ModelElement resolve(String modelServiceId, String runtimeService) {
+            ModelElement byExplicitId = resolveTargetToken(modelServiceId);
+            if (byExplicitId != null) {
+                return byExplicitId;
+            }
+            if (runtimeService == null || runtimeService.isBlank()) {
+                return null;
+            }
+            String lower = runtimeService.trim().toLowerCase(Locale.ROOT);
+            String slug = normalizeServiceSlug(runtimeService);
+
+            String mappedTarget = confirmedByLower.get(lower);
+            if (mappedTarget == null && !slug.isBlank()) {
+                mappedTarget = uniqueConfirmedBySlug.get(slug);
+            }
+            if (mappedTarget != null) {
+                ModelElement fromConfirmed = resolveTargetToken(mappedTarget);
+                if (fromConfirmed != null) {
+                    return fromConfirmed;
+                }
+            }
+
+            ModelElement direct = uniqueByLowerName.get(lower);
+            if (direct != null) {
+                return direct;
+            }
+            if (!slug.isBlank()) {
+                return uniqueContainerBySlug.get(slug);
+            }
+            return null;
+        }
+
+        private ModelElement resolveTargetToken(String token) {
+            if (token == null || token.isBlank()) {
+                return null;
+            }
+            String trimmed = token.trim();
+            try {
+                ModelElement found = byId.get(UUID.fromString(trimmed));
+                if (found != null) {
+                    return found;
+                }
+            } catch (IllegalArgumentException ignored) {
+            }
+            ModelElement byName = uniqueByLowerName.get(trimmed.toLowerCase(Locale.ROOT));
+            if (byName != null) {
+                return byName;
+            }
+            String slug = normalizeServiceSlug(trimmed);
+            return !slug.isBlank() ? uniqueContainerBySlug.get(slug) : null;
+        }
+
+        private static String normalizeServiceSlug(String raw) {
+            String cleaned = ComposePreflightValidator.cleanServiceCandidate(raw);
+            if (cleaned.isBlank()) {
+                return "";
+            }
+            String lower = cleaned.toLowerCase(Locale.ROOT)
+                    .replaceFirst("^fruit[-_]", "")
+                    .replaceFirst("[-_]*(service|services|api|app|svc|server|backend|container)$", "")
+                    .replaceAll("[^a-z0-9]", "");
+            return lower.isEmpty() ? cleaned.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "") : lower;
+        }
+    }
+
     private static List<String> resolveReceiptCausalParents(RunnerCorrelatedSpanDTO callerSpan,
                                                             Map<String, RunnerCorrelatedSpanDTO> spanMap,
                                                             Map<String, String> childSpanKeyToMessageId) {
@@ -721,7 +1052,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         RunnerCorrelatedSpanDTO curr = callerSpan;
         String callerService = callerSpan != null ? callerSpan.getRuntimeService() : null;
         while (curr != null && curr.getSpanId() != null && curr.getTraceId() != null) {
-            String key = (curr.getTraceId() + ":" + curr.getSpanId()).toLowerCase();
+            String key = (curr.getTraceId() + ":" + curr.getSpanId()).toLowerCase(Locale.ROOT);
             if (!visited.add(key)) break;
             String msgId = childSpanKeyToMessageId.get(key);
             if (msgId != null && !result.contains(msgId)) {
@@ -729,7 +1060,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 break;
             }
             if (curr.getParentSpanId() == null || curr.getParentSpanId().isBlank()) break;
-            RunnerCorrelatedSpanDTO next = spanMap.get((curr.getTraceId() + ":" + curr.getParentSpanId()).toLowerCase());
+            RunnerCorrelatedSpanDTO next = spanMap.get((curr.getTraceId() + ":" + curr.getParentSpanId()).toLowerCase(Locale.ROOT));
             if (next == null || callerService == null || next.getRuntimeService() == null
                     || !callerService.equalsIgnoreCase(next.getRuntimeService())) {
                 break;
@@ -750,7 +1081,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             } catch (IllegalArgumentException ignored) {}
         }
         if (serviceName != null && !serviceName.isBlank()) {
-            return serviceNameToElementMap.get(serviceName.toLowerCase());
+            return serviceNameToElementMap.get(serviceName.toLowerCase(Locale.ROOT));
         }
         return null;
     }
@@ -767,8 +1098,8 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                                                             List<ModelRelationship> newRelationships,
                                                             List<Evidence> newEvidences) {
 
-        String pairKeyUuid = (caller.getId().toString() + "->" + callee.getId().toString()).toLowerCase();
-        String pairKeyName = (caller.getName() + "->" + callee.getName()).toLowerCase();
+        String pairKeyUuid = (caller.getId().toString() + "->" + callee.getId().toString()).toLowerCase(Locale.ROOT);
+        String pairKeyName = (caller.getName() + "->" + callee.getName()).toLowerCase(Locale.ROOT);
 
         ModelRelationship matchedRel = relByPairKey.get(pairKeyUuid);
         if (matchedRel == null) {
@@ -933,4 +1264,3 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         return element;
     }
 }
-

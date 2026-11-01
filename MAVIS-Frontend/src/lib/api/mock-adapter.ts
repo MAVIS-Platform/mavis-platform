@@ -525,6 +525,72 @@ export class MockAdapter implements ApiAdapter {
           .filter((s) => this.user?.role === "admin" || s.projectId === p.projectId)
           .map((s) => this.advanceSession(s));
       }
+      case "runtimeReadSessions": {
+        const p = contracts.runtimeReadSessions.input.parse(raw);
+        return this.sessions
+          .filter((s) =>
+            p.projectId === "*"
+              ? this.user?.role === "admin" || this.projects.some((pr) => pr.id === s.projectId)
+              : s.projectId === p.projectId,
+          )
+          .map((s) => this.toRuntimeReadView(s));
+      }
+      case "runtimeReadSession": {
+        const p = contracts.runtimeReadSession.input.parse(raw);
+        return this.toRuntimeReadView(this.find(this.sessions, (s) => s.id === p.sessionId));
+      }
+      case "runtimeStop": {
+        const p = contracts.runtimeStop.input.parse(raw);
+        const s = this.advanceSession(this.find(this.sessions, (v) => v.id === p.sessionId));
+        if (s.status === "running") {
+          s.status = "cancelled";
+          s.outcome = "unknown";
+          s.events.push({ at: new Date().toISOString(), message: "Sample session cancelled" });
+          this.record("cancel", s.id);
+        }
+        return this.toRuntimeReadView(s);
+      }
+      case "runtimeApprove": {
+        const p = contracts.runtimeApprove.input.parse(raw);
+        const s = this.find(this.sessions, (v) => v.id === p.sessionId);
+        if (!["completed", "failed", "cancelled", "terminated"].includes(s.status)) {
+          s.status = "running";
+          this.started.set(s.id, Date.now() - 7000);
+          s.events.push({ at: new Date().toISOString(), message: "Sample session dispatched" });
+        }
+        return this.toRuntimeReadView(s);
+      }
+      case "runtimeSequence": {
+        const p = contracts.runtimeSequence.input.parse(raw);
+        const s = this.advanceSession(this.find(this.sessions, (v) => v.id === p.sessionId));
+        const view = this.toRuntimeReadView(s);
+        return {
+          sessionId: s.id,
+          modelId: view.enrichedModelId ?? view.modelId ?? "model-1",
+          baseModelId: view.modelId,
+          snapshotId: s.snapshotId,
+          traceStatus: view.traceStatus ?? "NONE",
+          mappingStatus: view.mappingStatus,
+          startedAt: s.approvedAt,
+          completedAt: view.completedAt,
+          limitations: s.traces.length ? ["PREVIEW_SAMPLE_TRACE"] : ["NO_OBSERVED_SEQUENCE_AVAILABLE"],
+          steps: s.traces.map((tr, idx) => ({
+            stepOrder: idx + 1,
+            messageId: `msg-obs-${idx + 1}`,
+            callerService: tr.from,
+            calleeService: tr.to,
+            operation: `/api/${tr.to}`,
+            messageSort: "UNKNOWN",
+            httpMethod: "GET",
+            httpStatusCode: 200,
+            durationMs: tr.durationMs,
+            traceId: tr.id.replace(/-/g, "").padEnd(32, "0").slice(0, 32),
+            spanId: String(idx + 1).padStart(16, "0"),
+            provenanceType: "OBSERVED",
+            causalParentMessageIds: [],
+          })),
+        };
+      }
       case "runtimeSession":
         return this.advanceSession(
           this.find(
@@ -891,6 +957,124 @@ export class MockAdapter implements ApiAdapter {
     if (job.status === "failed")
       this.find(this.projects, (p) => p.id === job.projectId).status = "failed";
     return job;
+  }
+  private toRuntimeReadView(rawSession: RuntimeSession) {
+    const s = this.advanceSession(rawSession);
+    const scenario = this.scenarios.find((sc) => sc.id === s.scenarioId) ?? null;
+    const baseModel =
+      this.models.find((m) => m.snapshotId === s.snapshotId) ??
+      this.models.find((m) => m.projectId === s.projectId) ??
+      null;
+    let enrichedModelId: string | null = null;
+    if (s.status === "completed" && s.traces.length > 0 && baseModel) {
+      const candidateId = `enriched-${s.id}`;
+      let enriched = this.models.find((m) => m.id === candidateId);
+      if (!enriched) {
+        enriched = structuredClone(baseModel);
+        enriched.id = candidateId;
+        enriched.revision =
+          Math.max(0, ...this.models.filter((m) => m.projectId === s.projectId).map((m) => m.revision)) + 1;
+        enriched.label = `Runtime enriched · revision ${enriched.revision}`;
+        (enriched as unknown as Record<string, unknown>)["origin"] = "RUNTIME_ENRICHED";
+        this.models.push(enriched);
+      }
+      enrichedModelId = enriched.id;
+    }
+    const executionStatus =
+      s.status === "running"
+        ? "RUNNING"
+        : s.status === "completed"
+          ? "COMPLETED"
+          : s.status === "failed"
+            ? "FAILED"
+            : s.status === "cancelled" || s.status === "terminated"
+              ? "CANCELLED"
+              : "NOT_STARTED";
+    const scenarioStatus =
+      s.outcome === "passed"
+        ? "PASSED"
+        : s.outcome === "failed"
+          ? "FAILED"
+          : executionStatus === "RUNNING"
+            ? "RUNNING"
+            : executionStatus === "CANCELLED"
+              ? "CANCELLED"
+              : "PENDING";
+    const hasTraces = s.traces.length > 0;
+    const stepResults = (scenario?.steps ?? []).map((rawStep, idx) => {
+      let service: string | null = "gateway";
+      let method = "GET";
+      let path = "/health";
+      let expectedStatus = 200;
+      try {
+        const parsed = JSON.parse(rawStep) as Record<string, unknown>;
+        if (typeof parsed["service"] === "string") service = parsed["service"];
+        if (typeof parsed["method"] === "string") method = parsed["method"].toUpperCase();
+        if (typeof parsed["path"] === "string") path = parsed["path"];
+        if (typeof parsed["expectedStatus"] === "number") expectedStatus = parsed["expectedStatus"];
+      } catch {
+        const tokens = rawStep.split("->")[0]?.trim().split(/\s+/) ?? [];
+        if (tokens.length >= 2) {
+          method = tokens[0]!.toUpperCase();
+          path = tokens[1]!;
+        }
+      }
+      const stepStatus =
+        s.status === "completed"
+          ? "PASSED"
+          : s.status === "failed"
+            ? idx === 0
+              ? "FAILED"
+              : "NOT_RUN"
+            : s.status === "running"
+              ? "PENDING"
+              : "NOT_RUN";
+      return {
+        id: `step-${idx + 1}`,
+        service,
+        method,
+        path,
+        expectedStatus,
+        statusCode: stepStatus === "PASSED" ? expectedStatus : stepStatus === "FAILED" ? 500 : null,
+        status: stepStatus,
+        durationMs: stepStatus === "PASSED" ? 42 : null,
+        failureReason:
+          stepStatus === "FAILED" ? `HTTP 500 (expected ${expectedStatus})` : null,
+        traceId: null,
+        parentSpanId: null,
+      };
+    });
+    return {
+      id: s.id,
+      projectId: s.projectId,
+      snapshotId: s.snapshotId,
+      modelId: baseModel?.id ?? null,
+      enrichedModelId,
+      scenarioName: scenario?.name ?? null,
+      profileName:
+        this.configurations.find((c) => c.projectId === s.projectId)?.profileId ?? "profile-1",
+      executionStatus,
+      scenarioStatus,
+      evidenceStatus: hasTraces ? "AVAILABLE" : "UNAVAILABLE",
+      cleanupStatus: s.status === "running" ? "NOT_APPLICABLE" : "CONFIRMED",
+      traceQuality: hasTraces ? "CompleteForCapturedData" : "Unavailable",
+      traceStatus: hasTraces ? "COMPLETE" : "NONE",
+      mappingStatus: hasTraces ? "MAPPED" : "UNAVAILABLE",
+      publicationGateStatus: hasTraces ? "HELD_NON_PROMOTED" : "SKIPPED_NO_EVIDENCE",
+      failureReason:
+        executionStatus === "FAILED"
+          ? "Sample runtime execution failed in preview scenario."
+          : executionStatus === "CANCELLED"
+            ? "Runtime session was cancelled before completion."
+            : null,
+      diagnostics: executionStatus === "FAILED" ? ["PREVIEW_RUNTIME_FAILED"] : [],
+      capturedSpanCount: hasTraces ? s.traces.length : 0,
+      stepResults,
+      createdAt: s.approvedAt,
+      startedAt: s.approvedAt,
+      completedAt:
+        s.status === "running" ? null : (s.events.at(-1)?.at ?? s.approvedAt),
+    };
   }
   private advanceSession(session: RuntimeSession) {
     if (

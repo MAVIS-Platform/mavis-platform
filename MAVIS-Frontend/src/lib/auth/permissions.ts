@@ -74,12 +74,24 @@ export function operationPermission(operation: Operation): Permission | undefine
       "buildRuntimeSandboxImages",
       "saveScenario",
       "startRuntime",
+      "runtimeApprove",
       "explain",
       "freezeArtifacts",
     ].includes(operation)
   )
     return "project:write";
   // Administrative runtime monitoring has its own route and backend checks.
-  if (["runtimeSessions", "runtimeSession", "stopRuntime"].includes(operation)) return undefined;
+  if (
+    [
+      "runtimeSessions",
+      "runtimeSession",
+      "stopRuntime",
+      "runtimeReadSessions",
+      "runtimeReadSession",
+      "runtimeStop",
+      "runtimeSequence",
+    ].includes(operation)
+  )
+    return undefined;
   return "project:read";
 }
