@@ -2,6 +2,32 @@ import type { ArchitecturalModel } from "@/types/domain";
 export type RuntimeDraftStep = { service: string; method: string; path: string; status: string; rationale?: string | undefined; source?: string | undefined;
  environmentVariables?: Record<string,string>; envHeaders?: Array<{ name: string; reference: string }>; bodyReference?: string; allowClientError?: boolean };
 export type RuntimeInput = { name:string; label:string; kind:"text"|"credential"|"json"; source:string };
+export function toServiceEnvPrefix(serviceName:string|undefined):string {
+ let prefix=(serviceName||"SVC").toUpperCase().replace(/[^A-Z0-9_]/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,"");
+ if(!prefix||!/^[A-Z]/.test(prefix))prefix=`SVC_${prefix}`;
+ return prefix.slice(0,32);
+}
+export function boundRuntimeEnvironment(raw:Record<string,string>):Record<string,string> {
+ const out:Record<string,string>={};
+ for(const [k,v] of Object.entries(raw)){
+  if(Object.keys(out).length>=64)break;
+  if(/^[A-Z][A-Z0-9_]{0,63}$/.test(k)&&typeof v==="string"&&v.length<=16000)out[k]=v;
+ }
+ return out;
+}
+export function resolveRuntimeTargetModel<T extends {id:string;snapshotId:string;origin?:string|null|undefined;latest?:boolean|undefined}>(
+ allModels:readonly T[],storedModelId?:string|null,configModelId?:string|null):T|undefined {
+ const statics=allModels.filter(m=>m.origin!=="RUNTIME_ENRICHED");
+ const candidates=statics.length>0?statics:allModels;
+ if(!candidates.length)return undefined;
+ const refId=storedModelId||configModelId||"";
+ const refAny=refId?allModels.find(m=>m.id===refId):undefined;
+ return (storedModelId?candidates.find(m=>m.id===storedModelId):undefined)
+  ??(configModelId?candidates.find(m=>m.id===configModelId):undefined)
+  ??(refAny?candidates.find(m=>m.snapshotId===refAny.snapshotId):undefined)
+  ??candidates.find(m=>m.latest)
+  ??candidates[0];
+}
 export function automaticRuntimeDraft(suggestions:ScenarioSuggestion[],profile?:Record<string,unknown>):{steps:RuntimeDraftStep[];inputs:RuntimeInput[];blocked:string[]} {
  const inputs:RuntimeInput[]=[],blocked:string[]=[],steps:RuntimeDraftStep[]=[];
  const add=(name:string,label:string,kind:RuntimeInput["kind"],source:string)=>{let candidate=name,counter=1;while(inputs.some(i=>i.name===candidate&&i.label!==label))candidate=name.slice(0,58)+"_"+(++counter);if(!inputs.some(i=>i.name===candidate))inputs.push({name:candidate,label,kind,source});return candidate;};
@@ -9,7 +35,7 @@ export function automaticRuntimeDraft(suggestions:ScenarioSuggestion[],profile?:
  const read=candidates.filter(s=>s.method==="GET");const chosen=(read.length?read:candidates.filter(s=>["POST","PUT","PATCH"].includes(s.method))).slice(0,5);
  for(const suggestion of chosen){
   if(suggestion.missing.some(m=>m.includes("method parameters"))&&(suggestion.parameterCount??1)>(suggestion.path.match(/\{[^}]+\}/g)?.length??0)&&suggestion.method==="GET") {blocked.push(suggestion.source+": request parameter binding is not available");continue;}
-  const variables:Record<string,string>={};const serviceKey=suggestion.service.replace(/[^A-Za-z0-9]/g,"_").toUpperCase().slice(0,32);
+  const variables:Record<string,string>={};const serviceKey=toServiceEnvPrefix(suggestion.service);
   const path=suggestion.path.replace(/\{([^}]+)\}/g,(_,param:string)=>{const alias="V"+Object.keys(variables).length;variables[alias]=add(`${serviceKey}_${param.replace(/[^A-Za-z0-9]/g,"_").toUpperCase()}`.slice(0,64),`${suggestion.service} ${suggestion.path}: ${param}`,"text",suggestion.source);return "{{"+alias+"}}";});
   const step:RuntimeDraftStep={service:suggestion.service,method:suggestion.method,path,status:suggestion.status};
   if(Object.keys(variables).length)step.environmentVariables=variables;

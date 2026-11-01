@@ -48,3 +48,45 @@ test('dotenv import is literal, bounded and never executes substitutions',()=>{
  const parsed=parseRuntimeEnvFile('export API_KEY="fixture-only"\nBODY=\'{"count":3}\'\nVALUE=$(not-executed)\n# ignored');assert.equal(parsed.API_KEY,'fixture-only');assert.equal(parsed.BODY,'{"count":3}');assert.equal(parsed.VALUE,'$(not-executed)');
  assert.throws(()=>parseRuntimeEnvFile('A=one\nA=two'),/Duplicate/);assert.throws(()=>parseRuntimeEnvFile('invalid-line-with-secret'),/line 1/);assert.throws(()=>parseRuntimeEnvFile('A='+ 'x'.repeat(65536)),/size/);
 });
+
+const {toServiceEnvPrefix,boundRuntimeEnvironment,resolveRuntimeTargetModel}=require('../src/features/runtime/scenario-suggestions.ts');
+test('digit-leading and special service names always produce valid uppercase environment identifiers',()=>{
+ for(const raw of ['2fa-service','3scale-gateway','---','','_edge_99','a'.repeat(80)]){
+  const prefix=toServiceEnvPrefix(raw);
+  assert.match(prefix,/^[A-Z][A-Z0-9_]{0,31}$/);
+ }
+ assert.equal(toServiceEnvPrefix('2fa-service'),'SVC_2FA_SERVICE');
+ const digitModel={elements:[{id:'svc2',name:'2fa-service',elementType:'SERVICE_CONTAINER'},{id:'ctrl2',name:'AuthController',parentId:'svc2',properties:{umlClassifier:{annotations:['RestController','RequestMapping'],endpointPrefixDeclarations:['@RequestMapping("/api/2fa")'],members:[method('verify','/verify/{code}','Post',{parameters:[{name:'code'},{name:'body'}],accessDeclarations:['@Secured("ROLE_USER")']})]}}}],edges:[]};
+ const draft=automaticRuntimeDraft(suggestRuntimeScenarios(digitModel));
+ assert.equal(draft.steps.length,1);
+ assert.match(draft.steps[0].bodyReference,/^[A-Z][A-Z0-9_]{0,63}$/);
+ assert.match(draft.steps[0].envHeaders[0].reference,/^[A-Z][A-Z0-9_]{0,63}$/);
+ for(const [alias,ref] of Object.entries(draft.steps[0].environmentVariables)){
+  assert.match(alias,/^[A-Z][A-Z0-9_]{0,63}$/);
+  assert.match(ref,/^[A-Z][A-Z0-9_]{0,63}$/);
+ }
+});
+
+test('boundRuntimeEnvironment filters invalid keys, oversize values and caps at 64 entries',()=>{
+ const raw={invalid_lower:'1','2BAD':'1',OVERSIZE:'x'.repeat(16001)};
+ for(let i=1;i<=80;i++)raw[`VALID_KEY_${i}`]=`val-${i}`;
+ const bounded=boundRuntimeEnvironment(raw);
+ assert.equal(Object.keys(bounded).length,64);
+ assert.ok(!('invalid_lower' in bounded)&&!('2BAD' in bounded)&&!('OVERSIZE' in bounded));
+ assert.equal(bounded.VALID_KEY_1,'val-1');
+ assert.equal(bounded.VALID_KEY_64,'val-64');
+});
+
+test('resolveRuntimeTargetModel unwraps RUNTIME_ENRICHED references on Run #2 and keeps snapshot/model scope aligned',()=>{
+ const s1='22222222-2222-4222-8222-222222222221',s2='22222222-2222-4222-8222-222222222222';
+ const m1={id:'33333333-3333-4333-8333-333333333331',snapshotId:s1,revision:1,origin:'STATIC',latest:false};
+ const m2Enriched={id:'33333333-3333-4333-8333-333333333332',snapshotId:s1,revision:2,origin:'RUNTIME_ENRICHED',latest:true};
+ const m3StaticS2={id:'33333333-3333-4333-8333-333333333333',snapshotId:s2,revision:3,origin:'STATIC',latest:false};
+ assert.equal(resolveRuntimeTargetModel([m2Enriched,m1],m2Enriched.id,null)?.id,m1.id);
+ assert.equal(resolveRuntimeTargetModel([m2Enriched,m1],null,m2Enriched.id)?.id,m1.id);
+ assert.equal(resolveRuntimeTargetModel([m2Enriched,m1],null,null)?.id,m1.id);
+ assert.equal(resolveRuntimeTargetModel([m3StaticS2,m2Enriched,m1],m2Enriched.id,null)?.id,m1.id);
+ const pickedS2=resolveRuntimeTargetModel([m3StaticS2,m2Enriched,m1],m3StaticS2.id,m1.id);
+ assert.equal(pickedS2?.id,m3StaticS2.id);
+ assert.equal(pickedS2?.snapshotId,s2);
+});

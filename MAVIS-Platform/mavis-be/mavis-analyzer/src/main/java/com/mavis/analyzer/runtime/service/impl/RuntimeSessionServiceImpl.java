@@ -597,6 +597,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                             .filter(mv -> !"RUNTIME_ENRICHED".equalsIgnoreCase(mv.getOrigin()))
                             .findFirst()
                             .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "Dự án chưa có ModelVersion hợp lệ. Vui lòng chạy phân tích tĩnh trước")));
+            if ("RUNTIME_ENRICHED".equalsIgnoreCase(pinnedModel.getOrigin()) && pinnedModel.getBaseModelVersion() != null) {
+                pinnedModel = pinnedModel.getBaseModelVersion();
+            }
 
             if (pinnedModel.getSourceSnapshot() == null || !snapshot.getId().equals(pinnedModel.getSourceSnapshot().getId())) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Pinned model must belong to the selected snapshot");

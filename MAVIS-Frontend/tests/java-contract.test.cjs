@@ -1040,3 +1040,209 @@ test("Step 3 runtimeReadSession, permissions and MockAdapter validate enriched d
  assert.equal("outcome" in stopped,false);
  assert.equal(stopped.executionStatus,"CANCELLED");
 });
+
+test("all 14 runtime operations pass strict executeJava + validateResponse contracts across a 2-run lifecycle with RUNTIME_ENRICHED promotion", async t => {
+ environment(t);
+ const {resolveRuntimeTargetModel}=require("../src/features/runtime/scenario-suggestions.ts");
+ const snap1="22222222-2222-4222-8222-222222222221",snap2Unanalyzed="22222222-2222-4222-8222-222222222229";
+ const staticM1="33333333-3333-4333-8333-333333333331",enrichedM2="33333333-3333-4333-8333-333333333332";
+ const scenId="66666666-6666-4666-8666-666666666661",sess1Id="77777777-7777-4777-8777-777777777771",sess2Id="77777777-7777-4777-8777-777777777772";
+ const digestImg="sha256:"+"a".repeat(64);
+ let cfgRev=0,cfgSnap=snap2Unanalyzed,cfgModel=null,scenRev=0,runCount=0;
+ let scenarioSteps=[JSON.stringify({id:"step-1",service:"order-api",method:"POST",path:"/api/orders",expectedStatus:201,allowClientError:true,bodyReference:"ORDER_API_BODY_1"})];
+
+ t.mock.method(globalThis,"fetch",async(url,options={})=>{
+  const u=new URL(url);
+  const p=u.pathname.replace("/api/v1/","");
+  const m=options.method??"GET";
+  const body=options.body?JSON.parse(options.body):undefined;
+  let data;
+  if(p===`projects/${project}/snapshots`) data=[
+   {id:snap2Unanalyzed,projectId:project,sourceType:"UPLOAD",branchName:null,commitSha:null,createdAt:"2026-11-01T12:05:00Z"},
+   {id:snap1,projectId:project,sourceType:"GITHUB",branchName:"main",commitSha:"abcdef1234567890",createdAt:"2026-11-01T12:00:00Z"}
+  ];
+  else if(p===`analyzer/projects/${project}/models`) data=runCount===0
+   ?[{id:staticM1,projectId:project,sourceSnapshotId:snap1,revision:1,origin:"STATIC",isLatestValid:true,createdAt:"2026-11-01T12:01:00Z"}]
+   :[
+     {id:enrichedM2,projectId:project,sourceSnapshotId:snap1,revision:2,origin:"RUNTIME_ENRICHED",isLatestValid:true,createdAt:"2026-11-01T12:03:00Z"},
+     {id:staticM1,projectId:project,sourceSnapshotId:snap1,revision:1,origin:"STATIC",isLatestValid:false,createdAt:"2026-11-01T12:01:00Z"}
+    ];
+  else if(p===`analyzer/snapshots/${snap1}`) data={id:snap1,projectId:project,sourceType:"GITHUB"};
+  else if(p===`analyzer/runtime/preflight`&&m==="POST") data={
+   compatible:true,detectedServices:["order-api","orders-db"],composeServices:["order-api","orders-db"],
+   infrastructureServices:["orders-db"],securityWarnings:[],recommendedProfile:"SPRING_BOOT_DOTNET_COMPOSE_V1",
+   servicePorts:{"order-api":8080},serviceStacks:{"order-api":"SPRING_BOOT"},
+   detectedEndpoints:[{service:"order-api",method:"POST",path:"/api/orders",source:"OrderController.java"}],
+   databaseChecks:[{service:"order-api",dbType:"POSTGRESQL",requiredEnvVars:["DB_PASSWORD"],status:"DETECTED_CONTAINER"}],
+   requiredEnvVars:[{name:"DB_PASSWORD",service:"order-api",services:["order-api","orders-db"],category:"DB_SECRET",defaultValue:null,scope:"SANDBOX",defaultPresent:false,required:true}],
+   runnerIssues:["Service 'order-api' uses build: without digest-pinned image"],
+   unresolvableRunnerIssues:["Service 'order-api' has no image"],
+   sandboxComposeYaml:"services:\n  order-api:\n    ports: ['8080:8080']\n",
+   sandboxComposeChanges:["Stripped build: on order-api"],
+   recommendedServiceMappings:{"order-api":node},modelServiceNames:{[node]:"order-api"},localImageBuildAvailable:true
+  };
+  else if(p===`analyzer/projects/${project}/runtime-plan`&&m==="GET") data={
+   projectId:project,snapshotId:cfgSnap,modelId:cfgModel,profileId:"SPRING_BOOT_DOTNET_COMPOSE_V1",
+   profile:{detectedServices:["order-api"],composeServices:["order-api"],localImageBuildAvailable:true},
+   revision:cfgRev,configured:cfgRev>0,supported:true,ready:cfgRev>0,prerequisites:[],protectedInputsReady:true
+  };
+  else if(p===`analyzer/projects/${project}/runtime-plan/build-images`&&m==="POST") data={
+   projectId:project,snapshotId:body.snapshotId??snap1,builtImages:{"order-api":digestImg},errors:[]
+  };
+  else if(p===`analyzer/projects/${project}/runtime-plan`&&m==="PUT"){
+   assert.equal(body.snapshotId,snap1,"snapshotId must match analyzed static model snapshot");
+   assert.equal(body.modelId,staticM1,"modelId must stay pinned to base STATIC model across runs");
+   assert.equal(body.expectedRevision,cfgRev);
+   cfgRev+=1;cfgSnap=body.snapshotId;cfgModel=body.modelId;
+   data={projectId:project,snapshotId:cfgSnap,modelId:cfgModel,profileId:body.profileId,profile:body.profile,revision:cfgRev,configured:true,supported:true,ready:true,prerequisites:[],protectedInputsReady:true};
+  }
+  else if(p===`analyzer/projects/${project}/runtime-plan/scenarios/generate`&&m==="POST") data={
+   projectId:project,snapshotId:body.snapshotId??snap1,modelId:body.modelId??staticM1,
+   suggestedName:"Auto-generated Architecture Verification Scenario",generatorMode:"SYSTEM_STATIC",aiModelName:"deterministic-static-v2",
+   summary:"Synthesized 1 causal step.",
+   steps:[{id:"step-1",service:"order-api",method:"POST",path:"/api/orders",expectedStatus:201,rationale:"Seed order",source:"OrderController.java",environmentVariables:null,envHeaders:null,bodyReference:"ORDER_API_BODY_1",allowClientError:true}],
+   sampleInputs:{ORDER_API_BODY_1:'{"customerEmail":"alice@mavis.io","quantity":1}'},
+   inheritedEnvKeys:["DB_PASSWORD"],runnableServices:["order-api"]
+  };
+  else if(p===`analyzer/projects/${project}/runtime-plan/scenarios`&&m==="GET") data=scenRev===0?[]:[{id:scenId,projectId:project,name:"Order Verification",steps:scenarioSteps,revision:scenRev}];
+  else if(p===`analyzer/projects/${project}/runtime-plan/scenarios`&&m==="POST"){
+   assert.equal(body.expectedRevision,0);scenRev=1;scenarioSteps=body.steps;
+   data={id:scenId,projectId:project,name:body.name,steps:scenarioSteps,revision:scenRev};
+  }
+  else if(p===`analyzer/projects/${project}/runtime-plan/scenarios/${scenId}`&&m==="PUT"){
+   assert.equal(body.expectedRevision,scenRev);scenRev+=1;scenarioSteps=body.steps;
+   data={id:scenId,projectId:project,name:body.name,steps:scenarioSteps,revision:scenRev};
+  }
+  else if(p===`analyzer/projects/${project}/runtime-plan/start`&&m==="POST"){
+   runCount+=1;
+   const sid=runCount===1?sess1Id:sess2Id;
+   // Java always unwraps RUNTIME_ENRICHED -> base STATIC modelVersionId (staticM1)
+   data={
+    id:sid,projectId:project,sourceSnapshotId:snap1,modelVersionId:staticM1,enrichedModelVersionId:null,
+    scenarioName:"Order Verification",profileName:"SPRING_BOOT_DOTNET_COMPOSE_V1",
+    scenarioConfig:{planning:{scenarioId:scenId,configurationRevision:body.configurationRevision,scenarioRevision:body.scenarioRevision}},
+    executionStatus:"RUNNING",scenarioStatus:"RUNNING",evidenceStatus:"PENDING",cleanupStatus:"PENDING",
+    traceQuality:"Pending",traceStatus:"NONE",mappingStatus:"PENDING",
+    createdAt:"2026-11-01T12:02:00Z",startedAt:"2026-11-01T12:02:01Z",completedAt:null
+   };
+  }
+  else if(p===`analyzer/runtime/sessions/${sess1Id}`&&m==="GET") data={
+   id:sess1Id,projectId:project,sourceSnapshotId:snap1,modelVersionId:staticM1,enrichedModelVersionId:enrichedM2,
+   scenarioName:"Order Verification",profileName:"SPRING_BOOT_DOTNET_COMPOSE_V1",
+   scenarioConfig:{planning:{scenarioId:scenId,configurationRevision:1,scenarioRevision:2}},
+   executionStatus:"COMPLETED",scenarioStatus:"PASSED",evidenceStatus:"COMPLETE",cleanupStatus:"CONFIRMED",
+   traceQuality:"Complete",publicationGateStatus:"PROMOTED",traceStatus:"COMPLETE",mappingStatus:"MAPPED",
+   capturedSpanCount:2,diagnostics:[],
+   stepResults:[{id:"step-1",service:"order-api",method:"POST",path:"/api/orders",expectedStatus:201,statusCode:201,status:"PASSED",durationMs:14,failureReason:null,traceId:"4bf92f3577b34da6a3ce929d0e0e4736",parentSpanId:"00f067aa0ba902b7"}],
+   createdAt:"2026-11-01T12:02:00Z",startedAt:"2026-11-01T12:02:01Z",completedAt:"2026-11-01T12:02:05Z"
+  };
+  else if(p===`analyzer/runtime/sessions/${sess1Id}/sequence`&&m==="GET") data={
+   runtimeSessionId:sess1Id,modelVersionId:enrichedM2,baseModelVersionId:staticM1,sourceSnapshotId:snap1,
+   modelRevision:2,baseModelRevision:1,modelOrigin:"RUNTIME_ENRICHED",traceStatus:"COMPLETE",mappingStatus:"MAPPED",
+   startedAt:"2026-11-01T12:02:01Z",completedAt:"2026-11-01T12:02:05Z",limitations:["NO_SYNTHETIC_REPLY_FROM_END_TIME"],
+   steps:[{stepOrder:1,callerService:"external",calleeService:"order-api",httpMethod:"POST",httpStatusCode:201,durationMs:14,traceId:"4bf92f3577b34da6a3ce929d0e0e4736",spanId:"1111111111111111",parentSpanId:"00f067aa0ba902b7"}]
+  };
+  else if(p===`analyzer/runtime/sessions/${sess2Id}/approve`&&m==="POST") data={
+   id:sess2Id,projectId:project,sourceSnapshotId:snap1,modelVersionId:staticM1,enrichedModelVersionId:null,
+   scenarioName:"Order Verification",profileName:"SPRING_BOOT_DOTNET_COMPOSE_V1",
+   executionStatus:"RUNNING",scenarioStatus:"RUNNING",evidenceStatus:"PENDING",cleanupStatus:"PENDING",
+   traceQuality:"Pending",traceStatus:"NONE",mappingStatus:"PENDING",
+   createdAt:"2026-11-01T12:04:00Z",startedAt:"2026-11-01T12:04:01Z",completedAt:null
+  };
+  else if(p===`analyzer/runtime/sessions/${sess2Id}/stop`&&m==="POST") data={
+   id:sess2Id,projectId:project,sourceSnapshotId:snap1,modelVersionId:staticM1,enrichedModelVersionId:null,
+   scenarioName:"Order Verification",profileName:"SPRING_BOOT_DOTNET_COMPOSE_V1",
+   scenarioConfig:{planning:{scenarioId:scenId,configurationRevision:2,scenarioRevision:2}},
+   executionStatus:"CANCELLING",scenarioStatus:"RUNNING",evidenceStatus:"PENDING",cleanupStatus:"PENDING",
+   traceQuality:"Pending",traceStatus:"NONE",mappingStatus:"PENDING",
+   createdAt:"2026-11-01T12:04:00Z",startedAt:"2026-11-01T12:04:01Z",completedAt:null
+  };
+  else if(p===`analyzer/projects/${project}/runtime-sessions`&&m==="GET") data=[
+   {id:sess2Id,projectId:project,sourceSnapshotId:snap1,modelVersionId:staticM1,executionStatus:"CANCELLING",scenarioStatus:"RUNNING",evidenceStatus:"PENDING",cleanupStatus:"PENDING",traceQuality:"Pending",mappingStatus:"PENDING",scenarioConfig:{planning:{scenarioId:scenId,configurationRevision:2,scenarioRevision:2}}},
+   {id:sess1Id,projectId:project,sourceSnapshotId:snap1,modelVersionId:staticM1,enrichedModelVersionId:enrichedM2,executionStatus:"COMPLETED",scenarioStatus:"PASSED",evidenceStatus:"COMPLETE",cleanupStatus:"CONFIRMED",traceQuality:"Complete",publicationGateStatus:"PROMOTED",mappingStatus:"MAPPED",scenarioConfig:{planning:{scenarioId:scenId,configurationRevision:1,scenarioRevision:2}}}
+  ];
+  else throw new Error(`Unexpected fetch ${m} ${p}`);
+  return Response.json({code:200,data});
+ });
+
+ const call=async(op,input)=>validateResponse(op,input,await executeJava(op,input,"jwt",new AbortController().signal));
+
+ // --- RUN #1 (with unanalyzed newer snapshot snap2Unanalyzed present!) ---
+ const snaps=await call("snapshots",{projectId:project});
+ assert.equal(snaps.length,2);
+ const modelsRun1=await call("modelVersions",{projectId:project});
+ const cfg0=await call("runtimeConfiguration",{projectId:project});
+ assert.equal(cfg0.snapshotId,snap2Unanalyzed); // Unconfigured default points to newest unanalyzed snapshot
+ const targetRun1=resolveRuntimeTargetModel(modelsRun1,null,cfg0.modelId);
+ assert.equal(targetRun1.id,staticM1);
+ assert.equal(targetRun1.snapshotId,snap1); // Aligned to analyzed snapshot snap1!
+
+ const pre=await call("runtimePreflight",{projectId:project,snapshotId:targetRun1.snapshotId});
+ assert.equal(pre.compatible,true);
+ assert.equal(pre.localImageBuildAvailable,true);
+
+ const built=await call("buildRuntimeSandboxImages",{projectId:project,snapshotId:targetRun1.snapshotId,services:["order-api"]});
+ assert.equal(built.builtImages["order-api"],digestImg);
+
+ const cfg1=await call("saveRuntimeConfiguration",{
+  projectId:project,profileId:"SPRING_BOOT_DOTNET_COMPOSE_V1",snapshotId:targetRun1.snapshotId,modelId:targetRun1.id,
+  expectedRevision:cfg0.revision,profile:{serviceImageOverrides:built.builtImages}
+ });
+ assert.equal(cfg1.revision,1);
+
+ const gen=await call("generateRuntimeScenario",{projectId:project,snapshotId:targetRun1.snapshotId,modelId:targetRun1.id});
+ assert.equal(gen.steps.length,1);
+ assert.equal((await call("scenarios",{projectId:project})).length,0);
+
+ const createdScen=await call("createScenario",{projectId:project,name:"Order Verification",steps:scenarioSteps});
+ assert.equal(createdScen.revision,1);
+ const updatedScen=await call("saveScenario",{scenarioId:createdScen.id,projectId:project,expectedRevision:1,name:"Order Verification",steps:scenarioSteps});
+ assert.equal(updatedScen.revision,2);
+
+ const run1=await call("startRuntime",{
+  projectId:project,snapshotId:targetRun1.snapshotId,modelId:targetRun1.id,scenarioId:updatedScen.id,
+  configurationRevision:cfg1.revision,scenarioRevision:updatedScen.revision,approved:true,
+  environment:{ORDER_API_BODY_1:'{"customerEmail":"alice@mavis.io","quantity":1}'}
+ });
+ assert.equal(run1.id,sess1Id);
+ assert.equal(run1.status,"running");
+
+ const read1=await call("runtimeReadSession",{sessionId:sess1Id});
+ assert.equal(read1.publicationGateStatus,"PROMOTED");
+ assert.equal(read1.enrichedModelId,enrichedM2);
+ const seq1=await call("runtimeSequence",{sessionId:sess1Id});
+ assert.equal(seq1.steps.length,1);
+ assert.equal(seq1.steps[0].httpStatusCode,201);
+
+ // --- RUN #2 (after RUNTIME_ENRICHED enrichedM2 became latest=true!) ---
+ const modelsRun2=await call("modelVersions",{projectId:project});
+ assert.equal(modelsRun2[0].id,enrichedM2);
+ assert.equal(modelsRun2[0].origin,"RUNTIME_ENRICHED");
+ const targetRun2=resolveRuntimeTargetModel(modelsRun2,enrichedM2,enrichedM2);
+ assert.equal(targetRun2.id,staticM1); // Unwrapped to base STATIC model so startRuntime never hits 502 contract!
+
+ const cfg2=await call("saveRuntimeConfiguration",{
+  projectId:project,profileId:"SPRING_BOOT_DOTNET_COMPOSE_V1",snapshotId:targetRun2.snapshotId,modelId:targetRun2.id,
+  expectedRevision:cfg1.revision,profile:{serviceImageOverrides:built.builtImages}
+ });
+ assert.equal(cfg2.revision,2);
+
+ const run2=await call("startRuntime",{
+  projectId:project,snapshotId:targetRun2.snapshotId,modelId:targetRun2.id,scenarioId:updatedScen.id,
+  configurationRevision:cfg2.revision,scenarioRevision:updatedScen.revision,approved:true,
+  environment:{ORDER_API_BODY_1:'{"customerEmail":"bob@mavis.io","quantity":2}'}
+ });
+ assert.equal(run2.id,sess2Id);
+ const approved2=await call("runtimeApprove",{sessionId:sess2Id});
+ assert.equal(approved2.executionStatus,"RUNNING");
+ const stoppedRead2=await call("runtimeStop",{sessionId:sess2Id});
+ assert.equal(stoppedRead2.executionStatus,"CANCELLING");
+ const stoppedCoursework2=await call("stopRuntime",{sessionId:sess2Id,action:"cancel"});
+ assert.equal(stoppedCoursework2.status,"cancelling");
+
+ const readList=await call("runtimeReadSessions",{projectId:project});
+ assert.equal(readList.length,2);
+ const courseworkList=await call("runtimeSessions",{projectId:project});
+ assert.equal(courseworkList.length,2);
+ assert.equal(courseworkList[1].traces.length,1);
+});

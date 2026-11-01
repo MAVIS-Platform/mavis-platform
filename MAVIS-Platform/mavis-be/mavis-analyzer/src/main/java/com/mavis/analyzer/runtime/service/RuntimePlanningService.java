@@ -158,12 +158,13 @@ public class RuntimePlanningService {
  @Transactional
  public ConfigurationView saveConfiguration(UUID id,ConfigurationRequest r){lock(id);var c=configurations.findById(id).orElseGet(RuntimeConfiguration::new);if(c.getRevision()!=r.expectedRevision())throw new BusinessException(ErrorCode.CONFLICT);
   var source=sources.findById(r.snapshotId()).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));var model=models.findById(r.modelId()).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));
+  if("RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin())&&model.getBaseModelVersion()!=null)model=model.getBaseModelVersion();
   if(!source.getProject().getId().equals(id)||!model.getProject().getId().equals(id)||model.getSourceSnapshot()==null||!model.getSourceSnapshot().getId().equals(source.getId()))throw new BusinessException(ErrorCode.BAD_REQUEST,"Source/model scope mismatch");
   settings.requireProfile(r.profileId());
   String existingSealed=c.getProfile()!=null&&c.getProfile().hasNonNull("sealedInputs")?c.getProfile().get("sealedInputs").asText(null):null;
   JsonNode normalizedProfile=normalizeStep1Profile(id,r.snapshotId(),r.profileId(),r.profile(),existingSealed);
   validateProfile(normalizedProfile);
-  c.setProjectId(id);c.setSourceSnapshotId(r.snapshotId());c.setModelVersionId(r.modelId());c.setProfileId(r.profileId());c.setProfile(normalizedProfile.deepCopy());c.setRevision(c.getRevision()+1);configurations.saveAndFlush(c);return configuration(id);
+  c.setProjectId(id);c.setSourceSnapshotId(r.snapshotId());c.setModelVersionId(model.getId());c.setProfileId(r.profileId());c.setProfile(normalizedProfile.deepCopy());c.setRevision(c.getRevision()+1);configurations.saveAndFlush(c);return configuration(id);
  }
 
  private JsonNode normalizeStep1Profile(UUID projectId,UUID snapshotId,String profileId,JsonNode rawProfile){
@@ -355,6 +356,7 @@ public class RuntimePlanningService {
   ModelVersion model=null;
   if(modelId!=null){
    model=models.findById(modelId).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));
+   if("RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin())&&model.getBaseModelVersion()!=null){model=model.getBaseModelVersion();modelId=model.getId();}
    if(!model.getProject().getId().equals(id))throw new BusinessException(ErrorCode.BAD_REQUEST,"Model scope mismatch");
   }
 
@@ -578,8 +580,7 @@ public class RuntimePlanningService {
   List<GeneratedStepDraft> steps=new ArrayList<>();
   int idx=1;
   for(DetectedEndpointDTO ep:selected){
-   String serviceKey=ep.getService().replaceAll("[^A-Za-z0-9]","_").toUpperCase(Locale.ROOT);
-   if(serviceKey.length()>32)serviceKey=serviceKey.substring(0,32);
+   String serviceKey=safeServiceEnvPrefix(ep.getService());
    Map<String,String> stepVars=new LinkedHashMap<>();
    StringBuffer rewrittenPath=new StringBuffer();
    Matcher m=PATH_PARAM_PATTERN.matcher(ep.getPath());
@@ -742,8 +743,7 @@ public class RuntimePlanningService {
    if(!rawPath.startsWith("/")||rawPath.startsWith("//")||rawPath.contains("\\")||rawPath.contains("\n")||rawPath.contains("\r"))continue;
    if(status<100||status>599)status=200;
 
-   String serviceKey=svc.replaceAll("[^A-Za-z0-9]","_").toUpperCase(Locale.ROOT);
-   if(serviceKey.length()>32)serviceKey=serviceKey.substring(0,32);
+   String serviceKey=safeServiceEnvPrefix(svc);
    Map<String,String> stepVars=new LinkedHashMap<>();
    StringBuffer rewrittenPath=new StringBuffer();
    Matcher m=PATH_PARAM_PATTERN.matcher(rawPath);
@@ -1105,30 +1105,47 @@ public class RuntimePlanningService {
  }
 
  private static Map<String,String> capProtectedEnvironment(Map<String,String> protectedEnv,ObjectNode bindings,ArrayNode steps){
-  if(protectedEnv.size()<=64)return protectedEnv;
-  Set<String> required=new LinkedHashSet<>();
-  if(bindings!=null&&bindings.isObject()){
-   bindings.elements().forEachRemaining(arr->{
-    if(arr.isArray())arr.forEach(b->{String ref=b.path("reference").asText("");if(!ref.isBlank())required.add(ref);});
-   });
-  }
-  if(steps!=null){
-   for(JsonNode step:steps){
-    if(step==null||!step.isObject())continue;
-    if(step.hasNonNull("bodyReference"))required.add(step.get("bodyReference").asText(""));
-    if(step.path("environmentVariables").isObject())step.path("environmentVariables").elements().forEachRemaining(v->required.add(v.asText("")));
-    if(step.path("envHeaders").isArray())step.path("envHeaders").forEach(h->required.add(h.path("reference").asText("")));
-    if(step.path("secretHeaders").isObject())step.path("secretHeaders").elements().forEachRemaining(v->required.add(v.asText("")));
+  Map<String,String> capped;
+  if(protectedEnv.size()<=64){
+   capped=protectedEnv;
+  }else{
+   Set<String> required=new LinkedHashSet<>();
+   if(steps!=null){
+    for(JsonNode step:steps){
+     if(step==null||!step.isObject())continue;
+     if(step.hasNonNull("bodyReference"))required.add(step.get("bodyReference").asText(""));
+     if(step.path("environmentVariables").isObject())step.path("environmentVariables").elements().forEachRemaining(v->required.add(v.asText("")));
+     if(step.path("envHeaders").isArray())step.path("envHeaders").forEach(h->required.add(h.path("reference").asText("")));
+     if(step.path("secretHeaders").isObject())step.path("secretHeaders").elements().forEachRemaining(v->required.add(v.asText("")));
+    }
+   }
+   if(bindings!=null&&bindings.isObject()){
+    bindings.elements().forEachRemaining(arr->{
+     if(arr.isArray())arr.forEach(b->{String ref=b.path("reference").asText("");if(!ref.isBlank())required.add(ref);});
+    });
+   }
+   capped=new LinkedHashMap<>();
+   for(String k:required){
+    if(capped.size()>=64)break;
+    if(protectedEnv.containsKey(k)&&k.matches("[A-Z][A-Z0-9_]{0,63}"))capped.put(k,protectedEnv.get(k));
+   }
+   for(Map.Entry<String,String> e:protectedEnv.entrySet()){
+    if(capped.size()>=64)break;
+    if(e.getKey()!=null&&e.getKey().matches("[A-Z][A-Z0-9_]{0,63}"))capped.putIfAbsent(e.getKey(),e.getValue());
    }
   }
-  Map<String,String> capped=new LinkedHashMap<>();
-  for(String k:required){
-   if(capped.size()>=64)break;
-   if(protectedEnv.containsKey(k)&&k.matches("[A-Z][A-Z0-9_]{0,63}"))capped.put(k,protectedEnv.get(k));
-  }
-  for(Map.Entry<String,String> e:protectedEnv.entrySet()){
-   if(capped.size()>=64)break;
-   if(e.getKey()!=null&&e.getKey().matches("[A-Z][A-Z0-9_]{0,63}"))capped.putIfAbsent(e.getKey(),e.getValue());
+  if(bindings!=null&&bindings.isObject()){
+   List<String> emptyServices=new ArrayList<>();
+   bindings.fields().forEachRemaining(svcEntry->{
+    if(svcEntry.getValue() instanceof ArrayNode arr){
+     for(int i=arr.size()-1;i>=0;i--){
+      String ref=arr.get(i).path("reference").asText("");
+      if(ref.isBlank()||!capped.containsKey(ref))arr.remove(i);
+     }
+     if(arr.isEmpty())emptyServices.add(svcEntry.getKey());
+    }
+   });
+   emptyServices.forEach(bindings::remove);
   }
   return capped;
  }
@@ -1420,6 +1437,12 @@ public class RuntimePlanningService {
 
  private static boolean isBindableEnvName(String name){
   return name!=null&&name.matches("[A-Z][A-Z0-9_]{0,63}")&&!"PATH".equals(name)&&RESERVED_ENV_PREFIXES.stream().noneMatch(name::startsWith);
+ }
+
+ static String safeServiceEnvPrefix(String serviceName){
+  String prefix=serviceName==null?"SVC":serviceName.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_]","_").replaceAll("_+","_").replaceAll("^_|_$","");
+  if(prefix.isEmpty()||!Character.isLetter(prefix.charAt(0)))prefix="SVC_"+prefix;
+  return prefix.length()>32?prefix.substring(0,32):prefix;
  }
 
  static String scopedEnvRef(String serviceName,String envName){
