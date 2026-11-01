@@ -39,7 +39,7 @@ export function RuntimeStepperBanner({
                     : "bg-muted text-muted-foreground"
                 }`}
               >
-                {isDone ? "✓" : isLocked ? "🔒" : s.num}
+                {isDone ? "✓" : s.num}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold leading-tight">{s.title}</p>
@@ -802,59 +802,64 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   </div>
                 )}
 
-                {effectiveUnresolvedIssues.length > 0 && (
-                  <div role="alert" className="rounded border border-amber-500/30 bg-amber-500/5 p-3 text-xs space-y-2">
-                    <p className="font-semibold text-amber-500">
-                      The sandbox runner will reject this Compose file until these are fixed:
-                    </p>
-                    <ul className="list-disc pl-5 space-y-0.5 text-amber-400">
-                      {effectiveUnresolvedIssues.map((issue, idx) => (
-                        <li key={idx}>{issue}</li>
-                      ))}
-                    </ul>
-                    {servicesNeedingImage.length > 0 && (
-                      <div className="pt-2 space-y-2 border-t border-amber-500/20">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-[11px] text-muted-foreground">
-                            Provide a digest-pinned image for services using <code className="font-mono">build:</code> or unpinned tags:
-                          </p>
-                          {localImageBuildAvailable && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs"
-                              disabled={buildImages.isPending}
-                              onClick={handleBuildLocalImages}
-                            >
-                              {buildImages.isPending
-                                ? "Building Sandbox Images..."
-                                : "Build Sandbox Images from Snapshot"}
-                            </Button>
-                          )}
-                        </div>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {servicesNeedingImage.map((svc) => (
-                            <div key={svc} className="flex items-center gap-2">
-                              <span className="w-32 font-mono text-[11px] truncate font-semibold" title={svc}>
-                                {svc}
-                              </span>
-                              <Input
-                                className="flex-1 font-mono text-xs h-8"
-                                placeholder={`ghcr.io/org/${svc}@sha256:...`}
-                                value={serviceImageOverrides[svc] ?? ""}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setServiceImageOverrides((prev) => ({ ...prev, [svc]: val }));
-                                }}
-                              />
-                            </div>
+                {effectiveUnresolvedIssues.length > 0 && (() => {
+                  const nonImageIssues = effectiveUnresolvedIssues.filter(
+                    (issue) => !/^Service '([^']+)' (?:uses build:|image |has no image)/.test(issue),
+                  );
+                  return (
+                    <div role="alert" className="rounded border bg-background/60 p-3 text-xs space-y-2.5">
+                      {nonImageIssues.length > 0 && (
+                        <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">
+                          {nonImageIssues.map((issue, idx) => (
+                            <li key={idx}>{issue}</li>
                           ))}
+                        </ul>
+                      )}
+                      {servicesNeedingImage.length > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-muted-foreground">
+                              <strong className="text-foreground">Image digests required ({servicesNeedingImage.length}):</strong>{" "}
+                              Services using <code className="font-mono">build:</code> or unpinned tags need a <code className="font-mono">name@sha256:...</code> image.
+                            </span>
+                            {localImageBuildAvailable && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs"
+                                disabled={buildImages.isPending}
+                                onClick={handleBuildLocalImages}
+                              >
+                                {buildImages.isPending
+                                  ? "Building images..."
+                                  : "Build from snapshot"}
+                              </Button>
+                            )}
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {servicesNeedingImage.map((svc) => (
+                              <div key={svc} className="flex items-center gap-2">
+                                <span className="w-32 font-mono text-[11px] truncate text-foreground" title={svc}>
+                                  {svc}
+                                </span>
+                                <Input
+                                  className="flex-1 font-mono text-xs h-8"
+                                  placeholder={`ghcr.io/org/${svc}@sha256:...`}
+                                  value={serviceImageOverrides[svc] ?? ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setServiceImageOverrides((prev) => ({ ...prev, [svc]: val }));
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Detected Services & Database Checks Dropdowns */}
                 {(() => {
@@ -1092,17 +1097,15 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     const infra = isInfraRole(svc);
                     const stack = (serviceStacks[svc] ?? "java").toLowerCase();
                     const nonInstrumented = !infra && stack !== "java" && stack !== "dotnet";
-                    const confidence = serviceHealthConfidence[svc] ?? "DETECTED";
                     const reason = serviceHealthReasons[svc] ?? "Readiness probe path";
                     return infra ? (
                       <div
                         key={svc}
                         title="Started by Compose; not instrumented or health-checked"
-                        className="inline-flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-1.5 text-xs font-mono text-muted-foreground"
+                        className="inline-flex items-center gap-2 rounded border bg-muted/20 px-2.5 py-1 text-xs font-mono text-muted-foreground"
                       >
-                        <span className="h-2 w-2 rounded-full bg-slate-500" />
-                        <span className="font-semibold">{svc}</span>
-                        <span>infrastructure</span>
+                        <span className="font-medium text-foreground">{svc}</span>
+                        <span>infra</span>
                         <button
                           type="button"
                           className="ml-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-background text-foreground"
@@ -1115,33 +1118,22 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     ) : (
                       <div
                         key={svc}
-                        className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs font-mono"
+                        className="inline-flex items-center gap-2 rounded border bg-background px-2.5 py-1 text-xs font-mono"
                       >
-                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                        <span className="font-semibold text-foreground">{svc}</span>
-                        <span className="rounded bg-background/80 px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                          {stack}
+                        <span className="font-medium text-foreground">{svc}</span>
+                        <span className="text-muted-foreground">
+                          ({stack}{servicePorts[svc] ? `:${servicePorts[svc]}` : ""})
                         </span>
-                        {servicePorts[svc] && (
-                          <span className="text-muted-foreground">:{servicePorts[svc]}</span>
-                        )}
-                        <span className="text-emerald-400">➔</span>
-                        <span className="text-emerald-400 font-semibold" title={serviceMappings[svc] ?? svc}>
+                        <span className="text-muted-foreground">→</span>
+                        <span className="text-foreground" title={serviceMappings[svc] ?? svc}>
                           {resolveMappingLabel(svc)}
                         </span>
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-[10px] ${
-                            confidence === "ASSUMED"
-                              ? "bg-amber-500/15 text-amber-400"
-                              : "bg-emerald-500/15 text-emerald-400"
-                          }`}
-                          title={reason}
-                        >
-                          {confidence === "ASSUMED" ? "⚠" : "✓"} {serviceHealthPaths[svc] ?? "/health"}
+                        <span className="text-muted-foreground text-[11px]" title={reason}>
+                          {serviceHealthPaths[svc] ?? "/health"}
                         </span>
                         {nonInstrumented && (
                           <span
-                            className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400"
+                            className="rounded border px-1 py-0.5 text-[10px] text-muted-foreground"
                             title="No auto-instrumentation agent for this runtime stack; calls into this service are traced from callers only"
                           >
                             caller-traced
@@ -1149,7 +1141,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                         )}
                         <button
                           type="button"
-                          className="ml-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-background text-muted-foreground"
+                          className="ml-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-muted text-muted-foreground"
                           onClick={() => setServiceRoles((prev) => ({ ...prev, [svc]: "INFRA" }))}
                           title="Mark as Infrastructure container (skip healthcheck & agent)"
                         >
@@ -1491,8 +1483,8 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
               {save.isPending ? "Saving & Continuing..." : "Continue to Step 2: Test Scenarios →"}
             </Button>
             {!isStep1Ready && step1BlockedReason && (
-              <span className="text-xs text-amber-500 font-medium">
-                🔒 {step1BlockedReason}
+              <span className="text-xs text-muted-foreground">
+                {step1BlockedReason}
               </span>
             )}
           </div>
