@@ -156,6 +156,7 @@ export const contracts = {
           z.object({
             name: z.string(),
             service: z.string().optional(),
+            services: z.array(z.string()).optional(),
             category: z.string().optional(),
             defaultValue: z.string().nullable().optional(),
             required: z.boolean().optional(),
@@ -174,6 +175,9 @@ export const contracts = {
       sandboxComposeYaml: z.string().nullable().optional(),
       sandboxComposeChanges: z.array(z.string()).optional(),
       unresolvableRunnerIssues: z.array(z.string()).optional(),
+      recommendedServiceMappings: z.record(z.string()).optional(),
+      modelServiceNames: z.record(z.string()).optional(),
+      localImageBuildAvailable: z.boolean().optional(),
     }),
     true,
   ),
@@ -444,6 +448,19 @@ export const contracts = {
     true,
   ),
   runtimeConfiguration: contract(project, d.runtimeConfigurationSchema),
+  buildRuntimeSandboxImages: contract(
+    project.extend({
+      snapshotId: id.optional(),
+      services: z.array(z.string().min(1).max(64)).max(20).optional(),
+    }),
+    z.object({
+      projectId: id,
+      snapshotId: id.nullable().optional(),
+      builtImages: z.record(z.string()),
+      errors: z.array(z.string()),
+    }),
+    true,
+  ),
   saveRuntimeConfiguration: contract(
     project.extend({
       profileId: id,

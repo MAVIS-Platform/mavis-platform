@@ -10,7 +10,8 @@ public sealed record EnvironmentHeader(string Name, string Reference);
 public sealed record HttpScenarioStep(string Id, string Service, string Method, string Path, int ExpectedStatus,
     string? JsonBody = null, IReadOnlyDictionary<string, string>? Headers = null,
     IReadOnlyDictionary<string, string>? SecretHeaders = null, IReadOnlyDictionary<string, string>? Extract = null,
-    IReadOnlyDictionary<string, string>? EnvironmentVariables = null, string? BodyReference = null, IReadOnlyList<EnvironmentHeader>? EnvHeaders = null);
+    IReadOnlyDictionary<string, string>? EnvironmentVariables = null, string? BodyReference = null, IReadOnlyList<EnvironmentHeader>? EnvHeaders = null,
+    bool AllowClientError = false);
 public sealed record HttpScenarioDefinition(string SessionId, IReadOnlyList<HttpScenarioStep> Steps, int TimeoutSeconds = 120);
 public sealed record HttpStepOutcome(string StepId, string Status, int? StatusCode, string TraceId, string ParentSpanId, long ElapsedMilliseconds);
 public sealed record HttpScenarioOutcome(string SessionId, string Status, IReadOnlyList<HttpStepOutcome> Steps);
@@ -83,7 +84,7 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
                     if (buffer.Length + count > MaxResponseBytes) throw new InvalidOperationException("Response size limit exceeded.");
                     buffer.Write(chunk, 0, count);
                 }
-                var passed = (int)response.StatusCode == step.ExpectedStatus;
+                var passed = step.AllowClientError ? (int)response.StatusCode is >= 200 and < 500 : (int)response.StatusCode == step.ExpectedStatus;
                 if (passed && step.Extract?.Count > 0)
                 {
                     using var json = JsonDocument.Parse(buffer.ToArray());

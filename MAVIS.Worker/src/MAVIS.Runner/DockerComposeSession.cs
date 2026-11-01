@@ -59,17 +59,21 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         var info = await docker.RunAsync(["info", "--format", "{{.OSType}}"], _directory, 10, ct);
         if (info.ExitCode != 0 || info.StandardOutput.Trim() != "linux") throw new InvalidOperationException("Linux Docker engine is unavailable.");
         Stage = "INSTRUMENTATION_PROFILE";
-        var volume = await docker.RunAsync(["volume", "inspect", "--format", "{{json .Labels}}", definition.Profile.InstrumentationVolume], _directory, 10, ct);
-        if (volume.ExitCode != 0) throw new RuntimeStageException("INSTRUMENTATION_BUNDLE_UNAVAILABLE");
-        using var labels = JsonDocument.Parse(volume.StandardOutput);
-        foreach (var runtime in definition.Profile.Applications.Values.Select(a => a.Runtime).Distinct())
+        var instrumentedRuntimes = definition.Profile.Applications.Values.Select(a => a.Runtime).Where(r => r != "passthrough").Distinct().ToArray();
+        if (instrumentedRuntimes.Length > 0)
         {
-            var isJava = runtime == "java";
-            var label = isJava ? "mavis.java.version" : "mavis.dotnet.version";
-            var expected = isJava ? definition.Profile.JavaInstrumentationVersion : definition.Profile.DotnetInstrumentationVersion;
-            if (string.IsNullOrWhiteSpace(expected) || !labels.RootElement.TryGetProperty(label, out var actual) || actual.GetString() != expected)
-                throw new RuntimeStageException("INSTRUMENTATION_VERSION_MISMATCH");
-            DeclaredInstrumentationVersions[isJava ? "java" : "dotnet"] = expected;
+            var volume = await docker.RunAsync(["volume", "inspect", "--format", "{{json .Labels}}", definition.Profile.InstrumentationVolume], _directory, 10, ct);
+            if (volume.ExitCode != 0) throw new RuntimeStageException("INSTRUMENTATION_BUNDLE_UNAVAILABLE");
+            using var labels = JsonDocument.Parse(volume.StandardOutput);
+            foreach (var runtime in instrumentedRuntimes)
+            {
+                var isJava = runtime == "java";
+                var label = isJava ? "mavis.java.version" : "mavis.dotnet.version";
+                var expected = isJava ? definition.Profile.JavaInstrumentationVersion : definition.Profile.DotnetInstrumentationVersion;
+                if (string.IsNullOrWhiteSpace(expected) || !labels.RootElement.TryGetProperty(label, out var actual) || actual.GetString() != expected)
+                    throw new RuntimeStageException("INSTRUMENTATION_VERSION_MISMATCH");
+                DeclaredInstrumentationVersions[isJava ? "java" : "dotnet"] = expected;
+            }
         }
         _resourcesMayExist = true; // Even a failed `up` may allocate partial resources.
         Stage = "DOCKER_UP";
@@ -115,7 +119,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         for (var attempt = 0; attempt < 30; attempt++)
         {
             ct.ThrowIfCancellationRequested();
-            var steps = definition.Profile.Applications.Select(p => new HttpScenarioStep(p.Key, p.Key, "GET", p.Value.ReadinessPath, 200))
+            var steps = definition.Profile.Applications.Select(p => new HttpScenarioStep(p.Key, p.Key, "GET", p.Value.ReadinessPath, 200, AllowClientError: p.Value.AllowClientErrorReadiness))
                 .Append(new("collector", "mavis-collector", "GET", "/", 200)).ToArray();
             var result = await RunInsideNetwork(new(definition.SessionId, steps, 2), _endpoints, new Dictionary<string, string>(), ct);
             if (result.Status == "Passed")

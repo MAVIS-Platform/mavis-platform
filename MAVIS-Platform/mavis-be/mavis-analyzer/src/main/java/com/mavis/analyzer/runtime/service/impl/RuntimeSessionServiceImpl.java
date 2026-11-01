@@ -99,6 +99,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     private com.mavis.analyzer.runtime.service.RuntimeSessionEnvironmentService runtimeSessionEnvironmentService;
 
     @Autowired(required = false)
+    private com.mavis.analyzer.runtime.service.SandboxImageBuilderService sandboxImageBuilderService;
+
+    @Autowired(required = false)
     @Lazy
     private RuntimeRunnerDispatcher runtimeRunnerDispatcher;
 
@@ -179,6 +182,26 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         try {
+            if (runtimeConfigurationRepository != null && snapshot.getProject() != null && snapshot.getProject().getId() != null
+                    && result.getSandboxComposeYaml() != null && !result.getSandboxComposeYaml().isBlank()) {
+                var savedCfg = runtimeConfigurationRepository.findById(snapshot.getProject().getId()).orElse(null);
+                if (savedCfg != null && savedCfg.getProfile() != null && savedCfg.getProfile().path("serviceImageOverrides").isObject()) {
+                    Map<String, String> savedOverrides = new LinkedHashMap<>();
+                    savedCfg.getProfile().path("serviceImageOverrides").fields().forEachRemaining(e -> {
+                        String val = e.getValue().asText("").trim();
+                        if (!val.isEmpty()) savedOverrides.put(e.getKey(), val);
+                    });
+                    if (!savedOverrides.isEmpty()) {
+                        var rem = composePreflightValidator.remediateCompose(result.getSandboxComposeYaml(), savedOverrides);
+                        if (rem != null && !rem.yaml().isBlank()) {
+                            result.setSandboxComposeYaml(rem.yaml());
+                            if (result.getSandboxComposeChanges() != null) result.getSandboxComposeChanges().addAll(rem.changes());
+                            result.setUnresolvableRunnerIssues(new ArrayList<>(rem.unresolvableIssues()));
+                        }
+                    }
+                }
+            }
+            result.setLocalImageBuildAvailable(sandboxImageBuilderService != null && sandboxImageBuilderService.isLocalBuildAvailable());
             composePreflightValidator.inspectSnapshotSource(path, result);
             enrichPreflightFromModel(snapshot, result);
             if (!result.isCompatible() && result.getDetectedServices() != null && !result.getDetectedServices().isEmpty()
@@ -429,6 +452,42 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         ComposePreflightValidator.pruneSpeculativeConnectionString(envMap, dbChecks);
         dto.setDatabaseChecks(dbChecks);
         dto.setRequiredEnvVars(new ArrayList<>(envMap.values()));
+
+        List<ModelElement> containerElements = elements.stream()
+                .filter(e -> "SERVICE_CONTAINER".equalsIgnoreCase(e.getElementType()) && e.getId() != null && e.getName() != null)
+                .toList();
+        Map<String, String> modelServiceNames = new LinkedHashMap<>();
+        for (ModelElement ce : containerElements) {
+            modelServiceNames.put(ce.getId().toString(), ce.getName());
+        }
+        Set<String> infraSet = new HashSet<>(dto.getInfrastructureServices() != null ? dto.getInfrastructureServices() : List.of());
+        List<String> appServices = services.stream().filter(s -> !infraSet.contains(s)).toList();
+        Map<String, String> recommendedMappings = new LinkedHashMap<>();
+        for (String svc : appServices) {
+            ModelElement matched = matchContainerElement(svc, containerElements, appServices.size() == 1 && containerElements.size() == 1);
+            if (matched != null) {
+                recommendedMappings.put(svc, matched.getId().toString());
+            }
+        }
+        dto.setModelServiceNames(modelServiceNames);
+        dto.setRecommendedServiceMappings(recommendedMappings);
+    }
+
+    private static ModelElement matchContainerElement(String candidate, List<ModelElement> containers, boolean singleFallback) {
+        if (candidate == null || candidate.isBlank() || containers == null || containers.isEmpty()) return null;
+        for (ModelElement el : containers) {
+            if (el.getId().toString().equalsIgnoreCase(candidate)
+                    || el.getName().equalsIgnoreCase(candidate)
+                    || ComposePreflightValidator.cleanServiceCandidate(el.getName()).equalsIgnoreCase(candidate)) {
+                return el;
+            }
+        }
+        for (ModelElement el : containers) {
+            if (ComposePreflightValidator.matchDetectedService(el.getName(), List.of(candidate)) != null) {
+                return el;
+            }
+        }
+        return singleFallback ? containers.get(0) : null;
     }
 
     private ModelElement resolveContainer(ModelElement el, Map<UUID, ModelElement> elementById) {
@@ -500,13 +559,43 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
 
-        // [WJ-01 / Chặng 11]: Suy ra confirmedServiceMappings từ model_elements của pinnedModel nếu không truyền
+        // [WJ-01 / Chặng 11]: Suy ra & chuẩn hóa confirmedServiceMappings sang UUID thật của model_elements thuộc pinnedModel
+        List<com.mavis.common.entity.ModelElement> elements = modelElementRepository.findByModelVersionId(pinnedModel.getId());
+        List<com.mavis.common.entity.ModelElement> containerEls = elements == null ? List.of() : elements.stream()
+                .filter(el -> "SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType()) && el.getId() != null && el.getName() != null)
+                .toList();
         Map<String, String> serviceMappings = request.getConfirmedServiceMappings();
-        if (serviceMappings == null || serviceMappings.isEmpty()) {
-            serviceMappings = new HashMap<>();
-            List<com.mavis.common.entity.ModelElement> elements = modelElementRepository.findByModelVersionId(pinnedModel.getId());
-            for (com.mavis.common.entity.ModelElement el : elements) {
-                if ("SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType()) && el.getName() != null) {
+        if (serviceMappings != null && !serviceMappings.isEmpty()) {
+            Map<String, String> normalized = new LinkedHashMap<>();
+            boolean singleFallback = serviceMappings.size() == 1 && containerEls.size() == 1;
+            for (Map.Entry<String, String> e : serviceMappings.entrySet()) {
+                String svcKey = e.getKey();
+                String rawVal = e.getValue() == null ? "" : e.getValue().trim();
+                if (isUuid(rawVal)) {
+                    normalized.put(svcKey, rawVal);
+                } else {
+                    ModelElement matched = matchContainerElement(rawVal.isEmpty() ? svcKey : rawVal, containerEls, singleFallback);
+                    if (matched == null && !rawVal.isEmpty()) matched = matchContainerElement(svcKey, containerEls, singleFallback);
+                    if (matched != null) normalized.put(svcKey, matched.getId().toString());
+                    else if (!rawVal.isEmpty()) normalized.put(svcKey, rawVal);
+                }
+            }
+            serviceMappings = normalized;
+        } else {
+            serviceMappings = new LinkedHashMap<>();
+            JsonNode reqApps = request.getScenarioConfig() != null ? request.getScenarioConfig().path("profile").path("applications") : null;
+            if (reqApps != null && reqApps.isObject() && !reqApps.isEmpty() && !containerEls.isEmpty()) {
+                List<String> appKeys = new ArrayList<>();
+                reqApps.fieldNames().forEachRemaining(appKeys::add);
+                for (String appKey : appKeys) {
+                    ModelElement matched = matchContainerElement(appKey, containerEls, appKeys.size() == 1 && containerEls.size() == 1);
+                    if (matched != null) {
+                        serviceMappings.put(appKey, matched.getId().toString());
+                    }
+                }
+            }
+            if (serviceMappings.isEmpty()) {
+                for (com.mavis.common.entity.ModelElement el : containerEls) {
                     serviceMappings.put(el.getName(), el.getId().toString());
                 }
             }
@@ -1014,7 +1103,11 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         if (exportedProfile instanceof ObjectNode object) {
             object.retain(RUNNER_PROFILE_FIELDS);
             if (object.get("applications") instanceof ObjectNode applications) {
-                applications.elements().forEachRemaining(app -> { if (app instanceof ObjectNode a) a.retain("runtime", "containerPort", "readinessPath"); });
+                applications.elements().forEachRemaining(app -> {
+                    if (app instanceof ObjectNode a) {
+                        a.retain("runtime", "containerPort", "readinessPath", "allowClientErrorReadiness");
+                    }
+                });
             }
         }
         return RunnerDefinitionExportDTO.builder()
@@ -1031,6 +1124,16 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .confirmedServiceMappings(mappings)
                 .protectedEnvironmentAvailable(session.getEnvironmentCiphertext() != null)
                 .build();
+    }
+
+    private static boolean isUuid(String value) {
+        if (value == null || value.length() != 36) return false;
+        try {
+            UUID.fromString(value);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     @Override

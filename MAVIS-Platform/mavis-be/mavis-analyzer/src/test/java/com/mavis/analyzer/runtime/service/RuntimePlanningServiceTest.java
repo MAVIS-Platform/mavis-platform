@@ -315,4 +315,198 @@ class RuntimePlanningServiceTest {
         assertThat(profile.path("collectorImage").asText()).endsWith("d".repeat(64));
         assertThat(profile.path("scenarioRunnerImage").asText()).endsWith("e".repeat(64));
     }
+
+    @Test
+    @DisplayName("STEP 1 100%: Multi-DB scoped secrets, shared multi-service JWT_SECRET, relocated compose secrets, unified management port & UUID mappings")
+    void testStart_MultiDbScopedCredentialsSharedSecretsRelocatedComposeSecretsAndUuidMappings() {
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        RuntimeConfiguration cfg = savedConfig("api-gateway", "order-service", "catalog-service");
+        ((ObjectNode) cfg.getProfile()).putObject("serviceMappings")
+                .put("api-gateway", "api-gateway")
+                .put("order-service", "order-service")
+                .put("catalog-service", "catalog-service");
+        when(configurations.findById(projectId)).thenReturn(Optional.of(cfg));
+        UUID scenarioId = savedScenario("order-service");
+
+        String gwUuid = UUID.randomUUID().toString();
+        String orderUuid = UUID.randomUUID().toString();
+        String catalogUuid = UUID.randomUUID().toString();
+
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("api-gateway", "order-service", "catalog-service", "orders-db", "catalog-db"))
+                .composeServices(List.of("api-gateway", "order-service", "catalog-service", "orders-db", "catalog-db"))
+                .infrastructureServices(List.of("orders-db", "catalog-db"))
+                .serviceDatabaseCredentials(Map.of(
+                        "orders-db", Map.of("POSTGRES_PASSWORD", "orders-pw"),
+                        "catalog-db", Map.of("POSTGRES_PASSWORD", "catalog-pw")
+                ))
+                .serviceDependencies(Map.of(
+                        "order-service", List.of("orders-db"),
+                        "catalog-service", List.of("catalog-db")
+                ))
+                .relocatedComposeSecrets(Map.of(
+                        "orders-db", Map.of("POSTGRES_PASSWORD", "orders-pw"),
+                        "catalog-db", Map.of("POSTGRES_PASSWORD", "catalog-pw")
+                ))
+                .unifiedManagementPorts(Map.of("order-service", 8085))
+                .recommendedServiceMappings(Map.of(
+                        "api-gateway", gwUuid,
+                        "order-service", orderUuid,
+                        "catalog-service", catalogUuid
+                ))
+                .modelServiceNames(Map.of(
+                        gwUuid, "api-gateway",
+                        orderUuid, "order-service",
+                        catalogUuid, "catalog-service"
+                ))
+                .requiredEnvVars(List.of(
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder()
+                                .name("JWT_SECRET")
+                                .service("api-gateway")
+                                .services(List.of("api-gateway", "order-service", "catalog-service"))
+                                .category("SECRET")
+                                .scope("SANDBOX")
+                                .build(),
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder()
+                                .name("DB_PASSWORD")
+                                .service("order-service")
+                                .services(List.of("order-service", "catalog-service"))
+                                .category("DB_SECRET")
+                                .scope("SANDBOX")
+                                .build()
+                ))
+                .build());
+
+        UUID sessionId = UUID.randomUUID();
+        when(runtime.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+        when(runtime.approveAndStartSession(sessionId)).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+
+        planningService.start(projectId, new StartRequest(snapshotId, scenarioId, 1, 1, true, null));
+
+        ArgumentCaptor<com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest> created =
+                ArgumentCaptor.forClass(com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest.class);
+        verify(runtime).createRuntimeSession(created.capture());
+
+        assertThat(created.getValue().getConfirmedServiceMappings())
+                .containsEntry("api-gateway", gwUuid)
+                .containsEntry("order-service", orderUuid)
+                .containsEntry("catalog-service", catalogUuid);
+
+        var envBindings = created.getValue().getScenarioConfig().path("profile").path("environmentBindings");
+        assertThat(envBindings.path("api-gateway").findValuesAsText("name")).contains("JWT_SECRET");
+        assertThat(envBindings.path("order-service").toString())
+                .contains("\"name\":\"DB_PASSWORD\",\"reference\":\"ORDER_SERVICE__DB_PASSWORD\"")
+                .contains("\"name\":\"JWT_SECRET\",\"reference\":\"JWT_SECRET\"")
+                .contains("\"name\":\"MANAGEMENT_SERVER_PORT\",\"reference\":\"MANAGEMENT_SERVER_PORT\"");
+        assertThat(envBindings.path("catalog-service").toString())
+                .contains("\"name\":\"DB_PASSWORD\",\"reference\":\"CATALOG_SERVICE__DB_PASSWORD\"")
+                .contains("\"name\":\"JWT_SECRET\",\"reference\":\"JWT_SECRET\"");
+        assertThat(envBindings.path("orders-db").toString())
+                .contains("\"name\":\"POSTGRES_PASSWORD\",\"reference\":\"ORDERS_DB__POSTGRES_PASSWORD\"");
+        assertThat(envBindings.path("catalog-db").toString())
+                .contains("\"name\":\"POSTGRES_PASSWORD\",\"reference\":\"CATALOG_DB__POSTGRES_PASSWORD\"");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> stored = ArgumentCaptor.forClass(Map.class);
+        verify(environments).store(eq(sessionId), stored.capture());
+        assertThat(stored.getValue())
+                .containsEntry("ORDER_SERVICE__DB_PASSWORD", "orders-pw")
+                .containsEntry("CATALOG_SERVICE__DB_PASSWORD", "catalog-pw")
+                .containsEntry("ORDERS_DB__POSTGRES_PASSWORD", "orders-pw")
+                .containsEntry("CATALOG_DB__POSTGRES_PASSWORD", "catalog-pw")
+                .containsEntry("MANAGEMENT_SERVER_PORT", "8085");
+        assertThat(stored.getValue().get("JWT_SECRET")).hasSize(44);
+    }
+
+    @Test
+    @DisplayName("STEP 1 100%: Step 1 draft saves immediately without operator images, maps polyglot/ASSUMED readiness, and enforces operator images at start()")
+    void testSaveConfiguration_AllowsStep1DraftWithoutOperatorImagesWhileStartEnforcesThem() {
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+
+        String gwUuid = UUID.randomUUID().toString();
+        PreflightCheckResponseDTO preflight = PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("gateway-node"))
+                .composeServices(List.of("gateway-node"))
+                .servicePorts(Map.of("gateway-node", 3000))
+                .serviceStacks(Map.of("gateway-node", "node"))
+                .serviceHealthPaths(Map.of("gateway-node", "/"))
+                .serviceHealthConfidence(Map.of("gateway-node", "ASSUMED"))
+                .recommendedServiceMappings(Map.of("gateway-node", gwUuid))
+                .modelServiceNames(Map.of(gwUuid, "gateway-node"))
+                .build();
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(preflight);
+
+        final RuntimeConfiguration[] holder = new RuntimeConfiguration[1];
+        when(configurations.findById(projectId)).thenAnswer(inv -> Optional.ofNullable(holder[0]));
+        when(configurations.saveAndFlush(any())).thenAnswer(inv -> {
+            holder[0] = inv.getArgument(0);
+            return holder[0];
+        });
+
+        ObjectNode step1Form = json.createObjectNode();
+        step1Form.putObject("serviceMappings").put("gateway-node", "gateway-node");
+        step1Form.putObject("environmentVariables").put("NODE_ENV", "production");
+
+        var savedView = planningService.saveConfiguration(projectId,
+                new RuntimePlanningService.ConfigurationRequest(snapshotId, modelId, "SPRING_BOOT_DOTNET_COMPOSE_V1", step1Form, 0));
+
+        assertThat(savedView.configured()).isTrue();
+        assertThat(savedView.ready()).isFalse(); // operator images not configured yet
+        assertThat(savedView.profile().path("serviceMappings").path("gateway-node").asText()).isEqualTo(gwUuid);
+        assertThat(savedView.profile().path("applications").path("gateway-node").path("runtime").asText()).isEqualTo("passthrough");
+        assertThat(savedView.profile().path("applications").path("gateway-node").path("allowClientErrorReadiness").asBoolean()).isTrue();
+
+        UUID scenarioId = savedScenario("gateway-node");
+        assertThatThrownBy(() -> planningService.start(projectId, new StartRequest(snapshotId, scenarioId, 1, 1, true, null)))
+                .hasMessageContaining("Sandbox runner images are not configured");
+    }
+
+    @Test
+    @DisplayName("STEP 1 100%: App DB_PASSWORD declared before infra POSTGRES_PASSWORD still shares the exact generated password")
+    void testStart_AppDbPasswordDeclaredBeforeInfraPostgresPasswordSharesGeneratedSecret() {
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(configurations.findById(projectId)).thenReturn(Optional.of(savedConfig("order-service")));
+        UUID scenarioId = savedScenario("order-service");
+
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("order-service", "orders-db"))
+                .composeServices(List.of("order-service", "orders-db"))
+                .infrastructureServices(List.of("orders-db"))
+                .serviceDependencies(Map.of("order-service", List.of("orders-db")))
+                .requiredEnvVars(List.of(
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder()
+                                .name("DB_PASSWORD")
+                                .service("order-service")
+                                .services(List.of("order-service"))
+                                .category("DB_SECRET")
+                                .scope("SANDBOX")
+                                .build(),
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder()
+                                .name("POSTGRES_PASSWORD")
+                                .service("orders-db")
+                                .services(List.of("orders-db"))
+                                .category("DB_SECRET")
+                                .scope("SANDBOX")
+                                .build()
+                ))
+                .build());
+        UUID sessionId = UUID.randomUUID();
+        when(runtime.createRuntimeSession(any())).thenReturn(com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO.builder().id(sessionId).build());
+        when(runtime.approveAndStartSession(sessionId)).thenReturn(com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO.builder().id(sessionId).build());
+
+        planningService.start(projectId, new StartRequest(snapshotId, scenarioId, 1, 1, true, null));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> stored = ArgumentCaptor.forClass(Map.class);
+        verify(environments).store(eq(sessionId), stored.capture());
+        assertThat(stored.getValue().get("DB_PASSWORD"))
+                .isNotBlank()
+                .isEqualTo(stored.getValue().get("POSTGRES_PASSWORD"));
+    }
 }

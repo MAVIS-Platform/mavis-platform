@@ -171,4 +171,68 @@ public sealed class RunnerComponentTests
         Assert.Contains("CAUSAL_CYCLE", result.Warnings); Assert.Contains("MISSING_PARENT_SPAN", result.Warnings);
         Assert.Equal(3, result.Spans.Count);
     }
+
+    [Fact]
+    public void PassthroughRuntimeAndScopedEnvironmentBindingsOmitJvmAgentAndIsolateSecrets()
+    {
+        var compose = $"services:\n  node-api:\n    image: node@sha256:{Digest}\n  order-svc:\n    image: order@sha256:{Digest}\n  postgres:\n    image: postgres@sha256:{Digest}\n    user: postgres\n    volumes:\n      - type: volume\n        source: postgres_data\n        target: /var/lib/postgresql/data\nvolumes:\n  postgres_data: {{}}\n";
+        var preflight = ComposePreflight.Check(compose);
+        Assert.True(preflight.Compatible);
+
+        var profile = new RunnerExecutionProfile(
+            "collector@sha256:" + Digest,
+            "mavis-agents-v1",
+            new Dictionary<string, RuntimeServiceProfile>
+            {
+                ["node-api"] = new("passthrough", 3000, "/", AllowClientErrorReadiness: true),
+                ["order-svc"] = new("passthrough", 8080, "/health")
+            },
+            ApprovedForLocalPoc: true,
+            EnvironmentBindings: new Dictionary<string, IReadOnlyList<RuntimeEnvironmentBinding>>
+            {
+                ["node-api"] = [new("DB_PASSWORD", "NODE_API__DB_PASSWORD")],
+                ["order-svc"] = [new("DB_PASSWORD", "ORDER_SVC__DB_PASSWORD")]
+            });
+        var values = new Dictionary<string, string>
+        {
+            ["NODE_API__DB_PASSWORD"] = "node_secret_1",
+            ["ORDER_SVC__DB_PASSWORD"] = "order_secret_2"
+        };
+        using var overrideDoc = JsonDocument.Parse(ComposeOverrideBuilder.Build(preflight, profile, Path.Combine(Path.GetTempPath(), "collector.yaml"), values));
+        var nodeConfig = overrideDoc.RootElement.GetProperty("services").GetProperty("node-api");
+        Assert.False(nodeConfig.TryGetProperty("volumes", out _));
+        var nodeEnv = nodeConfig.GetProperty("environment");
+        Assert.Equal("node-api", nodeEnv.GetProperty("OTEL_SERVICE_NAME").GetString());
+        Assert.Equal("http://mavis-collector:4318", nodeEnv.GetProperty("OTEL_EXPORTER_OTLP_ENDPOINT").GetString());
+        Assert.False(nodeEnv.TryGetProperty("JAVA_TOOL_OPTIONS", out _));
+        Assert.False(nodeEnv.TryGetProperty("CORECLR_ENABLE_PROFILING", out _));
+        Assert.Equal("node_secret_1", nodeEnv.GetProperty("DB_PASSWORD").GetString());
+        Assert.Equal("order_secret_2", overrideDoc.RootElement.GetProperty("services").GetProperty("order-svc").GetProperty("environment").GetProperty("DB_PASSWORD").GetString());
+        Assert.False(overrideDoc.RootElement.GetProperty("volumes").TryGetProperty("mavis-instrumentation", out _));
+    }
+
+    [Fact]
+    public async Task AllowClientErrorReadinessAccepts4xxLivenessResponsesAndRejects5xx()
+    {
+        using var handler = new Handler((req, _) => req.RequestUri!.AbsolutePath switch
+        {
+            "/unmapped-root" => new(HttpStatusCode.NotFound),
+            "/secured-root" => new(HttpStatusCode.Unauthorized),
+            _ => new(HttpStatusCode.ServiceUnavailable)
+        });
+        using var client = new HttpClient(handler);
+        var endpoints = new Dictionary<string, Uri> { ["app"] = new("http://127.0.0.1:12345") };
+
+        var okOutcome = await new HttpScenarioRunner().ExecuteAsync(client,
+            new("readiness", [
+                new("s1", "app", "GET", "/unmapped-root", 200, AllowClientError: true),
+                new("s2", "app", "GET", "/secured-root", 200, AllowClientError: true)
+            ]), endpoints, new Dictionary<string, string>());
+        Assert.Equal("Passed", okOutcome.Status);
+
+        var failOutcome = await new HttpScenarioRunner().ExecuteAsync(client,
+            new("readiness-5xx", [new("s3", "app", "GET", "/starting", 200, AllowClientError: true)]),
+            endpoints, new Dictionary<string, string>());
+        Assert.Equal("Failed", failOutcome.Status);
+    }
 }

@@ -71,6 +71,7 @@ export function operationPermission(operation: Operation): Permission | undefine
       "deleteSnapshot",
       "reviewContext",
       "saveRuntimeConfiguration",
+      "buildRuntimeSandboxImages",
       "saveScenario",
       "startRuntime",
       "explain",

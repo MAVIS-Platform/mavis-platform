@@ -86,6 +86,7 @@ export interface Step1Draft {
   secretValues?: Record<string, string>;
   secretReferences?: string[];
   dismissedSecretKeys?: string[];
+  savedRevision?: number;
   scenarioName?: string;
   plannedSteps?: RuntimeDraftStep[];
   plannedInputs?: Record<string, string>;
@@ -144,6 +145,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const config = useApiQuery("runtimeConfiguration", { projectId });
   const preflight = useApiMutation("runtimePreflight");
   const save = useApiMutation("saveRuntimeConfiguration");
+  const buildImages = useApiMutation("buildRuntimeSandboxImages");
 
   const models = useApiQuery("modelVersions", { projectId });
   const staticModels = (models.data ?? []).filter(
@@ -172,6 +174,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [serviceRoles, setServiceRoles] = useState<Record<string, "APP" | "INFRA">>({});
   const [serviceImageOverrides, setServiceImageOverrides] = useState<Record<string, string>>({});
   const [showSandboxCompose, setShowSandboxCompose] = useState(false);
+  const [step1StatusMsg, setStep1StatusMsg] = useState("");
 
   useEffect(() => {
     if (preflight.data?.recommendedProfile) {
@@ -287,6 +290,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       ? (rawProfile["requiredEnvVars"] as Array<{
           name: string;
           service?: string;
+          services?: string[];
           category?: string;
           defaultValue?: string | null;
           required?: boolean;
@@ -310,6 +314,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     preflight.data?.sandboxComposeChanges ?? stringList(rawProfile["sandboxComposeChanges"]);
   const unresolvableRunnerIssues =
     preflight.data?.unresolvableRunnerIssues ?? stringList(rawProfile["unresolvableRunnerIssues"]);
+  const recommendedServiceMappings =
+    preflight.data?.recommendedServiceMappings ?? stringMap(rawProfile["recommendedServiceMappings"]);
+  const modelServiceNames =
+    preflight.data?.modelServiceNames ?? stringMap(rawProfile["modelServiceNames"]);
+  const localImageBuildAvailable =
+    preflight.data?.localImageBuildAvailable ?? Boolean(rawProfile["localImageBuildAvailable"]);
 
   useEffect(() => {
     if (rawProfile && typeof rawProfile["serviceMappings"] === "object" && rawProfile["serviceMappings"] !== null) {
@@ -350,12 +360,16 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       setServiceMappings((prev) => {
         const next = { ...prev };
         for (const s of activeServices) {
-          if (!next[s]) next[s] = s;
+          const rec = recommendedServiceMappings[s];
+          const cur = next[s];
+          if (!cur || (rec && cur === s && cur !== rec)) {
+            next[s] = rec || s;
+          }
         }
         return next;
       });
     }
-  }, [activeServices.join(",")]);
+  }, [activeServices.join(","), JSON.stringify(recommendedServiceMappings)]);
 
   useEffect(() => {
     if (!projectId || !snapshotId) return;
@@ -437,7 +451,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     if (!m) return true;
     const svc = m[1] ?? "";
     const override = serviceImageOverrides[svc]?.trim() ?? "";
-    return !/.+@sha256:[0-9a-fA-F]{64}$/.test(override);
+    return !/^(.+@)?sha256:[0-9a-fA-F]{64}$/.test(override);
   });
   const servicesNeedingImage = Array.from(
     new Set(
@@ -447,7 +461,42 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     ),
   );
 
-  const proceedToStep2 = () => {
+  const resolveMappingLabel = (svc: string) => {
+    const mapped = serviceMappings[svc] ?? recommendedServiceMappings[svc] ?? svc;
+    return modelServiceNames[mapped] ?? mapped;
+  };
+
+  const handleBuildLocalImages = () => {
+    setStep1StatusMsg("");
+    buildImages.mutate(
+      {
+        projectId,
+        ...(snapshotId ? { snapshotId } : {}),
+        ...(servicesNeedingImage.length > 0 ? { services: servicesNeedingImage } : {}),
+      },
+      {
+        onSuccess: (res) => {
+          const count = Object.keys(res.builtImages).length;
+          if (count > 0) {
+            setServiceImageOverrides((prev) => ({ ...prev, ...res.builtImages }));
+            if (snapshotId) {
+              preflight.mutate({ projectId, snapshotId });
+            }
+          }
+          if (res.errors.length > 0) {
+            setStep1StatusMsg(res.errors.join("; "));
+          } else {
+            setStep1StatusMsg(`Built and digest-pinned ${count} sandbox image(s) from snapshot.`);
+          }
+        },
+        onError: (err) => {
+          setStep1StatusMsg(err instanceof Error ? err.message : String(err));
+        },
+      },
+    );
+  };
+
+  const proceedToStep2 = async () => {
     const combinedSecretRefs = Array.from(
       new Set([
         ...secretRefs
@@ -457,9 +506,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         ...allSecretKeys,
       ]),
     ).filter((k) => !dismissedSecretKeys.includes(k));
+    const effectiveModelId = modelId || defaultModelId;
+    const effectiveSnapshotId = snapshotId || snapshots.data?.[0]?.id || "";
     writeStep1Target(projectId, {
-      modelId: modelId || defaultModelId,
-      snapshotId: snapshotId || snapshots.data?.[0]?.id || "",
+      modelId: effectiveModelId,
+      snapshotId: effectiveSnapshotId,
       profileId,
       serviceMappings,
       serviceRoles,
@@ -469,6 +520,33 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       secretReferences: combinedSecretRefs,
       dismissedSecretKeys,
     });
+    if (effectiveModelId && effectiveSnapshotId) {
+      try {
+        setStep1StatusMsg("");
+        const currentRev = Math.max(config.data?.revision ?? 0, readStep1Target(projectId).savedRevision ?? 0);
+        const savedCfg = await save.mutateAsync({
+          projectId,
+          profileId,
+          snapshotId: effectiveSnapshotId,
+          modelId: effectiveModelId,
+          profile: {
+            serviceMappings,
+            serviceRoles,
+            serviceImageOverrides,
+            environmentVariables: envVars,
+            secretValues,
+            secretReferences: combinedSecretRefs,
+          },
+          expectedRevision: currentRev,
+        });
+        writeStep1Target(projectId, { savedRevision: savedCfg.revision });
+      } catch (err) {
+        setStep1StatusMsg(
+          `Could not persist Step 1 configuration: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return;
+      }
+    }
     router.push(`/scenarios?project=${projectId}`);
   };
 
@@ -510,9 +588,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 : ""}
             </p>
           </div>
-          <Button type="button" size="sm" onClick={proceedToStep2}>
-            Continue to Step 2: Test Scenarios →
+          <Button type="button" size="sm" disabled={save.isPending} onClick={() => void proceedToStep2()}>
+            {save.isPending ? "Saving & Continuing..." : "Continue to Step 2: Test Scenarios →"}
           </Button>
+        </div>
+      )}
+      {step1StatusMsg && (
+        <div role="status" className="rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs text-foreground">
+          {step1StatusMsg}
         </div>
       )}
 
@@ -658,9 +741,25 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     </ul>
                     {servicesNeedingImage.length > 0 && (
                       <div className="pt-2 space-y-2 border-t border-amber-500/20">
-                        <p className="text-[11px] text-muted-foreground">
-                          Provide a digest-pinned image for services using <code className="font-mono">build:</code> or unpinned tags:
-                        </p>
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-[11px] text-muted-foreground">
+                            Provide a digest-pinned image for services using <code className="font-mono">build:</code> or unpinned tags:
+                          </p>
+                          {localImageBuildAvailable && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs"
+                              disabled={buildImages.isPending}
+                              onClick={handleBuildLocalImages}
+                            >
+                              {buildImages.isPending
+                                ? "Building Sandbox Images..."
+                                : "Build Sandbox Images from Snapshot"}
+                            </Button>
+                          )}
+                        </div>
                         <div className="grid gap-2 sm:grid-cols-2">
                           {servicesNeedingImage.map((svc) => (
                             <div key={svc} className="flex items-center gap-2">
@@ -866,23 +965,45 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
             {activeServices.length ? (
               showMappingInputs ? (
                 <div className="grid gap-3 sm:grid-cols-2 pt-1">
-                  {activeServices.map((svc) => (
-                    <div key={svc} className="flex items-center gap-2">
-                      <span className="w-32 font-mono text-xs truncate" title={svc}>
-                        {svc}
-                      </span>
-                      <span className="text-muted-foreground">→</span>
-                      <Input
-                        className="flex-1 font-mono text-xs h-8"
-                        placeholder="Model Element Name / ID"
-                        value={serviceMappings[svc] ?? svc}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setServiceMappings((m) => ({ ...m, [svc]: val }));
-                        }}
-                      />
-                    </div>
-                  ))}
+                  {activeServices.map((svc) => {
+                    const currentVal = serviceMappings[svc] ?? recommendedServiceMappings[svc] ?? svc;
+                    const modelEntries = Object.entries(modelServiceNames);
+                    if (modelEntries.length > 0) {
+                      const opts = modelEntries.map(([uuid, name]) => ({
+                        value: uuid,
+                        label: `${name} (${uuid.slice(0, 8)})`,
+                      }));
+                      if (currentVal && !opts.some((o) => o.value === currentVal)) {
+                        opts.unshift({ value: currentVal, label: currentVal });
+                      }
+                      return (
+                        <SelectField
+                          key={svc}
+                          label={`${svc} → Model Container`}
+                          value={currentVal}
+                          onChange={(val) => setServiceMappings((m) => ({ ...m, [svc]: val }))}
+                          options={opts}
+                        />
+                      );
+                    }
+                    return (
+                      <div key={svc} className="flex items-center gap-2">
+                        <span className="w-32 font-mono text-xs truncate" title={svc}>
+                          {svc}
+                        </span>
+                        <span className="text-muted-foreground">→</span>
+                        <Input
+                          className="flex-1 font-mono text-xs h-8"
+                          placeholder="Model Element Name / ID"
+                          value={currentVal}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setServiceMappings((m) => ({ ...m, [svc]: val }));
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-2 pt-0.5">
@@ -924,8 +1045,8 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           <span className="text-muted-foreground">:{servicePorts[svc]}</span>
                         )}
                         <span className="text-emerald-400">➔</span>
-                        <span className="text-emerald-400 font-semibold">
-                          {serviceMappings[svc] ?? svc}
+                        <span className="text-emerald-400 font-semibold" title={serviceMappings[svc] ?? svc}>
+                          {resolveMappingLabel(svc)}
                         </span>
                         <span
                           className={`rounded px-1.5 py-0.5 text-[10px] ${
@@ -1001,6 +1122,8 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 <div className="flex flex-wrap gap-1.5">
                   {autoSecretKeys.map((k) => {
                     const meta = requiredEnvVars.find((r) => r.name === k);
+                    const ownersLabel =
+                      meta?.services && meta.services.length > 0 ? meta.services.join(", ") : meta?.service;
                     return (
                       <span
                         key={k}
@@ -1009,6 +1132,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                         <strong className="text-foreground">{k}</strong>
                         <span className="text-muted-foreground">
                           {meta?.defaultPresent ? "· default in source/compose" : "· generated per run"}
+                          {ownersLabel ? ` (${ownersLabel})` : ""}
                         </span>
                       </span>
                     );
@@ -1056,9 +1180,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          {meta?.service && (
-                            <span className="px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground font-mono">
-                              {meta.service}
+                          {(meta?.services?.length ? meta.services.join(", ") : meta?.service) && (
+                            <span
+                              className="px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground font-mono truncate max-w-44"
+                              title={meta?.services?.length ? meta.services.join(", ") : meta?.service}
+                            >
+                              {meta?.services?.length ? meta.services.join(", ") : meta?.service}
                             </span>
                           )}
                           {isConfigured && (
@@ -1266,12 +1393,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Your configuration is held as a draft in this session and will only be saved when you confirm and launch the runtime session into Step 3. Exiting early discards unsaved changes.
+            Your configuration and encrypted secrets are saved immediately when continuing to Step 2, so reloading or revisiting later preserves your setup.
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="button" onClick={proceedToStep2}>
-              Continue to Step 2: Test Scenarios →
+            <Button type="button" disabled={save.isPending} onClick={() => void proceedToStep2()}>
+              {save.isPending ? "Saving & Continuing..." : "Continue to Step 2: Test Scenarios →"}
             </Button>
           </div>
         </div>
@@ -1651,7 +1778,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       setRunMessage("Complete request services, paths, parameter values and expected status codes.");
       return;
     }
-    let activeConfigRevision = config.data?.revision ?? 0;
+    let activeConfigRevision = Math.max(config.data?.revision ?? 0, readStep1Target(projectId).savedRevision ?? 0);
     if (approveAndDispatch) {
       try {
         setRunMessage("Saving complete Step 1 & Step 2 runtime configuration...");
@@ -1706,6 +1833,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           expectedRevision: activeConfigRevision,
         });
         activeConfigRevision = pinned.revision;
+        writeStep1Target(projectId, { savedRevision: pinned.revision });
       } catch (pinErr) {
         setRunMessage(
           `Could not save runtime configuration: ${pinErr instanceof Error ? pinErr.message : String(pinErr)}`,

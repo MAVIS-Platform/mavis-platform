@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace MAVIS.Runner;
 
 public sealed record RuntimeEnvironmentBinding(string Name, string Reference);
-public sealed record RuntimeServiceProfile(string Runtime, int ContainerPort, string ReadinessPath = "/health");
+public sealed record RuntimeServiceProfile(string Runtime, int ContainerPort, string ReadinessPath = "/health", bool AllowClientErrorReadiness = false);
 public sealed record RunnerExecutionProfile(string CollectorImage, string InstrumentationVolume,
     IReadOnlyDictionary<string, RuntimeServiceProfile> Applications, int MemoryMiB = 256, double Cpus = 1,
     int TimeoutSeconds = 120, bool ApprovedForLocalPoc = false, string? ScenarioRunnerImage = null,
@@ -43,7 +43,7 @@ public static class ComposeOverrideBuilder
             if(protectedEnvironment.Count>0)config["environment"]=protectedEnvironment;
             if (profile.Applications.TryGetValue(service, out var app))
             {
-                if (app is null || app.Runtime is not ("dotnet8-linux-x64-glibc" or "java") || app.ContainerPort is < 1 or > 65535 ||
+                if (app is null || app.Runtime is not ("dotnet8-linux-x64-glibc" or "java" or "passthrough") || app.ContainerPort is < 1 or > 65535 ||
                     app.ReadinessPath is null || !app.ReadinessPath.StartsWith('/') || app.ReadinessPath.StartsWith("//", StringComparison.Ordinal) || app.ReadinessPath.Contains('\\'))
                     throw new ArgumentException("Unsupported application profile.");
                 var environment = new Dictionary<string, string>
@@ -53,8 +53,12 @@ public static class ComposeOverrideBuilder
                     ["OTEL_METRICS_EXPORTER"] = "none", ["OTEL_LOGS_EXPORTER"] = "none", ["OTEL_PROPAGATORS"] = "tracecontext,baggage",
                     ["OTEL_TRACES_SAMPLER"] = "always_on"
                 };
-                if (app.Runtime == "java") environment["JAVA_TOOL_OPTIONS"] = "-javaagent:/mavis-otel/java/opentelemetry-javaagent.jar";
-                else
+                if (app.Runtime == "java")
+                {
+                    environment["JAVA_TOOL_OPTIONS"] = "-javaagent:/mavis-otel/java/opentelemetry-javaagent.jar";
+                    config["volumes"] = new[] { new { type = "volume", source = "mavis-instrumentation", target = "/mavis-otel", read_only = true } };
+                }
+                else if (app.Runtime == "dotnet8-linux-x64-glibc")
                 {
                     environment["CORECLR_ENABLE_PROFILING"] = "1";
                     environment["CORECLR_PROFILER"] = "{918728DD-259F-4A6A-AC2B-B85E1B658318}";
@@ -64,10 +68,10 @@ public static class ComposeOverrideBuilder
                     environment["DOTNET_SHARED_STORE"] = "/mavis-otel/dotnet/store";
                     environment["OTEL_DOTNET_AUTO_HOME"] = "/mavis-otel/dotnet";
                     environment["OTEL_DOTNET_AUTO_LOG_DIRECTORY"] = "/tmp/otel";
+                    config["volumes"] = new[] { new { type = "volume", source = "mavis-instrumentation", target = "/mavis-otel", read_only = true } };
                 }
                 foreach (var pair in protectedEnvironment) environment[pair.Key]=pair.Value;
                 config["environment"] = environment;
-                config["volumes"] = new[] { new { type = "volume", source = "mavis-instrumentation", target = "/mavis-otel", read_only = true } };
             }
             services[service] = config;
         }
@@ -83,13 +87,14 @@ public static class ComposeOverrideBuilder
                 new { type = "volume", source = "mavis-traces", target = "/traces", read_only = false }
             }
         };
+        var volumes = new Dictionary<string, object> { ["mavis-traces"] = new { } };
+        if (profile.Applications.Values.Any(a => a.Runtime != "passthrough"))
+            volumes["mavis-instrumentation"] = new { external = true, name = profile.InstrumentationVolume };
         var result = new
         {
             services,
             networks = new { @default = new { @internal = true } },
-            volumes = new Dictionary<string, object> {
-                ["mavis-instrumentation"] = new { external = true, name = profile.InstrumentationVolume }, ["mavis-traces"] = new { }
-            }
+            volumes
         };
         return JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true });
     }
