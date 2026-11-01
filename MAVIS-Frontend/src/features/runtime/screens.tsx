@@ -1741,7 +1741,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     }
   }, [projectId, config.data?.profile]);
 
-  const triggerSystemAiGeneration = (explicitGoal?: string) => {
+  const triggerSystemAiGeneration = (explicitGoal?: string, repairSessionId?: string) => {
     if (!snapshotId) return;
     generateAiDraft.mutate(
       {
@@ -1749,6 +1749,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         snapshotId,
         modelId: modelId || undefined,
         goal: explicitGoal?.trim() || aiGoal.trim() || undefined,
+        ...(repairSessionId ? { repairSessionId } : {}),
       },
       {
         onSuccess: (res) => {
@@ -1767,20 +1768,29 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           if (res.steps && res.steps.length > 0) {
             const sampleMap = res.sampleInputs ?? {};
             const extraInputs: Record<string, string> = {};
+            const extractedVars = new Set<string>();
+            for (const st of res.steps) {
+              if (st.extract) {
+                Object.keys(st.extract).forEach((k) => extractedVars.add(k));
+              }
+            }
             setDraftSteps(
               res.steps.map((st, idx) => {
                 let resolvedPath = st.path;
                 if (st.environmentVariables) {
                   for (const [alias, envName] of Object.entries(st.environmentVariables)) {
+                    if (extractedVars.has(alias) || extractedVars.has(envName)) continue;
                     const val = sampleMap[envName] || "1";
                     resolvedPath = resolvedPath.replaceAll(`{{${alias}}}`, val);
                   }
                 }
-                resolvedPath = resolvedPath.replace(/\{\{V\d+\}\}/g, "1").replace(/\{([^}/]+)\}/g, (_, p: string) => {
-                  const lower = p.toLowerCase();
-                  if (lower.includes("uuid") || lower.includes("guid")) return "00000000-0000-0000-0000-000000000001";
-                  return lower.includes("code") || lower.includes("sku") ? "SKU-LAPTOP-01" : "1";
-                });
+                resolvedPath = resolvedPath
+                  .replace(/\{\{(V\d+)\}\}/g, (full, vName: string) => (extractedVars.has(vName) ? full : "1"))
+                  .replace(/(?<!\{)\{([^{}/]+)\}(?!\})/g, (_, p: string) => {
+                    const lower = p.toLowerCase();
+                    if (lower.includes("uuid") || lower.includes("guid")) return "00000000-0000-0000-0000-000000000001";
+                    return lower.includes("code") || lower.includes("sku") ? "SKU-LAPTOP-01" : "1";
+                  });
                 const method = st.method.toUpperCase();
                 const serviceKey = toServiceEnvPrefix(st.service);
                 let bodyRef = st.bodyReference ?? undefined;
@@ -1801,6 +1811,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   source: st.source,
                   allowClientError: st.allowClientError ?? true,
                   ...(st.envHeaders ? { envHeaders: st.envHeaders } : {}),
+                  ...(st.headers ? { headers: st.headers } : {}),
+                  ...(st.extract ? { extract: st.extract } : {}),
+                  ...(st.journeyPhase ? { journeyPhase: st.journeyPhase } : {}),
                   ...(bodyRef ? { bodyReference: bodyRef } : {}),
                 };
               }),
@@ -1815,10 +1828,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   };
 
   useEffect(() => {
-    const key = `${projectId}:${snapshotId}:${modelId}`;
-    if (snapshotId && modelId && autoGenTriggered.current !== key && !edited.current) {
+    const urlRepair =
+      typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("repairSession") ?? undefined : undefined;
+    const key = `${projectId}:${snapshotId}:${modelId}:${urlRepair ?? ""}`;
+    if (snapshotId && modelId && autoGenTriggered.current !== key && (!edited.current || Boolean(urlRepair))) {
       autoGenTriggered.current = key;
-      triggerSystemAiGeneration();
+      triggerSystemAiGeneration(
+        urlRepair ? "Self-heal previous run failures and expand trace coverage to unverified services" : undefined,
+        urlRepair,
+      );
     }
   }, [projectId, snapshotId, modelId]);
 
@@ -1975,6 +1993,14 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           obj["environmentVariables"] && typeof obj["environmentVariables"] === "object"
             ? (obj["environmentVariables"] as Record<string, string>)
             : undefined;
+        const headers =
+          obj["headers"] && typeof obj["headers"] === "object"
+            ? (obj["headers"] as Record<string, string>)
+            : undefined;
+        const extract =
+          obj["extract"] && typeof obj["extract"] === "object"
+            ? (obj["extract"] as Record<string, string>)
+            : undefined;
         parsedSteps.push({
           service: svc,
           method,
@@ -1985,6 +2011,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           allowClientError: typeof obj["allowClientError"] === "boolean" ? obj["allowClientError"] : true,
           ...(envVars ? { environmentVariables: envVars } : {}),
           ...(envHeaders?.length ? { envHeaders } : {}),
+          ...(headers && Object.keys(headers).length ? { headers } : {}),
+          ...(extract && Object.keys(extract).length ? { extract } : {}),
           ...(bodyRef ? { bodyReference: bodyRef } : {}),
         });
       } catch {
@@ -2293,6 +2321,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         allowClientError: step.allowClientError !== false,
         ...(step.environmentVariables ? { environmentVariables: step.environmentVariables } : {}),
         ...(step.envHeaders?.length ? { envHeaders: step.envHeaders } : {}),
+        ...(step.headers && Object.keys(step.headers).length ? { headers: step.headers } : {}),
+        ...(step.extract && Object.keys(step.extract).length ? { extract: step.extract } : {}),
         ...(bodyRef ? { bodyReference: bodyRef } : {}),
       });
     });
@@ -2800,9 +2830,25 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                           ✕
                         </Button>
                       </div>
-                      {(st.rationale || st.source) && (
+                      {(st.rationale || st.source || st.extract || st.journeyPhase) && (
                         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pl-1">
-                          {st.rationale && <span>💡 {st.rationale}</span>}
+                          <div className="flex flex-wrap items-center gap-2">
+                            {st.journeyPhase && (
+                              <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono text-[10px] font-semibold">
+                                {st.journeyPhase}
+                              </span>
+                            )}
+                            {st.extract &&
+                              Object.entries(st.extract).map(([varKey, ptr]) => (
+                                <span
+                                  key={varKey}
+                                  className="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30 font-mono text-[10px]"
+                                >
+                                  📤 {varKey} ← {ptr}
+                                </span>
+                              ))}
+                            {st.rationale && <span>💡 {st.rationale}</span>}
+                          </div>
                           {st.source && <span className="font-mono text-[11px]">Source: {st.source}</span>}
                         </div>
                       )}

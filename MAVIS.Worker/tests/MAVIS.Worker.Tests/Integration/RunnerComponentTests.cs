@@ -242,4 +242,39 @@ public sealed class RunnerComponentTests
             endpoints, new Dictionary<string, string>());
         Assert.Equal("Failed", failOutcome.Status);
     }
+
+    [Fact]
+    public async Task BodyReferenceSubstitutesVariablesCoercesIntegersAndSupportsMultiPointerExtract()
+    {
+        string? capturedOrderJson = null;
+        string? capturedAuthHeader = null;
+        using var handler = new Handler((req, call) =>
+        {
+            if (call == 1)
+                return new(HttpStatusCode.Created) { Content = new StringContent("{\"data\":{\"id\":42,\"token\":\"jwt-xyz\"}}", Encoding.UTF8, "application/json") };
+            using var reader = new StreamReader(req.Content!.ReadAsStream());
+            capturedOrderJson = reader.ReadToEnd();
+            capturedAuthHeader = req.Headers.GetValues("Authorization").Single();
+            return new(HttpStatusCode.Created) { Content = new StringContent("{\"orderId\":99}", Encoding.UTF8, "application/json") };
+        });
+        using var client = new HttpClient(handler);
+        var scenario = new HttpScenarioDefinition("stateful", [
+            new("seed", "app", "POST", "/users", 201,
+                Extract: new Dictionary<string, string> { ["USER_ID"] = "/id|/data/id", ["AUTH_TOKEN"] = "/accessToken|/data/token" }),
+            new("order", "app", "POST", "/orders", 201,
+                BodyReference: "order_body",
+                Headers: new Dictionary<string, string> { ["Authorization"] = "Bearer {{AUTH_TOKEN}}" })
+        ]);
+        var outcome = await new HttpScenarioRunner().ExecuteAsync(
+            client,
+            scenario,
+            new Dictionary<string, Uri> { ["app"] = new("http://127.0.0.1:12345") },
+            new Dictionary<string, string> { ["order_body"] = "{\"userId\":\"{{USER_ID}}\",\"label\":\"user-{{USER_ID}}\"}" });
+        Assert.Equal("Passed", outcome.Status);
+        Assert.Equal("Bearer jwt-xyz", capturedAuthHeader);
+        using var doc = JsonDocument.Parse(capturedOrderJson!);
+        Assert.Equal(JsonValueKind.Number, doc.RootElement.GetProperty("userId").ValueKind);
+        Assert.Equal(42, doc.RootElement.GetProperty("userId").GetInt64());
+        Assert.Equal("user-42", doc.RootElement.GetProperty("label").GetString());
+    }
 }

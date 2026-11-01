@@ -53,13 +53,13 @@ public class ComposePreflightValidator {
     private static final Pattern DOCKERFILE_EXPOSE_PATTERN = Pattern.compile("(?im)^\\s*EXPOSE\\s+(\\d{2,5})(?:/tcp)?\\b");
     private static final Pattern DOCKERFILE_VOLUME_LINE_PATTERN = Pattern.compile("(?im)^\\s*VOLUME\\s+(.+)$");
     private static final Pattern URI_USERINFO_SECRET_PATTERN = Pattern.compile("[a-zA-Z][a-zA-Z0-9+.-]*://[^/\\s]*:[^@/\\s]+@");
-    private static final Pattern JAVA_RECORD_PATTERN = Pattern.compile("\\brecord\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:<[^>]+>)?\\s*\\(([^)]*)\\)");
+    private static final Pattern JAVA_RECORD_PATTERN = Pattern.compile("\\brecord\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:<[^>]+>)?\\s*\\(((?:[^()]|\\([^)]*\\))*)\\)");
     private static final Pattern JAVA_ENUM_PATTERN = Pattern.compile("\\benum\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:implements[^{]+)?\\{\\s*(?:/\\*[\\s\\S]*?\\*/\\s*|//[^\\n]*\\n\\s*)*([A-Z_][A-Z0-9_]*)");
     private static final Pattern JAVA_CLASS_NAME_PATTERN = Pattern.compile("\\bclass\\s+([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern JAVA_FIELD_PATTERN = Pattern.compile("(?m)^[ \\t]*((?:@[A-Za-z0-9_.]+(?:\\([^)\\n]*\\))?[ \\t\\r\\n]*)*)(?:private|protected)[ \\t]+(?!static\\b|final\\b)([A-Za-z_][A-Za-z0-9_<>, ?.\\[\\]]*?)[ \\t]+([a-zA-Z_][A-Za-z0-9_]*)[ \\t]*(?:=[^;\\n]+)?;");
     private static final Pattern JAVA_REQUEST_BODY_PATTERN = Pattern.compile("@RequestBody\\b(?:\\s+@[A-Za-z0-9_.]+(?:\\([^)]*\\))?)*(?:\\s+final)?\\s+([A-Za-z_][A-Za-z0-9_<>, ?.\\[\\]]*)\\s+[A-Za-z_][A-Za-z0-9_]*");
     private static final Pattern CSHARP_ENUM_PATTERN = Pattern.compile("\\benum\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?::[^{]+)?\\{\\s*([A-Za-z_][A-Za-z0-9_]*)");
-    private static final Pattern CSHARP_RECORD_PATTERN = Pattern.compile("\\brecord\\s+(?:class\\s+|struct\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*\\(([^)]*)\\)");
+    private static final Pattern CSHARP_RECORD_PATTERN = Pattern.compile("\\brecord\\s+(?:class\\s+|struct\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*\\(((?:[^()]|\\([^)]*\\))*)\\)");
     private static final Pattern CSHARP_CLASS_NAME_PATTERN = Pattern.compile("\\bclass\\s+([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern CSHARP_PROP_PATTERN = Pattern.compile("(?m)^[ \\t]*((?:\\[[^\\]\\n]+\\][ \\t\\r\\n]*)*)public[ \\t]+(?!static\\b|const\\b|class\\b|record\\b|interface\\b|enum\\b|override\\b|virtual\\s+ICollection)([A-Za-z_][A-Za-z0-9_<>?.\\[\\]]*)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)[ \\t]*\\{[ \\t]*get;");
     private static final Pattern CSHARP_FROM_BODY_PATTERN = Pattern.compile("\\[FromBody\\]\\s*([A-Za-z_][A-Za-z0-9_<>?.\\[\\]]*)\\s+[A-Za-z_][A-Za-z0-9_]*");
@@ -747,7 +747,11 @@ public class ComposePreflightValidator {
         Map<String, Integer> actuatorPorts = new HashMap<>();
         Map<String, Integer> sourcePorts = new HashMap<>();
         Map<String, Map<String, String>> dtoSchemas = new LinkedHashMap<>();
+        Map<String, Map<String, String>> responseSchemas = new LinkedHashMap<>();
+        Map<String, List<String>> dtoValidationHints = new LinkedHashMap<>();
         Map<String, String> enumFirstValues = new LinkedHashMap<>();
+        List<GatewayRouteRule> gatewayRoutes = new ArrayList<>();
+        Map<String, Set<String>> serviceOutboundTargets = new LinkedHashMap<>();
 
         try {
             if (Files.isRegularFile(storagePath) && storagePath.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".zip")) {
@@ -772,7 +776,7 @@ public class ComposePreflightValidator {
                             String content = new String(is.readNBytes(256_000), StandardCharsets.UTF_8);
                             inspectFileContent(entryName, content, dto, envMap, dbChecks, endpoints, endpointKeys,
                                     explicitHealth, actuatorServices, contextPaths, actuatorBasePaths, actuatorPorts, sourcePorts,
-                                    dtoSchemas, enumFirstValues);
+                                    dtoSchemas, responseSchemas, dtoValidationHints, enumFirstValues, gatewayRoutes, serviceOutboundTargets);
                         }
                     }
                 }
@@ -798,7 +802,7 @@ public class ComposePreflightValidator {
                                 String content = Files.readString(file, StandardCharsets.UTF_8);
                                 inspectFileContent(rel, content, dto, envMap, dbChecks, endpoints, endpointKeys,
                                         explicitHealth, actuatorServices, contextPaths, actuatorBasePaths, actuatorPorts, sourcePorts,
-                                        dtoSchemas, enumFirstValues);
+                                        dtoSchemas, responseSchemas, dtoValidationHints, enumFirstValues, gatewayRoutes, serviceOutboundTargets);
                             }
                         } catch (Exception ignored) {}
                     }
@@ -808,6 +812,17 @@ public class ComposePreflightValidator {
             log.warn("Không thể quét bổ sung source snapshot tại {}: {}", storagePath, e.getMessage());
         }
 
+        // Apply context-path to discovered endpoints before gateway projection
+        for (DetectedEndpointDTO ep : endpoints) {
+            String ctx = contextPaths.get(ep.getService());
+            if (ctx != null && !ctx.isBlank() && !"/".equals(ctx) && !ep.getPath().startsWith(ctx + "/") && !ep.getPath().equals(ctx)) {
+                ep.setPath(normalizeEndpointPath(ctx, ep.getPath()));
+            }
+        }
+
+        // Project downstream endpoints through discovered API Gateway route rules (Top-Down entrypoints)
+        projectGatewayEntryEndpoints(endpoints, endpointKeys, gatewayRoutes, dto.getDetectedServices());
+
         for (DetectedEndpointDTO ep : endpoints) {
             if (ep.getSampleJsonBody() == null && ep.getRequestBodyType() != null
                     && ep.getMethod() != null && Set.of("POST", "PUT", "PATCH").contains(ep.getMethod())) {
@@ -816,6 +831,7 @@ public class ComposePreflightValidator {
                     ep.setSampleJsonBody(synthesized);
                 }
             }
+            enrichEndpointContractAndTopology(ep, responseSchemas, dtoValidationHints, serviceOutboundTargets, dto);
         }
 
         List<String> services = dto.getDetectedServices() != null ? new ArrayList<>(dto.getDetectedServices()) : new ArrayList<>();
@@ -835,14 +851,6 @@ public class ComposePreflightValidator {
             dto.setDetectedServices(services);
             dto.setServicePorts(ports);
             dto.setServiceStacks(stacks);
-        }
-
-        // Apply context-path to discovered endpoints
-        for (DetectedEndpointDTO ep : endpoints) {
-            String ctx = contextPaths.get(ep.getService());
-            if (ctx != null && !ctx.isBlank() && !"/".equals(ctx) && !ep.getPath().startsWith(ctx + "/") && !ep.getPath().equals(ctx)) {
-                ep.setPath(normalizeEndpointPath(ctx, ep.getPath()));
-            }
         }
 
         // Apply source-configured ports when Compose fell back to default 8080 or was absent
@@ -946,6 +954,8 @@ public class ComposePreflightValidator {
                 || lower.endsWith(".js") || lower.endsWith(".ts") || lower.endsWith(".py") || lower.endsWith(".go");
     }
 
+    record GatewayRouteRule(String gatewayService, String pathPrefix, String targetService, int stripPrefix) {}
+
     private void inspectFileContent(
             String relativePath,
             String content,
@@ -961,13 +971,29 @@ public class ComposePreflightValidator {
             Map<String, Integer> actuatorPorts,
             Map<String, Integer> sourcePorts,
             Map<String, Map<String, String>> dtoSchemas,
-            Map<String, String> enumFirstValues) {
+            Map<String, Map<String, String>> responseSchemas,
+            Map<String, List<String>> dtoValidationHints,
+            Map<String, String> enumFirstValues,
+            List<GatewayRouteRule> gatewayRoutes,
+            Map<String, Set<String>> serviceOutboundTargets) {
 
         String cleanRelPath = stripGitHubRootPrefix(relativePath);
         String lowerPath = cleanRelPath.toLowerCase(Locale.ROOT);
         String baseName = lowerPath.contains("/") ? lowerPath.substring(lowerPath.lastIndexOf('/') + 1) : lowerPath;
         String inferredService = inferServiceFromPath(relativePath, dto.getDetectedServices());
         String lowerContent = content.toLowerCase(Locale.ROOT);
+
+        if (inferredService != null) {
+            extractOutboundCallsFromFile(inferredService, content, lowerContent, dto.getDetectedServices(), serviceOutboundTargets);
+            extractGatewayRoutesFromFile(inferredService, lowerPath, content, dto.getDetectedServices(), gatewayRoutes);
+        }
+
+        // OpenAPI / Swagger specification support (YAML or JSON)
+        if ((lowerPath.endsWith(".yml") || lowerPath.endsWith(".yaml") || lowerPath.endsWith(".json"))
+                && (lowerContent.contains("openapi:") || lowerContent.contains("\"openapi\"")
+                || lowerContent.contains("swagger:") || lowerContent.contains("\"swagger\""))) {
+            extractOpenApiEndpointsAndSchemas(inferredService, cleanRelPath, content, endpoints, endpointKeys, dtoSchemas, responseSchemas);
+        }
 
         // True stack refinement from manifests and Dockerfiles (P1.3)
         if (dto.getServiceStacks() != null && inferredService != null) {
@@ -1176,6 +1202,8 @@ public class ComposePreflightValidator {
             if (healthChecks.find()) explicitHealth.putIfAbsent(inferredService, healthChecks.group(1));
         }
         if (lowerPath.endsWith(".js") || lowerPath.endsWith(".ts") || lowerPath.endsWith(".py") || lowerPath.endsWith(".go")) {
+            extractPolyglotDtoSchemas(lowerPath, content, dtoSchemas, responseSchemas);
+            extractNestJsControllerEndpoints(inferredService, cleanRelPath, lowerPath, content, endpoints, endpointKeys, explicitHealth);
             Matcher routeMatcher = EXPRESS_FASTAPI_GIN_ROUTE_PATTERN.matcher(content);
             while (routeMatcher.find()) {
                 String method = routeMatcher.group(1).toUpperCase(Locale.ROOT);
@@ -1185,20 +1213,27 @@ public class ComposePreflightValidator {
                 }
                 String key = (inferredService + ":" + method + ":" + fullPath).toLowerCase(Locale.ROOT);
                 if (endpointKeys.add(key)) {
+                    String handlerWindow = extractHandlerWindow(content, routeMatcher.start(), routeMatcher.end(), EXPRESS_FASTAPI_GIN_ROUTE_PATTERN);
                     endpoints.add(DetectedEndpointDTO.builder()
                             .service(inferredService)
                             .method(method)
                             .path(fullPath)
                             .source(cleanRelPath)
+                            .expectedStatus(inferPolyglotHttpStatus(method, handlerWindow))
+                            .requestBodyType(extractPolyglotRequestBodyType(lowerPath, handlerWindow))
+                            .responseBodyType(extractPolyglotResponseBodyType(lowerPath, handlerWindow))
+                            .responseFields(extractInlineResponseFields(handlerWindow))
+                            .requiresAuth(detectEndpointAuth("", handlerWindow))
+                            .requiredRoles(extractRequiredRoles("", handlerWindow))
                             .build());
                 }
             }
         }
 
         if (lowerPath.endsWith(".java")) {
-            extractJavaDtoSchemas(content, dtoSchemas, enumFirstValues);
+            extractJavaDtoSchemas(content, dtoSchemas, responseSchemas, dtoValidationHints, enumFirstValues);
         } else if (lowerPath.endsWith(".cs")) {
-            extractCsharpDtoSchemas(content, dtoSchemas, enumFirstValues);
+            extractCsharpDtoSchemas(content, dtoSchemas, responseSchemas, dtoValidationHints, enumFirstValues);
         }
 
         // 2. Java Controller endpoints (skip @FeignClient / @HttpExchange client interfaces)
@@ -1244,17 +1279,21 @@ public class ComposePreflightValidator {
                     subPath = qm.group(1);
                 }
                 String fullPath = normalizeEndpointPath(basePath, subPath);
-                String key = (inferredService + ":" + method + ":" + fullPath).toLowerCase(Locale.ROOT);
+                String handlerWindow = extractHandlerWindow(content, matcher.start(), matcher.end(), SPRING_MAPPING_PATTERN);
+                String fullPathWithQuery = appendRequiredQueryParams(fullPath, handlerWindow);
+                String key = (inferredService + ":" + method + ":" + fullPathWithQuery).toLowerCase(Locale.ROOT);
                 if (endpointKeys.add(key)) {
-                    String handlerWindow = extractHandlerWindow(content, matcher.start(), matcher.end(), SPRING_MAPPING_PATTERN);
                     endpoints.add(DetectedEndpointDTO.builder()
                             .service(inferredService)
                             .method(method)
-                            .path(fullPath)
+                            .path(fullPathWithQuery)
                             .source(cleanRelPath)
                             .expectedStatus(inferExpectedHttpStatus(method, handlerWindow))
                             .requestBodyType(extractJavaRequestBodyType(handlerWindow))
+                            .responseBodyType(extractJavaResponseBodyType(handlerWindow))
+                            .responseFields(extractInlineResponseFields(handlerWindow))
                             .requiresAuth(detectEndpointAuth(classHeader, handlerWindow))
+                            .requiredRoles(extractRequiredRoles(classHeader, handlerWindow))
                             .build());
                 }
             }
@@ -1287,7 +1326,10 @@ public class ComposePreflightValidator {
                             .source(cleanRelPath)
                             .expectedStatus(inferExpectedHttpStatus(method, handlerWindow))
                             .requestBodyType(extractCsharpRequestBodyType(handlerWindow))
+                            .responseBodyType(extractCsharpResponseBodyType(handlerWindow))
+                            .responseFields(extractInlineResponseFields(handlerWindow))
                             .requiresAuth(detectEndpointAuth(csClassHeader, handlerWindow))
+                            .requiredRoles(extractRequiredRoles(csClassHeader, handlerWindow))
                             .build());
                 }
             }
@@ -1305,7 +1347,10 @@ public class ComposePreflightValidator {
                             .source(cleanRelPath)
                             .expectedStatus(inferExpectedHttpStatus(method, handlerWindow))
                             .requestBodyType(extractCsharpRequestBodyType(handlerWindow))
+                            .responseBodyType(extractCsharpResponseBodyType(handlerWindow))
+                            .responseFields(extractInlineResponseFields(handlerWindow))
                             .requiresAuth(detectEndpointAuth("", handlerWindow))
+                            .requiredRoles(extractRequiredRoles("", handlerWindow))
                             .build());
                 }
             }
@@ -1345,20 +1390,81 @@ public class ComposePreflightValidator {
 
     private static Boolean detectEndpointAuth(String classHeader, String handlerWindow) {
         String combined = (classHeader == null ? "" : classHeader) + "\n" + (handlerWindow == null ? "" : handlerWindow);
-        if (handlerWindow != null && (handlerWindow.contains("PermitAll") || handlerWindow.contains("AllowAnonymous"))) {
+        if (handlerWindow != null && (handlerWindow.contains("PermitAll") || handlerWindow.contains("AllowAnonymous") || handlerWindow.contains("@Public"))) {
             return null;
         }
         if (combined.contains("@PreAuthorize") || combined.contains("@Secured") || combined.contains("@RolesAllowed")
-                || combined.contains("[Authorize") || combined.contains(".RequireAuthorization(")) {
+                || combined.contains("[Authorize") || combined.contains(".RequireAuthorization(")
+                || combined.contains("@UseGuards") || combined.contains("JwtAuthGuard") || combined.contains("AuthGuard")
+                || combined.contains("Depends(get_current_user") || combined.contains("Depends(require_auth")
+                || combined.contains("Security(") || combined.contains("HTTPBearer")) {
             return Boolean.TRUE;
         }
         return null;
+    }
+
+    private static List<String> extractRequiredRoles(String classHeader, String handlerWindow) {
+        String combined = (classHeader == null ? "" : classHeader) + "\n" + (handlerWindow == null ? "" : handlerWindow);
+        Set<String> roles = new LinkedHashSet<>();
+        Matcher m1 = Pattern.compile("(?:hasRole|hasAnyRole|hasAuthority|hasAnyAuthority)\\s*\\(([^)]+)\\)").matcher(combined);
+        while (m1.find()) {
+            Matcher q = Pattern.compile("['\"]([A-Za-z0-9_:-]+)['\"]").matcher(m1.group(1));
+            while (q.find()) roles.add(q.group(1).replaceFirst("^ROLE_", ""));
+        }
+        Matcher m2 = Pattern.compile("(?:@RolesAllowed|@Secured|@Roles|Roles\\s*=)\\s*\\(?\\s*\\{?([^)}\\]\\n]+)").matcher(combined);
+        while (m2.find()) {
+            Matcher q = Pattern.compile("['\"]([A-Za-z0-9_,-]+)['\"]").matcher(m2.group(1));
+            while (q.find()) {
+                for (String part : q.group(1).split(",")) {
+                    String clean = part.trim().replaceFirst("^ROLE_", "");
+                    if (!clean.isEmpty()) roles.add(clean);
+                }
+            }
+        }
+        return roles.isEmpty() ? null : new ArrayList<>(roles);
+    }
+
+    private static String appendRequiredQueryParams(String path, String window) {
+        if (path == null || window == null || path.contains("?")) return path;
+        Matcher m = Pattern.compile("@RequestParam\\s*(?:\\(([^)]*)\\))?\\s*(?:@[A-Za-z0-9_.]+\\s*)*(?:final\\s+)?([A-Za-z0-9_<>?]+)\\s+([A-Za-z_][A-Za-z0-9_]*)").matcher(window);
+        List<String> params = new ArrayList<>();
+        while (m.find() && params.size() < 3) {
+            String annArgs = m.group(1) != null ? m.group(1) : "";
+            if (annArgs.contains("required = false") || annArgs.contains("required=false") || annArgs.contains("defaultValue")) continue;
+            String type = m.group(2);
+            if (type.startsWith("Optional") || type.startsWith("Map") || type.startsWith("MultiValueMap")) continue;
+            String paramName = m.group(3);
+            Matcher explicitName = Pattern.compile("(?:(?:value|name)\\s*=\\s*)?\"([A-Za-z0-9_.-]+)\"").matcher(annArgs);
+            if (explicitName.find()) paramName = explicitName.group(1);
+            String lowParam = paramName.toLowerCase(Locale.ROOT);
+            String val = (type.matches("(?i).*(int|long|short|double|float|decimal|number).*") || lowParam.endsWith("id") || lowParam.equals("page") || lowParam.equals("size") || lowParam.equals("limit")) ? "1"
+                    : type.matches("(?i).*bool.*") ? "true"
+                    : (lowParam.contains("code") || lowParam.contains("sku")) ? "SKU-LAPTOP-01"
+                    : "sample";
+            params.add(paramName + "=" + val);
+        }
+        return params.isEmpty() ? path : path + "?" + String.join("&", params);
     }
 
     private static String extractJavaRequestBodyType(String window) {
         if (window == null) return null;
         Matcher m = JAVA_REQUEST_BODY_PATTERN.matcher(window);
         return m.find() ? simplifyDtoTypeName(m.group(1)) : null;
+    }
+
+    private static String extractJavaResponseBodyType(String window) {
+        if (window == null) return null;
+        Matcher re = Pattern.compile("ResponseEntity\\s*<\\s*([A-Za-z_][A-Za-z0-9_<>., ?]*?)\\s*>").matcher(window);
+        if (re.find()) {
+            String inner = re.group(1).trim();
+            if (inner.startsWith("ApiResponse<") || inner.startsWith("Result<") || inner.startsWith("DataResponse<")) {
+                int lt = inner.indexOf('<'), gt = inner.lastIndexOf('>');
+                if (lt > 0 && gt > lt) inner = inner.substring(lt + 1, gt).trim();
+            }
+            return simplifyDtoTypeName(inner);
+        }
+        Matcher sig = Pattern.compile("(?:public|protected)\\s+(?:CompletableFuture<|Mono<|Flux<)?([A-Za-z_][A-Za-z0-9_.]*)\\s+[a-zA-Z_][A-Za-z0-9_]*\\s*\\(").matcher(window);
+        return sig.find() ? simplifyDtoTypeName(sig.group(1)) : null;
     }
 
     private static String extractCsharpRequestBodyType(String window) {
@@ -1373,6 +1479,38 @@ public class ComposePreflightValidator {
         return null;
     }
 
+    private static String extractCsharpResponseBodyType(String window) {
+        if (window == null) return null;
+        Matcher ar = Pattern.compile("(?:ActionResult|Task<ActionResult|IResult|TypedResults)\\s*<\\s*([A-Za-z_][A-Za-z0-9_.]*)\\s*>").matcher(window);
+        if (ar.find()) return simplifyDtoTypeName(ar.group(1));
+        Matcher newDto = Pattern.compile("(?:Ok|Created|CreatedAtAction|CreatedAtRoute)\\s*\\([^;]*?new\\s+([A-Z][A-Za-z0-9_]*(?:Response|Dto|DTO|Result|View))\\b").matcher(window);
+        return newDto.find() ? simplifyDtoTypeName(newDto.group(1)) : null;
+    }
+
+    private static List<String> extractInlineResponseFields(String window) {
+        if (window == null || window.isEmpty()) return null;
+        Set<String> pointers = new LinkedHashSet<>();
+        // Java Map.of("token", ..., "orderId", ...)
+        Matcher mapOf = Pattern.compile("Map\\.of\\s*\\(([^)]+)\\)").matcher(window);
+        while (mapOf.find()) {
+            Matcher q = Pattern.compile("\"([a-zA-Z_][a-zA-Z0-9_]*)\"\\s*,").matcher(mapOf.group(1));
+            while (q.find() && pointers.size() < 6) pointers.add("/" + q.group(1));
+        }
+        // C# anonymous object new { id = ..., accessToken = ... } or JS/Python dict {"id": ..., "access_token": ...}
+        Matcher anon = Pattern.compile("(?:Ok|Created|CreatedAtAction|Results\\.Ok|Results\\.Created|res(?:ponse)?\\.(?:status\\([^)]*\\)\\.)?json|return)\\s*\\(?\\s*(?:new\\s*)?\\{([^}]{1,320})\\}").matcher(window);
+        while (anon.find()) {
+            String body = anon.group(1);
+            Matcher kv = Pattern.compile("(?:[\"']([a-zA-Z_][a-zA-Z0-9_]*)[\"']\\s*:|\\b([a-zA-Z_][a-zA-Z0-9_]*)\\s*=)").matcher(body);
+            while (kv.find() && pointers.size() < 6) {
+                String k = kv.group(1) != null ? kv.group(1) : kv.group(2);
+                if (k != null && !Set.of("return", "new", "true", "false", "null", "await").contains(k)) {
+                    pointers.add("/" + k);
+                }
+            }
+        }
+        return pointers.isEmpty() ? null : new ArrayList<>(pointers);
+    }
+
     private static String simplifyDtoTypeName(String rawType) {
         if (rawType == null) return null;
         String t = rawType.trim().replace("?", "").replace("[]", "");
@@ -1380,11 +1518,16 @@ public class ComposePreflightValidator {
         if (lt > 0) t = t.substring(0, lt).trim();
         int dot = t.lastIndexOf('.');
         if (dot >= 0) t = t.substring(dot + 1).trim();
-        return t.isEmpty() || Set.of("String", "string", "Object", "object", "JsonNode", "JsonElement", "Map", "Dictionary", "List", "Set").contains(t)
+        return t.isEmpty() || Set.of("String", "string", "Object", "object", "void", "Void", "ResponseEntity", "IActionResult", "ActionResult", "IResult", "Task", "JsonNode", "JsonElement", "Map", "Dictionary", "List", "Set").contains(t)
                 ? null : t;
     }
 
-    private static void extractJavaDtoSchemas(String content, Map<String, Map<String, String>> dtoSchemas, Map<String, String> enumFirstValues) {
+    private static void extractJavaDtoSchemas(
+            String content,
+            Map<String, Map<String, String>> dtoSchemas,
+            Map<String, Map<String, String>> responseSchemas,
+            Map<String, List<String>> dtoValidationHints,
+            Map<String, String> enumFirstValues) {
         Matcher em = JAVA_ENUM_PATTERN.matcher(content);
         while (em.find()) {
             String enumName = em.group(1);
@@ -1394,8 +1537,13 @@ public class ComposePreflightValidator {
         Matcher rm = JAVA_RECORD_PATTERN.matcher(content);
         while (rm.find()) {
             String recName = rm.group(1);
-            Map<String, String> fields = parseRecordComponents(rm.group(2), false);
-            if (!fields.isEmpty()) dtoSchemas.putIfAbsent(recName, fields);
+            List<String> hints = new ArrayList<>();
+            Map<String, String> fields = parseRecordComponents(rm.group(2), false, hints);
+            if (!fields.isEmpty()) {
+                dtoSchemas.putIfAbsent(recName, fields);
+                responseSchemas.putIfAbsent(recName, fields);
+                if (!hints.isEmpty()) dtoValidationHints.putIfAbsent(recName, hints);
+            }
         }
         if (content.contains("@RestController") || content.contains("@Controller") || content.contains("@Service")
                 || content.contains("@Repository") || content.contains("@Configuration")) {
@@ -1405,50 +1553,112 @@ public class ComposePreflightValidator {
         if (!cm.find()) return;
         String className = cm.group(1);
         if (className.endsWith("Application") || className.endsWith("Exception") || className.endsWith("Test")) return;
-        Map<String, String> fields = new LinkedHashMap<>();
+        Map<String, String> reqFields = new LinkedHashMap<>();
+        Map<String, String> respFields = new LinkedHashMap<>();
+        List<String> hints = new ArrayList<>();
         Matcher fm = JAVA_FIELD_PATTERN.matcher(content);
-        while (fm.find() && fields.size() < 16) {
+        while (fm.find() && respFields.size() < 20) {
             String annotations = fm.group(1) != null ? fm.group(1) : "";
             String fieldType = fm.group(2).trim();
             String fieldName = fm.group(3).trim();
             if ("serialVersionUID".equals(fieldName) || annotations.contains("@JsonIgnore") || annotations.contains("@Transient")) continue;
-            if (annotations.contains("@GeneratedValue") || (annotations.contains("@Id") && "id".equalsIgnoreCase(fieldName))) continue;
             if (annotations.contains("@OneToMany") || annotations.contains("@ManyToMany") || annotations.contains("@ManyToOne") || annotations.contains("@OneToOne")) continue;
-            fields.putIfAbsent(fieldName, fieldType);
+            respFields.putIfAbsent(fieldName, fieldType);
+            if (annotations.contains("@GeneratedValue") || (annotations.contains("@Id") && "id".equalsIgnoreCase(fieldName))) continue;
+            String constraintSuffix = extractFieldValidationConstraint(fieldName, annotations, hints);
+            if (reqFields.size() < 16) {
+                reqFields.putIfAbsent(fieldName, constraintSuffix.isEmpty() ? fieldType : fieldType + constraintSuffix);
+            }
         }
-        if (!fields.isEmpty()) dtoSchemas.putIfAbsent(className, fields);
+        if (!reqFields.isEmpty()) dtoSchemas.putIfAbsent(className, reqFields);
+        if (!respFields.isEmpty()) responseSchemas.putIfAbsent(className, respFields);
+        if (!hints.isEmpty()) dtoValidationHints.putIfAbsent(className, hints);
     }
 
-    private static void extractCsharpDtoSchemas(String content, Map<String, Map<String, String>> dtoSchemas, Map<String, String> enumFirstValues) {
+    private static void extractCsharpDtoSchemas(
+            String content,
+            Map<String, Map<String, String>> dtoSchemas,
+            Map<String, Map<String, String>> responseSchemas,
+            Map<String, List<String>> dtoValidationHints,
+            Map<String, String> enumFirstValues) {
         Matcher em = CSHARP_ENUM_PATTERN.matcher(content);
         while (em.find()) {
             enumFirstValues.putIfAbsent(em.group(1), em.group(2));
         }
         Matcher rm = CSHARP_RECORD_PATTERN.matcher(content);
         while (rm.find()) {
-            Map<String, String> fields = parseRecordComponents(rm.group(2), true);
-            if (!fields.isEmpty()) dtoSchemas.putIfAbsent(rm.group(1), fields);
+            List<String> hints = new ArrayList<>();
+            Map<String, String> fields = parseRecordComponents(rm.group(2), true, hints);
+            if (!fields.isEmpty()) {
+                dtoSchemas.putIfAbsent(rm.group(1), fields);
+                responseSchemas.putIfAbsent(rm.group(1), fields);
+                if (!hints.isEmpty()) dtoValidationHints.putIfAbsent(rm.group(1), hints);
+            }
         }
         if (content.contains("ControllerBase") || content.contains(": Controller") || content.contains(": DbContext")) return;
         Matcher cm = CSHARP_CLASS_NAME_PATTERN.matcher(content);
         if (!cm.find()) return;
         String className = cm.group(1);
         if (className.endsWith("Program") || className.endsWith("Startup") || className.endsWith("Middleware")) return;
-        Map<String, String> fields = new LinkedHashMap<>();
+        Map<String, String> reqFields = new LinkedHashMap<>();
+        Map<String, String> respFields = new LinkedHashMap<>();
+        List<String> hints = new ArrayList<>();
         Matcher pm = CSHARP_PROP_PATTERN.matcher(content);
-        while (pm.find() && fields.size() < 16) {
+        while (pm.find() && respFields.size() < 20) {
             String attrs = pm.group(1) != null ? pm.group(1) : "";
             String propType = pm.group(2).trim();
             String rawName = pm.group(3).trim();
             if (attrs.contains("JsonIgnore")) continue;
-            if ("Id".equals(rawName) && !className.endsWith("Request") && !className.endsWith("Dto") && !className.endsWith("DTO") && !className.endsWith("Command")) continue;
             String camelName = Character.toLowerCase(rawName.charAt(0)) + rawName.substring(1);
-            fields.putIfAbsent(camelName, propType);
+            respFields.putIfAbsent(camelName, propType);
+            if ("Id".equals(rawName) && !className.endsWith("Request") && !className.endsWith("Dto") && !className.endsWith("DTO") && !className.endsWith("Command")) continue;
+            String constraintSuffix = extractFieldValidationConstraint(camelName, attrs, hints);
+            if (reqFields.size() < 16) {
+                reqFields.putIfAbsent(camelName, constraintSuffix.isEmpty() ? propType : propType + constraintSuffix);
+            }
         }
-        if (!fields.isEmpty()) dtoSchemas.putIfAbsent(className, fields);
+        if (!reqFields.isEmpty()) dtoSchemas.putIfAbsent(className, reqFields);
+        if (!respFields.isEmpty()) responseSchemas.putIfAbsent(className, respFields);
+        if (!hints.isEmpty()) dtoValidationHints.putIfAbsent(className, hints);
+    }
+
+    private static String extractFieldValidationConstraint(String fieldName, String annotations, List<String> hints) {
+        if (annotations == null || annotations.isBlank()) return "";
+        StringBuilder meta = new StringBuilder();
+        if (annotations.contains("@Email") || annotations.contains("EmailAddress")) {
+            meta.append("|email");
+            hints.add(fieldName + ":email");
+        }
+        Matcher minM = Pattern.compile("(?:@(?:Min|DecimalMin)\\s*\\(\\s*(?:value\\s*=\\s*)?\"?(\\d+)|\\[Range\\s*\\(\\s*(\\d+))").matcher(annotations);
+        if (minM.find()) {
+            String v = minM.group(1) != null ? minM.group(1) : minM.group(2);
+            meta.append("|min=").append(v);
+            hints.add(fieldName + ">=min(" + v + ")");
+        } else if (annotations.contains("@Positive")) {
+            meta.append("|min=1");
+            hints.add(fieldName + ":positive");
+        }
+        Matcher sizeM = Pattern.compile("(?:@Size\\s*\\([^)]*min\\s*=\\s*(\\d+)|\\[(?:MinLength|StringLength)\\s*\\([^)]*(?:MinimumLength\\s*=\\s*)?(\\d+))").matcher(annotations);
+        if (sizeM.find()) {
+            String v = sizeM.group(1) != null ? sizeM.group(1) : sizeM.group(2);
+            meta.append("|minLen=").append(v);
+            hints.add(fieldName + ":minLen(" + v + ")");
+        }
+        if (annotations.contains("@Future")) {
+            meta.append("|future");
+            hints.add(fieldName + ":futureDate");
+        }
+        if (annotations.contains("@NotBlank") || annotations.contains("@NotEmpty") || annotations.contains("[Required")) {
+            hints.add(fieldName + ":required");
+        }
+        return meta.toString();
     }
 
     private static Map<String, String> parseRecordComponents(String rawParams, boolean camelCaseNames) {
+        return parseRecordComponents(rawParams, camelCaseNames, new ArrayList<>());
+    }
+
+    private static Map<String, String> parseRecordComponents(String rawParams, boolean camelCaseNames, List<String> hints) {
         Map<String, String> fields = new LinkedHashMap<>();
         if (rawParams == null || rawParams.isBlank()) return fields;
         List<String> parts = new ArrayList<>();
@@ -1477,7 +1687,8 @@ public class ComposePreflightValidator {
             String name = cleaned.substring(lastSpace + 1).trim();
             if (type.isEmpty() || !name.matches("[A-Za-z_][A-Za-z0-9_]*")) continue;
             if (camelCaseNames) name = Character.toLowerCase(name.charAt(0)) + name.substring(1);
-            fields.putIfAbsent(name, type);
+            String constraintSuffix = extractFieldValidationConstraint(name, part, hints);
+            fields.putIfAbsent(name, constraintSuffix.isEmpty() ? type : type + constraintSuffix);
         }
         return fields;
     }
@@ -1509,58 +1720,490 @@ public class ComposePreflightValidator {
         return out;
     }
 
-    private static Object synthesizeFieldValue(String fieldName, String rawType, Map<String, Map<String, String>> dtoSchemas, Map<String, String> enumFirstValues, int depth) {
-        String type = rawType == null ? "String" : rawType.trim().replace("?", "");
+    private static Object synthesizeFieldValue(String fieldName, String rawTypeWithMeta, Map<String, Map<String, String>> dtoSchemas, Map<String, String> enumFirstValues, int depth) {
+        String rawType = rawTypeWithMeta == null ? "String" : rawTypeWithMeta;
+        String meta = "";
+        int pipeIdx = rawType.indexOf('|');
+        if (pipeIdx >= 0) {
+            meta = rawType.substring(pipeIdx);
+            rawType = rawType.substring(0, pipeIdx);
+        }
+        String type = rawType.trim().replace("?", "");
         String lowerName = fieldName == null ? "" : fieldName.toLowerCase(Locale.ROOT);
         if (type.endsWith("[]") || type.startsWith("List<") || type.startsWith("Set<") || type.startsWith("Collection<")
-                || type.startsWith("IList<") || type.startsWith("IEnumerable<") || type.startsWith("ICollection<")) {
+                || type.startsWith("IList<") || type.startsWith("IEnumerable<") || type.startsWith("ICollection<") || type.startsWith("list[")) {
             String elemType = type.endsWith("[]") ? type.substring(0, type.length() - 2)
-                    : (type.contains("<") && type.endsWith(">") ? type.substring(type.indexOf('<') + 1, type.length() - 1).trim() : "String");
+                    : (type.contains("<") && type.endsWith(">") ? type.substring(type.indexOf('<') + 1, type.length() - 1).trim()
+                    : (type.contains("[") && type.endsWith("]") ? type.substring(type.indexOf('[') + 1, type.length() - 1).trim() : "String"));
             Object elem = synthesizeFieldValue(fieldName, elemType, dtoSchemas, enumFirstValues, depth + 1);
             return elem != null ? List.of(elem) : List.of();
         }
-        if (type.startsWith("Map<") || type.startsWith("Dictionary<") || type.startsWith("IDictionary<")) {
+        if (type.startsWith("Map<") || type.startsWith("Dictionary<") || type.startsWith("IDictionary<") || type.startsWith("dict[")) {
             return Map.of();
         }
         String simple = type.contains(".") ? type.substring(type.lastIndexOf('.') + 1) : type;
         if (enumFirstValues != null && enumFirstValues.containsKey(simple)) {
             return enumFirstValues.get(simple);
         }
+        Integer minConstraint = null;
+        Matcher minM = Pattern.compile("\\|min=(\\d+)").matcher(meta);
+        if (minM.find()) {
+            try { minConstraint = Integer.parseInt(minM.group(1)); } catch (NumberFormatException ignored) {}
+        }
+        Integer minLenConstraint = null;
+        Matcher minLenM = Pattern.compile("\\|minLen=(\\d+)").matcher(meta);
+        if (minLenM.find()) {
+            try { minLenConstraint = Integer.parseInt(minLenM.group(1)); } catch (NumberFormatException ignored) {}
+        }
         return switch (simple) {
             case "boolean", "Boolean", "bool" -> !lowerName.contains("deleted") && !lowerName.contains("disabled");
-            case "int", "Integer", "long", "Long", "short", "Short", "byte", "Byte", "Int32", "Int64", "BigInteger" -> {
-                if (lowerName.contains("age")) yield 28;
-                if (lowerName.contains("port")) yield 8080;
-                if (lowerName.contains("year")) yield 2026;
-                if (lowerName.contains("stock") || lowerName.contains("inventory")) yield 20;
-                yield 1;
+            case "int", "Integer", "long", "Long", "short", "Short", "byte", "Byte", "Int32", "Int64", "BigInteger", "number", "int64", "int32", "uint" -> {
+                int baseVal = lowerName.contains("age") ? 28
+                        : lowerName.contains("port") ? 8080
+                        : lowerName.contains("year") ? 2026
+                        : (lowerName.contains("stock") || lowerName.contains("inventory") || lowerName.contains("quantity")) ? 20
+                        : 1;
+                yield minConstraint != null ? Math.max(baseVal, minConstraint) : baseVal;
             }
-            case "double", "Double", "float", "Float", "BigDecimal", "decimal", "Decimal" -> {
-                if (lowerName.contains("rate") || lowerName.contains("discount")) yield 0.1;
-                yield 99.5;
+            case "double", "Double", "float", "Float", "BigDecimal", "decimal", "Decimal", "float64", "float32" -> {
+                double baseVal = (lowerName.contains("rate") || lowerName.contains("discount")) ? 0.1 : 99.5;
+                yield minConstraint != null ? Math.max(baseVal, (double) minConstraint) : baseVal;
             }
             case "UUID", "Guid" -> "00000000-0000-0000-0000-000000000001";
-            case "LocalDate", "DateOnly" -> "2026-01-15";
+            case "LocalDate", "DateOnly", "date" -> meta.contains("|future") ? "2027-06-15" : "2026-01-15";
             case "LocalTime", "TimeOnly" -> "10:00:00";
-            case "Instant", "OffsetDateTime", "ZonedDateTime", "Date", "DateTime", "DateTimeOffset" -> "2026-01-15T10:00:00Z";
-            case "LocalDateTime" -> "2026-01-15T10:00:00";
-            case "String", "string", "CharSequence" -> {
-                if (lowerName.contains("email")) yield "alice@example.org";
-                if (lowerName.contains("phone") || lowerName.contains("mobile")) yield "+84901234567";
-                if (lowerName.contains("url") || lowerName.contains("uri") || lowerName.contains("website")) yield "https://example.org";
-                if (lowerName.contains("uuid") || lowerName.contains("guid")) yield "00000000-0000-0000-0000-000000000001";
-                if (lowerName.contains("code") || lowerName.contains("sku")) yield "SKU-LAPTOP-01";
-                if (lowerName.contains("currency")) yield "USD";
-                if (lowerName.contains("country")) yield "VN";
-                if (lowerName.contains("status")) yield "ACTIVE";
-                if (lowerName.contains("role")) yield "USER";
-                if (lowerName.contains("password") || lowerName.contains("pwd")) yield "SandboxPass123!";
-                if (lowerName.contains("username") || lowerName.contains("login")) yield "alice";
-                if (lowerName.contains("name")) yield "Sample " + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
-                yield "sample-" + fieldName;
+            case "Instant", "OffsetDateTime", "ZonedDateTime", "Date", "DateTime", "DateTimeOffset", "datetime" -> meta.contains("|future") ? "2027-06-15T10:00:00Z" : "2026-01-15T10:00:00Z";
+            case "LocalDateTime" -> meta.contains("|future") ? "2027-06-15T10:00:00" : "2026-01-15T10:00:00";
+            case "String", "string", "CharSequence", "str" -> {
+                String candidate;
+                if (meta.contains("|email") || lowerName.contains("email")) candidate = "alice@example.org";
+                else if (lowerName.contains("phone") || lowerName.contains("mobile")) candidate = "+84901234567";
+                else if (lowerName.contains("url") || lowerName.contains("uri") || lowerName.contains("website")) candidate = "https://example.org";
+                else if (lowerName.contains("uuid") || lowerName.contains("guid")) candidate = "00000000-0000-0000-0000-000000000001";
+                else if (lowerName.contains("code") || lowerName.contains("sku")) candidate = "SKU-LAPTOP-01";
+                else if (lowerName.contains("currency")) candidate = "USD";
+                else if (lowerName.contains("country")) candidate = "VN";
+                else if (lowerName.contains("status")) candidate = "ACTIVE";
+                else if (lowerName.contains("role")) candidate = "USER";
+                else if (lowerName.contains("password") || lowerName.contains("pwd")) candidate = "SandboxPass123!";
+                else if (lowerName.contains("username") || lowerName.contains("login")) candidate = "alice";
+                else if (lowerName.contains("name")) candidate = "Sample " + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+                else candidate = "sample-" + fieldName;
+                if (minLenConstraint != null && minLenConstraint > candidate.length() && minLenConstraint <= 128) {
+                    candidate = candidate + "-".repeat(1) + "x".repeat(minLenConstraint - candidate.length() - 1);
+                }
+                yield candidate;
             }
             default -> depth < 2 ? synthesizeDtoMap(simple, dtoSchemas, enumFirstValues, depth + 1) : null;
         };
+    }
+
+    private static void extractPolyglotDtoSchemas(
+            String lowerPath,
+            String content,
+            Map<String, Map<String, String>> dtoSchemas,
+            Map<String, Map<String, String>> responseSchemas) {
+        if (lowerPath.endsWith(".ts")) {
+            Matcher m = Pattern.compile("(?:export\\s+)?(?:class|interface)\\s+([A-Z][A-Za-z0-9_]*(?:Dto|DTO|Request|Response|Input|Payload|Entity)?)\\s*(?:extends\\s+[^{]+)?\\{([^}]{1,1500})\\}").matcher(content);
+            while (m.find()) {
+                String name = m.group(1);
+                Map<String, String> fields = new LinkedHashMap<>();
+                Matcher prop = Pattern.compile("(?m)^\\s*(?:readonly\\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\\??\\s*:\\s*([a-zA-Z0-9_\\[\\]<>]+)").matcher(m.group(2));
+                while (prop.find() && fields.size() < 16) {
+                    fields.putIfAbsent(prop.group(1), prop.group(2));
+                }
+                if (!fields.isEmpty()) {
+                    dtoSchemas.putIfAbsent(name, fields);
+                    responseSchemas.putIfAbsent(name, fields);
+                }
+            }
+        } else if (lowerPath.endsWith(".py")) {
+            Matcher m = Pattern.compile("class\\s+([A-Z][A-Za-z0-9_]*)\\s*\\(\\s*(?:BaseModel|SQLModel|Schema)[^)]*\\)\\s*:([\\s\\S]{1,1200}?)(?=\\n(?:class|def|@)|\\z)").matcher(content);
+            while (m.find()) {
+                String name = m.group(1);
+                Map<String, String> fields = new LinkedHashMap<>();
+                Matcher prop = Pattern.compile("(?m)^[ \\t]{2,8}([a-zA-Z_][a-zA-Z0-9_]*)\\s*:\\s*(?:Optional\\[)?([a-zA-Z0-9_\\[\\]]+)").matcher(m.group(2));
+                while (prop.find() && fields.size() < 16) {
+                    String fName = prop.group(1);
+                    if (!fName.startsWith("_") && !"model_config".equals(fName)) {
+                        fields.putIfAbsent(fName, prop.group(2));
+                    }
+                }
+                if (!fields.isEmpty()) {
+                    dtoSchemas.putIfAbsent(name, fields);
+                    responseSchemas.putIfAbsent(name, fields);
+                }
+            }
+        } else if (lowerPath.endsWith(".go")) {
+            Matcher m = Pattern.compile("type\\s+([A-Z][A-Za-z0-9_]*)\\s+struct\\s*\\{([^}]{1,1500})\\}").matcher(content);
+            while (m.find()) {
+                String name = m.group(1);
+                Map<String, String> fields = new LinkedHashMap<>();
+                Matcher prop = Pattern.compile("(?m)^\\s*([A-Z][A-Za-z0-9_]*)\\s+([*\\[\\]a-zA-Z0-9_.]+)\\s+`[^`]*json:\"([a-zA-Z0-9_]+)").matcher(m.group(2));
+                while (prop.find() && fields.size() < 16) {
+                    String jsonTag = prop.group(3);
+                    if (!"-".equals(jsonTag)) fields.putIfAbsent(jsonTag, prop.group(2).replace("*", ""));
+                }
+                if (!fields.isEmpty()) {
+                    dtoSchemas.putIfAbsent(name, fields);
+                    responseSchemas.putIfAbsent(name, fields);
+                }
+            }
+        }
+    }
+
+    private static void extractNestJsControllerEndpoints(
+            String service,
+            String cleanRelPath,
+            String lowerPath,
+            String content,
+            List<DetectedEndpointDTO> endpoints,
+            Set<String> endpointKeys,
+            Map<String, String> explicitHealth) {
+        if (!lowerPath.endsWith(".ts") || !content.contains("@Controller")) return;
+        Matcher ctrl = Pattern.compile("@Controller\\s*\\(\\s*(?:['\"]([^'\"]*)['\"])?\\s*\\)").matcher(content);
+        if (!ctrl.find()) return;
+        String basePath = ctrl.group(1) != null ? ctrl.group(1) : "";
+        String classHeader = content.substring(0, Math.min(content.length(), ctrl.end() + 120));
+        Pattern nestRoute = Pattern.compile("@(Get|Post|Put|Delete|Patch)\\s*\\(\\s*(?:['\"]([^'\"]*)['\"])?\\s*\\)");
+        Matcher m = nestRoute.matcher(content);
+        while (m.find()) {
+            String method = m.group(1).toUpperCase(Locale.ROOT);
+            String sub = m.group(2) != null ? m.group(2) : "";
+            String fullPath = normalizeEndpointPath(basePath, sub).replaceAll(":([a-zA-Z_][a-zA-Z0-9_]*)", "{$1}");
+            if (fullPath.startsWith("/health") || fullPath.equals("/ready")) explicitHealth.putIfAbsent(service, fullPath);
+            String key = (service + ":" + method + ":" + fullPath).toLowerCase(Locale.ROOT);
+            if (endpointKeys.add(key)) {
+                String window = extractHandlerWindow(content, m.start(), m.end(), nestRoute);
+                endpoints.add(DetectedEndpointDTO.builder()
+                        .service(service)
+                        .method(method)
+                        .path(fullPath)
+                        .source(cleanRelPath)
+                        .expectedStatus(inferPolyglotHttpStatus(method, window))
+                        .requestBodyType(extractPolyglotRequestBodyType(lowerPath, window))
+                        .responseBodyType(extractPolyglotResponseBodyType(lowerPath, window))
+                        .responseFields(extractInlineResponseFields(window))
+                        .requiresAuth(detectEndpointAuth(classHeader, window))
+                        .requiredRoles(extractRequiredRoles(classHeader, window))
+                        .build());
+            }
+        }
+    }
+
+    private static Integer inferPolyglotHttpStatus(String method, String window) {
+        if (window == null) return null;
+        Matcher sc = Pattern.compile("(?:status_code\\s*=\\s*|@HttpCode\\s*\\(\\s*|\\.status\\s*\\(\\s*|http\\.StatusCreated|201)(\\d{3})?").matcher(window);
+        if (window.contains("status_code=201") || window.contains("status_code = 201") || window.contains("HTTP_201_CREATED")
+                || window.contains("@HttpCode(201)") || window.contains(".status(201)") || window.contains("StatusCreated")) {
+            return 201;
+        }
+        if ("DELETE".equals(method) && (window.contains("204") || window.contains("HTTP_204_NO_CONTENT") || window.contains("StatusNoContent"))) {
+            return 204;
+        }
+        return inferExpectedHttpStatus(method, window);
+    }
+
+    private static String extractPolyglotRequestBodyType(String lowerPath, String window) {
+        if (window == null) return null;
+        if (lowerPath.endsWith(".ts")) {
+            Matcher m = Pattern.compile("@Body\\s*\\([^)]*\\)\\s*[a-zA-Z_][a-zA-Z0-9_]*\\s*:\\s*([A-Z][A-Za-z0-9_]*)").matcher(window);
+            if (m.find()) return simplifyDtoTypeName(m.group(1));
+        } else if (lowerPath.endsWith(".py")) {
+            Matcher m = Pattern.compile("\\([^)]*\\b[a-zA-Z_][a-zA-Z0-9_]*\\s*:\\s*([A-Z][A-Za-z0-9_]*)").matcher(window);
+            if (m.find() && !Set.of("Request", "Response", "Session", "BackgroundTasks").contains(m.group(1))) {
+                return simplifyDtoTypeName(m.group(1));
+            }
+        } else if (lowerPath.endsWith(".go")) {
+            Matcher m = Pattern.compile("var\\s+[a-zA-Z_][a-zA-Z0-9_]*\\s+([A-Z][A-Za-z0-9_]*)").matcher(window);
+            if (m.find()) return simplifyDtoTypeName(m.group(1));
+        }
+        return null;
+    }
+
+    private static String extractPolyglotResponseBodyType(String lowerPath, String window) {
+        if (window == null) return null;
+        if (lowerPath.endsWith(".py")) {
+            Matcher m = Pattern.compile("response_model\\s*=\\s*(?:List\\[)?([A-Z][A-Za-z0-9_]*)").matcher(window);
+            if (m.find()) return simplifyDtoTypeName(m.group(1));
+        } else if (lowerPath.endsWith(".ts")) {
+            Matcher m = Pattern.compile("\\)\\s*:\\s*(?:Promise<)?([A-Z][A-Za-z0-9_]*)").matcher(window);
+            if (m.find()) return simplifyDtoTypeName(m.group(1));
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void extractOpenApiEndpointsAndSchemas(
+            String service,
+            String cleanRelPath,
+            String content,
+            List<DetectedEndpointDTO> endpoints,
+            Set<String> endpointKeys,
+            Map<String, Map<String, String>> dtoSchemas,
+            Map<String, Map<String, String>> responseSchemas) {
+        try {
+            Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
+            Object rootObj = yaml.load(content);
+            if (!(rootObj instanceof Map<?, ?> root)) return;
+            Map<?, ?> schemas = null;
+            if (root.get("components") instanceof Map<?, ?> comp && comp.get("schemas") instanceof Map<?, ?> s) {
+                schemas = s;
+            } else if (root.get("definitions") instanceof Map<?, ?> defs) {
+                schemas = defs;
+            }
+            if (schemas != null) {
+                for (Map.Entry<?, ?> entry : schemas.entrySet()) {
+                    String schemaName = String.valueOf(entry.getKey());
+                    if (!(entry.getValue() instanceof Map<?, ?> schemaDef)) continue;
+                    if (!(schemaDef.get("properties") instanceof Map<?, ?> props)) continue;
+                    Map<String, String> fields = new LinkedHashMap<>();
+                    for (Map.Entry<?, ?> propEntry : props.entrySet()) {
+                        if (fields.size() >= 16 || !(propEntry.getValue() instanceof Map<?, ?> propDef)) continue;
+                        String pName = String.valueOf(propEntry.getKey());
+                        String pType = propDef.get("type") != null ? String.valueOf(propDef.get("type")) : "String";
+                        if ("integer".equals(pType)) pType = "int";
+                        else if ("number".equals(pType)) pType = "double";
+                        else if ("boolean".equals(pType)) pType = "boolean";
+                        else pType = "String";
+                        fields.putIfAbsent(pName, pType);
+                    }
+                    if (!fields.isEmpty()) {
+                        dtoSchemas.putIfAbsent(schemaName, fields);
+                        responseSchemas.putIfAbsent(schemaName, fields);
+                    }
+                }
+            }
+            if (!(root.get("paths") instanceof Map<?, ?> paths)) return;
+            for (Map.Entry<?, ?> pathEntry : paths.entrySet()) {
+                String rawPath = normalizeEndpointPath("", String.valueOf(pathEntry.getKey()));
+                if (!(pathEntry.getValue() instanceof Map<?, ?> ops)) continue;
+                for (String verb : List.of("get", "post", "put", "patch", "delete")) {
+                    if (!(ops.get(verb) instanceof Map<?, ?> op)) continue;
+                    String upperVerb = verb.toUpperCase(Locale.ROOT);
+                    String key = (service + ":" + upperVerb + ":" + rawPath).toLowerCase(Locale.ROOT);
+                    if (!endpointKeys.add(key)) continue;
+                    String reqRef = extractOpenApiRefName(op.get("requestBody"));
+                    String respRef = extractOpenApiRefName(op.get("responses"));
+                    Integer status = (op.get("responses") instanceof Map<?, ?> rMap && (rMap.containsKey("201") || rMap.containsKey(201))) ? 201 : 200;
+                    Boolean reqAuth = (op.containsKey("security") || root.containsKey("security")) ? Boolean.TRUE : null;
+                    endpoints.add(DetectedEndpointDTO.builder()
+                            .service(service)
+                            .method(upperVerb)
+                            .path(rawPath)
+                            .source(cleanRelPath)
+                            .expectedStatus(status)
+                            .requestBodyType(reqRef)
+                            .responseBodyType(respRef)
+                            .requiresAuth(reqAuth)
+                            .build());
+                }
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static String extractOpenApiRefName(Object node) {
+        if (node == null) return null;
+        String text = String.valueOf(node);
+        Matcher m = Pattern.compile("#/(?:components/schemas|definitions)/([A-Za-z0-9_.-]+)").matcher(text);
+        return m.find() ? m.group(1) : null;
+    }
+
+    private static void extractOutboundCallsFromFile(
+            String service,
+            String content,
+            String lowerContent,
+            List<String> detectedServices,
+            Map<String, Set<String>> serviceOutboundTargets) {
+        Set<String> targets = serviceOutboundTargets.computeIfAbsent(service, k -> new LinkedHashSet<>());
+        Matcher feign = Pattern.compile("@FeignClient\\s*\\([^)]*(?:name|value|url)\\s*=\\s*\"(?:https?://)?([a-zA-Z0-9_.-]+)").matcher(content);
+        while (feign.find()) {
+            String matched = matchDetectedService(feign.group(1), detectedServices);
+            targets.add(matched != null ? matched : cleanServiceCandidate(feign.group(1)));
+        }
+        if (detectedServices != null) {
+            for (String candidate : detectedServices) {
+                if (candidate.equalsIgnoreCase(service)) continue;
+                String lowCand = candidate.toLowerCase(Locale.ROOT);
+                if (lowerContent.contains("://" + lowCand) || lowerContent.contains("lb://" + lowCand)
+                        || lowerContent.contains("\"" + lowCand + "\"")) {
+                    targets.add(candidate);
+                }
+            }
+        }
+        if (lowerContent.contains("kafkatemplate") || lowerContent.contains("kafka.produce") || lowerContent.contains("confluent.kafka")) {
+            targets.add("kafka");
+        }
+        if (lowerContent.contains("rabbittemplate") || lowerContent.contains("basicpublish") || lowerContent.contains("ipublishendpoint")) {
+            targets.add("rabbitmq");
+        }
+    }
+
+    private static void extractGatewayRoutesFromFile(
+            String service,
+            String lowerPath,
+            String content,
+            List<String> detectedServices,
+            List<GatewayRouteRule> gatewayRoutes) {
+        // 1. Spring Cloud Gateway YAML / Properties: Path=/api/orders/** + uri: lb://order-service or http://order-service:8080
+        if (lowerPath.endsWith(".yml") || lowerPath.endsWith(".yaml") || lowerPath.endsWith(".properties")) {
+            Matcher yamlBlocks = Pattern.compile("(?s)uri\\s*[:=]\\s*['\"]?(?:lb|https?)://([a-zA-Z0-9_.-]+)(?::\\d+)?['\"]?.*?Path\\s*=\\s*([/a-zA-Z0-9_*.-]+)|Path\\s*=\\s*([/a-zA-Z0-9_*.-]+).*?uri\\s*[:=]\\s*['\"]?(?:lb|https?)://([a-zA-Z0-9_.-]+)").matcher(content);
+            while (yamlBlocks.find()) {
+                String rawTarget = yamlBlocks.group(1) != null ? yamlBlocks.group(1) : yamlBlocks.group(4);
+                String rawPath = yamlBlocks.group(2) != null ? yamlBlocks.group(2) : yamlBlocks.group(3);
+                String matchedTarget = matchDetectedService(rawTarget, detectedServices);
+                String targetSvc = matchedTarget != null ? matchedTarget : cleanServiceCandidate(rawTarget);
+                String prefix = rawPath.replaceAll("/\\*\\*$", "").replaceAll("/\\*$", "");
+                int strip = content.contains("StripPrefix=1") ? 1 : (content.contains("StripPrefix=2") ? 2 : 0);
+                if (!targetSvc.isBlank() && !targetSvc.equalsIgnoreCase(service) && prefix.startsWith("/")) {
+                    gatewayRoutes.add(new GatewayRouteRule(service, prefix, targetSvc, strip));
+                }
+            }
+        }
+        // 2. Nginx proxy_pass: location /api/orders/ { proxy_pass http://order-service:8080/; }
+        Matcher nginx = Pattern.compile("location\\s+(?:~\\*?\\s+)?([/a-zA-Z0-9_-]+)\\s*\\{[^}]*proxy_pass\\s+https?://([a-zA-Z0-9_.-]+)").matcher(content);
+        while (nginx.find()) {
+            String prefix = nginx.group(1);
+            String rawTarget = nginx.group(2);
+            String matchedTarget = matchDetectedService(rawTarget, detectedServices);
+            String targetSvc = matchedTarget != null ? matchedTarget : cleanServiceCandidate(rawTarget);
+            if (!targetSvc.isBlank() && !targetSvc.equalsIgnoreCase(service)) {
+                gatewayRoutes.add(new GatewayRouteRule(service, prefix, targetSvc, 0));
+            }
+        }
+    }
+
+    private static void projectGatewayEntryEndpoints(
+            List<DetectedEndpointDTO> endpoints,
+            Set<String> endpointKeys,
+            List<GatewayRouteRule> gatewayRoutes,
+            List<String> detectedServices) {
+        if (gatewayRoutes == null || gatewayRoutes.isEmpty() || endpoints.isEmpty()) return;
+        List<DetectedEndpointDTO> snapshot = new ArrayList<>(endpoints);
+        for (GatewayRouteRule rule : gatewayRoutes) {
+            for (DetectedEndpointDTO ep : snapshot) {
+                if (!rule.targetService().equalsIgnoreCase(ep.getService()) || isHealthEndpointPath(ep.getPath())) continue;
+                String gwPath;
+                if (rule.stripPrefix() > 0) {
+                    gwPath = normalizeEndpointPath(rule.pathPrefix(), ep.getPath());
+                } else if (ep.getPath().startsWith(rule.pathPrefix())) {
+                    gwPath = ep.getPath();
+                } else {
+                    gwPath = normalizeEndpointPath(rule.pathPrefix(), ep.getPath());
+                }
+                String key = (rule.gatewayService() + ":" + ep.getMethod() + ":" + gwPath).toLowerCase(Locale.ROOT);
+                if (endpointKeys.add(key)) {
+                    List<String> down = new ArrayList<>();
+                    down.add(ep.getService());
+                    if (ep.getDownstreamTargets() != null) {
+                        for (String t : ep.getDownstreamTargets()) if (!down.contains(t)) down.add(t);
+                    }
+                    endpoints.add(DetectedEndpointDTO.builder()
+                            .service(rule.gatewayService())
+                            .method(ep.getMethod())
+                            .path(gwPath)
+                            .source("Gateway Route -> " + ep.getService() + " (" + ep.getSource() + ")")
+                            .expectedStatus(ep.getExpectedStatus())
+                            .requestBodyType(ep.getRequestBodyType())
+                            .responseBodyType(ep.getResponseBodyType())
+                            .sampleJsonBody(ep.getSampleJsonBody())
+                            .requiresAuth(ep.getRequiresAuth())
+                            .requiredRoles(ep.getRequiredRoles())
+                            .responseFields(ep.getResponseFields())
+                            .validationHints(ep.getValidationHints())
+                            .downstreamTargets(down)
+                            .build());
+                }
+            }
+        }
+    }
+
+    private static boolean isHealthEndpointPath(String path) {
+        if (path == null) return false;
+        String low = path.toLowerCase(Locale.ROOT);
+        return low.equals("/health") || low.equals("/healthz") || low.equals("/ready") || low.equals("/readyz")
+                || low.startsWith("/actuator/health") || low.startsWith("/actuator/info");
+    }
+
+    private static void enrichEndpointContractAndTopology(
+            DetectedEndpointDTO ep,
+            Map<String, Map<String, String>> responseSchemas,
+            Map<String, List<String>> dtoValidationHints,
+            Map<String, Set<String>> serviceOutboundTargets,
+            PreflightCheckResponseDTO dto) {
+        if (ep == null) return;
+        // 1. Validation hints from request DTO
+        if (ep.getValidationHints() == null && ep.getRequestBodyType() != null && dtoValidationHints != null) {
+            List<String> hints = dtoValidationHints.get(ep.getRequestBodyType());
+            if (hints != null && !hints.isEmpty()) ep.setValidationHints(new ArrayList<>(hints));
+        }
+        // 2. Verifiable response JSON pointers from response DTO schema
+        Set<String> respPtrs = new LinkedHashSet<>();
+        if (ep.getResponseFields() != null) respPtrs.addAll(ep.getResponseFields());
+        if (ep.getResponseBodyType() != null && responseSchemas != null) {
+            Map<String, String> rFields = responseSchemas.get(ep.getResponseBodyType());
+            if (rFields != null) {
+                for (String f : rFields.keySet()) {
+                    String low = f.toLowerCase(Locale.ROOT);
+                    if (low.equals("id") || low.endsWith("id") || low.equals("uuid") || low.contains("code") || low.contains("sku")
+                            || low.contains("token") || low.equals("jwt") || low.equals("status") || low.contains("number") || low.equals("key")) {
+                        respPtrs.add("/" + f);
+                    }
+                }
+                if (respPtrs.isEmpty() && !rFields.isEmpty()) {
+                    respPtrs.add("/" + rFields.keySet().iterator().next());
+                }
+            }
+        }
+        if (!respPtrs.isEmpty()) ep.setResponseFields(new ArrayList<>(respPtrs));
+
+        // 3. Downstream targets & Top-Down Journey Role + Fan-out Score
+        Set<String> targets = new LinkedHashSet<>();
+        if (ep.getDownstreamTargets() != null) targets.addAll(ep.getDownstreamTargets());
+        if (serviceOutboundTargets != null && ep.getService() != null) {
+            targets.addAll(serviceOutboundTargets.getOrDefault(ep.getService(), Set.of()));
+        }
+        if (dto != null && dto.getServiceDependencies() != null && ep.getService() != null) {
+            Set<String> infra = new HashSet<>(dto.getInfrastructureServices() != null ? dto.getInfrastructureServices() : List.of());
+            for (String dep : dto.getServiceDependencies().getOrDefault(ep.getService(), List.of())) {
+                if (!infra.contains(dep) && !dep.equalsIgnoreCase(ep.getService())) targets.add(dep);
+            }
+        }
+        if (!targets.isEmpty()) ep.setDownstreamTargets(new ArrayList<>(targets));
+
+        String lowPath = (ep.getPath() != null ? ep.getPath() : "").toLowerCase(Locale.ROOT);
+        String verb = ep.getMethod() != null ? ep.getMethod().toUpperCase(Locale.ROOT) : "GET";
+        String lowSvc = (ep.getService() != null ? ep.getService() : "").toLowerCase(Locale.ROOT);
+        boolean isGateway = lowSvc.contains("gateway") || lowSvc.contains("bff") || lowSvc.equals("edge") || lowSvc.startsWith("edge-")
+                || (ep.getSource() != null && ep.getSource().startsWith("Gateway Route"));
+        boolean isAuth = "POST".equals(verb) && (lowPath.contains("/auth/") || lowPath.endsWith("/login") || lowPath.endsWith("/signin")
+                || lowPath.endsWith("/register") || lowPath.endsWith("/signup") || lowPath.endsWith("/token"));
+        boolean isWorkflowAction = Set.of("POST", "PUT", "PATCH").contains(verb) && (lowPath.contains("checkout") || lowPath.contains("order")
+                || lowPath.contains("pay") || lowPath.contains("charge") || lowPath.contains("transfer") || lowPath.contains("reserve")
+                || lowPath.contains("confirm") || lowPath.contains("approve") || lowPath.contains("process") || lowPath.contains("submit")
+                || lowPath.contains("dispatch") || lowPath.contains("fulfill") || lowPath.contains("assign") || lowPath.contains("booking")
+                || !targets.isEmpty());
+
+        String role;
+        if (isHealthEndpointPath(lowPath)) role = "HEALTH_FALLBACK";
+        else if (isAuth) role = "AUTH_ENTRY";
+        else if (isWorkflowAction) role = "CROSS_SERVICE_WORKFLOW";
+        else if ("POST".equals(verb) && !lowPath.contains("{")) role = "PREREQUISITE_SEED";
+        else if ("GET".equals(verb)) role = "STATE_VERIFICATION";
+        else if ("DELETE".equals(verb)) role = "CLEANUP_COMPENSATION";
+        else role = "CROSS_SERVICE_WORKFLOW";
+        ep.setJourneyRole(role);
+
+        int score = 10;
+        if (isGateway) score += 35;
+        score += targets.size() * 25;
+        if ("AUTH_ENTRY".equals(role)) score += 30;
+        else if ("CROSS_SERVICE_WORKFLOW".equals(role)) score += 25;
+        else if ("PREREQUISITE_SEED".equals(role)) score += 20;
+        else if ("STATE_VERIFICATION".equals(role)) score += (lowPath.contains("{") ? 12 : 6);
+        else if ("CLEANUP_COMPENSATION".equals(role)) score -= 15;
+        else if ("HEALTH_FALLBACK".equals(role)) score = 1;
+        ep.setFanOutScore(Math.max(1, score));
     }
 
     private static String extractConfigScalarValue(String line) {

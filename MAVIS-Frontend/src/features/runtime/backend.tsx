@@ -1480,6 +1480,13 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {selectedId && (isExecFailed || isTimedOut || (isCompleted && scenarioStatus !== "PASSED")) && (
+                <Button variant="outline" size="sm" className="text-xs h-9 border-violet-500/40 text-violet-300" asChild>
+                  <Link href={`/scenarios?project=${projectId}&repairSession=${selectedId}`}>
+                    ✨ AI Repair in Step 2
+                  </Link>
+                </Button>
+              )}
               <Button variant="outline" size="sm" className="text-xs h-9" asChild>
                 <Link href={`/scenarios?project=${projectId}`}>← Edit Scenario in Step 2</Link>
               </Button>

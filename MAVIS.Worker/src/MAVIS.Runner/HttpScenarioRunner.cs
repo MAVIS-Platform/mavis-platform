@@ -70,7 +70,7 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
                 {
                     // Body is a complete JSON document; no raw text substitution into JSON syntax.
                     using var body = JsonDocument.Parse(jsonBody);
-                    request.Content = new StringContent(JsonSerializer.Serialize(step.BodyReference is null ? Replace(body.RootElement) : body.RootElement), Encoding.UTF8, "application/json");
+                    request.Content = new StringContent(JsonSerializer.Serialize(Replace(body.RootElement)), Encoding.UTF8, "application/json");
                 }
                 using var stepTimeout = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
                 stepTimeout.CancelAfter(TimeSpan.FromSeconds(30));
@@ -90,10 +90,28 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
                     using var json = JsonDocument.Parse(buffer.ToArray());
                     foreach (var extract in step.Extract)
                     {
-                        var value = json.RootElement;
-                        foreach (var segment in extract.Value.TrimStart('/').Split('/'))
-                            value = value.GetProperty(segment.Replace("~1", "/").Replace("~0", "~"));
-                        variables[extract.Key] = value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText();
+                        var resolved = false;
+                        foreach (var candidatePointer in extract.Value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        {
+                            var value = json.RootElement;
+                            var ok = true;
+                            foreach (var segment in candidatePointer.TrimStart('/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+                            {
+                                var unescaped = segment.Replace("~1", "/").Replace("~0", "~");
+                                if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty(unescaped, out var prop))
+                                    value = prop;
+                                else if (value.ValueKind == JsonValueKind.Array && int.TryParse(unescaped, out var idx) && idx >= 0 && idx < value.GetArrayLength())
+                                    value = value[idx];
+                                else { ok = false; break; }
+                            }
+                            if (ok && value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null))
+                            {
+                                variables[extract.Key] = value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText();
+                                resolved = true;
+                                break;
+                            }
+                        }
+                        if (!resolved) throw new KeyNotFoundException($"Missing JSON pointer '{extract.Value}'.");
                     }
                 }
                 outcomes.Add(new(step.Id, passed ? "Passed" : "Failed", (int)response.StatusCode, trace, span, watch.ElapsedMilliseconds));
@@ -122,13 +140,23 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
 
         string Substitute(string value, bool encode) => Variable.Replace(value, match => variables.TryGetValue(match.Groups[1].Value, out var result)
             ? encode ? Uri.EscapeDataString(result) : result : throw new InvalidOperationException("Unavailable scenario variable."));
-        object? Replace(JsonElement element) => element.ValueKind switch
+        object? Replace(JsonElement element)
         {
-            JsonValueKind.String => Substitute(element.GetString()!, false),
-            JsonValueKind.Object => element.EnumerateObject().ToDictionary(p => p.Name, p => Replace(p.Value)),
-            JsonValueKind.Array => element.EnumerateArray().Select(Replace).ToArray(),
-            _ => element.Clone()
-        };
+            if (element.ValueKind == JsonValueKind.String)
+            {
+                var raw = element.GetString()!;
+                var m = Variable.Match(raw);
+                if (m.Success && m.Index == 0 && m.Length == raw.Length && variables.TryGetValue(m.Groups[1].Value, out var exact) && long.TryParse(exact, out var num))
+                    return num;
+                return Substitute(raw, false);
+            }
+            return element.ValueKind switch
+            {
+                JsonValueKind.Object => element.EnumerateObject().ToDictionary(p => p.Name, p => Replace(p.Value)),
+                JsonValueKind.Array => element.EnumerateArray().Select(Replace).ToArray(),
+                _ => element.Clone()
+            };
+        }
     }
 
     private void Validate(HttpScenarioDefinition scenario, IReadOnlyDictionary<string, Uri> endpoints, IReadOnlyDictionary<string, string> secrets)
@@ -155,13 +183,14 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
                 if (!Regex.IsMatch(binding.Key, "^[A-Z][A-Z0-9_]{0,63}$") || !secrets.ContainsKey(binding.Value)) throw new ArgumentException("Protected input reference is unavailable.");
                 available.Add(binding.Key);
             }
+            string? refBodyInput = null;
             if (step.BodyReference is not null)
             {
-                if (step.JsonBody is not null || !secrets.TryGetValue(step.BodyReference,out var bodyInput) || bodyInput.Length > MaxResponseBytes) throw new ArgumentException("Protected body reference unavailable.");
-                using var body = JsonDocument.Parse(bodyInput);
+                if (step.JsonBody is not null || !secrets.TryGetValue(step.BodyReference,out refBodyInput) || refBodyInput.Length > MaxResponseBytes) throw new ArgumentException("Protected body reference unavailable.");
+                using var body = JsonDocument.Parse(refBodyInput);
             }
             if (step.JsonBody is not null) { using var body = JsonDocument.Parse(step.JsonBody); }
-            foreach (var value in new[] { step.Path, step.JsonBody ?? "" }.Concat(step.Headers?.Values ?? []))
+            foreach (var value in new[] { step.Path, step.JsonBody ?? "", refBodyInput ?? "" }.Concat(step.Headers?.Values ?? []))
                 foreach (Match match in Variable.Matches(value))
                     if (!available.Contains(match.Groups[1].Value)) throw new ArgumentException("Scenario variable is used before definition.");
             if (step.SecretHeaders?.Values.Any(reference => !secrets.ContainsKey(reference)) == true)

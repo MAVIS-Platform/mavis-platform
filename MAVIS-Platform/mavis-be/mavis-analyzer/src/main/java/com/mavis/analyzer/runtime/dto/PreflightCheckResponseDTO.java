@@ -147,8 +147,15 @@ public class PreflightCheckResponseDTO {
         private String source;
         private Integer expectedStatus;
         private String requestBodyType;
+        private String responseBodyType;
         private String sampleJsonBody;
         private Boolean requiresAuth;
+        private List<String> requiredRoles;
+        private List<String> responseFields;
+        private List<String> validationHints;
+        private List<String> downstreamTargets;
+        private Integer fanOutScore;
+        private String journeyRole;
     }
 
     @Data

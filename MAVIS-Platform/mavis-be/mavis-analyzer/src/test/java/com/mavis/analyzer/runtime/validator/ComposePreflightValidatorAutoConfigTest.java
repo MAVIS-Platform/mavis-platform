@@ -598,4 +598,132 @@ class ComposePreflightValidatorAutoConfigTest {
         assertThat(csBody.path("currency").asText()).isNotBlank();
         assertThat(csBody.path("captureImmediately").isBoolean()).isTrue();
     }
+
+    @Test
+    void openApiSpecsSpringGatewayRoutesValidationConstraintsAndResponseFieldsAreProjectedTopDown(@TempDir Path tempDir) throws Exception {
+        PreflightCheckResponseDTO dto = PreflightCheckResponseDTO.builder()
+                .detectedServices(List.of("api-gateway", "order-service", "inventory-service"))
+                .servicePorts(new LinkedHashMap<>(Map.of("api-gateway", 8080, "order-service", 8081, "inventory-service", 8082)))
+                .serviceStacks(new LinkedHashMap<>(Map.of("api-gateway", "java", "order-service", "java", "inventory-service", "node")))
+                .build();
+
+        // 1. Spring Cloud Gateway routing /gw/orders/** (StripPrefix=1) -> lb://order-service
+        Path gwRes = Files.createDirectories(tempDir.resolve("api-gateway/src/main/resources"));
+        Files.writeString(gwRes.resolve("application.yml"), """
+                spring:
+                  cloud:
+                    gateway:
+                      routes:
+                        - id: orders-route
+                          uri: lb://order-service
+                          predicates:
+                            - Path=/gw/orders/**
+                          filters:
+                            - StripPrefix=1
+                """);
+
+        // 2. Order Service with validation constraints (@Min(5), @Size(min=12)), @RequestParam, Feign call to inventory-service, and OrderResponse DTO
+        Path orderJava = Files.createDirectories(tempDir.resolve("order-service/src/main/java/orders"));
+        Files.writeString(orderJava.resolve("InventoryClient.java"), """
+                package orders;
+                import org.springframework.cloud.openfeign.FeignClient;
+                @FeignClient(name = "inventory-service")
+                public interface InventoryClient {}
+                """);
+        Files.writeString(orderJava.resolve("CreateOrderReq.java"), """
+                package orders;
+                import jakarta.validation.constraints.*;
+                public record CreateOrderReq(
+                        @Size(min = 12, max = 30) String referenceCode,
+                        @Min(5) int quantity
+                ) {}
+                """);
+        Files.writeString(orderJava.resolve("OrderResponse.java"), """
+                package orders;
+                public record OrderResponse(Long id, String referenceCode, String status) {}
+                """);
+        Files.writeString(orderJava.resolve("OrderController.java"), """
+                package orders;
+                import org.springframework.http.ResponseEntity;
+                import org.springframework.security.access.prepost.PreAuthorize;
+                import org.springframework.web.bind.annotation.*;
+                @RestController
+                @RequestMapping("/orders")
+                public class OrderController {
+                    @PostMapping
+                    @PreAuthorize("hasAuthority('ORDER_WRITE')")
+                    public ResponseEntity<OrderResponse> create(@RequestBody CreateOrderReq req, @RequestParam String tenantId) {
+                        return ResponseEntity.status(201).build();
+                    }
+                }
+                """);
+
+        // 3. Inventory Service with OpenAPI spec
+        Path invDir = Files.createDirectories(tempDir.resolve("inventory-service"));
+        Files.writeString(invDir.resolve("openapi.yaml"), """
+                openapi: 3.0.3
+                paths:
+                  /api/stock/reserve:
+                    post:
+                      security:
+                        - bearerAuth: []
+                      requestBody:
+                        content:
+                          application/json:
+                            schema:
+                              $ref: '#/components/schemas/ReserveStockInput'
+                      responses:
+                        '201':
+                          content:
+                            application/json:
+                              schema:
+                                $ref: '#/components/schemas/ReserveStockOutput'
+                components:
+                  schemas:
+                    ReserveStockInput:
+                      type: object
+                      properties:
+                        sku:
+                          type: string
+                        qty:
+                          type: integer
+                    ReserveStockOutput:
+                      type: object
+                      properties:
+                        reservationId:
+                          type: string
+                """);
+
+        validator.inspectSnapshotSource(tempDir, dto);
+
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        // Verify OrderController endpoint has @RequestParam appended, validation constraints respected, responseFields & downstreamTargets populated
+        var orderPost = dto.getDetectedEndpoints().stream()
+                .filter(ep -> "order-service".equals(ep.getService()) && "POST".equals(ep.getMethod()) && ep.getPath().startsWith("/orders"))
+                .findFirst().orElseThrow();
+        assertThat(orderPost.getPath()).isEqualTo("/orders?tenantId=1");
+        assertThat(orderPost.getRequiredRoles()).contains("ORDER_WRITE");
+        assertThat(orderPost.getResponseFields()).contains("/id", "/referenceCode", "/status");
+        assertThat(orderPost.getDownstreamTargets()).contains("inventory-service");
+        var orderJson = mapper.readTree(orderPost.getSampleJsonBody());
+        assertThat(orderJson.path("referenceCode").asText().length()).isGreaterThanOrEqualTo(12);
+        assertThat(orderJson.path("quantity").asInt()).isGreaterThanOrEqualTo(5);
+
+        // Verify Gateway projected endpoint /gw/orders?tenantId=1 on api-gateway!
+        var gwProjected = dto.getDetectedEndpoints().stream()
+                .filter(ep -> "api-gateway".equals(ep.getService()) && "POST".equals(ep.getMethod()) && ep.getPath().startsWith("/gw/orders"))
+                .findFirst().orElseThrow();
+        assertThat(gwProjected.getDownstreamTargets()).contains("order-service");
+        assertThat(gwProjected.getResponseFields()).contains("/id");
+        assertThat(gwProjected.getFanOutScore()).isGreaterThan(orderPost.getFanOutScore());
+
+        // Verify OpenAPI endpoint on inventory-service
+        var invOpenApi = dto.getDetectedEndpoints().stream()
+                .filter(ep -> "inventory-service".equals(ep.getService()) && "/api/stock/reserve".equals(ep.getPath()))
+                .findFirst().orElseThrow();
+        assertThat(invOpenApi.getExpectedStatus()).isEqualTo(201);
+        assertThat(invOpenApi.getRequiresAuth()).isTrue();
+        assertThat(invOpenApi.getResponseFields()).contains("/reservationId");
+    }
 }

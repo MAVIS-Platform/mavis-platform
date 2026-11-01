@@ -45,6 +45,21 @@ public class SecretRedactor {
 
                 if ("secretHeaders".equalsIgnoreCase(key)) {
                     redactedNode.set(key, value.deepCopy());
+                } else if ("extract".equalsIgnoreCase(key) && value.isObject()) {
+                    redactedNode.set(key, value.deepCopy());
+                } else if ("headers".equalsIgnoreCase(key) && value.isObject()) {
+                    ObjectNode hdrCopy = OBJECT_MAPPER.createObjectNode();
+                    value.fields().forEachRemaining(he -> {
+                        String hv = he.getValue().asText("");
+                        if (hv.matches("(?i)(?:Bearer\\s+)?\\{\\{[A-Za-z][A-Za-z0-9_]*}}")) {
+                            hdrCopy.put(he.getKey(), hv);
+                        } else if (isSensitiveKey(he.getKey())) {
+                            hdrCopy.put(he.getKey(), REDACTED_MARKER);
+                        } else {
+                            hdrCopy.put(he.getKey(), redactString(hv));
+                        }
+                    });
+                    redactedNode.set(key, hdrCopy);
                 } else if (value.isObject() || value.isArray()) {
                     redactedNode.set(key, redactJson(value));
                 } else if (isSensitiveKey(key)) {
