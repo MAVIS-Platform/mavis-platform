@@ -219,6 +219,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             composePreflightValidator.inspectSnapshotSource(path, result);
             enrichPreflightFromModel(snapshot, result);
             composePreflightValidator.finalizeSandboxTopology(path, result, rawYamlContent, savedOverrides, envFiles);
+            ComposePreflightValidator.assignEnvResolutions(result);
             refreshRecommendedMappingsForSynthesizedServices(result);
             if (!result.isCompatible() && result.getDetectedServices() != null && !result.getDetectedServices().isEmpty()
                     && result.getSecurityWarnings() != null
@@ -322,7 +323,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 String host = el.getProperties() != null ? el.getProperties().path("physicalHost").asText(el.getName()) : el.getName();
                 String dbName = el.getProperties() != null ? el.getProperties().path("database").asText(el.getName()) : el.getName();
                 String protocol = el.getProperties() != null ? el.getProperties().path("protocol").asText("SQL") : "SQL";
-                boolean dbExists = dbChecks.stream().anyMatch(d -> d.getService().equalsIgnoreCase(ownerSvc));
+                boolean dbExists = dbChecks.stream().anyMatch(d -> d.getService().equalsIgnoreCase(ownerSvc) && !ComposePreflightValidator.isCacheOrBrokerType(d.getDbType()));
                 if (!dbExists) {
                     if (envMap.values().stream().noneMatch(v -> "DB_SECRET".equals(v.getCategory()))) {
                         ComposePreflightValidator.registerEnvVar(envMap, "DB_CONNECTION_STRING", ownerSvc, null, "STATIC_MODEL");
@@ -346,7 +347,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                         && envMap.values().stream().noneMatch(v -> "DB_SECRET".equals(v.getCategory()))) {
                     String svcName = services.isEmpty() ? "default-service" : services.get(0);
                     ComposePreflightValidator.registerEnvVar(envMap, "DB_CONNECTION_STRING", svcName, null, "STATIC_MODEL");
-                    if (dbChecks.isEmpty()) {
+                    if (dbChecks.stream().allMatch(d -> ComposePreflightValidator.isCacheOrBrokerType(d.getDbType()))) {
                         dbChecks.add(DatabaseCheckDTO.builder()
                                 .service(svcName)
                                 .dbType("SQL")
@@ -401,7 +402,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                         if (src != null && src.getName() != null) {
                             String matchedSrc = ComposePreflightValidator.matchDetectedService(src.getName(), services);
                             String svcName = matchedSrc != null ? matchedSrc : src.getName();
-                            boolean dbExists = dbChecks.stream().anyMatch(d -> d.getService().equalsIgnoreCase(svcName));
+                            boolean dbExists = dbChecks.stream().anyMatch(d -> d.getService().equalsIgnoreCase(svcName) && !ComposePreflightValidator.isCacheOrBrokerType(d.getDbType()));
                             if (!dbExists) {
                                 if (envMap.values().stream().noneMatch(v -> "DB_SECRET".equals(v.getCategory()))) {
                                     ComposePreflightValidator.registerEnvVar(envMap, "DB_CONNECTION_STRING", svcName, null, "STATIC_MODEL");

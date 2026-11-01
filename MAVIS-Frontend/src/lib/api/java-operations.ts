@@ -1026,6 +1026,7 @@ export async function executeJava(
                 services: z.array(z.string()).optional(),
                 defaultValue: z.string().nullable().optional(),
                 scope: z.string().nullable().optional(),
+                resolution: z.string().nullable().optional(),
                 defaultPresent: z.boolean().optional(),
                 required: z.boolean().optional(),
                 source: z.string().optional(),

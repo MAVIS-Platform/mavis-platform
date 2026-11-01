@@ -267,7 +267,7 @@ class RuntimePlanningServiceTest {
         ArgumentCaptor<Map<String, String>> stored = ArgumentCaptor.forClass(Map.class);
         verify(environments).store(eq(sessionId), stored.capture());
         assertThat(stored.getValue()).containsEntry("DB_PASSWORD", "pg-literal").doesNotContainKeys("OPENAI_API_KEY", "SERVER_PORT");
-        assertThat(stored.getValue().get("JWT_SECRET")).hasSize(44);
+        assertThat(stored.getValue().get("JWT_SECRET")).hasSize(88); // 64 random bytes: HS512-safe
     }
 
     @Test
@@ -416,7 +416,7 @@ class RuntimePlanningServiceTest {
                 .containsEntry("ORDERS_DB__POSTGRES_PASSWORD", "orders-pw")
                 .containsEntry("CATALOG_DB__POSTGRES_PASSWORD", "catalog-pw")
                 .containsEntry("MANAGEMENT_SERVER_PORT", "8085");
-        assertThat(stored.getValue().get("JWT_SECRET")).hasSize(44);
+        assertThat(stored.getValue().get("JWT_SECRET")).hasSize(88); // 64 random bytes: HS512-safe
     }
 
     @Test
@@ -795,5 +795,28 @@ class RuntimePlanningServiceTest {
         } finally {
             mockOpenAi.stop(0);
         }
+    }
+
+    @Test
+    @DisplayName("STEP 1 SANDBOX: generated secrets match their job (HS512 JWT, hex, shared RSA PEM pair)")
+    void testRandomSecretForFormats() throws Exception {
+        java.security.KeyPair[] rsa = new java.security.KeyPair[1];
+        assertThat(java.util.Base64.getDecoder().decode(planningService.randomSecretFor("JWT_SECRET", rsa))).hasSizeGreaterThanOrEqualTo(64);
+        assertThat(planningService.randomSecretFor("ENCRYPTION_KEY_HEX", rsa)).matches("[0-9a-f]{64}");
+        assertThat(java.util.Base64.getDecoder().decode(planningService.randomSecretFor("SESSION_SECRET", rsa))).hasSize(32);
+
+        String priv = planningService.randomSecretFor("SIGNING_PRIVATE_KEY", rsa);
+        String pub = planningService.randomSecretFor("SIGNING_PUBLIC_KEY", rsa);
+        assertThat(priv).startsWith("-----BEGIN PRIVATE KEY-----\n").endsWith("-----END PRIVATE KEY-----");
+        var kf = java.security.KeyFactory.getInstance("RSA");
+        var privateKey = kf.generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(java.util.Base64.getMimeDecoder().decode(priv.replaceAll("-----[A-Z ]+-----", ""))));
+        var publicKey = kf.generatePublic(new java.security.spec.X509EncodedKeySpec(java.util.Base64.getMimeDecoder().decode(pub.replaceAll("-----[A-Z ]+-----", ""))));
+        var sig = java.security.Signature.getInstance("SHA256withRSA");
+        sig.initSign(privateKey);
+        sig.update("mavis".getBytes(StandardCharsets.UTF_8));
+        byte[] signed = sig.sign();
+        sig.initVerify(publicKey);
+        sig.update("mavis".getBytes(StandardCharsets.UTF_8));
+        assertThat(sig.verify(signed)).isTrue();
     }
 }

@@ -162,6 +162,7 @@ export const contracts = {
             required: z.boolean().optional(),
             source: z.string().optional(),
             scope: z.string().nullable().optional(),
+            resolution: z.string().nullable().optional(),
             defaultPresent: z.boolean().optional(),
           }),
         )

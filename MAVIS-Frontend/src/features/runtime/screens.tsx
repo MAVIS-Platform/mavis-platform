@@ -309,6 +309,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
           source?: string;
           scope?: string | null;
           defaultPresent?: boolean;
+          resolution?: string | null;
         }>)
       : []);
   const stringList = (value: unknown) => (Array.isArray(value) ? value.map(String) : []);
@@ -442,11 +443,13 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       name,
     );
 
-  // Sandbox-internal secrets (JWT keys, DB passwords) are generated per run or reused from the sandbox DB container.
+  // Backend `resolution` decides what the sandbox provides; the name regex only covers profiles saved before it existed.
   const externalSecretKeys = allSecretKeys.filter((k) => {
     const meta = requiredEnvVars.find((r) => r.name === k);
-    const effectiveScope = meta?.scope ?? (isExternalSecretName(k) ? "EXTERNAL" : "SANDBOX");
-    return !meta || configuredSecretKeys.includes(k) || (effectiveScope === "EXTERNAL" && !meta.defaultPresent);
+    if (!meta || configuredSecretKeys.includes(k)) return true;
+    if (meta.resolution) return meta.resolution === "USER_REQUIRED";
+    const effectiveScope = meta.scope ?? (isExternalSecretName(k) ? "EXTERNAL" : "SANDBOX");
+    return effectiveScope === "EXTERNAL" && !meta.defaultPresent;
   });
   const autoSecretKeys = allSecretKeys.filter((k) => !externalSecretKeys.includes(k));
   const renderedSecretKeys = showSecretOverrides ? allSecretKeys : externalSecretKeys;
@@ -1164,7 +1167,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                       >
                         <strong className="text-foreground">{k}</strong>
                         <span className="text-muted-foreground">
-                          {meta?.defaultPresent ? "· default in source/compose" : "· generated per run"}
+                          {meta?.resolution === "SANDBOX_INFRA"
+                            ? "· from sandbox infrastructure"
+                            : meta?.defaultPresent
+                              ? "· default in source/compose"
+                              : "· generated per run"}
                           {ownersLabel ? ` (${ownersLabel})` : ""}
                         </span>
                       </span>
