@@ -473,6 +473,43 @@ export class MockAdapter implements ApiAdapter {
         return this.scenarios.filter(
           (s) => s.projectId === contracts.scenarios.input.parse(raw).projectId,
         );
+      case "createScenario": {
+        const p = contracts.createScenario.input.parse(raw);
+        this.find(this.projects, (proj) => proj.id === p.projectId);
+        const created = { id: crypto.randomUUID(), projectId: p.projectId, name: p.name, steps: p.steps, revision: 1 };
+        this.scenarios.push(created);
+        return created;
+      }
+      case "generateRuntimeScenario": {
+        const p = contracts.generateRuntimeScenario.input.parse(raw);
+        this.find(this.projects, (proj) => proj.id === p.projectId);
+        const model = (p.modelId ? this.models.find((m) => m.id === p.modelId) : undefined) ?? (p.snapshotId ? this.models.find((m) => m.snapshotId === p.snapshotId) : undefined) ?? this.models.find((m) => m.projectId === p.projectId) ?? this.models[0];
+        const containerElems = (model?.elements ?? []).filter((e) => e.elementType === "SERVICE_CONTAINER");
+        const runnableServices = (containerElems.length > 0 ? containerElems : (model?.elements ?? [])).map((e) => e.name);
+        const svc = runnableServices[0] ?? "gateway";
+        return {
+          projectId: p.projectId,
+          snapshotId: p.snapshotId ?? model?.snapshotId ?? null,
+          modelId: p.modelId ?? model?.id ?? null,
+          suggestedName: "Auto-generated Architecture Verification Scenario",
+          generatorMode: "SYSTEM_STATIC" as const,
+          aiModelName: "deterministic-static-v2",
+          summary: `Automatically synthesized verification scenario across ${Math.max(1, runnableServices.length)} services.`,
+          steps: runnableServices.slice(0, 6).map((s, idx) => ({
+            id: `step-${idx + 1}`,
+            service: s || svc,
+            method: "GET",
+            path: "/health",
+            expectedStatus: 200,
+            rationale: `Verify ${s || svc} readiness and OpenTelemetry trace capture.`,
+            source: "Preview Preflight",
+            allowClientError: true,
+          })),
+          sampleInputs: {},
+          inheritedEnvKeys: [],
+          runnableServices,
+        };
+      }
       case "saveScenario": {
         const p = contracts.saveScenario.input.parse(raw);
         const scenario = this.find(this.scenarios, (s) => s.id === p.scenarioId);

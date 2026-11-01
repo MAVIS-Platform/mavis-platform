@@ -891,3 +891,58 @@ test("runtimePreflight and buildRuntimeSandboxImages preserve full Step 1 automa
  assert.ok(mockPre.compatible);
  assert.ok(Object.keys(mockPre.recommendedServiceMappings).length>0);
 });
+
+
+test("generateRuntimeScenario, createScenario and saveScenario validate Step 2 contracts across Backend and MockAdapter",async t=>{
+ environment(t);
+ t.mock.method(globalThis,"fetch",async(url,options)=>{
+  assert.ok(String(url).endsWith(`/analyzer/projects/${project}/runtime-plan/scenarios/generate`));
+  assert.equal(options.method,"POST");
+  return Response.json({code:200,data:{
+   projectId:project,
+   snapshotId:snapshot,
+   modelId:model,
+   suggestedName:"Multi-Service Order Verification",
+   generatorMode:"SYSTEM_STATIC",
+   aiModelName:null,
+   summary:"Causal CRUD flow across api-gateway and order-service.",
+   runnableServices:["api-gateway","order-service"],
+   steps:[{
+    id:"step-1",
+    service:"order-service",
+    method:"POST",
+    path:"/api/orders",
+    expectedStatus:201,
+    allowClientError:true,
+    rationale:"Create order using CreateOrderRequest DTO",
+    source:"OrderController.java",
+    bodyReference:"ORDER_SERVICE_BODY_1",
+    envHeaders:[{name:"Authorization",reference:"ORDER_SERVICE_AUTH"}]
+   }],
+   sampleInputs:{ORDER_SERVICE_BODY_1:'{"sku":"SKU-100","quantity":2}',ORDER_SERVICE_AUTH:"Bearer sandbox-verification-token"},
+   inheritedEnvKeys:["DB_PASSWORD","JWT_SECRET"]
+  }});
+ });
+ const genReq={projectId:project,snapshotId:snapshot,modelId:model};
+ const genRes=validateResponse("generateRuntimeScenario",genReq,await executeJava("generateRuntimeScenario",genReq,"jwt",new AbortController().signal));
+ assert.deepEqual(genRes.runnableServices,["api-gateway","order-service"]);
+ assert.equal(genRes.steps[0].allowClientError,true);
+ assert.equal(genRes.steps[0].expectedStatus,201);
+ assert.equal(genRes.sampleInputs.ORDER_SERVICE_BODY_1,'{"sku":"SKU-100","quantity":2}');
+
+ const {MockAdapter}=require("../src/lib/api/mock-adapter.ts");
+ const mock=new MockAdapter("normal",0);
+ const mockGenReq={projectId:"sample-checkout",snapshotId:"source-1"};
+ const mockDraft=validateResponse("generateRuntimeScenario",mockGenReq,await mock.execute("generateRuntimeScenario",mockGenReq));
+ assert.ok(mockDraft.steps.length>0);
+ assert.ok(Array.isArray(mockDraft.runnableServices)&&mockDraft.runnableServices.length>0);
+ assert.equal(mockDraft.steps[0].allowClientError,true);
+
+ const createReq={projectId:"sample-checkout",name:"Saved Step 2 Flow",steps:[JSON.stringify({id:"step-1",service:mockDraft.steps[0].service,method:"POST",path:"/checkout",expectedStatus:201,allowClientError:true,bodyReference:"CHECKOUT_BODY_1"})]};
+ const created=validateResponse("createScenario",createReq,await mock.execute("createScenario",createReq));
+ assert.equal(created.revision,1);
+ const saveReq={...createReq,scenarioId:created.id,expectedRevision:1,name:"Updated Step 2 Flow"};
+ const updated=validateResponse("saveScenario",saveReq,await mock.execute("saveScenario",saveReq));
+ assert.equal(updated.revision,2);
+ assert.equal(updated.name,"Updated Step 2 Flow");
+});

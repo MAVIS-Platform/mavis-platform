@@ -1,6 +1,7 @@
 package com.mavis.analyzer.runtime.service;
 
 import com.mavis.analyzer.runtime.util.SecretRedactor;
+import com.mavis.analyzer.runtime.validator.ComposePreflightValidator;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import lombok.extern.slf4j.Slf4j;
@@ -81,31 +82,60 @@ public class SandboxImageBuilderService {
             workspace = Files.createTempDirectory("mavis-imgbuild-");
             extractOrCopySnapshot(snapshotStoragePath, workspace);
 
-            Path composeFile = findComposeFile(workspace)
-                    .orElseThrow(() -> new BusinessException(ErrorCode.BAD_REQUEST, "No docker-compose.yml found in snapshot"));
-            Path composeDir = composeFile.getParent();
-
-            Object loaded = new Yaml(new SafeConstructor(new LoaderOptions()))
-                    .load(Files.readString(composeFile, StandardCharsets.UTF_8));
-            if (!(loaded instanceof Map<?, ?> rootMap) || !(rootMap.get("services") instanceof Map<?, ?> servicesMap)) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "docker-compose.yml does not contain a valid services mapping");
-            }
-
             Set<String> filter = requestedServices != null && !requestedServices.isEmpty()
                     ? Set.copyOf(requestedServices)
                     : Set.of();
+
+            Optional<Path> composeFileOpt = findComposeFile(workspace);
+            Path baseDir;
+            Map<String, BuildSpec> targetsToBuild = new LinkedHashMap<>();
+
+            if (composeFileOpt.isPresent()) {
+                Path composeFile = composeFileOpt.get();
+                baseDir = composeFile.getParent();
+                Path dotEnvPath = baseDir != null ? baseDir.resolve(".env") : null;
+                Map<String, String> rootDotEnv = (dotEnvPath != null && Files.isRegularFile(dotEnvPath, LinkOption.NOFOLLOW_LINKS) && Files.size(dotEnvPath) <= 65_536)
+                        ? ComposePreflightValidator.parseDotEnvContent(Files.readString(dotEnvPath, StandardCharsets.UTF_8))
+                        : Map.of();
+
+                Object loaded = new Yaml(new SafeConstructor(new LoaderOptions()))
+                        .load(Files.readString(composeFile, StandardCharsets.UTF_8));
+                if (!(loaded instanceof Map<?, ?> rootMap) || !(rootMap.get("services") instanceof Map<?, ?> servicesMap)) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "docker-compose.yml does not contain a valid services mapping");
+                }
+                for (Map.Entry<?, ?> entry : servicesMap.entrySet()) {
+                    String svc = String.valueOf(entry.getKey());
+                    if (!filter.isEmpty() && !filter.contains(svc)) continue;
+                    if (!(entry.getValue() instanceof Map<?, ?> cfg) || !cfg.containsKey("build")) continue;
+                    targetsToBuild.put(svc, parseBuildSpec(cfg.get("build"), rootDotEnv));
+                }
+            } else {
+                baseDir = workspace;
+                List<ComposePreflightValidator.DiscoveredDockerfile> discovered = ComposePreflightValidator.discoverDockerfilesInDirectory(workspace);
+                if (discovered.isEmpty()) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "No docker-compose.yml or Dockerfile found in snapshot");
+                }
+                for (ComposePreflightValidator.DiscoveredDockerfile d : discovered) {
+                    String svc = d.serviceName();
+                    if (discovered.size() == 1 && requestedServices != null && requestedServices.size() == 1) {
+                        svc = requestedServices.get(0);
+                    } else if (!filter.isEmpty() && !filter.contains(svc)) {
+                        String matched = ComposePreflightValidator.matchDetectedService(svc, requestedServices);
+                        if (matched == null) continue;
+                        svc = matched;
+                    }
+                    targetsToBuild.put(svc, new BuildSpec(d.context(), d.dockerfile(), null, Map.of()));
+                }
+            }
 
             Map<String, String> builtImages = new LinkedHashMap<>();
             List<String> errors = new ArrayList<>();
             String projPrefix = projectId.toString().replace("-", "").substring(0, 8).toLowerCase(Locale.ROOT);
 
-            for (Map.Entry<?, ?> entry : servicesMap.entrySet()) {
-                String svc = String.valueOf(entry.getKey());
-                if (!filter.isEmpty() && !filter.contains(svc)) continue;
-                if (!(entry.getValue() instanceof Map<?, ?> cfg) || !cfg.containsKey("build")) continue;
-
-                BuildSpec spec = parseBuildSpec(cfg.get("build"));
-                Path contextDir = composeDir.resolve(spec.context()).normalize();
+            for (Map.Entry<String, BuildSpec> entry : targetsToBuild.entrySet()) {
+                String svc = entry.getKey();
+                BuildSpec spec = entry.getValue();
+                Path contextDir = baseDir.resolve(spec.context()).normalize();
                 Path dockerfile = contextDir.resolve(spec.dockerfile()).normalize();
 
                 if (!contextDir.startsWith(workspace) || !dockerfile.startsWith(workspace)
@@ -120,7 +150,7 @@ public class SandboxImageBuilderService {
                 if (safeSvc.length() > 40) safeSvc = safeSvc.substring(0, 40);
                 String tag = "mavis-sandbox-" + projPrefix + "-" + safeSvc + ":latest";
 
-                String buildErr = runDockerBuild(projectId, tag, dockerfile, contextDir);
+                String buildErr = runDockerBuild(projectId, tag, dockerfile, contextDir, spec.target(), spec.args());
                 if (buildErr != null) {
                     errors.add("Service '" + svc + "': " + buildErr);
                     continue;
@@ -145,16 +175,58 @@ public class SandboxImageBuilderService {
         }
     }
 
-    private record BuildSpec(String context, String dockerfile) {}
+    protected record BuildSpec(String context, String dockerfile, String target, Map<String, String> args) {}
 
-    private static BuildSpec parseBuildSpec(Object buildNode) {
+    static BuildSpec parseBuildSpec(Object buildNode, Map<String, String> rootDotEnv) {
         if (buildNode instanceof Map<?, ?> map) {
-            String ctx = map.get("context") != null ? String.valueOf(map.get("context")).trim() : ".";
-            String df = map.get("dockerfile") != null ? String.valueOf(map.get("dockerfile")).trim() : "Dockerfile";
-            return new BuildSpec(ctx.isEmpty() ? "." : ctx, df.isEmpty() ? "Dockerfile" : df);
+            String ctx = map.get("context") != null ? ComposePreflightValidator.resolvePlaceholders(String.valueOf(map.get("context")).trim(), rootDotEnv) : ".";
+            String df = map.get("dockerfile") != null ? ComposePreflightValidator.resolvePlaceholders(String.valueOf(map.get("dockerfile")).trim(), rootDotEnv) : "Dockerfile";
+            String target = null;
+            if (map.get("target") != null) {
+                String rawTarget = ComposePreflightValidator.resolvePlaceholders(String.valueOf(map.get("target")).trim(), rootDotEnv);
+                if (rawTarget.matches("[A-Za-z0-9._-]{1,64}")) target = rawTarget;
+            }
+            Map<String, String> args = parseBuildArgs(map.get("args"), rootDotEnv);
+            return new BuildSpec(ctx.isEmpty() ? "." : ctx, df.isEmpty() ? "Dockerfile" : df, target, args);
         }
-        String ctx = buildNode != null ? String.valueOf(buildNode).trim() : ".";
-        return new BuildSpec(ctx.isEmpty() ? "." : ctx, "Dockerfile");
+        String ctx = buildNode != null ? ComposePreflightValidator.resolvePlaceholders(String.valueOf(buildNode).trim(), rootDotEnv) : ".";
+        return new BuildSpec(ctx.isEmpty() ? "." : ctx, "Dockerfile", null, Map.of());
+    }
+
+    private static Map<String, String> parseBuildArgs(Object argsNode, Map<String, String> rootDotEnv) {
+        if (argsNode == null) return Map.of();
+        Map<String, String> raw = new LinkedHashMap<>();
+        if (argsNode instanceof Map<?, ?> map) {
+            map.forEach((k, v) -> {
+                if (k != null) {
+                    String key = String.valueOf(k).trim();
+                    String val = v == null ? (rootDotEnv != null ? rootDotEnv.getOrDefault(key, "") : "") : String.valueOf(v).trim();
+                    raw.put(key, val);
+                }
+            });
+        } else if (argsNode instanceof List<?> list) {
+            for (Object item : list) {
+                if (item == null) continue;
+                String s = String.valueOf(item).trim();
+                int eq = s.indexOf('=');
+                if (eq > 0) {
+                    raw.put(s.substring(0, eq).trim(), s.substring(eq + 1).trim());
+                } else if (!s.isEmpty() && rootDotEnv != null && rootDotEnv.containsKey(s)) {
+                    raw.put(s, rootDotEnv.get(s));
+                }
+            }
+        }
+        Map<String, String> safe = new LinkedHashMap<>();
+        for (Map.Entry<String, String> e : raw.entrySet()) {
+            String k = e.getKey();
+            if (!k.matches("[A-Za-z_][A-Za-z0-9_]{0,63}")) continue;
+            String v = ComposePreflightValidator.resolvePlaceholders(e.getValue(), rootDotEnv);
+            if (v == null || v.contains("$") || v.length() > 1024 || v.indexOf('\r') >= 0 || v.indexOf('\n') >= 0 || v.indexOf('\0') >= 0) {
+                continue;
+            }
+            safe.put(k, v);
+        }
+        return safe;
     }
 
     private void extractOrCopySnapshot(Path source, Path targetRoot) throws IOException {
@@ -233,13 +305,35 @@ public class SandboxImageBuilderService {
     }
 
     protected String runDockerBuild(UUID projectId, String tag, Path dockerfile, Path contextDir) {
+        return runDockerBuild(projectId, tag, dockerfile, contextDir, null, Map.of());
+    }
+
+    protected String runDockerBuild(
+            UUID projectId,
+            String tag,
+            Path dockerfile,
+            Path contextDir,
+            String target,
+            Map<String, String> buildArgs) {
         try {
-            Process process = new ProcessBuilder(
+            List<String> cmd = new ArrayList<>(List.of(
                     "docker", "build",
                     "--label", "mavis.sandbox.project=" + projectId,
                     "--tag", tag,
-                    "--file", dockerfile.toString(),
-                    contextDir.toString())
+                    "--file", dockerfile.toString()
+            ));
+            if (target != null && !target.isBlank()) {
+                cmd.add("--target");
+                cmd.add(target);
+            }
+            if (buildArgs != null) {
+                for (Map.Entry<String, String> arg : buildArgs.entrySet()) {
+                    cmd.add("--build-arg");
+                    cmd.add(arg.getKey() + "=" + arg.getValue());
+                }
+            }
+            cmd.add(contextDir.toString());
+            Process process = new ProcessBuilder(cmd)
                     .redirectErrorStream(true)
                     .start();
             var tail = new java.io.ByteArrayOutputStream();

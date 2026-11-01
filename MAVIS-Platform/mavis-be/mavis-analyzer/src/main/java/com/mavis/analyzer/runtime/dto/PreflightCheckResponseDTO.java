@@ -120,15 +120,35 @@ public class PreflightCheckResponseDTO {
     @Builder.Default
     private Map<String, Integer> unifiedManagementPorts = new HashMap<>();
 
+    /** Composite Compose environment templates containing unresolved ${VAR} placeholders (e.g. jdbc:postgresql://db:5432/${DB_NAME}). Server-side only. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Builder.Default
+    private Map<String, Map<String, String>> composeEnvTemplates = new HashMap<>();
+
+    /** Safe absolute container writable paths declared via VOLUME in service Dockerfiles. Server-side only. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Builder.Default
+    private Map<String, List<String>> serviceDockerfileVolumes = new HashMap<>();
+
+    /** Services managing their own DB schema via Flyway or Liquibase migrations. Server-side only. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Builder.Default
+    private java.util.Set<String> migrationManagedServices = new java.util.HashSet<>();
+
     @Data
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     public static class DetectedEndpointDTO {
         private String service;
         private String method;
         private String path;
         private String source;
+        private Integer expectedStatus;
+        private String requestBodyType;
+        private String sampleJsonBody;
+        private Boolean requiresAuth;
     }
 
     @Data

@@ -509,4 +509,237 @@ class RuntimePlanningServiceTest {
                 .isNotBlank()
                 .isEqualTo(stored.getValue().get("POSTGRES_PASSWORD"));
     }
+
+    @Test
+    @DisplayName("STEP 1 100%: Composite ${VAR} templates expand per service using defaults, DB container credentials and relocated secrets")
+    void testStart_ExpandsCompositeEnvTemplatesAndWiresAutoProvisionedSandboxDbSecrets() {
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(configurations.findById(projectId)).thenReturn(Optional.of(savedConfig("order-service")));
+        UUID scenarioId = savedScenario("order-service");
+
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("order-service", "sandbox-postgres"))
+                .composeServices(List.of("order-service", "sandbox-postgres"))
+                .infrastructureServices(List.of("sandbox-postgres"))
+                .serviceDependencies(Map.of("order-service", List.of("sandbox-postgres")))
+                .serviceDatabaseCredentials(Map.of("sandbox-postgres", Map.of(
+                        "POSTGRES_USER", "testseed_user",
+                        "POSTGRES_DB", "testseed",
+                        "POSTGRES_PASSWORD", "ephemeral-pw-123"
+                )))
+                .sandboxDatabaseCredentials(Map.of(
+                        "POSTGRES_USER", "testseed_user",
+                        "POSTGRES_DB", "testseed",
+                        "POSTGRES_PASSWORD", "ephemeral-pw-123"
+                ))
+                .relocatedComposeSecrets(Map.of(
+                        "sandbox-postgres", Map.of("POSTGRES_PASSWORD", "ephemeral-pw-123")
+                ))
+                .composeEnvTemplates(Map.of("order-service", Map.of(
+                        "SPRING_DATASOURCE_URL", "jdbc:postgresql://sandbox-postgres:5432/${DB_NAME}",
+                        "ASYNC_DATABASE_URL", "postgresql://${DB_USERNAME}:${DB_PASSWORD}@sandbox-postgres:5432/${DB_NAME}"
+                )))
+                .requiredEnvVars(List.of(
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder()
+                                .name("DB_NAME")
+                                .service("order-service")
+                                .category("ENV")
+                                .defaultValue("testseed")
+                                .defaultPresent(true)
+                                .build(),
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder()
+                                .name("DB_USERNAME")
+                                .service("order-service")
+                                .category("ENV")
+                                .defaultValue("testseed_user")
+                                .defaultPresent(true)
+                                .build(),
+                        PreflightCheckResponseDTO.RequiredEnvVarDTO.builder()
+                                .name("DB_PASSWORD")
+                                .service("order-service")
+                                .category("DB_SECRET")
+                                .scope("SANDBOX")
+                                .build()
+                ))
+                .build());
+
+        UUID sessionId = UUID.randomUUID();
+        when(runtime.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+        when(runtime.approveAndStartSession(sessionId)).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+
+        planningService.start(projectId, new StartRequest(snapshotId, scenarioId, 1, 1, true, null));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> stored = ArgumentCaptor.forClass(Map.class);
+        verify(environments).store(eq(sessionId), stored.capture());
+        assertThat(stored.getValue())
+                .containsEntry("POSTGRES_PASSWORD", "ephemeral-pw-123")
+                .containsEntry("DB_PASSWORD", "ephemeral-pw-123")
+                .containsEntry("SPRING_DATASOURCE_URL", "jdbc:postgresql://sandbox-postgres:5432/testseed")
+                .containsEntry("ASYNC_DATABASE_URL", "postgresql://testseed_user:ephemeral-pw-123@sandbox-postgres:5432/testseed");
+    }
+
+    @Test
+    @DisplayName("STEP 2 100%: Causal CRUD ordering, infra exclusion, ModelElement-to-Compose normalization, DTO sampleJsonBody & multi-service health fallback")
+    void testGenerateScenario_CausalMultiServiceOrderingExcludesInfraAndSynthesizesDtoPayloads() {
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.empty());
+
+        String gwUuid = UUID.randomUUID().toString();
+        String orderUuid = UUID.randomUUID().toString();
+        String invUuid = UUID.randomUUID().toString();
+
+        PreflightCheckResponseDTO preflight = PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("order-service", "api-gateway", "inventory-service", "orders-db", "sandbox-postgres", "redis"))
+                .composeServices(List.of("order-service", "api-gateway", "inventory-service", "orders-db", "sandbox-postgres", "redis"))
+                .infrastructureServices(List.of("orders-db", "sandbox-postgres", "redis"))
+                .serviceHealthPaths(Map.of("inventory-service", "/actuator/health"))
+                .recommendedServiceMappings(Map.of(
+                        "api-gateway", gwUuid,
+                        "order-service", orderUuid,
+                        "inventory-service", invUuid
+                ))
+                .modelServiceNames(Map.of(
+                        gwUuid, "ApiGateway",
+                        orderUuid, "OrderService",
+                        invUuid, "InventoryService"
+                ))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder().service("orders-db").method("GET").path("/db-internal").source("fake").build(),
+                        DetectedEndpointDTO.builder().service("OrderService").method("GET").path("/actuator/health").source("Actuator").build(),
+                        DetectedEndpointDTO.builder().service("OrderService").method("DELETE").path("/api/orders/{id}").expectedStatus(204).source("OrderController.java").build(),
+                        DetectedEndpointDTO.builder().service("OrderService").method("GET").path("/api/orders/{id}").source("OrderController.java").build(),
+                        DetectedEndpointDTO.builder()
+                                .service("OrderService")
+                                .method("POST")
+                                .path("/api/orders")
+                                .expectedStatus(201)
+                                .requestBodyType("CreateOrderDto")
+                                .sampleJsonBody("{\"sku\":\"SKU-900\",\"quantity\":2}")
+                                .source("OrderController.java")
+                                .build(),
+                        DetectedEndpointDTO.builder().service("ApiGateway").method("POST").path("/api/auth/login").expectedStatus(200).sampleJsonBody("{\"email\":\"user@example.com\",\"password\":\"SandboxPass123!\"}").source("AuthController.java").build()
+                ))
+                .build();
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(preflight);
+
+        GeneratedScenarioDraftView draft = planningService.generateScenario(
+                projectId, new GenerateScenarioRequest(snapshotId, modelId, null));
+
+        assertThat(draft.runnableServices())
+                .containsExactly("order-service", "api-gateway", "inventory-service")
+                .doesNotContain("orders-db", "sandbox-postgres", "redis");
+        assertThat(draft.steps()).extracting(RuntimePlanningService.GeneratedStepDraft::service)
+                .doesNotContain("orders-db", "sandbox-postgres", "redis", "OrderService", "ApiGateway")
+                .contains("api-gateway", "order-service", "inventory-service");
+
+        // Upstream api-gateway auth step runs first
+        assertThat(draft.steps().get(0).service()).isEqualTo("api-gateway");
+        assertThat(draft.steps().get(0).path()).isEqualTo("/api/auth/login");
+        assertThat(draft.steps().get(0).allowClientError()).isTrue();
+
+        // Within order-service: POST /api/orders (seed) runs BEFORE GET /api/orders/{{V0}} and DELETE /api/orders/{{V0}}, and /actuator/health is last
+        List<RuntimePlanningService.GeneratedStepDraft> orderSteps = draft.steps().stream()
+                .filter(s -> "order-service".equals(s.service()))
+                .toList();
+        assertThat(orderSteps.get(0).method()).isEqualTo("POST");
+        assertThat(orderSteps.get(0).path()).isEqualTo("/api/orders");
+        assertThat(orderSteps.get(0).expectedStatus()).isEqualTo(201);
+        assertThat(draft.sampleInputs().get(orderSteps.get(0).bodyReference())).isEqualTo("{\"sku\":\"SKU-900\",\"quantity\":2}");
+
+        int getIdx = orderSteps.indexOf(orderSteps.stream().filter(s -> "GET".equals(s.method()) && s.path().startsWith("/api/orders/")).findFirst().orElseThrow());
+        int delIdx = orderSteps.indexOf(orderSteps.stream().filter(s -> "DELETE".equals(s.method())).findFirst().orElseThrow());
+        assertThat(getIdx).isGreaterThan(0).isLessThan(delIdx);
+        assertThat(orderSteps.get(delIdx).expectedStatus()).isEqualTo(204);
+        assertThat(orderSteps).noneMatch(s -> "/actuator/health".equals(s.path()));
+
+        // inventory-service had 0 business endpoints so it gets 1 health fallback step from serviceHealthPaths for multi-service trace coverage
+        assertThat(draft.steps()).anyMatch(s -> "inventory-service".equals(s.service()) && "/actuator/health".equals(s.path()));
+    }
+
+    @Test
+    @DisplayName("STEP 2 100%: saveScenario enforces HttpScenarioRunner validation & start() normalizes ModelElement service + populates missing protected references")
+    void testSaveScenarioAndStart_EnforcesRunnerStepContractNormalizesModelServiceAndPopulatesMissingProtectedReferences() {
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+
+        // 1. Reject invalid Runner steps early in saveScenario()
+        assertThatThrownBy(() -> planningService.saveScenario(projectId, null,
+                new RuntimePlanningService.ScenarioRequest("Bad Path", List.of(
+                        "{\"id\":\"s1\",\"service\":\"order-service\",\"method\":\"GET\",\"path\":\"/api\\\\orders\",\"expectedStatus\":200}"
+                ), 0))).hasMessageContaining("Invalid or secret-bearing scenario step");
+
+        assertThatThrownBy(() -> planningService.saveScenario(projectId, null,
+                new RuntimePlanningService.ScenarioRequest("Both Bodies", List.of(
+                        "{\"id\":\"s1\",\"service\":\"order-service\",\"method\":\"POST\",\"path\":\"/api/orders\",\"expectedStatus\":201,\"jsonBody\":\"{}\",\"bodyReference\":\"ORDER_BODY\"}"
+                ), 0))).hasMessageContaining("both jsonBody and bodyReference");
+
+        assertThatThrownBy(() -> planningService.saveScenario(projectId, null,
+                new RuntimePlanningService.ScenarioRequest("Forbidden Header", List.of(
+                        "{\"id\":\"s1\",\"service\":\"order-service\",\"method\":\"GET\",\"path\":\"/api/orders\",\"expectedStatus\":200,\"envHeaders\":[{\"name\":\"Host\",\"reference\":\"CUSTOM_HOST\"}]}"
+                ), 0))).hasMessageContaining("Unsupported envHeaders");
+
+        // 2. Save valid scenario referencing ModelElement name ("OrderService") + allowClientError + bodyReference + environmentVariables + envHeaders
+        final RuntimeScenario[] savedHolder = new RuntimeScenario[1];
+        when(scenarios.saveAndFlush(any())).thenAnswer(inv -> {
+            RuntimeScenario sc = inv.getArgument(0);
+            if (sc.getId() == null) sc.setId(UUID.randomUUID());
+            savedHolder[0] = sc;
+            return sc;
+        });
+
+        var savedView = planningService.saveScenario(projectId, null,
+                new RuntimePlanningService.ScenarioRequest("Update Order Flow", List.of(
+                        "{\"id\":\"step-1\",\"service\":\"OrderService\",\"method\":\"PUT\",\"path\":\"/api/orders/{{V0}}\",\"expectedStatus\":200,\"allowClientError\":true,\"bodyReference\":\"ORDER_UPDATE_BODY\",\"environmentVariables\":{\"V0\":\"ORDER_ID\"},\"envHeaders\":[{\"name\":\"Authorization\",\"reference\":\"ORDER_AUTH\"}]}"
+                ), 0));
+        assertThat(savedView.revision()).isEqualTo(1);
+
+        // 3. Start session WITHOUT passing ORDER_UPDATE_BODY, ORDER_ID, or ORDER_AUTH in StartRequest.environment:
+        //    start() must normalize "OrderService" -> "order-service" AND auto-populate all 3 protected references (using parameterized DTO sampleJsonBody!)
+        String orderUuid = UUID.randomUUID().toString();
+        RuntimeConfiguration cfg = savedConfig("order-service");
+        ((ObjectNode) cfg.getProfile()).putObject("serviceMappings").put("order-service", orderUuid);
+        when(configurations.findById(projectId)).thenReturn(Optional.of(cfg));
+        when(scenarios.findById(savedView.id())).thenReturn(Optional.of(savedHolder[0]));
+
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("order-service"))
+                .composeServices(List.of("order-service"))
+                .recommendedServiceMappings(Map.of("order-service", orderUuid))
+                .modelServiceNames(Map.of(orderUuid, "OrderService"))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder()
+                                .service("order-service")
+                                .method("PUT")
+                                .path("/api/orders/{id}")
+                                .sampleJsonBody("{\"status\":\"CONFIRMED\",\"quantity\":5}")
+                                .build()
+                ))
+                .build());
+
+        UUID sessionId = UUID.randomUUID();
+        when(runtime.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+        when(runtime.approveAndStartSession(sessionId)).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).executionStatus("READY_FOR_DISPATCH").build());
+
+        planningService.start(projectId, new StartRequest(snapshotId, savedView.id(), 1, 1, true, Map.of()));
+
+        ArgumentCaptor<com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest> created =
+                ArgumentCaptor.forClass(com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest.class);
+        verify(runtime).createRuntimeSession(created.capture());
+        var exportedStep = created.getValue().getScenarioConfig().path("scenario").path("steps").get(0);
+        assertThat(exportedStep.path("service").asText()).isEqualTo("order-service");
+        assertThat(exportedStep.path("allowClientError").asBoolean()).isTrue();
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> storedEnv = ArgumentCaptor.forClass(Map.class);
+        verify(environments).store(eq(sessionId), storedEnv.capture());
+        assertThat(storedEnv.getValue())
+                .containsEntry("ORDER_UPDATE_BODY", "{\"status\":\"CONFIRMED\",\"quantity\":5}")
+                .containsEntry("ORDER_ID", "1")
+                .containsEntry("ORDER_AUTH", "Bearer sandbox-verification-token");
+    }
 }
