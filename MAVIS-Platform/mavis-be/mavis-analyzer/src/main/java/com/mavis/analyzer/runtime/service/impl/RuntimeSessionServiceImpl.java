@@ -96,6 +96,9 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     private RuntimeConfigurationRepository runtimeConfigurationRepository;
 
     @Autowired(required = false)
+    private com.mavis.analyzer.runtime.service.RuntimeSessionEnvironmentService runtimeSessionEnvironmentService;
+
+    @Autowired(required = false)
     @Lazy
     private RuntimeRunnerDispatcher runtimeRunnerDispatcher;
 
@@ -423,6 +426,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         dto.setServicePorts(ports);
         dto.setServiceStacks(stacks);
         dto.setDetectedEndpoints(endpoints);
+        ComposePreflightValidator.pruneSpeculativeConnectionString(envMap, dbChecks);
         dto.setDatabaseChecks(dbChecks);
         dto.setRequiredEnvVars(new ArrayList<>(envMap.values()));
     }
@@ -943,15 +947,30 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
 
-        // Kiểm tra bắt buộc: composeYaml không rỗng
-        if (composeYaml.isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "composeYaml không được để trống cho run-definition");
-        }
-
         JsonNode scenarioConfig = session.getScenarioConfig();
         JsonNode profileNode = scenarioConfig != null && scenarioConfig.has("profile")
                 ? scenarioConfig.path("profile")
                 : null;
+
+        if (profileNode != null && profileNode.hasNonNull("sandboxCompose") && !profileNode.get("sandboxCompose").asText().isBlank()) {
+            composeYaml = profileNode.get("sandboxCompose").asText();
+        } else if (!composeYaml.isBlank() && composePreflightValidator != null) {
+            Map<String, String> overrides = new LinkedHashMap<>();
+            if (profileNode != null && profileNode.path("serviceImageOverrides").isObject()) {
+                profileNode.path("serviceImageOverrides").fields().forEachRemaining(e -> overrides.put(e.getKey(), e.getValue().asText("")));
+            }
+            PreflightCheckResponseDTO check = composePreflightValidator.validate(composeYaml, overrides);
+            if (check.getRunnerIssues() != null && !check.getRunnerIssues().isEmpty()
+                    && (check.getUnresolvableRunnerIssues() == null || check.getUnresolvableRunnerIssues().isEmpty())
+                    && check.getSandboxComposeYaml() != null && !check.getSandboxComposeYaml().isBlank()) {
+                composeYaml = check.getSandboxComposeYaml();
+            }
+        }
+
+        // Kiểm tra bắt buộc: composeYaml không rỗng
+        if (composeYaml.isBlank()) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "composeYaml không được để trống cho run-definition");
+        }
 
         // Kiểm tra bắt buộc: profileNode là object hợp lệ có collectorImage, instrumentationVolume, applications không rỗng
         if (profileNode == null || !profileNode.isObject()
@@ -1300,15 +1319,36 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     @Override
     public List<String> getConfiguredSecretKeys(UUID projectId) {
         if (projectId == null) return Collections.emptyList();
+        Set<String> keys = new TreeSet<>();
+        if (runtimeConfigurationRepository != null && runtimeSessionEnvironmentService != null) {
+            runtimeConfigurationRepository.findById(projectId).ifPresent(rc -> {
+                if (rc.getProfile() != null && rc.getProfile().hasNonNull("sealedInputs")) {
+                    keys.addAll(runtimeSessionEnvironmentService.unsealProjectInputs(projectId, rc.getProfile().get("sealedInputs").asText()).keySet());
+                }
+            });
+        }
         Map<String, String> store = projectSecrets.get(projectId);
-        if (store == null || store.isEmpty()) return Collections.emptyList();
-        return store.keySet().stream().sorted().collect(Collectors.toList());
+        if (store != null) keys.addAll(store.keySet());
+        return new ArrayList<>(keys);
     }
 
     @Override
     public Map<String, String> getProjectExecutionEnvironment(UUID projectId) {
         if (projectId == null) return Collections.emptyMap();
         Map<String, String> merged = new LinkedHashMap<>();
+        if (runtimeConfigurationRepository != null) {
+            runtimeConfigurationRepository.findById(projectId).ifPresent(rc -> {
+                if (rc.getProfile() != null && rc.getProfile().isObject()) {
+                    JsonNode envNode = rc.getProfile().path("environmentVariables");
+                    if (envNode.isObject()) {
+                        envNode.fields().forEachRemaining(e -> merged.put(e.getKey(), e.getValue().asText("")));
+                    }
+                    if (runtimeSessionEnvironmentService != null && rc.getProfile().hasNonNull("sealedInputs")) {
+                        merged.putAll(runtimeSessionEnvironmentService.unsealProjectInputs(projectId, rc.getProfile().get("sealedInputs").asText()));
+                    }
+                }
+            });
+        }
         RuntimeProjectConfigDTO cfg = projectConfigs.get(projectId);
         if (cfg != null && cfg.getEnvironmentVariables() != null) {
             merged.putAll(cfg.getEnvironmentVariables());
