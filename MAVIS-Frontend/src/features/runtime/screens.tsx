@@ -80,6 +80,8 @@ export interface Step1Draft {
   snapshotId?: string;
   profileId?: string;
   serviceMappings?: Record<string, string>;
+  serviceRoles?: Record<string, "APP" | "INFRA">;
+  serviceImageOverrides?: Record<string, string>;
   envVars?: Record<string, string>;
   secretValues?: Record<string, string>;
   secretReferences?: string[];
@@ -167,6 +169,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [showMappingInputs, setShowMappingInputs] = useState(false);
   const [showEnvInputs, setShowEnvInputs] = useState(false);
   const [showSecretOverrides, setShowSecretOverrides] = useState(false);
+  const [serviceRoles, setServiceRoles] = useState<Record<string, "APP" | "INFRA">>({});
+  const [serviceImageOverrides, setServiceImageOverrides] = useState<Record<string, string>>({});
+  const [showSandboxCompose, setShowSandboxCompose] = useState(false);
 
   useEffect(() => {
     if (preflight.data?.recommendedProfile) {
@@ -210,6 +215,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     if (stored.dismissedSecretKeys && stored.dismissedSecretKeys.length > 0) {
       setDismissedSecretKeys((prev) => Array.from(new Set([...prev, ...stored.dismissedSecretKeys!])));
     }
+    if (stored.serviceRoles && Object.keys(stored.serviceRoles).length > 0) {
+      setServiceRoles((prev) => ({ ...stored.serviceRoles, ...prev }));
+    }
+    if (stored.serviceImageOverrides && Object.keys(stored.serviceImageOverrides).length > 0) {
+      setServiceImageOverrides((prev) => ({ ...stored.serviceImageOverrides, ...prev }));
+    }
   }, [projectId]);
 
   useEffect(() => {
@@ -219,12 +230,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         snapshotId,
         profileId,
         serviceMappings,
+        serviceRoles,
+        serviceImageOverrides,
         envVars,
         secretValues,
         dismissedSecretKeys,
       });
     }
-  }, [projectId, modelId, snapshotId, profileId, serviceMappings, envVars, secretValues, dismissedSecretKeys]);
+  }, [projectId, modelId, snapshotId, profileId, serviceMappings, serviceRoles, serviceImageOverrides, envVars, secretValues, dismissedSecretKeys]);
 
   const rawProfile = (config.data?.profile ?? {}) as Record<string, unknown>;
   const configuredSecretKeys = Array.isArray(rawProfile["configuredSecretKeys"])
@@ -283,18 +296,37 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         }>)
       : []);
   const stringList = (value: unknown) => (Array.isArray(value) ? value.map(String) : []);
+  const stringMap = (value: unknown): Record<string, string> =>
+    typeof value === "object" && value !== null ? (value as Record<string, string>) : {};
   const runnerIssues = preflight.data?.runnerIssues ?? stringList(rawProfile["runnerIssues"]);
   const infrastructureServices = preflight.data?.infrastructureServices ?? stringList(rawProfile["infrastructureServices"]);
-  const serviceHealthPaths =
-    preflight.data?.serviceHealthPaths ??
-    (typeof rawProfile["serviceHealthPaths"] === "object" && rawProfile["serviceHealthPaths"] !== null
-      ? (rawProfile["serviceHealthPaths"] as Record<string, string>)
-      : {});
+  const serviceHealthPaths = preflight.data?.serviceHealthPaths ?? stringMap(rawProfile["serviceHealthPaths"]);
+  const serviceHealthConfidence = preflight.data?.serviceHealthConfidence ?? stringMap(rawProfile["serviceHealthConfidence"]);
+  const serviceHealthReasons = preflight.data?.serviceHealthReasons ?? stringMap(rawProfile["serviceHealthReasons"]);
+  const sandboxComposeYaml =
+    preflight.data?.sandboxComposeYaml ??
+    (typeof rawProfile["sandboxComposeYaml"] === "string" ? rawProfile["sandboxComposeYaml"] : "");
+  const sandboxComposeChanges =
+    preflight.data?.sandboxComposeChanges ?? stringList(rawProfile["sandboxComposeChanges"]);
+  const unresolvableRunnerIssues =
+    preflight.data?.unresolvableRunnerIssues ?? stringList(rawProfile["unresolvableRunnerIssues"]);
 
   useEffect(() => {
     if (rawProfile && typeof rawProfile["serviceMappings"] === "object" && rawProfile["serviceMappings"] !== null) {
       setServiceMappings((prev) => ({
         ...(rawProfile["serviceMappings"] as Record<string, string>),
+        ...prev,
+      }));
+    }
+    if (rawProfile && typeof rawProfile["serviceRoles"] === "object" && rawProfile["serviceRoles"] !== null) {
+      setServiceRoles((prev) => ({
+        ...(rawProfile["serviceRoles"] as Record<string, "APP" | "INFRA">),
+        ...prev,
+      }));
+    }
+    if (rawProfile && typeof rawProfile["serviceImageOverrides"] === "object" && rawProfile["serviceImageOverrides"] !== null) {
+      setServiceImageOverrides((prev) => ({
+        ...(rawProfile["serviceImageOverrides"] as Record<string, string>),
         ...prev,
       }));
     }
@@ -356,10 +388,17 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     });
   }, [detectedVarSignature, databaseChecks.length, snapshotId]);
 
+  const hasSpecificDbVars = requiredEnvVars.some(
+    (v) =>
+      v.name !== "DB_CONNECTION_STRING" &&
+      (v.name.toUpperCase().startsWith("DB_") || v.name.toUpperCase().includes("DATASOURCE")),
+  );
+
   const autoDetectedSecretKeys = Array.from(
     new Set([
       ...requiredEnvVars
         .filter((v) => v.category === "DB_SECRET" || v.category === "SECRET")
+        .filter((v) => !(v.name === "DB_CONNECTION_STRING" && hasSpecificDbVars))
         .map((v) => v.name),
     ]),
   );
@@ -368,21 +407,115 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     new Set([
       ...autoDetectedSecretKeys,
       ...configuredSecretKeys,
-      ...Object.keys(secretValues),
+      ...Object.keys(secretValues).filter((k) => !(k === "DB_CONNECTION_STRING" && hasSpecificDbVars)),
     ]),
   ).filter((k) => !dismissedSecretKeys.includes(k));
+
+  const isExternalSecretName = (name: string) =>
+    /OPENAI|GEMINI|ANTHROPIC|CLAUDE|AZURE|AWS_|GOOGLE|GCP|STRIPE|PAYPAL|TWILIO|SENDGRID|MAILGUN|SMTP|MAIL_|SLACK|GITHUB|DISCORD|FIREBASE|CLOUDINARY|S3_|MAPS|OAUTH|CLIENT_SECRET|API_KEY|APIKEY|ACCESS_KEY|DASHSCOPE|HUGGINGFACE|DEEPSEEK|MISTRAL|COHERE/i.test(
+      name,
+    );
 
   // Sandbox-internal secrets (JWT keys, DB passwords) are generated per run or reused from the sandbox DB container.
   const externalSecretKeys = allSecretKeys.filter((k) => {
     const meta = requiredEnvVars.find((r) => r.name === k);
-    return !meta || configuredSecretKeys.includes(k) || (meta.scope === "EXTERNAL" && !meta.defaultPresent);
+    const effectiveScope = meta?.scope ?? (isExternalSecretName(k) ? "EXTERNAL" : "SANDBOX");
+    return !meta || configuredSecretKeys.includes(k) || (effectiveScope === "EXTERNAL" && !meta.defaultPresent);
   });
   const autoSecretKeys = allSecretKeys.filter((k) => !externalSecretKeys.includes(k));
   const renderedSecretKeys = showSecretOverrides ? allSecretKeys : externalSecretKeys;
 
+  const isInfraRole = (svc: string) =>
+    serviceRoles[svc] ? serviceRoles[svc] === "INFRA" : infrastructureServices.includes(svc);
+  const appServicesCount = activeServices.filter((s) => !isInfraRole(s)).length;
+  const infraServicesCount = activeServices.filter((s) => isInfraRole(s)).length;
+
+  const rawUnresolved =
+    sandboxComposeChanges.length > 0 || Boolean(sandboxComposeYaml) ? unresolvableRunnerIssues : runnerIssues;
+  const effectiveUnresolvedIssues = rawUnresolved.filter((issue) => {
+    const m = /^Service '([^']+)' (?:uses build:|image )/.exec(issue);
+    if (!m) return true;
+    const svc = m[1] ?? "";
+    const override = serviceImageOverrides[svc]?.trim() ?? "";
+    return !/.+@sha256:[0-9a-fA-F]{64}$/.test(override);
+  });
+  const servicesNeedingImage = Array.from(
+    new Set(
+      rawUnresolved
+        .map((issue) => /^Service '([^']+)' (?:uses build:|image )/.exec(issue)?.[1])
+        .filter((s): s is string => Boolean(s)),
+    ),
+  );
+
+  const proceedToStep2 = () => {
+    const combinedSecretRefs = Array.from(
+      new Set([
+        ...secretRefs
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        ...allSecretKeys,
+      ]),
+    ).filter((k) => !dismissedSecretKeys.includes(k));
+    writeStep1Target(projectId, {
+      modelId: modelId || defaultModelId,
+      snapshotId: snapshotId || snapshots.data?.[0]?.id || "",
+      profileId,
+      serviceMappings,
+      serviceRoles,
+      serviceImageOverrides,
+      envVars,
+      secretValues,
+      secretReferences: combinedSecretRefs,
+      dismissedSecretKeys,
+    });
+    router.push(`/scenarios?project=${projectId}`);
+  };
+
+  const isPreflightSecure = preflight.data ? preflight.data.compatible : (config.data?.supported ?? true);
+
   return (
     <div className="space-y-6">
       <RuntimeStepperBanner currentStep={1} projectId={projectId} />
+
+      {/* P3: One-Card Readiness Summary Banner with Immediate Continue CTA */}
+      {(preflight.data || activeServices.length > 0) && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <StatusBadge
+                status={
+                  !isPreflightSecure
+                    ? "Rejected"
+                    : effectiveUnresolvedIssues.length
+                      ? `Needs ${effectiveUnresolvedIssues.length} input(s)`
+                      : sandboxComposeChanges.length > 0
+                        ? "Ready (Auto-Remediated Compose)"
+                        : "Ready for Sandbox Run"
+                }
+                variant={!isPreflightSecure ? "destructive" : effectiveUnresolvedIssues.length ? "warning" : "success"}
+              />
+              <span className="text-xs font-mono text-foreground font-semibold">
+                {appServicesCount} app service(s)
+                {infraServicesCount > 0 ? ` · ${infraServicesCount} infra` : ""} · {detectedEndpoints.length} endpoint(s) ·{" "}
+                {databaseChecks.length} DB binding(s) · 0 required inputs
+              </span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {autoSecretKeys.length > 0
+                ? `${autoSecretKeys.length} sandbox secret(s) (${autoSecretKeys.join(", ")}) are provided automatically per run.`
+                : "All service mappings, ports, and readiness checks are configured automatically."}{" "}
+              {externalSecretKeys.length > 0
+                ? `${externalSecretKeys.length} external key(s) optional.`
+                : ""}
+            </p>
+          </div>
+          <Button type="button" size="sm" onClick={proceedToStep2}>
+            Continue to Step 2: Test Scenarios →
+          </Button>
+        </div>
+      )}
+
       {/* Step 1: Preflight Eligibility & Source Inspection */}
       <DetailPanel title="1. Source Snapshot, API & Database Inspection (Preflight)">
         <p className="text-sm text-muted-foreground">
@@ -460,21 +593,18 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <span className="font-semibold text-sm">Preflight Result:</span>
-                    {(() => {
-                      const secure = preflight.data ? preflight.data.compatible : config.data?.supported;
-                      return (
-                        <StatusBadge
-                          status={
-                            !secure
-                              ? "Rejected"
-                              : runnerIssues.length
-                                ? `Needs changes (${runnerIssues.length})`
-                                : "Ready for sandbox run"
-                          }
-                          variant={!secure ? "destructive" : runnerIssues.length ? "warning" : "success"}
-                        />
-                      );
-                    })()}
+                    <StatusBadge
+                      status={
+                        !isPreflightSecure
+                          ? "Rejected"
+                          : effectiveUnresolvedIssues.length
+                            ? `Needs changes (${effectiveUnresolvedIssues.length})`
+                            : sandboxComposeChanges.length > 0
+                              ? "Ready (Auto-Remediated)"
+                              : "Ready for sandbox run"
+                      }
+                      variant={!isPreflightSecure ? "destructive" : effectiveUnresolvedIssues.length ? "warning" : "success"}
+                    />
                   </div>
                   {(preflight.data?.recommendedProfile || config.data?.profileId) && (
                     <p className="text-xs text-muted-foreground">
@@ -484,16 +614,73 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   )}
                 </div>
 
-                {runnerIssues.length > 0 && (
-                  <div role="alert" className="rounded border border-amber-500/30 bg-amber-500/5 p-3 text-xs space-y-1">
+                {/* P4: Automatic Sandbox Compose Remediation Banner */}
+                {sandboxComposeChanges.length > 0 && (
+                  <div className="rounded border border-sky-500/30 bg-sky-500/5 p-3 text-xs space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-semibold text-sky-400">
+                        ✨ Sandbox Compose Auto-Generated ({sandboxComposeChanges.length} automatic adjustments applied)
+                      </span>
+                      {sandboxComposeYaml && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-[11px]"
+                          onClick={() => setShowSandboxCompose((prev) => !prev)}
+                        >
+                          {showSandboxCompose ? "Hide Sandbox Compose" : "View Generated Sandbox Compose"}
+                        </Button>
+                      )}
+                    </div>
+                    <ul className="list-disc pl-5 space-y-0.5 text-muted-foreground">
+                      {sandboxComposeChanges.slice(0, 6).map((ch, idx) => (
+                        <li key={idx}>{ch}</li>
+                      ))}
+                    </ul>
+                    {showSandboxCompose && sandboxComposeYaml && (
+                      <pre className="mt-2 max-h-48 overflow-auto rounded border bg-background/90 p-2 font-mono text-[11px] text-foreground">
+                        {sandboxComposeYaml}
+                      </pre>
+                    )}
+                  </div>
+                )}
+
+                {effectiveUnresolvedIssues.length > 0 && (
+                  <div role="alert" className="rounded border border-amber-500/30 bg-amber-500/5 p-3 text-xs space-y-2">
                     <p className="font-semibold text-amber-500">
                       The sandbox runner will reject this Compose file until these are fixed:
                     </p>
                     <ul className="list-disc pl-5 space-y-0.5 text-amber-400">
-                      {runnerIssues.map((issue, idx) => (
+                      {effectiveUnresolvedIssues.map((issue, idx) => (
                         <li key={idx}>{issue}</li>
                       ))}
                     </ul>
+                    {servicesNeedingImage.length > 0 && (
+                      <div className="pt-2 space-y-2 border-t border-amber-500/20">
+                        <p className="text-[11px] text-muted-foreground">
+                          Provide a digest-pinned image for services using <code className="font-mono">build:</code> or unpinned tags:
+                        </p>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {servicesNeedingImage.map((svc) => (
+                            <div key={svc} className="flex items-center gap-2">
+                              <span className="w-32 font-mono text-[11px] truncate font-semibold" title={svc}>
+                                {svc}
+                              </span>
+                              <Input
+                                className="flex-1 font-mono text-xs h-8"
+                                placeholder={`ghcr.io/org/${svc}@sha256:...`}
+                                value={serviceImageOverrides[svc] ?? ""}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setServiceImageOverrides((prev) => ({ ...prev, [svc]: val }));
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -699,8 +886,13 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 </div>
               ) : (
                 <div className="flex flex-wrap gap-2 pt-0.5">
-                  {activeServices.map((svc) =>
-                    infrastructureServices.includes(svc) ? (
+                  {activeServices.map((svc) => {
+                    const infra = isInfraRole(svc);
+                    const stack = (serviceStacks[svc] ?? "java").toLowerCase();
+                    const nonInstrumented = !infra && stack !== "java" && stack !== "dotnet";
+                    const confidence = serviceHealthConfidence[svc] ?? "DETECTED";
+                    const reason = serviceHealthReasons[svc] ?? "Readiness probe path";
+                    return infra ? (
                       <div
                         key={svc}
                         title="Started by Compose; not instrumented or health-checked"
@@ -709,27 +901,61 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                         <span className="h-2 w-2 rounded-full bg-slate-500" />
                         <span className="font-semibold">{svc}</span>
                         <span>infrastructure</span>
+                        <button
+                          type="button"
+                          className="ml-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-background text-foreground"
+                          onClick={() => setServiceRoles((prev) => ({ ...prev, [svc]: "APP" }))}
+                          title="Switch role to Application"
+                        >
+                          → App
+                        </button>
                       </div>
                     ) : (
-                    <div
-                      key={svc}
-                      className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs font-mono"
-                    >
-                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                      <span className="font-semibold text-foreground">{svc}</span>
-                      {servicePorts[svc] && (
-                        <span className="text-muted-foreground">:{servicePorts[svc]}</span>
-                      )}
-                      <span className="text-emerald-400">➔</span>
-                      <span className="text-emerald-400 font-semibold">
-                        {serviceMappings[svc] ?? svc}
-                      </span>
-                      <span className="text-muted-foreground" title="Readiness check path">
-                        {serviceHealthPaths[svc] ?? "/health"}
-                      </span>
-                    </div>
-                    ),
-                  )}
+                      <div
+                        key={svc}
+                        className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 text-xs font-mono"
+                      >
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                        <span className="font-semibold text-foreground">{svc}</span>
+                        <span className="rounded bg-background/80 px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                          {stack}
+                        </span>
+                        {servicePorts[svc] && (
+                          <span className="text-muted-foreground">:{servicePorts[svc]}</span>
+                        )}
+                        <span className="text-emerald-400">➔</span>
+                        <span className="text-emerald-400 font-semibold">
+                          {serviceMappings[svc] ?? svc}
+                        </span>
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[10px] ${
+                            confidence === "ASSUMED"
+                              ? "bg-amber-500/15 text-amber-400"
+                              : "bg-emerald-500/15 text-emerald-400"
+                          }`}
+                          title={reason}
+                        >
+                          {confidence === "ASSUMED" ? "⚠" : "✓"} {serviceHealthPaths[svc] ?? "/health"}
+                        </span>
+                        {nonInstrumented && (
+                          <span
+                            className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-400"
+                            title="No auto-instrumentation agent for this runtime stack; calls into this service are traced from callers only"
+                          >
+                            caller-traced
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          className="ml-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-background text-muted-foreground"
+                          onClick={() => setServiceRoles((prev) => ({ ...prev, [svc]: "INFRA" }))}
+                          title="Mark as Infrastructure container (skip healthcheck & agent)"
+                        >
+                          → Infra
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )
             ) : (
@@ -1044,31 +1270,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
           </p>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button
-              type="button"
-              onClick={() => {
-                const combinedSecretRefs = Array.from(
-                  new Set([
-                    ...secretRefs
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                    ...allSecretKeys,
-                  ]),
-                ).filter((k) => !dismissedSecretKeys.includes(k));
-                writeStep1Target(projectId, {
-                  modelId: modelId || defaultModelId,
-                  snapshotId: snapshotId || snapshots.data?.[0]?.id || "",
-                  profileId,
-                  serviceMappings,
-                  envVars,
-                  secretValues,
-                  secretReferences: combinedSecretRefs,
-                  dismissedSecretKeys,
-                });
-                router.push(`/scenarios?project=${projectId}`);
-              }}
-            >
+            <Button type="button" onClick={proceedToStep2}>
               Continue to Step 2: Test Scenarios →
             </Button>
           </div>
@@ -1476,6 +1678,18 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             ...Object.keys(stored.secretValues ?? {}),
           ]),
         ).filter((k) => !(stored.dismissedSecretKeys ?? []).includes(k));
+        const mergedRoles = {
+          ...(rawProf["serviceRoles"] && typeof rawProf["serviceRoles"] === "object"
+            ? (rawProf["serviceRoles"] as Record<string, "APP" | "INFRA">)
+            : {}),
+          ...(stored.serviceRoles ?? {}),
+        };
+        const mergedImageOverrides = {
+          ...(rawProf["serviceImageOverrides"] && typeof rawProf["serviceImageOverrides"] === "object"
+            ? (rawProf["serviceImageOverrides"] as Record<string, string>)
+            : {}),
+          ...(stored.serviceImageOverrides ?? {}),
+        };
         const pinned = await autoSaveConfig.mutateAsync({
           projectId,
           profileId: stored.profileId || config.data?.profileId || "SPRING_BOOT_DOTNET_COMPOSE_V1",
@@ -1483,6 +1697,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           modelId: chosenModel.id,
           profile: {
             serviceMappings: mergedMappings,
+            serviceRoles: mergedRoles,
+            serviceImageOverrides: mergedImageOverrides,
             environmentVariables: mergedEnvVars,
             secretValues: stored.secretValues ?? {},
             secretReferences: mergedSecretRefs,

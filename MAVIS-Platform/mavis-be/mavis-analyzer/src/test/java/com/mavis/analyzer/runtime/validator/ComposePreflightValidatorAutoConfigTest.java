@@ -3,8 +3,12 @@ package com.mavis.analyzer.runtime.validator;
 import com.mavis.analyzer.runtime.dto.PreflightCheckResponseDTO;
 import com.mavis.analyzer.runtime.dto.PreflightCheckResponseDTO.RequiredEnvVarDTO;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,12 +34,13 @@ class ComposePreflightValidatorAutoConfigTest {
         assertThat(dto.getRunnerIssues()).isEmpty();
         assertThat(dto.getServicePorts()).containsEntry("order-service", 8081);
         assertThat(dto.getServiceHealthPaths()).containsEntry("order-service", "/actuator/health/readiness");
+        assertThat(dto.getServiceHealthConfidence()).containsEntry("order-service", "DETECTED");
         assertThat(dto.getInfrastructureServices()).isEmpty();
     }
 
     @Test
-    void typicalDeveloperComposeExplainsEveryRunnerRejection() {
-        PreflightCheckResponseDTO dto = validator.validate("""
+    void typicalDeveloperComposeExplainsIssuesAndGeneratesRunnerReadySandboxCompose() {
+        String rawCompose = """
                 version: "3.8"
                 services:
                   order-service:
@@ -44,13 +49,15 @@ class ComposePreflightValidatorAutoConfigTest {
                       - "9090:8080"
                     environment:
                       - DB_PASSWORD=${DB_PASSWORD}
+                      - SPRING_PROFILES_ACTIVE=${PROFILE:-docker}
                   orders-db:
                     image: postgres:16
                 networks:
                   default: {}
-                """);
+                """;
+        PreflightCheckResponseDTO dto = validator.validate(rawCompose);
 
-        assertThat(dto.isCompatible()).isTrue(); // no privileged/host/socket risk
+        assertThat(dto.isCompatible()).isTrue();
         assertThat(dto.getRunnerIssues())
                 .anyMatch(i -> i.contains("'version'"))
                 .anyMatch(i -> i.contains("'networks'"))
@@ -61,26 +68,91 @@ class ComposePreflightValidatorAutoConfigTest {
                 .anyMatch(i -> i.contains("postgres:16") && i.contains("pinned by digest"));
         assertThat(dto.getServicePorts()).containsEntry("order-service", 8080);
         assertThat(dto.getInfrastructureServices()).containsExactly("orders-db");
+        assertThat(dto.getSandboxComposeChanges()).isNotEmpty();
+        // Only build: remains unresolvable without a user image override; ports, version, networks, list env, ${}, and postgres:16 are auto-fixed!
+        assertThat(dto.getUnresolvableRunnerIssues()).singleElement().satisfies(i -> assertThat(i).contains("uses build:"));
+
+        // Providing the published image for order-service produces a 100% Runner-compatible Compose file
+        PreflightCheckResponseDTO remediated = validator.validate(rawCompose, Map.of(
+                "order-service", "example/order-service@sha256:" + "f".repeat(64)
+        ));
+        assertThat(remediated.getUnresolvableRunnerIssues()).isEmpty();
+        assertThat(remediated.getSandboxComposeYaml()).isNotBlank().doesNotContain("$").doesNotContain("networks:");
+        PreflightCheckResponseDTO recheck = validator.validate(remediated.getSandboxComposeYaml());
+        assertThat(recheck.getRunnerIssues()).isEmpty();
     }
 
     @Test
-    void databaseContainerCredentialsAreCapturedServerSideAndReusedForApplicationVariables() {
+    void databaseContainerCredentialsAreMatchedPerServiceInMultiDbTopologies() {
         PreflightCheckResponseDTO dto = validator.validate("""
                 services:
+                  order-service:
+                    image: example/order@sha256:%s
+                    depends_on:
+                      - orders-db
                   catalog-service:
                     image: example/catalog@sha256:%s
+                    environment:
+                      SPRING_DATASOURCE_URL: jdbc:postgresql://catalog-db:5432/catalog
+                  orders-db:
+                    image: postgres@sha256:%s
+                    environment:
+                      POSTGRES_PASSWORD: orders-secret-pw
                   catalog-db:
                     image: postgres@sha256:%s
                     environment:
-                      POSTGRES_PASSWORD: sandbox-pg
-                """.formatted("b".repeat(64), "c".repeat(64)));
+                      POSTGRES_PASSWORD: catalog-secret-pw
+                """.formatted("1".repeat(64), "2".repeat(64), "3".repeat(64), "4".repeat(64)));
 
-        Map<String, String> credentials = dto.getSandboxDatabaseCredentials();
-        assertThat(credentials).containsEntry("POSTGRES_PASSWORD", "sandbox-pg").containsEntry("POSTGRES_USER", "postgres");
-        assertThat(ComposePreflightValidator.databaseCredentialFor("DB_PASSWORD", credentials)).isEqualTo("sandbox-pg");
-        assertThat(ComposePreflightValidator.databaseCredentialFor("SPRING_DATASOURCE_USERNAME", credentials)).isEqualTo("postgres");
-        assertThat(ComposePreflightValidator.databaseCredentialFor("JWT_SECRET", credentials)).isNull();
+        assertThat(ComposePreflightValidator.databaseCredentialFor("DB_PASSWORD", "order-service", dto)).isEqualTo("orders-secret-pw");
+        assertThat(ComposePreflightValidator.databaseCredentialFor("DB_PASSWORD", "catalog-service", dto)).isEqualTo("catalog-secret-pw");
+        assertThat(ComposePreflightValidator.databaseCredentialFor("SPRING_DATASOURCE_USERNAME", "catalog-service", dto)).isEqualTo("postgres");
+        assertThat(ComposePreflightValidator.databaseCredentialFor("JWT_SECRET", "order-service", dto)).isNull();
         assertThat(ComposePreflightValidator.isInfrastructureService("payment-service", "redis:7")).isFalse();
+    }
+
+    @Test
+    void contextPathActuatorAndTrueStacksAreDetectedFromSource(@TempDir Path tempDir) throws Exception {
+        PreflightCheckResponseDTO dto = PreflightCheckResponseDTO.builder()
+                .detectedServices(List.of("order-service", "gateway-service", "legacy-service"))
+                .servicePorts(new LinkedHashMap<>(Map.of("order-service", 8080, "gateway-service", 8080, "legacy-service", 8080)))
+                .serviceStacks(new LinkedHashMap<>(Map.of("order-service", "java", "gateway-service", "java", "legacy-service", "java")))
+                .build();
+
+        Path orderRes = Files.createDirectories(tempDir.resolve("order-service/src/main/resources"));
+        Files.writeString(orderRes.resolve("application.properties"), """
+                server.port=8085
+                server.servlet.context-path=/orders
+                management.endpoints.web.base-path=/mgmt
+                """);
+        Files.writeString(tempDir.resolve("order-service/pom.xml"), "<project><dependencies><dependency><artifactId>spring-boot-starter-actuator</artifactId></dependency></dependencies></project>");
+        Path orderJava = Files.createDirectories(tempDir.resolve("order-service/src/main/java/demo"));
+        Files.writeString(orderJava.resolve("OrderController.java"), """
+                @RestController
+                @RequestMapping("/api")
+                public class OrderController {
+                    @GetMapping("/items")
+                    public String items() { return "ok"; }
+                }
+                """);
+
+        Path gatewayDir = Files.createDirectories(tempDir.resolve("gateway-service"));
+        Files.writeString(gatewayDir.resolve("package.json"), "{\"name\":\"gateway-service\"}");
+        Files.writeString(gatewayDir.resolve("server.js"), "app.get('/healthz', (req, res) => res.send('ok'));");
+
+        validator.inspectSnapshotSource(tempDir, dto);
+
+        assertThat(dto.getServicePorts()).containsEntry("order-service", 8085);
+        assertThat(dto.getServiceHealthPaths()).containsEntry("order-service", "/orders/mgmt/health");
+        assertThat(dto.getServiceHealthConfidence()).containsEntry("order-service", "DETECTED");
+        assertThat(dto.getDetectedEndpoints()).anyMatch(ep -> "order-service".equals(ep.getService()) && "/orders/api/items".equals(ep.getPath()));
+
+        assertThat(dto.getServiceStacks()).containsEntry("gateway-service", "node");
+        assertThat(dto.getServiceHealthPaths()).containsEntry("gateway-service", "/healthz");
+        assertThat(dto.getServiceHealthConfidence()).containsEntry("gateway-service", "DETECTED");
+
+        assertThat(dto.getServiceHealthPaths()).containsEntry("legacy-service", "/");
+        assertThat(dto.getServiceHealthConfidence()).containsEntry("legacy-service", "ASSUMED");
     }
 
     @Test

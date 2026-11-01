@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -20,8 +21,34 @@ public class RuntimeSessionEnvironmentService {
  public RuntimeSessionEnvironmentService(RuntimeSessionRepository sessions,RunnerServiceAuthGuard runner,ObjectMapper json,@Value("${mavis.runtime.environment-key:}") String key){this.sessions=sessions;this.runner=runner;this.json=json;this.key=key;}
  private BusinessException invalid(String message){return new BusinessException(ErrorCode.BAD_REQUEST,message);}
  private byte[] key(){try{byte[] bytes=Base64.getDecoder().decode(key);if(bytes.length!=32)throw new IllegalArgumentException();return bytes;}catch(Exception e){throw invalid("Protected runtime environment storage is not configured");}}
+ private byte[] projectKey(){try{return key();}catch(Exception ignored){try{return MessageDigest.getInstance("SHA-256").digest(("mavis-project-sealed:"+(key==null?"":key)).getBytes(StandardCharsets.UTF_8));}catch(Exception e){throw invalid("Could not derive project key");}}}
  public boolean isConfigured(){try{key();return runner.isConfigured();}catch(BusinessException ex){return false;}}
  private byte[] scope(RuntimeSession s){return (s.getId()+"|"+s.getSourceSnapshot().getId()+"|"+s.getModelVersion().getId()).getBytes(StandardCharsets.UTF_8);}
+ private byte[] projectScope(UUID projectId){return ("project|"+projectId).getBytes(StandardCharsets.UTF_8);}
+
+ public String sealProjectInputs(UUID projectId,Map<String,String> values){
+  if(projectId==null||values==null||values.isEmpty())return null;
+  try{
+   byte[] plain=json.writeValueAsBytes(values);
+   byte[] nonce=new byte[12];new SecureRandom().nextBytes(nonce);
+   var cipher=Cipher.getInstance("AES/GCM/NoPadding");
+   cipher.init(Cipher.ENCRYPT_MODE,new SecretKeySpec(projectKey(),"AES"),new GCMParameterSpec(128,nonce));
+   cipher.updateAAD(projectScope(projectId));
+   return "v1."+Base64.getEncoder().encodeToString(nonce)+"."+Base64.getEncoder().encodeToString(cipher.doFinal(plain));
+  }catch(Exception e){throw invalid("Could not seal project inputs");}
+ }
+
+ public Map<String,String> unsealProjectInputs(UUID projectId,String sealed){
+  if(projectId==null||sealed==null||sealed.isBlank())return Map.of();
+  try{
+   var parts=sealed.split("\\.");if(parts.length!=3||!parts[0].equals("v1"))return Map.of();
+   var cipher=Cipher.getInstance("AES/GCM/NoPadding");
+   cipher.init(Cipher.DECRYPT_MODE,new SecretKeySpec(projectKey(),"AES"),new GCMParameterSpec(128,Base64.getDecoder().decode(parts[1])));
+   cipher.updateAAD(projectScope(projectId));
+   return json.readValue(cipher.doFinal(Base64.getDecoder().decode(parts[2])),json.getTypeFactory().constructMapType(LinkedHashMap.class,String.class,String.class));
+  }catch(Exception e){return Map.of();}
+ }
+
  @Transactional
  public void store(UUID sessionId,Map<String,String> values){
   if(values==null||values.isEmpty())return;

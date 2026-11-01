@@ -51,14 +51,52 @@ public class PreflightCheckResponseDTO {
     @Builder.Default
     private List<String> infrastructureServices = new ArrayList<>();
 
-    /** Readiness path per application service (compose healthcheck > explicit route > actuator > /health). */
+    /** Readiness path per application service (compose healthcheck > explicit route > actuator > /). */
     @Builder.Default
     private Map<String, String> serviceHealthPaths = new HashMap<>();
+
+    /** DETECTED when backed by Compose healthcheck, Actuator or explicit route; ASSUMED when falling back. */
+    @Builder.Default
+    private Map<String, String> serviceHealthConfidence = new HashMap<>();
+
+    /** Short explanation for each service's readiness probe source. */
+    @Builder.Default
+    private Map<String, String> serviceHealthReasons = new HashMap<>();
+
+    /** Services physically declared in docker-compose.yml (excludes model-only services). */
+    @Builder.Default
+    private List<String> composeServices = new ArrayList<>();
+
+    /** Auto-remediated MAVIS.Runner-compatible docker-compose.yml when raw Compose has fixable runnerIssues. */
+    private String sandboxComposeYaml;
+
+    /** Human-readable transformations applied to produce sandboxComposeYaml. */
+    @Builder.Default
+    private List<String> sandboxComposeChanges = new ArrayList<>();
+
+    /** Runner issues that remain even after automatic sandbox compose remediation (e.g. build: without image override). */
+    @Builder.Default
+    private List<String> unresolvableRunnerIssues = new ArrayList<>();
 
     /** Literal credentials of sandbox database containers (e.g. POSTGRES_PASSWORD). Server-side only, never serialized. */
     @com.fasterxml.jackson.annotation.JsonIgnore
     @Builder.Default
     private Map<String, String> sandboxDatabaseCredentials = new HashMap<>();
+
+    /** Per-DB-container credentials keyed by DB service name. Server-side only. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Builder.Default
+    private Map<String, Map<String, String>> serviceDatabaseCredentials = new HashMap<>();
+
+    /** Service dependencies (depends_on and JDBC host references) keyed by app service name. Server-side only. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Builder.Default
+    private Map<String, List<String>> serviceDependencies = new HashMap<>();
+
+    /** Compose environment variable aliases where container env key differs from ${PLACEHOLDER} name. Server-side only. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Builder.Default
+    private Map<String, Map<String, String>> composeEnvAliases = new HashMap<>();
 
     @Data
     @Builder

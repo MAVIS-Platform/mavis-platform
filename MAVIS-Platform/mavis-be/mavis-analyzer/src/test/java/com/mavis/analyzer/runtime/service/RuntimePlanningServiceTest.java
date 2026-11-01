@@ -293,20 +293,25 @@ class RuntimePlanningServiceTest {
         ReflectionTestUtils.setField(planningService, "runnerCollectorImage", "otel/collector@sha256:" + "d".repeat(64));
         ReflectionTestUtils.setField(planningService, "runnerScenarioImage", "mavis/scenario-runner@sha256:" + "e".repeat(64));
         when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
-                .detectedServices(List.of("order-service", "orders-db"))
+                .detectedServices(List.of("order-service", "orders-db", "model-only-service"))
+                .composeServices(List.of("order-service", "orders-db"))
                 .infrastructureServices(List.of("orders-db"))
                 .servicePorts(Map.of("order-service", 8081, "orders-db", 5432))
                 .serviceHealthPaths(Map.of("order-service", "/actuator/health"))
                 .build());
+        when(environments.sealProjectInputs(eq(projectId), any())).thenReturn("v1.nonce.cipher");
         ObjectNode raw = json.createObjectNode();
         raw.putObject("serviceMappings").put("order-service", "order-service").put("orders-db", "orders-db");
+        raw.putObject("secretValues").put("OPENAI_API_KEY", "sk-live-123");
 
         ObjectNode profile = (ObjectNode) ReflectionTestUtils.invokeMethod(planningService, "normalizeStep1Profile",
                 projectId, snapshotId, "SPRING_BOOT_DOTNET_COMPOSE_V1", raw);
 
         assertThat(profile.path("applications").has("orders-db")).isFalse();
+        assertThat(profile.path("applications").has("model-only-service")).isFalse();
         assertThat(profile.path("applications").path("order-service").path("containerPort").asInt()).isEqualTo(8081);
         assertThat(profile.path("applications").path("order-service").path("readinessPath").asText()).isEqualTo("/actuator/health");
+        assertThat(profile.path("sealedInputs").asText()).isEqualTo("v1.nonce.cipher");
         assertThat(profile.path("collectorImage").asText()).endsWith("d".repeat(64));
         assertThat(profile.path("scenarioRunnerImage").asText()).endsWith("e".repeat(64));
     }
