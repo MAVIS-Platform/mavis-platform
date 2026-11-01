@@ -739,12 +739,12 @@ class RuntimePlanningServiceTest {
         verify(environments).store(eq(sessionId), storedEnv.capture());
         assertThat(storedEnv.getValue())
                 .containsEntry("ORDER_UPDATE_BODY", "{\"status\":\"CONFIRMED\",\"quantity\":5}")
-                .containsEntry("ORDER_ID", "1")
-                .containsEntry("ORDER_AUTH", "Bearer sandbox-verification-token");
+                .containsEntry("ORDER_ID", "1");
+        assertThat(storedEnv.getValue().get("ORDER_AUTH")).startsWith("Bearer eyJ");
     }
 
     @Test
-    @DisplayName("STEP 2 AI: OpenAI sk- key routes to chat/completions with Bearer auth and parses gpt-5-mini JSON")
+    @DisplayName("STEP 2 AI: OpenAI sk- key routes to chat/completions with Bearer auth and parses gpt-5.4 JSON")
     void testGenerateScenario_OpenAiKeyRouting() throws Exception {
         when(projects.findById(projectId)).thenReturn(Optional.of(project));
         when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
@@ -788,7 +788,7 @@ class RuntimePlanningServiceTest {
 
             assertThat(authHeader[0]).isEqualTo("Bearer sk-proj-test-key");
             assertThat(aiDraft.generatorMode()).isEqualTo("AI_ASSISTED");
-            assertThat(aiDraft.aiModelName()).isEqualTo("gpt-5-mini");
+            assertThat(aiDraft.aiModelName()).isEqualTo("gpt-5.4");
             assertThat(aiDraft.suggestedName()).isEqualTo("OpenAI Checkout Flow");
             assertThat(aiDraft.steps()).hasSize(1);
             assertThat(aiDraft.steps().get(0).expectedStatus()).isEqualTo(201);
@@ -818,5 +818,116 @@ class RuntimePlanningServiceTest {
         sig.initVerify(publicKey);
         sig.update("mavis".getBytes(StandardCharsets.UTF_8));
         assertThat(sig.verify(signed)).isTrue();
+    }
+
+    @Test
+    @DisplayName("STEP 2 TOP-DOWN: Stateful extract -> {{VAR}} chaining, Sandbox JWT minting (HS256 & RS256), and dual-compatible jsonBody promotion in start()")
+    void testTopDownStatefulChainingSandboxJwtAndDualRunnerBodyPromotion() throws Exception {
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.empty());
+
+        PreflightCheckResponseDTO preflight = PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("api-gateway", "order-service"))
+                .composeServices(List.of("api-gateway", "order-service"))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder()
+                                .service("api-gateway")
+                                .method("POST")
+                                .path("/api/orders")
+                                .expectedStatus(201)
+                                .requiresAuth(true)
+                                .requiredRoles(List.of("ORDER_MANAGER"))
+                                .sampleJsonBody("{\"sku\":\"SKU-LAPTOP-01\",\"quantity\":1}")
+                                .responseFields(List.of("/id", "/status"))
+                                .journeyRole("PREREQUISITE_SEED")
+                                .fanOutScore(6)
+                                .source("OrderController.java")
+                                .build(),
+                        DetectedEndpointDTO.builder()
+                                .service("order-service")
+                                .method("POST")
+                                .path("/api/payments")
+                                .expectedStatus(200)
+                                .requiresAuth(true)
+                                .sampleJsonBody("{\"orderId\":1,\"amount\":1299.0}")
+                                .journeyRole("CROSS_SERVICE_WORKFLOW")
+                                .fanOutScore(5)
+                                .source("PaymentController.java")
+                                .build(),
+                        DetectedEndpointDTO.builder()
+                                .service("order-service")
+                                .method("GET")
+                                .path("/api/orders/{orderId}")
+                                .expectedStatus(200)
+                                .requiresAuth(true)
+                                .journeyRole("STATE_VERIFICATION")
+                                .source("OrderController.java")
+                                .build()
+                ))
+                .build();
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(preflight);
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of(
+                "JWT_SECRET", "c2FuZGJveC1zZWNyZXQta2V5LTMtYnl0ZXMtbG9uZy1mb3ItaHMyNTYtc2lnbmluZy10ZXN0"
+        ));
+
+        GeneratedScenarioDraftView draft = planningService.generateScenario(
+                projectId, new GenerateScenarioRequest(snapshotId, modelId, null));
+
+        assertThat(draft.aiModelName()).isEqualTo("topdown-journey-v3");
+        assertThat(draft.steps()).hasSize(3);
+
+        // Step 1 seeds order and extracts ORDER_ID -> /id, plus attaches envHeaders Authorization with signed JWT
+        var step1 = draft.steps().get(0);
+        assertThat(step1.path()).isEqualTo("/api/orders");
+        assertThat(step1.extract()).containsEntry("ORDER_ID", "/id");
+        assertThat(step1.envHeaders()).isNotEmpty();
+        String authRef = step1.envHeaders().get(0).get("reference");
+        assertThat(draft.sampleInputs().get(authRef)).startsWith("Bearer eyJ");
+
+        // Step 2 (GET /api/orders/{orderId}) chains {{ORDER_ID}} directly in path!
+        var step2 = draft.steps().get(1);
+        assertThat(step2.path()).isEqualTo("/api/orders/{{ORDER_ID}}");
+
+        // Step 3 (POST /api/payments) chains {{ORDER_ID}} inside its sample body!
+        var step3 = draft.steps().get(2);
+        assertThat(draft.sampleInputs().get(step3.bodyReference())).contains("{{ORDER_ID}}");
+
+        // Now save and start() the scenario: verify that step 3's bodyReference containing {{ORDER_ID}} is promoted to inline jsonBody for pinned runner compatibility!
+        final RuntimeScenario[] savedHolder = new RuntimeScenario[1];
+        when(scenarios.saveAndFlush(any())).thenAnswer(inv -> {
+            RuntimeScenario sc = inv.getArgument(0);
+            if (sc.getId() == null) sc.setId(UUID.randomUUID());
+            savedHolder[0] = sc;
+            return sc;
+        });
+
+        var savedScenarioView = planningService.saveScenario(projectId, null,
+                new RuntimePlanningService.ScenarioRequest("Stateful Journey", List.of(
+                        json.writeValueAsString(step1),
+                        json.writeValueAsString(step2),
+                        json.writeValueAsString(step3)
+                ), 0));
+
+        when(configurations.findById(projectId)).thenReturn(Optional.of(savedConfig("api-gateway", "order-service")));
+        when(scenarios.findById(savedScenarioView.id())).thenReturn(Optional.of(savedHolder[0]));
+        UUID sessionId = UUID.randomUUID();
+        when(runtime.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+        when(runtime.approveAndStartSession(sessionId)).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).executionStatus("READY_FOR_DISPATCH").build());
+
+        planningService.start(projectId, new StartRequest(snapshotId, savedScenarioView.id(), 1, 1, true, draft.sampleInputs()));
+
+        ArgumentCaptor<com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest> created =
+                ArgumentCaptor.forClass(com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest.class);
+        verify(runtime).createRuntimeSession(created.capture());
+        var exportedSteps = created.getValue().getScenarioConfig().path("scenario").path("steps");
+        assertThat(exportedSteps.get(0).path("extract").path("ORDER_ID").asText()).isEqualTo("/id");
+        assertThat(exportedSteps.get(1).path("path").asText()).isEqualTo("/api/orders/{{ORDER_ID}}");
+        // Step 3's bodyReference was promoted to inline jsonBody because it references {{ORDER_ID}}
+        assertThat(exportedSteps.get(2).has("bodyReference")).isFalse();
+        assertThat(exportedSteps.get(2).path("jsonBody").asText()).contains("{{ORDER_ID}}");
     }
 }

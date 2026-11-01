@@ -498,6 +498,7 @@ export const contracts = {
       snapshotId: id.optional(),
       modelId: id.optional(),
       goal: z.string().trim().max(500).optional(),
+      repairSessionId: id.optional(),
     }),
     z.object({
       projectId: id,
@@ -520,6 +521,9 @@ export const contracts = {
           envHeaders: z.array(z.object({ name: z.string(), reference: z.string() })).nullable().optional(),
           bodyReference: z.string().nullable().optional(),
           allowClientError: z.boolean().nullable().optional(),
+          headers: z.record(z.string()).nullable().optional(),
+          extract: z.record(z.string()).nullable().optional(),
+          journeyPhase: z.string().nullable().optional(),
         }),
       ),
       sampleInputs: z.record(z.string()).nullable().optional(),

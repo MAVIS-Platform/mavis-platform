@@ -53,9 +53,15 @@ public class RuntimePlanningService {
  private AiUsageRecorder aiUsageRecorder;
  @Autowired(required = false)
  private SandboxImageBuilderService imageBuilder;
+ @Autowired(required = false)
+ private RuntimeSessionRepository runtimeSessions;
 
  @Value("${mavis.ai.endpoint-url:}")
  private String customAiEndpointUrl;
+ @Value("${mavis.ai.scenario-openai-model:gpt-5.4}")
+ private String scenarioOpenAiModel = "gpt-5.4";
+ @Value("${mavis.ai.scenario-gemini-model:gemini-2.5-pro}")
+ private String scenarioGeminiModel = "gemini-2.5-pro";
 
  @Value("${mavis.runner.collector-image:}")
  private String runnerCollectorImage;
@@ -77,9 +83,12 @@ public class RuntimePlanningService {
  public record StartRequest(@NotNull UUID snapshotId,@NotNull UUID scenarioId,@Min(1) int configurationRevision,@Min(1) int scenarioRevision,@AssertTrue boolean approved,@com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY) Map<String,String> environment){ @Override public String toString(){return "RuntimeStartRequest[snapshotId="+snapshotId+",scenarioId="+scenarioId+",environment=[protected]]";} }
  public record ConfigurationView(UUID projectId,UUID snapshotId,UUID modelId,String profileId,JsonNode profile,int revision,boolean configured,boolean supported,boolean ready,List<String> prerequisites,boolean protectedInputsReady){}
  public record ScenarioView(UUID id,UUID projectId,String name,List<String> steps,int revision){}
- public record GenerateScenarioRequest(UUID snapshotId,UUID modelId,@Size(max=500) String goal){}
- public record GeneratedStepDraft(String id,String service,String method,String path,int expectedStatus,String rationale,String source,Map<String,String> environmentVariables,List<Map<String,String>> envHeaders,String bodyReference,Boolean allowClientError){
-  public GeneratedStepDraft(String id,String service,String method,String path,int expectedStatus,String rationale,String source,Map<String,String> environmentVariables,List<Map<String,String>> envHeaders,String bodyReference){this(id,service,method,path,expectedStatus,rationale,source,environmentVariables,envHeaders,bodyReference,Boolean.TRUE);}
+ public record GenerateScenarioRequest(UUID snapshotId,UUID modelId,@Size(max=500) String goal,UUID repairSessionId){
+  public GenerateScenarioRequest(UUID snapshotId,UUID modelId,String goal){this(snapshotId,modelId,goal,null);}
+ }
+ public record GeneratedStepDraft(String id,String service,String method,String path,int expectedStatus,String rationale,String source,Map<String,String> environmentVariables,List<Map<String,String>> envHeaders,String bodyReference,Boolean allowClientError,Map<String,String> headers,Map<String,String> extract,String journeyPhase){
+  public GeneratedStepDraft(String id,String service,String method,String path,int expectedStatus,String rationale,String source,Map<String,String> environmentVariables,List<Map<String,String>> envHeaders,String bodyReference,Boolean allowClientError){this(id,service,method,path,expectedStatus,rationale,source,environmentVariables,envHeaders,bodyReference,allowClientError,null,null,null);}
+  public GeneratedStepDraft(String id,String service,String method,String path,int expectedStatus,String rationale,String source,Map<String,String> environmentVariables,List<Map<String,String>> envHeaders,String bodyReference){this(id,service,method,path,expectedStatus,rationale,source,environmentVariables,envHeaders,bodyReference,Boolean.TRUE,null,null,null);}
  }
  public record GeneratedScenarioDraftView(UUID projectId,UUID snapshotId,UUID modelId,String suggestedName,String generatorMode,String aiModelName,String summary,List<GeneratedStepDraft> steps,Map<String,String> sampleInputs,List<String> inheritedEnvKeys,List<String> runnableServices){
   public GeneratedScenarioDraftView(UUID projectId,UUID snapshotId,UUID modelId,String suggestedName,String generatorMode,String aiModelName,String summary,List<GeneratedStepDraft> steps,Map<String,String> sampleInputs,List<String> inheritedEnvKeys){this(projectId,snapshotId,modelId,suggestedName,generatorMode,aiModelName,summary,steps,sampleInputs,inheritedEnvKeys,List.of());}
@@ -404,6 +413,7 @@ public class RuntimePlanningService {
   List<String> relationshipSummaries=new ArrayList<>();
   Set<String> connectedServices=new LinkedHashSet<>();
   Set<String> upstreamServices=new LinkedHashSet<>();
+  Map<String,Set<String>> c4OutboundByService=new LinkedHashMap<>();
   for(String svc:allowedServices){
    String low=svc.toLowerCase(Locale.ROOT);
    if(low.contains("gateway")||low.contains("bff")||low.equals("edge")||low.startsWith("edge-"))upstreamServices.add(svc);
@@ -421,16 +431,25 @@ public class RuntimePlanningService {
       connectedServices.add(resolvedSrc);
       if("GATEWAY_ROUTE".equalsIgnoreCase(rel.getRelationType())||"SERVICE_HTTP_CALL".equalsIgnoreCase(rel.getRelationType())){
        upstreamServices.add(resolvedSrc);
+       if(resolvedTgt!=null&&!resolvedSrc.equals(resolvedTgt)){
+        c4OutboundByService.computeIfAbsent(resolvedSrc,k->new LinkedHashSet<>()).add(resolvedTgt);
+       }
       }
      }
      if(resolvedTgt!=null)connectedServices.add(resolvedTgt);
-     relationshipSummaries.add((resolvedSrc!=null?resolvedSrc:sName)+" -> "+(resolvedTgt!=null?resolvedTgt:tName)+" ("+rel.getRelationType()+")");
+     String propHint="";
+     if(rel.getProperties()!=null&&rel.getProperties().isObject()){
+      String hm=rel.getProperties().path("httpMethod").asText("");
+      String hp=rel.getProperties().path("httpPath").asText("");
+      if(!hm.isBlank()||!hp.isBlank())propHint=" ["+hm+" "+hp+"]";
+     }
+     relationshipSummaries.add((resolvedSrc!=null?resolvedSrc:sName)+" -> "+(resolvedTgt!=null?resolvedTgt:tName)+" ("+rel.getRelationType()+propHint+")");
     }
    }
   }
   String fallbackService=allowedServices.stream().findFirst().orElse("gateway");
 
-  // Filter & order candidate endpoints deterministically with causal CRUD & multi-service priority
+  // Filter & order candidate endpoints deterministically with top-down journey, causal CRUD & multi-service priority
   List<DetectedEndpointDTO> candidates=new ArrayList<>();
   Set<String> seenKeys=new HashSet<>();
   for(DetectedEndpointDTO ep:rawEndpoints){
@@ -442,6 +461,15 @@ public class RuntimePlanningService {
    if(!Set.of("GET","POST","PUT","PATCH","DELETE").contains(verb))continue;
    String key=svc+":"+verb+":"+ep.getPath();
    if(seenKeys.add(key)){
+    Set<String> targets=new LinkedHashSet<>();
+    if(ep.getDownstreamTargets()!=null){
+     for(String t:ep.getDownstreamTargets()){
+      String rt=resolveServiceToAllowed(t,null,allowedServices,savedProfile,pre);
+      if(rt!=null&&!rt.equals(svc))targets.add(rt);
+     }
+    }
+    if(c4OutboundByService.containsKey(svc))targets.addAll(c4OutboundByService.get(svc));
+    int fanOut=ep.getFanOutScore()!=null?ep.getFanOutScore():(1+targets.size()*2+(upstreamServices.contains(svc)?2:0));
     candidates.add(DetectedEndpointDTO.builder()
       .service(svc)
       .method(verb)
@@ -449,8 +477,15 @@ public class RuntimePlanningService {
       .source(ep.getSource())
       .expectedStatus(ep.getExpectedStatus())
       .requestBodyType(ep.getRequestBodyType())
+      .responseBodyType(ep.getResponseBodyType())
       .sampleJsonBody(ep.getSampleJsonBody())
       .requiresAuth(ep.getRequiresAuth())
+      .requiredRoles(ep.getRequiredRoles())
+      .responseFields(ep.getResponseFields())
+      .validationHints(ep.getValidationHints())
+      .downstreamTargets(targets.isEmpty()?null:new ArrayList<>(targets))
+      .fanOutScore(fanOut)
+      .journeyRole(ep.getJourneyRole())
       .build());
    }
   }
@@ -472,6 +507,9 @@ public class RuntimePlanningService {
    int phaseA=causalEndpointPhase(a,crudResourceRoots);
    int phaseB=causalEndpointPhase(b,crudResourceRoots);
    if(phaseA!=phaseB)return Integer.compare(phaseA,phaseB);
+   int fanA=a.getFanOutScore()!=null?a.getFanOutScore():0;
+   int fanB=b.getFanOutScore()!=null?b.getFanOutScore():0;
+   if(fanA!=fanB)return Integer.compare(fanB,fanA);
    boolean paramA=PATH_PARAM_PATTERN.matcher(a.getPath()).find();
    boolean paramB=PATH_PARAM_PATTERN.matcher(b.getPath()).find();
    if(paramA!=paramB)return paramA?1:-1;
@@ -480,7 +518,8 @@ public class RuntimePlanningService {
   candidates.sort(causalComparator);
 
   // Inherited Step 1 environment keys
-  Set<String> inheritedKeys=new LinkedHashSet<>(runtime.getProjectExecutionEnvironment(id).keySet());
+  Map<String,String> step1EnvMap=runtime.getProjectExecutionEnvironment(id);
+  Set<String> inheritedKeys=new LinkedHashSet<>(step1EnvMap!=null?step1EnvMap.keySet():Set.of());
   if(savedProfile!=null){
    JsonNode envNode=savedProfile.path("environmentVariables");
    if(envNode.isObject())envNode.fieldNames().forEachRemaining(inheritedKeys::add);
@@ -490,15 +529,17 @@ public class RuntimePlanningService {
 
   Map<String,String> sampleInputs=new LinkedHashMap<>();
   Map<String,String> healthPaths=(pre!=null&&pre.getServiceHealthPaths()!=null)?pre.getServiceHealthPaths():Map.of();
-  List<GeneratedStepDraft> staticSteps=buildDeterministicSteps(candidates,allowedServices,upstreamServices,connectedServices,healthPaths,causalComparator,sampleInputs);
+  String sandboxBearer=resolveOrMintPreviewBearerToken(id,savedProfile,pre,candidates);
+  List<GeneratedStepDraft> staticSteps=buildDeterministicSteps(candidates,allowedServices,upstreamServices,connectedServices,healthPaths,causalComparator,sampleInputs,sandboxBearer);
   List<String> runnableList=new ArrayList<>(allowedServices);
 
+  String repairFeedback=buildRepairFeedbackSummary(id,r!=null?r.repairSessionId():null,allowedServices);
   String goal=r!=null&&r.goal()!=null?SecretRedactor.redactString(r.goal().trim()):"";
   Optional<String> maybeKey=apiKeyProvider!=null?apiKeyProvider.resolveApiKey():Optional.empty();
   if(maybeKey.isPresent()&&!candidates.isEmpty()){
    try{
     GeneratedScenarioDraftView aiDraft=callAiScenarioGenerator(
-      id,snapshotId,modelId,maybeKey.get(),goal,allowedServices,savedProfile,pre,candidates,relationshipSummaries,new ArrayList<>(inheritedKeys),runnableList);
+      id,snapshotId,modelId,maybeKey.get(),goal,repairFeedback,sandboxBearer,allowedServices,savedProfile,pre,candidates,relationshipSummaries,new ArrayList<>(inheritedKeys),runnableList);
     if(aiDraft!=null&&!aiDraft.steps().isEmpty()){
      return aiDraft;
     }
@@ -515,7 +556,7 @@ public class RuntimePlanningService {
     id,snapshotId,modelId,
     "Auto-generated Architecture Verification Scenario",
     "SYSTEM_STATIC",
-    "deterministic-static-v2",
+    "topdown-journey-v3",
     summary,
     staticSteps,
     sampleInputs,
@@ -531,7 +572,8 @@ public class RuntimePlanningService {
    Set<String> connectedServices,
    Map<String,String> serviceHealthPaths,
    Comparator<DetectedEndpointDTO> causalComparator,
-   Map<String,String> sampleInputs){
+   Map<String,String> sampleInputs,
+   String sandboxBearer){
   List<DetectedEndpointDTO> business=sortedCandidates.stream().filter(ep->!isHealthProbePath(ep.getPath())).toList();
   List<DetectedEndpointDTO> healthOnly=sortedCandidates.stream().filter(ep->isHealthProbePath(ep.getPath())).toList();
 
@@ -577,23 +619,53 @@ public class RuntimePlanningService {
   selected.addAll(pickedSet);
   selected.sort(causalComparator);
 
+  Map<String,String> extractedByResource=new LinkedHashMap<>();
+  boolean hasExtractedAuthToken=false;
   List<GeneratedStepDraft> steps=new ArrayList<>();
   int idx=1;
   for(DetectedEndpointDTO ep:selected){
    String serviceKey=safeServiceEnvPrefix(ep.getService());
+   String resRoot=resourceEntityToken(ep.getPath());
+   Map<String,String> stepExtract=new LinkedHashMap<>();
+   String phase=ep.getJourneyRole()!=null?ep.getJourneyRole():inferJourneyPhase(ep);
+
+   // Tier A Auth extraction when auth endpoint declares a token field in responseFields
+   if("AUTH_ENTRY".equals(phase)&&ep.getResponseFields()!=null){
+    String tokPtr=findMatchingPointer(ep.getResponseFields(),List.of("accesstoken","access_token","token","jwt","idtoken"));
+    if(tokPtr!=null){
+     stepExtract.put("AUTH_TOKEN",tokPtr);
+     hasExtractedAuthToken=true;
+    }
+   }
+
    Map<String,String> stepVars=new LinkedHashMap<>();
    StringBuffer rewrittenPath=new StringBuffer();
    Matcher m=PATH_PARAM_PATTERN.matcher(ep.getPath());
    while(m.find()){
     String param=m.group(1);
-    String alias="V"+stepVars.size();
-    String envName=(serviceKey+"_"+param.replaceAll("[^A-Za-z0-9]","_").toUpperCase(Locale.ROOT));
-    if(envName.length()>60)envName=envName.substring(0,60);
-    stepVars.put(alias,envName);
-    sampleInputs.putIfAbsent(envName,inferSampleParamValue(param));
-    m.appendReplacement(rewrittenPath,"{{"+alias+"}}");
+    String chainedVar=resolveChainedVariableForParam(param,resRoot,extractedByResource);
+    if(chainedVar!=null){
+     m.appendReplacement(rewrittenPath,"{{"+chainedVar+"}}");
+    }else{
+     String alias="V"+stepVars.size();
+     String envName=(serviceKey+"_"+param.replaceAll("[^A-Za-z0-9]","_").toUpperCase(Locale.ROOT));
+     if(envName.length()>60)envName=envName.substring(0,60);
+     stepVars.put(alias,envName);
+     sampleInputs.putIfAbsent(envName,inferSampleParamValue(param));
+     m.appendReplacement(rewrittenPath,"{{"+alias+"}}");
+    }
    }
    m.appendTail(rewrittenPath);
+
+   // Seed/Workflow POST extraction when responseFields confirms an id/code pointer
+   if("POST".equals(ep.getMethod())&&!"AUTH_ENTRY".equals(phase)&&ep.getResponseFields()!=null&&!resRoot.isEmpty()){
+    String idPtr=findMatchingPointer(ep.getResponseFields(),List.of("id",resRoot.toLowerCase(Locale.ROOT)+"id","code","sku","orderid","productid"));
+    if(idPtr!=null){
+     String varName=toScenarioEnvKey(resRoot+"_ID");
+     stepExtract.put(varName,idPtr);
+     extractedByResource.putIfAbsent(resRoot,varName);
+    }
+   }
 
    String bodyRef=null;
    if(Set.of("POST","PUT","PATCH").contains(ep.getMethod())){
@@ -601,7 +673,20 @@ public class RuntimePlanningService {
     String candidateBody=isValidJsonObject(ep.getSampleJsonBody())
       ?SecretRedactor.redactString(ep.getSampleJsonBody())
       :inferSampleJsonBody(ep.getPath());
+    candidateBody=injectChainedVariablesIntoBody(candidateBody,extractedByResource);
     sampleInputs.putIfAbsent(bodyRef,candidateBody);
+   }
+
+   Map<String,String> stepHeaders=null;
+   List<Map<String,String>> stepEnvHeaders=null;
+   if(Boolean.TRUE.equals(ep.getRequiresAuth())&&!"AUTH_ENTRY".equals(phase)){
+    if(hasExtractedAuthToken){
+     stepHeaders=Map.of("Authorization","Bearer {{AUTH_TOKEN}}");
+    }else if(sandboxBearer!=null){
+     String authRef=serviceKey+"_AUTHORIZATION";
+     stepEnvHeaders=List.of(Map.of("name","Authorization","reference",authRef));
+     sampleInputs.putIfAbsent(authRef,sandboxBearer);
+    }
    }
 
    int expectedStatus=(ep.getExpectedStatus()!=null&&ep.getExpectedStatus()>=100&&ep.getExpectedStatus()<=599)
@@ -626,9 +711,12 @@ public class RuntimePlanningService {
      rationale,
      ep.getSource()!=null?ep.getSource():"Step 1 Preflight",
      stepVars.isEmpty()?null:stepVars,
-     null,
+     stepEnvHeaders,
      bodyRef,
-     Boolean.TRUE
+     Boolean.TRUE,
+     stepHeaders,
+     stepExtract.isEmpty()?null:stepExtract,
+     phase
    ));
    idx++;
   }
@@ -641,6 +729,8 @@ public class RuntimePlanningService {
    UUID modelId,
    String apiKey,
    String goal,
+   String repairFeedback,
+   String sandboxBearer,
    Set<String> allowedServices,
    JsonNode savedProfile,
    PreflightCheckResponseDTO pre,
@@ -652,25 +742,44 @@ public class RuntimePlanningService {
   Map<String,DetectedEndpointDTO> endpointLookup=new LinkedHashMap<>();
   for(DetectedEndpointDTO ep:candidates){
    endpointLookup.putIfAbsent(ep.getService()+":"+ep.getMethod()+":"+ep.getPath(),ep);
+   endpointLookup.putIfAbsent(canonicalRouteKey(ep.getService(),ep.getMethod(),ep.getPath()),ep);
   }
 
   StringBuilder prompt=new StringBuilder();
-  prompt.append("You are an architecture runtime verification planner for MAVIS.\n");
-  prompt.append("Build an ordered, causal HTTP test scenario (max 10 steps) using ONLY the allowed services and discovered endpoints below.\n");
-  prompt.append("Order causally: Auth/Seed POST before GET list/detail before PUT/PATCH before DELETE, prioritizing gateway/upstream services to maximize cross-service OpenTelemetry trace coverage across all allowed services.\n");
+  prompt.append("You are an elite Principal Distributed Systems Architect and Verification Planner for MAVIS.\n");
+  prompt.append("Design a TOP-DOWN, STATEFUL, END-TO-END Business Journey scenario (max 10 steps) using ONLY the allowed services and discovered endpoints below.\n");
+  prompt.append("CRITICAL DESIGN RULES:\n");
+  prompt.append("1. DO NOT generate isolated, naive per-table CRUD loops (avoid calling DELETE on seeded entities right after creating them unless testing a compensation/cancellation workflow).\n");
+  prompt.append("2. Follow a Top-Down Business Journey across services:\n");
+  prompt.append("   - Phase 0 (AUTH_ENTRY): If auth/register/login endpoints exist and downstream routes require auth, authenticate first and extract AUTH_TOKEN.\n");
+  prompt.append("   - Phase 1 (PREREQUISITE_SEED): Seed prerequisite master data (e.g. organization/department/catalog/inventory/account) via POST and extract created IDs/codes using `extract`.\n");
+  prompt.append("   - Phase 2 (CROSS_SERVICE_WORKFLOW): Invoke high-fan-out Gateway/Orchestrator business actions (e.g. checkout, order creation, payment, transfer, booking) referencing extracted `{{VAR}}` values in `path` or `sampleJsonBody` to trigger cross-service OpenTelemetry spans.\n");
+  prompt.append("   - Phase 3 (STATE_VERIFICATION): Verify side effects and state transitions across downstream services using GET with `{{VAR}}`.\n");
+  prompt.append("3. Stateful Variable Chaining: When a POST step returns JSON fields (see `responseFields`), you may attach `\"extract\": {\"ORDER_ID\": \"/id\"}` (variable names MUST match `[A-Z][A-Z0-9_]*`, pointers MUST start with `/`), and reference `{{ORDER_ID}}` in subsequent steps' `path`, `sampleJsonBody`, or `headers`.\n");
+  prompt.append("4. Respect `validationHints` and `dtoSample` so every POST/PUT/PATCH body passes Bean Validation (@NotBlank, @Email, @Positive, etc.) on the first try.\n");
   prompt.append("Allowed services: ").append(String.join(", ",allowedServices)).append("\n");
   if(!relationships.isEmpty()){
-   prompt.append("Architecture relationships:\n");
-   relationships.stream().limit(20).forEach(r->prompt.append("- ").append(SecretRedactor.redactString(r)).append("\n"));
+   prompt.append("Architecture C4 relationships (target these cross-service paths):\n");
+   relationships.stream().limit(25).forEach(r->prompt.append("- ").append(SecretRedactor.redactString(r)).append("\n"));
   }
-  prompt.append("Discovered endpoints:\n");
-  candidates.stream().limit(35).forEach(ep->{
+  if(repairFeedback!=null&&!repairFeedback.isBlank()){
+   prompt.append("Previous Run Diagnostic Feedback (SELF-HEAL these failures and cover unverified services):\n").append(repairFeedback).append("\n");
+  }
+  prompt.append("Discovered endpoints (ordered by top-down topology & fan-out):\n");
+  candidates.stream().limit(40).forEach(ep->{
    prompt.append("- service=").append(ep.getService())
      .append(", method=").append(ep.getMethod())
      .append(", path=").append(ep.getPath());
+   if(ep.getJourneyRole()!=null)prompt.append(", role=").append(ep.getJourneyRole());
+   if(ep.getFanOutScore()!=null)prompt.append(", fanOut=").append(ep.getFanOutScore());
+   if(ep.getDownstreamTargets()!=null&&!ep.getDownstreamTargets().isEmpty())prompt.append(", calls=").append(String.join("|",ep.getDownstreamTargets()));
+   if(Boolean.TRUE.equals(ep.getRequiresAuth()))prompt.append(", requiresAuth=true");
+   if(ep.getRequiredRoles()!=null&&!ep.getRequiredRoles().isEmpty())prompt.append(", roles=").append(String.join("|",ep.getRequiredRoles()));
    if(ep.getExpectedStatus()!=null)prompt.append(", expectedStatus=").append(ep.getExpectedStatus());
    if(ep.getRequestBodyType()!=null)prompt.append(", bodyDto=").append(ep.getRequestBodyType());
    if(ep.getSampleJsonBody()!=null)prompt.append(", dtoSample=").append(SecretRedactor.redactString(ep.getSampleJsonBody()));
+   if(ep.getValidationHints()!=null&&!ep.getValidationHints().isEmpty())prompt.append(", validationHints=").append(SecretRedactor.redactString(ep.getValidationHints().toString()));
+   if(ep.getResponseFields()!=null&&!ep.getResponseFields().isEmpty())prompt.append(", responseFields=").append(String.join("|",ep.getResponseFields()));
    prompt.append(", source=").append(ep.getSource()!=null?ep.getSource():"snapshot").append("\n");
   });
   if(!goal.isBlank()){
@@ -680,76 +789,107 @@ public class RuntimePlanningService {
     Return strict JSON ONLY (no markdown fences) matching this structure:
     {
       "suggestedName": "Scenario title",
-      "summary": "Brief English explanation of why this scenario verifies the architecture",
+      "summary": "Brief explanation of the top-down business journey and cross-service trace coverage",
       "steps": [
         {
           "service": "must be one of Allowed services",
           "method": "GET|POST|PUT|PATCH|DELETE",
-          "path": "/concrete/path/with/realistic/sample/id/like/1",
+          "path": "/concrete/path/or/chained/{{ENTITY_ID}}",
           "expectedStatus": 200,
-          "rationale": "English 1-line reason for this step",
-          "sampleJsonBody": "{\\"optional\\":\\"sample\\"}"
+          "journeyPhase": "AUTH_ENTRY|PREREQUISITE_SEED|CROSS_SERVICE_WORKFLOW|STATE_VERIFICATION",
+          "rationale": "1-line architectural reason for this step",
+          "sampleJsonBody": "{\\"optional\\":\\"sample\\"}",
+          "headers": {"Authorization": "Bearer {{AUTH_TOKEN}}"},
+          "extract": {"ENTITY_ID": "/id"}
         }
       ]
     }
-    Replace any path parameters like {id} or {orderId} directly with realistic sample values (e.g. 1, SKU-LAPTOP-01) and provide valid JSON matching dtoSample fields for POST/PUT/PATCH requests.
+    Use {{VAR}} ONLY for variables extracted by an earlier step's `extract` map; replace any other path parameters like {id} directly with realistic sample values (e.g. 1, SKU-LAPTOP-01).
     """);
 
   boolean hasCustomUrl=customAiEndpointUrl!=null&&!customAiEndpointUrl.isBlank();
   boolean useOpenAi=apiKey!=null&&apiKey.startsWith("sk-");
-  String rawText;
-  String aiModelName;
+  String redactedPrompt=SecretRedactor.redactString(prompt.toString());
+  String rawText=null;
+  String aiModelName=null;
   if(useOpenAi){
-   ObjectNode openAiReq=json.createObjectNode();
-   openAiReq.put("model","gpt-5-mini");
-   openAiReq.put("reasoning_effort","minimal");
-   openAiReq.putObject("response_format").put("type","json_object");
-   ArrayNode messages=openAiReq.putArray("messages");
-   messages.addObject().put("role","user").put("content",SecretRedactor.redactString(prompt.toString()));
-   String endpoint=hasCustomUrl?customAiEndpointUrl:"https://api.openai.com/v1/chat/completions";
-   HttpRequest httpReq=HttpRequest.newBuilder()
-     .uri(URI.create(endpoint))
-     .timeout(Duration.ofSeconds(18))
-     .header("Content-Type","application/json")
-     .header("Authorization","Bearer "+apiKey)
-     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(openAiReq)))
-     .build();
-   HttpResponse<String> resp=httpClient.send(httpReq,HttpResponse.BodyHandlers.ofString());
-   if(resp.statusCode()<200||resp.statusCode()>=300){
-    throw new IllegalStateException("LLM status "+resp.statusCode());
+   String primaryModel=(scenarioOpenAiModel!=null&&!scenarioOpenAiModel.isBlank())?scenarioOpenAiModel.trim():"gpt-5.4";
+   List<String> modelChain=primaryModel.equals("gpt-5-mini")?List.of("gpt-5-mini"):List.of(primaryModel,"gpt-5-mini");
+   Exception lastErr=null;
+   for(String candidateModel:modelChain){
+    try{
+     ObjectNode openAiReq=json.createObjectNode();
+     openAiReq.put("model",candidateModel);
+     openAiReq.put("reasoning_effort",candidateModel.startsWith("gpt-5.4")?"medium":"minimal");
+     openAiReq.putObject("response_format").put("type","json_object");
+     ArrayNode messages=openAiReq.putArray("messages");
+     messages.addObject().put("role","user").put("content",redactedPrompt);
+     String endpoint=hasCustomUrl?customAiEndpointUrl:"https://api.openai.com/v1/chat/completions";
+     HttpRequest httpReq=HttpRequest.newBuilder()
+       .uri(URI.create(endpoint))
+       .timeout(Duration.ofSeconds(25))
+       .header("Content-Type","application/json")
+       .header("Authorization","Bearer "+apiKey)
+       .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(openAiReq)))
+       .build();
+     HttpResponse<String> resp=httpClient.send(httpReq,HttpResponse.BodyHandlers.ofString());
+     if(resp.statusCode()<200||resp.statusCode()>=300){
+      throw new IllegalStateException("LLM status "+resp.statusCode());
+     }
+     JsonNode root=json.readTree(resp.body());
+     if(aiUsageRecorder!=null&&!hasCustomUrl){
+      aiUsageRecorder.recordResponse("openai",candidateModel,root);
+     }
+     rawText=root.path("choices").path(0).path("message").path("content").asText("");
+     aiModelName=candidateModel;
+     break;
+    }catch(Exception ex){
+     lastErr=ex;
+     if(hasCustomUrl)break;
+    }
    }
-   JsonNode root=json.readTree(resp.body());
-   if(aiUsageRecorder!=null&&!hasCustomUrl){
-    aiUsageRecorder.recordResponse("openai","gpt-5-mini",root);
-   }
-   rawText=root.path("choices").path(0).path("message").path("content").asText("");
-   aiModelName="gpt-5-mini";
+   if(rawText==null)throw lastErr!=null?lastErr:new IllegalStateException("OpenAI scenario generation failed");
   }else{
-   ObjectNode reqBody=json.createObjectNode();
-   ArrayNode contents=reqBody.putArray("contents");
-   ObjectNode contentNode=contents.addObject();
-   ArrayNode parts=contentNode.putArray("parts");
-   parts.addObject().put("text",SecretRedactor.redactString(prompt.toString()));
-   ObjectNode genCfg=reqBody.putObject("generationConfig");
-   genCfg.put("temperature",0.2);
-   genCfg.put("responseMimeType","application/json");
-   String endpoint=hasCustomUrl?customAiEndpointUrl:(DEFAULT_GEMINI_URL+apiKey);
-   HttpRequest httpReq=HttpRequest.newBuilder()
-     .uri(URI.create(endpoint))
-     .timeout(Duration.ofSeconds(12))
-     .header("Content-Type","application/json")
-     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(reqBody)))
-     .build();
-   HttpResponse<String> resp=httpClient.send(httpReq,HttpResponse.BodyHandlers.ofString());
-   if(resp.statusCode()<200||resp.statusCode()>=300){
-    throw new IllegalStateException("LLM status "+resp.statusCode());
+   String primaryModel=(scenarioGeminiModel!=null&&!scenarioGeminiModel.isBlank())?scenarioGeminiModel.trim():"gemini-2.5-pro";
+   List<String> modelChain=primaryModel.equals("gemini-2.5-flash")?List.of("gemini-2.5-flash"):List.of(primaryModel,"gemini-2.5-flash");
+   Exception lastErr=null;
+   for(String candidateModel:modelChain){
+    try{
+     ObjectNode reqBody=json.createObjectNode();
+     ArrayNode contents=reqBody.putArray("contents");
+     ObjectNode contentNode=contents.addObject();
+     ArrayNode parts=contentNode.putArray("parts");
+     parts.addObject().put("text",redactedPrompt);
+     ObjectNode genCfg=reqBody.putObject("generationConfig");
+     genCfg.put("temperature",0.2);
+     genCfg.put("responseMimeType","application/json");
+     if(candidateModel.contains("pro")){
+      genCfg.putObject("thinkingConfig").put("thinkingBudget",2048);
+     }
+     String endpoint=hasCustomUrl?customAiEndpointUrl:("https://generativelanguage.googleapis.com/v1beta/models/"+candidateModel+":generateContent?key="+apiKey);
+     HttpRequest httpReq=HttpRequest.newBuilder()
+       .uri(URI.create(endpoint))
+       .timeout(Duration.ofSeconds(22))
+       .header("Content-Type","application/json")
+       .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(reqBody)))
+       .build();
+     HttpResponse<String> resp=httpClient.send(httpReq,HttpResponse.BodyHandlers.ofString());
+     if(resp.statusCode()<200||resp.statusCode()>=300){
+      throw new IllegalStateException("LLM status "+resp.statusCode());
+     }
+     JsonNode root=json.readTree(resp.body());
+     if(aiUsageRecorder!=null&&!hasCustomUrl){
+      aiUsageRecorder.recordResponse("gemini",candidateModel,root);
+     }
+     rawText=root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText("");
+     aiModelName=candidateModel;
+     break;
+    }catch(Exception ex){
+     lastErr=ex;
+     if(hasCustomUrl)break;
+    }
    }
-   JsonNode root=json.readTree(resp.body());
-   if(aiUsageRecorder!=null&&!hasCustomUrl){
-    aiUsageRecorder.recordResponse("gemini","gemini-2.5-flash",root);
-   }
-   rawText=root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText("");
-   aiModelName="gemini-2.5-flash";
+   if(rawText==null)throw lastErr!=null?lastErr:new IllegalStateException("Gemini scenario generation failed");
   }
   String cleaned=rawText.replaceAll("(?s)^```(?:json)?\\s*","").replaceAll("(?s)\\s*```$","").trim();
   JsonNode parsed=json.readTree(cleaned);
@@ -757,6 +897,7 @@ public class RuntimePlanningService {
 
   Map<String,String> sampleInputs=new LinkedHashMap<>();
   List<GeneratedStepDraft> validSteps=new ArrayList<>();
+  Set<String> availableExtractedVars=new LinkedHashSet<>();
   int idx=1;
   for(JsonNode item:parsed.path("steps")){
    if(idx>10)break;
@@ -770,10 +911,15 @@ public class RuntimePlanningService {
    if(!rawPath.startsWith("/")||rawPath.startsWith("//")||rawPath.contains("\\")||rawPath.contains("\n")||rawPath.contains("\r"))continue;
    if(status<100||status>599)status=200;
 
+   DetectedEndpointDTO matchedEp=endpointLookup.get(svc+":"+verb+":"+rawPath);
+   if(matchedEp==null)matchedEp=endpointLookup.get(canonicalRouteKey(svc,verb,rawPath));
+
    String serviceKey=safeServiceEnvPrefix(svc);
    Map<String,String> stepVars=new LinkedHashMap<>();
-   StringBuffer rewrittenPath=new StringBuffer();
-   Matcher m=PATH_PARAM_PATTERN.matcher(rawPath);
+   // Preserve {{VAR}} in rawPath when VAR is already in availableExtractedVars; convert single {param} to {{V0}}
+   String pathSingleBracesOnly=rawPath.replaceAll("\\{\\{([a-zA-Z][a-zA-Z0-9_]*)}}","__MAVIS_VAR_$1__");
+   StringBuffer rewrittenSingle=new StringBuffer();
+   Matcher m=PATH_PARAM_PATTERN.matcher(pathSingleBracesOnly);
    while(m.find()){
     String param=m.group(1);
     String alias="V"+stepVars.size();
@@ -781,19 +927,55 @@ public class RuntimePlanningService {
     if(envName.length()>60)envName=envName.substring(0,60);
     stepVars.put(alias,envName);
     sampleInputs.putIfAbsent(envName,inferSampleParamValue(param));
-    m.appendReplacement(rewrittenPath,"{{"+alias+"}}");
+    m.appendReplacement(rewrittenSingle,"{{"+alias+"}}");
    }
-   m.appendTail(rewrittenPath);
+   m.appendTail(rewrittenSingle);
+   String finalPath=rewrittenSingle.toString().replaceAll("__MAVIS_VAR_([a-zA-Z][a-zA-Z0-9_]*)__","{{$1}}");
 
    String bodyRef=null;
    if(Set.of("POST","PUT","PATCH").contains(verb)){
     bodyRef=serviceKey+"_BODY_"+idx;
     String aiSampleBody=SecretRedactor.redactString(item.path("sampleJsonBody").asText(""));
-    DetectedEndpointDTO matchedEp=endpointLookup.get(svc+":"+verb+":"+rawPath);
     String fallbackBody=(matchedEp!=null&&isValidJsonObject(matchedEp.getSampleJsonBody()))
       ?SecretRedactor.redactString(matchedEp.getSampleJsonBody())
       :inferSampleJsonBody(rawPath);
     sampleInputs.putIfAbsent(bodyRef,isValidJsonObject(aiSampleBody)?aiSampleBody:fallbackBody);
+   }
+
+   Map<String,String> stepHeaders=new LinkedHashMap<>();
+   if(item.path("headers").isObject()){
+    item.path("headers").fields().forEachRemaining(e->{
+     String hk=e.getKey().trim();
+     String hv=SecretRedactor.redactString(e.getValue().asText("").trim());
+     if(hk.matches("[A-Za-z][A-Za-z0-9-]{0,63}")&&!Set.of("host","traceparent","tracestate").contains(hk.toLowerCase(Locale.ROOT))&&!hv.isEmpty()&&!hv.contains("\r")&&!hv.contains("\n")){
+      stepHeaders.put(hk,hv);
+     }
+    });
+   }
+   List<Map<String,String>> stepEnvHeaders=null;
+   String phase=item.path("journeyPhase").asText(matchedEp!=null&&matchedEp.getJourneyRole()!=null?matchedEp.getJourneyRole():inferJourneyPhase(matchedEp!=null?matchedEp:DetectedEndpointDTO.builder().service(svc).method(verb).path(rawPath).build()));
+   if(matchedEp!=null&&Boolean.TRUE.equals(matchedEp.getRequiresAuth())&&!"AUTH_ENTRY".equals(phase)&&!stepHeaders.containsKey("Authorization")){
+    if(availableExtractedVars.contains("AUTH_TOKEN")){
+     stepHeaders.put("Authorization","Bearer {{AUTH_TOKEN}}");
+    }else if(sandboxBearer!=null){
+     String authRef=serviceKey+"_AUTHORIZATION";
+     stepEnvHeaders=List.of(Map.of("name","Authorization","reference",authRef));
+     sampleInputs.putIfAbsent(authRef,sandboxBearer);
+    }
+   }
+
+   Map<String,String> stepExtract=new LinkedHashMap<>();
+   if(item.path("extract").isObject()){
+    item.path("extract").fields().forEachRemaining(e->{
+     String ek=toScenarioEnvKey(e.getKey().trim());
+     String ptr=e.getValue().asText("").trim();
+     if(ptr.startsWith("$."))ptr="/"+ptr.substring(2).replace('.','/');
+     else if(!ptr.isEmpty()&&!ptr.startsWith("/"))ptr="/"+ptr.replace('.','/');
+     if(!ek.isEmpty()&&ptr.startsWith("/")&&ptr.length()<=512){
+      stepExtract.put(ek,ptr);
+      availableExtractedVars.add(ek);
+     }
+    });
    }
 
    String rationale=SecretRedactor.redactString(item.path("rationale").asText("Verify API workflow proposed by AI + Static Analysis."));
@@ -801,14 +983,17 @@ public class RuntimePlanningService {
      "step-"+idx,
      svc,
      verb,
-     rewrittenPath.toString(),
+     finalPath,
      status,
      rationale,
      "AI + Static Analysis",
      stepVars.isEmpty()?null:stepVars,
-     null,
+     stepEnvHeaders,
      bodyRef,
-     Boolean.TRUE
+     Boolean.TRUE,
+     stepHeaders.isEmpty()?null:stepHeaders,
+     stepExtract.isEmpty()?null:stepExtract,
+     phase
    ));
    idx++;
   }
@@ -838,8 +1023,215 @@ public class RuntimePlanningService {
 
  private static String resourceRoot(String path){
   if(path==null||path.isBlank())return "/";
-  String cleaned=path.replaceAll("(?:/\\{[^}/]+\\})+$","");
+  String cleaned=path.replaceAll("\\?.*$","").replaceAll("(?:/\\{[^}/]+\\})+$","");
   return cleaned.isEmpty()?"/":cleaned.toLowerCase(Locale.ROOT);
+ }
+
+ private static String resourceEntityToken(String path){
+  String root=resourceRoot(path);
+  String[] segs=root.split("/");
+  for(int i=segs.length-1;i>=0;i--){
+   String s=segs[i].replaceAll("[^a-z0-9]","");
+   if(s.isEmpty()||Set.of("api","v1","v2","v3","public","internal","rest","search","query","checkout","cancel","approve","reject","pay","charge","process","confirm","submit","status","health","actuator").contains(s))continue;
+   if(s.endsWith("ies")&&s.length()>4)s=s.substring(0,s.length()-3)+"y";
+   else if(s.endsWith("ses")&&s.length()>4)s=s.substring(0,s.length()-2);
+   else if(s.endsWith("s")&&!s.endsWith("ss")&&s.length()>3)s=s.substring(0,s.length()-1);
+   return s.toUpperCase(Locale.ROOT);
+  }
+  return "";
+ }
+
+ private static String findMatchingPointer(List<String> pointers,List<String> preferredNames){
+  if(pointers==null||pointers.isEmpty())return null;
+  for(String pref:preferredNames){
+   for(String p:pointers){
+    if(p==null)continue;
+    String leaf=p.contains("/")?p.substring(p.lastIndexOf('/')+1):p;
+    if(leaf.equalsIgnoreCase(pref))return p.startsWith("/")?p:"/"+p;
+   }
+  }
+  return null;
+ }
+
+ private static String resolveChainedVariableForParam(String param,String resourceToken,Map<String,String> extractedByResource){
+  if(extractedByResource==null||extractedByResource.isEmpty()||param==null)return null;
+  String cleanParam=param.replaceAll("[^A-Za-z0-9]","").toLowerCase(Locale.ROOT);
+  if((cleanParam.equals("id")||cleanParam.equals("code")||cleanParam.equals("sku"))&&!resourceToken.isEmpty()&&extractedByResource.containsKey(resourceToken)){
+   return extractedByResource.get(resourceToken);
+  }
+  for(Map.Entry<String,String> e:extractedByResource.entrySet()){
+   String tok=e.getKey().toLowerCase(Locale.ROOT);
+   if(cleanParam.equals(tok+"id")||cleanParam.equals(tok+"code")||cleanParam.equals(tok+"sku")){
+    return e.getValue();
+   }
+  }
+  return null;
+ }
+
+ private String injectChainedVariablesIntoBody(String jsonBodyStr,Map<String,String> extractedByResource){
+  if(extractedByResource==null||extractedByResource.isEmpty()||!isValidJsonObject(jsonBodyStr))return jsonBodyStr;
+  try{
+   JsonNode root=json.readTree(jsonBodyStr);
+   if(!(root instanceof ObjectNode obj))return jsonBodyStr;
+   boolean changed=false;
+   List<String> fields=new ArrayList<>();
+   obj.fieldNames().forEachRemaining(fields::add);
+   for(String f:fields){
+    String low=f.replaceAll("[^A-Za-z0-9]","").toLowerCase(Locale.ROOT);
+    for(Map.Entry<String,String> e:extractedByResource.entrySet()){
+     String tok=e.getKey().toLowerCase(Locale.ROOT);
+     if(low.equals(tok+"id")||low.equals(tok+"code")||low.equals(tok+"sku")){
+      obj.put(f,"{{"+e.getValue()+"}}");
+      changed=true;
+      break;
+     }
+    }
+   }
+   return changed?json.writeValueAsString(obj):jsonBodyStr;
+  }catch(Exception ex){
+   return jsonBodyStr;
+  }
+ }
+
+ private static String inferJourneyPhase(DetectedEndpointDTO ep){
+  if(ep==null||isHealthProbePath(ep.getPath()))return "HEALTH_FALLBACK";
+  String verb=ep.getMethod()!=null?ep.getMethod().toUpperCase(Locale.ROOT):"GET";
+  String low=ep.getPath()!=null?ep.getPath().toLowerCase(Locale.ROOT):"/";
+  if("POST".equals(verb)&&(low.contains("/auth/")||low.endsWith("/login")||low.endsWith("/signin")||low.endsWith("/register")||low.endsWith("/signup")||low.endsWith("/token")))return "AUTH_ENTRY";
+  if("DELETE".equals(verb))return "CLEANUP_COMPENSATION";
+  if("GET".equals(verb))return "STATE_VERIFICATION";
+  if(ep.getDownstreamTargets()!=null&&!ep.getDownstreamTargets().isEmpty())return "CROSS_SERVICE_WORKFLOW";
+  if("POST".equals(verb)&&!PATH_PARAM_PATTERN.matcher(low).find())return "PREREQUISITE_SEED";
+  return "CROSS_SERVICE_WORKFLOW";
+ }
+
+ private String buildRepairFeedbackSummary(UUID projectId,UUID repairSessionId,Set<String> allowedServices){
+  if(runtimeSessions==null)return "";
+  try{
+   RuntimeSession target=null;
+   if(repairSessionId!=null){
+    target=runtimeSessions.findById(repairSessionId).filter(s->s.getProject()!=null&&projectId.equals(s.getProject().getId())).orElse(null);
+   }else{
+    List<RuntimeSession> recent=runtimeSessions.findByProjectIdOrderByCreatedAtDesc(projectId);
+    if(recent!=null){
+     target=recent.stream().filter(s->s.getRunnerReceiptJson()!=null&&("FAILED".equalsIgnoreCase(s.getScenarioStatus())||"PARTIAL".equalsIgnoreCase(s.getTraceQuality()))).findFirst().orElse(null);
+    }
+   }
+   if(target==null||target.getRunnerReceiptJson()==null)return "";
+   StringBuilder sb=new StringBuilder();
+   sb.append("- Session ").append(target.getId()).append(" status=").append(target.getScenarioStatus()).append(", traceQuality=").append(target.getTraceQuality()).append("\n");
+   JsonNode stepsNode=target.getRunnerReceiptJson().path("scenario").path("steps");
+   if(!stepsNode.isArray())stepsNode=target.getRunnerReceiptJson().path("steps");
+   if(stepsNode.isArray()){
+    for(JsonNode st:stepsNode){
+     sb.append("  * step ").append(st.path("stepId").asText(st.path("id").asText("?")))
+       .append(": outcome=").append(st.path("status").asText("?"))
+       .append(", httpStatus=").append(st.path("statusCode").asText("null")).append("\n");
+    }
+   }
+   if(target.getEnrichedModelVersionId()!=null&&modelElements!=null){
+    Set<String> unverified=new LinkedHashSet<>();
+    for(ModelElement el:modelElements.findByModelVersionId(target.getEnrichedModelVersionId())){
+     if("SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType())&&el.getProperties()!=null&&!el.getProperties().path("runtimeObserved").asBoolean(false)){
+      String resolved=resolveServiceToAllowed(el.getName(),el.getId(),allowedServices,null,null);
+      if(resolved!=null)unverified.add(resolved);
+     }
+    }
+    if(!unverified.isEmpty()){
+     sb.append("  * Services with 0 OpenTelemetry spans in that run (prioritize calling or fanning out to these): ").append(String.join(", ",unverified)).append("\n");
+    }
+   }
+   return sb.toString();
+  }catch(Exception ex){
+   return "";
+  }
+ }
+
+ private String resolveOrMintPreviewBearerToken(UUID projectId,JsonNode savedProfile,PreflightCheckResponseDTO pre,List<DetectedEndpointDTO> candidates){
+  Set<String> roles=new LinkedHashSet<>(List.of("USER","ADMIN"));
+  if(candidates!=null){
+   for(DetectedEndpointDTO ep:candidates){
+    if(ep.getRequiredRoles()!=null)roles.addAll(ep.getRequiredRoles());
+   }
+  }
+  Map<String,String> defaults=collectProjectInputDefaults(projectId,savedProfile,pre);
+  return mintSandboxBearerToken(defaults,roles);
+ }
+
+ String mintSandboxBearerToken(Map<String,String> envMap,Collection<String> requiredRoles){
+  try{
+   Set<String> roles=new LinkedHashSet<>(List.of("USER","ADMIN"));
+   if(requiredRoles!=null){
+    for(String r:requiredRoles){if(r!=null&&!r.isBlank())roles.add(r.trim().toUpperCase(Locale.ROOT));}
+   }
+   List<String> roleWithPrefix=new ArrayList<>();
+   for(String r:roles){
+    roleWithPrefix.add(r);
+    if(!r.startsWith("ROLE_"))roleWithPrefix.add("ROLE_"+r);
+   }
+   long now=System.currentTimeMillis()/1000L;
+   ObjectNode payload=json.createObjectNode();
+   payload.put("sub","1");
+   payload.put("userId",1);
+   payload.put("id",1);
+   payload.put("username","alice");
+   payload.put("preferred_username","alice");
+   payload.put("email","alice@example.org");
+   payload.put("scope","read write admin openid profile");
+   payload.put("iss","mavis-sandbox");
+   payload.put("aud","mavis-sandbox");
+   payload.put("iat",now-60);
+   payload.put("exp",now+86400);
+   ArrayNode rolesArr=payload.putArray("roles");
+   roles.forEach(rolesArr::add);
+   ArrayNode authArr=payload.putArray("authorities");
+   roleWithPrefix.forEach(authArr::add);
+
+   String rsaPrivPem=null;
+   String jwtSecret=null;
+   if(envMap!=null){
+    for(Map.Entry<String,String> e:envMap.entrySet()){
+     String k=e.getKey()==null?"":e.getKey().toUpperCase(Locale.ROOT);
+     String v=e.getValue();
+     if(v==null||v.isBlank())continue;
+     if(k.contains("PRIVATE_KEY")&&v.contains("BEGIN PRIVATE KEY")){rsaPrivPem=v;break;}
+     if(jwtSecret==null&&(k.contains("JWT")||k.contains("HMAC")||k.contains("TOKEN_SECRET")||k.contains("SIGNING_KEY")||k.equals("SECRET_KEY"))){
+      jwtSecret=v;
+     }
+    }
+   }
+   Base64.Encoder b64Url=Base64.getUrlEncoder().withoutPadding();
+   if(rsaPrivPem!=null){
+    String headerJson="{\"alg\":\"RS256\",\"typ\":\"JWT\"}";
+    String signingInput=b64Url.encodeToString(headerJson.getBytes(java.nio.charset.StandardCharsets.UTF_8))+"."+b64Url.encodeToString(json.writeValueAsBytes(payload));
+    byte[] der=Base64.getMimeDecoder().decode(rsaPrivPem.replaceAll("-----[A-Z ]+-----",""));
+    var kf=java.security.KeyFactory.getInstance("RSA");
+    var privKey=kf.generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(der));
+    var sig=java.security.Signature.getInstance("SHA256withRSA");
+    sig.initSign(privKey);
+    sig.update(signingInput.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    return "Bearer "+signingInput+"."+b64Url.encodeToString(sig.sign());
+   }
+   byte[] keyBytes;
+   if(jwtSecret!=null){
+    byte[] raw=jwtSecret.trim().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    try{
+     byte[] dec=Base64.getDecoder().decode(jwtSecret.trim());
+     if(dec.length>=32)raw=dec;
+    }catch(IllegalArgumentException ignored){}
+    keyBytes=raw.length>=32?raw:java.util.Arrays.copyOf(raw,32);
+   }else{
+    keyBytes="mavis-default-sandbox-hs256-signing-secret-key-2026-verified".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+   }
+   String headerJson="{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
+   String signingInput=b64Url.encodeToString(headerJson.getBytes(java.nio.charset.StandardCharsets.UTF_8))+"."+b64Url.encodeToString(json.writeValueAsBytes(payload));
+   javax.crypto.Mac mac=javax.crypto.Mac.getInstance("HmacSHA256");
+   mac.init(new javax.crypto.spec.SecretKeySpec(keyBytes,"HmacSHA256"));
+   byte[] signature=mac.doFinal(signingInput.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+   return "Bearer "+signingInput+"."+b64Url.encodeToString(signature);
+  }catch(Exception ex){
+   return "Bearer sandbox-verification-token";
+  }
  }
 
  private static int causalEndpointPhase(DetectedEndpointDTO ep,Set<String> crudResourceRoots){
@@ -1185,19 +1577,27 @@ public class RuntimePlanningService {
  private void ensureScenarioStepReferences(ArrayNode steps,PreflightCheckResponseDTO pre,Map<String,String> step1Defaults,Map<String,String> protectedEnv){
   if(steps==null||protectedEnv==null)return;
   Map<String,String> detectedBodyByRoute=new HashMap<>();
+  Set<String> allRequiredRoles=new LinkedHashSet<>();
   if(pre!=null&&pre.getDetectedEndpoints()!=null){
    for(DetectedEndpointDTO ep:pre.getDetectedEndpoints()){
     if(ep!=null&&isValidJsonObject(ep.getSampleJsonBody())){
      detectedBodyByRoute.putIfAbsent((ep.getService()+":"+ep.getMethod()+":"+ep.getPath()).toLowerCase(Locale.ROOT),ep.getSampleJsonBody());
      detectedBodyByRoute.putIfAbsent(canonicalRouteKey(ep.getService(),ep.getMethod(),ep.getPath()),ep.getSampleJsonBody());
     }
+    if(ep!=null&&ep.getRequiredRoles()!=null)allRequiredRoles.addAll(ep.getRequiredRoles());
    }
   }
+  String mintedBearer=null;
+  Set<String> availableVars=new HashSet<>();
   for(JsonNode step:steps){
    if(step==null||!step.isObject())continue;
+   ObjectNode stepObj=(ObjectNode)step;
    String svc=step.path("service").asText("");
    String method=step.path("method").asText("GET");
    String path=step.path("path").asText("/");
+   if(step.path("environmentVariables").isObject()){
+    step.path("environmentVariables").fieldNames().forEachRemaining(availableVars::add);
+   }
    if(step.hasNonNull("bodyReference")){
     String bodyRef=step.get("bodyReference").asText("");
     if(!bodyRef.isBlank()&&!isValidJsonObject(protectedEnv.get(bodyRef))){
@@ -1205,6 +1605,30 @@ public class RuntimePlanningService {
      String fallback=isValidJsonObject(defBody)?defBody:detectedBodyByRoute.get((svc+":"+method+":"+path).toLowerCase(Locale.ROOT));
      if(fallback==null)fallback=detectedBodyByRoute.get(canonicalRouteKey(svc,method,path));
      protectedEnv.put(bodyRef,isValidJsonObject(fallback)?fallback:inferSampleJsonBody(path));
+    }
+    // Dual-compatibility with pinned ScenarioRunnerImage: when body payload uses {{VAR}}, promote to inline jsonBody so Replace(body.RootElement) executes
+    String resolvedBody=protectedEnv.get(bodyRef);
+    if(resolvedBody!=null&&SCENARIO_VAR_PATTERN.matcher(resolvedBody).find()){
+     try{
+      JsonNode parsedBody=json.readTree(resolvedBody);
+      if(parsedBody!=null&&parsedBody.isObject()&&parsedBody.equals(SecretRedactor.redactJson(parsedBody))){
+       Map<String,String> bodyRewrites=new LinkedHashMap<>();
+       collectUnboundScenarioVars(resolvedBody,availableVars,bodyRewrites);
+       if(!bodyRewrites.isEmpty()){
+        ObjectNode envVars=(stepObj.has("environmentVariables")&&stepObj.get("environmentVariables").isObject())
+          ?(ObjectNode)stepObj.get("environmentVariables")
+          :stepObj.putObject("environmentVariables");
+        for(Map.Entry<String,String> rw:bodyRewrites.entrySet()){
+         String orig=rw.getKey(),envKey=rw.getValue();
+         if(envVars.size()<64&&!envVars.has(envKey))envVars.put(envKey,envKey);
+         availableVars.add(envKey);
+         if(!orig.equals(envKey))resolvedBody=resolvedBody.replace("{{"+orig+"}}","{{"+envKey+"}}");
+        }
+       }
+       stepObj.put("jsonBody",resolvedBody);
+       stepObj.remove("bodyReference");
+      }
+     }catch(Exception ignored){}
     }
    }
    if(step.path("environmentVariables").isObject()){
@@ -1222,7 +1646,14 @@ public class RuntimePlanningService {
      String hRef=h.path("reference").asText("");
      if(!hRef.isBlank()&&hRef.matches("[A-Z][A-Z0-9_]{0,63}")&&(protectedEnv.get(hRef)==null||protectedEnv.get(hRef).isBlank())){
       String defVal=step1Defaults!=null?step1Defaults.get(hRef):null;
-      protectedEnv.put(hRef,(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0)?defVal:("Authorization".equalsIgnoreCase(hName)?"Bearer sandbox-verification-token":"sandbox-verification-value"));
+      if(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0){
+       protectedEnv.put(hRef,defVal);
+      }else if("Authorization".equalsIgnoreCase(hName)){
+       if(mintedBearer==null)mintedBearer=mintSandboxBearerToken(protectedEnv,allRequiredRoles);
+       protectedEnv.put(hRef,mintedBearer);
+      }else{
+       protectedEnv.put(hRef,"sandbox-verification-value");
+      }
      }
     }
    }
@@ -1231,9 +1662,18 @@ public class RuntimePlanningService {
      String sRef=e.getValue().asText("");
      if(!sRef.isBlank()&&sRef.matches("[A-Z][A-Z0-9_]{0,63}")&&(protectedEnv.get(sRef)==null||protectedEnv.get(sRef).isBlank())){
       String defVal=step1Defaults!=null?step1Defaults.get(sRef):null;
-      protectedEnv.put(sRef,(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0)?defVal:("Authorization".equalsIgnoreCase(e.getKey())?"Bearer sandbox-verification-token":"sandbox-verification-value"));
+      if(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0){
+       protectedEnv.put(sRef,defVal);
+      }else if("Authorization".equalsIgnoreCase(e.getKey())){
+       protectedEnv.put(sRef,mintSandboxBearerToken(protectedEnv,allRequiredRoles));
+      }else{
+       protectedEnv.put(sRef,"sandbox-verification-value");
+      }
      }
     });
+   }
+   if(step.path("extract").isObject()){
+    step.path("extract").fieldNames().forEachRemaining(availableVars::add);
    }
   }
  }
@@ -1593,6 +2033,26 @@ public class RuntimePlanningService {
     }
    }
    if(n.has("secretHeaders")){if(!n.get("secretHeaders").isObject())throw new BusinessException(ErrorCode.BAD_REQUEST);for(var it=n.get("secretHeaders").elements();it.hasNext();)if(!it.next().asText().matches("[A-Z_][A-Z0-9_]{0,99}"))throw new BusinessException(ErrorCode.BAD_REQUEST,"Secret headers must refer to environment names");}
+   if(n.hasNonNull("headers")){
+    if(!n.get("headers").isObject()||n.get("headers").size()>64)throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid headers map");
+    n.get("headers").fields().forEachRemaining(e->{
+     String hk=e.getKey();
+     String hv=e.getValue().asText("");
+     if(!hk.matches("[A-Za-z][A-Za-z0-9-]{0,63}")||Set.of("host","traceparent","tracestate").contains(hk.toLowerCase(Locale.ROOT))||hv.contains("\r")||hv.contains("\n")){
+      throw new BusinessException(ErrorCode.BAD_REQUEST,"Unsupported scenario header");
+     }
+    });
+   }
+   if(n.hasNonNull("extract")){
+    if(!n.get("extract").isObject()||n.get("extract").size()>32)throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid extract map");
+    n.get("extract").fields().forEachRemaining(e->{
+     String ek=e.getKey();
+     String ptr=e.getValue().asText("");
+     if(!ek.matches("[a-zA-Z][a-zA-Z0-9_]{0,63}")||!ptr.startsWith("/")||ptr.length()>512){
+      throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid extract variable or JSON pointer");
+     }
+    });
+   }
    if(n.hasNonNull("jsonBody")){try{var body=json.readTree(n.get("jsonBody").asText());if(body==null||!body.equals(SecretRedactor.redactJson(body)))throw new IllegalArgumentException();}catch(Exception ex){throw new BusinessException(ErrorCode.BAD_REQUEST,"JSON body must not contain literal secrets");}}
    result.add(n);
   }return result;

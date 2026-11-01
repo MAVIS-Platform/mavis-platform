@@ -1,6 +1,6 @@
 import type { ArchitecturalModel } from "@/types/domain";
 export type RuntimeDraftStep = { service: string; method: string; path: string; status: string; rationale?: string | undefined; source?: string | undefined;
- environmentVariables?: Record<string,string>; envHeaders?: Array<{ name: string; reference: string }>; bodyReference?: string; allowClientError?: boolean };
+ environmentVariables?: Record<string,string>; envHeaders?: Array<{ name: string; reference: string }>; bodyReference?: string; allowClientError?: boolean; headers?: Record<string, string>; extract?: Record<string, string>; journeyPhase?: string };
 export type RuntimeInput = { name:string; label:string; kind:"text"|"credential"|"json"; source:string };
 export function toServiceEnvPrefix(serviceName:string|undefined):string {
  let prefix=(serviceName||"SVC").toUpperCase().replace(/[^A-Z0-9_]/g,"_").replace(/_+/g,"_").replace(/^_|_$/g,"");
