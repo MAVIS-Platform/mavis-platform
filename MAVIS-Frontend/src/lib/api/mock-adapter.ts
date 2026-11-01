@@ -421,8 +421,53 @@ export class MockAdapter implements ApiAdapter {
         if (config.revision !== p.expectedRevision) throw new ApiError("conflict", 409);
         this.find(this.profiles, (v) => v.id === p.profileId && v.enabled);
         config.profileId = p.profileId;
+        if (p.snapshotId) config.snapshotId = p.snapshotId;
+        if (p.modelId) config.modelId = p.modelId;
+        if (p.profile) config.profile = p.profile;
         config.revision++;
         return config;
+      }
+      case "buildRuntimeSandboxImages": {
+        const p = contracts.buildRuntimeSandboxImages.input.parse(raw);
+        this.find(this.projects, (proj) => proj.id === p.projectId);
+        return {
+          projectId: p.projectId,
+          snapshotId: p.snapshotId ?? null,
+          builtImages: {},
+          errors: ["Local sandbox image building is unavailable in preview mode"],
+        };
+      }
+      case "runtimePreflight": {
+        const p = contracts.runtimePreflight.input.parse(raw);
+        this.find(this.snapshots, (s) => s.id === p.snapshotId);
+        const model = this.models.find((m) => m.snapshotId === p.snapshotId) ?? this.models[0];
+        const elems = model?.elements ?? [];
+        const detectedServices = elems.map((e) => e.name);
+        const recommendedServiceMappings = Object.fromEntries(elems.map((e) => [e.name, e.id]));
+        const modelServiceNames = Object.fromEntries(elems.map((e) => [e.id, e.name]));
+        return {
+          compatible: true,
+          detectedServices,
+          composeServices: detectedServices,
+          securityWarnings: [],
+          recommendedProfile: "profile-1",
+          servicePorts: Object.fromEntries(detectedServices.map((s) => [s, 8080])),
+          serviceStacks: Object.fromEntries(detectedServices.map((s) => [s, "java"])),
+          detectedEndpoints: [],
+          databaseChecks: [],
+          requiredEnvVars: [],
+          runnerIssues: [],
+          infrastructureServices: [],
+          serviceHealthPaths: Object.fromEntries(detectedServices.map((s) => [s, "/health"])),
+          serviceHealthConfidence: Object.fromEntries(detectedServices.map((s) => [s, "DETECTED"])),
+          serviceHealthReasons: {},
+          sandboxComposeYaml: "",
+          sandboxComposeChanges: [],
+          unresolvableRunnerIssues: [],
+          recommendedServiceMappings,
+          modelServiceNames,
+          localImageBuildAvailable: false,
+        };
       }
       case "scenarios":
         return this.scenarios.filter(

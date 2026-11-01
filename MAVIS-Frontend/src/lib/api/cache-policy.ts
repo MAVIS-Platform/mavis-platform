@@ -46,6 +46,7 @@ export const mutationInvalidations: Partial<Record<Operation, readonly Operation
   deleteSnapshot: ["audit","snapshots","models","modelVersions","model","analysisJobs","projectOverviews","project","projectAnalysisActivity", "projectActivity","platformSummary"],
   saveModel: ["models", "modelVersions", "model", "compareModels"],
   saveRuntimeConfiguration: ["runtimeConfiguration"],
+  buildRuntimeSandboxImages: ["runtimeConfiguration"],
   createScenario: ["scenarios"],
   saveScenario: ["scenarios"],
   startRuntime: [

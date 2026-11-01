@@ -559,6 +559,9 @@ export async function executeJava(
       return javaRequest(`analyzer/projects/${id(input,"projectId")}/runtime-plan/scenarios/${id(input,"scenarioId")}`, token,
         { method: "PUT", body: JSON.stringify(input), signal });
     }
+    case "buildRuntimeSandboxImages": {
+      return post(`analyzer/projects/${id(input,"projectId")}/runtime-plan/build-images`, input);
+    }
     case "generateRuntimeScenario": {
       return post(`analyzer/projects/${id(input,"projectId")}/runtime-plan/scenarios/generate`, input);
     }
@@ -974,12 +977,29 @@ export async function executeJava(
                 name: z.string(),
                 service: z.string().optional(),
                 category: z.string().optional(),
+                services: z.array(z.string()).optional(),
                 defaultValue: z.string().nullable().optional(),
+                scope: z.string().nullable().optional(),
+                defaultPresent: z.boolean().optional(),
                 required: z.boolean().optional(),
                 source: z.string().optional(),
               }),
             )
             .optional(),
+        })
+        .extend({
+          runnerIssues: z.array(z.string()).optional(),
+          infrastructureServices: z.array(z.string()).optional(),
+          serviceHealthPaths: z.record(z.string()).optional(),
+          serviceHealthConfidence: z.record(z.string()).optional(),
+          serviceHealthReasons: z.record(z.string()).optional(),
+          composeServices: z.array(z.string()).optional(),
+          sandboxComposeYaml: z.string().nullable().optional(),
+          sandboxComposeChanges: z.array(z.string()).optional(),
+          unresolvableRunnerIssues: z.array(z.string()).optional(),
+          recommendedServiceMappings: z.record(z.string()).optional(),
+          modelServiceNames: z.record(z.string()).optional(),
+          localImageBuildAvailable: z.boolean().optional(),
         })
         .parse(await post(`analyzer/runtime/preflight?snapshotId=${snapshot}`));
       return { ...result, recommendedProfile: result.recommendedProfile ?? null };

@@ -843,3 +843,51 @@ test("an empty saved scenario list remains empty instead of generating fake busi
  environment(t);let calls=0;t.mock.method(globalThis,'fetch',async()=>{calls++;return Response.json({code:200,data:[]});});
  assert.deepEqual(await executeJava('scenarios',{projectId:project},'jwt',new AbortController().signal),[]);assert.equal(calls,1);
 });
+
+test("runtimePreflight and buildRuntimeSandboxImages preserve full Step 1 automation and UUID mapping contracts",async t=>{
+ environment(t);
+ const calls=[];
+ t.mock.method(globalThis,"fetch",async(url,options)=>{
+  calls.push({url:String(url),method:options?.method??"GET"});
+  if(String(url).includes("/snapshots/"))return Response.json({code:200,data:{id:snapshot,projectId:project}});
+  if(String(url).includes("/runtime/preflight"))return Response.json({code:200,data:{
+   compatible:true,
+   detectedServices:["api-gateway","order-service","orders-db"],
+   composeServices:["api-gateway","order-service","orders-db"],
+   infrastructureServices:["orders-db"],
+   securityWarnings:[],
+   recommendedProfile:"SPRING_BOOT_DOTNET_COMPOSE_V1",
+   serviceHealthPaths:{"api-gateway":"/actuator/health","order-service":"/"},
+   serviceHealthConfidence:{"api-gateway":"DETECTED","order-service":"ASSUMED"},
+   sandboxComposeYaml:"services:\n  api-gateway:\n    expose:\n    - '8080'\n",
+   sandboxComposeChanges:["Converted ports to expose"],
+   unresolvableRunnerIssues:["Service 'order-service' uses build:"],
+   recommendedServiceMappings:{"api-gateway":node,"order-service":job},
+   modelServiceNames:{[node]:"api-gateway",[job]:"order-service"},
+   localImageBuildAvailable:true,
+   requiredEnvVars:[{name:"JWT_SECRET",service:"api-gateway",services:["api-gateway","order-service"],category:"SECRET",scope:"SANDBOX",defaultPresent:false}]
+  }});
+  if(String(url).endsWith("/runtime-plan/build-images"))return Response.json({code:200,data:{
+   projectId:project,
+   snapshotId:snapshot,
+   builtImages:{"order-service":"mavis-sandbox/order-service@sha256:"+"a".repeat(64),"api-gateway":"sha256:"+"b".repeat(64)},
+   errors:[]
+  }});
+  throw Error("Unexpected URL "+url);
+ });
+ const pre=validateResponse("runtimePreflight",{projectId:project,snapshotId:snapshot},await executeJava("runtimePreflight",{projectId:project,snapshotId:snapshot},"jwt",new AbortController().signal));
+ assert.equal(pre.localImageBuildAvailable,true);
+ assert.equal(pre.recommendedServiceMappings["api-gateway"],node);
+ assert.deepEqual(pre.requiredEnvVars[0].services,["api-gateway","order-service"]);
+ assert.equal(pre.serviceHealthConfidence["order-service"],"ASSUMED");
+
+ const built=validateResponse("buildRuntimeSandboxImages",{projectId:project,snapshotId:snapshot,services:["order-service"]},await executeJava("buildRuntimeSandboxImages",{projectId:project,snapshotId:snapshot,services:["order-service"]},"jwt",new AbortController().signal));
+ assert.ok(built.builtImages["order-service"].includes("@sha256:"));
+ assert.ok(built.builtImages["api-gateway"].startsWith("sha256:"));
+ assert.ok(calls.some(c=>c.method==="POST"&&c.url.endsWith(`/analyzer/projects/${project}/runtime-plan/build-images`)));
+ const {MockAdapter}=require("../src/lib/api/mock-adapter.ts");
+ const mock=new MockAdapter("normal",0);
+ const mockPre=validateResponse("runtimePreflight",{projectId:"sample-checkout",snapshotId:"source-1"},await mock.execute("runtimePreflight",{projectId:"sample-checkout",snapshotId:"source-1"}));
+ assert.ok(mockPre.compatible);
+ assert.ok(Object.keys(mockPre.recommendedServiceMappings).length>0);
+});

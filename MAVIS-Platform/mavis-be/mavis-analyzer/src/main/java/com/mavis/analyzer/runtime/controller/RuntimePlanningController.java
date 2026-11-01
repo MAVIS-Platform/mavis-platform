@@ -11,6 +11,7 @@ public class RuntimePlanningController {
  private final RuntimePlanningService planning;
  @GetMapping public ApiResponse<?> configuration(@PathVariable UUID projectId){return ApiResponse.success(planning.configuration(projectId));}
  @PutMapping public ApiResponse<?> save(@PathVariable UUID projectId,@Valid @RequestBody ConfigurationRequest r){return ApiResponse.success(planning.saveConfiguration(projectId,r));}
+ @PostMapping("/build-images") public ApiResponse<?> buildImages(@PathVariable UUID projectId,@RequestBody(required=false) BuildImagesRequest r){return ApiResponse.success(planning.buildSandboxImages(projectId,r));}
  @GetMapping("/scenarios") public ApiResponse<?> scenarios(@PathVariable UUID projectId){return ApiResponse.success(planning.scenarios(projectId));}
  @PostMapping("/scenarios") public ApiResponse<?> create(@PathVariable UUID projectId,@Valid @RequestBody ScenarioRequest r){return ApiResponse.success(planning.saveScenario(projectId,null,r));}
  @PutMapping("/scenarios/{scenarioId}") public ApiResponse<?> update(@PathVariable UUID projectId,@PathVariable UUID scenarioId,@Valid @RequestBody ScenarioRequest r){return ApiResponse.success(planning.saveScenario(projectId,scenarioId,r));}

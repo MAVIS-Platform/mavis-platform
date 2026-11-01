@@ -51,6 +51,8 @@ public class RuntimePlanningService {
  private ApiKeyProvider apiKeyProvider;
  @Autowired(required = false)
  private AiUsageRecorder aiUsageRecorder;
+ @Autowired(required = false)
+ private SandboxImageBuilderService imageBuilder;
 
  @Value("${mavis.ai.endpoint-url:}")
  private String customAiEndpointUrl;
@@ -78,6 +80,8 @@ public class RuntimePlanningService {
  public record GenerateScenarioRequest(UUID snapshotId,UUID modelId,@Size(max=500) String goal){}
  public record GeneratedStepDraft(String id,String service,String method,String path,int expectedStatus,String rationale,String source,Map<String,String> environmentVariables,List<Map<String,String>> envHeaders,String bodyReference){}
  public record GeneratedScenarioDraftView(UUID projectId,UUID snapshotId,UUID modelId,String suggestedName,String generatorMode,String aiModelName,String summary,List<GeneratedStepDraft> steps,Map<String,String> sampleInputs,List<String> inheritedEnvKeys){}
+ public record BuildImagesRequest(UUID snapshotId,List<String> services){}
+ public record BuildImagesView(UUID projectId,UUID snapshotId,Map<String,String> builtImages,List<String> errors){}
 
  private Project project(UUID id,boolean write){var p=projects.findById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));if(write)policy.requireProjectWriteAccess(p);else policy.requireProjectReadAccess(p);return p;}
  private void lock(UUID id){var p=projects.findLockedById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));policy.requireProjectWriteAccess(p);}
@@ -114,10 +118,37 @@ public class RuntimePlanningService {
    if(pre.getSandboxComposeYaml()!=null)profileNode.put("sandboxComposeYaml",pre.getSandboxComposeYaml());
    profileNode.set("sandboxComposeChanges",json.valueToTree(pre.getSandboxComposeChanges()));
    profileNode.set("unresolvableRunnerIssues",json.valueToTree(pre.getUnresolvableRunnerIssues()));
+   profileNode.set("recommendedServiceMappings",json.valueToTree(pre.getRecommendedServiceMappings()));
+   profileNode.set("modelServiceNames",json.valueToTree(pre.getModelServiceNames()));
+   profileNode.put("localImageBuildAvailable",pre.isLocalImageBuildAvailable());
   }
-  if(!runnerImagesConfigured())warnings.add("Sandbox runner images are not configured (MAVIS_RUNNER_COLLECTOR_IMAGE, MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE); runs cannot start until an operator sets them");
+  boolean imagesReady=runnerImagesConfigured()||profileHasPinnedRunnerImages(profileNode);
+  if(!imagesReady)warnings.add("Sandbox runner images are not configured (MAVIS_RUNNER_COLLECTOR_IMAGE, MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE); runs cannot start until an operator sets them");
   if(!environments.isConfigured())warnings.add("MAVIS_RUNTIME_ENVIRONMENT_KEY is not configured; changed environment values, generated sandbox secrets and request bodies cannot be delivered to the runner");
-  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),profileNode,c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled,warnings,true);
+  return new ConfigurationView(id,snapshot,c==null?null:c.getModelVersionId(),c==null?"SPRING_BOOT_DOTNET_COMPOSE_V1":c.getProfileId(),profileNode,c==null?0:c.getRevision(),c!=null,supported,c!=null&&supported&&enabled&&imagesReady,warnings,true);
+ }
+
+ @Transactional
+ public BuildImagesView buildSandboxImages(UUID id,BuildImagesRequest r){
+  lock(id);
+  if(imageBuilder==null)throw new BusinessException(ErrorCode.FORBIDDEN,"Local sandbox image building service is unavailable");
+  var c=configurations.findById(id).orElse(null);
+  UUID snapshotId=(r!=null&&r.snapshotId()!=null)?r.snapshotId():(c!=null?c.getSourceSnapshotId():sources.findFirstByProjectIdOrderByCreatedAtDesc(id).map(SourceSnapshot::getId).orElse(null));
+  if(snapshotId==null)throw new BusinessException(ErrorCode.BAD_REQUEST,"No source snapshot available");
+  var source=sources.findById(snapshotId).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));
+  if(!source.getProject().getId().equals(id))throw new BusinessException(ErrorCode.BAD_REQUEST,"Snapshot scope mismatch");
+  var res=imageBuilder.buildSnapshotImages(id,java.nio.file.Paths.get(source.getStoragePath()),r!=null?r.services():null);
+  if(c!=null&&snapshotId.equals(c.getSourceSnapshotId())&&!res.builtImages().isEmpty()&&c.getProfile()!=null&&c.getProfile().isObject()){
+   ObjectNode p=(ObjectNode)c.getProfile().deepCopy();
+   ObjectNode overrides=p.has("serviceImageOverrides")&&p.get("serviceImageOverrides").isObject()?(ObjectNode)p.get("serviceImageOverrides"):p.putObject("serviceImageOverrides");
+   res.builtImages().forEach(overrides::put);
+   String existingSealed=p.hasNonNull("sealedInputs")?p.get("sealedInputs").asText(null):null;
+   JsonNode normalized=normalizeStep1Profile(id,snapshotId,c.getProfileId(),p,existingSealed);
+   c.setProfile(normalized.deepCopy());
+   c.setRevision(c.getRevision()+1);
+   configurations.saveAndFlush(c);
+  }
+  return new BuildImagesView(id,snapshotId,res.builtImages(),res.errors());
  }
 
  @Transactional
@@ -245,6 +276,7 @@ public class RuntimePlanningService {
    });
    if(svcNames.isEmpty())svcNames.add("gateway");
    Map<String,String> healthPaths=pre!=null&&pre.getServiceHealthPaths()!=null?pre.getServiceHealthPaths():Map.of();
+   Map<String,String> healthConfidence=pre!=null&&pre.getServiceHealthConfidence()!=null?pre.getServiceHealthConfidence():Map.of();
    int count=0;
    for(String sName:svcNames){
     if(count>=10)break;
@@ -254,15 +286,35 @@ public class RuntimePlanningService {
     ObjectNode appNode=apps.putObject(safeKey);
     int port=pre!=null&&pre.getServicePorts()!=null&&pre.getServicePorts().containsKey(sName)?pre.getServicePorts().get(sName):8080;
     String stack=pre!=null&&pre.getServiceStacks()!=null?pre.getServiceStacks().getOrDefault(sName,"java"):"java";
-    appNode.put("runtime","dotnet".equalsIgnoreCase(stack)?"dotnet8-linux-x64-glibc":"java");
+    appNode.put("runtime",mapStackToRuntime(stack));
     appNode.put("containerPort",(port>=1&&port<=65535)?port:8080);
     appNode.put("readinessPath",healthPaths.getOrDefault(sName,"/health"));
+    if("ASSUMED".equalsIgnoreCase(healthConfidence.get(sName)))appNode.put("allowClientErrorReadiness",true);
     count++;
    }
   }
   Map<String,String> mappings=new LinkedHashMap<>();
   if(p.has("serviceMappings")&&p.get("serviceMappings").isObject()){
    p.get("serviceMappings").fields().forEachRemaining(e->mappings.put(e.getKey(),e.getValue().asText("")));
+  }
+  if(pre!=null){
+   Map<String,String> recommended=pre.getRecommendedServiceMappings()!=null?pre.getRecommendedServiceMappings():Map.of();
+   Map<String,String> modelNames=pre.getModelServiceNames()!=null?pre.getModelServiceNames():Map.of();
+   recommended.forEach((svc,recUuid)->{
+    String cur=mappings.get(svc);
+    if(cur==null||cur.isBlank()||(!isUuidString(cur)&&cur.equalsIgnoreCase(svc)))mappings.put(svc,recUuid);
+   });
+   if(!modelNames.isEmpty()){
+    for(Map.Entry<String,String> e:new ArrayList<>(mappings.entrySet())){
+     String cur=e.getValue();
+     if(cur!=null&&!cur.isBlank()&&!isUuidString(cur)){
+      for(Map.Entry<String,String> mn:modelNames.entrySet()){
+       if(cur.equalsIgnoreCase(mn.getValue())){mappings.put(e.getKey(),mn.getKey());break;}
+      }
+     }
+    }
+   }
+   if(!mappings.isEmpty())p.set("serviceMappings",json.valueToTree(mappings));
   }
   runtime.updateProjectRuntimeConfig(projectId,RuntimeProjectConfigRequestDTO.builder()
    .profileId(profileId)
@@ -271,6 +323,17 @@ public class RuntimePlanningService {
    .secretReferences(new ArrayList<>(secretRefs))
    .build());
   return p;
+ }
+
+ private static String mapStackToRuntime(String stack){
+  if(stack==null||stack.isBlank()||"java".equalsIgnoreCase(stack))return "java";
+  if("dotnet".equalsIgnoreCase(stack))return "dotnet8-linux-x64-glibc";
+  return "passthrough";
+ }
+
+ private static boolean isUuidString(String value){
+  if(value==null||value.length()!=36)return false;
+  try{UUID.fromString(value);return true;}catch(IllegalArgumentException ex){return false;}
  }
 
  @Transactional(readOnly=true)
@@ -642,19 +705,32 @@ public class RuntimePlanningService {
   var config=json.createObjectNode();
   ObjectNode profileCopy=c.getProfile().deepCopy();
   profileCopy.remove("sealedInputs");
+  if(!profileCopy.hasNonNull("collectorImage")&&runnerCollectorImage!=null&&!runnerCollectorImage.isBlank())profileCopy.put("collectorImage",runnerCollectorImage.trim());
+  if(!profileCopy.hasNonNull("scenarioRunnerImage")&&runnerScenarioImage!=null&&!runnerScenarioImage.isBlank())profileCopy.put("scenarioRunnerImage",runnerScenarioImage.trim());
+  if(profileCopy.has("approvedForLocalPoc")&&!profileHasPinnedRunnerImages(profileCopy)){
+   throw new BusinessException(ErrorCode.BAD_REQUEST,"Sandbox runner images are not configured. An operator must set MAVIS_RUNNER_COLLECTOR_IMAGE and MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE to digest-pinned images");
+  }
   if(!profileCopy.hasNonNull("sandboxCompose")&&pre.getSandboxComposeYaml()!=null&&!pre.getSandboxComposeYaml().isBlank()&&(pre.getUnresolvableRunnerIssues()==null||pre.getUnresolvableRunnerIssues().isEmpty())){
    profileCopy.put("sandboxCompose",pre.getSandboxComposeYaml());
   }
   config.set("profile",profileCopy);
   var scenario=config.putObject("scenario");scenario.set("steps",s.getSteps().deepCopy());scenario.put("timeoutSeconds",settings.requireProfile(c.getProfileId()).timeoutSeconds());
   var planning=config.putObject("planning");planning.put("scenarioId",s.getId().toString());planning.put("scenarioRevision",s.getRevision());planning.put("configurationRevision",c.getRevision());
-  // Values the containers need beyond Compose: edited env, user secrets and per-run sandbox secrets.
-  Map<String,String> containerEnv=containerEnvironment(id,c.getProfile(),pre);
-  ObjectNode bindings=environmentBindings(pre,apps,containerEnv.keySet());
-  if(!bindings.isEmpty())((ObjectNode)config.get("profile")).set("environmentBindings",bindings);
-  var created=runtime.createRuntimeSession(RuntimeSessionCreateRequest.builder().projectId(id).sourceSnapshotId(c.getSourceSnapshotId()).modelVersionId(c.getModelVersionId()).profileName(c.getProfileId()).scenarioName(s.getName()).scenarioConfig(config).build());
+  // Values the containers need beyond Compose: edited env, relocated compose secrets, user secrets and per-service sandbox secrets.
+  var execEnv=buildExecutionEnvironment(id,c.getProfile(),pre,apps);
+  if(!execEnv.bindings().isEmpty())((ObjectNode)config.get("profile")).set("environmentBindings",execEnv.bindings());
+  Map<String,String> confirmedMappings=resolveConfirmedServiceMappings(c.getModelVersionId(),c.getProfile(),pre,apps);
+  var createBuilder=RuntimeSessionCreateRequest.builder()
+   .projectId(id)
+   .sourceSnapshotId(c.getSourceSnapshotId())
+   .modelVersionId(c.getModelVersionId())
+   .profileName(c.getProfileId())
+   .scenarioName(s.getName())
+   .scenarioConfig(config);
+  if(!confirmedMappings.isEmpty())createBuilder.confirmedServiceMappings(confirmedMappings);
+  var created=runtime.createRuntimeSession(createBuilder.build());
 
-  Map<String,String> protectedEnv=new LinkedHashMap<>(containerEnv);
+  Map<String,String> protectedEnv=new LinkedHashMap<>(execEnv.protectedEnvironment());
   if(r.environment()!=null)protectedEnv.putAll(r.environment());
   // Fails (and rolls back the session) when MAVIS_RUNTIME_ENVIRONMENT_KEY is missing instead of silently dropping inputs.
   if(!protectedEnv.isEmpty())environments.store(created.getId(),protectedEnv);
@@ -666,9 +742,28 @@ public class RuntimePlanningService {
     &&runnerScenarioImage!=null&&runnerScenarioImage.trim().matches("([A-Za-z0-9./:_-]+@)?sha256:[0-9a-f]{64}");
  }
 
- private Map<String,String> containerEnvironment(UUID projectId,JsonNode profile,PreflightCheckResponseDTO pre){
+ private static boolean profileHasPinnedRunnerImages(JsonNode p){
+  return p!=null&&p.path("collectorImage").isTextual()&&p.path("scenarioRunnerImage").isTextual()
+    &&p.path("collectorImage").asText().matches("[A-Za-z0-9./:_-]+@sha256:[0-9a-f]{64}")
+    &&p.path("scenarioRunnerImage").asText().matches("([A-Za-z0-9./:_-]+@)?sha256:[0-9a-f]{64}");
+ }
+
+ private record ExecutionEnvironment(Map<String,String> protectedEnvironment,ObjectNode bindings){}
+
+ private ExecutionEnvironment buildExecutionEnvironment(UUID projectId,JsonNode profile,PreflightCheckResponseDTO pre,JsonNode apps){
+  List<String> composeServices=(pre.getComposeServices()!=null&&!pre.getComposeServices().isEmpty())
+    ?pre.getComposeServices()
+    :(pre.getDetectedServices()==null?List.of():pre.getDetectedServices());
+  List<String> appServices=new ArrayList<>();
+  apps.fieldNames().forEachRemaining(svc->{if(composeServices.contains(svc))appServices.add(svc);});
+
   Map<String,PreflightCheckResponseDTO.RequiredEnvVarDTO> known=new LinkedHashMap<>();
   if(pre.getRequiredEnvVars()!=null)pre.getRequiredEnvVars().forEach(v->known.put(v.getName(),v));
+
+  Map<String,String> protectedEnv=new LinkedHashMap<>();
+  Map<String,Map<String,String>> serviceBindings=new LinkedHashMap<>();
+
+  // 1. User-provided overrides & secrets
   Map<String,String> candidates=new LinkedHashMap<>();
   JsonNode persisted=profile==null?null:profile.path("environmentVariables");
   if(persisted!=null&&persisted.isObject())persisted.fields().forEachRemaining(e->candidates.put(e.getKey(),e.getValue().asText("")));
@@ -678,72 +773,235 @@ public class RuntimePlanningService {
   }
   Map<String,String> step1=runtime.getProjectExecutionEnvironment(projectId);
   if(step1!=null)candidates.putAll(step1);
-  Map<String,String> env=new LinkedHashMap<>();
+
+  Set<String> userOverriddenKeys=new HashSet<>();
   candidates.forEach((k,v)->{
    if(k==null||!k.matches("[A-Z][A-Z0-9_]{0,63}")||v==null||v.isBlank()||v.length()>16000)return;
    var meta=known.get(k);
    // Unchanged defaults already live in Compose/source; only real overrides are injected.
    if(meta!=null&&meta.isDefaultPresent()&&v.equals(meta.getDefaultValue()))return;
-   env.put(k,v);
+   userOverriddenKeys.add(k);
+   protectedEnv.put(k,v);
+   if(isBindableEnvName(k)){
+    for(String target:owningServices(meta,composeServices,appServices)){
+     serviceBindings.computeIfAbsent(target,x->new LinkedHashMap<>()).put(k,k);
+    }
+   }
   });
+
+  // 2. Relocated literal secrets stripped from sandboxComposeYaml (zero data loss)
+  if(pre.getRelocatedComposeSecrets()!=null&&!pre.getRelocatedComposeSecrets().isEmpty()){
+   Map<String,Set<String>> distinctByKey=new HashMap<>();
+   pre.getRelocatedComposeSecrets().forEach((svc,secMap)->{
+    if(!composeServices.contains(svc)||secMap==null)return;
+    secMap.forEach((k,v)->{
+     if(!userOverriddenKeys.contains(k)&&isBindableEnvName(k)&&v!=null&&!v.isBlank()&&v.length()<=16000){
+      distinctByKey.computeIfAbsent(k,x->new LinkedHashSet<>()).add(v);
+     }
+    });
+   });
+   pre.getRelocatedComposeSecrets().forEach((svc,secMap)->{
+    if(!composeServices.contains(svc)||secMap==null)return;
+    secMap.forEach((k,v)->{
+     if(userOverriddenKeys.contains(k)||!isBindableEnvName(k)||v==null||v.isBlank()||v.length()>16000)return;
+     boolean needsScope=distinctByKey.getOrDefault(k,Set.of()).size()>1||(protectedEnv.containsKey(k)&&!v.equals(protectedEnv.get(k)));
+     String ref=needsScope?scopedEnvRef(svc,k):k;
+     if(!isBindableEnvName(ref))return;
+     protectedEnv.put(ref,v);
+     serviceBindings.computeIfAbsent(svc,x->new LinkedHashMap<>()).put(k,ref);
+    });
+   });
+  }
+
+  // 3. Unified Actuator management port override (when management.server.port differed from server.port)
+  if(pre.getUnifiedManagementPorts()!=null&&!pre.getUnifiedManagementPorts().isEmpty()&&!userOverriddenKeys.contains("MANAGEMENT_SERVER_PORT")){
+   Set<Integer> distinctPorts=new LinkedHashSet<>();
+   pre.getUnifiedManagementPorts().forEach((svc,port)->{if(composeServices.contains(svc)&&port!=null)distinctPorts.add(port);});
+   pre.getUnifiedManagementPorts().forEach((svc,port)->{
+    if(!composeServices.contains(svc)||port==null)return;
+    if(serviceBindings.getOrDefault(svc,Map.of()).containsKey("MANAGEMENT_SERVER_PORT"))return;
+    String val=String.valueOf(port);
+    boolean needsScope=distinctPorts.size()>1||(protectedEnv.containsKey("MANAGEMENT_SERVER_PORT")&&!val.equals(protectedEnv.get("MANAGEMENT_SERVER_PORT")));
+    String ref=needsScope?scopedEnvRef(svc,"MANAGEMENT_SERVER_PORT"):"MANAGEMENT_SERVER_PORT";
+    protectedEnv.put(ref,val);
+    serviceBindings.computeIfAbsent(svc,x->new LinkedHashMap<>()).put("MANAGEMENT_SERVER_PORT",ref);
+   });
+  }
+
+  // 4. Auto-resolved DB credentials (scoped per service when multi-DB values differ) and shared generated sandbox secrets
   Map<String,String> credentials=new HashMap<>(pre.getSandboxDatabaseCredentials()==null?Map.of():pre.getSandboxDatabaseCredentials());
+  Map<String,Map<String,String>> perServiceCreds=new LinkedHashMap<>();
+  if(pre.getServiceDatabaseCredentials()!=null){
+   pre.getServiceDatabaseCredentials().forEach((svc,m)->{if(m!=null)perServiceCreds.put(svc,new LinkedHashMap<>(m));});
+  }
   Set<String> infra=new HashSet<>(pre.getInfrastructureServices()==null?List.of():pre.getInfrastructureServices());
-  // Database containers first, so applications reuse the same generated credential.
-  for(boolean infraPass:new boolean[]{true,false}){
-   for(var v:known.values()){
-    if(infra.contains(v.getService())!=infraPass||env.containsKey(v.getName())||v.isDefaultPresent()||!v.getName().matches("[A-Z][A-Z0-9_]{0,63}"))continue;
-    String value=ComposePreflightValidator.databaseCredentialFor(v.getName(),v.getService(),pre);
-    if(value==null)value=ComposePreflightValidator.databaseCredentialFor(v.getName(),credentials);
-    boolean secret="SECRET".equals(v.getCategory())||"DB_SECRET".equals(v.getCategory());
-    if(value==null&&secret&&ComposePreflightValidator.isGeneratableSandboxSecret(v.getName()))value=randomSecret();
-    if(value==null)continue;
-    env.put(v.getName(),value);
-    if(infraPass)credentials.putIfAbsent(v.getName(),value);
+  List<PreflightCheckResponseDTO.RequiredEnvVarDTO> orderedVars=new ArrayList<>(known.values());
+  orderedVars.sort(Comparator.comparingInt(v->owningServices(v,composeServices,appServices).stream().anyMatch(infra::contains)?0:1));
+  for(var v:orderedVars){
+   String key=v.getName();
+   if(userOverriddenKeys.contains(key)||v.isDefaultPresent()||!isBindableEnvName(key))continue;
+   List<String> owners=owningServices(v,composeServices,appServices);
+   List<String> orderedOwners=new ArrayList<>();
+   owners.forEach(s->{if(infra.contains(s))orderedOwners.add(s);});
+   owners.forEach(s->{if(!infra.contains(s))orderedOwners.add(s);});
+   boolean secret="SECRET".equals(v.getCategory())||"DB_SECRET".equals(v.getCategory());
+   String sharedGenerated=null;
+   Map<String,String> resolvedPerSvc=new LinkedHashMap<>();
+   for(String svc:orderedOwners){
+    if(serviceBindings.getOrDefault(svc,Map.of()).containsKey(key))continue;
+    String val=ComposePreflightValidator.databaseCredentialFor(key,svc,perServiceCreds,pre.getServiceDependencies(),credentials);
+    if(val==null&&secret&&ComposePreflightValidator.isGeneratableSandboxSecret(key)){
+     if(sharedGenerated==null)sharedGenerated=randomSecret();
+     val=sharedGenerated;
+    }
+    if(val!=null){
+     resolvedPerSvc.put(svc,val);
+     if(infra.contains(svc)){
+      credentials.putIfAbsent(key,val);
+      perServiceCreds.computeIfAbsent(svc,x->new LinkedHashMap<>()).putIfAbsent(key,val);
+     }
+    }
+   }
+   if(resolvedPerSvc.isEmpty())continue;
+   Set<String> distinctVals=new LinkedHashSet<>(resolvedPerSvc.values());
+   for(Map.Entry<String,String> entry:resolvedPerSvc.entrySet()){
+    String svc=entry.getKey();
+    String val=entry.getValue();
+    boolean needsScope=distinctVals.size()>1||(protectedEnv.containsKey(key)&&!val.equals(protectedEnv.get(key)));
+    String ref=needsScope?scopedEnvRef(svc,key):key;
+    if(!isBindableEnvName(ref))continue;
+    protectedEnv.put(ref,val);
+    serviceBindings.computeIfAbsent(svc,x->new LinkedHashMap<>()).put(key,ref);
    }
   }
-  return env;
+
+  // 5. Compose environment aliases (e.g. SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD})
+  if(pre.getComposeEnvAliases()!=null){
+   for(Map.Entry<String,Map<String,String>> svcAliases:pre.getComposeEnvAliases().entrySet()){
+    String svc=svcAliases.getKey();
+    if(!composeServices.contains(svc)||svcAliases.getValue()==null)continue;
+    for(Map.Entry<String,String> alias:svcAliases.getValue().entrySet()){
+     String containerKey=alias.getKey();
+     String refKey=alias.getValue();
+     if(!isBindableEnvName(containerKey))continue;
+     String actualRef=serviceBindings.getOrDefault(svc,Map.of()).get(refKey);
+     if(actualRef==null&&protectedEnv.containsKey(refKey)&&isBindableEnvName(refKey))actualRef=refKey;
+     if(actualRef!=null){
+      serviceBindings.computeIfAbsent(svc,x->new LinkedHashMap<>()).putIfAbsent(containerKey,actualRef);
+     }
+    }
+   }
+  }
+
+  ObjectNode out=json.createObjectNode();
+  for(Map.Entry<String,Map<String,String>> svcEntry:serviceBindings.entrySet()){
+   if(svcEntry.getValue().isEmpty())continue;
+   ArrayNode list=out.putArray(svcEntry.getKey());
+   for(Map.Entry<String,String> b:svcEntry.getValue().entrySet()){
+    if(list.size()>=64)break;
+    list.addObject().put("name",b.getKey()).put("reference",b.getValue());
+   }
+  }
+  return new ExecutionEnvironment(protectedEnv,out);
+ }
+
+ private static List<String> owningServices(PreflightCheckResponseDTO.RequiredEnvVarDTO meta,List<String> composeServices,List<String> appServices){
+  if(meta==null)return appServices;
+  List<String> targets=new ArrayList<>();
+  if(meta.getServices()!=null&&!meta.getServices().isEmpty()){
+   for(String s:meta.getServices()){
+    if(composeServices.contains(s)&&!targets.contains(s))targets.add(s);
+   }
+  }
+  if(targets.isEmpty()&&meta.getService()!=null&&composeServices.contains(meta.getService())){
+   targets.add(meta.getService());
+  }
+  return targets.isEmpty()?appServices:targets;
+ }
+
+ private static boolean isBindableEnvName(String name){
+  return name!=null&&name.matches("[A-Z][A-Z0-9_]{0,63}")&&!"PATH".equals(name)&&RESERVED_ENV_PREFIXES.stream().noneMatch(name::startsWith);
+ }
+
+ static String scopedEnvRef(String serviceName,String envName){
+  String prefix=serviceName==null?"SVC":serviceName.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_]","_").replaceAll("_+","_").replaceAll("^_|_$","");
+  if(prefix.isEmpty()||!Character.isLetter(prefix.charAt(0)))prefix="SVC_"+prefix;
+  final String candidatePrefix=prefix+"_";
+  if(RESERVED_ENV_PREFIXES.stream().anyMatch(candidatePrefix::startsWith))prefix="SVC_"+prefix;
+  int maxPrefixLen=64-2-envName.length();
+  if(maxPrefixLen<4)return envName;
+  if(prefix.length()>maxPrefixLen)prefix=prefix.substring(0,maxPrefixLen);
+  return prefix+"__"+envName;
+ }
+
+ private Map<String,String> resolveConfirmedServiceMappings(UUID modelVersionId,JsonNode profile,PreflightCheckResponseDTO pre,JsonNode apps){
+  Map<String,String> raw=new LinkedHashMap<>();
+  if(profile!=null&&profile.has("serviceMappings")&&profile.get("serviceMappings").isObject()){
+   profile.get("serviceMappings").fields().forEachRemaining(e->raw.put(e.getKey(),e.getValue().asText("").trim()));
+  }
+  Map<String,String> recommended=pre!=null&&pre.getRecommendedServiceMappings()!=null?pre.getRecommendedServiceMappings():Map.of();
+  Map<String,String> modelNames=new LinkedHashMap<>(pre!=null&&pre.getModelServiceNames()!=null?pre.getModelServiceNames():Map.of());
+  if(modelNames.isEmpty()&&modelElements!=null&&modelVersionId!=null){
+   List<ModelElement> els=modelElements.findByModelVersionId(modelVersionId);
+   if(els!=null){
+    for(ModelElement el:els){
+     if("SERVICE_CONTAINER".equalsIgnoreCase(el.getElementType())&&el.getId()!=null&&el.getName()!=null){
+      modelNames.put(el.getId().toString(),el.getName());
+     }
+    }
+   }
+  }
+  Set<String> appKeys=new LinkedHashSet<>();
+  if(apps!=null&&apps.isObject())apps.fieldNames().forEachRemaining(appKeys::add);
+  for(String appKey:appKeys){
+   raw.putIfAbsent(appKey,recommended.getOrDefault(appKey,""));
+  }
+  Map<String,String> resolved=new LinkedHashMap<>();
+  boolean singleFallback=appKeys.size()==1&&modelNames.size()==1;
+  String singleUuid=singleFallback?modelNames.keySet().iterator().next():null;
+  for(Map.Entry<String,String> e:raw.entrySet()){
+   String svc=e.getKey();
+   if(!appKeys.isEmpty()&&!appKeys.contains(svc))continue;
+   String val=e.getValue();
+   if(isUuidString(val)){
+    resolved.put(svc,val);
+    continue;
+   }
+   String rec=recommended.get(svc);
+   if((val.isEmpty()||val.equalsIgnoreCase(svc))&&isUuidString(rec)){
+    resolved.put(svc,rec);
+    continue;
+   }
+   String matchedUuid=matchModelUuid(val.isEmpty()?svc:val,modelNames);
+   if(matchedUuid==null&&!val.isEmpty())matchedUuid=matchModelUuid(svc,modelNames);
+   if(matchedUuid==null&&singleFallback)matchedUuid=singleUuid;
+   if(matchedUuid!=null)resolved.put(svc,matchedUuid);
+   else if(!val.isEmpty())resolved.put(svc,val);
+  }
+  return resolved;
+ }
+
+ private static String matchModelUuid(String candidate,Map<String,String> modelNames){
+  if(candidate==null||candidate.isBlank()||modelNames.isEmpty())return null;
+  for(Map.Entry<String,String> e:modelNames.entrySet()){
+   if(e.getKey().equalsIgnoreCase(candidate)||e.getValue().equalsIgnoreCase(candidate)
+     ||ComposePreflightValidator.cleanServiceCandidate(e.getValue()).equalsIgnoreCase(candidate)){
+    return e.getKey();
+   }
+  }
+  for(Map.Entry<String,String> e:modelNames.entrySet()){
+   if(ComposePreflightValidator.matchDetectedService(e.getValue(),List.of(candidate))!=null)return e.getKey();
+  }
+  return null;
  }
 
  private String randomSecret(){byte[] bytes=new byte[32];secureRandom.nextBytes(bytes);return Base64.getEncoder().encodeToString(bytes);}
 
- private ObjectNode environmentBindings(PreflightCheckResponseDTO pre,JsonNode apps,Set<String> names){
-  ObjectNode out=json.createObjectNode();
-  if(names.isEmpty())return out;
-  List<String> composeServices=pre.getDetectedServices()==null?List.of():pre.getDetectedServices();
-  List<String> appServices=new ArrayList<>();
-  apps.fieldNames().forEachRemaining(svc->{if(composeServices.contains(svc))appServices.add(svc);});
-  Map<String,String> owner=new HashMap<>();
-  if(pre.getRequiredEnvVars()!=null)pre.getRequiredEnvVars().forEach(v->owner.put(v.getName(),v.getService()));
-  for(String name:names){
-   // Same reserved names MAVIS.Runner rejects in ComposeOverrideBuilder.
-   if(!name.matches("[A-Z][A-Z0-9_]{0,63}")||name.equals("PATH")||RESERVED_ENV_PREFIXES.stream().anyMatch(name::startsWith))continue;
-   String svc=owner.get(name);
-   List<String> targets=svc!=null&&composeServices.contains(svc)?List.of(svc):appServices;
-   for(String target:targets){
-    ArrayNode list=out.has(target)?(ArrayNode)out.get(target):out.putArray(target);
-    if(list.size()<64)list.addObject().put("name",name).put("reference",name);
-   }
-  }
-  if(pre.getComposeEnvAliases()!=null){
-   for(Map.Entry<String,Map<String,String>> svcAliases:pre.getComposeEnvAliases().entrySet()){
-    String svc=svcAliases.getKey();
-    if(!composeServices.contains(svc))continue;
-    for(Map.Entry<String,String> alias:svcAliases.getValue().entrySet()){
-     String containerKey=alias.getKey();
-     String refKey=alias.getValue();
-     if(!names.contains(refKey)||!containerKey.matches("[A-Z][A-Z0-9_]{0,63}")||containerKey.equals("PATH")||RESERVED_ENV_PREFIXES.stream().anyMatch(containerKey::startsWith))continue;
-     ArrayNode list=out.has(svc)?(ArrayNode)out.get(svc):out.putArray(svc);
-     if(list.size()<64)list.addObject().put("name",containerKey).put("reference",refKey);
-    }
-   }
-  }
-  return out;
- }
-
  private void validateProfile(JsonNode p){if(!p.isObject()||p.toString().length()>50000||!p.equals(SecretRedactor.redactJson(p)))throw new BusinessException(ErrorCode.BAD_REQUEST,"Profile must be a bounded object without literal secrets");
-  if(!p.path("collectorImage").isTextual()||!p.path("scenarioRunnerImage").isTextual())throw new BusinessException(ErrorCode.BAD_REQUEST,"Sandbox runner images are not configured. An operator must set MAVIS_RUNNER_COLLECTOR_IMAGE and MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE to digest-pinned images");
-  if(!p.path("scenarioRunnerImage").asText().matches("([A-Za-z0-9./:_-]+@)?sha256:[0-9a-f]{64}")||!p.path("collectorImage").asText().matches("[A-Za-z0-9./:_-]+@sha256:[0-9a-f]{64}")||!p.path("instrumentationVolume").asText().matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")||!p.path("approvedForLocalPoc").asBoolean(false)||!p.path("applications").isObject()||p.path("applications").isEmpty()||p.path("applications").size()>10)throw new BusinessException(ErrorCode.BAD_REQUEST,"An approved, digest-pinned operator profile is required");
-  for(var it=p.path("applications").fields();it.hasNext();){var app=it.next();int port=app.getValue().path("containerPort").asInt();if(!app.getKey().matches("[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}")||port<1||port>65535||!Set.of("java","dotnet8-linux-x64-glibc").contains(app.getValue().path("runtime").asText())||!app.getValue().path("readinessPath").asText("/health").startsWith("/"))throw new BusinessException(ErrorCode.BAD_REQUEST,"Unsupported application profile");}
+  if(p.hasNonNull("collectorImage")&&(!p.path("collectorImage").isTextual()||!p.path("collectorImage").asText().matches("[A-Za-z0-9./:_-]+@sha256:[0-9a-f]{64}")))throw new BusinessException(ErrorCode.BAD_REQUEST,"collectorImage must be digest-pinned");
+  if(p.hasNonNull("scenarioRunnerImage")&&(!p.path("scenarioRunnerImage").isTextual()||!p.path("scenarioRunnerImage").asText().matches("([A-Za-z0-9./:_-]+@)?sha256:[0-9a-f]{64}")))throw new BusinessException(ErrorCode.BAD_REQUEST,"scenarioRunnerImage must be digest-pinned");
+  if(!p.path("instrumentationVolume").asText().matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")||!p.path("approvedForLocalPoc").asBoolean(false)||!p.path("applications").isObject()||p.path("applications").isEmpty()||p.path("applications").size()>10)throw new BusinessException(ErrorCode.BAD_REQUEST,"An approved, digest-pinned operator profile is required");
+  for(var it=p.path("applications").fields();it.hasNext();){var app=it.next();int port=app.getValue().path("containerPort").asInt();if(!app.getKey().matches("[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}")||port<1||port>65535||!Set.of("java","dotnet8-linux-x64-glibc","passthrough").contains(app.getValue().path("runtime").asText())||!app.getValue().path("readinessPath").asText("/health").startsWith("/"))throw new BusinessException(ErrorCode.BAD_REQUEST,"Unsupported application profile");}
  }
  private ArrayNode parseSteps(List<String> rows){var result=json.createArrayNode();var ids=new HashSet<String>();for(String row:rows){JsonNode n;try{n=json.readTree(row);}catch(Exception e){throw new BusinessException(ErrorCode.BAD_REQUEST,"Each scenario step must be a JSON object");}
    if(n==null||!n.isObject()||!ids.add(n.path("id").asText())||n.path("id").asText().isBlank()||!n.path("service").asText().matches("[A-Za-z0-9][A-Za-z0-9_-]{0,62}")||!Set.of("GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS").contains(n.path("method").asText())||!n.path("path").asText().startsWith("/")||n.path("path").asText().startsWith("//")||n.path("expectedStatus").asInt()<100||n.path("expectedStatus").asInt()>599||!n.equals(SecretRedactor.redactJson(n)))throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid or secret-bearing scenario step");
