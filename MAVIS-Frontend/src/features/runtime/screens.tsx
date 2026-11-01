@@ -767,10 +767,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
 
                 {/* P4: Automatic Sandbox Compose Remediation Banner */}
                 {sandboxComposeChanges.length > 0 && (
-                  <div className="rounded border border-sky-500/30 bg-sky-500/5 p-3 text-xs space-y-2">
+                  <div className="rounded border bg-background/60 px-3 py-2 text-xs space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-semibold text-sky-400">
-                        ✨ Sandbox Compose Auto-Generated ({sandboxComposeChanges.length} automatic adjustments applied)
+                      <span className="text-muted-foreground">
+                        <strong className="text-foreground">Sandbox Compose profile:</strong>{" "}
+                        {sandboxComposeChanges.length} automatic adjustment{sandboxComposeChanges.length === 1 ? "" : "s"} applied for isolated execution.
                       </span>
                       {sandboxComposeYaml && (
                         <Button
@@ -780,19 +781,23 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           className="h-6 text-[11px]"
                           onClick={() => setShowSandboxCompose((prev) => !prev)}
                         >
-                          {showSandboxCompose ? "Hide Sandbox Compose" : "View Generated Sandbox Compose"}
+                          {showSandboxCompose ? "Hide details" : "View generated Compose"}
                         </Button>
                       )}
                     </div>
-                    <ul className="list-disc pl-5 space-y-0.5 text-muted-foreground">
-                      {sandboxComposeChanges.slice(0, 6).map((ch, idx) => (
-                        <li key={idx}>{ch}</li>
-                      ))}
-                    </ul>
-                    {showSandboxCompose && sandboxComposeYaml && (
-                      <pre className="mt-2 max-h-48 overflow-auto rounded border bg-background/90 p-2 font-mono text-[11px] text-foreground">
-                        {sandboxComposeYaml}
-                      </pre>
+                    {showSandboxCompose && (
+                      <div className="space-y-2 pt-1 border-t">
+                        <ul className="list-disc pl-5 space-y-0.5 text-muted-foreground">
+                          {sandboxComposeChanges.map((ch, idx) => (
+                            <li key={idx}>{ch}</li>
+                          ))}
+                        </ul>
+                        {sandboxComposeYaml && (
+                          <pre className="max-h-48 overflow-auto rounded border bg-background p-2 font-mono text-[11px] text-foreground">
+                            {sandboxComposeYaml}
+                          </pre>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -1180,10 +1185,10 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
             </div>
 
             {autoSecretKeys.length > 0 && (
-              <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 space-y-2">
+              <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-emerald-500">
-                    🔒 Provided automatically for the sandbox ({autoSecretKeys.length})
+                  <span className="text-xs font-medium text-foreground">
+                    Provided automatically for the sandbox ({autoSecretKeys.length})
                   </span>
                   <Button
                     type="button"
@@ -1234,14 +1239,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     upper.includes("DATASOURCE_URL");
                   const isAiOrApi = upper.includes("API_KEY") || upper.includes("OPENAI") || upper.includes("GEMINI");
                   const friendlyLabel = isDbConn
-                    ? "🗄️ Database Connection String"
+                    ? "Database Connection String"
                     : isAiOrApi
-                      ? "🤖 AI / External Service API Key"
+                      ? "AI / External Service API Key"
                       : upper.includes("JWT")
-                        ? "🔐 JWT Signing Secret"
+                        ? "JWT Signing Secret"
                         : upper.includes("DB_") || upper.includes("DATASOURCE")
-                          ? "🗄️ Database Credential"
-                          : "🔑 Protected Secret";
+                          ? "Database Credential"
+                          : "Protected Secret";
                   const defaultPlaceholder = isConfigured
                     ? "•••••••• (Saved — leave blank to keep existing value)"
                     : isDbConn
@@ -2457,10 +2462,10 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       />
 
       {(step1Readiness.remainingIssues.length > 0 || step1Readiness.prerequisites.length > 0) && (
-        <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 p-3.5 text-xs space-y-2">
+        <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-3.5 text-xs space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-semibold text-amber-400">
-              ⚠️ Sandbox Readiness Check (from Step 1)
+              Sandbox Readiness Check (from Step 1)
             </span>
             <div className="flex items-center gap-2">
               {step1Readiness.missingBuildServices.length > 0 && step1Readiness.localBuildAvailable && (
@@ -2472,8 +2477,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   onClick={handleBuildMissingImagesInStep2}
                 >
                   {buildImages.isPending
-                    ? "🔨 Building images..."
-                    : `🔨 Build ${step1Readiness.missingBuildServices.length} Missing Image(s)`}
+                    ? "Building images..."
+                    : `Build ${step1Readiness.missingBuildServices.length} Missing Image(s)`}
                 </Button>
               )}
               <Link
@@ -2583,8 +2588,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   }}
                 >
                   {generateAiDraft.isPending
-                    ? "✨ System + AI analyzing..."
-                    : "✨ Regenerate Scenario with System + AI"}
+                    ? "Analyzing & generating..."
+                    : "Regenerate Scenario"}
                 </Button>
               </div>
             )}
@@ -2596,11 +2601,11 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 <span className="font-semibold">Scenario Proposal Source:</span>
                 {generatorMode === "AI_ASSISTED" ? (
                   <span className="px-2 py-0.5 rounded bg-primary/15 text-primary text-xs font-semibold">
-                    ✨ AI + System Generated ({aiModelName || "Gemini"})
+                    AI + System Generated ({aiModelName || "Gemini"})
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 text-xs font-semibold">
-                    ⚙️ System Static Analysis ({aiModelName || "Deterministic"})
+                    System Static Analysis ({aiModelName || "Deterministic"})
                   </span>
                 )}
               </div>
@@ -2668,40 +2673,40 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             );
             const allDetectedServices = [...uniqueEntryServices, ...downstreamServices];
             return (
-              <div className="rounded-xl border border-primary/25 bg-slate-950/70 p-3.5 space-y-2.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-sky-400">
-                    🕸️ Planned Workflow Preview (from model edges) ({steps.length} HTTP Calls → {allDetectedServices.length} Services)
+              <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="font-semibold text-foreground">
+                    Planned Workflow Preview ({steps.length} HTTP Calls → {allDetectedServices.length} Services)
                   </span>
-                  <span className="text-[11px] font-mono text-slate-400">
-                    Live trace & sequence diagram will render in Step 3
+                  <span className="text-[11px] font-mono text-muted-foreground">
+                    Live trace & sequence diagram render in Step 3
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <div className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-mono font-bold text-sky-300">
-                    ⚡ MAVIS Runner
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                  <div className="rounded border bg-background px-2.5 py-1 text-xs font-mono font-medium text-foreground">
+                    MAVIS Runner
                   </div>
-                  <span className="text-sky-400 font-bold">──▶</span>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground font-mono text-xs">→</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {uniqueEntryServices.map((entrySvc) => (
                       <div
                         key={entrySvc}
-                        className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-mono font-semibold text-emerald-300"
+                        className="rounded border bg-background px-2.5 py-1 text-xs font-mono font-medium text-foreground"
                       >
-                        🟢 {entrySvc}
+                        {entrySvc}
                       </div>
                     ))}
                   </div>
                   {downstreamServices.length > 0 && (
                     <>
-                      <span className="text-emerald-400 font-bold">──▶</span>
-                      <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-muted-foreground font-mono text-xs">→</span>
+                      <div className="flex flex-wrap items-center gap-1.5">
                         {downstreamServices.map((ds) => (
                           <div
                             key={ds}
-                            className="rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs font-mono text-violet-300"
+                            className="rounded border bg-muted/40 px-2.5 py-1 text-xs font-mono text-muted-foreground"
                           >
-                            🔗 {ds}
+                            {ds}
                           </div>
                         ))}
                       </div>
@@ -2739,7 +2744,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
             {steps.length === 0 ? (
               <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
-                No scenario steps yet. Click <strong>✨ Regenerate Scenario with System + AI</strong> or{" "}
+                No scenario steps yet. Click <strong>Regenerate Scenario</strong> or{" "}
                 <strong>+ Add HTTP Step</strong> to start.
               </div>
             ) : (
@@ -2882,7 +2887,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                               : "border-border bg-background text-muted-foreground hover:text-foreground"
                           }`}
                         >
-                          🔑 Auth
+                          Auth
                         </button>
                         <Button
                           size="sm"
@@ -2897,7 +2902,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pl-1">
                           <div className="flex flex-wrap items-center gap-2">
                             {st.journeyPhase && (
-                              <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono text-[10px] font-semibold">
+                              <span className="px-1.5 py-0.5 rounded bg-muted text-foreground font-mono text-[10px] font-medium">
                                 {st.journeyPhase}
                               </span>
                             )}
@@ -2905,20 +2910,20 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                               Object.entries(st.extract).map(([varKey, ptr]) => (
                                 <span
                                   key={varKey}
-                                  className="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 border border-violet-500/30 font-mono text-[10px]"
+                                  className="px-1.5 py-0.5 rounded bg-muted text-foreground border font-mono text-[10px]"
                                 >
-                                  📤 {varKey} ← {ptr}
+                                  {varKey} ← {ptr}
                                 </span>
                               ))}
-                            {st.rationale && <span>💡 {st.rationale}</span>}
+                            {st.rationale && <span>{st.rationale}</span>}
                           </div>
                           {st.source && <span className="font-mono text-[11px]">Source: {st.source}</span>}
                         </div>
                       )}
                       {authHeader && (
                         <div className="flex items-center gap-2 pl-1 pt-0.5">
-                          <span className="text-[11px] font-mono text-sky-400 shrink-0">
-                            🔑 Authorization:
+                          <span className="text-[11px] font-mono text-muted-foreground shrink-0">
+                            Authorization:
                           </span>
                           <Input
                             type="password"
@@ -2936,7 +2941,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                       {isWrite && effectiveBodyRef && (
                         <div className="flex flex-wrap items-center gap-2 pl-1 pt-0.5">
                           <span className="text-[11px] font-mono text-muted-foreground shrink-0">
-                            ✨ JSON Payload:
+                            JSON Payload:
                           </span>
                           <Input
                             className={`h-7 font-mono text-xs flex-1 min-w-56 ${
@@ -2989,8 +2994,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             )}
           </div>
 
-          <div className="rounded-lg border bg-emerald-500/5 border-emerald-500/20 px-3.5 py-2.5 text-xs text-emerald-500 font-medium">
-            ✨ AI & System automatically synthesized URL path parameters, source-grounded DTO JSON payloads, and causal workflow ordering (Step 1 environment variables and secrets are inherited automatically).
+          <div className="rounded-lg border bg-muted/20 px-3.5 py-2 text-xs text-muted-foreground">
+            URL path parameters, DTO JSON payloads, and workflow ordering are synthesized from source contracts (Step 1 environment variables and secrets are inherited automatically).
           </div>
         </div>
       </DetailPanel>
@@ -3052,7 +3057,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             >
               {buildImages.isPending || autoSaveConfig.isPending || start.isPending
                 ? "Saving & launching into Step 3..."
-                : "🚀 Confirm & Run in Step 3"}
+                : "Confirm & Run in Step 3 →"}
             </Button>
             <Button
               type="button"
@@ -3067,7 +3072,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               }
               onClick={() => handleCreateAndRun(false)}
             >
-              {saveDraft.isPending || updateDraft.isPending ? "Saving..." : "💾 Save Scenario Draft"}
+              {saveDraft.isPending || updateDraft.isPending ? "Saving..." : "Save Scenario Draft"}
             </Button>
           </div>
 
