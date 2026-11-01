@@ -209,3 +209,13 @@ test('BE legacy argument counting handles generics in signatures without guessin
  assert.equal(resolveCalledMethods(methods,{methodName:'send',arguments:'[build(a,b)]'}).length,2);
  assert.equal(resolveCalledMethods(methods,{methodName:'send',arguments:'[null]'}).length,1);
 });
+
+test('Source method sequence viewIds strictly satisfy architectureDocument identifier contract across generic signatures',()=>{
+ const model=fixture(),controller=model.elements.find(n=>n.id==='oc');
+ controller.properties.umlClassifier.methodsCfg[0].signature='listProducts(): List<ProductEntity>';
+ controller.properties.umlClassifier.methodsCfg[1].signature='listProducts(ProductEntity[]): List<ProductEntity>';
+ const flows=detectSequenceFlows(model,{level:'MICRO',serviceId:'org'}).filter(f=>f.sourceMethod);
+ assert.equal(flows.length,2);
+ for(const f of flows){assert.match(f.viewId,/^[a-zA-Z0-9:_-]{1,160}$/);}
+ assert.notEqual(flows[0].viewId,flows[1].viewId);
+});

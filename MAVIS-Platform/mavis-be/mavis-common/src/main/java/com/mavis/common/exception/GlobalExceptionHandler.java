@@ -151,6 +151,11 @@ public class GlobalExceptionHandler {
         return ApiResponse.error(ErrorCode.BAD_REQUEST, ex.getMessage());
     }
 
+    @ExceptionHandler(org.springframework.web.context.request.async.AsyncRequestNotUsableException.class)
+    public void handleClientDisconnect(org.springframework.web.context.request.async.AsyncRequestNotUsableException ex) {
+        log.debug("Client disconnected before response completed: {}", ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ApiResponse<Void> handleGlobalException(Exception ex) {

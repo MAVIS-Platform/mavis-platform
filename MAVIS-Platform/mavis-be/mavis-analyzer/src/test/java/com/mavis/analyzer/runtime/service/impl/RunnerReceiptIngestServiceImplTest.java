@@ -727,5 +727,114 @@ class RunnerReceiptIngestServiceImplTest {
         assertThat(dto.getStepResults().get(1).getPath()).doesNotContain("secret777");
         assertThat(dto.getFailureReason()).doesNotContain("secret777").doesNotContain("hidden123");
         assertThat(String.join(" ", dto.getDiagnostics())).doesNotContain("hidden123");
+
+        // Verify out-of-order container-batch interactions sort chronologically and resolve causalParentMessageIds
+    }
+
+    @Test
+    @DisplayName("Step 3: Out-of-order OTel container-batch interactions sort chronologically and resolve causalParentMessageIds")
+    void outOfOrderContainerBatchInteractionsSortChronologicallyAndResolveCausalParents() {
+        UUID serviceCId = UUID.randomUUID();
+        ModelElement baseServiceC = ModelElement.builder()
+                .id(serviceCId)
+                .modelVersion(baseModelVersion)
+                .name("ledger-service")
+                .elementType("SERVICE_CONTAINER")
+                .status("ACTIVE")
+                .build();
+        when(modelElementRepository.findByModelVersionId(modelVersionId))
+                .thenReturn(List.of(elementA, elementB, baseServiceC));
+
+        String traceId = "2d9249389ce8d609a63b3411d44440fd";
+        RunnerCorrelatedSpanDTO gwClientToOrder = RunnerCorrelatedSpanDTO.builder()
+                .traceId(traceId)
+                .spanId("49e9c40e616d2a37")
+                .parentSpanId("f65db588bf8464bf")
+                .runtimeService("order-service")
+                .modelServiceId(serviceAId.toString())
+                .startTimeUnixNano("1793542783600924440")
+                .durationNanoseconds("651926101")
+                .build();
+        RunnerCorrelatedSpanDTO invServer = RunnerCorrelatedSpanDTO.builder()
+                .traceId(traceId)
+                .spanId("a88572a2dd072d9a")
+                .parentSpanId("49e9c40e616d2a37")
+                .runtimeService("inventory-service")
+                .modelServiceId(serviceBId.toString())
+                .startTimeUnixNano("1793542783620651528")
+                .durationNanoseconds("631493536")
+                .build();
+        RunnerCorrelatedSpanDTO invClientToPay = RunnerCorrelatedSpanDTO.builder()
+                .traceId(traceId)
+                .spanId("8c860789f2f41e94")
+                .parentSpanId("a88572a2dd072d9a")
+                .runtimeService("inventory-service")
+                .modelServiceId(serviceBId.toString())
+                .startTimeUnixNano("1793542784140798127")
+                .durationNanoseconds("80190228")
+                .build();
+        RunnerCorrelatedSpanDTO payServer = RunnerCorrelatedSpanDTO.builder()
+                .traceId(traceId)
+                .spanId("71e0258e6b933a8f")
+                .parentSpanId("8c860789f2f41e94")
+                .runtimeService("payment-service")
+                .modelServiceId(serviceCId.toString())
+                .startTimeUnixNano("1793542784178217004")
+                .durationNanoseconds("43368094")
+                .build();
+
+        RunnerObservedInteractionDTO downstreamFirst = RunnerObservedInteractionDTO.builder()
+                .traceId(traceId)
+                .fromService("inventory-service")
+                .toService("payment-service")
+                .fromModelServiceId(serviceBId.toString())
+                .toModelServiceId(serviceCId.toString())
+                .parentSpanId("8c860789f2f41e94")
+                .childSpanId("71e0258e6b933a8f")
+                .build();
+        RunnerObservedInteractionDTO upstreamSecond = RunnerObservedInteractionDTO.builder()
+                .traceId(traceId)
+                .fromService("order-service")
+                .toService("inventory-service")
+                .fromModelServiceId(serviceAId.toString())
+                .toModelServiceId(serviceBId.toString())
+                .parentSpanId("49e9c40e616d2a37")
+                .childSpanId("a88572a2dd072d9a")
+                .build();
+
+        RunnerTraceCorrelationDTO trace = RunnerTraceCorrelationDTO.builder()
+                .sessionId(sessionId.toString())
+                .modelVersionId(modelVersionId.toString())
+                .spans(List.of(gwClientToOrder, invServer, invClientToPay, payServer))
+                .interactions(List.of(downstreamFirst, upstreamSecond))
+                .build();
+
+        RunnerOutcomeDTO outcome = RunnerOutcomeDTO.builder()
+                .executionStatus("Completed")
+                .scenarioStatus("Passed")
+                .evidenceStatus("Available")
+                .cleanupStatus("Confirmed")
+                .traceQuality("Complete")
+                .mappingStatus("Mapped")
+                .trace(trace)
+                .build();
+
+        runnerReceiptIngestService.ingestRunnerReceiptAck(
+                sessionId,
+                createValidReceiptBuilder().imageSourceCorrespondence("Verified").outcome(outcome).build());
+
+        ArgumentCaptor<DiagramVersion> diagCaptor = ArgumentCaptor.forClass(DiagramVersion.class);
+        verify(diagramVersionRepository).save(diagCaptor.capture());
+        var steps = diagCaptor.getValue().getLayoutJson().path("steps");
+        assertThat(steps).hasSize(2);
+        assertThat(steps.get(0).path("stepOrder").asInt()).isEqualTo(1);
+        assertThat(steps.get(0).path("callerService").asText()).isEqualTo("order-service");
+        assertThat(steps.get(0).path("calleeService").asText()).isEqualTo("payment-service");
+        assertThat(steps.get(0).path("causalParentMessageIds")).isEmpty();
+
+        assertThat(steps.get(1).path("stepOrder").asInt()).isEqualTo(2);
+        assertThat(steps.get(1).path("callerService").asText()).isEqualTo("payment-service");
+        assertThat(steps.get(1).path("calleeService").asText()).isEqualTo("ledger-service");
+        assertThat(steps.get(1).path("causalParentMessageIds").get(0).asText()).isEqualTo("msg-obs-1");
     }
 }

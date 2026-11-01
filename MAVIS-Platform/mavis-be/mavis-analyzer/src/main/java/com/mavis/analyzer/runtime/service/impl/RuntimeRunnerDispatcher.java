@@ -84,7 +84,7 @@ public class RuntimeRunnerDispatcher {
     public CompletableFuture<Void> dispatchSessionAsync(UUID sessionId) {
         return CompletableFuture.runAsync(() -> {
             try {
-                dispatchSession(sessionId);
+                executeSessionInternal(sessionId);
             } catch (Exception e) {
                 log.error("Runtime dispatch failed for {}", sessionId, e);
                 recordAsyncDispatchFailure(sessionId, e);
@@ -148,6 +148,11 @@ public class RuntimeRunnerDispatcher {
     }
 
     public RuntimeSessionResponseDTO dispatchSession(UUID sessionId) {
+        executeSessionInternal(sessionId);
+        return runtimeSessionService.getSessionById(sessionId);
+    }
+
+    void executeSessionInternal(UUID sessionId) {
         Object lock = sessionLocks.computeIfAbsent(sessionId, k -> new Object());
         synchronized (lock) {
             try {
@@ -158,11 +163,11 @@ public class RuntimeRunnerDispatcher {
 
                 if (isTerminalOrCommitted(session)) {
                     log.info("Phiên thực nghiệm {} đã kết thúc ({}), trả về kết quả idempotent", sessionId, session.getExecutionStatus());
-                    return runtimeSessionService.getSessionById(sessionId);
+                    return;
                 }
 
                 if (tryAutoImportOutboxReceipt(session)) {
-                    return runtimeSessionService.getSessionById(sessionId);
+                    return;
                 }
 
                 boolean managedAvailable = ("AUTO".equalsIgnoreCase(runnerMode) || "MANAGED_CLI".equalsIgnoreCase(runnerMode))
@@ -185,7 +190,6 @@ public class RuntimeRunnerDispatcher {
 
                 try {
                     executeManagedCli(session);
-                    return runtimeSessionService.getSessionById(sessionId);
                 } catch (Exception failure) {
                     log.warn("Managed runtime execution failed for {}", sessionId, failure);
                     String detail = failure.getMessage() != null && !failure.getMessage().isBlank()

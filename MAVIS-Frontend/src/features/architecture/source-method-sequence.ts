@@ -33,7 +33,16 @@ export function sourceMethodFlows(
       )
       .map((method) => ({
         flowId: "method:" + node.id + ":" + String(method["signature"]),
-        viewId: "scenarios:source-method:" + node.id + ":" + String(method["signature"]),
+        viewId: (() => {
+          const sig = String(method["signature"]);
+          const safeNode = node.id.replace(/[^a-zA-Z0-9:_-]+/g, "_");
+          const sigSlug = sig.replace(/[^a-zA-Z0-9:_-]+/g, "_").replace(/^_+|_+$/g, "");
+          let h = 2166136261;
+          for (let i = 0; i < sig.length; i++) h = Math.imul(h ^ sig.charCodeAt(i), 16777619);
+          const hashHex = (h >>> 0).toString(16).padStart(8, "0");
+          const prefix = `scenarios:source-method:${safeNode}:`;
+          return `${prefix}${sigSlug.slice(0, Math.max(8, 160 - prefix.length - 9))}_${hashHex}`;
+        })(),
         title: ("Source endpoint · " + node.name + "." + String(method["methodName"])).slice(
           0,
           120,

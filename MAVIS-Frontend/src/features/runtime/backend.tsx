@@ -767,7 +767,7 @@ function RuntimeSequenceDiagramCanvas({
             type="button"
             size="sm"
             variant="outline"
-            className="h-7 px-2 text-xs"
+            className="h-7 px-2 text-xs bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white"
             onClick={() => setZoomPct((z) => Math.max(60, z - 15))}
           >
             −
@@ -777,7 +777,7 @@ function RuntimeSequenceDiagramCanvas({
             type="button"
             size="sm"
             variant="outline"
-            className="h-7 px-2 text-xs"
+            className="h-7 px-2 text-xs bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white"
             onClick={() => setZoomPct((z) => Math.min(160, z + 15))}
           >
             +
@@ -786,7 +786,7 @@ function RuntimeSequenceDiagramCanvas({
             type="button"
             size="sm"
             variant="outline"
-            className="h-7 px-2.5 text-xs"
+            className="h-7 px-2.5 text-xs bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white"
             onClick={() => setZoomPct(100)}
           >
             100%
@@ -795,7 +795,7 @@ function RuntimeSequenceDiagramCanvas({
             type="button"
             size="sm"
             variant="outline"
-            className="h-7 px-2.5 text-xs border-sky-500/40 text-sky-300 hover:bg-sky-500/10"
+            className="h-7 px-2.5 text-xs bg-slate-900 border-sky-400/50 text-sky-300 hover:bg-sky-950 hover:text-sky-200"
             onClick={handleDownloadSvg}
           >
             ⬇️ Download .SVG
@@ -805,7 +805,7 @@ function RuntimeSequenceDiagramCanvas({
               type="button"
               size="sm"
               variant="outline"
-              className="h-7 px-2.5 text-xs border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/10"
+              className="h-7 px-2.5 text-xs bg-slate-900 border-emerald-400/50 text-emerald-300 hover:bg-emerald-950 hover:text-emerald-200"
               asChild
             >
               <Link
@@ -1008,26 +1008,48 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   );
 
   const handleQuickRun = async () => {
-    if (!projectId || !snapshots.data?.length || quickRunRunning) return;
+    if (!projectId || quickRunRunning) return;
     setQuickRunRunning(true);
     setQuickRunMsg("Saving Step 1 & Step 2 runtime configuration and launching workflow...");
     setQuickRunError("");
 
+    const [snapshotsList, modelsList, configData, scenariosList] = await Promise.all([
+      snapshots.data ? Promise.resolve(snapshots.data) : snapshots.refetch().then((r) => r.data ?? []),
+      models.data ? Promise.resolve(models.data) : models.refetch().then((r) => r.data ?? []),
+      config.data ? Promise.resolve(config.data) : config.refetch().then((r) => r.data),
+      scenarios.data ? Promise.resolve(scenarios.data) : scenarios.refetch().then((r) => r.data ?? []),
+    ]);
+
     const stored = readStep1Target(projectId);
-    const chosenModel = resolveRuntimeTargetModel(models.data ?? [], stored.modelId, config.data?.modelId);
+    const chosenModel = resolveRuntimeTargetModel(
+      modelsList,
+      stored.modelId,
+      configData?.modelId || session.data?.modelId,
+    );
     const chosenSnapshotId =
       chosenModel?.snapshotId ||
       stored.snapshotId ||
-      config.data?.snapshotId ||
-      snapshots.data[0]?.id;
+      configData?.snapshotId ||
+      session.data?.snapshotId ||
+      snapshotsList[0]?.id;
 
     if (!chosenSnapshotId || !chosenModel) {
       setQuickRunRunning(false);
+      setQuickRunMsg("");
       setQuickRunError("Select an analyzed snapshot and model in Step 1 first.");
       return;
     }
 
     try {
+      const rawProfile = (configData?.profile ?? {}) as Record<string, unknown>;
+      const activeEndpoints = Array.isArray(rawProfile["detectedEndpoints"])
+        ? (rawProfile["detectedEndpoints"] as Array<{
+            service: string;
+            method: string;
+            path: string;
+            sampleJsonBody?: string;
+          }>)
+        : detectedEndpoints;
       const infraSet = new Set(
         Array.isArray(rawProfile["infrastructureServices"])
           ? (rawProfile["infrastructureServices"] as unknown[]).map(String)
@@ -1070,7 +1092,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       );
 
       let autoBuiltOverrides: Record<string, string> = {};
-      let activeConfigRevision = Math.max(config.data?.revision ?? 0, stored.savedRevision ?? 0);
+      let activeConfigRevision = Math.max(configData?.revision ?? 0, stored.savedRevision ?? 0);
       if (missingBuildServices.length > 0 && localBuildAvailable) {
         setQuickRunMsg(
           `🔨 Auto-building ${missingBuildServices.length} local sandbox image(s) (${missingBuildServices.join(", ")})...`,
@@ -1125,7 +1147,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
 
       const configPayload = {
         projectId,
-        profileId: stored.profileId || config.data?.profileId || "SPRING_BOOT_DOTNET_COMPOSE_V1",
+        profileId: stored.profileId || configData?.profileId || "SPRING_BOOT_DOTNET_COMPOSE_V1",
         snapshotId: chosenSnapshotId,
         modelId: chosenModel.id,
         profile: {
@@ -1183,9 +1205,13 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         }
       }
 
-      const runnableEndpoints = detectedEndpoints.filter(
+      const runnableEndpoints = activeEndpoints.filter(
         (ep) => !ep.service || (!infraSet.has(ep.service) && mergedRoles[ep.service] !== "INFRA"),
       );
+      const fallbackSavedScenario =
+        (session.data?.scenarioName
+          ? scenariosList.find((sc) => sc.name === session.data?.scenarioName)
+          : undefined) ?? scenariosList[0];
 
       const draftSteps =
         stored.plannedSteps && stored.plannedSteps.length > 0
@@ -1228,42 +1254,76 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 ...(st.envHeaders && st.envHeaders.length ? { envHeaders: st.envHeaders } : {}),
               });
             })
-          : runnableEndpoints.length > 0
-            ? runnableEndpoints.slice(0, 6).map((ep, idx) => {
-                const method = (ep.method || "GET").toUpperCase();
-                const isWrite = ["POST", "PUT", "PATCH"].includes(method);
-                const bodyRef = isWrite ? `STEP_${idx + 1}_BODY` : undefined;
-                if (bodyRef) {
-                  environment[bodyRef] = ep.sampleJsonBody?.trim() || defaultBody;
+          : fallbackSavedScenario?.steps?.length
+            ? fallbackSavedScenario.steps.map((rawStep) => {
+                try {
+                  const parsed = JSON.parse(rawStep) as {
+                    method?: string;
+                    bodyReference?: string;
+                    envHeaders?: Array<{ reference?: string }>;
+                    environmentVariables?: Record<string, string>;
+                  };
+                  if (
+                    parsed.bodyReference &&
+                    /^[A-Z][A-Z0-9_]{0,63}$/.test(parsed.bodyReference) &&
+                    !environment[parsed.bodyReference]
+                  ) {
+                    environment[parsed.bodyReference] = defaultBody;
+                  }
+                  for (const hdr of parsed.envHeaders ?? []) {
+                    if (hdr.reference && /^[A-Z][A-Z0-9_]{0,63}$/.test(hdr.reference) && !environment[hdr.reference]) {
+                      environment[hdr.reference] = "Bearer sandbox-verification-token";
+                    }
+                  }
+                  for (const refKey of Object.values(parsed.environmentVariables ?? {})) {
+                    if (refKey && /^[A-Z][A-Z0-9_]{0,63}$/.test(refKey) && !environment[refKey]) {
+                      environment[refKey] = "1";
+                    }
+                  }
+                } catch {
+                  // Keep raw saved step intact
                 }
-                return JSON.stringify({
-                  id: `step-${idx + 1}`,
-                  service: ep.service || defaultSvc,
-                  method,
-                  path: ep.path.replace(/\{[^}/]+\}/g, "1"),
-                  expectedStatus: 200,
-                  allowClientError: true,
-                  ...(bodyRef ? { bodyReference: bodyRef } : {}),
-                });
+                return rawStep;
               })
-            : [
-                JSON.stringify({
-                  id: "step-1",
-                  service: defaultSvc,
-                  method: "GET",
-                  path: "/health",
-                  expectedStatus: 200,
-                  allowClientError: true,
-                }),
-              ];
+            : runnableEndpoints.length > 0
+              ? runnableEndpoints.slice(0, 6).map((ep, idx) => {
+                  const method = (ep.method || "GET").toUpperCase();
+                  const isWrite = ["POST", "PUT", "PATCH"].includes(method);
+                  const bodyRef = isWrite ? `STEP_${idx + 1}_BODY` : undefined;
+                  if (bodyRef) {
+                    environment[bodyRef] = ep.sampleJsonBody?.trim() || defaultBody;
+                  }
+                  return JSON.stringify({
+                    id: `step-${idx + 1}`,
+                    service: ep.service || defaultSvc,
+                    method,
+                    path: ep.path.replace(/\{[^}/]+\}/g, "1"),
+                    expectedStatus: 200,
+                    allowClientError: true,
+                    ...(bodyRef ? { bodyReference: bodyRef } : {}),
+                  });
+                })
+              : [
+                  JSON.stringify({
+                    id: "step-1",
+                    service: defaultSvc,
+                    method: "GET",
+                    path: "/health",
+                    expectedStatus: 200,
+                    allowClientError: true,
+                  }),
+                ];
 
       const boundedEnv = boundRuntimeEnvironment(environment);
 
-      const scenarioName = stored.scenarioName || "Architecture Verification Scenario";
-      const exactMatch = (scenarios.data ?? []).find(
+      const scenarioName =
+        stored.scenarioName ||
+        (fallbackSavedScenario?.steps?.length ? fallbackSavedScenario.name : "") ||
+        "Architecture Verification Scenario";
+      const exactMatch = scenariosList.find(
         (sc) => sc.name === scenarioName && JSON.stringify(sc.steps) === JSON.stringify(draftSteps),
       );
-      const sameNameScenario = (scenarios.data ?? []).find((sc) => sc.name === scenarioName);
+      const sameNameScenario = scenariosList.find((sc) => sc.name === scenarioName);
       const savedScenario =
         exactMatch ??
         (sameNameScenario
@@ -1396,8 +1456,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 <span
                   className={`px-2 py-0.5 rounded-full border text-[11px] font-mono font-semibold ${
                     observed
-                      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                      : "bg-slate-500/15 text-slate-300 border-slate-500/30"
+                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
+                      : "bg-slate-500/15 text-slate-700 dark:text-slate-200 border-slate-500/40"
                   }`}
                 >
                   {observed ? "🟢 Observed trace" : "◌ Planned workflow (not executed)"}
@@ -1407,7 +1467,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 Saves your complete Step 1 & Step 2 runtime configuration, executes the HTTP test workflow, and visualizes service call topology and UML sequence diagrams in real time.
               </p>
               {quickRunMsg && (
-                <p className="text-xs font-medium text-emerald-400 mt-1">{quickRunMsg}</p>
+                <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mt-1">{quickRunMsg}</p>
               )}
               {quickRunError && (
                 <div
@@ -1443,7 +1503,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   (isExecFailed || isTimedOut) && !st.done && st.num > 1
                     ? "border-destructive/40 bg-destructive/5 text-destructive"
                     : st.current
-                      ? "border-sky-400 bg-sky-500/15 text-sky-200 shadow-sm"
+                      ? "border-sky-400 bg-sky-500/15 text-sky-800 dark:text-sky-200 shadow-sm"
                       : st.done
                         ? "border-emerald-500/30 bg-emerald-500/5 text-foreground"
                         : "border-border/60 bg-background/40 text-muted-foreground"
@@ -1503,12 +1563,12 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="space-y-1">
             <div className="flex flex-wrap items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-300">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
                 Runtime-Enriched Architecture Revision Ready
               </span>
               {publicationGate && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border border-emerald-400/40 bg-emerald-500/15 text-emerald-200">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border border-emerald-600/40 bg-emerald-600/15 text-emerald-900 dark:text-emerald-200">
                   {publicationGate}
                 </span>
               )}
@@ -1531,7 +1591,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 Enriched C4 Graph
               </Link>
             </Button>
-            <Button size="sm" variant="outline" className="h-8 text-xs border-emerald-500/40 text-emerald-300" asChild>
+            <Button size="sm" variant="outline" className="h-8 text-xs border-emerald-600/40 text-emerald-800 dark:text-emerald-300" asChild>
               <Link
                 href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(selectedId)}`}
               >
@@ -1606,7 +1666,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-8 text-xs border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+                  className="h-8 text-xs border-emerald-600/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10"
                   asChild
                 >
                   <Link
@@ -1637,7 +1697,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           {hasSession && isAwaitingDispatch && !administrative && (
             <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-3 text-xs flex flex-wrap items-center justify-between gap-2">
               <div className="space-y-0.5">
-                <p className="font-semibold text-sky-300">
+                <p className="font-semibold text-sky-800 dark:text-sky-300">
                   Session {selectedId.slice(0, 8)} is queued ({execStatus})
                 </p>
                 <p className="text-muted-foreground">
@@ -1672,9 +1732,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               role="alert"
               className={`rounded-lg border p-3 text-xs space-y-2 ${
                 isCancelled
-                  ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200"
                   : isTimedOut
-                    ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+                    ? "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200"
                     : "border-destructive/30 bg-destructive/10 text-destructive"
               }`}
             >

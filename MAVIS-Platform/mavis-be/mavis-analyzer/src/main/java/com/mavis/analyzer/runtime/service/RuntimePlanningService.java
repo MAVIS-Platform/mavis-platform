@@ -695,35 +695,62 @@ public class RuntimePlanningService {
     Replace any path parameters like {id} or {orderId} directly with realistic sample values (e.g. 1, SKU-LAPTOP-01) and provide valid JSON matching dtoSample fields for POST/PUT/PATCH requests.
     """);
 
-  ObjectNode reqBody=json.createObjectNode();
-  ArrayNode contents=reqBody.putArray("contents");
-  ObjectNode contentNode=contents.addObject();
-  ArrayNode parts=contentNode.putArray("parts");
-  parts.addObject().put("text",SecretRedactor.redactString(prompt.toString()));
-  ObjectNode genCfg=reqBody.putObject("generationConfig");
-  genCfg.put("temperature",0.2);
-  genCfg.put("responseMimeType","application/json");
-
-  String endpoint=(customAiEndpointUrl!=null&&!customAiEndpointUrl.isBlank())
-    ?customAiEndpointUrl
-    :(DEFAULT_GEMINI_URL+apiKey);
-
-  HttpRequest httpReq=HttpRequest.newBuilder()
-    .uri(URI.create(endpoint))
-    .timeout(Duration.ofSeconds(12))
-    .header("Content-Type","application/json")
-    .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(reqBody)))
-    .build();
-
-  HttpResponse<String> resp=httpClient.send(httpReq,HttpResponse.BodyHandlers.ofString());
-  if(resp.statusCode()<200||resp.statusCode()>=300){
-   throw new IllegalStateException("LLM status "+resp.statusCode());
+  boolean hasCustomUrl=customAiEndpointUrl!=null&&!customAiEndpointUrl.isBlank();
+  boolean useOpenAi=apiKey!=null&&apiKey.startsWith("sk-");
+  String rawText;
+  String aiModelName;
+  if(useOpenAi){
+   ObjectNode openAiReq=json.createObjectNode();
+   openAiReq.put("model","gpt-5-mini");
+   openAiReq.put("reasoning_effort","minimal");
+   openAiReq.putObject("response_format").put("type","json_object");
+   ArrayNode messages=openAiReq.putArray("messages");
+   messages.addObject().put("role","user").put("content",SecretRedactor.redactString(prompt.toString()));
+   String endpoint=hasCustomUrl?customAiEndpointUrl:"https://api.openai.com/v1/chat/completions";
+   HttpRequest httpReq=HttpRequest.newBuilder()
+     .uri(URI.create(endpoint))
+     .timeout(Duration.ofSeconds(18))
+     .header("Content-Type","application/json")
+     .header("Authorization","Bearer "+apiKey)
+     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(openAiReq)))
+     .build();
+   HttpResponse<String> resp=httpClient.send(httpReq,HttpResponse.BodyHandlers.ofString());
+   if(resp.statusCode()<200||resp.statusCode()>=300){
+    throw new IllegalStateException("LLM status "+resp.statusCode());
+   }
+   JsonNode root=json.readTree(resp.body());
+   if(aiUsageRecorder!=null&&!hasCustomUrl){
+    aiUsageRecorder.recordResponse("openai","gpt-5-mini",root);
+   }
+   rawText=root.path("choices").path(0).path("message").path("content").asText("");
+   aiModelName="gpt-5-mini";
+  }else{
+   ObjectNode reqBody=json.createObjectNode();
+   ArrayNode contents=reqBody.putArray("contents");
+   ObjectNode contentNode=contents.addObject();
+   ArrayNode parts=contentNode.putArray("parts");
+   parts.addObject().put("text",SecretRedactor.redactString(prompt.toString()));
+   ObjectNode genCfg=reqBody.putObject("generationConfig");
+   genCfg.put("temperature",0.2);
+   genCfg.put("responseMimeType","application/json");
+   String endpoint=hasCustomUrl?customAiEndpointUrl:(DEFAULT_GEMINI_URL+apiKey);
+   HttpRequest httpReq=HttpRequest.newBuilder()
+     .uri(URI.create(endpoint))
+     .timeout(Duration.ofSeconds(12))
+     .header("Content-Type","application/json")
+     .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(reqBody)))
+     .build();
+   HttpResponse<String> resp=httpClient.send(httpReq,HttpResponse.BodyHandlers.ofString());
+   if(resp.statusCode()<200||resp.statusCode()>=300){
+    throw new IllegalStateException("LLM status "+resp.statusCode());
+   }
+   JsonNode root=json.readTree(resp.body());
+   if(aiUsageRecorder!=null&&!hasCustomUrl){
+    aiUsageRecorder.recordResponse("gemini","gemini-2.5-flash",root);
+   }
+   rawText=root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText("");
+   aiModelName="gemini-2.5-flash";
   }
-  JsonNode root=json.readTree(resp.body());
-  if(aiUsageRecorder!=null){
-   aiUsageRecorder.recordResponse("gemini","gemini-2.5-flash",root);
-  }
-  String rawText=root.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText("");
   String cleaned=rawText.replaceAll("(?s)^```(?:json)?\\s*","").replaceAll("(?s)\\s*```$","").trim();
   JsonNode parsed=json.readTree(cleaned);
   if(parsed==null||!parsed.isObject())return null;
@@ -788,12 +815,12 @@ public class RuntimePlanningService {
   if(validSteps.isEmpty())return null;
   String suggestedName=SecretRedactor.redactString(parsed.path("suggestedName").asText("AI Architecture Verification Scenario")).trim();
   if(suggestedName.isEmpty())suggestedName="AI Architecture Verification Scenario";
-  String summary=SecretRedactor.redactString(parsed.path("summary").asText("Scenario synthesized by System + Gemini AI from Step 1 endpoints and architecture relationships.")).trim();
+  String summary=SecretRedactor.redactString(parsed.path("summary").asText("Scenario synthesized by System + AI from Step 1 endpoints and architecture relationships.")).trim();
   return new GeneratedScenarioDraftView(
     projectId,snapshotId,modelId,
     suggestedName.length()>100?suggestedName.substring(0,100):suggestedName,
     "AI_ASSISTED",
-    "gemini-2.5-flash",
+    aiModelName,
     summary,
     validSteps,
     sampleInputs,
