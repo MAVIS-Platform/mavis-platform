@@ -525,7 +525,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       try {
         setStep1StatusMsg("");
         const currentRev = Math.max(config.data?.revision ?? 0, readStep1Target(projectId).savedRevision ?? 0);
-        const savedCfg = await save.mutateAsync({
+        const payload = {
           projectId,
           profileId,
           snapshotId: effectiveSnapshotId,
@@ -538,8 +538,18 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
             secretValues,
             secretReferences: combinedSecretRefs,
           },
-          expectedRevision: currentRev,
-        });
+        };
+        let savedCfg: { revision: number };
+        try {
+          savedCfg = await save.mutateAsync({ ...payload, expectedRevision: currentRev });
+        } catch (firstErr) {
+          const refreshed = await config.refetch();
+          if (refreshed.data?.revision !== undefined && refreshed.data.revision !== currentRev) {
+            savedCfg = await save.mutateAsync({ ...payload, expectedRevision: refreshed.data.revision });
+          } else {
+            throw firstErr;
+          }
+        }
         writeStep1Target(projectId, { savedRevision: savedCfg.revision });
       } catch (err) {
         setStep1StatusMsg(
@@ -2184,8 +2194,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           ...(stored.serviceImageOverrides ?? {}),
           ...autoBuiltOverrides,
         };
-        const expectedRev = config.data?.revision ?? activeConfigRevision;
-        const pinned = await autoSaveConfig.mutateAsync({
+        const configPayload = {
           projectId,
           profileId: stored.profileId || config.data?.profileId || "SPRING_BOOT_DOTNET_COMPOSE_V1",
           snapshotId: effectiveSnapshotId,
@@ -2198,8 +2207,24 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             secretValues: stored.secretValues ?? {},
             secretReferences: mergedSecretRefs,
           },
-          expectedRevision: expectedRev,
-        });
+        };
+        let pinned: { revision: number };
+        try {
+          pinned = await autoSaveConfig.mutateAsync({
+            ...configPayload,
+            expectedRevision: activeConfigRevision,
+          });
+        } catch (firstPinErr) {
+          const refreshed = await config.refetch();
+          if (refreshed.data?.revision !== undefined && refreshed.data.revision !== activeConfigRevision) {
+            pinned = await autoSaveConfig.mutateAsync({
+              ...configPayload,
+              expectedRevision: refreshed.data.revision,
+            });
+          } else {
+            throw firstPinErr;
+          }
+        }
         activeConfigRevision = pinned.revision;
         writeStep1Target(projectId, { savedRevision: pinned.revision });
       } catch (pinErr) {

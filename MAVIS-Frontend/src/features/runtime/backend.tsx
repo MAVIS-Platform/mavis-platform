@@ -1050,21 +1050,23 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         ...(stored.serviceImageOverrides ?? {}),
       };
 
-      const runnerIssues = Array.isArray(rawProfile["runnerIssues"])
-        ? (rawProfile["runnerIssues"] as unknown[]).map(String)
-        : [];
+      const rawIssues = Array.isArray(rawProfile["unresolvableRunnerIssues"])
+        ? (rawProfile["unresolvableRunnerIssues"] as unknown[]).map(String)
+        : Array.isArray(rawProfile["runnerIssues"])
+          ? (rawProfile["runnerIssues"] as unknown[]).map(String)
+          : [];
       const localBuildAvailable = rawProfile["localImageBuildAvailable"] === true;
       const missingBuildServices = Array.from(
         new Set(
-          runnerIssues
+          rawIssues
             .map((iss) => {
-              const m = /^(?:LOCAL_BUILD_ONLY|UNPINNED_LOCAL_IMAGE):([^:\s]+)/.exec(iss);
+              const m = /^Service '([^']+)' (?:uses build:|image |has no image)/i.exec(iss);
               return m?.[1] ?? "";
             })
             .filter(
               (svc) =>
                 Boolean(svc) &&
-                !existingImageOverrides[svc] &&
+                !existingImageOverrides[svc]?.trim() &&
                 mergedRoles[svc] !== "INFRA",
             ),
         ),
@@ -1124,7 +1126,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         ...autoBuiltOverrides,
       };
 
-      const pinnedConfig = await autoSaveConfig.mutateAsync({
+      const configPayload = {
         projectId,
         profileId: stored.profileId || config.data?.profileId || "SPRING_BOOT_DOTNET_COMPOSE_V1",
         snapshotId: chosenSnapshotId,
@@ -1137,15 +1139,34 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           secretValues: stored.secretValues ?? {},
           secretReferences: mergedSecretRefs,
         },
-        expectedRevision: config.data?.revision ?? activeConfigRevision,
-      });
+      };
+      let pinnedConfig: { revision: number };
+      try {
+        pinnedConfig = await autoSaveConfig.mutateAsync({
+          ...configPayload,
+          expectedRevision: activeConfigRevision,
+        });
+      } catch (firstErr) {
+        const refreshed = await config.refetch();
+        if (refreshed.data?.revision !== undefined && refreshed.data.revision !== activeConfigRevision) {
+          pinnedConfig = await autoSaveConfig.mutateAsync({
+            ...configPayload,
+            expectedRevision: refreshed.data.revision,
+          });
+        } else {
+          throw firstErr;
+        }
+      }
       writeStep1Target(projectId, { savedRevision: pinnedConfig.revision });
 
       // 2. Resolve runnable application service & Step 2 scenario steps
-      const detectedSvcs = Array.isArray(rawProfile["detectedServices"])
-        ? (rawProfile["detectedServices"] as unknown[]).map(String)
-        : [];
-      const runnableComposeSvcs = detectedSvcs.filter(
+      const composeSvcs =
+        Array.isArray(rawProfile["composeServices"]) && rawProfile["composeServices"].length > 0
+          ? (rawProfile["composeServices"] as unknown[]).map(String)
+          : Array.isArray(rawProfile["detectedServices"])
+            ? (rawProfile["detectedServices"] as unknown[]).map(String)
+            : [];
+      const runnableComposeSvcs = composeSvcs.filter(
         (svc) => (!infraSet.has(svc) && mergedRoles[svc] !== "INFRA") || mergedRoles[svc] === "APP",
       );
       const realServices = (modelDetail.data?.elements ?? []).filter(

@@ -2354,3 +2354,16 @@ test("runtime workflow without observed trace is planned only and never invents 
  assert.deepEqual(mappedPlanned.steps.map(s=>[s.callerService,s.calleeService]),[["mavis-runner","gateway"],["gateway","orders"]]);
  assert.ok(mappedPlanned.steps.every(s=>s.durationMs==null&&s.httpStatusCode==null&&s.traceId==null));
 });
+
+test("runtime Step 1-2-3 source guards: Quick Run matches ComposePreflightValidator build issues and avoids stale revision override", () => {
+ const fs=require("node:fs");
+ const path=require("node:path");
+ const backendSrc=fs.readFileSync(path.join(__dirname,"../src/features/runtime/backend.tsx"),"utf8");
+ const screensSrc=fs.readFileSync(path.join(__dirname,"../src/features/runtime/screens.tsx"),"utf8");
+
+ assert.ok(!backendSrc.includes("LOCAL_BUILD_ONLY"),"Step 3 Quick Run must not use obsolete LOCAL_BUILD_ONLY prefix");
+ assert.ok(backendSrc.includes("Service '([^']+)' (?:uses build:|image |has no image)"),"Step 3 Quick Run must match ComposePreflightValidator issue messages");
+ assert.ok(backendSrc.includes('rawProfile["composeServices"]'),"Step 3 Quick Run must prefer composeServices over model-enriched detectedServices");
+ assert.ok(!backendSrc.includes("config.data?.revision ?? activeConfigRevision"),"Step 3 Quick Run must not shadow activeConfigRevision with stale closure revision 0");
+ assert.ok(!screensSrc.includes("config.data?.revision ?? activeConfigRevision"),"Step 2 Run must not shadow activeConfigRevision with stale closure revision 0");
+});

@@ -1199,11 +1199,11 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Invalid resourceProject format: " + resProj);
         }
 
-        if (runnerStateRoot == null || runnerStateRoot.isBlank()) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "mavis.runner.state-root is not configured");
-        }
+        String effectiveStateRoot = (runnerStateRoot == null || runnerStateRoot.isBlank())
+                ? System.getProperty("java.io.tmpdir") + java.io.File.separator + "mavis-runner-state"
+                : runnerStateRoot;
 
-        Path stateRootPath = Path.of(runnerStateRoot).toAbsolutePath().normalize();
+        Path stateRootPath = Path.of(effectiveStateRoot).toAbsolutePath().normalize();
         Path receiptsDir = stateRootPath.resolve("receipts").normalize();
 
         try {
