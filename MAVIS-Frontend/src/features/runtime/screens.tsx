@@ -48,7 +48,7 @@ export function RuntimeStepperBanner({ currentStep, projectId }: { currentStep: 
 
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { suggestRuntimeScenarios, automaticRuntimeDraft, parseRuntimeEnvFile, type RuntimeDraftStep, type RuntimeInput } from "./scenario-suggestions";
+import { suggestRuntimeScenarios, automaticRuntimeDraft, type RuntimeDraftStep, type RuntimeInput } from "./scenario-suggestions";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useApi, useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
@@ -56,7 +56,6 @@ import { RequestState, ErrorState, EmptyState } from "@/components/shared/reques
 import { ConfirmDialog, FormField, SelectField } from "@/components/shared/forms";
 import { DetailPanel, StatusBadge } from "@/components/shared/data";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 
 export function httpMethodBadgeClass(method: string): string {
@@ -87,27 +86,31 @@ export interface Step1Draft {
   dismissedSecretKeys?: string[];
   scenarioName?: string;
   plannedSteps?: RuntimeDraftStep[];
+  plannedInputs?: Record<string, string>;
 }
 
+// shortcut: secrets are lost on full page reload, upgrade to a server-side draft if users complain.
+const secretDrafts = new Map<string, Record<string, string>>();
+
 export function readStep1Target(projectId: string): Step1Draft {
+  const secretValues = secretDrafts.get(projectId);
   try {
     const raw = typeof window !== "undefined" ? window.sessionStorage.getItem(`mavis:runtime-target:${projectId}`) : null;
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Step1Draft;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    const parsed = raw ? (JSON.parse(raw) as Step1Draft) : {};
+    const draft = parsed && typeof parsed === "object" ? { ...parsed } : {};
+    delete draft.secretValues;
+    return secretValues ? { ...draft, secretValues } : draft;
   } catch {
-    return {};
+    return secretValues ? { secretValues } : {};
   }
 }
 
 export function writeStep1Target(projectId: string, draft: Step1Draft) {
   try {
     if (typeof window !== "undefined" && projectId) {
-      const existing = readStep1Target(projectId);
-      window.sessionStorage.setItem(
-        `mavis:runtime-target:${projectId}`,
-        JSON.stringify({ ...existing, ...draft }),
-      );
+      const { secretValues, ...rest } = { ...readStep1Target(projectId), ...draft };
+      if (secretValues) secretDrafts.set(projectId, secretValues);
+      window.sessionStorage.setItem(`mavis:runtime-target:${projectId}`, JSON.stringify(rest));
     }
   } catch {
     // Ignore storage restriction
@@ -1033,7 +1036,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const [generatorMode, setGeneratorMode] = useState<"AI_ASSISTED" | "SYSTEM_STATIC" | "LOCAL_STATIC">("LOCAL_STATIC");
   const [aiModelName, setAiModelName] = useState("");
   const [inheritedEnvKeys, setInheritedEnvKeys] = useState<string[]>([]);
-  const [userConfirmed, setUserConfirmed] = useState(true);
+  const [userConfirmed, setUserConfirmed] = useState(false);
 
   const [steps, setDraftSteps] = useState<RuntimeDraftStep[]>([]);
   const edited = useRef(false);
@@ -1054,12 +1057,14 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     if (projectId && steps.length > 0) {
-      writeStep1Target(projectId, {
-        scenarioName,
-        plannedSteps: steps,
-      });
+      const plannedInputs = Object.fromEntries(
+        steps
+          .filter((st) => st.bodyReference && environment[st.bodyReference])
+          .map((st) => [st.bodyReference!, environment[st.bodyReference!]!]),
+      );
+      writeStep1Target(projectId, { scenarioName, plannedSteps: steps, plannedInputs });
     }
-  }, [projectId, scenarioName, steps]);
+  }, [projectId, scenarioName, steps, environment]);
 
   const staticModels = (models.data ?? []).filter(
     (m) => !("origin" in m) || (m as any).origin !== "RUNTIME_ENRICHED",
@@ -1599,20 +1604,21 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
           {steps.length > 0 && (() => {
             const uniqueEntryServices = Array.from(new Set(steps.map((s) => s.service)));
-            const allDetectedServices = Array.from(
-              new Set([
-                ...detectedServiceNames,
-                ...uniqueEntryServices,
-              ]),
+            const nameById = new Map((modelDetail.data?.elements ?? []).map((e) => [e.id, e.name]));
+            const downstreamServices = Array.from(
+              new Set(
+                (modelDetail.data?.edges ?? [])
+                  .filter((e) => uniqueEntryServices.includes(nameById.get(e.from) ?? ""))
+                  .map((e) => nameById.get(e.to))
+                  .filter((n): n is string => Boolean(n) && detectedServiceNames.includes(n!) && !uniqueEntryServices.includes(n!)),
+              ),
             );
-            const downstreamServices = allDetectedServices.filter(
-              (s) => !uniqueEntryServices.includes(s),
-            );
+            const allDetectedServices = [...uniqueEntryServices, ...downstreamServices];
             return (
               <div className="rounded-xl border border-primary/25 bg-slate-950/70 p-3.5 space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-sky-400">
-                    🕸️ Predicted Architecture Workflow Preview ({steps.length} HTTP Calls → {allDetectedServices.length} Services)
+                    🕸️ Planned Workflow Preview (from model edges) ({steps.length} HTTP Calls → {allDetectedServices.length} Services)
                   </span>
                   <span className="text-[11px] font-mono text-slate-400">
                     Live trace & sequence diagram will render in Step 3

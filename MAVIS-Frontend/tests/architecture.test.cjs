@@ -2324,3 +2324,14 @@ test("Eight active diagram kinds retire Context links to Container",()=>{
  assert.equal(resolveDiagramKind('SCENARIOS'),'UML_SEQUENCE');
  for(const value of kinds)assert.equal(resolveDiagramKind(value),value);
 });
+
+test("runtime workflow without observed trace is planned only and never invents latency, status or trace ids", () => {
+ const {deriveWorkflowSteps}=require("../src/features/runtime/backend.tsx");
+ const model={elements:[{id:"g",name:"api-gateway"},{id:"o",name:"order-service"},{id:"p",name:"payment-service"}],edges:[{from:"g",to:"o"},{from:"g",to:"p"}]};
+ const planned=deriveWorkflowSteps(undefined,[{service:"api-gateway",method:"GET",path:"/api/gateway/orders/1"}],model);
+ assert.equal(planned.mode,"PLANNED");
+ assert.deepEqual(planned.steps.map(s=>s.calleeService),["api-gateway","order-service"]);
+ assert.ok(planned.steps.every(s=>s.durationMs==null&&s.httpStatusCode==null&&s.traceId==null&&s.provenanceType==="PLANNED"));
+ const real=[{callerService:"api-gateway",calleeService:"order-service",durationMs:12,httpStatusCode:200,traceId:"t"}];
+ assert.deepEqual(deriveWorkflowSteps(real,[],model),{steps:real,mode:"OBSERVED"});
+});
