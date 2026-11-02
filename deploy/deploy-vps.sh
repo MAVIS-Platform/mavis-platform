@@ -40,7 +40,9 @@ p.write_text('\n'.join(lines) + '\n')
 p.chmod(0o600)
 PY
 previous="/opt/mavis/releases/$(date -u +%Y%m%dT%H%M%SZ)-before-$tag"
-mkdir -p "$previous"
+mkdir -p "$previous" /tmp/mavis-runner-state
+chown -R 1654:1654 /tmp/mavis-runner-state 2>/dev/null || true
+chmod 0755 /tmp/mavis-runner-state 2>/dev/null || true
 cp deploy/compose.production.yml "$previous/compose.production.yml"
 old_prefix=mavis
 old_tag=local

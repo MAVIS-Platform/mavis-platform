@@ -1279,6 +1279,13 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         if (exportedProfile instanceof ObjectNode object) {
             object.retain(RUNNER_PROFILE_FIELDS);
             if (object.get("applications") instanceof ObjectNode applications) {
+                List<String> appNames = new ArrayList<>();
+                applications.fieldNames().forEachRemaining(appNames::add);
+                for (String appName : appNames) {
+                    if (ComposePreflightValidator.isInfrastructureService(appName, "") && applications.size() > 1) {
+                        applications.remove(appName);
+                    }
+                }
                 applications.elements().forEachRemaining(app -> {
                     if (app instanceof ObjectNode a) {
                         a.retain("runtime", "containerPort", "readinessPath", "allowClientErrorReadiness");

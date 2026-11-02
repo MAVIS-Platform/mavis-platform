@@ -34,6 +34,9 @@ services:
       MAVIS_WORKER_ARTIFACT_ROOT: /data/worker-artifacts
       MAVIS_RUNNER_AUTO_DISPATCH_ENABLED: "true"
       MAVIS_RUNNER_MODE: "AUTO"
+      MAVIS_RUNNER_STATE_ROOT: /tmp/mavis-runner-state
+      MAVIS_RUNNER_PROJECT_PATH: /app/runner/MAVIS.Runner.dll
+      MAVIS_RUNNER_COLLECTOR_CONFIG: /app/samples/runtime-poc/collector.yaml
       MAVIS_RUNTIME_ENVIRONMENT_KEY: ${MAVIS_RUNTIME_ENVIRONMENT_KEY:-}
       # Digest-pinned images the sandbox runner pulls (e.g. otel/opentelemetry-collector-contrib@sha256:...).
       MAVIS_RUNNER_COLLECTOR_IMAGE: ${MAVIS_RUNNER_COLLECTOR_IMAGE:-otel/opentelemetry-collector-contrib@sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806}
@@ -46,6 +49,7 @@ services:
       - "0"
     volumes:
       - data:/data
+      - /tmp/mavis-runner-state:/tmp/mavis-runner-state
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       worker:

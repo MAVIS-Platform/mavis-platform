@@ -218,7 +218,9 @@ public class RuntimeRunnerDispatcher {
                 Path.of(DEFAULT_RUNNER_PROJECT_PATH),
                 Path.of("../../MAVIS.Worker/src/MAVIS.Runner/MAVIS.Runner.csproj"),
                 Path.of("../../../MAVIS.Worker/src/MAVIS.Runner/MAVIS.Runner.csproj"),
-                Path.of("MAVIS.Worker/src/MAVIS.Runner/MAVIS.Runner.csproj")
+                Path.of("MAVIS.Worker/src/MAVIS.Runner/MAVIS.Runner.csproj"),
+                Path.of("/app/runner/MAVIS.Runner.dll"),
+                Path.of("runner/MAVIS.Runner.dll")
         );
         for (Path p : candidates) {
             Path abs = p.toAbsolutePath().normalize();
@@ -243,7 +245,8 @@ public class RuntimeRunnerDispatcher {
                 Path.of("../MAVIS.Worker/samples/runtime-poc/collector.yaml"),
                 Path.of("../../MAVIS.Worker/samples/runtime-poc/collector.yaml"),
                 Path.of("../../../MAVIS.Worker/samples/runtime-poc/collector.yaml"),
-                Path.of("MAVIS.Worker/samples/runtime-poc/collector.yaml")
+                Path.of("MAVIS.Worker/samples/runtime-poc/collector.yaml"),
+                Path.of("/app/samples/runtime-poc/collector.yaml")
         );
         for (Path p : candidates) {
             Path abs = p.toAbsolutePath().normalize();
@@ -434,12 +437,123 @@ public class RuntimeRunnerDispatcher {
         }
     }
 
+    static String captureCommandStdout(List<String> cmd, int timeoutSeconds) {
+        try {
+            Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+            byte[] out = proc.getInputStream().readAllBytes();
+            if (!proc.waitFor(timeoutSeconds, TimeUnit.SECONDS) || proc.exitValue() != 0) {
+                proc.destroyForcibly();
+                return null;
+            }
+            return new String(out, StandardCharsets.UTF_8).trim();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private RuntimeSession ensureRunnerHostPrerequisites(RuntimeSession session, Path projPath) {
+        if (session == null || session.getScenarioConfig() == null || !session.getScenarioConfig().isObject()) {
+            return session;
+        }
+        try {
+            com.fasterxml.jackson.databind.JsonNode profileNode = session.getScenarioConfig().path("profile");
+            if (!(profileNode instanceof ObjectNode profile)) {
+                return session;
+            }
+            String volumeName = profile.path("instrumentationVolume").asText("mavis-agents-v1").trim();
+            if (volumeName.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")) {
+                String labels = captureCommandStdout(List.of("docker", "volume", "inspect", "--format", "{{json .Labels}}", volumeName), 10);
+                if (labels == null || !labels.contains("1.17.0") || !labels.contains("2.32.0")) {
+                    for (Path b : List.of(
+                            Path.of("/app/otel-bundle"),
+                            Path.of("../MAVIS.Worker/samples/runtime-poc/artifacts/bundle"),
+                            Path.of("../../MAVIS.Worker/samples/runtime-poc/artifacts/bundle"),
+                            Path.of("MAVIS.Worker/samples/runtime-poc/artifacts/bundle"))) {
+                        Path absBundle = b.toAbsolutePath().normalize();
+                        if (Files.isDirectory(absBundle.resolve("java")) && Files.isDirectory(absBundle.resolve("dotnet"))) {
+                            String helperImg = "mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac";
+                            probeCommandZeroExit(List.of("docker", "volume", "rm", "-f", volumeName), 10);
+                            probeCommandZeroExit(List.of("docker", "volume", "create",
+                                    "--label", "mavis.poc.managed=true",
+                                    "--label", "mavis.dotnet.version=1.17.0",
+                                    "--label", "mavis.java.version=2.32.0",
+                                    volumeName), 15);
+                            probeCommandZeroExit(List.of("docker", "pull", helperImg), 120);
+                            String tmpContainer = "mavis-agent-seed-" + UUID.randomUUID().toString().substring(0, 8);
+                            try {
+                                if (probeCommandZeroExit(List.of("docker", "create", "--name", tmpContainer, "-v", volumeName + ":/agents", helperImg), 20)) {
+                                    probeCommandZeroExit(List.of("docker", "cp", absBundle.toString() + "/.", tmpContainer + ":/agents/"), 30);
+                                }
+                            } finally {
+                                probeCommandZeroExit(List.of("docker", "rm", "-f", tmpContainer), 10);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            String configuredRunnerImg = profile.path("scenarioRunnerImage").asText("").trim();
+            boolean needsBuiltRunnerImg = configuredRunnerImg.isEmpty()
+                    || configuredRunnerImg.startsWith("mcr.microsoft.com/dotnet/aspnet")
+                    || configuredRunnerImg.endsWith("0000000000000000000000000000000000000000000000000000000000000001");
+            if (needsBuiltRunnerImg) {
+                String runnerImgId = captureCommandStdout(List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:1"), 10);
+                if (runnerImgId == null || !runnerImgId.matches("^sha256:[0-9a-f]{64}$")) {
+                    Optional<Path> dllOpt = resolvePrebuiltRunnerDll(projPath, false);
+                    Path dllDir = dllOpt.map(Path::getParent).orElse(null);
+                    Path dockerfile = null;
+                    for (Path df : List.of(
+                            Path.of("/app/samples/runtime-poc/Runner.Dockerfile"),
+                            Path.of("../MAVIS.Worker/samples/runtime-poc/Runner.Dockerfile"),
+                            Path.of("../../MAVIS.Worker/samples/runtime-poc/Runner.Dockerfile"),
+                            Path.of("MAVIS.Worker/samples/runtime-poc/Runner.Dockerfile"))) {
+                        if (Files.isRegularFile(df.toAbsolutePath().normalize())) {
+                            dockerfile = df.toAbsolutePath().normalize();
+                            break;
+                        }
+                    }
+                    if (dllDir != null && Files.isDirectory(dllDir) && dockerfile != null) {
+                        Path buildCtx = Files.createTempDirectory("mavis-runner-img-");
+                        try {
+                            Path pubDir = buildCtx.resolve("artifacts/runner-publish");
+                            Files.createDirectories(pubDir);
+                            try (Stream<Path> files = Files.list(dllDir)) {
+                                for (Path f : files.filter(Files::isRegularFile).toList()) {
+                                    Files.copy(f, pubDir.resolve(f.getFileName()));
+                                }
+                            }
+                            Path dfCopy = buildCtx.resolve("Runner.Dockerfile");
+                            Files.copy(dockerfile, dfCopy);
+                            probeCommandZeroExit(List.of("docker", "build", "--quiet", "--file", dfCopy.toString(), "-t", "mavis-poc-runner:1", buildCtx.toString()), 120);
+                        } finally {
+                            try (Stream<Path> walk = Files.walk(buildCtx)) {
+                                walk.sorted(Comparator.reverseOrder()).forEach(p -> {
+                                    try { Files.deleteIfExists(p); } catch (Exception ignored) {}
+                                });
+                            }
+                        }
+                        runnerImgId = captureCommandStdout(List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:1"), 10);
+                    }
+                }
+                if (runnerImgId != null && runnerImgId.matches("^sha256:[0-9a-f]{64}$")) {
+                    profile.put("scenarioRunnerImage", runnerImgId);
+                    session = runtimeSessionRepository.save(session);
+                }
+            }
+        } catch (Exception ex) {
+            log.warn("Không thể tự động chuẩn bị host runner artifacts cho session {}: {}", session.getId(), ex.getMessage());
+        }
+        return session;
+    }
+
     private void executeManagedCli(RuntimeSession session) throws Exception {
         Path stateDir = resolveStateDir();
         Files.createDirectories(stateDir);
 
         Path projPath = resolveRunnerProjectPath();
         Path collectorPath = resolveCollectorConfigPath();
+        session = ensureRunnerHostPrerequisites(session, projPath);
         String baseApiUrl = "http://127.0.0.1:" + serverPort;
 
         Optional<Path> freshDll = resolvePrebuiltRunnerDll(projPath, true);
