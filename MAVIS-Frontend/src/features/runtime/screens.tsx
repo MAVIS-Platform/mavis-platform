@@ -607,11 +607,22 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     const builtTotal: Record<string, string> = {};
     const errorsTotal: string[] = [];
     try {
-      const batches = targets.length > 0 ? targets.map((s) => [s]) : [[]];
+      const PARALLEL_BATCH_SIZE = 3;
+      const batches: string[][] = [];
+      if (targets.length === 0) {
+        batches.push([]);
+      } else {
+        for (let i = 0; i < targets.length; i += PARALLEL_BATCH_SIZE) {
+          batches.push(targets.slice(i, i + PARALLEL_BATCH_SIZE));
+        }
+      }
       for (let i = 0; i < batches.length; i++) {
         const batch = batches[i]!;
         if (batch[0]) {
-          setStep1StatusMsg(`Building sandbox image (${i + 1}/${batches.length}): ${batch[0]}...`);
+          const doneCount = Object.keys(builtTotal).length;
+          setStep1StatusMsg(
+            `Building sandbox image (${doneCount + 1}–${Math.min(doneCount + batch.length, targets.length)}/${targets.length}): ${batch.join(", ")}...`,
+          );
         }
         const res = await buildImages.mutateAsync({
           projectId,
