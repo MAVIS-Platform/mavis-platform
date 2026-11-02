@@ -100,25 +100,34 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
                             var resolved = false;
                             if (json is not null)
                             {
-                                foreach (var candidatePointer in extract.Value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                string[] envelopePrefixes = ["", "/data", "/data/0", "/data/content/0", "/result", "/result/0", "/payload", "/content/0", "/items/0", "/0"];
+                                foreach (var rawPointer in extract.Value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                                 {
-                                    var value = json.RootElement;
-                                    var ok = true;
-                                    foreach (var segment in candidatePointer.TrimStart('/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+                                    var cleanPointer = "/" + rawPointer.TrimStart('/');
+                                    foreach (var prefix in envelopePrefixes)
                                     {
-                                        var unescaped = segment.Replace("~1", "/").Replace("~0", "~");
-                                        if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty(unescaped, out var prop))
-                                            value = prop;
-                                        else if (value.ValueKind == JsonValueKind.Array && int.TryParse(unescaped, out var idx) && idx >= 0 && idx < value.GetArrayLength())
-                                            value = value[idx];
-                                        else { ok = false; break; }
+                                        var candidatePointer = string.IsNullOrEmpty(prefix) || cleanPointer.StartsWith(prefix + "/", StringComparison.OrdinalIgnoreCase)
+                                            ? cleanPointer
+                                            : prefix + cleanPointer;
+                                        var value = json.RootElement;
+                                        var ok = true;
+                                        foreach (var segment in candidatePointer.TrimStart('/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+                                        {
+                                            var unescaped = segment.Replace("~1", "/").Replace("~0", "~");
+                                            if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty(unescaped, out var prop))
+                                                value = prop;
+                                            else if (value.ValueKind == JsonValueKind.Array && int.TryParse(unescaped, out var idx) && idx >= 0 && idx < value.GetArrayLength())
+                                                value = value[idx];
+                                            else { ok = false; break; }
+                                        }
+                                        if (ok && value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null or JsonValueKind.Object or JsonValueKind.Array))
+                                        {
+                                            variables[extract.Key] = value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText();
+                                            resolved = true;
+                                            break;
+                                        }
                                     }
-                                    if (ok && value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null))
-                                    {
-                                        variables[extract.Key] = value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText();
-                                        resolved = true;
-                                        break;
-                                    }
+                                    if (resolved) break;
                                 }
                             }
                             if (!resolved)

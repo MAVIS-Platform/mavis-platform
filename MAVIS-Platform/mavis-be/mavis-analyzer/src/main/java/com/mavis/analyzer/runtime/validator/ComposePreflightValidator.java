@@ -1330,6 +1330,12 @@ public class ComposePreflightValidator {
                 }
                 String fullPath = normalizeEndpointPath(basePath, subPath);
                 String handlerWindow = extractHandlerWindow(content, matcher.start(), matcher.end(), SPRING_MAPPING_PATTERN);
+                String upperArgs = args.toUpperCase(Locale.ROOT);
+                boolean isMultipartOnly = (upperArgs.contains("MULTIPART_FORM_DATA") && !upperArgs.contains("APPLICATION_JSON"))
+                        || ((handlerWindow.contains("@RequestPart") || handlerWindow.contains("MultipartFile")) && !handlerWindow.contains("@RequestBody"));
+                if (isMultipartOnly && Set.of("POST", "PUT", "PATCH").contains(method)) {
+                    continue;
+                }
                 String fullPathWithQuery = appendRequiredQueryParams(fullPath, handlerWindow);
                 String key = (inferredService + ":" + method + ":" + fullPathWithQuery).toLowerCase(Locale.ROOT);
                 if (endpointKeys.add(key)) {
@@ -1604,29 +1610,38 @@ public class ComposePreflightValidator {
             return;
         }
         Matcher cm = JAVA_CLASS_NAME_PATTERN.matcher(content);
-        if (!cm.find()) return;
-        String className = cm.group(1);
-        if (className.endsWith("Application") || className.endsWith("Exception") || className.endsWith("Test")) return;
-        Map<String, String> reqFields = new LinkedHashMap<>();
-        Map<String, String> respFields = new LinkedHashMap<>();
-        List<String> hints = new ArrayList<>();
-        Matcher fm = JAVA_FIELD_PATTERN.matcher(content);
-        while (fm.find() && respFields.size() < 20) {
-            String annotations = fm.group(1) != null ? fm.group(1) : "";
-            String fieldType = fm.group(2).trim();
-            String fieldName = fm.group(3).trim();
-            if ("serialVersionUID".equals(fieldName) || annotations.contains("@JsonIgnore") || annotations.contains("@Transient")) continue;
-            if (annotations.contains("@OneToMany") || annotations.contains("@ManyToMany") || annotations.contains("@ManyToOne") || annotations.contains("@OneToOne")) continue;
-            respFields.putIfAbsent(fieldName, fieldType);
-            if (annotations.contains("@GeneratedValue") || (annotations.contains("@Id") && "id".equalsIgnoreCase(fieldName))) continue;
-            String constraintSuffix = extractFieldValidationConstraint(fieldName, annotations, hints);
-            if (reqFields.size() < 16) {
-                reqFields.putIfAbsent(fieldName, constraintSuffix.isEmpty() ? fieldType : fieldType + constraintSuffix);
-            }
+        List<String> classNames = new ArrayList<>();
+        List<Integer> classStarts = new ArrayList<>();
+        while (cm.find()) {
+            classNames.add(cm.group(1));
+            classStarts.add(cm.start());
         }
-        if (!reqFields.isEmpty()) dtoSchemas.putIfAbsent(className, reqFields);
-        if (!respFields.isEmpty()) responseSchemas.putIfAbsent(className, respFields);
-        if (!hints.isEmpty()) dtoValidationHints.putIfAbsent(className, hints);
+        if (classNames.isEmpty()) return;
+        for (int ci = 0; ci < classNames.size(); ci++) {
+            String className = classNames.get(ci);
+            if (className.endsWith("Application") || className.endsWith("Exception") || className.endsWith("Test")) continue;
+            String classSlice = content.substring(classStarts.get(ci), ci + 1 < classStarts.size() ? classStarts.get(ci + 1) : content.length());
+            Map<String, String> reqFields = new LinkedHashMap<>();
+            Map<String, String> respFields = new LinkedHashMap<>();
+            List<String> hints = new ArrayList<>();
+            Matcher fm = JAVA_FIELD_PATTERN.matcher(classSlice);
+            while (fm.find() && respFields.size() < 20) {
+                String annotations = fm.group(1) != null ? fm.group(1) : "";
+                String fieldType = fm.group(2).trim();
+                String fieldName = fm.group(3).trim();
+                if ("serialVersionUID".equals(fieldName) || annotations.contains("@JsonIgnore") || annotations.contains("@Transient")) continue;
+                if (annotations.contains("@OneToMany") || annotations.contains("@ManyToMany") || annotations.contains("@ManyToOne") || annotations.contains("@OneToOne")) continue;
+                respFields.putIfAbsent(fieldName, fieldType);
+                if (annotations.contains("@GeneratedValue") || (annotations.contains("@Id") && "id".equalsIgnoreCase(fieldName))) continue;
+                String constraintSuffix = extractFieldValidationConstraint(fieldName, annotations, hints);
+                if (reqFields.size() < 16) {
+                    reqFields.putIfAbsent(fieldName, constraintSuffix.isEmpty() ? fieldType : fieldType + constraintSuffix);
+                }
+            }
+            if (!reqFields.isEmpty()) dtoSchemas.putIfAbsent(className, reqFields);
+            if (!respFields.isEmpty()) responseSchemas.putIfAbsent(className, respFields);
+            if (!hints.isEmpty()) dtoValidationHints.putIfAbsent(className, hints);
+        }
     }
 
     private static void extractCsharpDtoSchemas(
@@ -1702,7 +1717,8 @@ public class ComposePreflightValidator {
             meta.append("|future");
             hints.add(fieldName + ":futureDate");
         }
-        if (annotations.contains("@NotBlank") || annotations.contains("@NotEmpty") || annotations.contains("[Required")) {
+        if (annotations.contains("@NotBlank") || annotations.contains("@NotEmpty") || annotations.contains("@NotNull") || annotations.contains("[Required")) {
+            meta.append("|required");
             hints.add(fieldName + ":required");
         }
         return meta.toString();
@@ -1767,12 +1783,19 @@ public class ComposePreflightValidator {
         int count = 0;
         for (Map.Entry<String, String> entry : fields.entrySet()) {
             if (count >= 12) break;
-            Object val = synthesizeFieldValue(entry.getKey(), entry.getValue(), dtoSchemas, enumFirstValues, depth);
-            if (isCouponDto && entry.getKey() != null && entry.getKey().toLowerCase(Locale.ROOT).contains("code") && "SKU-LAPTOP-01".equals(val)) {
+            String fName = entry.getKey();
+            String fType = entry.getValue();
+            String lowField = fName == null ? "" : fName.toLowerCase(Locale.ROOT);
+            if (!isCouponDto && (lowField.contains("coupon") || lowField.contains("voucher") || lowField.contains("promo"))
+                    && (fType == null || !fType.contains("|required"))) {
+                continue;
+            }
+            Object val = synthesizeFieldValue(fName, fType, dtoSchemas, enumFirstValues, depth);
+            if (isCouponDto && lowField.contains("code") && "SKU-LAPTOP-01".equals(val)) {
                 val = "SAVE10";
             }
             if (val != null) {
-                out.put(entry.getKey(), val);
+                out.put(fName, val);
                 count++;
             }
         }
@@ -1798,6 +1821,9 @@ public class ComposePreflightValidator {
             return elem != null ? List.of(elem) : List.of();
         }
         if (type.startsWith("Map<") || type.startsWith("Dictionary<") || type.startsWith("IDictionary<") || type.startsWith("dict[")) {
+            if (lowerName.contains("address")) {
+                return Map.of("recipientName", "Nguyen Van A", "recipientPhone", "0901234567", "streetAddress", "123 Le Loi, Quan 1, TP.HCM");
+            }
             return Map.of();
         }
         String simple = type.contains(".") ? type.substring(type.lastIndexOf('.') + 1) : type;
@@ -1839,6 +1865,7 @@ public class ComposePreflightValidator {
                 else if (lowerName.contains("phone") || lowerName.contains("mobile")) candidate = "+84901234567";
                 else if (lowerName.contains("url") || lowerName.contains("uri") || lowerName.contains("website")) candidate = "https://example.org";
                 else if (lowerName.contains("uuid") || lowerName.contains("guid")) candidate = "00000000-0000-0000-0000-000000000001";
+                else if (lowerName.contains("paymentmethod")) candidate = "COD";
                 else if (lowerName.contains("code") || lowerName.contains("sku")) candidate = "SKU-LAPTOP-01";
                 else if (lowerName.contains("currency")) candidate = "USD";
                 else if (lowerName.contains("country")) candidate = "VN";
