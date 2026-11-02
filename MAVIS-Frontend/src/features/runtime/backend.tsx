@@ -976,7 +976,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       return session.data.stepResults
         .filter((sr) => Boolean(sr.service && sr.path))
         .map((sr) => ({
-          service: sr.service,
+          service: sr.service ?? "api-gateway",
           method: sr.method ?? "GET",
           path: sr.path ?? "/",
         }));
