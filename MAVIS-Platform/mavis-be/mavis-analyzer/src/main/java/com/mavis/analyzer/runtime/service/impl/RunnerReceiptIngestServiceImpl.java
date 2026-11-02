@@ -569,7 +569,26 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     && !isDiscoveryOrConfigRegistryService(ps.getRuntimeService())
                     && !isDiscoveryOrConfigRegistryService(cs.getRuntimeService());
         });
-        boolean skipRegistryNoise = hasNonRegistryInteraction || hasExternalRootSpan;
+        boolean scenarioTargetsNonRegistry = false;
+        if (outcome.getScenario() != null && outcome.getScenario().path("steps").isArray()) {
+            for (JsonNode st : outcome.getScenario().path("steps")) {
+                String svc = st.path("service").asText("");
+                if (!svc.isBlank() && !isDiscoveryOrConfigRegistryService(svc)) {
+                    scenarioTargetsNonRegistry = true;
+                    break;
+                }
+            }
+        }
+        if (!scenarioTargetsNonRegistry && session.getScenarioConfig() != null && session.getScenarioConfig().path("scenario").path("steps").isArray()) {
+            for (JsonNode st : session.getScenarioConfig().path("scenario").path("steps")) {
+                String svc = st.path("service").asText("");
+                if (!svc.isBlank() && !isDiscoveryOrConfigRegistryService(svc)) {
+                    scenarioTargetsNonRegistry = true;
+                    break;
+                }
+            }
+        }
+        boolean skipRegistryNoise = scenarioTargetsNonRegistry || hasNonRegistryInteraction || hasExternalRootSpan;
 
         if (!interactions.isEmpty()) {
             List<Integer> orderedIndices = new ArrayList<>(interactions.size());

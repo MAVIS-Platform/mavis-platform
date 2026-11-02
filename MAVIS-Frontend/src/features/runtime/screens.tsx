@@ -895,9 +895,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     <span className="text-xs text-muted-foreground">
                       <strong className="text-foreground">{activeServices.length}</strong> services ({appServicesCount} app, {infraServicesCount} infra)
                       {" · "}
-                      <strong className="text-foreground">{databaseChecks.length}</strong> DBs
+                      <strong className="text-foreground">{new Set(databaseChecks.filter((d) => d.status !== "DETECTED_CONTAINER" && !["redis", "kafka", "rabbitmq", "activemq", "nats"].includes((d.dbType ?? "").toLowerCase())).map((d) => `${d.service}:${d.dbType}`)).size || databaseChecks.length}</strong> DBs
                       {" · "}
-                      <strong className="text-foreground">{detectedEndpoints.length}</strong> endpoints
+                      <strong className="text-foreground">{detectedEndpoints.filter((ep) => !(ep.source ?? "").toLowerCase().includes("gateway route")).length || detectedEndpoints.length}</strong> endpoints
                       {" · "}
                       <strong className="text-foreground">{Object.keys(envVars).length}</strong> env vars
                     </span>

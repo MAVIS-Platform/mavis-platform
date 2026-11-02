@@ -99,12 +99,14 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         correlationLimitations.add("NO_COMBINED_FRAGMENTS_FROM_SINGLE_TRACE");
         boolean clockSkewDetected = false;
         int stepIndex = 1;
+        boolean hasNonRegistrySpan = rawSpans.stream().anyMatch(s -> s != null && s.getServiceName() != null && !isDiscoveryOrConfigRegistryService(s.getServiceName()));
 
         for (OtelSpanDTO child : rawSpans) {
             if (child.getParentSpanId() != null && !child.getParentSpanId().isBlank()) {
                 OtelSpanDTO parent = spanByIdMap.get(spanKey(child.getTraceId(), child.getParentSpanId()));
                 if (parent != null && parent.getServiceName() != null && child.getServiceName() != null) {
                     if (!parent.getServiceName().equalsIgnoreCase(child.getServiceName())) {
+                        if (hasNonRegistrySpan && (isDiscoveryOrConfigRegistryService(parent.getServiceName()) || isDiscoveryOrConfigRegistryService(child.getServiceName()))) continue;
                         String effectiveOperation = resolveSpanOperation(parent, child);
                         String dedupKey = (Objects.toString(child.getTraceId(), "") + "|"
                                 + parent.getServiceName().toLowerCase(Locale.ROOT) + "->"
@@ -1067,6 +1069,17 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         } else {
             node.putNull(field);
         }
+    }
+
+    private static boolean isDiscoveryOrConfigRegistryService(String name) {
+        if (name == null) return false;
+        String low = name.trim().toLowerCase(Locale.ROOT);
+        return low.equals("service-discovery")
+                || low.equals("discovery-service")
+                || low.equals("eureka-server")
+                || low.equals("eureka")
+                || low.equals("config-server")
+                || low.equals("consul");
     }
 
     private static void putLongOrNull(ObjectNode node, String field, Long value) {
