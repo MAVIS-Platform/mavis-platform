@@ -47,12 +47,32 @@ export function ArchitectureWorkspace({
   );
   const [selected, setSelected] = useState<{ modelId: string; elementId: string } | null>(null);
   const id = selected?.modelId === state.model?.id ? (selected?.elementId ?? null) : null;
+  const latestEnriched = state.models.find((m) => "origin" in m && m.origin === "RUNTIME_ENRICHED");
+  const currentSummary = state.models.find((m) => m.id === state.model?.id);
+  const currentIsEnriched = Boolean(currentSummary && "origin" in currentSummary && currentSummary.origin === "RUNTIME_ENRICHED");
   return (
     <PageContainer>
       <div className="space-y-2.5">
         {isAdmin && <Button asChild variant="outline" size="sm">
           <Link href={returnHref}>← {t("Back to analysis jobs")}</Link>
         </Button>}
+        {latestEnriched && state.model && !currentIsEnriched && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-950/20 px-3.5 py-2 text-xs">
+            <span className="text-emerald-300">
+              <strong className="font-semibold text-emerald-400">
+                ⚡ Runtime-Enriched Revision {latestEnriched.revision} Available:
+              </strong>{" "}
+              You are viewing Static Revision {state.model.revision}. Switch to the Runtime-Enriched model to inspect OpenTelemetry-verified service edges and observed sequence traces.
+            </span>
+            <Button
+              size="sm"
+              className="h-7 bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-500"
+              onClick={() => state.selectModel(latestEnriched.id)}
+            >
+              Switch to Runtime-Enriched Revision {latestEnriched.revision} →
+            </Button>
+          </div>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-full sm:w-64">

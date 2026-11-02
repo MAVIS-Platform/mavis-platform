@@ -39,6 +39,7 @@ export function ModelVersionSelector({
           value: model.id,
           label: [
             `Revision ${model.revision}`,
+            model.origin === "RUNTIME_ENRICHED" ? "Runtime-Enriched" : "",
             model.revision === newest ? "Latest" : "",
             customLabel,
             created,

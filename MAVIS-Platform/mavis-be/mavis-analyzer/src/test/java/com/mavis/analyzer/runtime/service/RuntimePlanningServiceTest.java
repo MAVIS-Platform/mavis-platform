@@ -1184,4 +1184,65 @@ class RuntimePlanningServiceTest {
             mockOpenAi.stop(0);
         }
     }
+
+    @Test
+    @DisplayName("STEP 2 & 3 FIX: Snaps hallucinated POST on multipart-excluded GET-only paths to GET and sanitizes /status AUTH_TOKEN extraction")
+    void testSnapsMultipartExcludedPostToGetAndSanitizesStatusTokenExtract() throws Exception {
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("api-gateway"))
+                .composeServices(List.of("api-gateway"))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/identity/auth/login").responseFields(List.of("/data/accessToken")).build(),
+                        DetectedEndpointDTO.builder().service("api-gateway").method("GET").path("/api/catalog/categories").responseFields(List.of("/data/id")).build(),
+                        DetectedEndpointDTO.builder().service("api-gateway").method("GET").path("/api/catalog/products").responseFields(List.of("/data/id")).build(),
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/order/orders/checkout").expectedStatus(200).build()
+                ))
+                .build());
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
+
+        HttpServer mockOpenAi = HttpServer.create(new InetSocketAddress(0), 0);
+        mockOpenAi.createContext("/v1/chat/completions", exchange -> {
+            String resp = """
+                    {
+                      "choices": [{
+                        "message": {
+                          "content": "{\\"suggestedName\\":\\"Catalog & Order\\",\\"summary\\":\\"End-to-end\\",\\"steps\\":[{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/identity/auth/login\\",\\"expectedStatus\\":200,\\"extract\\":{\\"AUTH_TOKEN\\":\\"/status\\"}},{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/catalog/categories\\",\\"expectedStatus\\":201,\\"extract\\":{\\"CATEGORY_STATUS\\":\\"/status\\"}},{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/catalog/products\\",\\"expectedStatus\\":201,\\"extract\\":{\\"PRODUCT_ID\\":\\"/data/id\\"}}]}"
+                        }
+                      }]
+                    }
+                    """;
+            byte[] bytes = resp.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        mockOpenAi.start();
+        try {
+            int port = mockOpenAi.getAddress().getPort();
+            ReflectionTestUtils.setField(planningService, "customAiEndpointUrl", "http://127.0.0.1:" + port + "/v1/chat/completions");
+            when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.of("sk-proj-test-key"));
+
+            GeneratedScenarioDraftView aiDraft = planningService.generateScenario(
+                    projectId, new GenerateScenarioRequest(snapshotId, modelId, "Full journey"));
+
+            assertThat(aiDraft.steps()).hasSize(4);
+            assertThat(aiDraft.steps().get(0).extract()).containsEntry("AUTH_TOKEN", "/data/accessToken");
+            assertThat(aiDraft.steps().get(1).method()).isEqualTo("GET");
+            assertThat(aiDraft.steps().get(1).path()).isEqualTo("/api/catalog/categories");
+            assertThat(aiDraft.steps().get(1).bodyReference()).isNull();
+            assertThat(aiDraft.steps().get(1).extract()).containsEntry("CATEGORY_ID", "/data/id|/id");
+            assertThat(aiDraft.steps().get(2).method()).isEqualTo("GET");
+            assertThat(aiDraft.steps().get(2).path()).isEqualTo("/api/catalog/products");
+            assertThat(aiDraft.steps().get(2).extract()).containsEntry("PRODUCT_ID", "/data/id|/id");
+            assertThat(aiDraft.steps().get(3).method()).isEqualTo("POST");
+            assertThat(aiDraft.steps().get(3).path()).isEqualTo("/api/order/orders/checkout");
+        } finally {
+            mockOpenAi.stop(0);
+        }
+    }
 }
