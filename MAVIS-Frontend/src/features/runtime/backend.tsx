@@ -152,8 +152,8 @@ export function deriveWorkflowSteps(
       (s) => !isRegistryName(s.callerService) && !isRegistryName(s.calleeService),
     );
     const activeSteps =
-      businessSteps.length > 0
-        ? businessSteps.map((s, idx) => ({ ...s, stepOrder: idx + 1 }))
+      businessSteps.length > 0 && businessSteps.length < observedSteps.length
+        ? businessSteps.map((s, idx) => (s.stepOrder !== undefined ? { ...s, stepOrder: idx + 1 } : s))
         : observedSteps;
     return { steps: activeSteps, mode: "OBSERVED" };
   }
