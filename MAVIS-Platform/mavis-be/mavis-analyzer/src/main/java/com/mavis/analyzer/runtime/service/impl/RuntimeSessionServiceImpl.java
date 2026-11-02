@@ -1285,6 +1285,14 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         var exportedProfile = profileNode.deepCopy();
         if (exportedProfile instanceof ObjectNode object) {
             object.retain(RUNNER_PROFILE_FIELDS);
+            String configuredRunnerImg = object.path("scenarioRunnerImage").asText("").trim();
+            if (configuredRunnerImg.startsWith("mcr.microsoft.com/dotnet/aspnet")) {
+                String builtId = RuntimeRunnerDispatcher.captureCommandStdout(
+                        List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:1"), 5);
+                if (builtId != null && builtId.matches("^sha256:[0-9a-f]{64}$")) {
+                    object.put("scenarioRunnerImage", builtId);
+                }
+            }
             if (object.get("applications") instanceof ObjectNode applications) {
                 List<String> appNames = new ArrayList<>();
                 applications.fieldNames().forEachRemaining(appNames::add);
