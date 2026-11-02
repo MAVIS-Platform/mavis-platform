@@ -297,6 +297,9 @@ class MocHuongProductionAuditTest {
 
             if ("spring-petclinic-microservices".equals(repoName)) {
                 assertThat(preflight.getUnresolvableRunnerIssues()).isEmpty();
+                assertThat(preflight.getSandboxComposeYaml())
+                        .contains("SPRING_CLOUD_CONFIG_FAIL_FAST: 'false'")
+                        .contains("SPRING_CLOUD_CONFIG_RETRY_MAX_ATTEMPTS: '10'");
                 assertThat(preflight.getDetectedServices())
                         .contains("api-gateway", "customers-service", "visits-service", "vets-service", "sandbox-mysql")
                         .doesNotContain("grafana-server", "prometheus-server", "tracing-server");
@@ -306,6 +309,8 @@ class MocHuongProductionAuditTest {
                 assertThat(draft.steps().get(1).extract()).containsEntry("PET_ID", "/id");
                 assertThat(draft.steps().get(2).path()).isEqualTo("/api/visit/owners/{{OWNER_ID}}/pets/{{PET_ID}}/visits");
                 assertThat(draft.steps().get(2).extract()).containsEntry("VISIT_ID", "/id");
+                assertThat(draft.steps())
+                        .anyMatch(s -> "/api/visit/pets/visits?petId={{PET_ID}}".equals(s.path()));
             } else if ("spring-boot-microservices".equals(repoName)) {
                 assertThat(preflight.getRequiredEnvVars())
                         .noneMatch(v -> "USER_REQUIRED".equals(v.getResolution()));

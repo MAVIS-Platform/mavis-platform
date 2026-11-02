@@ -778,6 +778,28 @@ public class RuntimePlanningService {
     }
    }
    m.appendTail(rewrittenPath);
+   String fullRewrittenPath=rewrittenPath.toString();
+   int qIdx=fullRewrittenPath.indexOf('?');
+   if(qIdx>=0&&!extractedByResource.isEmpty()){
+    String basePart=fullRewrittenPath.substring(0,qIdx);
+    String[] qPairs=fullRewrittenPath.substring(qIdx+1).split("&");
+    boolean qChanged=false;
+    for(int qi=0;qi<qPairs.length;qi++){
+     int eq=qPairs[qi].indexOf('=');
+     if(eq>0){
+      String qKey=qPairs[qi].substring(0,eq);
+      String qVal=qPairs[qi].substring(eq+1);
+      if(!qVal.contains("{{")){
+       String chainedQ=resolveChainedVariableForParam(qKey,resRoot,extractedByResource);
+       if(chainedQ!=null){
+        qPairs[qi]=qKey+"={{"+chainedQ+"}}";
+        qChanged=true;
+       }
+      }
+     }
+    }
+    if(qChanged)fullRewrittenPath=basePart+"?"+String.join("&",qPairs);
+   }
 
    // Seed/Workflow POST extraction when responseFields confirms an id/code pointer
    if("POST".equals(ep.getMethod())&&!"AUTH_ENTRY".equals(rawPhase)&&ep.getResponseFields()!=null&&!resRoot.isEmpty()){
@@ -836,7 +858,7 @@ public class RuntimePlanningService {
      "step-"+idx,
      ep.getService(),
      ep.getMethod(),
-     rewrittenPath.toString(),
+     fullRewrittenPath,
      expectedStatus,
      rationale,
      ep.getSource()!=null?ep.getSource():"Step 1 Preflight",

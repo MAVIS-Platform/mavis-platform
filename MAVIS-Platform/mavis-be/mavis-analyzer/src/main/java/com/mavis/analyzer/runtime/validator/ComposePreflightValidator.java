@@ -404,7 +404,9 @@ public class ComposePreflightValidator {
 
                 // 3. Environment & env_file normalization (env_file -> base map, list -> map, ${VAR:-default} / .env -> value, secrets -> relocatedSecrets)
                 boolean hasEnvFile = cfg.containsKey("env_file");
-                if (hasEnvFile || cfg.containsKey("environment")) {
+                boolean dependsOnConfigServer = extractServiceDependencies(cfg).stream()
+                        .anyMatch(d -> d.equalsIgnoreCase("config-server") || d.equalsIgnoreCase("config-service"));
+                if (hasEnvFile || cfg.containsKey("environment") || dependsOnConfigServer) {
                     Map<String, String> rawEnv = mergedServiceEnvironment(cfg, safeEnvFiles);
                     Map<String, String> cleanEnv = new LinkedHashMap<>();
                     boolean listConverted = cfg.get("environment") instanceof List<?>;
@@ -453,6 +455,11 @@ public class ComposePreflightValidator {
                     if (cleanEnv.containsKey("SPRING_KAFKA_BOOTSTRAP_SERVERS") || cleanEnv.containsKey("KAFKA_BOOTSTRAP_SERVERS")) {
                         cleanEnv.putIfAbsent("SPRING_KAFKA_TEMPLATE_OBSERVATION_ENABLED", "true");
                         cleanEnv.putIfAbsent("SPRING_KAFKA_LISTENER_OBSERVATION_ENABLED", "true");
+                    }
+                    if (dependsOnConfigServer || cleanEnv.containsKey("CONFIG_SERVER_URL") || cleanEnv.containsKey("SPRING_CLOUD_CONFIG_URI")
+                            || cleanEnv.getOrDefault("SPRING_CONFIG_IMPORT", "").contains("configserver:")) {
+                        cleanEnv.putIfAbsent("SPRING_CLOUD_CONFIG_FAIL_FAST", "false");
+                        cleanEnv.putIfAbsent("SPRING_CLOUD_CONFIG_RETRY_MAX_ATTEMPTS", "10");
                     }
                     if (!cleanEnv.isEmpty()) {
                         outSvc.put("environment", cleanEnv);
@@ -4259,6 +4266,11 @@ public class ComposePreflightValidator {
                 appEnv.put("SPRING_DATASOURCE_PASSWORD", dbPass);
                 if (dto.getMigrationManagedServices() == null || !dto.getMigrationManagedServices().contains(appSvc)) {
                     appEnv.putIfAbsent("SPRING_JPA_HIBERNATE_DDL_AUTO", "update");
+                } else if ("postgres".equals(family) && dto.getMigrationManagedServices().size() > 1) {
+                    String schemaName = appSvc.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_]", "_");
+                    appEnv.putIfAbsent("SPRING_FLYWAY_SCHEMAS", schemaName);
+                    appEnv.putIfAbsent("SPRING_FLYWAY_DEFAULT_SCHEMA", schemaName);
+                    appEnv.putIfAbsent("SPRING_JPA_PROPERTIES_HIBERNATE_DEFAULT_SCHEMA", schemaName);
                 }
                 clearedKeys.addAll(List.of("SPRING_DATASOURCE_URL", "SPRING_DATASOURCE_USERNAME", "SPRING_DATASOURCE_PASSWORD"));
                 previewUrl = jdbcUrl;
