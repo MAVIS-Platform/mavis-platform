@@ -41,7 +41,7 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
             var point=positions.addObject().put("id",node.getId().toString()).put("name",node.getName()).put("kind",node.getElementType()).put("type",node.getElementType()).put("status",node.getStatus()).put("x",(i%8)*280).put("y",(i/8)*180);
             point.put("languageStack",node.getLanguageStack());
             if (node.getProperties() != null) {
-                point.set("properties", node.getProperties());
+                point.set("properties", node.getProperties().deepCopy());
                 point.put("description", node.getProperties().path("responsibility").asText(node.getProperties().path("description").asText("")));
             }
             point.putObject("position").put("x",(i%8)*280).put("y",(i/8)*180);

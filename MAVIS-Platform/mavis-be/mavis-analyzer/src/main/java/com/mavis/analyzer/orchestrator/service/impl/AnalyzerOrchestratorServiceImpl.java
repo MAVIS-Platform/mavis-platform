@@ -44,7 +44,7 @@ public class AnalyzerOrchestratorServiceImpl implements AnalyzerOrchestratorServ
             if(!snapshot.getProject().getId().equals(project.getId()))throw new IllegalArgumentException("Snapshot project mismatch");
             Job job=event.jobId()==null?jobs.save(Job.builder().project(project).sourceSnapshot(snapshot).jobType("STATIC_ANALYSIS").status("PENDING").build()):jobs.findById(event.jobId()).orElseThrow();
             if(!job.getProject().getId().equals(project.getId()) || !job.getSourceSnapshot().getId().equals(snapshot.getId()))throw new IllegalArgumentException("Job snapshot mismatch");
-            jobId=job.getId();Instant deadline=Instant.now().plusSeconds(120);
+            jobId=job.getId();Instant deadline=Instant.now().plusSeconds(600);
             if(!publisher.begin(jobId,attempt,deadline))return;started=true;executions.register(jobId);
             // Stored snapshot artifact is authoritative; event paths cannot select another source.
             String extracted=ZipUtils.extract(snapshot.getStoragePath(),snapshot.getArtifactHash());
