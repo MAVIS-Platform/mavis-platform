@@ -1131,12 +1131,22 @@ public class RuntimePlanningService {
    }
 
    Map<String,String> stepExtract=new LinkedHashMap<>();
+   final DetectedEndpointDTO matchedForExtract=matchedEp;
    if(item.path("extract").isObject()){
     item.path("extract").fields().forEachRemaining(e->{
      String ek=toScenarioEnvKey(e.getKey().trim());
      String ptr=e.getValue().asText("").trim();
      if(ptr.startsWith("$."))ptr="/"+ptr.substring(2).replace('.','/');
      else if(!ptr.isEmpty()&&!ptr.startsWith("/"))ptr="/"+ptr.replace('.','/');
+     if("/status".equalsIgnoreCase(ptr)||"/message".equalsIgnoreCase(ptr)||ek.endsWith("_STATUS")){
+      if(ek.contains("TOKEN")&&matchedForExtract!=null&&matchedForExtract.getResponseFields()!=null){
+       String tokPtr=findMatchingPointer(matchedForExtract.getResponseFields(),List.of("accessToken","token","jwt","idToken"));
+       if(tokPtr!=null)ptr=tokPtr;
+       else return;
+      }else{
+       return;
+      }
+     }
      if(!ek.isEmpty()&&ptr.startsWith("/")&&ptr.length()<=512){
       stepExtract.put(ek,ptr);
       availableExtractedVars.add(ek);
@@ -1145,6 +1155,13 @@ public class RuntimePlanningService {
       }
      }
     });
+   }
+   if("POST".equals(verb)&&isAuthPhase&&matchedEp!=null&&matchedEp.getResponseFields()!=null&&stepExtract.isEmpty()&&rawPath.toLowerCase(Locale.ROOT).contains("login")){
+    String tokPtr=findMatchingPointer(matchedEp.getResponseFields(),List.of("accessToken","token","jwt","idToken"));
+    if(tokPtr!=null){
+     stepExtract.put("AUTH_TOKEN",tokPtr);
+     availableExtractedVars.add("AUTH_TOKEN");
+    }
    }
    if("POST".equals(verb)&&!isAuthPhase&&matchedEp!=null&&matchedEp.getResponseFields()!=null&&!resRoot.isEmpty()){
     if(stepExtract.isEmpty()){
