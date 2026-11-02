@@ -1514,12 +1514,18 @@ public class ComposePreflightValidator {
 
     private static String extractJavaResponseBodyType(String window) {
         if (window == null) return null;
-        Matcher re = Pattern.compile("ResponseEntity\\s*<\\s*([A-Za-z_][A-Za-z0-9_<>., ?]*?)\\s*>").matcher(window);
-        if (re.find()) {
+        Matcher re = Pattern.compile("ResponseEntity\\s*<\\s*([A-Za-z_][A-Za-z0-9_<>., ?]*)\\s*>\\s+[a-zA-Z_][A-Za-z0-9_]*\\s*\\(").matcher(window);
+        if (!re.find()) {
+            re = Pattern.compile("ResponseEntity\\s*<\\s*([A-Za-z_][A-Za-z0-9_<>., ?]*?)\\s*>").matcher(window);
+            if (!re.find()) re = null;
+        }
+        if (re != null) {
             String inner = re.group(1).trim();
-            if (inner.startsWith("ApiResponse<") || inner.startsWith("Result<") || inner.startsWith("DataResponse<")) {
+            while (inner.matches("(?i)(?:ApiResponse|Result|DataResponse|BaseResponse|PageResponse|List|Set|Collection|Page)\\s*<.*")) {
                 int lt = inner.indexOf('<'), gt = inner.lastIndexOf('>');
                 if (lt > 0 && gt > lt) inner = inner.substring(lt + 1, gt).trim();
+                else if (lt > 0) inner = inner.substring(lt + 1).replace(">", "").trim();
+                else break;
             }
             return simplifyDtoTypeName(inner);
         }
@@ -2491,16 +2497,22 @@ public class ComposePreflightValidator {
         if (ep.getResponseFields() != null) respPtrs.addAll(ep.getResponseFields());
         if (ep.getResponseBodyType() != null && responseSchemas != null) {
             Map<String, String> rFields = responseSchemas.get(ep.getResponseBodyType());
+            String ptrPrefix = (!"ApiResponse".equals(ep.getResponseBodyType())
+                    && responseSchemas.containsKey("ApiResponse")
+                    && responseSchemas.get("ApiResponse").containsKey("data")) ? "/data/" : "/";
             if (rFields != null) {
                 for (String f : rFields.keySet()) {
                     String low = f.toLowerCase(Locale.ROOT);
                     if (low.equals("id") || low.endsWith("id") || low.equals("uuid") || low.contains("code") || low.contains("sku")
-                            || low.contains("token") || low.equals("jwt") || low.equals("status") || low.contains("number") || low.equals("key")) {
-                        respPtrs.add("/" + f);
+                            || low.contains("token") || low.equals("jwt") || low.contains("number") || low.equals("key")) {
+                        respPtrs.add(ptrPrefix + f);
                     }
                 }
                 if (respPtrs.isEmpty() && !rFields.isEmpty()) {
-                    respPtrs.add("/" + rFields.keySet().iterator().next());
+                    String firstKey = rFields.keySet().iterator().next();
+                    if (!"status".equalsIgnoreCase(firstKey) && !"message".equalsIgnoreCase(firstKey)) {
+                        respPtrs.add(ptrPrefix + firstKey);
+                    }
                 }
             }
         }
