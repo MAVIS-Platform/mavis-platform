@@ -1264,10 +1264,17 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         // Kiểm tra bắt buộc: confirmedServiceMappings không rỗng
-        Map<String, String> mappings = session.getConfirmedServiceMappings();
-        if (mappings == null || mappings.isEmpty()) {
+        Map<String, String> rawMappings = session.getConfirmedServiceMappings();
+        if (rawMappings == null || rawMappings.isEmpty()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "confirmedServiceMappings không được để trống");
         }
+        Map<String, String> uuidOnlyMappings = new LinkedHashMap<>();
+        rawMappings.forEach((k, v) -> {
+            if (k != null && !ComposePreflightValidator.isInfrastructureService(k, "") && isUuid(v)) {
+                uuidOnlyMappings.put(k, v);
+            }
+        });
+        Map<String, String> mappings = uuidOnlyMappings.isEmpty() ? rawMappings : uuidOnlyMappings;
 
         // Lấy modelVersionId trực tiếp từ session.getModelVersion() đã pin cứng
         if (session.getModelVersion() == null) {
