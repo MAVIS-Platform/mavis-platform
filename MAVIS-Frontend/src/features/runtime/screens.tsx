@@ -304,8 +304,10 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     }
   }, [projectId, modelId, snapshotId, profileId, serviceMappings, serviceRoles, serviceImageOverrides, envVars, secretValues, dismissedSecretKeys]);
 
-  const rawProfile = (config.data?.profile ?? {}) as Record<string, unknown>;
-  const configuredSecretKeys = Array.isArray(rawProfile["configuredSecretKeys"])
+  const savedProfile = (config.data?.profile ?? {}) as Record<string, unknown>;
+  const hasCheckedPreflight = Boolean(preflight.data);
+  const rawProfile = hasCheckedPreflight ? savedProfile : ({} as Record<string, unknown>);
+  const configuredSecretKeys = Array.isArray(savedProfile["configuredSecretKeys"])
     ? (rawProfile["configuredSecretKeys"] as unknown[]).map(String)
     : [];
 
@@ -416,7 +418,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         setSecretRefs(refs.join(", "));
       }
     }
-  }, [config.data?.profile]);
+  }, [config.data?.profile, hasCheckedPreflight]);
 
   useEffect(() => {
     if (activeServices.length) {
@@ -440,11 +442,6 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       setServiceImageOverrides((prev) => ({ ...discovered, ...prev }));
     }
   }, [preflight.data?.serviceImageOverrides]);
-
-  useEffect(() => {
-    if (!projectId || !snapshotId) return;
-    preflight.mutate({ projectId, snapshotId });
-  }, [projectId, snapshotId]);
 
   const detectedVarSignature = requiredEnvVars.map((r) => `${r.name}:${r.category}`).join("|");
 
@@ -665,7 +662,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   };
 
   const isPreflightSecure = preflight.data ? preflight.data.compatible : (config.data?.supported ?? true);
-  const hasInspectedStep1 = Boolean(preflight.data) || activeServices.length > 0;
+  const hasInspectedStep1 = hasCheckedPreflight;
   const isStep1Ready =
     hasInspectedStep1 &&
     !snapshots.isPending &&
@@ -683,7 +680,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         : buildImages.isPending || isAutoBuilding
           ? "Building sandbox images..."
           : !hasInspectedStep1
-            ? "Waiting for Step 1 preflight inspection..."
+            ? "Click Check below to inspect the selected revision first"
             : !isPreflightSecure
               ? "Compose preflight rejected — fix the issues below first"
               : effectiveUnresolvedIssues.length > 0
@@ -761,24 +758,29 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>
                 {preflight.isPending
-                  ? "Inspecting source & Compose automatically..."
-                  : "Preflight runs automatically for the selected revision."}
+                  ? "Inspecting source & Compose..."
+                  : hasCheckedPreflight
+                    ? "Preflight check completed for the selected revision."
+                    : "Click Check to inspect the selected revision."}
               </span>
               <Button
                 type="button"
-                variant="ghost"
+                variant={hasCheckedPreflight ? "ghost" : "default"}
                 size="sm"
                 className="h-7 text-xs"
                 disabled={!snapshotId || preflight.isPending}
-                onClick={() => preflight.mutate({ projectId, snapshotId })}
+                onClick={() => {
+                  autoBuildTriggeredRef.current = "";
+                  preflight.mutate({ projectId, snapshotId });
+                }}
               >
-                ↻ Re-check
+                {preflight.isPending ? "Checking..." : hasCheckedPreflight ? "↻ Re-check" : "Check"}
               </Button>
             </div>
 
             {preflight.isError && <ErrorState error={preflight.error} />}
 
-            {(preflight.data || activeServices.length > 0) && (
+            {hasCheckedPreflight && (
               <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
