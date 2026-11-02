@@ -29,7 +29,7 @@ function ExplainWorkspace() {
         title="AI Explanations"
         description="Explain any architecture element or relationship in an exact model revision using saved source/config evidence and 3E grounding."
       />
-      <div className="grid gap-4 md:grid-cols-2">
+      <div data-tour="explain-selectors" className="grid gap-4 md:grid-cols-2">
         <ProjectSelector />
         {state.projectId && state.model && (
           <ModelVersionSelector

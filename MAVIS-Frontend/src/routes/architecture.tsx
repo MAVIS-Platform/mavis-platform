@@ -9,6 +9,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer } from "@/components/layout/page";
+import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
 import { RequestState } from "@/components/shared/request-state";
 import { ProjectSelector } from "@/features/projects/components";
 import { ModelVersionSelector } from "@/features/architecture/components";
@@ -73,7 +74,7 @@ export function ArchitectureWorkspace({
             </Button>
           </div>
         )}
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3">
+        <div data-tour="architecture-toolbar" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-full sm:w-64">
               <ProjectSelector selectedProject={project.data} />
@@ -88,46 +89,49 @@ export function ArchitectureWorkspace({
               </div>
             )}
           </div>
-          {state.projectId && state.model && (
-            <div className="ml-auto flex flex-wrap items-center gap-1.5">
-              {resolvedMode !== "graph" && (
-                <>
-                  <Button asChild size="sm" variant="outline">
-                    <Link
-                      href={`/impact?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                    >
-                      Change Impact
-                    </Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link
-                      href={`/model?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                    >
-                      Model Editor
-                    </Link>
-                  </Button>
-                  <Button asChild size="sm" variant="outline">
-                    <Link href={`/sessions?project=${encodeURIComponent(state.projectId)}`}>
-                      Runtime
-                    </Link>
-                  </Button>
-                </>
-              )}
-              {project.data?.workspaceId && (
-                <Button
-                  asChild
-                  size="sm"
-                  className="bg-primary font-semibold text-primary-foreground"
-                >
-                  <Link
-                    href={`/assignments?workspace=${encodeURIComponent(project.data.workspaceId)}${project.data.assignmentId ? `#assignment-${encodeURIComponent(project.data.assignmentId)}` : ""}`}
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <ScreenHelpTrigger screenId={resolvedMode === "diagram" ? "diagrams" : "architecture"} />
+            {state.projectId && state.model && (
+              <>
+                {resolvedMode !== "graph" && (
+                  <>
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        href={`/impact?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                      >
+                        Change Impact
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link
+                        href={`/model?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
+                      >
+                        Model Editor
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/sessions?project=${encodeURIComponent(state.projectId)}`}>
+                        Runtime
+                      </Link>
+                    </Button>
+                  </>
+                )}
+                {project.data?.workspaceId && (
+                  <Button
+                    asChild
+                    size="sm"
+                    className="bg-primary font-semibold text-primary-foreground"
                   >
-                    Submit to Assignment →
-                  </Link>
-                </Button>
-              )}
-            </div>
-          )}
+                    <Link
+                      href={`/assignments?workspace=${encodeURIComponent(project.data.workspaceId)}${project.data.assignmentId ? `#assignment-${encodeURIComponent(project.data.assignmentId)}` : ""}`}
+                    >
+                      Submit to Assignment →
+                    </Link>
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
         </div>
         {isAdmin && state.projectId && state.model && (
           <nav aria-label="Architecture views" className="flex flex-wrap gap-2 rounded-xl border bg-card p-3">

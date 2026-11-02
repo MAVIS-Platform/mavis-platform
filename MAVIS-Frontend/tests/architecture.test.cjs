@@ -2378,3 +2378,31 @@ test("runtime Step 1-2-3 source guards: Quick Run matches ComposePreflightValida
  assert.ok(backendSrc.includes("models.refetch()")&&backendSrc.includes("fallbackSavedScenario"),"Step 3 Quick Run must await pending queries and reuse saved scenarios after cold reload");
  assert.ok(screensSrc.includes('meta.resolution === "USER_REQUIRED"'),"Step 1 must ask only for secrets the backend marks USER_REQUIRED");
 });
+
+
+test("Screen Guided Tour catalog covers all 28 screens with bilingual EN/VI steps and renders trigger in SectionHeader & ArchitectureWorkspace", () => {
+ const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
+ const {SCREEN_TOUR_CATALOG,resolveScreenTour}=require("../src/lib/guided-tours/catalog.ts");
+ const expectedScreens=[
+  "overview","import","project-overview","snapshots","analysis-history","architecture","diagrams","model",
+  "compare","impact","explain","runtime-config","scenarios","sessions","workspaces","workspace-overview",
+  "assignments","members","references","submissions","submission-review","health","jobs","usage",
+  "users","integrations","audit","runtime-summary","profiles","admin-sessions","profile","notifications"
+ ];
+ for(const id of expectedScreens){
+  const tour=resolveScreenTour(id);
+  assert.ok(tour,`Missing screen tour for ${id}`);
+  assert.ok(tour.title.en&&tour.title.vi,`Missing bilingual title for ${id}`);
+  assert.ok(tour.subtitle.en&&tour.subtitle.vi,`Missing bilingual subtitle for ${id}`);
+  assert.equal(tour.cards.length,2,`Expected 2 summary cards for ${id}`);
+  assert.ok(tour.steps.length>=1,`Expected at least 1 step for ${id}`);
+  for(const step of tour.steps){
+   assert.ok(step.title.en&&step.title.vi,`Missing bilingual step title in ${id}:${step.id}`);
+   assert.ok(step.description.en&&step.description.vi,`Missing bilingual step description in ${id}:${step.id}`);
+   assert.ok(step.selectors.length>=1,`Missing step selectors in ${id}:${step.id}`);
+  }
+ }
+ const {SectionHeader}=require("../src/components/layout/page.tsx");
+ const headerHtml=renderToStaticMarkup(React.createElement(SectionHeader,{title:"Runtime Configuration"}));
+ assert.ok(headerHtml.includes('data-tour-trigger="runtime-config"'),"SectionHeader must render ScreenHelpTrigger matching title");
+});

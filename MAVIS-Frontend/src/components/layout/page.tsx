@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
 
 export function PageContainer({
   children,
@@ -29,16 +30,21 @@ export function SectionHeader({
   title,
   description,
   actions,
+  screenId,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
+  screenId?: string;
 }) {
   const { t } = useLocale();
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">{t(title)}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold tracking-tight">{t(title)}</h1>
+          <ScreenHelpTrigger screenId={screenId ?? title} />
+        </div>
         {description && <p className="mt-1 text-sm text-muted-foreground">{t(description)}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}

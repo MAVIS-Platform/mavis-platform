@@ -20,7 +20,7 @@ export function RuntimeStepperBanner({
     { num: 3, title: "Step 3: Run & Trace", path: "/sessions", desc: "Monitor execution and sequence diagrams" },
   ];
   return (
-    <div className="rounded-xl border bg-card p-4 shadow-sm mb-5">
+    <div data-tour="runtime-stepper" className="rounded-xl border bg-card p-4 shadow-sm mb-5">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         {steps.map((s) => {
           const isActive = s.num === currentStep;
