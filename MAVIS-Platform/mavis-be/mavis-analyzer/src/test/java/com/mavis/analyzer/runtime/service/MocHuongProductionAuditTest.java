@@ -207,4 +207,133 @@ class MocHuongProductionAuditTest {
         assertThat(json.readTree(regBody).path("email").asText()).isEqualTo(json.readTree(loginBody).path("email").asText());
         assertThat(json.readTree(regBody).path("password").asText()).isEqualTo(json.readTree(loginBody).path("password").asText());
     }
+
+    @Test
+    void auditExternalGitHubMicroserviceReposStep1Step2Step3() throws Exception {
+        Path baseDir = Path.of("C:/Users/nhuth/.gemini/antigravity/brain/f2ca13c1-0139-4609-bc20-d9f77e37dc0e/scratch/external-repos");
+        if (!Files.isDirectory(baseDir)) {
+            return;
+        }
+        String[] repoNames = {
+                "spring-petclinic-microservices",
+                "spring-boot-microservices",
+                "sample-spring-microservices-new"
+        };
+        for (String repoName : repoNames) {
+            Path repoDir = baseDir.resolve(repoName);
+            Path composePath = repoDir.resolve("docker-compose.yml");
+            if (!Files.isRegularFile(composePath)) continue;
+
+            String yamlContent = Files.readString(composePath, StandardCharsets.UTF_8);
+            ComposePreflightValidator validator = new ComposePreflightValidator();
+            Map<String, String> envFiles = validator.collectDirectoryEnvFiles(composePath.getParent());
+            PreflightCheckResponseDTO preflight = validator.validate(yamlContent, Map.of(), envFiles);
+            validator.inspectSnapshotSource(repoDir, preflight);
+            validator.finalizeSandboxTopology(repoDir, preflight, yamlContent, Map.of(), envFiles);
+            ComposePreflightValidator.assignEnvResolutions(preflight);
+
+            System.out.println("\n=======================================================");
+            System.out.println("REPO: " + repoName);
+            System.out.println("=======================================================");
+            System.out.println("Compatible: " + preflight.isCompatible());
+            System.out.println("Runner Issues: " + preflight.getRunnerIssues());
+            System.out.println("Unresolvable Issues: " + preflight.getUnresolvableRunnerIssues());
+            System.out.println("Detected Services (" + preflight.getDetectedServices().size() + "): " + preflight.getDetectedServices());
+            System.out.println("Infra Services (" + preflight.getInfrastructureServices().size() + "): " + preflight.getInfrastructureServices());
+            System.out.println("Service Ports: " + preflight.getServicePorts());
+            System.out.println("Service Health Paths: " + preflight.getServiceHealthPaths());
+            System.out.println("Database Checks (" + preflight.getDatabaseChecks().size() + "):");
+            for (DatabaseCheckDTO db : preflight.getDatabaseChecks()) {
+                System.out.println("  - DB: service=" + db.getService() + " | type=" + db.getDbType() + " | status=" + db.getStatus() + " | key=" + db.getConfigKey() + " | url=" + db.getConnectionUrl());
+            }
+            System.out.println("Detected Endpoints (" + preflight.getDetectedEndpoints().size() + "):");
+            for (DetectedEndpointDTO ep : preflight.getDetectedEndpoints()) {
+                System.out.println("  - EP: [" + ep.getService() + "] " + ep.getMethod() + " " + ep.getPath()
+                        + " (status=" + ep.getExpectedStatus() + ", req=" + ep.getRequestBodyType()
+                        + ", resp=" + ep.getResponseBodyType() + ", fields=" + ep.getResponseFields()
+                        + ", sample=" + ep.getSampleJsonBody() + ")");
+            }
+            System.out.println("Required Env Vars (" + preflight.getRequiredEnvVars().size() + "):");
+            for (RequiredEnvVarDTO ev : preflight.getRequiredEnvVars()) {
+                System.out.println("  - ENV: " + ev.getName() + " | cat=" + ev.getCategory() + " | res=" + ev.getResolution() + " | svc=" + ev.getServices() + " | def=" + ev.getDefaultValue());
+            }
+
+            RuntimePlanningService planningService = new RuntimePlanningService(
+                    projects, sources, models, configurations, scenarios,
+                    policy, settings, runtime, json, environments
+            );
+            ReflectionTestUtils.setField(planningService, "apiKeyProvider", apiKeyProvider);
+            ReflectionTestUtils.setField(planningService, "composeValidator", validator);
+
+            UUID projectId = UUID.randomUUID();
+            UUID snapshotId = UUID.randomUUID();
+            UUID modelId = UUID.randomUUID();
+            Project project = Project.builder().id(projectId).name(repoName).build();
+            SourceSnapshot snapshot = SourceSnapshot.builder().id(snapshotId).project(project).storagePath(repoDir.toString()).build();
+            ModelVersion model = ModelVersion.builder().id(modelId).project(project).sourceSnapshot(snapshot).revision(1).isLatestValid(true).build();
+
+            when(projects.findById(projectId)).thenReturn(Optional.of(project));
+            when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+            when(models.findById(modelId)).thenReturn(Optional.of(model));
+            when(runtime.runComposePreflight(snapshotId)).thenReturn(preflight);
+            when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.empty());
+
+            GeneratedScenarioDraftView draft = planningService.generateScenario(
+                    projectId, new GenerateScenarioRequest(snapshotId, modelId, null));
+            System.out.println("--- STEP 2 SCENARIO [" + repoName + "] ---");
+            System.out.println("Name: " + draft.suggestedName() + " | Steps: " + draft.steps().size());
+            for (GeneratedStepDraft s : draft.steps()) {
+                String body = s.bodyReference() != null ? draft.sampleInputs().get(s.bodyReference()) : null;
+                System.out.println("  Step " + s.id() + ": [" + s.service() + "] " + s.method() + " " + s.path()
+                        + " -> expect=" + s.expectedStatus()
+                        + " | phase=" + s.journeyPhase()
+                        + " | extract=" + s.extract()
+                        + " | vars=" + s.environmentVariables()
+                        + " | body=" + body);
+            }
+
+            assertThat(preflight.isCompatible()).isTrue();
+            assertThat(draft.steps()).isNotEmpty();
+
+            if ("spring-petclinic-microservices".equals(repoName)) {
+                assertThat(preflight.getUnresolvableRunnerIssues()).isEmpty();
+                assertThat(preflight.getDetectedServices())
+                        .contains("api-gateway", "customers-service", "visits-service", "vets-service", "sandbox-mysql")
+                        .doesNotContain("grafana-server", "prometheus-server", "tracing-server");
+                assertThat(draft.steps().get(0).path()).isEqualTo("/api/customer/owners");
+                assertThat(draft.steps().get(0).extract()).containsEntry("OWNER_ID", "/id");
+                assertThat(draft.steps().get(1).path()).isEqualTo("/api/customer/owners/{{OWNER_ID}}/pets");
+                assertThat(draft.steps().get(1).extract()).containsEntry("PET_ID", "/id");
+                assertThat(draft.steps().get(2).path()).isEqualTo("/api/visit/owners/{{OWNER_ID}}/pets/{{PET_ID}}/visits");
+                assertThat(draft.steps().get(2).extract()).containsEntry("VISIT_ID", "/id");
+            } else if ("spring-boot-microservices".equals(repoName)) {
+                assertThat(preflight.getRequiredEnvVars())
+                        .noneMatch(v -> "USER_REQUIRED".equals(v.getResolution()));
+                assertThat(draft.steps().get(0).service()).isEqualTo("api-gateway");
+                assertThat(draft.steps().get(0).path()).isEqualTo("/api/product");
+                assertThat(draft.steps().get(0).expectedStatus()).isEqualTo(201);
+            } else if ("sample-spring-microservices-new".equals(repoName)) {
+                assertThat(preflight.getRequiredEnvVars())
+                        .noneMatch(v -> "USER_REQUIRED".equals(v.getResolution()));
+                assertThat(draft.steps().get(0).service()).isEqualTo("gateway-service");
+                assertThat(draft.steps().get(0).path()).isEqualTo("/organization/");
+                assertThat(draft.steps().get(0).extract()).containsEntry("ORGANIZATION_ID", "/id");
+                assertThat(draft.steps().get(1).path()).isEqualTo("/department/");
+                assertThat(draft.steps().get(1).extract()).containsEntry("DEPARTMENT_ID", "/id");
+                assertThat(draft.steps().get(2).path()).isEqualTo("/employee/");
+                assertThat(draft.steps().get(2).extract()).containsEntry("EMPLOYEE_ID", "/id");
+            }
+
+            // Step 3 variable normalization & payload binding check
+            var stepsArray = json.createArrayNode();
+            for (GeneratedStepDraft s : draft.steps()) {
+                stepsArray.add(json.valueToTree(s));
+            }
+            ReflectionTestUtils.invokeMethod(planningService, "normalizeAndBindScenarioVariables", stepsArray, preflight);
+            Map<String, String> step1Defaults = new LinkedHashMap<>(draft.sampleInputs());
+            Map<String, String> protectedEnv = new LinkedHashMap<>(draft.sampleInputs());
+            ReflectionTestUtils.invokeMethod(planningService, "ensureScenarioStepReferences", stepsArray, preflight, step1Defaults, protectedEnv);
+            assertThat(stepsArray.size()).isEqualTo(draft.steps().size());
+        }
+    }
 }
