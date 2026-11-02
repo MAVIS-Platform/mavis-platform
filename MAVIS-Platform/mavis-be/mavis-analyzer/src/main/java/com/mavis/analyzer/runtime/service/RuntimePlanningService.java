@@ -1000,7 +1000,8 @@ public class RuntimePlanningService {
       if(es.startsWith("{")&&es.endsWith("}")){
        String epParam=es.substring(1,es.length()-1);
        String chained=resolveChainedVariableForParam(epParam,resRoot,extractedByResource);
-       boolean rsIsUnboundOrMisplacedSku="SKU-LAPTOP-01".equalsIgnoreCase(rs)&&!epParam.toLowerCase(Locale.ROOT).contains("sku")&&!epParam.toLowerCase(Locale.ROOT).contains("code");
+       boolean rsIsUnboundOrMisplacedSku=("SKU-LAPTOP-01".equalsIgnoreCase(rs)&&!epParam.toLowerCase(Locale.ROOT).contains("sku")&&!epParam.toLowerCase(Locale.ROOT).contains("code"))
+         ||(epParam.toLowerCase(Locale.ROOT).endsWith("code")&&rs.contains("_ID}}"));
        if(chained!=null&&availableExtractedVars.contains(chained)&&(rs.startsWith("{")||rsIsUnboundOrMisplacedSku)){
         reqSegs[si]="{{"+chained+"}}";
         modifiedSeg=true;
@@ -1121,13 +1122,22 @@ public class RuntimePlanningService {
      }
     });
    }
-   if("POST".equals(verb)&&!isAuthPhase&&stepExtract.isEmpty()&&matchedEp!=null&&matchedEp.getResponseFields()!=null&&!resRoot.isEmpty()){
-    String idPtr=findMatchingPointer(matchedEp.getResponseFields(),List.of("id",resRoot.toLowerCase(Locale.ROOT)+"id","code","sku","orderid","productid"));
-    if(idPtr!=null){
-     String varName=toScenarioEnvKey(resRoot+"_ID");
-     stepExtract.put(varName,idPtr);
-     availableExtractedVars.add(varName);
-     extractedByResource.putIfAbsent(resRoot,varName);
+   if("POST".equals(verb)&&!isAuthPhase&&matchedEp!=null&&matchedEp.getResponseFields()!=null&&!resRoot.isEmpty()){
+    if(stepExtract.isEmpty()){
+     String idPtr=findMatchingPointer(matchedEp.getResponseFields(),List.of("id",resRoot.toLowerCase(Locale.ROOT)+"id","code","sku","orderid","productid"));
+     if(idPtr!=null){
+      String varName=toScenarioEnvKey(resRoot+"_ID");
+      stepExtract.put(varName,idPtr);
+      availableExtractedVars.add(varName);
+      extractedByResource.putIfAbsent(resRoot,varName);
+     }
+    }
+    String codePtr=findMatchingPointer(matchedEp.getResponseFields(),List.of(resRoot.toLowerCase(Locale.ROOT)+"code","code","sku"));
+    if(codePtr!=null){
+     String codeVar=toScenarioEnvKey(resRoot+"_CODE");
+     stepExtract.putIfAbsent(codeVar,codePtr);
+     availableExtractedVars.add(codeVar);
+     extractedByResource.putIfAbsent(resRoot+"_CODE",codeVar);
     }
    }
 
@@ -1209,13 +1219,23 @@ public class RuntimePlanningService {
  private static String resolveChainedVariableForParam(String param,String resourceToken,Map<String,String> extractedByResource){
   if(extractedByResource==null||extractedByResource.isEmpty()||param==null)return null;
   String cleanParam=param.replaceAll("[^A-Za-z0-9]","").toLowerCase(Locale.ROOT);
+  boolean wantsCode=cleanParam.endsWith("code")||cleanParam.endsWith("sku");
+  if(wantsCode&&!resourceToken.isEmpty()&&extractedByResource.containsKey(resourceToken+"_CODE")){
+   return extractedByResource.get(resourceToken+"_CODE");
+  }
   if((cleanParam.equals("id")||cleanParam.equals("code")||cleanParam.equals("sku"))&&!resourceToken.isEmpty()&&extractedByResource.containsKey(resourceToken)){
-   return extractedByResource.get(resourceToken);
+   String candidate=extractedByResource.get(resourceToken);
+   if(!wantsCode||candidate.endsWith("_CODE")||candidate.endsWith("_SKU"))return candidate;
   }
   for(Map.Entry<String,String> e:extractedByResource.entrySet()){
    String tok=e.getKey().toLowerCase(Locale.ROOT);
-   if(cleanParam.equals(tok+"id")||cleanParam.equals(tok+"code")||cleanParam.equals(tok+"sku")){
-    return e.getValue();
+   String val=e.getValue();
+   if(wantsCode){
+    if(cleanParam.equals(tok.replace("_",""))||((cleanParam.equals(tok+"code")||cleanParam.equals(tok+"sku"))&&(val.endsWith("_CODE")||val.endsWith("_SKU")))){
+     return val;
+    }
+   }else if(cleanParam.equals(tok+"id")||cleanParam.equals(tok+"code")||cleanParam.equals(tok+"sku")){
+    return val;
    }
   }
   return null;
@@ -1323,13 +1343,18 @@ public class RuntimePlanningService {
     if(!r.startsWith("ROLE_"))roleWithPrefix.add("ROLE_"+r);
    }
    long now=System.currentTimeMillis()/1000L;
+   String subjectEmail=(envMap!=null&&envMap.get("__MAVIS_SANDBOX_SUBJECT_EMAIL")!=null&&!envMap.get("__MAVIS_SANDBOX_SUBJECT_EMAIL").isBlank())
+     ?envMap.get("__MAVIS_SANDBOX_SUBJECT_EMAIL").trim()
+     :"alice@example.org";
    ObjectNode payload=json.createObjectNode();
-   payload.put("sub","1");
+   payload.put("sub",subjectEmail);
    payload.put("userId",1);
    payload.put("id",1);
    payload.put("username","alice");
    payload.put("preferred_username","alice");
-   payload.put("email","alice@example.org");
+   payload.put("fullName","Alice Sandbox");
+   payload.put("email",subjectEmail);
+   payload.put("role",roles.contains("ADMIN")?"ADMIN":roles.iterator().next());
    payload.put("scope","read write admin openid profile");
    payload.put("iss","mavis-sandbox");
    payload.put("aud","mavis-sandbox");
@@ -1839,7 +1864,37 @@ public class RuntimePlanningService {
     if(ep!=null&&ep.getRequiredRoles()!=null)allRequiredRoles.addAll(ep.getRequiredRoles());
    }
   }
-  String mintedBearer=mintSandboxBearerToken(protectedEnv,allRequiredRoles);
+  String registeredEmail=null;
+  String registeredPassword=null;
+  for(JsonNode step:steps){
+   if(step==null||!step.isObject())continue;
+   String p=step.path("path").asText("").toLowerCase(Locale.ROOT);
+   String bodyRef=step.path("bodyReference").asText("");
+   String rawBody=!bodyRef.isBlank()?protectedEnv.getOrDefault(bodyRef,step1Defaults!=null?step1Defaults.get(bodyRef):null):step.path("jsonBody").asText(null);
+   if(isValidJsonObject(rawBody)&&(p.endsWith("/register")||p.endsWith("/signup")||p.endsWith("/login")||p.endsWith("/signin"))){
+    try{
+     JsonNode bNode=json.readTree(rawBody);
+     if(p.endsWith("/register")||p.endsWith("/signup")){
+      if(bNode.hasNonNull("email")&&!bNode.get("email").asText("").isBlank())registeredEmail=bNode.get("email").asText().trim();
+      if(bNode.hasNonNull("password")&&!bNode.get("password").asText("").isBlank())registeredPassword=bNode.get("password").asText();
+     }else if((p.endsWith("/login")||p.endsWith("/signin"))&&bNode instanceof ObjectNode loginObj){
+      boolean changed=false;
+      if(registeredEmail!=null&&loginObj.has("email")&&!registeredEmail.equals(loginObj.path("email").asText(""))){
+       loginObj.put("email",registeredEmail);changed=true;
+      }else if(registeredEmail==null&&loginObj.hasNonNull("email")&&!loginObj.get("email").asText("").isBlank()){
+       registeredEmail=loginObj.get("email").asText().trim();
+      }
+      if(registeredPassword!=null&&loginObj.has("password")&&!registeredPassword.equals(loginObj.path("password").asText(""))){
+       loginObj.put("password",registeredPassword);changed=true;
+      }
+      if(changed&&!bodyRef.isBlank())protectedEnv.put(bodyRef,json.writeValueAsString(loginObj));
+     }
+    }catch(Exception ignored){}
+   }
+  }
+  Map<String,String> mintEnv=new LinkedHashMap<>(protectedEnv);
+  if(registeredEmail!=null)mintEnv.put("__MAVIS_SANDBOX_SUBJECT_EMAIL",registeredEmail);
+  String mintedBearer=mintSandboxBearerToken(mintEnv,allRequiredRoles);
   if(protectedEnv.containsKey("SANDBOX_BEARER_TOKEN")&&(step1Defaults==null||!step1Defaults.containsKey("SANDBOX_BEARER_TOKEN"))){
    protectedEnv.put("SANDBOX_BEARER_TOKEN",mintedBearer);
   }
