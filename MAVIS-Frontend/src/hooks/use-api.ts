@@ -248,28 +248,6 @@ export function useApiMutation<K extends Operation>(operation: K) {
           return operation !== "gradeSubmission" || queryOperation !== "submissionReview";
         },
       });
-      if (
-        ![
-          "readNotification",
-          "readAllNotifications",
-          "register",
-          "verifyEmail",
-          "resendOtp",
-          "forgotPassword",
-          "resetPassword",
-        ].includes(operation)
-      )
-        toast.success(
-          operation === "signOut"
-            ? "Signed out"
-            : ["mockLogin", "signIn"].includes(operation)
-              ? api.mode === "mock"
-                ? "Sample account selected"
-                : "Signed in"
-              : api.mode === "mock"
-                ? "Sample change saved for this browser session"
-                : "Change saved",
-        );
     },
     onError: (error) => {
       toast.error(normalizeError(error).message);
