@@ -822,6 +822,7 @@ public class RuntimePlanningService {
   prompt.append("   - Set `journeyPhase` on each step to `<PHASE_CODE>: <Domain Feature Cluster Name>` (e.g. `AUTH_ENTRY: Auth & User Identity`, `PREREQUISITE_SEED: Catalog & Inventory`, `CROSS_SERVICE_WORKFLOW: Order & Coupon Checkout`, `STATE_VERIFICATION: Order & Payment Verification`). Steps belonging to the same functional feature cluster MUST share the exact same `<Domain Feature Cluster Name>`.\n");
   prompt.append("3. Stateful Variable Chaining: When a POST step returns JSON fields (see `responseFields`), you may attach `\"extract\": {\"ORDER_ID\": \"/id\"}` (variable names MUST match `[A-Z][A-Z0-9_]*`, pointers MUST start with `/`), and reference `{{ORDER_ID}}` in subsequent steps' `path`, `sampleJsonBody`, or `headers`.\n");
   prompt.append("4. Respect `validationHints` and `dtoSample` so every POST/PUT/PATCH body passes Bean Validation (@NotBlank, @Email, @Positive, etc.) on the first try.\n");
+  prompt.append("5. NEVER invent a POST/PUT/PATCH verb for a path that is only listed as GET in Discovered endpoints (some write routes require multipart/form-data file uploads and are excluded; use the listed GET route or a listed POST route instead).\n");
   prompt.append("Allowed services: ").append(String.join(", ",allowedServices)).append("\n");
   if(!relationships.isEmpty()){
    prompt.append("Architecture C4 relationships (target these cross-service paths):\n");
@@ -1030,6 +1031,17 @@ public class RuntimePlanningService {
      }
     }
    }
+   boolean snappedWriteToGet=false;
+   if(matchedEp==null&&Set.of("POST","PUT","PATCH").contains(verb)){
+    DetectedEndpointDTO getCand=matchCandidateEndpoint(svc,"GET",rawPath,endpointLookup,candidates);
+    if(getCand!=null){
+     verb="GET";
+     rawPath=getCand.getPath();
+     matchedEp=getCand;
+     status=getCand.getExpectedStatus()!=null?getCand.getExpectedStatus():200;
+     snappedWriteToGet=true;
+    }
+   }
 
    String resRoot=resourceEntityToken(matchedEp!=null&&matchedEp.getPath()!=null?matchedEp.getPath():rawPath);
    if(matchedEp!=null&&matchedEp.getPath()!=null){
@@ -1155,6 +1167,7 @@ public class RuntimePlanningService {
 
    Map<String,String> stepExtract=new LinkedHashMap<>();
    final DetectedEndpointDTO matchedForExtract=matchedEp;
+   final String finalVerbForExtract=verb;
    if(item.path("extract").isObject()){
     item.path("extract").fields().forEachRemaining(e->{
      String ek=toScenarioEnvKey(e.getKey().trim());
@@ -1169,6 +1182,9 @@ public class RuntimePlanningService {
       }else{
        return;
       }
+     }
+     if("GET".equals(finalVerbForExtract)&&ptr.startsWith("/data/")&&!ptr.contains("|")){
+      ptr=ptr+"|/"+ptr.substring(6);
      }
      if(!ek.isEmpty()&&ptr.startsWith("/")&&ptr.length()<=512){
       stepExtract.put(ek,ptr);
@@ -1186,10 +1202,11 @@ public class RuntimePlanningService {
      availableExtractedVars.add("AUTH_TOKEN");
     }
    }
-   if("POST".equals(verb)&&!isAuthPhase&&matchedEp!=null&&matchedEp.getResponseFields()!=null&&!resRoot.isEmpty()){
+   if(("POST".equals(verb)||snappedWriteToGet)&&!isAuthPhase&&matchedEp!=null&&matchedEp.getResponseFields()!=null&&!resRoot.isEmpty()){
     if(stepExtract.isEmpty()){
      String idPtr=findMatchingPointer(matchedEp.getResponseFields(),List.of("id",resRoot.toLowerCase(Locale.ROOT)+"id","code","sku","orderid","productid"));
      if(idPtr!=null){
+      if("GET".equals(verb)&&idPtr.startsWith("/data/")&&!idPtr.contains("|"))idPtr=idPtr+"|/"+idPtr.substring(6);
       String varName=toScenarioEnvKey(resRoot+"_ID");
       stepExtract.put(varName,idPtr);
       availableExtractedVars.add(varName);
@@ -1198,6 +1215,7 @@ public class RuntimePlanningService {
     }
     String codePtr=findMatchingPointer(matchedEp.getResponseFields(),List.of(resRoot.toLowerCase(Locale.ROOT)+"code","code","sku"));
     if(codePtr!=null){
+     if("GET".equals(verb)&&codePtr.startsWith("/data/")&&!codePtr.contains("|"))codePtr=codePtr+"|/"+codePtr.substring(6);
      String codeVar=toScenarioEnvKey(resRoot+"_CODE");
      stepExtract.putIfAbsent(codeVar,codePtr);
      availableExtractedVars.add(codeVar);
@@ -1695,7 +1713,7 @@ public class RuntimePlanningService {
     stepObj.put("service",resolvedSvc);
    }
   }
-  normalizeAndBindScenarioVariables(normalizedSteps);
+  normalizeAndBindScenarioVariables(normalizedSteps,pre);
   // Values the containers need beyond Compose: edited env, relocated compose secrets, user secrets and per-service sandbox secrets.
   var execEnv=buildExecutionEnvironment(id,c.getProfile(),pre,apps);
   Map<String,String> step1Defaults=collectProjectInputDefaults(id,c.getProfile(),pre);
@@ -1776,8 +1794,15 @@ public class RuntimePlanningService {
   }
  }
 
- private void normalizeAndBindScenarioVariables(ArrayNode steps){
+ private void normalizeAndBindScenarioVariables(ArrayNode steps,PreflightCheckResponseDTO pre){
   if(steps==null)return;
+  List<DetectedEndpointDTO> detList=(pre!=null&&pre.getDetectedEndpoints()!=null)?pre.getDetectedEndpoints():List.of();
+  Map<String,DetectedEndpointDTO> detLookup=new LinkedHashMap<>();
+  for(DetectedEndpointDTO ep:detList){
+   if(ep==null)continue;
+   detLookup.putIfAbsent(ep.getService()+":"+ep.getMethod()+":"+ep.getPath(),ep);
+   detLookup.putIfAbsent(canonicalRouteKey(ep.getService(),ep.getMethod(),ep.getPath()),ep);
+  }
   Set<String> seenAuthRoutes=new HashSet<>();
   for(int i=0;i<steps.size();i++){
    JsonNode n=steps.get(i);
@@ -1793,7 +1818,21 @@ public class RuntimePlanningService {
   int safeAliasSeq=0;
   for(JsonNode node:steps){
    if(!(node instanceof ObjectNode step))continue;
-   if("POST".equalsIgnoreCase(step.path("method").asText(""))&&step.path("path").asText("").toLowerCase(Locale.ROOT).endsWith("/coupons")){
+   String stepSvc=step.path("service").asText("");
+   String stepVerb=step.path("method").asText("GET").toUpperCase(Locale.ROOT);
+   String stepPath=step.path("path").asText("");
+   if(!detList.isEmpty()&&Set.of("POST","PUT","PATCH").contains(stepVerb)
+     &&matchCandidateEndpoint(stepSvc,stepVerb,stepPath,detLookup,detList)==null){
+    DetectedEndpointDTO getCand=matchCandidateEndpoint(stepSvc,"GET",stepPath,detLookup,detList);
+    if(getCand!=null){
+     stepVerb="GET";
+     step.put("method","GET");
+     step.put("expectedStatus",getCand.getExpectedStatus()!=null?getCand.getExpectedStatus():200);
+     step.remove("bodyReference");
+     step.remove("jsonBody");
+    }
+   }
+   if("POST".equalsIgnoreCase(stepVerb)&&stepPath.toLowerCase(Locale.ROOT).endsWith("/coupons")){
     ObjectNode ext=step.path("extract").isObject()?(ObjectNode)step.get("extract"):step.putObject("extract");
     if(!ext.has("COUPON_ID"))ext.put("COUPON_ID","/id");
    }
@@ -1851,8 +1890,15 @@ public class RuntimePlanningService {
     ext.fieldNames().forEachRemaining(extKeys::add);
     for(String ek:extKeys){
      String ptr=ext.path(ek).asText("").trim();
-     if(ptr.startsWith("$."))ext.put(ek,"/"+ptr.substring(2).replace('.','/'));
-     else if(!ptr.isEmpty()&&!ptr.startsWith("/"))ext.put(ek,"/"+ptr.replace('.','/'));
+     if(ptr.startsWith("$."))ptr="/"+ptr.substring(2).replace('.','/');
+     else if(!ptr.isEmpty()&&!ptr.startsWith("/"))ptr="/"+ptr.replace('.','/');
+     if(ek.contains("TOKEN")&&("/status".equalsIgnoreCase(ptr)||"/message".equalsIgnoreCase(ptr))){
+      ptr="/data/accessToken|/accessToken|/token|/jwt";
+     }
+     if("GET".equalsIgnoreCase(stepVerb)&&ptr.startsWith("/data/")&&!ptr.contains("|")){
+      ptr=ptr+"|/"+ptr.substring(6);
+     }
+     if(!ptr.isEmpty())ext.put(ek,ptr);
      if(!ek.isBlank())available.add(ek);
     }
    }

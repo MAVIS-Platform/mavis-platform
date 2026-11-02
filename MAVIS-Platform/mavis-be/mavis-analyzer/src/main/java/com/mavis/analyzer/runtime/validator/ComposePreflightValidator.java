@@ -1804,6 +1804,9 @@ public class ComposePreflightValidator {
                 if (lowField.startsWith("parent") && lowField.endsWith("id")) {
                     continue;
                 }
+                if (lowField.contains("idempotency")) {
+                    continue;
+                }
                 if (isCouponDto && lowField.startsWith("applicable")) {
                     continue;
                 }
@@ -1864,7 +1867,7 @@ public class ComposePreflightValidator {
                 int baseVal = lowerName.contains("age") ? 28
                         : lowerName.contains("port") ? 8080
                         : lowerName.contains("year") ? 2026
-                        : (lowerName.contains("stock") || lowerName.contains("inventory") || lowerName.contains("quantity")) ? 20
+                        : (lowerName.contains("stock") || lowerName.contains("inventory")) ? 20
                         : 1;
                 yield minConstraint != null ? Math.max(baseVal, minConstraint) : baseVal;
             }

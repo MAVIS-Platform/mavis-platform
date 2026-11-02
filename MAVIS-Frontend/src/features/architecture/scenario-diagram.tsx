@@ -522,8 +522,19 @@ export function ScenarioDiagram(props: {
   onThemeChange?: ((theme: import("@/lib/drawio/rules").DrawioTheme) => void) | undefined;
 }) {
   const searchParams = useSearchParams();
+  const hasRuntimeEvidence = useMemo(
+    () =>
+      props.model.edges.some(
+        (e) =>
+          e.originLayer === "RUNTIME" ||
+          e.evidence.some((ev) => ev.kind === "runtime"),
+      ),
+    [props.model.edges],
+  );
   const initialMode =
-    searchParams.get("mode") === "observed" || Boolean(searchParams.get("session"))
+    searchParams.get("mode") === "observed" ||
+    Boolean(searchParams.get("session")) ||
+    hasRuntimeEvidence
       ? "observed"
       : "designed";
   const [mode, setMode] = useState<"designed" | "observed">(initialMode);
