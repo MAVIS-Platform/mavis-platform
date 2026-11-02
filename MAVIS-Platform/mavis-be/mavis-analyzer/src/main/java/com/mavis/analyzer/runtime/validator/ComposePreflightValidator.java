@@ -2504,7 +2504,8 @@ public class ComposePreflightValidator {
                 for (String f : rFields.keySet()) {
                     String low = f.toLowerCase(Locale.ROOT);
                     if (low.equals("id") || low.endsWith("id") || low.equals("uuid") || low.contains("code") || low.contains("sku")
-                            || low.contains("token") || low.equals("jwt") || low.contains("number") || low.equals("key")) {
+                            || low.contains("token") || low.equals("jwt") || (low.equals("status") && !"ApiResponse".equals(ep.getResponseBodyType()))
+                            || low.contains("number") || low.equals("key")) {
                         respPtrs.add(ptrPrefix + f);
                     }
                 }
