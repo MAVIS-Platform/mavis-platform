@@ -132,9 +132,31 @@ export function httpMethodBadgeClass(method: string): string {
   }
 }
 
+export function isKnownInfraName(svc: string): boolean {
+  return /^(sandbox-|redis$|kafka$|zookeeper$|postgres$|postgresql$|mysql$|mariadb$|mongo$|mongodb$|rabbitmq$|zipkin$|jaeger$)/i.test(
+    svc.trim(),
+  );
+}
+
+export function sanitizeServiceRoles(
+  roles?: Record<string, "APP" | "INFRA"> | Record<string, string>,
+): Record<string, "APP" | "INFRA"> {
+  if (!roles || typeof roles !== "object") return {};
+  const out: Record<string, "APP" | "INFRA"> = {};
+  for (const [k, v] of Object.entries(roles)) {
+    if (isKnownInfraName(k)) {
+      out[k] = "INFRA";
+    } else if (v === "APP" || v === "INFRA") {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 export interface Step1Draft {
   modelId?: string;
   snapshotId?: string;
+  checkedSnapshotId?: string;
   profileId?: string;
   serviceMappings?: Record<string, string>;
   serviceRoles?: Record<string, "APP" | "INFRA">;
@@ -148,6 +170,7 @@ export interface Step1Draft {
   scenarioName?: string;
   plannedSteps?: RuntimeDraftStep[];
   plannedInputs?: Record<string, string>;
+  plannedUserEdited?: boolean;
 }
 
 // shortcut: secrets are lost on full page reload, upgrade to a server-side draft if users complain.
@@ -283,12 +306,18 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       setDismissedSecretKeys((prev) => Array.from(new Set([...prev, ...stored.dismissedSecretKeys!])));
     }
     if (stored.serviceRoles && Object.keys(stored.serviceRoles).length > 0) {
-      setServiceRoles((prev) => ({ ...stored.serviceRoles, ...prev }));
+      setServiceRoles((prev) => ({ ...sanitizeServiceRoles(stored.serviceRoles), ...prev }));
     }
     if (stored.serviceImageOverrides && Object.keys(stored.serviceImageOverrides).length > 0) {
       setServiceImageOverrides((prev) => ({ ...stored.serviceImageOverrides, ...prev }));
     }
   }, [projectId]);
+
+  useEffect(() => {
+    if (preflight.data && snapshotId) {
+      writeStep1Target(projectId, { checkedSnapshotId: snapshotId });
+    }
+  }, [projectId, preflight.data, snapshotId]);
 
   useEffect(() => {
     if (modelId || snapshotId) {
@@ -297,7 +326,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         snapshotId,
         profileId,
         serviceMappings,
-        serviceRoles,
+        serviceRoles: sanitizeServiceRoles(serviceRoles),
         serviceImageOverrides,
         envVars,
         secretValues,
@@ -307,9 +336,15 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   }, [projectId, modelId, snapshotId, profileId, serviceMappings, serviceRoles, serviceImageOverrides, envVars, secretValues, dismissedSecretKeys]);
 
   const savedProfile = (config.data?.profile ?? {}) as Record<string, unknown>;
-  const hasCheckedPreflight = Boolean(preflight.data);
+  const hasCheckedPreflight =
+    Boolean(preflight.data) ||
+    Boolean(
+      snapshotId &&
+        readStep1Target(projectId).checkedSnapshotId === snapshotId &&
+        config.data?.snapshotId === snapshotId,
+    );
   const rawProfile = hasCheckedPreflight ? savedProfile : ({} as Record<string, unknown>);
-  const configuredSecretKeys = Array.isArray(savedProfile["configuredSecretKeys"])
+  const configuredSecretKeys = Array.isArray(rawProfile["configuredSecretKeys"])
     ? (rawProfile["configuredSecretKeys"] as unknown[]).map(String)
     : [];
 
@@ -397,7 +432,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     }
     if (rawProfile && typeof rawProfile["serviceRoles"] === "object" && rawProfile["serviceRoles"] !== null) {
       setServiceRoles((prev) => ({
-        ...(rawProfile["serviceRoles"] as Record<string, "APP" | "INFRA">),
+        ...sanitizeServiceRoles(rawProfile["serviceRoles"] as Record<string, "APP" | "INFRA">),
         ...prev,
       }));
     }
@@ -516,10 +551,6 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const autoSecretKeys = allSecretKeys.filter((k) => !externalSecretKeys.includes(k));
   const renderedSecretKeys = showSecretOverrides ? allSecretKeys : externalSecretKeys;
 
-  const isKnownInfraName = (svc: string) =>
-    /^(sandbox-|redis$|kafka$|zookeeper$|postgres$|postgresql$|mysql$|mariadb$|mongo$|mongodb$|rabbitmq$|zipkin$|jaeger$)/i.test(
-      svc.trim(),
-    );
   const isInfraRole = (svc: string) =>
     isKnownInfraName(svc) ? true : serviceRoles[svc] ? serviceRoles[svc] === "INFRA" : infrastructureServices.includes(svc);
   const appServicesCount = activeServices.filter((s) => !isInfraRole(s)).length;
@@ -625,12 +656,17 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       candidateModels.find((m) => m.id === (modelId || defaultModelId)) ?? candidateModels[0];
     const effectiveModelId = activeModel?.id ?? "";
     const effectiveSnapshotId = activeModel?.snapshotId || snapshotId || snapshots.data?.[0]?.id || "";
+    const cleanRoles = sanitizeServiceRoles({
+      ...Object.fromEntries(activeServices.map((s) => [s, isInfraRole(s) ? "INFRA" : "APP"])),
+      ...serviceRoles,
+    });
     writeStep1Target(projectId, {
       modelId: effectiveModelId,
       snapshotId: effectiveSnapshotId,
+      checkedSnapshotId: effectiveSnapshotId,
       profileId,
       serviceMappings,
-      serviceRoles,
+      serviceRoles: cleanRoles,
       serviceImageOverrides,
       envVars,
       secretValues,
@@ -648,7 +684,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
           modelId: effectiveModelId,
           profile: {
             serviceMappings,
-            serviceRoles,
+            serviceRoles: cleanRoles,
             serviceImageOverrides,
             environmentVariables: envVars,
             secretValues,
@@ -740,6 +776,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           setModelId(nextModelId);
                           const chosen = candidateModels.find((m) => m.id === nextModelId);
                           if (chosen?.snapshotId && chosen.snapshotId !== snapshotId) {
+                            writeStep1Target(projectId, { checkedSnapshotId: "" });
                             setSnapshotId(chosen.snapshotId);
                             setServiceMappings({});
                             preflight.reset();
@@ -1316,6 +1353,20 @@ export function RuntimeScenarios() {
 }
 
 
+function matchesEndpointPathTemplate(templatePath: string | undefined, concretePath: string): boolean {
+  if (!templatePath) return false;
+  if (templatePath === concretePath) return true;
+  if (!templatePath.includes("{")) return false;
+  const pattern =
+    "^" +
+    templatePath
+      .split(/(\{[^}/]+\})/g)
+      .map((seg) => (seg.startsWith("{") && seg.endsWith("}") ? "[^/]+" : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+      .join("") +
+    "$";
+  return new RegExp(pattern).test(concretePath);
+}
+
 function inferStepSampleBody(
   path: string,
   service: string,
@@ -1326,7 +1377,7 @@ function inferStepSampleBody(
     (ep) =>
       (!ep.service || ep.service === service) &&
       (ep.method ?? "POST").toUpperCase() === method.toUpperCase() &&
-      ep.path === path &&
+      matchesEndpointPathTemplate(ep.path, path) &&
       ep.sampleJsonBody,
   );
   if (matched?.sampleJsonBody) return matched.sampleJsonBody;
@@ -1343,8 +1394,21 @@ function inferStepSampleBody(
   if (lower.includes("department")) return '{"name":"Engineering","organizationId":1}';
   if (lower.includes("organization")) return '{"name":"MAVIS Corp","address":"Hanoi"}';
   if (lower.includes("status")) return '{"status":"COMPLETED"}';
+  if (lower.includes("/cart")) return '{"productId":1,"variantId":1,"quantity":1}';
   if (lower.includes("payment") || lower.includes("charge")) {
     return '{"orderId":1,"amount":1299.00,"paymentMethod":"CREDIT_CARD"}';
+  }
+  if (lower.includes("categor")) {
+    return '{"name":"Tinh dau thien nhien","description":"Danh muc tinh dau cao cap","sortOrder":1,"isActive":true}';
+  }
+  if (lower.includes("coupon")) {
+    return '{"code":"WELCOME10","discountValue":10,"minOrderAmount":100000}';
+  }
+  if (lower.includes("review")) {
+    return '{"productId":1,"orderId":1,"rating":5,"comment":"San pham chat luong tot"}';
+  }
+  if (lower.includes("address")) {
+    return '{"receiverName":"Nguyen Van A","phone":"0901234567","province":"TP.HCM","district":"Quan 1","ward":"Ben Nghe","streetAddress":"123 Le Loi","isDefault":true}';
   }
   if (lower.includes("product") || lower.includes("catalog") || lower.includes("inventory") || lower.includes("item")) {
     return '{"code":"SKU-MOUSE-02","name":"Wireless Mouse","price":49.00,"stock":20,"quantity":1,"categoryId":1}';
@@ -1394,15 +1458,16 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   const [generatedRunnableServices, setGeneratedRunnableServices] = useState<string[]>([]);
   const runnableServices = useMemo(() => {
-    if (generatedRunnableServices.length > 0) return generatedRunnableServices;
+    const cleanGenerated = generatedRunnableServices.filter((s) => !isKnownInfraName(s));
+    if (cleanGenerated.length > 0) return cleanGenerated;
     const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
     const stored = readStep1Target(projectId);
-    const roleMap: Record<string, string> = {
+    const roleMap = sanitizeServiceRoles({
       ...(rawProf["serviceRoles"] && typeof rawProf["serviceRoles"] === "object"
         ? (rawProf["serviceRoles"] as Record<string, string>)
         : {}),
       ...(stored.serviceRoles ?? {}),
-    };
+    });
     const infra = new Set<string>(
       Array.isArray(rawProf["infrastructureServices"])
         ? (rawProf["infrastructureServices"] as unknown[])
@@ -1418,13 +1483,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       : Array.isArray(rawProf["detectedServices"])
         ? (rawProf["detectedServices"] as unknown[]).map(String)
         : [];
-    const filteredCompose = composeList.filter((s) => Boolean(s) && !infra.has(s));
+    const filteredCompose = composeList.filter((s) => Boolean(s) && !infra.has(s) && !isKnownInfraName(s));
     if (filteredCompose.length > 0) return filteredCompose;
     if (rawProf["applications"] && typeof rawProf["applications"] === "object") {
-      const appKeys = Object.keys(rawProf["applications"] as Record<string, unknown>).filter((s) => !infra.has(s));
+      const appKeys = Object.keys(rawProf["applications"] as Record<string, unknown>).filter(
+        (s) => !infra.has(s) && !isKnownInfraName(s),
+      );
       if (appKeys.length > 0) return appKeys;
     }
-    return detectedServiceNames;
+    return detectedServiceNames.filter((s) => !isKnownInfraName(s));
   }, [generatedRunnableServices, config.data?.profile, projectId, detectedServiceNames]);
 
   const defaultSvc = runnableServices[0] ?? detectedServiceNames[0] ?? "gateway";
@@ -1435,7 +1502,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const [generatorMode, setGeneratorMode] = useState<"AI_ASSISTED" | "SYSTEM_STATIC" | "LOCAL_STATIC">("LOCAL_STATIC");
   const [aiModelName, setAiModelName] = useState("");
   const [inheritedEnvKeys, setInheritedEnvKeys] = useState<string[]>([]);
-  const [userConfirmed, setUserConfirmed] = useState(true);
 
   const [steps, setDraftSteps] = useState<RuntimeDraftStep[]>([]);
   const edited = useRef(false);
@@ -1455,7 +1521,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const [runMessage, setRunMessage] = useState("");
 
   const discoveredEndpoints = useMemo(() => {
-    const raw = (config.data?.profile as { detectedEndpoints?: Array<{ service?: string; method?: string; path?: string; source?: string; expectedStatus?: number; sampleJsonBody?: string }> } | undefined)?.detectedEndpoints;
+    const raw = (config.data?.profile as { detectedEndpoints?: Array<{ service?: string; method?: string; path?: string; source?: string; expectedStatus?: number; sampleJsonBody?: string; requiresAuth?: boolean }> } | undefined)?.detectedEndpoints;
     return Array.isArray(raw) ? raw : [];
   }, [config.data?.profile]);
 
@@ -1490,9 +1556,12 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     const stored = readStep1Target(projectId);
     const matchesCurrentSnapshot =
       !stored.plannedSnapshotId || !stored.snapshotId || stored.plannedSnapshotId === stored.snapshotId;
-    if (matchesCurrentSnapshot && stored.plannedSteps && stored.plannedSteps.length > 0) {
+    const isStaleNaiveFallback =
+      stored.plannedSteps?.length &&
+      stored.plannedSteps.every((st) => st.rationale?.startsWith("Automatically extracted from Step 1"));
+    if (matchesCurrentSnapshot && stored.plannedSteps && stored.plannedSteps.length > 0 && !isStaleNaiveFallback) {
       restoredDraftRef.current = true;
-      edited.current = true;
+      edited.current = Boolean(stored.plannedUserEdited);
       setDraftSteps(stored.plannedSteps);
       if (stored.scenarioName) setScenarioName(stored.scenarioName);
       if (stored.plannedInputs && Object.keys(stored.plannedInputs).length > 0) {
@@ -1519,6 +1588,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         scenarioName,
         plannedSteps: steps,
         plannedInputs,
+        plannedUserEdited: edited.current,
       });
     }
   }, [projectId, snapshotId, scenarioName, steps, environment]);
@@ -1626,6 +1696,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 Object.keys(st.extract).forEach((k) => extractedVars.add(k));
               }
             }
+            edited.current = false;
             setDraftSteps(
               res.steps.map((st, idx) => {
                 let resolvedPath = st.path;
@@ -1727,17 +1798,79 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       }
       if (discoveredEndpoints.length > 0) {
         const sampleEnv: Record<string, string> = {};
+        const isAuxPath = (p: string) =>
+          /\/ai\/|\/chat$|\/generate-|\/suggest-|\/inactive$|\/invoice-pdf$|\/forgot-password$|\/reset-password$|\/logout$|\/verify-email$/i.test(p);
         const nonHealth = discoveredEndpoints.filter(
           (ep) => !["/health", "/actuator/health", "/ready", "/readyz"].includes((ep.path || "").toLowerCase()),
         );
-        const pool = nonHealth.length > 0 ? nonHealth : discoveredEndpoints;
-        const synthesized = pool.slice(0, 8).map((ep, idx) => {
+        const corePool = nonHealth.filter((ep) => !isAuxPath(ep.path || "") && (ep.method || "GET").toUpperCase() !== "DELETE");
+        const pool = corePool.length > 0 ? corePool : nonHealth.length > 0 ? nonHealth : discoveredEndpoints;
+
+        const endpointPhase = (ep: { method?: string; path?: string }) => {
+          const verb = (ep.method || "GET").toUpperCase();
+          const low = (ep.path || "").toLowerCase();
+          if (isAuxPath(low)) return 5;
+          if (verb === "POST" && (/\/auth\//.test(low) || /\/(login|signin|register|signup|token)$/.test(low))) return 0;
+          if (verb === "POST" && !low.includes("{") && !/\/(checkout|cancel|pay|charge|confirm|submit)$/.test(low)) return 1;
+          if (verb === "POST") return 2;
+          if (verb === "GET") return low.includes("{") ? 4 : 3;
+          return 4;
+        };
+        const serviceTier = (svc: string) => {
+          const low = svc.toLowerCase();
+          if (low.includes("gateway") || low.includes("bff") || low.startsWith("edge")) return 0;
+          if (low.includes("identity") || low.includes("auth") || low.includes("user")) return 1;
+          if (low.includes("catalog") || low.includes("product") || low.includes("inventory")) return 2;
+          return 3;
+        };
+
+        const normalizedPool = pool.map((ep, idx) => {
           const candidateSvc = (ep.service || "").replace(/-[0-9a-f]{7,40}$/i, "");
           const cleanSvc =
             (candidateSvc && runnableServices.includes(candidateSvc) ? candidateSvc : undefined) ||
             runnableServices[idx % Math.max(1, runnableServices.length)] ||
             defaultSvc ||
             "gateway";
+          return { ...ep, cleanSvc };
+        });
+        normalizedPool.sort((a, b) => {
+          const tDiff = serviceTier(a.cleanSvc) - serviceTier(b.cleanSvc);
+          if (tDiff !== 0) return tDiff;
+          if (a.cleanSvc !== b.cleanSvc) return a.cleanSvc.localeCompare(b.cleanSvc);
+          const pDiff = endpointPhase(a) - endpointPhase(b);
+          if (pDiff !== 0) return pDiff;
+          return (a.path || "").localeCompare(b.path || "");
+        });
+
+        const picked: typeof normalizedPool = [];
+        const perSvcCount = new Map<string, number>();
+        for (const maxPerSvc of [2, 3]) {
+          for (const ep of normalizedPool) {
+            if (picked.length >= 8) break;
+            if (picked.includes(ep)) continue;
+            const cnt = perSvcCount.get(ep.cleanSvc) ?? 0;
+            if (cnt < maxPerSvc) {
+              picked.push(ep);
+              perSvcCount.set(ep.cleanSvc, cnt + 1);
+            }
+          }
+        }
+        for (const ep of normalizedPool) {
+          if (picked.length >= 8) break;
+          if (!picked.includes(ep)) picked.push(ep);
+        }
+        picked.sort((a, b) => {
+          const pA = endpointPhase(a);
+          const pB = endpointPhase(b);
+          if ((pA === 0) !== (pB === 0)) return pA === 0 ? -1 : 1;
+          const tDiff = serviceTier(a.cleanSvc) - serviceTier(b.cleanSvc);
+          if (tDiff !== 0) return tDiff;
+          if (a.cleanSvc !== b.cleanSvc) return a.cleanSvc.localeCompare(b.cleanSvc);
+          return pA - pB;
+        });
+
+        const synthesized = picked.map((ep, idx) => {
+          const cleanSvc = ep.cleanSvc;
           const serviceKey = toServiceEnvPrefix(cleanSvc);
           const method = (ep.method || "GET").toUpperCase();
           const rawPath = ep.path || "/health";
@@ -1752,14 +1885,21 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             sampleEnv[bodyRef] =
               ep.sampleJsonBody || inferStepSampleBody(rewrittenPath, cleanSvc, method, discoveredEndpoints);
           }
+          let envHeaders: Array<{ name: string; reference: string }> | undefined;
+          if (ep.requiresAuth && endpointPhase(ep) !== 0) {
+            const authRef = `${serviceKey}_AUTHORIZATION`;
+            envHeaders = [{ name: "Authorization", reference: authRef }];
+            sampleEnv[authRef] = sampleEnv[authRef] || "Bearer sandbox-verification-token";
+          }
           return {
             service: cleanSvc,
             method,
             path: rewrittenPath,
             status: String(ep.expectedStatus ?? 200),
-            rationale: `Automatically extracted from Step 1 (${ep.source ?? "source snapshot"})`,
+            rationale: `Verify ${method} ${rewrittenPath} on ${cleanSvc}`,
             source: ep.source ?? "Step 1 Preflight",
             allowClientError: true,
+            ...(envHeaders ? { envHeaders } : {}),
             ...(bodyRef ? { bodyReference: bodyRef } : {}),
           } as RuntimeDraftStep;
         });
@@ -1994,10 +2134,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   const handleCreateAndRun = async (approveAndDispatch: boolean) => {
     if (submitting.current) return;
-    if (!userConfirmed) {
-      setRunMessage("Please confirm the scenario before saving or running.");
-      return;
-    }
     const chosenModel = selectableModels.find((m) => m.id === modelId);
     const effectiveSnapshotId = chosenModel?.snapshotId || snapshotId;
     if (!chosenModel || !effectiveSnapshotId || !steps.length) {
@@ -2083,12 +2219,12 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             ...Object.keys(stored.secretValues ?? {}),
           ]),
         ).filter((k) => !(stored.dismissedSecretKeys ?? []).includes(k));
-        const mergedRoles = {
+        const mergedRoles = sanitizeServiceRoles({
           ...(rawProf["serviceRoles"] && typeof rawProf["serviceRoles"] === "object"
             ? (rawProf["serviceRoles"] as Record<string, "APP" | "INFRA">)
             : {}),
           ...(stored.serviceRoles ?? {}),
-        };
+        });
         const mergedImageOverrides = {
           ...(rawProf["serviceImageOverrides"] && typeof rawProf["serviceImageOverrides"] === "object"
             ? (rawProf["serviceImageOverrides"] as Record<string, string>)
@@ -2262,15 +2398,13 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       <RuntimeStepperBanner
         currentStep={2}
         projectId={projectId}
-        canProceedToStep3={Boolean(modelId && steps.length > 0 && userConfirmed && !generateAiDraft.isPending)}
+        canProceedToStep3={Boolean(modelId && steps.length > 0 && !generateAiDraft.isPending)}
         blockedReason={
           generateAiDraft.isPending
             ? "Generating test scenario..."
             : !steps.length
               ? "Generate or add at least 1 HTTP step below"
-              : !userConfirmed
-                ? "Confirm the scenario below to unlock Step 3"
-                : undefined
+              : undefined
         }
       />
 
@@ -2318,13 +2452,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      <DetailPanel title="1. System + AI Auto-Generate Test Scenario">
-        <p className="text-sm text-muted-foreground">
-          Combines Step 1 static analysis (Runnable Compose Services, DTO Payloads, Causal CRUD Ordering, Relationships, DB/Env) with AI to
-          automatically propose an ordered HTTP test workflow.
-        </p>
-
-        <div className="mt-4 space-y-4">
+      <DetailPanel title="HTTP Test Scenario Builder">
+        <div className="space-y-4">
           {(() => {
             const activeModel = selectableModels.find((m) => m.id === modelId) ?? selectableModels[0];
             const activeSnap =
@@ -2336,29 +2465,44 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 ? activeSnap.name
                 : "Inheriting from Step 1...";
             return (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3.5 py-2.5 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground">Target revision (from Step 1):</span>
                   <span className="font-mono font-semibold text-foreground">{revLabel}</span>
                   {runnableServices.length > 0 && (
                     <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono text-[11px]">
-                      {runnableServices.length} runnable app{runnableServices.length === 1 ? "" : "s"}: {runnableServices.join(", ")}
+                      {runnableServices.length} runnable apps
                     </span>
                   )}
+                  {inheritedEnvKeys.length > 0 && (
+                    <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground font-mono text-[11px]">
+                      {inheritedEnvKeys.length} env vars
+                    </span>
+                  )}
+                  <span
+                    className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                      generatorMode === "AI_ASSISTED"
+                        ? "bg-primary/15 text-primary"
+                        : "bg-muted text-muted-foreground"
+                    }`}
+                  >
+                    {generatorMode === "AI_ASSISTED"
+                      ? `AI + Static (${aiModelName || "Gemini"})`
+                      : "Static Analysis"}
+                  </span>
                 </div>
                 <Link
                   href={`/runtime-config?project=${projectId}`}
                   className="text-primary hover:underline font-medium"
                 >
-                  ← Change in Step 1
+                  ← Step 1
                 </Link>
               </div>
             );
           })()}
 
           {(scenarios.data ?? []).length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/15 px-3 py-2 text-xs">
-              <span className="text-muted-foreground font-medium">Saved scenarios:</span>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="text-muted-foreground font-medium mr-1">Saved:</span>
               {(scenarios.data ?? []).slice(0, 8).map((sc) => (
                 <button
                   key={sc.id}
@@ -2376,81 +2520,56 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             </div>
           )}
 
-          <FormField
-            label="AI Testing Goal (Optional)"
-            hint="Example: Verify cross-service organization, department, and employee creation flow"
-          >
-            {(props) => (
-              <div className="flex flex-wrap items-center gap-2.5">
+          <div className="grid gap-3 md:grid-cols-2">
+            <FormField label="Scenario Name">
+              {(props) => (
                 <Input
                   {...props}
-                  className="flex-1 min-w-64"
-                  placeholder="Enter a specific test objective or leave blank for comprehensive auto-generation..."
-                  value={aiGoal}
-                  onChange={(e) => setAiGoal(e.target.value)}
+                  value={scenarioName}
+                  onChange={(e) => setScenarioName(e.target.value)}
                 />
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="shrink-0 h-10"
-                  disabled={!snapshotId || generateAiDraft.isPending}
-                  onClick={() => {
-                    setSelectedScenarioId("");
-                    edited.current = false;
-                    triggerSystemAiGeneration(aiGoal);
-                  }}
-                >
-                  {generateAiDraft.isPending
-                    ? "Analyzing & generating..."
-                    : "Regenerate Scenario"}
-                </Button>
-              </div>
-            )}
-          </FormField>
-
-          <div className="rounded-lg border p-3.5 bg-muted/30 space-y-2 text-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">Scenario Proposal Source:</span>
-                {generatorMode === "AI_ASSISTED" ? (
-                  <span className="px-2 py-0.5 rounded bg-primary/15 text-primary text-xs font-semibold">
-                    AI + System Generated ({aiModelName || "Gemini"})
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 text-xs font-semibold">
-                    System Static Analysis ({aiModelName || "Deterministic"})
-                  </span>
-                )}
-              </div>
-              {inheritedEnvKeys.length > 0 && (
-                <span className="text-xs text-muted-foreground">
-                  Inherited from Step 1:{" "}
-                  <strong className="font-mono text-foreground">
-                    {inheritedEnvKeys.length} Env/Secret vars ({inheritedEnvKeys.slice(0, 4).join(", ")}
-                    {inheritedEnvKeys.length > 4 ? "..." : ""})
-                  </strong>
-                </span>
               )}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {aiSummary ||
-                "Requests are drafts synthesized from extracted endpoints, DTO schemas, and architecture relationships. Review and confirm below before running."}
-            </p>
-          </div>
-        </div>
-      </DetailPanel>
+            </FormField>
 
-      <DetailPanel title="2. Review & Customize Proposed Scenario Steps">
-        <div className="space-y-4">
-          <FormField label="Scenario Name">
-            {(props) => (
-              <Input
-                {...props}
-                value={scenarioName}
-                onChange={(e) => setScenarioName(e.target.value)}
-              />
-            )}
-          </FormField>
+            <FormField label="Custom Test Focus (Optional)">
+              {(props) => (
+                <div className="flex items-center gap-2">
+                  <Input
+                    {...props}
+                    className="flex-1"
+                    placeholder="Leave blank for full auto-flow, or describe a flow to test..."
+                    value={aiGoal}
+                    onChange={(e) => setAiGoal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && snapshotId && !generateAiDraft.isPending) {
+                        e.preventDefault();
+                        setSelectedScenarioId("");
+                        edited.current = false;
+                        triggerSystemAiGeneration(aiGoal);
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0 h-10"
+                    disabled={!snapshotId || generateAiDraft.isPending}
+                    onClick={() => {
+                      setSelectedScenarioId("");
+                      edited.current = false;
+                      triggerSystemAiGeneration(aiGoal);
+                    }}
+                  >
+                    {generateAiDraft.isPending ? "Generating..." : "Regenerate"}
+                  </Button>
+                </div>
+              )}
+            </FormField>
+          </div>
+
+          {aiSummary && (
+            <p className="text-xs text-muted-foreground">{aiSummary}</p>
+          )}
 
           {steps.length > 0 && (() => {
             const uniqueEntryServices = Array.from(new Set(steps.map((s) => s.service)));
@@ -2484,62 +2603,43 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   ),
               ),
             );
-            const allDetectedServices = [...uniqueEntryServices, ...downstreamServices];
             return (
-              <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <span className="font-semibold text-foreground">
-                    Planned Workflow Preview ({steps.length} HTTP Calls → {allDetectedServices.length} Services)
+              <div className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+                <span className="text-muted-foreground font-medium mr-1">Flow:</span>
+                <span className="rounded border bg-background px-2 py-0.5 font-mono font-medium text-foreground">
+                  MAVIS Runner
+                </span>
+                <span className="text-muted-foreground font-mono">→</span>
+                {uniqueEntryServices.map((entrySvc) => (
+                  <span
+                    key={entrySvc}
+                    className="rounded border bg-background px-2 py-0.5 font-mono font-medium text-foreground"
+                  >
+                    {entrySvc}
                   </span>
-                  <span className="text-[11px] font-mono text-muted-foreground">
-                    Live trace & sequence diagram render in Step 3
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                  <div className="rounded border bg-background px-2.5 py-1 text-xs font-mono font-medium text-foreground">
-                    MAVIS Runner
-                  </div>
-                  <span className="text-muted-foreground font-mono text-xs">→</span>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {uniqueEntryServices.map((entrySvc) => (
-                      <div
-                        key={entrySvc}
-                        className="rounded border bg-background px-2.5 py-1 text-xs font-mono font-medium text-foreground"
+                ))}
+                {downstreamServices.length > 0 && (
+                  <>
+                    <span className="text-muted-foreground font-mono">→</span>
+                    {downstreamServices.map((ds) => (
+                      <span
+                        key={ds}
+                        className="rounded border bg-muted/40 px-2 py-0.5 font-mono text-muted-foreground"
                       >
-                        {entrySvc}
-                      </div>
+                        {ds}
+                      </span>
                     ))}
-                  </div>
-                  {downstreamServices.length > 0 && (
-                    <>
-                      <span className="text-muted-foreground font-mono text-xs">→</span>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {downstreamServices.map((ds) => (
-                          <div
-                            key={ds}
-                            className="rounded border bg-muted/40 px-2.5 py-1 text-xs font-mono text-muted-foreground"
-                          >
-                            {ds}
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
+                  </>
+                )}
               </div>
             );
           })()}
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-semibold">
-                  Proposed HTTP Sequence ({steps.length} step{steps.length === 1 ? "" : "s"})
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  Edit Method, Runnable Service, Path, Payload, or Status Mode (Trace 2xx–4xx vs Strict) directly.
-                </p>
-              </div>
+              <h4 className="text-sm font-semibold">
+                HTTP Steps ({steps.length})
+              </h4>
               <div className="flex gap-2">
                 <Button
                   size="sm"
@@ -2547,18 +2647,18 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   onClick={applySuggestions}
                   disabled={generateAiDraft.isPending}
                 >
-                  ↺ Reset to Default Proposal
+                  ↺ Reset
                 </Button>
                 <Button size="sm" variant="outline" onClick={addStep}>
-                  + Add HTTP Step
+                  + Add Step
                 </Button>
               </div>
             </div>
 
             {steps.length === 0 ? (
               <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
-                No scenario steps yet. Click <strong>Regenerate Scenario</strong> or{" "}
-                <strong>+ Add HTTP Step</strong> to start.
+                No scenario steps yet. Click <strong>Regenerate</strong> or{" "}
+                <strong>+ Add Step</strong> to start.
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -2730,7 +2830,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                               ))}
                             {st.rationale && <span>{st.rationale}</span>}
                           </div>
-                          {st.source && <span className="font-mono text-[11px]">Source: {st.source}</span>}
+                          {st.source && (!st.rationale || !st.rationale.includes(st.source)) && (
+                            <span className="font-mono text-[11px]">Source: {st.source}</span>
+                          )}
                         </div>
                       )}
                       {authHeader && (
@@ -2807,89 +2909,41 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             )}
           </div>
 
-          <div className="rounded-lg border bg-muted/20 px-3.5 py-2 text-xs text-muted-foreground">
-            URL path parameters, DTO JSON payloads, and workflow ordering are synthesized from source contracts (Step 1 environment variables and secrets are inherited automatically).
-          </div>
-        </div>
-      </DetailPanel>
-
-      <DetailPanel title="3. User Confirmation & Execution Dispatch">
-        <div className="space-y-4">
-          <div className="rounded-lg border p-3.5 bg-muted/20 space-y-2 text-xs">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-semibold text-sm">Scenario Summary Ready for Execution:</span>
-              <span className="font-mono">
-                {steps.length} HTTP steps · {inheritedEnvKeys.length} vars inherited from Step 1
-              </span>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            <div className="flex flex-wrap gap-2.5">
+              <Button
+                disabled={
+                  !modelId ||
+                  !steps.length ||
+                  buildImages.isPending ||
+                  autoSaveConfig.isPending ||
+                  saveDraft.isPending ||
+                  updateDraft.isPending ||
+                  start.isPending
+                }
+                onClick={() => handleCreateAndRun(true)}
+              >
+                {buildImages.isPending || autoSaveConfig.isPending || start.isPending
+                  ? "Saving & launching into Step 3..."
+                  : "Confirm & Run in Step 3 →"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={
+                  !modelId ||
+                  !steps.length ||
+                  saveDraft.isPending ||
+                  updateDraft.isPending ||
+                  start.isPending
+                }
+                onClick={() => handleCreateAndRun(false)}
+              >
+                {saveDraft.isPending || updateDraft.isPending ? "Saving..." : "Save Draft"}
+              </Button>
             </div>
-            <ul className="space-y-1.5 font-mono text-muted-foreground">
-              {steps.map((step, index) => (
-                <li key={index} className="flex flex-wrap items-center gap-2">
-                  <span>{index + 1}.</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold ${httpMethodBadgeClass(step.method)}`}>
-                    {step.method}
-                  </span>
-                  <span className="text-foreground">
-                    {step.service}
-                    {step.path}
-                  </span>
-                  <span>
-                    → Expected {step.status} ({step.allowClientError !== false ? "2xx–4xx Trace" : "Strict"})
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {runMessage && <p className="text-xs font-medium text-primary">{runMessage}</p>}
           </div>
-
-          <label className="flex items-start gap-2.5 cursor-pointer text-sm select-none">
-            <input
-              type="checkbox"
-              className="mt-1 h-4 w-4 rounded border"
-              checked={userConfirmed}
-              onChange={(e) => setUserConfirmed(e.target.checked)}
-            />
-            <span>
-              <strong>I confirm the test scenario above:</strong> Authorize MAVIS to save the complete
-              runtime configuration and launch containers in Step 3 to capture OpenTelemetry traces.
-            </span>
-          </label>
-
-          <div className="flex flex-wrap gap-3 pt-1">
-            <Button
-              disabled={
-                !userConfirmed ||
-                !modelId ||
-                !steps.length ||
-                buildImages.isPending ||
-                autoSaveConfig.isPending ||
-                saveDraft.isPending ||
-                updateDraft.isPending ||
-                start.isPending
-              }
-              onClick={() => handleCreateAndRun(true)}
-            >
-              {buildImages.isPending || autoSaveConfig.isPending || start.isPending
-                ? "Saving & launching into Step 3..."
-                : "Confirm & Run in Step 3 →"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={
-                !userConfirmed ||
-                !modelId ||
-                !steps.length ||
-                saveDraft.isPending ||
-                updateDraft.isPending ||
-                start.isPending
-              }
-              onClick={() => handleCreateAndRun(false)}
-            >
-              {saveDraft.isPending || updateDraft.isPending ? "Saving..." : "Save Scenario Draft"}
-            </Button>
-          </div>
-
-          {runMessage && <p className="text-sm font-medium text-primary mt-2">{runMessage}</p>}
         </div>
       </DetailPanel>
     </div>
