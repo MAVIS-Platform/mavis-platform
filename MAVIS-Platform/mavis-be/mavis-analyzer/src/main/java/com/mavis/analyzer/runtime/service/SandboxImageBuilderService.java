@@ -101,8 +101,15 @@ public class SandboxImageBuilderService {
 
         Path workspace = null;
         try {
-            workspace = Files.createTempDirectory("mavis-imgbuild-");
-            extractOrCopySnapshot(snapshotStoragePath, workspace);
+            try {
+                workspace = Files.createTempDirectory("mavis-imgbuild-");
+                extractOrCopySnapshot(snapshotStoragePath, workspace);
+            } catch (IOException firstIo) {
+                deleteQuietly(workspace);
+                pruneDockerDisk(true);
+                workspace = Files.createTempDirectory("mavis-imgbuild-");
+                extractOrCopySnapshot(snapshotStoragePath, workspace);
+            }
 
             Set<String> filter = requestedServices != null && !requestedServices.isEmpty()
                     ? Set.copyOf(requestedServices)
@@ -203,6 +210,10 @@ public class SandboxImageBuilderService {
                 String tag = sandboxTag(projectId, svc);
 
                 String buildErr = runDockerBuild(projectId, tag, dockerfile, contextDir, spec.target(), spec.args());
+                if (buildErr != null && buildErr.toLowerCase(Locale.ROOT).contains("no space left on device")) {
+                    pruneDockerDisk(true);
+                    buildErr = runDockerBuild(projectId, tag, dockerfile, contextDir, spec.target(), spec.args());
+                }
                 if (buildErr != null) {
                     errors.add("Service '" + svc + "': " + buildErr);
                     continue;
@@ -211,6 +222,7 @@ public class SandboxImageBuilderService {
                 String imageId = inspectImageId(tag);
                 if (imageId != null) {
                     builtImages.put(svc, imageId);
+                    pruneDockerDisk(false);
                 } else {
                     errors.add("Service '" + svc + "': image built but content digest could not be inspected");
                 }
@@ -218,10 +230,13 @@ public class SandboxImageBuilderService {
 
             return new BuildImagesResult(builtImages, errors);
         } catch (BusinessException e) {
-            throw e;
+            if (e.getErrorCode() == ErrorCode.FORBIDDEN || e.getErrorCode() == ErrorCode.NOT_FOUND) {
+                throw e;
+            }
+            return new BuildImagesResult(Map.of(), List.of(SecretRedactor.redactString(String.valueOf(e.getMessage()))));
         } catch (Exception e) {
             log.warn("Sandbox image build failed for project {}: {}", projectId, e.getMessage());
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "Failed to build sandbox images: " + SecretRedactor.redactString(String.valueOf(e.getMessage())));
+            return new BuildImagesResult(Map.of(), List.of("Failed to build sandbox images: " + SecretRedactor.redactString(String.valueOf(e.getMessage()))));
         } finally {
             deleteQuietly(workspace);
         }
@@ -248,7 +263,7 @@ public class SandboxImageBuilderService {
                         WORKDIR /mavis_build
                         COPY pom.xml .
                         COPY src ./src
-                        RUN mvn clean package -DskipTests -B
+                        RUN mvn clean package -DskipTests -B && rm -rf /root/.m2/repository
 
                         """;
                 Files.writeString(dockerfile, header + rewritten, StandardCharsets.UTF_8);
@@ -497,6 +512,30 @@ public class SandboxImageBuilderService {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    protected void pruneDockerDisk(boolean aggressive) {
+        try {
+            runQuietCommand(List.of("docker", "image", "prune", "-f"), 15);
+            if (aggressive) {
+                runQuietCommand(List.of("docker", "container", "prune", "-f"), 15);
+                runQuietCommand(List.of("docker", "builder", "prune", "-af"), 30);
+            } else {
+                runQuietCommand(List.of("docker", "builder", "prune", "-f", "--keep-storage", "1500mb"), 20);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private static void runQuietCommand(List<String> cmd, int timeoutSeconds) {
+        try {
+            Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+            try (InputStream in = p.getInputStream()) {
+                in.transferTo(java.io.OutputStream.nullOutputStream());
+            } catch (IOException ignored) {}
+            if (!p.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+                p.destroyForcibly();
+            }
+        } catch (Exception ignored) {}
     }
 
     private static void deleteQuietly(Path root) {

@@ -179,7 +179,7 @@ jobs:
           target="$DEPLOY_USER@$DEPLOY_HOST"
           incoming="/opt/mavis/incoming-$COMMIT"
           ssh_opts=(-i ~/.ssh/mavis_deploy -o BatchMode=yes -o StrictHostKeyChecking=yes)
-          ssh "${ssh_opts[@]}" "$target" "mkdir -p '$incoming'"
+          ssh "${ssh_opts[@]}" "$target" "docker container prune -f >/dev/null 2>&1 || true; docker builder prune -af >/dev/null 2>&1 || true; docker image prune -f >/dev/null 2>&1 || true; mkdir -p '$incoming'"
           scp "${ssh_opts[@]}" deploy/compose.production.yml deploy/deploy-vps.sh "$target:$incoming/"
           prefix="ghcr.io/${REPOSITORY,,}"
           printf '%s\n' "$GH_TOKEN" | ssh "${ssh_opts[@]}" "$target" "bash '$incoming/deploy-vps.sh' '$COMMIT' '$prefix' '$GH_USER'"
