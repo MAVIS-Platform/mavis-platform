@@ -296,15 +296,15 @@ function buildRuntimeSequenceSvgString(
     participants.push("api-gateway", "service");
   }
 
-  const colWidth = 220;
-  const leftMargin = 130;
+  const colWidth = 260;
+  const leftMargin = 150;
   const topMargin = 105;
   const rowHeight = 74;
   const headerBoxWidth = 176;
   const headerBoxHeight = 44;
   const bottomFooterSpace = 85;
 
-  const width = Math.max(820, leftMargin * 2 + (participants.length - 1) * colWidth + 60);
+  const width = Math.max(880, leftMargin * 2 + (participants.length - 1) * colWidth + 60);
   const height = topMargin + steps.length * rowHeight + bottomFooterSpace;
 
   const xOf = (svcName: string) => {
@@ -911,11 +911,11 @@ function RuntimeSequenceDiagramCanvas({
         </div>
       </div>
 
-      <div className="overflow-x-auto overflow-y-auto max-h-[620px] rounded-lg border border-slate-800 bg-[#0b1120] p-2">
+      <div className="overflow-x-auto overflow-y-auto max-h-[620px] rounded-lg border border-slate-800 bg-[#0b1120] p-2 flex justify-center">
         <div
           style={{
             transform: `scale(${zoomPct / 100})`,
-            transformOrigin: "top left",
+            transformOrigin: "top center",
           }}
           dangerouslySetInnerHTML={{ __html: svgMarkup }}
         />
