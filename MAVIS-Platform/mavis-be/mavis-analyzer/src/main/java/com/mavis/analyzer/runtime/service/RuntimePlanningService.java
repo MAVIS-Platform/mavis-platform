@@ -556,12 +556,12 @@ public class RuntimePlanningService {
    int phaseA=causalEndpointPhase(a,crudResourceRoots);
    int phaseB=causalEndpointPhase(b,crudResourceRoots);
    if(phaseA!=phaseB)return Integer.compare(phaseA,phaseB);
-   int fanA=a.getFanOutScore()!=null?a.getFanOutScore():0;
-   int fanB=b.getFanOutScore()!=null?b.getFanOutScore():0;
-   if(fanA!=fanB)return Integer.compare(fanB,fanA);
    boolean paramA=PATH_PARAM_PATTERN.matcher(a.getPath()).find();
    boolean paramB=PATH_PARAM_PATTERN.matcher(b.getPath()).find();
    if(paramA!=paramB)return paramA?1:-1;
+   int fanA=a.getFanOutScore()!=null?a.getFanOutScore():0;
+   int fanB=b.getFanOutScore()!=null?b.getFanOutScore():0;
+   if(fanA!=fanB)return Integer.compare(fanB,fanA);
    return (a.getService()+a.getPath()+a.getMethod()).compareTo(b.getService()+b.getPath()+b.getMethod());
   };
   candidates.sort(causalComparator);
@@ -579,16 +579,17 @@ public class RuntimePlanningService {
   Map<String,String> sampleInputs=new LinkedHashMap<>();
   Map<String,String> healthPaths=(pre!=null&&pre.getServiceHealthPaths()!=null)?pre.getServiceHealthPaths():Map.of();
   String sandboxBearer=resolveOrMintPreviewBearerToken(id,savedProfile,pre,candidates);
-  List<GeneratedStepDraft> staticSteps=buildDeterministicSteps(candidates,allowedServices,upstreamServices,connectedServices,healthPaths,causalComparator,sampleInputs,sandboxBearer);
-  List<String> runnableList=new ArrayList<>(allowedServices);
-
   String repairFeedback=buildRepairFeedbackSummary(id,r!=null?r.repairSessionId():null,allowedServices);
   String goal=r!=null&&r.goal()!=null?SecretRedactor.redactString(r.goal().trim()):"";
+  List<DetectedEndpointDTO> goalCandidates=filterCandidatesForGoal(candidates,goal);
+  List<GeneratedStepDraft> staticSteps=buildDeterministicSteps(goalCandidates,allowedServices,upstreamServices,connectedServices,healthPaths,causalComparator,sampleInputs,sandboxBearer,goal);
+  List<String> runnableList=new ArrayList<>(allowedServices);
+
   Optional<String> maybeKey=apiKeyProvider!=null?apiKeyProvider.resolveApiKey():Optional.empty();
-  if(maybeKey.isPresent()&&!candidates.isEmpty()){
+  if(maybeKey.isPresent()&&!goalCandidates.isEmpty()){
    try{
     GeneratedScenarioDraftView aiDraft=callAiScenarioGenerator(
-      id,snapshotId,modelId,maybeKey.get(),goal,repairFeedback,sandboxBearer,allowedServices,savedProfile,pre,candidates,relationshipSummaries,new ArrayList<>(inheritedKeys),runnableList);
+      id,snapshotId,modelId,maybeKey.get(),goal,repairFeedback,sandboxBearer,allowedServices,savedProfile,pre,goalCandidates,relationshipSummaries,new ArrayList<>(inheritedKeys),runnableList);
     if(aiDraft!=null&&!aiDraft.steps().isEmpty()){
      return aiDraft;
     }
@@ -603,7 +604,7 @@ public class RuntimePlanningService {
     :"Automatically synthesized "+staticSteps.size()+" causal test steps covering "+coveredServices+" of "+Math.max(1,allowedServices.size())+" runnable services discovered in Step 1. Review and confirm below before running.";
   return new GeneratedScenarioDraftView(
     id,snapshotId,modelId,
-    "Auto-generated Architecture Verification Scenario",
+    suggestScenarioNameForGoal(goal),
     "SYSTEM_STATIC",
     "topdown-journey-v3",
     summary,
@@ -622,62 +623,113 @@ public class RuntimePlanningService {
    Map<String,String> serviceHealthPaths,
    Comparator<DetectedEndpointDTO> causalComparator,
    Map<String,String> sampleInputs,
-   String sandboxBearer){
+   String sandboxBearer,
+   String goal){
   List<DetectedEndpointDTO> business=sortedCandidates.stream().filter(ep->!isHealthProbePath(ep.getPath())).toList();
   List<DetectedEndpointDTO> healthOnly=sortedCandidates.stream().filter(ep->isHealthProbePath(ep.getPath())).toList();
 
   List<DetectedEndpointDTO> selected=new ArrayList<>();
   Set<DetectedEndpointDTO> pickedSet=new LinkedHashSet<>();
-  // Pass 1: ensure up to 2 primary causal business endpoints per runnable service so multi-service repos get balanced coverage
+  Set<String> seenMethodPaths=new HashSet<>();
+  boolean isFocusedGoal=goal!=null&&!goal.isBlank()&&goal.toLowerCase(Locale.ROOT).contains("focus");
+  Set<String> businessDomainServices=new HashSet<>();
+  for(DetectedEndpointDTO ep:business){
+   businessDomainServices.add(ep.getService());
+   businessDomainServices.add(resolveEndpointDomainService(ep,allowedServices));
+  }
+  boolean hasHttpLessRunnableService=!isFocusedGoal&&allowedServices.stream()
+    .anyMatch(svc->!isDiscoveryRegistryService(svc)&&!businessDomainServices.contains(svc));
+  int businessCap=hasHttpLessRunnableService?9:10;
+  int perSvcWriteCap=isFocusedGoal?4:2;
+  int perSvcPass1Cap=isFocusedGoal?7:3;
+  // Pass 1a: ensure transactional write endpoints (POST/PUT/PATCH) are represented per domain service before GETs fill the cap
   Map<String,Integer> perServiceCount=new HashMap<>();
   for(DetectedEndpointDTO ep:business){
-   if(pickedSet.size()>=10)break;
-   if(isAuxiliaryEndpointPath(ep.getPath())||"DELETE".equals(ep.getMethod()))continue;
-   int cnt=perServiceCount.getOrDefault(ep.getService(),0);
-   if(cnt<2){
+   if(pickedSet.size()>=businessCap)break;
+   if(isAuxiliaryEndpointPath(ep.getPath())||!Set.of("POST","PUT","PATCH").contains(ep.getMethod()))continue;
+   if(ep.getPath()!=null&&ep.getPath().contains("/batch"))continue;
+   String routeKey= ("PATCH".equals(ep.getMethod())?"PUT":ep.getMethod())+":"+ep.getPath();
+   if(seenMethodPaths.contains(routeKey))continue;
+   String domainSvc=resolveEndpointDomainService(ep,allowedServices);
+   int cnt=perServiceCount.getOrDefault(domainSvc,0);
+   if(cnt<perSvcWriteCap){
     pickedSet.add(ep);
-    perServiceCount.put(ep.getService(),cnt+1);
+    seenMethodPaths.add(routeKey);
+    seenMethodPaths.add(ep.getMethod()+":"+ep.getPath());
+    perServiceCount.put(domainSvc,cnt+1);
    }
   }
-  // Pass 2: allow a 3rd primary endpoint per service before falling back to auxiliary/DELETE endpoints
+  // Pass 1b: ensure primary causal business endpoints (including GET verification) per domain service
   for(DetectedEndpointDTO ep:business){
-   if(pickedSet.size()>=10)break;
+   if(pickedSet.size()>=businessCap)break;
+   if(isAuxiliaryEndpointPath(ep.getPath())||"DELETE".equals(ep.getMethod()))continue;
+   if(ep.getPath()!=null&&ep.getPath().contains("/batch"))continue;
+   String routeKey=("PATCH".equals(ep.getMethod())?"PUT":ep.getMethod())+":"+ep.getPath();
+   if(seenMethodPaths.contains(routeKey))continue;
+   String domainSvc=resolveEndpointDomainService(ep,allowedServices);
+   int cnt=perServiceCount.getOrDefault(domainSvc,0);
+   if(cnt<perSvcPass1Cap){
+    pickedSet.add(ep);
+    seenMethodPaths.add(routeKey);
+    seenMethodPaths.add(ep.getMethod()+":"+ep.getPath());
+    perServiceCount.put(domainSvc,cnt+1);
+   }
+  }
+  // Pass 2: allow additional primary endpoints per service before falling back to auxiliary/DELETE endpoints
+  for(DetectedEndpointDTO ep:business){
+   if(pickedSet.size()>=businessCap)break;
    if(isAuxiliaryEndpointPath(ep.getPath()))continue;
-   int cnt=perServiceCount.getOrDefault(ep.getService(),0);
-   if(cnt<3&&pickedSet.add(ep)){
-    perServiceCount.put(ep.getService(),cnt+1);
+   String routeKey=("PATCH".equals(ep.getMethod())?"PUT":ep.getMethod())+":"+ep.getPath();
+   if(seenMethodPaths.contains(routeKey))continue;
+   String domainSvc=resolveEndpointDomainService(ep,allowedServices);
+   int cnt=perServiceCount.getOrDefault(domainSvc,0);
+   if(cnt<(isFocusedGoal?10:4)&&pickedSet.add(ep)){
+    seenMethodPaths.add(routeKey);
+    seenMethodPaths.add(ep.getMethod()+":"+ep.getPath());
+    perServiceCount.put(domainSvc,cnt+1);
    }
   }
   for(DetectedEndpointDTO ep:business){
-   if(pickedSet.size()>=10)break;
-   if(perServiceCount.getOrDefault(ep.getService(),0)==0||!isAuxiliaryEndpointPath(ep.getPath())){
+   if(pickedSet.size()>=businessCap)break;
+   String routeKey=("PATCH".equals(ep.getMethod())?"PUT":ep.getMethod())+":"+ep.getPath();
+   if(seenMethodPaths.contains(routeKey))continue;
+   String domainSvc=resolveEndpointDomainService(ep,allowedServices);
+   if(perServiceCount.getOrDefault(domainSvc,0)==0||!isAuxiliaryEndpointPath(ep.getPath())){
     if(pickedSet.add(ep)){
-     perServiceCount.put(ep.getService(),perServiceCount.getOrDefault(ep.getService(),0)+1);
+     seenMethodPaths.add(routeKey);
+     seenMethodPaths.add(ep.getMethod()+":"+ep.getPath());
+     perServiceCount.put(domainSvc,perServiceCount.getOrDefault(domainSvc,0)+1);
     }
    }
   }
-  // Pass 3: for any runnable service with 0 business endpoints, include 1 health/readiness probe
+  // Pass 3: for any runnable service with 0 business endpoints (when not running a focused domain goal), include 1 health/readiness probe
   Set<String> coveredServices=new HashSet<>();
-  pickedSet.forEach(ep->coveredServices.add(ep.getService()));
-  for(DetectedEndpointDTO hp:healthOnly){
-   if(pickedSet.size()>=10)break;
-   if(!coveredServices.isEmpty()&&isDiscoveryRegistryService(hp.getService()))continue;
-   if(coveredServices.add(hp.getService())){
-    pickedSet.add(hp);
+  pickedSet.forEach(ep->{
+   coveredServices.add(ep.getService());
+   coveredServices.add(resolveEndpointDomainService(ep,allowedServices));
+   if(ep.getDownstreamTargets()!=null)coveredServices.addAll(ep.getDownstreamTargets());
+  });
+  if(!isFocusedGoal){
+   for(DetectedEndpointDTO hp:healthOnly){
+    if(pickedSet.size()>=10)break;
+    if(!coveredServices.isEmpty()&&isDiscoveryRegistryService(hp.getService()))continue;
+    if(coveredServices.add(hp.getService())){
+     pickedSet.add(hp);
+    }
    }
-  }
-  for(String svc:allowedServices){
-   if(pickedSet.size()>=10)break;
-   if(!coveredServices.isEmpty()&&isDiscoveryRegistryService(svc))continue;
-   String probePath=serviceHealthPaths!=null?serviceHealthPaths.get(svc):null;
-   if(probePath!=null&&probePath.startsWith("/")&&coveredServices.add(svc)){
-    pickedSet.add(DetectedEndpointDTO.builder()
-      .service(svc)
-      .method("GET")
-      .path(probePath)
-      .expectedStatus(200)
-      .source("Step 1 Readiness Probe")
-      .build());
+   for(String svc:allowedServices){
+    if(pickedSet.size()>=10)break;
+    if(!coveredServices.isEmpty()&&isDiscoveryRegistryService(svc))continue;
+    String probePath=serviceHealthPaths!=null?serviceHealthPaths.get(svc):null;
+    if(probePath!=null&&probePath.startsWith("/")&&coveredServices.add(svc)){
+     pickedSet.add(DetectedEndpointDTO.builder()
+       .service(svc)
+       .method("GET")
+       .path(probePath)
+       .expectedStatus(200)
+       .source("Step 1 Readiness Probe")
+       .build());
+    }
    }
   }
   selected.addAll(pickedSet);
@@ -691,10 +743,11 @@ public class RuntimePlanningService {
    String serviceKey=safeServiceEnvPrefix(ep.getService());
    String resRoot=resourceEntityToken(ep.getPath());
    Map<String,String> stepExtract=new LinkedHashMap<>();
-   String phase=ep.getJourneyRole()!=null?ep.getJourneyRole():inferJourneyPhase(ep);
+   String rawPhase=ep.getJourneyRole()!=null?ep.getJourneyRole():inferJourneyPhase(ep);
+   String phase=inferClusteredJourneyPhase(ep,rawPhase);
 
    // Tier A Auth extraction when auth endpoint declares a token field in responseFields
-   if("AUTH_ENTRY".equals(phase)&&ep.getResponseFields()!=null){
+   if("AUTH_ENTRY".equals(rawPhase)&&ep.getResponseFields()!=null){
     String tokPtr=findMatchingPointer(ep.getResponseFields(),List.of("accesstoken","access_token","token","jwt","idtoken"));
     if(tokPtr!=null){
      stepExtract.put("AUTH_TOKEN",tokPtr);
@@ -722,12 +775,18 @@ public class RuntimePlanningService {
    m.appendTail(rewrittenPath);
 
    // Seed/Workflow POST extraction when responseFields confirms an id/code pointer
-   if("POST".equals(ep.getMethod())&&!"AUTH_ENTRY".equals(phase)&&ep.getResponseFields()!=null&&!resRoot.isEmpty()){
+   if("POST".equals(ep.getMethod())&&!"AUTH_ENTRY".equals(rawPhase)&&ep.getResponseFields()!=null&&!resRoot.isEmpty()){
     String idPtr=findMatchingPointer(ep.getResponseFields(),List.of("id",resRoot.toLowerCase(Locale.ROOT)+"id","code","sku","orderid","productid"));
     if(idPtr!=null){
      String varName=toScenarioEnvKey(resRoot+"_ID");
      stepExtract.put(varName,idPtr);
      extractedByResource.putIfAbsent(resRoot,varName);
+    }
+    String codePtr=findMatchingPointer(ep.getResponseFields(),List.of(resRoot.toLowerCase(Locale.ROOT)+"code","code","sku"));
+    if(codePtr!=null){
+     String codeVar=toScenarioEnvKey(resRoot+"_CODE");
+     stepExtract.putIfAbsent(codeVar,codePtr);
+     extractedByResource.putIfAbsent(resRoot+"_CODE",codeVar);
     }
    }
 
@@ -743,8 +802,10 @@ public class RuntimePlanningService {
 
    Map<String,String> stepHeaders=null;
    List<Map<String,String>> stepEnvHeaders=null;
-   if(Boolean.TRUE.equals(ep.getRequiresAuth())&&!"AUTH_ENTRY".equals(phase)){
-    if(hasExtractedAuthToken){
+   if(Boolean.TRUE.equals(ep.getRequiresAuth())&&!"AUTH_ENTRY".equals(rawPhase)){
+    boolean requiresAdmin=(ep.getPath()!=null&&ep.getPath().toLowerCase(Locale.ROOT).contains("/admin/"))
+      ||(ep.getRequiredRoles()!=null&&ep.getRequiredRoles().stream().anyMatch(r->r!=null&&r.toUpperCase(Locale.ROOT).contains("ADMIN")));
+    if(hasExtractedAuthToken&&!requiresAdmin){
      stepHeaders=Map.of("Authorization","Bearer {{AUTH_TOKEN}}");
     }else if(sandboxBearer!=null){
      String authRef=serviceKey+"_AUTHORIZATION";
@@ -1381,8 +1442,10 @@ public class RuntimePlanningService {
     String low=f.replaceAll("[^A-Za-z0-9]","").toLowerCase(Locale.ROOT);
     for(Map.Entry<String,String> e:extractedByResource.entrySet()){
      String tok=e.getKey().toLowerCase(Locale.ROOT);
-     if(low.equals(tok+"id")||low.equals(tok+"code")||low.equals(tok+"sku")){
-      obj.put(f,"{{"+e.getValue()+"}}");
+     String val=e.getValue();
+     boolean wantsCode=low.endsWith("code")||low.endsWith("sku");
+     if(wantsCode?((low.equals(tok.replace("_",""))||low.equals(tok+"code")||low.equals(tok+"sku"))&&(val.endsWith("_CODE")||val.endsWith("_SKU"))):low.equals(tok+"id")){
+      obj.put(f,"{{"+val+"}}");
       changed=true;
       break;
      }
@@ -1404,6 +1467,101 @@ public class RuntimePlanningService {
   if(ep.getDownstreamTargets()!=null&&!ep.getDownstreamTargets().isEmpty())return "CROSS_SERVICE_WORKFLOW";
   if("POST".equals(verb)&&!PATH_PARAM_PATTERN.matcher(low).find())return "PREREQUISITE_SEED";
   return "CROSS_SERVICE_WORKFLOW";
+ }
+
+ private static String resolveEndpointDomainService(DetectedEndpointDTO ep,Set<String> allowedServices){
+  if(ep.getDownstreamTargets()!=null&&!ep.getDownstreamTargets().isEmpty())return ep.getDownstreamTargets().get(0);
+  if(ep.getPath()!=null&&allowedServices!=null){
+   String[] segs=ep.getPath().toLowerCase(Locale.ROOT).split("/");
+   for(String seg:segs){
+    if(seg.isEmpty()||seg.equals("api")||seg.matches("v\\d+"))continue;
+    for(String svc:allowedServices){
+     String lowSvc=svc.toLowerCase(Locale.ROOT);
+     if(lowSvc.equals(seg)||lowSvc.startsWith(seg+"-")||lowSvc.endsWith("-"+seg)){
+      return svc;
+     }
+    }
+    break;
+   }
+  }
+  return ep.getService();
+ }
+
+ private static String inferClusteredJourneyPhase(DetectedEndpointDTO ep,String basePhase){
+  if(ep==null||basePhase==null||basePhase.contains(":"))return basePhase;
+  if("HEALTH_FALLBACK".equals(basePhase))return "HEALTH_FALLBACK: Service Readiness";
+  String low=ep.getPath()!=null?ep.getPath().toLowerCase(Locale.ROOT):"/";
+  if("AUTH_ENTRY".equals(basePhase)||low.contains("/identity/")||low.contains("/auth/")||low.contains("/users")||low.contains("/addresses")){
+   return basePhase+": Auth & User Identity";
+  }
+  if(low.contains("/catalog/")||low.contains("/categories")||low.contains("/products")||low.contains("/inventory")||low.contains("/reviews")){
+   return basePhase+": Catalog & Inventory";
+  }
+  if(low.contains("/payment")){
+   return basePhase+": Order & Payment Verification";
+  }
+  if(low.contains("/order")||low.contains("/cart")||low.contains("/checkout")||low.contains("/coupons")){
+   return basePhase+": Order & Coupon Checkout";
+  }
+  return basePhase;
+ }
+
+ private static List<DetectedEndpointDTO> filterCandidatesForGoal(List<DetectedEndpointDTO> candidates,String goal){
+  if(candidates==null||candidates.isEmpty()||goal==null||goal.isBlank())return candidates;
+  String lowGoal=goal.toLowerCase(Locale.ROOT);
+  List<DetectedEndpointDTO> filtered=new ArrayList<>();
+  if(lowGoal.contains("auth")&&lowGoal.contains("identity")&&!lowGoal.contains("catalog")&&!lowGoal.contains("order")){
+   for(DetectedEndpointDTO ep:candidates){
+    String p=ep.getPath()!=null?ep.getPath().toLowerCase(Locale.ROOT):"";
+    String s=ep.getService()!=null?ep.getService().toLowerCase(Locale.ROOT):"";
+    if(p.contains("/identity/")||p.contains("/auth/")||p.contains("/users")||p.contains("/addresses")||s.contains("identity")||s.contains("auth")){
+     filtered.add(ep);
+    }
+   }
+  }else if(lowGoal.contains("catalog")&&lowGoal.contains("inventory")&&!lowGoal.contains("order")){
+   for(DetectedEndpointDTO ep:candidates){
+    String p=ep.getPath()!=null?ep.getPath().toLowerCase(Locale.ROOT):"";
+    String s=ep.getService()!=null?ep.getService().toLowerCase(Locale.ROOT):"";
+    if(p.contains("/catalog/")||p.contains("/categories")||p.contains("/products")||p.contains("/inventory")||p.contains("/reviews")||s.contains("catalog")){
+     filtered.add(ep);
+    }
+   }
+  }else if((lowGoal.contains("order")||lowGoal.contains("cart")||lowGoal.contains("checkout"))&&!lowGoal.contains("catalog")){
+   for(DetectedEndpointDTO ep:candidates){
+    String p=ep.getPath()!=null?ep.getPath().toLowerCase(Locale.ROOT):"";
+    String s=ep.getService()!=null?ep.getService().toLowerCase(Locale.ROOT):"";
+    if(p.endsWith("/register")||p.endsWith("/login")||p.contains("/order/")||p.contains("/orders")||p.contains("/cart")||p.contains("/checkout")||p.contains("/coupons")||p.contains("/payment")||s.contains("order")){
+     filtered.add(ep);
+    }
+   }
+  }else if(lowGoal.contains("compensating")||lowGoal.contains("cancellation")||lowGoal.contains("edge-case")){
+   for(DetectedEndpointDTO ep:candidates){
+    String p=ep.getPath()!=null?ep.getPath().toLowerCase(Locale.ROOT):"";
+    String v=ep.getMethod()!=null?ep.getMethod().toUpperCase(Locale.ROOT):"";
+    if(p.endsWith("/login")||p.contains("/admin/")||p.contains("/cancel")||p.contains("/status")||p.contains("/deduct")||p.contains("/restore")||p.contains("/validate")||"PUT".equals(v)||"PATCH".equals(v)||"DELETE".equals(v)){
+     filtered.add(ep);
+    }
+   }
+  }
+  return filtered.isEmpty()?candidates:filtered;
+ }
+
+ private static String suggestScenarioNameForGoal(String goal){
+  if(goal==null||goal.isBlank())return "End-to-End Business Journey Verification";
+  String lowGoal=goal.toLowerCase(Locale.ROOT);
+  if(lowGoal.contains("auth")&&lowGoal.contains("identity")&&!lowGoal.contains("catalog")&&!lowGoal.contains("order")){
+   return "Auth & User Identity Verification Scenario";
+  }
+  if(lowGoal.contains("catalog")&&lowGoal.contains("inventory")&&!lowGoal.contains("order")){
+   return "Catalog & Inventory Verification Scenario";
+  }
+  if((lowGoal.contains("order")||lowGoal.contains("cart")||lowGoal.contains("checkout"))&&!lowGoal.contains("catalog")){
+   return "Order, Cart, Coupon Checkout & Payment Scenario";
+  }
+  if(lowGoal.contains("compensating")||lowGoal.contains("cancellation")||lowGoal.contains("edge-case")){
+   return "Admin & Compensating Workflow Scenario";
+  }
+  return "Custom Goal Architecture Verification Scenario";
  }
 
  private String buildRepairFeedbackSummary(UUID projectId,UUID repairSessionId,Set<String> allowedServices){
@@ -1461,7 +1619,7 @@ public class RuntimePlanningService {
 
  String mintSandboxBearerToken(Map<String,String> envMap,Collection<String> requiredRoles){
   try{
-   Set<String> roles=new LinkedHashSet<>(List.of("USER","ADMIN"));
+   Set<String> roles=new LinkedHashSet<>(List.of("USER","ADMIN","CUSTOMER"));
    if(requiredRoles!=null){
     for(String r:requiredRoles){if(r!=null&&!r.isBlank())roles.add(r.trim().toUpperCase(Locale.ROOT));}
    }
@@ -1545,7 +1703,9 @@ public class RuntimePlanningService {
   String low=path.toLowerCase(Locale.ROOT);
   return low.contains("/ai/")||low.endsWith("/chat")||low.contains("/generate-")||low.contains("/suggest-")
     ||low.endsWith("/inactive")||low.endsWith("/invoice-pdf")||low.endsWith("/forgot-password")
-    ||low.endsWith("/reset-password")||low.endsWith("/logout")||low.endsWith("/verify-email");
+    ||low.endsWith("/reset-password")||low.endsWith("/logout")||low.endsWith("/verify-email")
+    ||low.endsWith("/google")||low.contains("/oauth")||low.endsWith("/refresh")
+    ||low.endsWith("/export-excel")||low.endsWith("/vnpay-return");
  }
 
  private static boolean isDiscoveryRegistryService(String service){
@@ -1559,7 +1719,8 @@ public class RuntimePlanningService {
   String verb=ep.getMethod();
   String low=ep.getPath().toLowerCase(Locale.ROOT);
   if(isAuxiliaryEndpointPath(low))return 4;
-  if("POST".equals(verb)&&(low.contains("/auth/")||low.endsWith("/login")||low.endsWith("/signin")||low.endsWith("/register")||low.endsWith("/signup")||low.endsWith("/token"))){
+  if("POST".equals(verb)&&(low.endsWith("/register")||low.endsWith("/signup")))return -1;
+  if("POST".equals(verb)&&(low.contains("/auth/")||low.endsWith("/login")||low.endsWith("/signin")||low.endsWith("/token"))){
    return 0;
   }
   if("POST".equals(verb)&&!PATH_PARAM_PATTERN.matcher(ep.getPath()).find()){

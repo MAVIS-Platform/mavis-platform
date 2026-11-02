@@ -390,7 +390,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
             if (rels != null) {
                 for (ModelRelationship rel : rels) {
-                    if ("SERVICE_HTTP_CALL".equalsIgnoreCase(rel.getRelationType()) || "GATEWAY_ROUTE".equalsIgnoreCase(rel.getRelationType())) {
+                    if (!hadSourceEndpoints && ("SERVICE_HTTP_CALL".equalsIgnoreCase(rel.getRelationType()) || "GATEWAY_ROUTE".equalsIgnoreCase(rel.getRelationType()))) {
                         ModelElement rawTgt = rel.getTargetElement() != null && rel.getTargetElement().getId() != null
                                 ? elementById.getOrDefault(rel.getTargetElement().getId(), rel.getTargetElement())
                                 : rel.getTargetElement();

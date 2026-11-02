@@ -57,7 +57,7 @@ public class ComposePreflightValidator {
     private static final Pattern JAVA_ENUM_PATTERN = Pattern.compile("\\benum\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?:implements[^{]+)?\\{\\s*(?:/\\*[\\s\\S]*?\\*/\\s*|//[^\\n]*\\n\\s*)*([A-Z_][A-Z0-9_]*)");
     private static final Pattern JAVA_CLASS_NAME_PATTERN = Pattern.compile("\\bclass\\s+([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern JAVA_FIELD_PATTERN = Pattern.compile("(?m)^[ \\t]*((?:@[A-Za-z0-9_.]+(?:\\([^)\\n]*\\))?[ \\t\\r\\n]*)*)(?:private|protected)[ \\t]+(?!static\\b|final\\b)([A-Za-z_][A-Za-z0-9_<>, ?.\\[\\]]*?)[ \\t]+([a-zA-Z_][A-Za-z0-9_]*)[ \\t]*(?:=[^;\\n]+)?;");
-    private static final Pattern JAVA_REQUEST_BODY_PATTERN = Pattern.compile("@RequestBody\\b(?:\\s+@[A-Za-z0-9_.]+(?:\\([^)]*\\))?)*(?:\\s+final)?\\s+([A-Za-z_][A-Za-z0-9_<>, ?.\\[\\]]*)\\s+[A-Za-z_][A-Za-z0-9_]*");
+    private static final Pattern JAVA_REQUEST_BODY_PATTERN = Pattern.compile("@RequestBody\\b(?:\\s*\\([^)]*\\))?(?:\\s+@[A-Za-z0-9_.]+(?:\\([^)]*\\))?)*(?:\\s+final)?\\s+([A-Za-z_][A-Za-z0-9_.]*(?:<[^>]+>)?(?:\\[\\])?)\\s+[A-Za-z_][A-Za-z0-9_]*");
     private static final Pattern CSHARP_ENUM_PATTERN = Pattern.compile("\\benum\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(?::[^{]+)?\\{\\s*([A-Za-z_][A-Za-z0-9_]*)");
     private static final Pattern CSHARP_RECORD_PATTERN = Pattern.compile("\\brecord\\s+(?:class\\s+|struct\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*\\(((?:[^()]|\\([^)]*\\))*)\\)");
     private static final Pattern CSHARP_CLASS_NAME_PATTERN = Pattern.compile("\\bclass\\s+([A-Za-z_][A-Za-z0-9_]*)");
@@ -807,7 +807,7 @@ public class ComposePreflightValidator {
                 Path dirToScan = Files.isDirectory(storagePath) ? storagePath : storagePath.getParent();
                 if (dirToScan != null && Files.isDirectory(dirToScan)) {
                     List<Path> candidates;
-                    try (Stream<Path> stream = Files.walk(dirToScan, 8)) {
+                    try (Stream<Path> stream = Files.walk(dirToScan, 16)) {
                         candidates = stream.filter(Files::isRegularFile)
                                 .filter(p -> !isIgnoredArchiveEntry(dirToScan.relativize(p).toString().replace('\\', '/')))
                                 .filter(p -> isInspectableSourceOrConfig(dirToScan.relativize(p).toString().replace('\\', '/')))
@@ -1018,13 +1018,26 @@ public class ComposePreflightValidator {
         String cleanRelPath = stripGitHubRootPrefix(relativePath);
         String lowerPath = cleanRelPath.toLowerCase(Locale.ROOT);
         String baseName = lowerPath.contains("/") ? lowerPath.substring(lowerPath.lastIndexOf('/') + 1) : lowerPath;
+        if (baseName.startsWith("docker-compose") || baseName.startsWith("compose.")
+                || baseName.equals("render.yaml") || baseName.equals("render.yml")) {
+            return;
+        }
+        if (lowerPath.endsWith(".java")) {
+            extractJavaDtoSchemas(content, dtoSchemas, responseSchemas, dtoValidationHints, enumFirstValues);
+        } else if (lowerPath.endsWith(".cs")) {
+            extractCsharpDtoSchemas(content, dtoSchemas, responseSchemas, dtoValidationHints, enumFirstValues);
+        } else if (lowerPath.endsWith(".js") || lowerPath.endsWith(".ts") || lowerPath.endsWith(".py") || lowerPath.endsWith(".go")) {
+            extractPolyglotDtoSchemas(lowerPath, content, dtoSchemas, responseSchemas);
+        }
+
         String inferredService = inferServiceFromPath(relativePath, dto.getDetectedServices());
+        if (inferredService == null) {
+            return;
+        }
         String lowerContent = content.toLowerCase(Locale.ROOT);
 
-        if (inferredService != null) {
-            extractOutboundCallsFromFile(inferredService, content, lowerContent, dto.getDetectedServices(), serviceOutboundTargets);
-            extractGatewayRoutesFromFile(inferredService, lowerPath, content, dto.getDetectedServices(), gatewayRoutes);
-        }
+        extractOutboundCallsFromFile(inferredService, content, lowerContent, dto.getDetectedServices(), serviceOutboundTargets);
+        extractGatewayRoutesFromFile(inferredService, lowerPath, content, dto.getDetectedServices(), gatewayRoutes);
 
         // OpenAPI / Swagger specification support (YAML or JSON)
         if ((lowerPath.endsWith(".yml") || lowerPath.endsWith(".yaml") || lowerPath.endsWith(".json"))
@@ -1256,7 +1269,6 @@ public class ComposePreflightValidator {
             if (healthChecks.find()) explicitHealth.putIfAbsent(inferredService, healthChecks.group(1));
         }
         if (lowerPath.endsWith(".js") || lowerPath.endsWith(".ts") || lowerPath.endsWith(".py") || lowerPath.endsWith(".go")) {
-            extractPolyglotDtoSchemas(lowerPath, content, dtoSchemas, responseSchemas);
             extractNestJsControllerEndpoints(inferredService, cleanRelPath, lowerPath, content, endpoints, endpointKeys, explicitHealth);
             Matcher routeMatcher = EXPRESS_FASTAPI_GIN_ROUTE_PATTERN.matcher(content);
             while (routeMatcher.find()) {
@@ -1282,12 +1294,6 @@ public class ComposePreflightValidator {
                             .build());
                 }
             }
-        }
-
-        if (lowerPath.endsWith(".java")) {
-            extractJavaDtoSchemas(content, dtoSchemas, responseSchemas, dtoValidationHints, enumFirstValues);
-        } else if (lowerPath.endsWith(".cs")) {
-            extractCsharpDtoSchemas(content, dtoSchemas, responseSchemas, dtoValidationHints, enumFirstValues);
         }
 
         // 2. Java Controller endpoints (skip @FeignClient / @HttpExchange client interfaces)
@@ -1422,9 +1428,16 @@ public class ComposePreflightValidator {
         int lastBrace = content.lastIndexOf('}', matchStart);
         if (lastBrace >= preStart) preStart = lastBrace + 1;
         int end = Math.min(content.length(), matchEnd + 900);
+        int searchFrom = matchEnd;
         Matcher next = nextEndpointPattern.matcher(content);
-        if (next.find(matchEnd) && next.start() < end) {
+        while (next.find(searchFrom) && next.start() < end) {
+            String between = content.substring(searchFrom, next.start()).trim();
+            if (between.isEmpty() || between.startsWith("@")) {
+                searchFrom = next.end();
+                continue;
+            }
             end = next.start();
+            break;
         }
         return content.substring(preStart, end);
     }
@@ -2555,7 +2568,9 @@ public class ComposePreflightValidator {
 
         boolean isAuxiliary = lowPath.contains("/ai/") || lowPath.endsWith("/chat") || lowPath.contains("/generate-")
                 || lowPath.contains("/suggest-") || lowPath.endsWith("/inactive") || lowPath.endsWith("/invoice-pdf")
-                || lowPath.endsWith("/forgot-password") || lowPath.endsWith("/reset-password") || lowPath.endsWith("/logout");
+                || lowPath.endsWith("/forgot-password") || lowPath.endsWith("/reset-password") || lowPath.endsWith("/logout")
+                || lowPath.endsWith("/google") || lowPath.contains("/oauth") || lowPath.endsWith("/refresh")
+                || lowPath.endsWith("/export-excel") || lowPath.endsWith("/vnpay-return");
         String role;
         if (isHealthEndpointPath(lowPath)) role = "HEALTH_FALLBACK";
         else if (isAuth) role = "AUTH_ENTRY";
@@ -3072,6 +3087,16 @@ public class ComposePreflightValidator {
     private static String inferServiceFromPath(String relativePath, List<String> detectedServices) {
         String norm = relativePath.replace('\\', '/');
         String lowerNorm = norm.toLowerCase(Locale.ROOT);
+        List<String> appServices = detectedServices == null ? List.of()
+                : detectedServices.stream().filter(s -> !isInfrastructureService(s, "")).toList();
+        if (!appServices.isEmpty()) {
+            for (String svc : appServices) {
+                String ls = svc.toLowerCase(Locale.ROOT);
+                if (lowerNorm.contains("/" + ls + "/") || lowerNorm.startsWith(ls + "/")) {
+                    return svc;
+                }
+            }
+        }
         if (detectedServices != null) {
             for (String svc : detectedServices) {
                 String ls = svc.toLowerCase(Locale.ROOT);
@@ -3085,12 +3110,17 @@ public class ComposePreflightValidator {
         if (parts.length > 1 && GITHUB_ZIP_ROOT_PATTERN.matcher(parts[0]).matches()) {
             startIdx = 1;
         }
+        List<String> matchPool = !appServices.isEmpty() ? appServices : detectedServices;
         for (int i = startIdx; i < parts.length; i++) {
             if ("src".equalsIgnoreCase(parts[i]) && i > startIdx) {
                 String moduleCandidate = cleanServiceCandidate(parts[i - 1]);
                 if (!moduleCandidate.isBlank()) {
-                    String matched = matchDetectedService(moduleCandidate, detectedServices);
-                    return matched != null ? matched : moduleCandidate;
+                    if (matchPool != null && !matchPool.isEmpty()) {
+                        String matched = matchDetectedService(moduleCandidate, matchPool);
+                        if (matched != null) return matched;
+                        return matchPool.size() == 1 ? matchPool.get(0) : null;
+                    }
+                    return moduleCandidate;
                 }
             }
         }
@@ -3102,13 +3132,17 @@ public class ComposePreflightValidator {
                     && !part.contains(".")) {
                 String cleaned = cleanServiceCandidate(part);
                 if (!cleaned.isBlank()) {
-                    String matched = matchDetectedService(cleaned, detectedServices);
-                    return matched != null ? matched : cleaned;
+                    if (matchPool != null && !matchPool.isEmpty()) {
+                        String matched = matchDetectedService(cleaned, matchPool);
+                        if (matched != null) return matched;
+                        continue;
+                    }
+                    return cleaned;
                 }
             }
         }
-        if (detectedServices != null && !detectedServices.isEmpty()) {
-            return detectedServices.get(0);
+        if (matchPool != null && !matchPool.isEmpty()) {
+            return matchPool.size() == 1 ? matchPool.get(0) : null;
         }
         if (parts.length > 0 && GITHUB_ZIP_ROOT_PATTERN.matcher(parts[0]).matches()) {
             String repoName = cleanServiceCandidate(parts[0]);
@@ -4054,6 +4088,10 @@ public class ComposePreflightValidator {
                         c.setConnectionUrl(previewUrl);
                     }
                 }
+                if (!localReplacedDbs.isEmpty()) {
+                    checks.removeIf(c -> c != null && appSvc.equals(c.getService())
+                            && !familyChecks.contains(c) && !isCacheOrBrokerType(c.getDbType()));
+                }
             }
             topologyChanges.add("Auto-provisioned ephemeral '" + containerName + "' container and wired " + String.join(", ", targetServices) + " for air-gapped sandbox execution");
         }
@@ -4334,28 +4372,34 @@ public class ComposePreflightValidator {
                 String stack = dto.getServiceStacks() != null ? dto.getServiceStacks().getOrDefault(appSvc, "java") : "java";
                 if (!"java".equals(stack)) continue;
                 Map<String, String> appEnv = composeEnvironment(appCfg.get("environment"));
-                if ("Redis".equals(check.getDbType()) && redisSvc != null
-                        && !appEnv.containsKey("SPRING_DATA_REDIS_HOST") && !appEnv.containsKey("SPRING_REDIS_HOST") && !appEnv.containsKey("REDIS_HOST")) {
-                    int rPort = dto.getServicePorts() != null ? dto.getServicePorts().getOrDefault(redisSvc, 6379) : 6379;
-                    appEnv.put("SPRING_DATA_REDIS_HOST", redisSvc);
-                    appEnv.putIfAbsent("SPRING_DATA_REDIS_PORT", String.valueOf(rPort));
-                    appCfg.put("environment", appEnv);
-                    addServiceDependency(appCfg, redisSvc);
-                    List<String> deps = dto.getServiceDependencies().computeIfAbsent(appSvc, k -> new ArrayList<>());
-                    if (!deps.contains(redisSvc)) deps.add(redisSvc);
-                    check.setStatus("DETECTED_CONTAINER");
-                    topologyChanges.add("Wired missing Redis host '" + redisSvc + "' on '" + appSvc + "'");
-                    changed = true;
-                } else if ("Kafka".equals(check.getDbType()) && kafkaSvc != null
-                        && !appEnv.containsKey("SPRING_KAFKA_BOOTSTRAP_SERVERS") && !appEnv.containsKey("KAFKA_BOOTSTRAP_SERVERS")) {
-                    appEnv.put("SPRING_KAFKA_BOOTSTRAP_SERVERS", kafkaSvc + ":9092");
-                    appCfg.put("environment", appEnv);
-                    addServiceDependency(appCfg, kafkaSvc);
-                    List<String> deps = dto.getServiceDependencies().computeIfAbsent(appSvc, k -> new ArrayList<>());
-                    if (!deps.contains(kafkaSvc)) deps.add(kafkaSvc);
-                    check.setStatus("DETECTED_CONTAINER");
-                    topologyChanges.add("Wired missing Kafka bootstrap '" + kafkaSvc + ":9092' on '" + appSvc + "'");
-                    changed = true;
+                if ("Redis".equals(check.getDbType()) && redisSvc != null) {
+                    if (!appEnv.containsKey("SPRING_DATA_REDIS_HOST") && !appEnv.containsKey("SPRING_REDIS_HOST") && !appEnv.containsKey("REDIS_HOST")) {
+                        int rPort = dto.getServicePorts() != null ? dto.getServicePorts().getOrDefault(redisSvc, 6379) : 6379;
+                        appEnv.put("SPRING_DATA_REDIS_HOST", redisSvc);
+                        appEnv.putIfAbsent("SPRING_DATA_REDIS_PORT", String.valueOf(rPort));
+                        appCfg.put("environment", appEnv);
+                        addServiceDependency(appCfg, redisSvc);
+                        List<String> deps = dto.getServiceDependencies().computeIfAbsent(appSvc, k -> new ArrayList<>());
+                        if (!deps.contains(redisSvc)) deps.add(redisSvc);
+                        check.setStatus("DETECTED_CONTAINER");
+                        topologyChanges.add("Wired missing Redis host '" + redisSvc + "' on '" + appSvc + "'");
+                        changed = true;
+                    } else {
+                        check.setStatus("CONFIGURED_IN_COMPOSE");
+                    }
+                } else if ("Kafka".equals(check.getDbType()) && kafkaSvc != null) {
+                    if (!appEnv.containsKey("SPRING_KAFKA_BOOTSTRAP_SERVERS") && !appEnv.containsKey("KAFKA_BOOTSTRAP_SERVERS")) {
+                        appEnv.put("SPRING_KAFKA_BOOTSTRAP_SERVERS", kafkaSvc + ":9092");
+                        appCfg.put("environment", appEnv);
+                        addServiceDependency(appCfg, kafkaSvc);
+                        List<String> deps = dto.getServiceDependencies().computeIfAbsent(appSvc, k -> new ArrayList<>());
+                        if (!deps.contains(kafkaSvc)) deps.add(kafkaSvc);
+                        check.setStatus("DETECTED_CONTAINER");
+                        topologyChanges.add("Wired missing Kafka bootstrap '" + kafkaSvc + ":9092' on '" + appSvc + "'");
+                        changed = true;
+                    } else {
+                        check.setStatus("CONFIGURED_IN_COMPOSE");
+                    }
                 }
             }
         }
@@ -4446,6 +4490,7 @@ public class ComposePreflightValidator {
             if (dto.getDetectedServices() != null) dto.getDetectedServices().removeAll(pruned);
             if (dto.getComposeServices() != null) dto.getComposeServices().removeAll(pruned);
             if (dto.getInfrastructureServices() != null) dto.getInfrastructureServices().removeAll(pruned);
+            if (dto.getDatabaseChecks() != null) dto.getDatabaseChecks().removeIf(c -> c != null && pruned.contains(c.getService()));
             if (dto.getServicePorts() != null) pruned.forEach(dto.getServicePorts()::remove);
             if (dto.getServiceStacks() != null) pruned.forEach(dto.getServiceStacks()::remove);
             if (dto.getRelocatedComposeSecrets() != null) pruned.forEach(dto.getRelocatedComposeSecrets()::remove);
