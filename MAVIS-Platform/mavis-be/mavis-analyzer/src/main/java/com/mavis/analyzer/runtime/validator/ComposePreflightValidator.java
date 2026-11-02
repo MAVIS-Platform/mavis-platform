@@ -450,6 +450,10 @@ public class ComposePreflightValidator {
                         cleanEnv.putIfAbsent("EUREKA_INSTANCE_LEASE_RENEWAL_INTERVAL_IN_SECONDS", "3");
                         cleanEnv.putIfAbsent("SPRING_CLOUD_LOADBALANCER_CACHE_TTL", "1s");
                     }
+                    if (cleanEnv.containsKey("SPRING_KAFKA_BOOTSTRAP_SERVERS") || cleanEnv.containsKey("KAFKA_BOOTSTRAP_SERVERS")) {
+                        cleanEnv.putIfAbsent("SPRING_KAFKA_TEMPLATE_OBSERVATION_ENABLED", "true");
+                        cleanEnv.putIfAbsent("SPRING_KAFKA_LISTENER_OBSERVATION_ENABLED", "true");
+                    }
                     if (!cleanEnv.isEmpty()) {
                         outSvc.put("environment", cleanEnv);
                     }
