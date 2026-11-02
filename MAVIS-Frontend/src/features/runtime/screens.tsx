@@ -231,6 +231,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [serviceRoles, setServiceRoles] = useState<Record<string, "APP" | "INFRA">>({});
   const [serviceImageOverrides, setServiceImageOverrides] = useState<Record<string, string>>({});
   const [showSandboxCompose, setShowSandboxCompose] = useState(false);
+  const [showStep1Details, setShowStep1Details] = useState(false);
   const [step1StatusMsg, setStep1StatusMsg] = useState("");
   const [isAutoBuilding, setIsAutoBuilding] = useState(false);
   const autoBuildTriggeredRef = useRef("");
@@ -703,88 +704,93 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {/* Step 1: Preflight Eligibility & Source Inspection */}
-      <DetailPanel title="1. Source Snapshot, API & Database Inspection (Preflight)">
-        <p className="text-sm text-muted-foreground">
-          Inspect the source snapshot for Docker Compose compatibility, API endpoints, database
-          connections, and required environment/secret variables.
-        </p>
-
+      {/* Step 1: Unified Target Revision & Auto-Configured Sandbox Summary */}
+      <DetailPanel title="Target Revision & Sandbox Readiness">
         <RequestState query={snapshots} empty={!snapshots.data?.length}>
-          <div className="mt-4 space-y-4">
-            {(() => {
-              const candidateModels = staticModels.length ? staticModels : (models.data ?? []);
-              if (candidateModels.length > 0) {
-                return (
-                  <SelectField
-                    disabled={preflight.isPending}
-                    label="Target revision"
-                    value={modelId || defaultModelId}
-                    onChange={(nextModelId) => {
-                      setModelId(nextModelId);
-                      const chosen = candidateModels.find((m) => m.id === nextModelId);
-                      if (chosen?.snapshotId && chosen.snapshotId !== snapshotId) {
-                        setSnapshotId(chosen.snapshotId);
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-64">
+                {(() => {
+                  const candidateModels = staticModels.length ? staticModels : (models.data ?? []);
+                  if (candidateModels.length > 0) {
+                    return (
+                      <SelectField
+                        disabled={preflight.isPending}
+                        label="Target revision"
+                        value={modelId || defaultModelId}
+                        onChange={(nextModelId) => {
+                          setModelId(nextModelId);
+                          const chosen = candidateModels.find((m) => m.id === nextModelId);
+                          if (chosen?.snapshotId && chosen.snapshotId !== snapshotId) {
+                            setSnapshotId(chosen.snapshotId);
+                            preflight.reset();
+                          }
+                        }}
+                        options={candidateModels.map((m) => {
+                          const snap = (snapshots.data ?? []).find((s) => s.id === m.snapshotId);
+                          return {
+                            value: m.id,
+                            label: `Revision ${m.revision}${m.latest ? " (Latest)" : ""} · ${snap ? snap.name : m.id.slice(0, 8)}`,
+                          };
+                        })}
+                      />
+                    );
+                  }
+                  return (
+                    <SelectField
+                      disabled={preflight.isPending}
+                      label="Target revision"
+                      value={snapshotId}
+                      onChange={(value) => {
+                        setSnapshotId(value);
                         preflight.reset();
-                      }
-                    }}
-                    options={candidateModels.map((m) => {
-                      const snap = (snapshots.data ?? []).find((s) => s.id === m.snapshotId);
-                      return {
-                        value: m.id,
-                        label: `Revision ${m.revision}${m.latest ? " (Latest)" : ""} · ${snap ? snap.name : m.id.slice(0, 8)}`,
-                      };
-                    })}
-                  />
-                );
-              }
-              return (
-                <SelectField
-                  disabled={preflight.isPending}
-                  label="Target revision"
-                  value={snapshotId}
-                  onChange={(value) => {
-                    setSnapshotId(value);
-                    preflight.reset();
-                  }}
-                  options={(snapshots.data ?? []).map((s, idx) => ({
-                    value: s.id,
-                    label: `Snapshot #${(snapshots.data?.length ?? idx) - idx} · ${s.name}`,
-                  }))}
-                />
-              );
-            })()}
+                      }}
+                      options={(snapshots.data ?? []).map((s, idx) => ({
+                        value: s.id,
+                        label: `Snapshot #${(snapshots.data?.length ?? idx) - idx} · ${s.name}`,
+                      }))}
+                    />
+                  );
+                })()}
+              </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <span>
-                {preflight.isPending
-                  ? "Inspecting source & Compose..."
-                  : hasCheckedPreflight
-                    ? "Preflight check completed for the selected revision."
-                    : "Click Check to inspect the selected revision."}
-              </span>
-              <Button
-                type="button"
-                variant={hasCheckedPreflight ? "ghost" : "default"}
-                size="sm"
-                className="h-7 text-xs"
-                disabled={!snapshotId || preflight.isPending}
-                onClick={() => {
-                  autoBuildTriggeredRef.current = "";
-                  preflight.mutate({ projectId, snapshotId });
-                }}
-              >
-                {preflight.isPending ? "Checking..." : hasCheckedPreflight ? "↻ Re-check" : "Check"}
-              </Button>
+              <div className="flex items-center gap-2 pb-0.5">
+                <Button
+                  type="button"
+                  variant={hasCheckedPreflight ? "outline" : "default"}
+                  size="sm"
+                  className="h-9 px-4 text-xs"
+                  disabled={!snapshotId || preflight.isPending}
+                  onClick={() => {
+                    autoBuildTriggeredRef.current = "";
+                    preflight.mutate({ projectId, snapshotId });
+                  }}
+                >
+                  {preflight.isPending ? "Checking..." : hasCheckedPreflight ? "↻ Re-check" : "Check"}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9 px-4 text-xs"
+                  disabled={!isStep1Ready || save.isPending}
+                  title={!isStep1Ready ? step1BlockedReason : undefined}
+                  onClick={() => void proceedToStep2()}
+                >
+                  {save.isPending ? "Saving..." : "Continue to Step 2 →"}
+                </Button>
+              </div>
             </div>
+
+            {!isStep1Ready && step1BlockedReason && (preflight.isPending || buildImages.isPending || isAutoBuilding || hasCheckedPreflight) && (
+              <p className="text-xs text-muted-foreground">{step1BlockedReason}</p>
+            )}
 
             {preflight.isError && <ErrorState error={preflight.error} />}
 
             {hasCheckedPreflight && (
               <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="font-semibold text-sm">Preflight Result:</span>
+                  <div className="flex flex-wrap items-center gap-2.5">
                     <StatusBadge
                       status={
                         !isPreflightSecure
@@ -792,57 +798,34 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           : effectiveUnresolvedIssues.length
                             ? `Needs changes (${effectiveUnresolvedIssues.length})`
                             : sandboxComposeChanges.length > 0
-                              ? "Ready (Auto-Remediated)"
-                              : "Ready for sandbox run"
+                              ? "Ready (Auto-Configured)"
+                              : "Ready"
                       }
                       variant={!isPreflightSecure ? "destructive" : effectiveUnresolvedIssues.length ? "warning" : "success"}
                     />
+                    <span className="text-xs text-muted-foreground">
+                      <strong className="text-foreground">{activeServices.length}</strong> services ({appServicesCount} app, {infraServicesCount} infra)
+                      {" · "}
+                      <strong className="text-foreground">{databaseChecks.length}</strong> DBs
+                      {" · "}
+                      <strong className="text-foreground">{detectedEndpoints.length}</strong> endpoints
+                      {" · "}
+                      <strong className="text-foreground">{Object.keys(envVars).length}</strong> env vars
+                    </span>
                   </div>
-                  {(preflight.data?.recommendedProfile || config.data?.profileId) && (
-                    <p className="text-xs text-muted-foreground">
-                      <strong>Recommended Profile:</strong>{" "}
-                      {preflight.data?.recommendedProfile ?? config.data?.profileId}
-                    </p>
-                  )}
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setShowStep1Details((prev) => !prev)}
+                  >
+                    {showStep1Details ? "Hide Details" : "Customize / View Details"}
+                  </Button>
                 </div>
 
-                {/* P4: Automatic Sandbox Compose Remediation Banner */}
-                {sandboxComposeChanges.length > 0 && (
-                  <div className="rounded border bg-background/60 px-3 py-2 text-xs space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-muted-foreground">
-                        <strong className="text-foreground">Sandbox Compose profile:</strong>{" "}
-                        {sandboxComposeChanges.length} automatic adjustment{sandboxComposeChanges.length === 1 ? "" : "s"} applied for isolated execution.
-                      </span>
-                      {sandboxComposeYaml && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 text-[11px]"
-                          onClick={() => setShowSandboxCompose((prev) => !prev)}
-                        >
-                          {showSandboxCompose ? "Hide details" : "View generated Compose"}
-                        </Button>
-                      )}
-                    </div>
-                    {showSandboxCompose && (
-                      <div className="space-y-2 pt-1 border-t">
-                        <ul className="list-disc pl-5 space-y-0.5 text-muted-foreground">
-                          {sandboxComposeChanges.map((ch, idx) => (
-                            <li key={idx}>{ch}</li>
-                          ))}
-                        </ul>
-                        {sandboxComposeYaml && (
-                          <pre className="max-h-48 overflow-auto rounded border bg-background p-2 font-mono text-[11px] text-foreground">
-                            {sandboxComposeYaml}
-                          </pre>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
+                {/* Actionable blockers: only shown automatically when user/system action is needed */}
                 {effectiveUnresolvedIssues.length > 0 && (() => {
                   const nonImageIssues = effectiveUnresolvedIssues.filter(
                     (issue) => !/^Service '([^']+)' (?:uses build:|image |has no image)/.test(issue),
@@ -902,146 +885,6 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   );
                 })()}
 
-                {/* Detected Services & Database Checks Dropdowns */}
-                {(() => {
-                  const filteredDbs =
-                    selectedServiceFilter === "ALL"
-                      ? databaseChecks
-                      : databaseChecks.filter((db) => db.service === selectedServiceFilter);
-                  const chosenDb =
-                    selectedDbIndex !== "ALL" ? filteredDbs[Number(selectedDbIndex)] : undefined;
-                  return (
-                    <div className="space-y-2">
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <SelectField
-                          label={`Detected Services & Runtime Stacks (${activeServices.length})`}
-                          value={selectedServiceFilter}
-                          onChange={(val) => {
-                            setSelectedServiceFilter(val);
-                            setSelectedDbIndex("ALL");
-                          }}
-                          options={[
-                            {
-                              value: "ALL",
-                              label: activeServices.length
-                                ? `All detected services (${activeServices.length})`
-                                : "No services detected",
-                            },
-                            ...activeServices.map((svc) => ({
-                              value: svc,
-                              label: `${svc}${servicePorts[svc] ? ` :${servicePorts[svc]}` : ""}${serviceStacks[svc] ? ` (${serviceStacks[svc]})` : ""}`,
-                            })),
-                          ]}
-                        />
-
-                        <SelectField
-                          label={`Database & Connection Inspection (${filteredDbs.length})`}
-                          value={selectedDbIndex}
-                          onChange={setSelectedDbIndex}
-                          options={
-                            filteredDbs.length > 0
-                              ? [
-                                  {
-                                    value: "ALL",
-                                    label: `All database bindings (${filteredDbs.length})`,
-                                  },
-                                  ...filteredDbs.map((db, idx) => ({
-                                    value: String(idx),
-                                    label: `${db.service} → ${db.dbType}${db.requiredEnvVars?.length ? ` (${db.requiredEnvVars.join(", ")})` : ""} · ${db.status ?? "DETECTED"}`,
-                                  })),
-                                ]
-                              : [
-                                  {
-                                    value: "ALL",
-                                    label: "No external database bindings detected",
-                                  },
-                                ]
-                          }
-                        />
-                      </div>
-
-                      {chosenDb && (
-                        <div className="flex flex-wrap items-center justify-between gap-2 rounded border bg-background/80 px-3 py-2 text-xs">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">
-                              {chosenDb.service} → {chosenDb.dbType}
-                            </span>
-                            {chosenDb.connectionUrl && (
-                              <span className="font-mono text-muted-foreground truncate max-w-md" title={chosenDb.connectionUrl}>
-                                · {chosenDb.connectionUrl}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {chosenDb.requiredEnvVars && chosenDb.requiredEnvVars.length > 0 && (
-                              <span className="text-muted-foreground">
-                                Requires: <strong className="font-mono text-foreground">{chosenDb.requiredEnvVars.join(", ")}</strong>
-                              </span>
-                            )}
-                            <span
-                              className={`px-1.5 py-0.5 rounded font-mono text-[10px] ${
-                                chosenDb.status === "AUTO_PROVISIONED_SANDBOX_DB" ||
-                                chosenDb.status === "DETECTED_CONTAINER" ||
-                                chosenDb.status === "CONFIGURED_IN_COMPOSE"
-                                  ? "bg-emerald-500/10 text-emerald-600"
-                                  : "bg-amber-500/10 text-amber-600"
-                              }`}
-                            >
-                              {chosenDb.status ?? "DETECTED"}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Discovered API Endpoints */}
-                {(() => {
-                  const filteredEndpoints =
-                    selectedServiceFilter === "ALL"
-                      ? detectedEndpoints
-                      : detectedEndpoints.filter((ep) => ep.service === selectedServiceFilter);
-                  return (
-                    <div>
-                      <strong className="text-sm">
-                        Discovered API Endpoints ({filteredEndpoints.length}):
-                      </strong>
-                      {filteredEndpoints.length > 0 ? (
-                        <div className="mt-1.5 max-h-44 overflow-y-auto rounded border bg-background/80 divide-y text-xs">
-                          {filteredEndpoints.map((ep, idx) => (
-                            <div
-                              key={`${ep.service}-${ep.method}-${ep.path}-${idx}`}
-                              className="flex items-center justify-between gap-2 px-3 py-1.5"
-                            >
-                              <div className="flex items-center gap-2 font-mono">
-                                <span
-                                  className={`inline-flex w-14 justify-center px-1.5 py-0.5 rounded font-semibold ${httpMethodBadgeClass(ep.method)}`}
-                                >
-                                  {ep.method}
-                                </span>
-                                <span className="font-medium">{ep.path}</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-muted-foreground">
-                                <span className="font-mono text-foreground/80">{ep.service}</span>
-                                {ep.source && (
-                                  <span className="hidden sm:inline truncate max-w-48">
-                                    · {ep.source}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Run preflight to inspect controller routes and HTTP endpoints from source.
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
-
                 {(preflight.data?.securityWarnings?.length || config.data?.prerequisites?.length) ? (
                   <div className="space-y-1">
                     <strong className="text-sm text-warning">Security Warnings / Prerequisites:</strong>
@@ -1054,482 +897,342 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     </ul>
                   </div>
                 ) : null}
+
+                {/* Collapsible Details & Advanced Overrides */}
+                {showStep1Details && (
+                  <div className="space-y-5 border-t pt-4">
+                    {/* Sandbox Compose Remediation */}
+                    {sandboxComposeChanges.length > 0 && (
+                      <div className="rounded border bg-background/60 px-3 py-2 text-xs space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-muted-foreground">
+                            <strong className="text-foreground">Sandbox Compose:</strong>{" "}
+                            {sandboxComposeChanges.length} automatic adjustment{sandboxComposeChanges.length === 1 ? "" : "s"} applied.
+                          </span>
+                          {sandboxComposeYaml && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-[11px]"
+                              onClick={() => setShowSandboxCompose((prev) => !prev)}
+                            >
+                              {showSandboxCompose ? "Hide YAML" : "View YAML"}
+                            </Button>
+                          )}
+                        </div>
+                        {showSandboxCompose && (
+                          <div className="space-y-2 pt-1 border-t">
+                            <ul className="list-disc pl-5 space-y-0.5 text-muted-foreground">
+                              {sandboxComposeChanges.map((ch, idx) => (
+                                <li key={idx}>{ch}</li>
+                              ))}
+                            </ul>
+                            {sandboxComposeYaml && (
+                              <pre className="max-h-48 overflow-auto rounded border bg-background p-2 font-mono text-[11px] text-foreground">
+                                {sandboxComposeYaml}
+                              </pre>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Service Mapping */}
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Service-to-Model Mapping ({activeServices.length})
+                        </h4>
+                        {activeServices.length > 0 && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-[11px]"
+                            onClick={() => setShowMappingInputs((prev) => !prev)}
+                          >
+                            {showMappingInputs ? "Done" : "Edit Mapping"}
+                          </Button>
+                        )}
+                      </div>
+                      {activeServices.length > 0 && (
+                        showMappingInputs ? (
+                          <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                            {activeServices.map((svc) => {
+                              const currentVal = serviceMappings[svc] ?? recommendedServiceMappings[svc] ?? svc;
+                              const modelEntries = Object.entries(modelServiceNames);
+                              if (modelEntries.length > 0) {
+                                const opts = modelEntries.map(([uuid, name]) => ({
+                                  value: uuid,
+                                  label: `${name} (${uuid.slice(0, 8)})`,
+                                }));
+                                if (currentVal && !opts.some((o) => o.value === currentVal)) {
+                                  opts.unshift({ value: currentVal, label: currentVal });
+                                }
+                                return (
+                                  <SelectField
+                                    key={svc}
+                                    label={`${svc} → Model Container`}
+                                    value={currentVal}
+                                    onChange={(val) => setServiceMappings((m) => ({ ...m, [svc]: val }))}
+                                    options={opts}
+                                  />
+                                );
+                              }
+                              return (
+                                <div key={svc} className="flex items-center gap-2">
+                                  <span className="w-32 font-mono text-xs truncate" title={svc}>
+                                    {svc}
+                                  </span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <Input
+                                    className="flex-1 font-mono text-xs h-8"
+                                    placeholder="Model Element Name / ID"
+                                    value={currentVal}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setServiceMappings((m) => ({ ...m, [svc]: val }));
+                                    }}
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {activeServices.map((svc) => {
+                              const infra = isInfraRole(svc);
+                              const stack = (serviceStacks[svc] ?? "java").toLowerCase();
+                              return infra ? (
+                                <div
+                                  key={svc}
+                                  className="inline-flex items-center gap-1.5 rounded border bg-muted/20 px-2 py-1 text-xs font-mono text-muted-foreground"
+                                >
+                                  <span className="font-medium text-foreground">{svc}</span>
+                                  <span>(infra)</span>
+                                  <button
+                                    type="button"
+                                    className="ml-1 rounded border px-1 py-0.5 text-[10px] hover:bg-background text-foreground"
+                                    onClick={() => setServiceRoles((prev) => ({ ...prev, [svc]: "APP" }))}
+                                  >
+                                    → App
+                                  </button>
+                                </div>
+                              ) : (
+                                <div
+                                  key={svc}
+                                  className="inline-flex items-center gap-1.5 rounded border bg-background px-2 py-1 text-xs font-mono"
+                                >
+                                  <span className="font-medium text-foreground">{svc}</span>
+                                  <span className="text-muted-foreground">
+                                    ({stack}{servicePorts[svc] ? `:${servicePorts[svc]}` : ""}) → {resolveMappingLabel(svc)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="ml-1 rounded border px-1 py-0.5 text-[10px] hover:bg-muted text-muted-foreground"
+                                    onClick={() => setServiceRoles((prev) => ({ ...prev, [svc]: "INFRA" }))}
+                                  >
+                                    → Infra
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )
+                      )}
+                    </div>
+
+                    {/* Secrets & Environment Variables */}
+                    <div className="grid gap-4 sm:grid-cols-2 border-t pt-3">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Secrets ({allSecretKeys.length} Auto)
+                          </h4>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-[11px]"
+                            onClick={() => setShowSecretOverrides((prev) => !prev)}
+                          >
+                            {showSecretOverrides ? "Done" : "Override / Add Secret"}
+                          </Button>
+                        </div>
+                        {showSecretOverrides && (
+                          <div className="space-y-2 pt-1">
+                            {renderedSecretKeys.map((sKey) => (
+                              <div key={sKey} className="flex items-center gap-2">
+                                <span className="w-36 font-mono text-[11px] truncate" title={sKey}>{sKey}</span>
+                                <Input
+                                  type="password"
+                                  autoComplete="new-password"
+                                  className="flex-1 font-mono text-xs h-7"
+                                  placeholder={configuredSecretKeys.includes(sKey) ? "•••••••• (Saved)" : "Override value"}
+                                  value={secretValues[sKey] ?? ""}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSecretValues((prev) => ({ ...prev, [sKey]: val }));
+                                  }}
+                                />
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-1.5 pt-1">
+                              <Input
+                                autoComplete="off"
+                                className="w-36 font-mono text-xs h-7"
+                                placeholder="SECRET_KEY"
+                                value={newSecretKey}
+                                onChange={(e) => setNewSecretKey(e.target.value.toUpperCase())}
+                              />
+                              <Input
+                                type="password"
+                                autoComplete="new-password"
+                                className="flex-1 font-mono text-xs h-7"
+                                placeholder="Value..."
+                                value={newSecretVal}
+                                onChange={(e) => setNewSecretVal(e.target.value)}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                disabled={!newSecretKey.trim()}
+                                onClick={() => {
+                                  const k = newSecretKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
+                                  if (!k) return;
+                                  setDismissedSecretKeys((prev) => prev.filter((item) => item !== k));
+                                  setSecretValues((prev) => ({ ...prev, [k]: newSecretVal }));
+                                  setNewSecretKey("");
+                                  setNewSecretVal("");
+                                }}
+                              >
+                                + Add
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Environment Variables ({Object.keys(envVars).length})
+                          </h4>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 text-[11px]"
+                            onClick={() => setShowEnvInputs((prev) => !prev)}
+                          >
+                            {showEnvInputs ? "Done" : "Edit Env Vars"}
+                          </Button>
+                        </div>
+                        {showEnvInputs && (
+                          <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1 pt-1">
+                            {Object.entries(envVars).map(([k, v]) => (
+                              <div key={k} className="flex items-center gap-1.5">
+                                <span className="w-40 font-mono text-[11px] truncate" title={k}>{k}</span>
+                                <Input
+                                  className="flex-1 font-mono text-xs h-7"
+                                  value={v}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setEnvVars((prev) => ({ ...prev, [k]: val }));
+                                  }}
+                                />
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0"
+                                  onClick={() =>
+                                    setEnvVars((prev) => {
+                                      const next = { ...prev };
+                                      delete next[k];
+                                      return next;
+                                    })
+                                  }
+                                >
+                                  ✕
+                                </Button>
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-1.5 pt-1">
+                              <Input
+                                className="w-36 font-mono text-xs h-7"
+                                placeholder="ENV_KEY"
+                                value={newEnvKey}
+                                onChange={(e) => setNewEnvKey(e.target.value.toUpperCase())}
+                              />
+                              <Input
+                                className="flex-1 font-mono text-xs h-7"
+                                placeholder="Value"
+                                value={newEnvVal}
+                                onChange={(e) => setNewEnvVal(e.target.value)}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                disabled={!newEnvKey.trim()}
+                                onClick={() => {
+                                  const k = newEnvKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
+                                  if (!k) return;
+                                  setEnvVars((prev) => ({ ...prev, [k]: newEnvVal }));
+                                  setNewEnvKey("");
+                                  setNewEnvVal("");
+                                }}
+                              >
+                                + Add
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Discovered Endpoints */}
+                    {detectedEndpoints.length > 0 && (
+                      <div className="space-y-1.5 border-t pt-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                            Discovered API Endpoints ({detectedEndpoints.length})
+                          </h4>
+                          <span className="font-mono text-[11px] text-muted-foreground">
+                            Profile: {profileId}
+                          </span>
+                        </div>
+                        <div className="max-h-36 overflow-y-auto rounded border bg-background/80 divide-y text-xs">
+                          {detectedEndpoints.map((ep, idx) => (
+                            <div
+                              key={`${ep.service}-${ep.method}-${ep.path}-${idx}`}
+                              className="flex items-center justify-between gap-2 px-3 py-1"
+                            >
+                              <div className="flex items-center gap-2 font-mono">
+                                <span
+                                  className={`inline-flex w-14 justify-center px-1.5 py-0.5 rounded font-semibold ${httpMethodBadgeClass(ep.method)}`}
+                                >
+                                  {ep.method}
+                                </span>
+                                <span className="font-medium">{ep.path}</span>
+                              </div>
+                              <span className="font-mono text-muted-foreground">{ep.service}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
         </RequestState>
-      </DetailPanel>
-
-      {/* Step 2: Service-to-Model Mapping, DB Secrets & Environment Variables */}
-      <DetailPanel title="2. Service Mapping, Database Secrets & Environment Variables">
-        <p className="text-sm text-muted-foreground">
-          Map each service container to its Model Element and provide required database credentials,
-          secrets, and environment variables for the sandbox container run.
-        </p>
-
-        <div className="mt-4 space-y-6">
-          {/* 2A. Service Mapping */}
-          <div className="space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h4 className="text-sm font-semibold">Service-to-Model Mapping (Auto-Matched by System & AI)</h4>
-                <p className="text-xs text-muted-foreground">
-                  Detected Docker Compose services are automatically bound to their corresponding Architecture Model containers.
-                </p>
-              </div>
-              {activeServices.length > 0 && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => setShowMappingInputs((prev) => !prev)}
-                >
-                  {showMappingInputs ? "Done Customizing" : "Customize Mapping"}
-                </Button>
-              )}
-            </div>
-            {activeServices.length ? (
-              showMappingInputs ? (
-                <div className="grid gap-3 sm:grid-cols-2 pt-1">
-                  {activeServices.map((svc) => {
-                    const currentVal = serviceMappings[svc] ?? recommendedServiceMappings[svc] ?? svc;
-                    const modelEntries = Object.entries(modelServiceNames);
-                    if (modelEntries.length > 0) {
-                      const opts = modelEntries.map(([uuid, name]) => ({
-                        value: uuid,
-                        label: `${name} (${uuid.slice(0, 8)})`,
-                      }));
-                      if (currentVal && !opts.some((o) => o.value === currentVal)) {
-                        opts.unshift({ value: currentVal, label: currentVal });
-                      }
-                      return (
-                        <SelectField
-                          key={svc}
-                          label={`${svc} → Model Container`}
-                          value={currentVal}
-                          onChange={(val) => setServiceMappings((m) => ({ ...m, [svc]: val }))}
-                          options={opts}
-                        />
-                      );
-                    }
-                    return (
-                      <div key={svc} className="flex items-center gap-2">
-                        <span className="w-32 font-mono text-xs truncate" title={svc}>
-                          {svc}
-                        </span>
-                        <span className="text-muted-foreground">→</span>
-                        <Input
-                          className="flex-1 font-mono text-xs h-8"
-                          placeholder="Model Element Name / ID"
-                          value={currentVal}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setServiceMappings((m) => ({ ...m, [svc]: val }));
-                          }}
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2 pt-0.5">
-                  {activeServices.map((svc) => {
-                    const infra = isInfraRole(svc);
-                    const stack = (serviceStacks[svc] ?? "java").toLowerCase();
-                    const nonInstrumented = !infra && stack !== "java" && stack !== "dotnet";
-                    const reason = serviceHealthReasons[svc] ?? "Readiness probe path";
-                    return infra ? (
-                      <div
-                        key={svc}
-                        title="Started by Compose; not instrumented or health-checked"
-                        className="inline-flex items-center gap-2 rounded border bg-muted/20 px-2.5 py-1 text-xs font-mono text-muted-foreground"
-                      >
-                        <span className="font-medium text-foreground">{svc}</span>
-                        <span>infra</span>
-                        <button
-                          type="button"
-                          className="ml-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-background text-foreground"
-                          onClick={() => setServiceRoles((prev) => ({ ...prev, [svc]: "APP" }))}
-                          title="Switch role to Application"
-                        >
-                          → App
-                        </button>
-                      </div>
-                    ) : (
-                      <div
-                        key={svc}
-                        className="inline-flex items-center gap-2 rounded border bg-background px-2.5 py-1 text-xs font-mono"
-                      >
-                        <span className="font-medium text-foreground">{svc}</span>
-                        <span className="text-muted-foreground">
-                          ({stack}{servicePorts[svc] ? `:${servicePorts[svc]}` : ""})
-                        </span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="text-foreground" title={serviceMappings[svc] ?? svc}>
-                          {resolveMappingLabel(svc)}
-                        </span>
-                        <span className="text-muted-foreground text-[11px]" title={reason}>
-                          {serviceHealthPaths[svc] ?? "/health"}
-                        </span>
-                        {nonInstrumented && (
-                          <span
-                            className="rounded border px-1 py-0.5 text-[10px] text-muted-foreground"
-                            title="No auto-instrumentation agent for this runtime stack; calls into this service are traced from callers only"
-                          >
-                            caller-traced
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          className="ml-1 rounded border px-1.5 py-0.5 text-[10px] hover:bg-muted text-muted-foreground"
-                          onClick={() => setServiceRoles((prev) => ({ ...prev, [svc]: "INFRA" }))}
-                          title="Mark as Infrastructure container (skip healthcheck & agent)"
-                        >
-                          → Infra
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Run preflight above to auto-detect service containers from source.
-              </p>
-            )}
-          </div>
-
-          {/* 2B. Auto-Detected Connections, Database & API Keys */}
-          <div className="space-y-3 border-t pt-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h4 className="text-sm font-semibold">
-                  Secrets & API Keys ({externalSecretKeys.length} optional input · {autoSecretKeys.length} automatic)
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  Sandbox-internal secrets (JWT keys, database passwords) are generated for each run or reused from the
-                  sandbox database container. External service keys are optional: the sandbox has no internet access.
-                </p>
-              </div>
-              <span className="px-2 py-0.5 rounded bg-primary/10 text-primary text-xs font-medium">
-                Auto-Detected: {allSecretKeys.length}
-              </span>
-            </div>
-
-            {autoSecretKeys.length > 0 && (
-              <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-foreground">
-                    Provided automatically for the sandbox ({autoSecretKeys.length})
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => setShowSecretOverrides((prev) => !prev)}
-                  >
-                    {showSecretOverrides ? "Hide overrides" : "Override values"}
-                  </Button>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {autoSecretKeys.map((k) => {
-                    const meta = requiredEnvVars.find((r) => r.name === k);
-                    const ownersLabel =
-                      meta?.services && meta.services.length > 0 ? meta.services.join(", ") : meta?.service;
-                    return (
-                      <span
-                        key={k}
-                        className="inline-flex items-center gap-1 rounded border bg-background/80 px-2 py-0.5 font-mono text-[11px]"
-                      >
-                        <strong className="text-foreground">{k}</strong>
-                        <span className="text-muted-foreground">
-                          {meta?.resolution === "SANDBOX_INFRA"
-                            ? "· from sandbox infrastructure"
-                            : meta?.defaultPresent
-                              ? "· default in source/compose"
-                              : "· generated per run"}
-                          {ownersLabel ? ` (${ownersLabel})` : ""}
-                        </span>
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {renderedSecretKeys.length > 0 ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {renderedSecretKeys.map((sKey) => {
-                  const isConfigured = configuredSecretKeys.includes(sKey);
-                  const meta = requiredEnvVars.find((r) => r.name === sKey);
-                  const upper = sKey.toUpperCase();
-                  const isDbConn =
-                    upper.includes("CONNECTION_STRING") ||
-                    upper.includes("CONNECTIONSTRING") ||
-                    upper.includes("DATABASE_URL") ||
-                    upper.includes("DATASOURCE_URL");
-                  const isAiOrApi = upper.includes("API_KEY") || upper.includes("OPENAI") || upper.includes("GEMINI");
-                  const friendlyLabel = isDbConn
-                    ? "Database Connection String"
-                    : isAiOrApi
-                      ? "AI / External Service API Key"
-                      : upper.includes("JWT")
-                        ? "JWT Signing Secret"
-                        : upper.includes("DB_") || upper.includes("DATASOURCE")
-                          ? "Database Credential"
-                          : "Protected Secret";
-                  const defaultPlaceholder = isConfigured
-                    ? "•••••••• (Saved — leave blank to keep existing value)"
-                    : isDbConn
-                      ? "jdbc:postgresql://host:5432/db?user=...&password=... (or Server=...)"
-                      : isAiOrApi
-                        ? "sk-... / AIza... (Enter API Key for AI / External API)"
-                        : `Enter value for ${sKey}`;
-                  return (
-                    <div key={sKey} className="rounded-lg border p-3 space-y-2 bg-muted/20">
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <div className="text-xs font-semibold">{friendlyLabel}</div>
-                          <div className="font-mono text-[11px] text-muted-foreground">
-                            {sKey}
-                            {meta?.source ? ` · from ${meta.source}` : ""}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          {(meta?.services?.length ? meta.services.join(", ") : meta?.service) && (
-                            <span
-                              className="px-1.5 py-0.5 rounded bg-muted text-[10px] text-muted-foreground font-mono truncate max-w-44"
-                              title={meta?.services?.length ? meta.services.join(", ") : meta?.service}
-                            >
-                              {meta?.services?.length ? meta.services.join(", ") : meta?.service}
-                            </span>
-                          )}
-                          {isConfigured && (
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 text-[10px] font-medium">
-                              Configured ✓
-                            </span>
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            aria-label={`Remove ${sKey}`}
-                            title={`Remove ${sKey}`}
-                            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                            onClick={() => {
-                              setDismissedSecretKeys((prev) => Array.from(new Set([...prev, sKey])));
-                              setSecretValues((prev) => {
-                                const next = { ...prev };
-                                delete next[sKey];
-                                return next;
-                              });
-                            }}
-                          >
-                            ✕
-                          </Button>
-                        </div>
-                      </div>
-                      <Input
-                        type={isDbConn ? "text" : "password"}
-                        autoComplete="new-password"
-                        className="font-mono text-xs h-9"
-                        placeholder={defaultPlaceholder}
-                        value={secretValues[sKey] ?? ""}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setSecretValues((prev) => ({ ...prev, [sKey]: val }));
-                        }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-                No input needed: every detected secret is provided automatically. You can still add a custom value below.
-              </div>
-            )}
-
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <Input
-                autoComplete="off"
-                className="w-56 font-mono text-xs h-8"
-                placeholder="Add another box (e.g. DB_CONNECTION_STRING, API_KEY)"
-                value={newSecretKey}
-                onChange={(e) => setNewSecretKey(e.target.value.toUpperCase())}
-              />
-              <Input
-                type="password"
-                autoComplete="new-password"
-                className="flex-1 min-w-48 font-mono text-xs h-8"
-                placeholder="Value..."
-                value={newSecretVal}
-                onChange={(e) => setNewSecretVal(e.target.value)}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!newSecretKey.trim()}
-                onClick={() => {
-                  const k = newSecretKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
-                  if (!k) return;
-                  setDismissedSecretKeys((prev) => prev.filter((item) => item !== k));
-                  setSecretValues((prev) => ({ ...prev, [k]: newSecretVal }));
-                  setNewSecretKey("");
-                  setNewSecretVal("");
-                }}
-              >
-                + Add Box
-              </Button>
-            </div>
-          </div>
-          {/* 2C. Environment Variables */}
-          <div className="space-y-3 border-t pt-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h4 className="text-sm font-semibold">
-                  Environment Variables ({Object.keys(envVars).length} Auto-Configured)
-                </h4>
-                <p className="text-xs text-muted-foreground">
-                  Service URLs, ports, and runtime flags automatically extracted from Docker Compose and source configs.
-                </p>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs"
-                onClick={() => setShowEnvInputs((prev) => !prev)}
-              >
-                {showEnvInputs ? "Hide Env Editor" : `Customize Env Vars (${Object.keys(envVars).length})`}
-              </Button>
-            </div>
-
-            {!showEnvInputs ? (
-              Object.keys(envVars).length > 0 ? (
-                <div className="flex flex-wrap gap-1.5 rounded-lg border bg-muted/20 p-2.5">
-                  {Object.entries(envVars).map(([k, v]) => (
-                    <span
-                      key={k}
-                      className="inline-flex items-center gap-1 rounded border bg-background/80 px-2 py-0.5 font-mono text-[11px]"
-                    >
-                      <strong className="text-foreground">{k}</strong>
-                      <span className="text-muted-foreground">=</span>
-                      <span className="text-emerald-400 truncate max-w-44">{v || "(default)"}</span>
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  No additional environment variables required.
-                </p>
-              )
-            ) : (
-              <div className="space-y-3">
-                {Object.keys(envVars).length > 0 && (
-                  <div className="space-y-2">
-                    {Object.entries(envVars).map(([k, v]) => (
-                      <div key={k} className="flex items-center gap-2">
-                        <span className="w-56 font-mono text-xs truncate font-medium" title={k}>
-                          {k}
-                        </span>
-                        <span className="text-muted-foreground">=</span>
-                        <Input
-                          className="flex-1 font-mono text-xs h-8"
-                          placeholder="Value"
-                          value={v}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setEnvVars((prev) => ({ ...prev, [k]: val }));
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            setEnvVars((prev) => {
-                              const next = { ...prev };
-                              delete next[k];
-                              return next;
-                            })
-                          }
-                        >
-                          ✕
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <Input
-                    className="w-48 font-mono text-xs h-8"
-                    placeholder="ENV_KEY (e.g. DB_HOST)"
-                    value={newEnvKey}
-                    onChange={(e) => setNewEnvKey(e.target.value.toUpperCase())}
-                  />
-                  <Input
-                    className="flex-1 min-w-48 font-mono text-xs h-8"
-                    placeholder="Environment value (e.g. postgres:5432)"
-                    value={newEnvVal}
-                    onChange={(e) => setNewEnvVal(e.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!newEnvKey.trim()}
-                    onClick={() => {
-                      const k = newEnvKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
-                      if (!k) return;
-                      setEnvVars((prev) => ({ ...prev, [k]: newEnvVal }));
-                      setNewEnvKey("");
-                      setNewEnvVal("");
-                    }}
-                  >
-                    + Add Environment Variable
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </DetailPanel>
-
-      {/* Step 3: Execution Profile & Proceed to Step 2 */}
-      <DetailPanel title="3. Execution Profile & Next Step">
-        <div className="space-y-4">
-          <div className="flex items-center justify-between rounded-lg border px-3 py-2 bg-muted/20 text-xs">
-            <span className="text-muted-foreground">
-              Sandbox Execution Profile (Auto-selected from detected stack):
-            </span>
-            <span className="font-mono font-semibold">{profileId}</span>
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            Your configuration and encrypted secrets are saved immediately when continuing to Step 2, so reloading or revisiting later preserves your setup.
-          </p>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              type="button"
-              disabled={!isStep1Ready || save.isPending}
-              title={!isStep1Ready ? step1BlockedReason : undefined}
-              onClick={() => void proceedToStep2()}
-            >
-              {save.isPending ? "Saving & Continuing..." : "Continue to Step 2: Test Scenarios →"}
-            </Button>
-            {!isStep1Ready && step1BlockedReason && (
-              <span className="text-xs text-muted-foreground">
-                {step1BlockedReason}
-              </span>
-            )}
-          </div>
-        </div>
       </DetailPanel>
     </div>
   );
