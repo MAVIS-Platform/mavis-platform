@@ -412,7 +412,12 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         List<ModelElement> allElements = new ArrayList<>(elements);
         allElements.addAll(savedComponents);
         Map<String,String> messagingBindings = new HashMap<>();
-        if(dockerDetectorService!=null&&sourcePath!=null)for(var container:dockerDetectorService.detectContainers(sourcePath))if(container.getMessageBrokerAuthority()!=null)messagingBindings.put(container.getServiceName(),container.getMessageBrokerAuthority());
+        List<DetectedContainerDTO> detectedComposeContainers = List.of();
+        if (dockerDetectorService != null && sourcePath != null) {
+            try { detectedComposeContainers = dockerDetectorService.detectContainers(sourcePath); } catch (Exception e) { log.warn("Lỗi khi detect containers: {}", e.getMessage()); }
+        }
+        if (detectedComposeContainers == null) detectedComposeContainers = List.of();
+        for(var container:detectedComposeContainers)if(container.getMessageBrokerAuthority()!=null)messagingBindings.put(container.getServiceName(),container.getMessageBrokerAuthority());
         Map<String,ModelElement> channels = new HashMap<>();
         if(evidences!=null)for(var ev:evidences)if(("MESSAGE_PUBLISH".equals(ev.getElementType())||"MESSAGE_SUBSCRIBE".equals(ev.getElementType()))&&!ev.getIdentifier().isBlank()) {
             String key=messageKey(ev,allElements,messagingBindings);
@@ -569,7 +574,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         // (1) DECLARED_COMPOSE: Từ depends_on trong docker-compose.yml
         if (dockerDetectorService != null && sourcePath != null) {
             try {
-                List<DetectedContainerDTO> composeContainers = dockerDetectorService.detectContainers(sourcePath);
+                List<DetectedContainerDTO> composeContainers = detectedComposeContainers;
                 for (DetectedContainerDTO c : composeContainers) {
                     ModelElement sourceContainer = elementByNameMap.get(c.getServiceName().toLowerCase().trim());
                     if (sourceContainer == null) sourceContainer = matchTargetElement(elements, c.getServiceName());
@@ -932,7 +937,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         }
 
         // (4) DATABASE_ACCESS: Từ Repository/Entity đến Database Node (Java)
-        Map<String, String> serviceToDbHostMap = mapServicesToDatabases(sourcePath);
+        Map<String, String> serviceToDbHostMap = mapServicesToDatabases(sourcePath, sourceConfigurations, detectedComposeContainers);
         if (evidences != null) {
             for (CodeEvidenceDTO ev : evidences) {
                 if ("DATABASE_REPOSITORY".equalsIgnoreCase(ev.getElementType())) {
@@ -1165,7 +1170,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         node.put("sourceType", "DOCKER_COMPOSE");
         node.put("locator", c.getComposeFilePath() + ":" + c.getLineNumber());
         if (c.getPorts() != null && !c.getPorts().isEmpty()) {
-            node.putPOJO("ports", c.getPorts());
+            node.set("ports", objectMapper.valueToTree(c.getPorts()));
         }
         ObjectNode deploymentMeta = objectMapper.createObjectNode();
         String elType = c.getElementType() != null ? c.getElementType() : "SERVICE_CONTAINER";
@@ -1332,7 +1337,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         if (owner == null) properties.put("resolutionIssue", "UNRESOLVED_COMPONENT_OWNER");
         return properties;
     }
-    private Map<String, String> mapServicesToDatabases(String sourcePath) {
+    private Map<String, String> mapServicesToDatabases(String sourcePath, List<DetectedSpringConfigDTO> cachedConfigs, List<DetectedContainerDTO> cachedContainers) {
         Map<String, String> map = new HashMap<>();
         if (springConfigDetectorService != null && sourcePath != null) {
             try {
@@ -1353,7 +1358,7 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             }
         }
         if (dockerDetectorService != null && sourcePath != null) {
-            for (DetectedContainerDTO container : dockerDetectorService.detectContainers(sourcePath)) {
+            for (DetectedContainerDTO container : (cachedContainers != null ? cachedContainers : dockerDetectorService.detectContainers(sourcePath))) {
                 if(container.getDatasourceHost()!=null) map.put(container.getServiceName(),container.getDatasourceDatabase()!=null?container.getDatasourceDatabase()+" @ "+container.getDatasourceHost():container.getDatasourceHost());
             }
         }

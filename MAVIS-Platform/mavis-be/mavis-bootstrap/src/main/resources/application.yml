@@ -12,6 +12,9 @@ spring:
     username: ${MAVIS_DB_USERNAME:mavis}
     password: ${MAVIS_DB_PASSWORD:}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      data-source-properties:
+        reWriteBatchedInserts: true
 
   jpa:
     # Khng cho php JPA t? ??ng t?o b?ng v chng ta s? dng Flyway
@@ -23,7 +26,7 @@ spring:
         format_sql: ${MAVIS_SHOW_SQL:false}
         dialect: org.hibernate.dialect.PostgreSQLDialect
         jdbc:
-          batch_size: 50
+          batch_size: 500
         order_inserts: true
         order_updates: true
 

@@ -63,7 +63,7 @@ public class CrossLanguageServiceLinker {
             for(var e:p.workerEvidence)evs.add(Evidence.builder().modelVersion(version).sourceSnapshot(version.getSourceSnapshot()).relationship(relation).locator(e.locator()).adapterVersion(e.adapterVersion()).sourceType(e.origin().equals("CONFIG")?"CONFIG_FILE":"STATIC_CODE").provenance(json.valueToTree(e)).build());
             for(var e:p.javaEvidence)evs.add(Evidence.builder().modelVersion(version).sourceSnapshot(version.getSourceSnapshot()).relationship(relation).locator(root.relativize(Path.of(e.getFilePath()).toAbsolutePath().normalize()).toString().replace('\\','/')+":"+e.getLineNumber()).adapterVersion("JAVAPARSER_3.25").sourceType("STATIC_CODE").build());
         }
-        elements.saveAll(ownedModules);relationships.saveAll(saved);relationships.flush();evidence.saveAll(evs);return new Report(linked,unresolved,ambiguous,bindings.hash());
+        elements.saveAll(ownedModules);relationships.saveAll(saved);if(!saved.isEmpty())relationships.flush();evidence.saveAll(evs);return new Report(linked,unresolved,ambiguous,bindings.hash());
     }
     private record Proposal(Set<String> from,Set<String> to,List<WorkerContract.Evidence> workerEvidence,List<CodeEvidenceDTO> javaEvidence,String id){}
     private static ModelElement unique(Set<String> names,Map<String,List<ModelElement>> services){if(names.size()!=1)return null;var values=services.getOrDefault(names.iterator().next(),List.of());return values.size()==1?values.get(0):null;}
