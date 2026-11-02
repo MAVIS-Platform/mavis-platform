@@ -831,7 +831,15 @@ public class RuntimePlanningService {
    prompt.append("Previous Run Diagnostic Feedback (SELF-HEAL these failures and cover unverified services):\n").append(repairFeedback).append("\n");
   }
   prompt.append("Discovered endpoints (ordered by top-down topology & fan-out):\n");
-  candidates.stream().limit(40).forEach(ep->{
+  List<DetectedEndpointDTO> promptCandidates=new ArrayList<>(candidates);
+  promptCandidates.sort((a,b)->{
+   int rA=aiPromptRolePriority(a),rB=aiPromptRolePriority(b);
+   if(rA!=rB)return Integer.compare(rA,rB);
+   int fA=a.getFanOutScore()!=null?a.getFanOutScore():0;
+   int fB=b.getFanOutScore()!=null?b.getFanOutScore():0;
+   return Integer.compare(fB,fA);
+  });
+  promptCandidates.stream().limit(70).forEach(ep->{
    prompt.append("- service=").append(ep.getService())
      .append(", method=").append(ep.getMethod())
      .append(", path=").append(ep.getPath());
@@ -987,6 +995,18 @@ public class RuntimePlanningService {
      matchedEp=dedupedMatch;
     }
    }
+   if(matchedEp==null&&Set.of("POST","PUT","PATCH").contains(verb)){
+    String cleanPrefix=rawPath.endsWith("/")?rawPath.substring(0,rawPath.length()-1):rawPath;
+    for(DetectedEndpointDTO cand:candidates){
+     if(svc.equalsIgnoreCase(cand.getService())&&verb.equalsIgnoreCase(cand.getMethod())
+       &&cand.getPath()!=null&&cand.getPath().startsWith(cleanPrefix+"/")
+       &&!cand.getPath().substring(cleanPrefix.length()+1).contains("/")){
+      rawPath=cand.getPath();
+      matchedEp=cand;
+      break;
+     }
+    }
+   }
 
    String resRoot=resourceEntityToken(matchedEp!=null&&matchedEp.getPath()!=null?matchedEp.getPath():rawPath);
    if(matchedEp!=null&&matchedEp.getPath()!=null){
@@ -1063,10 +1083,14 @@ public class RuntimePlanningService {
     }
     bodyVarMatcher.appendTail(cleanedBody);
     aiSampleBody=cleanedBody.toString();
-    String fallbackBody=(matchedEp!=null&&isValidJsonObject(matchedEp.getSampleJsonBody()))
+    boolean hasDtoSample=(matchedEp!=null&&isValidJsonObject(matchedEp.getSampleJsonBody()));
+    String fallbackBody=hasDtoSample
       ?SecretRedactor.redactString(matchedEp.getSampleJsonBody())
       :inferSampleJsonBody(rawPath);
-    sampleInputs.putIfAbsent(bodyRef,isValidJsonObject(aiSampleBody)?aiSampleBody:fallbackBody);
+    String finalBody=isValidJsonObject(aiSampleBody)
+      ?(hasDtoSample?reconcileAiBodyWithDtoSample(aiSampleBody,fallbackBody):aiSampleBody)
+      :fallbackBody;
+    sampleInputs.putIfAbsent(bodyRef,finalBody);
    }
 
    Map<String,String> stepHeaders=new LinkedHashMap<>();
@@ -1175,6 +1199,52 @@ public class RuntimePlanningService {
     inheritedKeys,
     runnableList
   );
+ }
+
+ private static int aiPromptRolePriority(DetectedEndpointDTO ep){
+  if(ep==null||isHealthProbePath(ep.getPath()))return 6;
+  String low=ep.getPath()!=null?ep.getPath().toLowerCase(Locale.ROOT):"/";
+  if(isAuxiliaryEndpointPath(low))return 5;
+  String role=ep.getJourneyRole()!=null?ep.getJourneyRole():"";
+  if("AUTH_ENTRY".equals(role))return 0;
+  if("PREREQUISITE_SEED".equals(role))return 1;
+  if("CROSS_SERVICE_WORKFLOW".equals(role))return 2;
+  if("STATE_VERIFICATION".equals(role))return 3;
+  if("CLEANUP_COMPENSATION".equals(role))return 4;
+  return 3;
+ }
+
+ private String reconcileAiBodyWithDtoSample(String aiBodyStr,String dtoSampleStr){
+  if(!isValidJsonObject(dtoSampleStr))return aiBodyStr;
+  if(!isValidJsonObject(aiBodyStr))return dtoSampleStr;
+  try{
+   JsonNode dtoNode=json.readTree(dtoSampleStr);
+   JsonNode aiNode=json.readTree(aiBodyStr);
+   if(!(dtoNode instanceof ObjectNode merged)||!(aiNode instanceof ObjectNode aiObj))return dtoSampleStr;
+   aiObj.fields().forEachRemaining(e->{
+    String k=e.getKey();
+    JsonNode aiVal=e.getValue();
+    if(aiVal==null||aiVal.isNull())return;
+    if(!merged.has(k)){
+     String lowK=k.toLowerCase(Locale.ROOT);
+     if(lowK.equals("shippingaddressid")&&merged.has("shippingAddress"))return;
+     if(lowK.startsWith("parent")&&lowK.endsWith("id"))return;
+     merged.set(k,aiVal);
+     return;
+    }
+    JsonNode baseVal=merged.get(k);
+    if(baseVal.isObject()||baseVal.isArray())return;
+    if(baseVal.isNumber()&&!aiVal.isNumber()&&!(aiVal.isTextual()&&aiVal.asText("").contains("{{")))return;
+    if(baseVal.isBoolean()&&!aiVal.isBoolean())return;
+    if("paymentMethod".equalsIgnoreCase(k)&&"ONLINE".equalsIgnoreCase(aiVal.asText("")))return;
+    String lowK=k.toLowerCase(Locale.ROOT);
+    if((lowK.contains("expir")||lowK.contains("end"))&&aiVal.isTextual()&&aiVal.asText("").startsWith("2026-01"))return;
+    merged.set(k,aiVal);
+   });
+   return json.writeValueAsString(merged);
+  }catch(Exception ex){
+   return dtoSampleStr;
+  }
  }
 
  private static boolean isHealthProbePath(String path){
