@@ -1782,13 +1782,21 @@ public class ComposePreflightValidator {
         boolean isCouponDto = lowDto.contains("coupon") || lowDto.contains("voucher") || lowDto.contains("promo") || lowDto.contains("discount");
         int count = 0;
         for (Map.Entry<String, String> entry : fields.entrySet()) {
-            if (count >= 12) break;
+            if (count >= 16) break;
             String fName = entry.getKey();
             String fType = entry.getValue();
             String lowField = fName == null ? "" : fName.toLowerCase(Locale.ROOT);
-            if (!isCouponDto && (lowField.contains("coupon") || lowField.contains("voucher") || lowField.contains("promo"))
-                    && (fType == null || !fType.contains("|required"))) {
-                continue;
+            boolean isRequiredField = fType != null && fType.contains("|required");
+            if (!isRequiredField) {
+                if (!isCouponDto && (lowField.contains("coupon") || lowField.contains("voucher") || lowField.contains("promo"))) {
+                    continue;
+                }
+                if (lowField.startsWith("parent") && lowField.endsWith("id")) {
+                    continue;
+                }
+                if (isCouponDto && lowField.startsWith("applicable")) {
+                    continue;
+                }
             }
             Object val = synthesizeFieldValue(fName, fType, dtoSchemas, enumFirstValues, depth);
             if (isCouponDto && lowField.contains("code") && "SKU-LAPTOP-01".equals(val)) {
@@ -1855,10 +1863,10 @@ public class ComposePreflightValidator {
                 yield minConstraint != null ? Math.max(baseVal, (double) minConstraint) : baseVal;
             }
             case "UUID", "Guid" -> "00000000-0000-0000-0000-000000000001";
-            case "LocalDate", "DateOnly", "date" -> meta.contains("|future") ? "2027-06-15" : "2026-01-15";
+            case "LocalDate", "DateOnly", "date" -> (meta.contains("|future") || lowerName.contains("expir") || lowerName.contains("end") || lowerName.contains("until") || lowerName.contains("validto")) ? "2027-06-15" : "2026-01-15";
             case "LocalTime", "TimeOnly" -> "10:00:00";
-            case "Instant", "OffsetDateTime", "ZonedDateTime", "Date", "DateTime", "DateTimeOffset", "datetime" -> meta.contains("|future") ? "2027-06-15T10:00:00Z" : "2026-01-15T10:00:00Z";
-            case "LocalDateTime" -> meta.contains("|future") ? "2027-06-15T10:00:00" : "2026-01-15T10:00:00";
+            case "Instant", "OffsetDateTime", "ZonedDateTime", "Date", "DateTime", "DateTimeOffset", "datetime" -> (meta.contains("|future") || lowerName.contains("expir") || lowerName.contains("end") || lowerName.contains("until") || lowerName.contains("validto")) ? "2027-06-15T10:00:00Z" : "2026-01-15T10:00:00Z";
+            case "LocalDateTime" -> (meta.contains("|future") || lowerName.contains("expir") || lowerName.contains("end") || lowerName.contains("until") || lowerName.contains("validto")) ? "2027-06-15T10:00:00" : "2026-01-15T10:00:00";
             case "String", "string", "CharSequence", "str" -> {
                 String candidate;
                 if (meta.contains("|email") || lowerName.contains("email")) candidate = "alice@example.org";
