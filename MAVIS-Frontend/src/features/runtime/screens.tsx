@@ -1559,6 +1559,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   );
   const [environment, setEnvironment] = useState<Record<string, string>>({});
   const [runMessage, setRunMessage] = useState("");
+  const [openPayloads, setOpenPayloads] = useState<Record<number, boolean>>({});
 
   const discoveredEndpoints = useMemo(() => {
     const raw = (config.data?.profile as { detectedEndpoints?: Array<{ service?: string; method?: string; path?: string; source?: string; expectedStatus?: number; sampleJsonBody?: string; requiresAuth?: boolean }> } | undefined)?.detectedEndpoints;
@@ -2956,6 +2957,33 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                             {st.allowClientError !== false ? "2xx–4xx" : "Strict"}
                           </button>
                         </div>
+                        {isWrite && effectiveBodyRef && (
+                          <button
+                            type="button"
+                            title="Toggle JSON Request Payload editor"
+                            onClick={() => {
+                              const nextOpen = !openPayloads[i];
+                              setOpenPayloads((prev) => ({ ...prev, [i]: nextOpen }));
+                              if (nextOpen && payloadValid && !payloadText.includes("\n")) {
+                                try {
+                                  const pretty = JSON.stringify(JSON.parse(payloadText), null, 2);
+                                  setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: pretty }));
+                                } catch {
+                                  // no-op
+                                }
+                              }
+                            }}
+                            className={`h-8 px-2.5 rounded border text-[11px] font-mono transition ${
+                              !payloadValid
+                                ? "border-rose-500/50 bg-rose-500/15 text-rose-400"
+                                : openPayloads[i]
+                                  ? "border-primary/50 bg-primary/15 text-primary"
+                                  : "border-border bg-background text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            Payload {openPayloads[i] ? "▾" : "▸"}
+                          </button>
+                        )}
                         <button
                           type="button"
                           title="Toggle encrypted Authorization header for this step"
@@ -2977,56 +3005,76 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                           ✕
                         </Button>
                       </div>
-                      {(st.rationale || st.source || st.extract || st.journeyPhase) && (
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground pl-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {st.journeyPhase && (
-                              <span className="px-1.5 py-0.5 rounded bg-muted text-foreground font-mono text-[10px] font-medium">
-                                {st.journeyPhase}
+                      {(st.rationale || st.extract) && (
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pl-1">
+                          {st.extract &&
+                            Object.entries(st.extract).map(([varKey, ptr]) => (
+                              <span
+                                key={varKey}
+                                className="px-1.5 py-0.5 rounded bg-muted text-foreground border font-mono text-[10px]"
+                              >
+                                {varKey} ← {ptr}
                               </span>
-                            )}
-                            {st.extract &&
-                              Object.entries(st.extract).map(([varKey, ptr]) => (
-                                <span
-                                  key={varKey}
-                                  className="px-1.5 py-0.5 rounded bg-muted text-foreground border font-mono text-[10px]"
-                                >
-                                  {varKey} ← {ptr}
-                                </span>
-                              ))}
-                            {st.rationale && <span>{st.rationale}</span>}
+                            ))}
+                          {st.rationale && <span>{st.rationale}</span>}
+                        </div>
+                      )}
+                      {isWrite && effectiveBodyRef && openPayloads[i] && (
+                        <div className="rounded-md border bg-background/80 p-2.5 space-y-2 mt-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-mono text-muted-foreground">
+                              Request Body (application/json)
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span
+                                className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                                  payloadValid
+                                    ? "bg-emerald-500/10 text-emerald-400"
+                                    : "bg-rose-500/15 text-rose-400 font-semibold"
+                                }`}
+                              >
+                                {payloadValid ? "✓ Valid JSON" : "⚠ Invalid JSON"}
+                              </span>
+                              {payloadValid && (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="text-[10px] font-mono px-2 py-0.5 rounded border bg-background hover:bg-muted"
+                                    onClick={() => {
+                                      try {
+                                        const pretty = JSON.stringify(JSON.parse(payloadText), null, 2);
+                                        setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: pretty }));
+                                      } catch {
+                                        // no-op
+                                      }
+                                    }}
+                                  >
+                                    Format
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="text-[10px] font-mono px-2 py-0.5 rounded border bg-background hover:bg-muted"
+                                    onClick={() => {
+                                      try {
+                                        const normalized = JSON.stringify(JSON.parse(payloadText));
+                                        setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: normalized }));
+                                      } catch {
+                                        // no-op
+                                      }
+                                    }}
+                                  >
+                                    Compact
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </div>
-                          {st.source && (!st.rationale || !st.rationale.includes(st.source)) && (
-                            <span className="font-mono text-[11px]">Source: {st.source}</span>
-                          )}
-                        </div>
-                      )}
-                      {authHeader && (
-                        <div className="flex items-center gap-2 pl-1 pt-0.5">
-                          <span className="text-[11px] font-mono text-muted-foreground shrink-0">
-                            Authorization:
-                          </span>
-                          <Input
-                            type="password"
-                            className="h-7 font-mono text-xs flex-1"
-                            placeholder="Bearer <jwt-or-token> (encrypted per-session)"
-                            value={environment[authHeader.reference] ?? ""}
-                            onChange={(e) => {
-                              const refKey = authHeader.reference;
-                              const val = e.target.value;
-                              setEnvironment((prev) => ({ ...prev, [refKey]: val }));
-                            }}
-                          />
-                        </div>
-                      )}
-                      {isWrite && effectiveBodyRef && (
-                        <div className="flex flex-wrap items-center gap-2 pl-1 pt-0.5">
-                          <span className="text-[11px] font-mono text-muted-foreground shrink-0">
-                            JSON Payload:
-                          </span>
-                          <Input
-                            className={`h-7 font-mono text-xs flex-1 min-w-56 ${
-                              payloadValid ? "" : "border-rose-500 focus-visible:ring-rose-500"
+                          <textarea
+                            rows={Math.min(10, Math.max(4, payloadText.split("\n").length))}
+                            className={`w-full rounded border bg-background p-2 font-mono text-xs leading-relaxed focus:outline-none focus:ring-1 ${
+                              payloadValid
+                                ? "border-border focus:ring-primary"
+                                : "border-rose-500 focus:ring-rose-500"
                             }`}
                             value={payloadText}
                             onChange={(e) => {
@@ -3041,31 +3089,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                               setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: val }));
                             }}
                           />
-                          <span
-                            className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${
-                              payloadValid
-                                ? "bg-emerald-500/10 text-emerald-400"
-                                : "bg-rose-500/15 text-rose-400 font-semibold"
-                            }`}
-                          >
-                            {payloadValid ? "✓ JSON" : "⚠ Invalid"}
-                          </span>
-                          {payloadValid && (
-                            <button
-                              type="button"
-                              className="text-[11px] font-mono px-2 py-0.5 rounded border bg-background hover:bg-muted"
-                              onClick={() => {
-                                try {
-                                  const normalized = JSON.stringify(JSON.parse(payloadText));
-                                  setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: normalized }));
-                                } catch {
-                                  // no-op
-                                }
-                              }}
-                            >
-                              Compact
-                            </button>
-                          )}
                         </div>
                       )}
                     </div>
