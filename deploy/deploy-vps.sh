@@ -9,6 +9,18 @@ registry_user="${3:?Missing registry user}"
 cd /opt/mavis
 exec 9>.deploy.lock
 flock -w 300 9
+old_prefix=mavis
+old_tag=local
+if [ -f .release.env ]; then
+  old_prefix=$(sed -n 's/^IMAGE_PREFIX=//p' .release.env)
+  old_tag=$(sed -n 's/^IMAGE_TAG=//p' .release.env)
+fi
+docker container prune -f >/dev/null 2>&1 || true
+docker builder prune -af >/dev/null 2>&1 || true
+docker image prune -f >/dev/null 2>&1 || true
+for img in $(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep "^${prefix}-" | grep -vE ":($tag|$old_tag)$" || true); do
+  docker rmi "$img" >/dev/null 2>&1 || true
+done
 incoming="/opt/mavis/incoming-$tag"
 test -f "$incoming/compose.production.yml"
 test -f .env.production
