@@ -1450,7 +1450,7 @@ public class ComposePreflightValidator {
                 || window.contains("Results.Created(") || window.contains("TypedResults.Created(")) {
             return 201;
         }
-        if ("DELETE".equals(method) && (window.contains("HttpStatus.NO_CONTENT")
+        if (Set.of("DELETE", "PUT", "PATCH", "POST").contains(method) && (window.contains("HttpStatus.NO_CONTENT")
                 || window.contains(".noContent()") || window.contains("NoContent(")
                 || window.contains("Status204NoContent") || window.contains("Results.NoContent("))) {
             return 204;
@@ -1661,8 +1661,18 @@ public class ComposePreflightValidator {
                     reqFields.putIfAbsent(fieldName, constraintSuffix.isEmpty() ? fieldType : fieldType + constraintSuffix);
                 }
             }
-            if (!reqFields.isEmpty()) dtoSchemas.putIfAbsent(className, reqFields);
-            if (!respFields.isEmpty()) responseSchemas.putIfAbsent(className, respFields);
+            if (!reqFields.isEmpty()) {
+                dtoSchemas.merge(className, reqFields, (oldMap, newMap) -> {
+                    newMap.forEach(oldMap::putIfAbsent);
+                    return oldMap;
+                });
+            }
+            if (!respFields.isEmpty()) {
+                responseSchemas.merge(className, respFields, (oldMap, newMap) -> {
+                    newMap.forEach(oldMap::putIfAbsent);
+                    return oldMap;
+                });
+            }
             if (!hints.isEmpty()) dtoValidationHints.putIfAbsent(className, hints);
         }
     }
@@ -2566,11 +2576,12 @@ public class ComposePreflightValidator {
                 || lowPath.contains("dispatch") || lowPath.contains("fulfill") || lowPath.contains("assign") || lowPath.contains("booking")
                 || !targets.isEmpty());
 
-        boolean isAuxiliary = lowPath.contains("/ai/") || lowPath.endsWith("/chat") || lowPath.contains("/generate-")
-                || lowPath.contains("/suggest-") || lowPath.endsWith("/inactive") || lowPath.endsWith("/invoice-pdf")
-                || lowPath.endsWith("/forgot-password") || lowPath.endsWith("/reset-password") || lowPath.endsWith("/logout")
-                || lowPath.endsWith("/google") || lowPath.contains("/oauth") || lowPath.endsWith("/refresh")
-                || lowPath.endsWith("/export-excel") || lowPath.endsWith("/vnpay-return");
+        boolean isAuxiliary = lowPath.contains("/ai/") || lowPath.contains("/genai/") || lowPath.endsWith("/chat")
+                || lowPath.endsWith("/chatclient") || lowPath.equals("/fallback") || lowPath.endsWith("/fallback")
+                || lowPath.contains("/generate-") || lowPath.contains("/suggest-") || lowPath.endsWith("/inactive")
+                || lowPath.endsWith("/invoice-pdf") || lowPath.endsWith("/forgot-password") || lowPath.endsWith("/reset-password")
+                || lowPath.endsWith("/logout") || lowPath.endsWith("/google") || lowPath.contains("/oauth")
+                || lowPath.endsWith("/refresh") || lowPath.endsWith("/export-excel") || lowPath.endsWith("/vnpay-return");
         String role;
         if (isHealthEndpointPath(lowPath)) role = "HEALTH_FALLBACK";
         else if (isAuth) role = "AUTH_ENTRY";
@@ -2917,12 +2928,13 @@ public class ComposePreflightValidator {
 
     public static boolean containsAiIndicator(String lower) {
         if (lower == null || lower.isEmpty()) return false;
-        return lower.contains("spring-ai") || lower.contains("langchain4j") || lower.contains("openai")
-                || lower.contains("gemini") || lower.contains("generativelanguage") || lower.contains("anthropic")
-                || lower.contains("dashscope") || lower.contains("qianwen") || lower.contains("tongyi")
-                || lower.contains("semantickernel") || lower.contains("azure.ai.openai")
-                || lower.contains("ai.api-key") || lower.contains("api_key") || lower.contains("apikey")
-                || lower.contains("chatclient") || lower.contains("chatmodel");
+        String cleaned = lower.replace("spring-openai-", "");
+        return cleaned.contains("spring-ai") || cleaned.contains("langchain4j") || cleaned.contains("openai")
+                || cleaned.contains("gemini") || cleaned.contains("generativelanguage") || cleaned.contains("anthropic")
+                || cleaned.contains("dashscope") || cleaned.contains("qianwen") || cleaned.contains("tongyi")
+                || cleaned.contains("semantickernel") || cleaned.contains("azure.ai.openai")
+                || cleaned.contains("ai.api-key") || cleaned.contains("api_key") || cleaned.contains("apikey")
+                || cleaned.contains("chatclient") || cleaned.contains("chatmodel");
     }
 
     public static boolean isDatabaseContainer(String lowerName, String lowerImage) {
@@ -3089,6 +3101,18 @@ public class ComposePreflightValidator {
         String lowerNorm = norm.toLowerCase(Locale.ROOT);
         List<String> appServices = detectedServices == null ? List.of()
                 : detectedServices.stream().filter(s -> !isInfrastructureService(s, "")).toList();
+        if (!appServices.isEmpty()
+                && (lowerNorm.endsWith(".yml") || lowerNorm.endsWith(".yaml") || lowerNorm.endsWith(".properties"))
+                && (lowerNorm.contains("/config/") || lowerNorm.contains("config-service/") || lowerNorm.contains("config-server/"))) {
+            String fileName = lowerNorm.substring(lowerNorm.lastIndexOf('/') + 1);
+            String stem = fileName.replaceFirst("\\.(ya?ml|properties)$", "")
+                    .replaceFirst("-(docker|dev|prod|production|local|default|test|stage|staging)$", "");
+            if (!stem.isEmpty() && !stem.equals("application") && !stem.equals("bootstrap")) {
+                for (String svc : appServices) {
+                    if (svc.equalsIgnoreCase(stem)) return svc;
+                }
+            }
+        }
         if (!appServices.isEmpty()) {
             for (String svc : appServices) {
                 String ls = svc.toLowerCase(Locale.ROOT);
@@ -3158,7 +3182,7 @@ public class ComposePreflightValidator {
         if (b.endsWith("/")) b = b.substring(0, b.length() - 1);
         if (!s.isEmpty() && !s.startsWith("/")) s = "/" + s;
         String combined = (b + s).replaceAll("//+", "/");
-        if (combined.startsWith("/owners/*/")) {
+        if (combined.contains("/owners/*/")) {
             combined = combined.replace("/owners/*/", "/owners/{ownerId}/");
         }
         if (combined.contains("/*/")) {
@@ -4441,6 +4465,40 @@ public class ComposePreflightValidator {
             }
         }
 
+        // 2c. Reconcile stale local application.properties SQL checks when Compose already configures the service's database
+        if (dto.getDatabaseChecks() != null && !dto.getDatabaseChecks().isEmpty()) {
+            Set<String> composeConfiguredSqlServices = new HashSet<>();
+            for (DatabaseCheckDTO c : dto.getDatabaseChecks()) {
+                if (c != null && c.getService() != null && !isCacheOrBrokerType(c.getDbType())
+                        && Set.of("CONFIGURED_IN_COMPOSE", "AUTO_PROVISIONED_SANDBOX_DB", "DETECTED_CONTAINER").contains(c.getStatus())) {
+                    composeConfiguredSqlServices.add(c.getService());
+                }
+            }
+            if (!composeConfiguredSqlServices.isEmpty()) {
+                boolean removedStale = dto.getDatabaseChecks().removeIf(c -> c != null && c.getService() != null
+                        && composeConfiguredSqlServices.contains(c.getService())
+                        && !isCacheOrBrokerType(c.getDbType())
+                        && ("REQUIRES_ENV_OR_SECRET".equals(c.getStatus()) || "DETECTED_IN_SOURCE".equals(c.getStatus()))
+                        && c.getConfigKey() != null && !c.getConfigKey().startsWith("docker-compose"));
+                if (removedStale) changed = true;
+                if (dto.getRequiredEnvVars() != null) {
+                    Set<String> sqlUrlVars = Set.of("DB_CONNECTION_STRING", "SPRING_DATASOURCE_URL", "DATABASE_URL", "CONNECTIONSTRINGS__DEFAULTCONNECTION");
+                    for (RequiredEnvVarDTO v : dto.getRequiredEnvVars()) {
+                        if (v != null && v.getName() != null && sqlUrlVars.contains(v.getName().toUpperCase(Locale.ROOT))) {
+                            List<String> owners = (v.getServices() != null && !v.getServices().isEmpty())
+                                    ? v.getServices()
+                                    : (v.getService() != null ? List.of(v.getService()) : List.of());
+                            if (!owners.isEmpty() && composeConfiguredSqlServices.containsAll(owners)) {
+                                v.setDefaultPresent(true);
+                                v.setRequired(false);
+                                v.setResolution("SANDBOX_INFRA");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // 3. Prune completely unreferenced replaced DB, ZooKeeper, and external tracing/UI collector containers
         Set<String> pruneCandidates = new LinkedHashSet<>();
         if (replacedDbContainers != null) pruneCandidates.addAll(replacedDbContainers);
@@ -4450,41 +4508,47 @@ public class ComposePreflightValidator {
             String low = cand.toLowerCase(Locale.ROOT);
             String img = (e.getValue() instanceof Map<?, ?> m && m.get("image") != null) ? String.valueOf(m.get("image")).toLowerCase(Locale.ROOT) : "";
             if (isInfrastructureService(low, img)
-                    && (low.equals("zipkin") || img.contains("zipkin") || low.equals("jaeger") || img.contains("jaeger")
-                    || low.equals("kibana") || img.contains("kibana") || low.equals("pgadmin") || img.contains("pgadmin")
-                    || low.equals("adminer") || img.contains("adminer"))) {
+                    && (low.contains("zipkin") || img.contains("zipkin") || low.contains("jaeger") || img.contains("jaeger")
+                    || low.contains("kibana") || img.contains("kibana") || low.contains("pgadmin") || img.contains("pgadmin")
+                    || low.contains("adminer") || img.contains("adminer") || low.contains("grafana") || img.contains("grafana")
+                    || low.contains("prometheus") || img.contains("prometheus"))) {
                 pruneCandidates.add(cand);
             }
         }
 
         Set<String> pruned = new LinkedHashSet<>();
-        for (String cand : pruneCandidates) {
-            if (!servicesMap.containsKey(cand)) continue;
-            String candLow = cand.toLowerCase(Locale.ROOT);
-            boolean referenced = false;
-            for (Map.Entry<String, Object> otherEntry : servicesMap.entrySet()) {
-                if (cand.equals(otherEntry.getKey()) || pruned.contains(otherEntry.getKey())) continue;
-                if (!(otherEntry.getValue() instanceof Map<?, ?> otherCfg)) continue;
-                if (extractServiceDependencies(otherCfg).contains(cand)) {
-                    referenced = true;
-                    break;
-                }
-                for (String ev : composeEnvironment(otherCfg.get("environment")).values()) {
-                    String evLow = ev == null ? "" : ev.toLowerCase(Locale.ROOT);
-                    if (evLow.equals(candLow) || evLow.contains("://" + candLow) || evLow.contains(candLow + ":")) {
+        boolean prunedPass;
+        do {
+            prunedPass = false;
+            for (String cand : pruneCandidates) {
+                if (!servicesMap.containsKey(cand)) continue;
+                String candLow = cand.toLowerCase(Locale.ROOT);
+                boolean referenced = false;
+                for (Map.Entry<String, Object> otherEntry : servicesMap.entrySet()) {
+                    if (cand.equals(otherEntry.getKey()) || pruned.contains(otherEntry.getKey())) continue;
+                    if (!(otherEntry.getValue() instanceof Map<?, ?> otherCfg)) continue;
+                    if (extractServiceDependencies(otherCfg).contains(cand)) {
                         referenced = true;
                         break;
                     }
+                    for (String ev : composeEnvironment(otherCfg.get("environment")).values()) {
+                        String evLow = ev == null ? "" : ev.toLowerCase(Locale.ROOT);
+                        if (evLow.equals(candLow) || evLow.contains("://" + candLow) || evLow.contains(candLow + ":")) {
+                            referenced = true;
+                            break;
+                        }
+                    }
+                    if (referenced) break;
                 }
-                if (referenced) break;
+                if (!referenced) {
+                    servicesMap.remove(cand);
+                    pruned.add(cand);
+                    topologyChanges.add("Pruned unreferenced sandbox infrastructure container '" + cand + "'");
+                    changed = true;
+                    prunedPass = true;
+                }
             }
-            if (!referenced) {
-                servicesMap.remove(cand);
-                pruned.add(cand);
-                topologyChanges.add("Pruned unreferenced sandbox infrastructure container '" + cand + "'");
-                changed = true;
-            }
-        }
+        } while (prunedPass);
 
         if (!pruned.isEmpty()) {
             if (dto.getDetectedServices() != null) dto.getDetectedServices().removeAll(pruned);

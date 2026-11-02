@@ -556,12 +556,17 @@ public class RuntimePlanningService {
    int phaseA=causalEndpointPhase(a,crudResourceRoots);
    int phaseB=causalEndpointPhase(b,crudResourceRoots);
    if(phaseA!=phaseB)return Integer.compare(phaseA,phaseB);
-   boolean paramA=PATH_PARAM_PATTERN.matcher(a.getPath()).find();
-   boolean paramB=PATH_PARAM_PATTERN.matcher(b.getPath()).find();
-   if(paramA!=paramB)return paramA?1:-1;
+   int paramCountA=countPathParams(a.getPath());
+   int paramCountB=countPathParams(b.getPath());
+   if(paramCountA!=paramCountB)return Integer.compare(paramCountA,paramCountB);
    int fanA=a.getFanOutScore()!=null?a.getFanOutScore():0;
    int fanB=b.getFanOutScore()!=null?b.getFanOutScore():0;
    if(fanA!=fanB)return Integer.compare(fanB,fanA);
+   if("POST".equals(a.getMethod())&&"POST".equals(b.getMethod())){
+    int fkA=countForeignKeyFields(a.getSampleJsonBody());
+    int fkB=countForeignKeyFields(b.getSampleJsonBody());
+    if(fkA!=fkB)return Integer.compare(fkA,fkB);
+   }
    return (a.getService()+a.getPath()+a.getMethod()).compareTo(b.getService()+b.getPath()+b.getMethod());
   };
   candidates.sort(causalComparator);
@@ -1383,8 +1388,10 @@ public class RuntimePlanningService {
   String root=resourceRoot(path);
   String[] segs=root.split("/");
   for(int i=segs.length-1;i>=0;i--){
-   String s=segs[i].replaceAll("[^a-z0-9]","");
-   if(s.isEmpty()||Set.of("api","v1","v2","v3","public","internal","rest","search","query","checkout","cancel","approve","reject","pay","charge","process","confirm","submit","status","health","actuator").contains(s))continue;
+   String rawSeg=segs[i];
+   if(rawSeg.contains("{")||rawSeg.contains("}"))continue;
+   String s=rawSeg.replaceAll("[^a-z0-9]","");
+   if(s.isEmpty()||s.startsWith("with")||Set.of("api","v1","v2","v3","public","internal","rest","search","query","checkout","cancel","approve","reject","pay","charge","process","confirm","submit","status","health","actuator").contains(s))continue;
    if(s.endsWith("ies")&&s.length()>4)s=s.substring(0,s.length()-3)+"y";
    else if(s.endsWith("ses")&&s.length()>4)s=s.substring(0,s.length()-2);
    else if(s.endsWith("s")&&!s.endsWith("ss")&&s.length()>3)s=s.substring(0,s.length()-1);
@@ -1502,6 +1509,12 @@ public class RuntimePlanningService {
   }
   if(low.contains("/order")||low.contains("/cart")||low.contains("/checkout")||low.contains("/coupons")){
    return basePhase+": Order & Coupon Checkout";
+  }
+  if(low.contains("/owner")||low.contains("/pet")||low.contains("/visit")||low.contains("/vet")){
+   return basePhase+": Customer & Pet Visits";
+  }
+  if(low.contains("/organization")||low.contains("/department")||low.contains("/employee")){
+   return basePhase+": Organization & Workforce";
   }
   return basePhase;
  }
@@ -1701,7 +1714,8 @@ public class RuntimePlanningService {
  private static boolean isAuxiliaryEndpointPath(String path){
   if(path==null)return false;
   String low=path.toLowerCase(Locale.ROOT);
-  return low.contains("/ai/")||low.endsWith("/chat")||low.contains("/generate-")||low.contains("/suggest-")
+  return low.contains("/ai/")||low.contains("/genai/")||low.endsWith("/chat")||low.endsWith("/chatclient")
+    ||low.equals("/fallback")||low.endsWith("/fallback")||low.contains("/generate-")||low.contains("/suggest-")
     ||low.endsWith("/inactive")||low.endsWith("/invoice-pdf")||low.endsWith("/forgot-password")
     ||low.endsWith("/reset-password")||low.endsWith("/logout")||low.endsWith("/verify-email")
     ||low.endsWith("/google")||low.contains("/oauth")||low.endsWith("/refresh")
@@ -1714,6 +1728,31 @@ public class RuntimePlanningService {
   return low.equals("service-discovery")||low.equals("discovery-service")||low.equals("eureka-server")||low.equals("eureka")||low.equals("config-server");
  }
 
+ private static int countPathParams(String path){
+  if(path==null||path.isEmpty())return 0;
+  int count=0;
+  Matcher m=PATH_PARAM_PATTERN.matcher(path);
+  while(m.find())count++;
+  return count;
+ }
+
+ private static int countForeignKeyFields(String sampleJsonBody){
+  if(sampleJsonBody==null||sampleJsonBody.isBlank())return 0;
+  String topLevel=sampleJsonBody;
+  while(topLevel.contains("[")){
+   String next=topLevel.replaceAll("\\[[^\\[\\]]*\\]","");
+   if(next.equals(topLevel))break;
+   topLevel=next;
+  }
+  int count=0;
+  Matcher m=Pattern.compile("\"([a-zA-Z0-9_]+(?:Id|Code|Sku))\"\\s*:",Pattern.CASE_INSENSITIVE).matcher(topLevel);
+  while(m.find()){
+   String k=m.group(1).toLowerCase(Locale.ROOT);
+   if(!k.equals("id")&&!k.equals("code")&&!k.equals("sku"))count++;
+  }
+  return count;
+ }
+
  private static int causalEndpointPhase(DetectedEndpointDTO ep,Set<String> crudResourceRoots){
   if(isHealthProbePath(ep.getPath()))return 5;
   String verb=ep.getMethod();
@@ -1723,10 +1762,12 @@ public class RuntimePlanningService {
   if("POST".equals(verb)&&(low.contains("/auth/")||low.endsWith("/login")||low.endsWith("/signin")||low.endsWith("/token"))){
    return 0;
   }
-  if("POST".equals(verb)&&!PATH_PARAM_PATTERN.matcher(ep.getPath()).find()){
-   String lastSeg=low.contains("/")?low.substring(low.lastIndexOf('/')+1):low;
+  if("POST".equals(verb)){
+   String noQuery=low.split("\\?",2)[0];
+   String lastSeg=noQuery.contains("/")?noQuery.substring(noQuery.lastIndexOf('/')+1):noQuery;
    boolean actionVerb=Set.of("checkout","cancel","approve","reject","pay","charge","process","confirm","submit","search","query","validate","verify","export","import","close","reopen").contains(lastSeg);
-   if(!actionVerb&&crudResourceRoots.contains(ep.getService()+":"+resourceRoot(ep.getPath()))){
+   boolean hasSubResourcePlural=PATH_PARAM_PATTERN.matcher(ep.getPath()).find()&&lastSeg.endsWith("s")&&!lastSeg.endsWith("ss")&&lastSeg.length()>3;
+   if(!actionVerb&&!lastSeg.endsWith("}")&&(crudResourceRoots.contains(ep.getService()+":"+resourceRoot(ep.getPath()))||hasSubResourcePlural)){
     return 1;
    }
   }
