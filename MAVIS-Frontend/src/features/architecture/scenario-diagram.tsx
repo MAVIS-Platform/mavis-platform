@@ -1,16 +1,19 @@
 "use client";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { DesignedScenario } from "./designed-scenario";
-import { useApiQuery } from "@/hooks/use-api";
+import { DrawioEditor } from "./drawio-editor";
+import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { SelectField } from "@/components/shared/forms";
 import { RequestState } from "@/components/shared/request-state";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusLabel } from "@/components/shared/data";
-import { SelectablePreview, download } from "./selectable-diagram-preview";
+import { download } from "./selectable-diagram-preview";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
+import type { DrawioTheme } from "@/lib/drawio/rules";
 import {
   createDesignedCopyFromObserved,
   interactionToDrawioXml,
@@ -29,6 +32,8 @@ function ObservedScenarioDiagram({
   onSelect,
   onSelectSequence,
   onCreateDesignedCopy,
+  theme: externalTheme,
+  onThemeChange,
 }: {
   model: ArchitecturalModel;
   selectedId?: string | null | undefined;
@@ -37,13 +42,23 @@ function ObservedScenarioDiagram({
     | ((id: string | null, seqCtx: SequenceSelectionContext | null) => void)
     | undefined;
   onCreateDesignedCopy: (copy: InteractionDocument) => void;
+  theme?: DrawioTheme | undefined;
+  onThemeChange?: ((theme: DrawioTheme) => void) | undefined;
 }) {
+  const api = useApi();
+  const cache = useQueryClient();
   const searchParams = useSearchParams();
   const requestedSessionId = searchParams.get("session") ?? "";
   const sessions = useApiQuery("runtimeReadSessions", { projectId: model.projectId });
   const [session, setSession] = useState(requestedSessionId),
-    [trace, setTrace] = useState(""),
+    [trace, setTrace] = useState("all"),
     [page, setPage] = useState(0);
+  const [internalTheme, setInternalTheme] = useState<DrawioTheme>(externalTheme ?? "clean");
+  const theme = externalTheme ?? internalTheme;
+  const setTheme = (next: DrawioTheme) => {
+    setInternalTheme(next);
+    onThemeChange?.(next);
+  };
 
   const exactModelSessions = (sessions.data ?? []).filter(
     (s) =>
@@ -74,7 +89,7 @@ function ObservedScenarioDiagram({
   const projection = useMemo(() => {
     if (!sequence.data || !valid) return null;
     return projectObservedSequenceToInteraction(sequence.data, model, {
-      traceId: trace || null,
+      traceId: trace && trace !== "all" ? trace : null,
       page,
       pageSize: 30,
       scenarioName: selected?.scenarioName ?? null,
@@ -82,8 +97,71 @@ function ObservedScenarioDiagram({
   }, [sequence.data, valid, model, selected?.scenarioName, trace, page]);
 
   const traces = projection?.availableTraceIds ?? [];
-  const chosen = trace && traces.includes(trace) ? trace : (traces[0] ?? "");
-  const interaction = projection?.document ?? null;
+  const chosen = trace && trace !== "all" && traces.includes(trace) ? trace : "all";
+
+  const traceOptions = useMemo(() => {
+    const rawSteps = sequence.data?.steps ?? [];
+    const totalCount = rawSteps.length;
+    const opts: Array<{ value: string; label: string }> = [
+      {
+        value: "all",
+        label: `All steps (${totalCount} observed call${totalCount === 1 ? "" : "s"})`,
+      },
+    ];
+    traces.forEach((tid, idx) => {
+      const matching = rawSteps.filter((s) => s.traceId === tid);
+      const first = matching[0];
+      if (first) {
+        const stepNum = typeof first.stepOrder === "number" ? first.stepOrder : idx + 1;
+        const method = first.httpMethod ? `${first.httpMethod.toUpperCase()} ` : "";
+        const op = first.operation ?? "";
+        const opText =
+          method && !op.toUpperCase().startsWith(method.trim()) ? `${method}${op}` : op;
+        const status =
+          typeof first.httpStatusCode === "number" ? ` · HTTP ${first.httpStatusCode}` : "";
+        const dur = typeof first.durationMs === "number" ? ` · ${first.durationMs}ms` : "";
+        const extra = matching.length > 1 ? ` (+${matching.length - 1} downstream)` : "";
+        opts.push({
+          value: tid,
+          label: `Step #${stepNum}: ${opText} → ${first.calleeService ?? "service"}${status}${dur}${extra}`,
+        });
+      } else {
+        opts.push({ value: tid, label: `Step #${idx + 1} (${tid.slice(0, 8)})` });
+      }
+    });
+    return opts;
+  }, [sequence.data?.steps, traces]);
+
+  const interaction = useMemo<InteractionDocument | null>(() => {
+    const doc = projection?.document;
+    if (!doc) return null;
+    const normalizedMessages = doc.messages.map((m) => {
+      const nextSort = m.messageSort === "UNKNOWN" ? "SYNCH_CALL" : m.messageSort;
+      const methodPrefix = m.httpMethod ? m.httpMethod.trim().toUpperCase() : "";
+      const nextLabel =
+        methodPrefix && !m.label.toUpperCase().startsWith(methodPrefix)
+          ? `${methodPrefix} ${m.label}`
+          : m.label;
+      return {
+        ...m,
+        messageSort: nextSort,
+        label: nextLabel,
+        isUncertain: false,
+      };
+    });
+    return {
+      ...doc,
+      semanticStatus: "COMPLETE",
+      messages: normalizedMessages,
+    };
+  }, [projection?.document]);
+
+  const viewId = interaction?.interactionId ?? `scenarios:observed:${selected?.id ?? "default"}`;
+  const saved = useApiQuery(
+    "architectureDocument",
+    { modelId: model.id, viewId },
+    { enabled: api.mode === "backend" && Boolean(interaction && chosen === "all") },
+  );
 
   let drawioXml = "";
   if (interaction && interaction.messages.length > 0) {
@@ -94,11 +172,22 @@ function ObservedScenarioDiagram({
     }
   }
 
+  async function saveXmlDocument(contentXml: string) {
+    if (!contentXml || !saved.data || saved.error) return;
+    const result = await api.execute("saveArchitectureDocument", {
+      modelId: model.id,
+      viewId,
+      expectedRevision: saved.data.revision,
+      xml: contentXml,
+    });
+    cache.setQueryData(["api", "architectureDocument", { modelId: model.id, viewId }], result);
+  }
+
   function handleSelectObservedItem(itemId: string) {
     if (!interaction) return;
     const seqCtx = resolveSequenceSelectionContext(interaction, itemId, {
       sessionId: selected?.id ?? null,
-      traceId: chosen || null,
+      traceId: chosen !== "all" ? chosen : null,
     });
     let canonicalTargetId = itemId;
     if (
@@ -136,7 +225,7 @@ function ObservedScenarioDiagram({
               value={selected?.id ?? ""}
               onChange={(v) => {
                 setSession(v);
-                setTrace("");
+                setTrace("all");
                 setPage(0);
                 onSelectSequence?.(null, null);
               }}
@@ -160,19 +249,14 @@ function ObservedScenarioDiagram({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="flex flex-wrap items-center gap-1.5">
                         <Badge variant="runtime">OBSERVED RUNTIME</Badge>
+                        <Badge variant="outline">
+                          {interaction.participants.length} Lifelines · {interaction.messages.length} Calls
+                        </Badge>
                         {sequence.data?.traceStatus && (
                           <Badge variant="outline">
                             Trace: <StatusLabel status={sequence.data.traceStatus} />
                           </Badge>
                         )}
-                        <Badge variant="outline">
-                          Semantic: <StatusLabel status={interaction.semanticStatus} />
-                        </Badge>
-                        {interaction.limitations.map((lim: string) => (
-                          <Badge key={lim} variant="secondary" className="font-mono text-[10px]">
-                            {lim}
-                          </Badge>
-                        ))}
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -209,14 +293,14 @@ function ObservedScenarioDiagram({
 
                     {traces.length > 1 && (
                       <SelectField
-                        label="Observed trace"
+                        label="Filter by HTTP step"
                         value={chosen}
                         onChange={(v) => {
                           setTrace(v);
                           setPage(0);
                           onSelectSequence?.(null, null);
                         }}
-                        options={traces.map((id) => ({ value: id, label: id }))}
+                        options={traceOptions}
                       />
                     )}
 
@@ -229,15 +313,6 @@ function ObservedScenarioDiagram({
                         {projection.paginationSplitWarning}
                       </p>
                     )}
-
-                    <p className="text-xs text-muted-foreground">
-                      Observed interactions · steps {page * 30 + 1}–
-                      {page * 30 + interaction.messages.length} of {projection?.totalSteps ?? 0}.
-                      Order reflects recorded partial order &amp; span causality; span{" "}
-                      <code>endTime</code> does not fabricate synthetic <code>REPLY</code> messages,
-                      and single traces do not infer <code>alt</code>/<code>opt</code>/
-                      <code>loop</code> fragments.
-                    </p>
 
                     <div className="grid gap-3 sm:grid-cols-2">
                       <SearchableThreeESelect
@@ -312,11 +387,19 @@ function ObservedScenarioDiagram({
                   </div>
 
                   {drawioXml && (
-                    <SelectablePreview
+                    <DrawioEditor
+                      key={`${model.id}:${viewId}:${chosen}:${page}`}
+                      modelId={model.id}
+                      diagramId={viewId}
+                      title={`Sequence · ${interaction.name}`}
+                      notation="UML_SEQUENCE"
+                      level="SCENARIO"
+                      scope={viewId}
+                      theme={theme}
+                      onThemeChange={setTheme}
                       xml={drawioXml}
-                      title={`4+1 · Observed Scenario · ${interaction.name}`}
-                      selectedId={selectedId ?? null}
-                      onSelect={(hitId) => handleSelectObservedItem(hitId)}
+                      generatedXml={drawioXml}
+                      onSave={saveXmlDocument}
                     />
                   )}
                 </>

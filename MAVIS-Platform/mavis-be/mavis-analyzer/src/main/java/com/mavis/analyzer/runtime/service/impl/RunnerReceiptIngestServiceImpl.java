@@ -852,7 +852,11 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 operation = "/api/" + cleanSlug;
             }
             stepNode.put("operation", operation);
-            stepNode.put("messageSort", "UNKNOWN");
+            String messageSort = (step.relationship != null && step.relationship.getRelationType() != null
+                    && step.relationship.getRelationType().toUpperCase(Locale.ROOT).startsWith("MESSAGE_"))
+                    ? "ASYNCH_SIGNAL"
+                    : "SYNCH_CALL";
+            stepNode.put("messageSort", messageSort);
             String httpMethod = step.childSpan.getHttpMethod() != null && !step.childSpan.getHttpMethod().isBlank()
                     ? step.childSpan.getHttpMethod()
                     : (directEntryPinnedStep != null && directEntryPinnedStep.hasNonNull("method")
