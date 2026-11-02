@@ -480,7 +480,8 @@ export function DependencyNetwork({
       cy.nodes().forEach((node) => {
         const id = node.data("sourceId") as string;
         const match = !search || String(node.data("name")).toLowerCase().includes(search);
-        node.toggleClass("muted", !match || (focus.active && !focus.nodes.has(id)));
+        const orphanInRuntime = origin === "runtime" && edges.length > 0 && node.degree() === 0;
+        node.toggleClass("muted", !match || orphanInRuntime || (focus.active && !focus.nodes.has(id)));
         node.toggleClass(
           "focused",
           selectedId === id || (highlightIds.length > 0 && focus.nodes.has(id)),
@@ -517,6 +518,8 @@ export function DependencyNetwork({
     highlightIds,
     query,
     mode,
+    origin,
+    edges.length,
   ]);
   return (
     <section

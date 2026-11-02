@@ -258,6 +258,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [serviceImageOverrides, setServiceImageOverrides] = useState<Record<string, string>>({});
   const [showSandboxCompose, setShowSandboxCompose] = useState(false);
   const [showStep1Details, setShowStep1Details] = useState(false);
+  const [showMissingKeyPrompt, setShowMissingKeyPrompt] = useState(false);
   const [step1StatusMsg, setStep1StatusMsg] = useState("");
   const [isAutoBuilding, setIsAutoBuilding] = useState(false);
   const autoBuildTriggeredRef = useRef("");
@@ -662,7 +663,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     void handleBuildLocalImages(unpinnedServices);
   }, [projectId, snapshotId, preflight.data, preflight.isPending, localImageBuildAvailable, unpinnedServices.join(",")]);
 
-  const proceedToStep2 = async () => {
+  const proceedToStep2 = async (bypassMissingKeyWarning = false) => {
+    if (!bypassMissingKeyWarning && missingExternalApiKeys.length > 0 && !showMissingKeyPrompt) {
+      setShowMissingKeyPrompt(true);
+      return;
+    }
+    setShowMissingKeyPrompt(false);
     const combinedSecretRefs = Array.from(
       new Set([
         ...secretRefs
@@ -770,6 +776,41 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         onStep2Click={() => void proceedToStep2()}
         blockedReason={step1BlockedReason}
       />
+      {showMissingKeyPrompt && missingExternalApiKeys.length > 0 && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-foreground">
+          <div className="space-y-1">
+            <p className="font-semibold text-amber-300">
+              External 3rd-party API key not entered ({missingExternalApiKeys.join(", ")})
+            </p>
+            <p className="text-muted-foreground">
+              Sandbox services will boot normally using an internal placeholder key, and all internal microservice flows (Auth, Catalog, Cart, Order, Checkout, Kafka) will run end-to-end. Only external 3rd-party routes (e.g. <code className="font-mono">/ai/*</code>) require a live key.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              onClick={() => {
+                setShowMissingKeyPrompt(false);
+                setShowStep1Details(true);
+                setShowSecretOverrides(true);
+              }}
+            >
+              Enter API Key
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => void proceedToStep2(true)}
+            >
+              Continue with Internal Flows →
+            </Button>
+          </div>
+        </div>
+      )}
       {step1StatusMsg && !(buildImages.isPending || isAutoBuilding) && (
         <div role="status" className="flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs text-foreground">
           {preflight.isPending && (
@@ -1185,7 +1226,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            Secrets ({allSecretKeys.length} Auto)
+                            Secrets ({autoSecretKeys.length} Auto{externalSecretKeys.length > 0 ? ` · ${externalSecretKeys.length} External` : ""})
                           </h4>
                           <Button
                             type="button"
@@ -2704,7 +2745,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               }
             });
             const stepClusters = Array.from(clusterMap.values()).sort(
-              (a, b) => a.meta.order - b.meta.order,
+              (a, b) => (a.stepIndices[0] ?? 0) - (b.stepIndices[0] ?? 0) || a.meta.order - b.meta.order,
             );
 
             return (
