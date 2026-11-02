@@ -21,6 +21,8 @@ import {
   readStep1Target,
   writeStep1Target,
   httpMethodBadgeClass,
+  isKnownInfraName,
+  sanitizeServiceRoles,
 } from "./screens";
 import { boundRuntimeEnvironment, resolveRuntimeTargetModel } from "./scenario-suggestions";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -970,6 +972,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   );
 
   const plannedRequests = useMemo(() => {
+    if (session.data?.stepResults?.length) {
+      return session.data.stepResults
+        .filter((sr) => Boolean(sr.service && sr.path))
+        .map((sr) => ({
+          service: sr.service,
+          method: sr.method ?? "GET",
+          path: sr.path ?? "/",
+        }));
+    }
     if (storedDraft.plannedSteps?.length) return storedDraft.plannedSteps;
     const saved = (scenarios.data?.[0]?.steps ?? []).flatMap((raw) => {
       try {
@@ -980,7 +991,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       }
     });
     return saved.length ? saved : detectedEndpoints.slice(0, 6);
-  }, [storedDraft.plannedSteps, scenarios.data, detectedEndpoints]);
+  }, [session.data?.stepResults, storedDraft.plannedSteps, scenarios.data, detectedEndpoints]);
 
   const workflowData = useMemo(
     () =>
@@ -1055,12 +1066,12 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           ? (rawProfile["infrastructureServices"] as unknown[]).map(String)
           : [],
       );
-      const mergedRoles: Record<string, "APP" | "INFRA"> = {
+      const mergedRoles = sanitizeServiceRoles({
         ...(rawProfile["serviceRoles"] && typeof rawProfile["serviceRoles"] === "object"
           ? (rawProfile["serviceRoles"] as Record<string, "APP" | "INFRA">)
           : {}),
         ...(stored.serviceRoles ?? {}),
-      };
+      });
       const existingImageOverrides: Record<string, string> = {
         ...(rawProfile["serviceImageOverrides"] &&
         typeof rawProfile["serviceImageOverrides"] === "object"
@@ -1186,7 +1197,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             ? (rawProfile["detectedServices"] as unknown[]).map(String)
             : [];
       const runnableComposeSvcs = composeSvcs.filter(
-        (svc) => (!infraSet.has(svc) && mergedRoles[svc] !== "INFRA") || mergedRoles[svc] === "APP",
+        (svc) => !isKnownInfraName(svc) && ((!infraSet.has(svc) && mergedRoles[svc] !== "INFRA") || mergedRoles[svc] === "APP"),
       );
       const realServices = (modelDetail.data?.elements ?? []).filter(
         (e) => e.elementType === "SERVICE_CONTAINER",
@@ -1252,6 +1263,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   ? { environmentVariables: st.environmentVariables }
                   : {}),
                 ...(st.envHeaders && st.envHeaders.length ? { envHeaders: st.envHeaders } : {}),
+                ...(st.headers && Object.keys(st.headers).length ? { headers: st.headers } : {}),
+                ...(st.extract && Object.keys(st.extract).length ? { extract: st.extract } : {}),
               });
             })
           : fallbackSavedScenario?.steps?.length
@@ -1405,7 +1418,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       num: 2,
       title: "Runner dispatched",
       desc: hasSession ? execStatus || "Queued" : "Not started",
-      done: hasSession && !["NOT_STARTED", "PENDING"].includes(execStatus),
+      done:
+        hasSession &&
+        !["NOT_STARTED", "PENDING", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEOUT"].includes(execStatus),
       current: ["APPROVED", "READY_FOR_DISPATCH", "ALLOCATED"].includes(execStatus),
     },
     {
@@ -1523,10 +1538,12 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                         ? "bg-sky-400 text-slate-950 animate-pulse"
                         : st.done
                           ? "bg-emerald-500 text-white"
-                          : "bg-muted text-muted-foreground"
+                          : (isExecFailed || isTimedOut) && st.num > 1
+                            ? "bg-destructive/20 text-destructive"
+                            : "bg-muted text-muted-foreground"
                     }`}
                   >
-                    {st.done && !st.current ? "✓" : st.num}
+                    {st.done && !st.current ? "✓" : (isExecFailed || isTimedOut) && st.num === 2 ? "✕" : st.num}
                   </span>
                   <span className="truncate">{st.title}</span>
                 </div>

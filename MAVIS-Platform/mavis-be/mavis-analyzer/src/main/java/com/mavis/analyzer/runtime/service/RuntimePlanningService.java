@@ -265,6 +265,7 @@ public class RuntimePlanningService {
   if(!p.hasNonNull("scenarioRunnerImage")&&runnerScenarioImage!=null&&!runnerScenarioImage.isBlank())p.put("scenarioRunnerImage",runnerScenarioImage.trim());
   if(!p.hasNonNull("instrumentationVolume"))p.put("instrumentationVolume","mavis-agents-v1");
   if(!p.hasNonNull("approvedForLocalPoc"))p.put("approvedForLocalPoc",true);
+  if(!p.hasNonNull("memoryMiB"))p.put("memoryMiB",512);
 
   Map<String,String> roleOverrides=new LinkedHashMap<>();
   if(p.has("serviceRoles")&&p.get("serviceRoles").isObject()){
@@ -300,6 +301,18 @@ public class RuntimePlanningService {
    }
   }
 
+  if(p.has("applications")&&p.get("applications").isObject()){
+   ObjectNode existingApps=(ObjectNode)p.get("applications");
+   List<String> existingKeys=new ArrayList<>();
+   existingApps.fieldNames().forEachRemaining(existingKeys::add);
+   for(String k:existingKeys){
+    if(ComposePreflightValidator.isInfrastructureService(k,"")||"INFRA".equalsIgnoreCase(roleOverrides.get(k))){
+     existingApps.remove(k);
+    }else if(existingApps.get(k) instanceof ObjectNode an&&!an.has("allowClientErrorReadiness")){
+     an.put("allowClientErrorReadiness",true);
+    }
+   }
+  }
   if(!p.has("applications")||!p.get("applications").isObject()||p.get("applications").isEmpty()){
    ObjectNode apps=p.putObject("applications");
    Set<String> svcNames=new LinkedHashSet<>();
@@ -323,7 +336,6 @@ public class RuntimePlanningService {
    });
    if(svcNames.isEmpty())svcNames.add("gateway");
    Map<String,String> healthPaths=pre!=null&&pre.getServiceHealthPaths()!=null?pre.getServiceHealthPaths():Map.of();
-   Map<String,String> healthConfidence=pre!=null&&pre.getServiceHealthConfidence()!=null?pre.getServiceHealthConfidence():Map.of();
    int count=0;
    for(String sName:svcNames){
     if(count>=10)break;
@@ -336,9 +348,7 @@ public class RuntimePlanningService {
     appNode.put("runtime",mapStackToRuntime(stack));
     appNode.put("containerPort",(port>=1&&port<=65535)?port:8080);
     appNode.put("readinessPath",healthPaths.getOrDefault(sName,"/health"));
-    boolean allowClientErr="ASSUMED".equalsIgnoreCase(healthConfidence.get(sName))
-      ||(pre!=null&&pre.getSecuredActuatorServices()!=null&&pre.getSecuredActuatorServices().contains(sName));
-    if(allowClientErr)appNode.put("allowClientErrorReadiness",true);
+    appNode.put("allowClientErrorReadiness",true);
     count++;
    }
   }
@@ -640,7 +650,7 @@ public class RuntimePlanningService {
   }
   for(DetectedEndpointDTO ep:business){
    if(pickedSet.size()>=10)break;
-   if(perServiceCount.getOrDefault(ep.getService(),0)==0||pickedSet.size()<6){
+   if(perServiceCount.getOrDefault(ep.getService(),0)==0||!isAuxiliaryEndpointPath(ep.getPath())){
     if(pickedSet.add(ep)){
      perServiceCount.put(ep.getService(),perServiceCount.getOrDefault(ep.getService(),0)+1);
     }
@@ -858,7 +868,7 @@ public class RuntimePlanningService {
         }
       ]
     }
-    Use {{VAR}} ONLY for variables extracted by an earlier step's `extract` map; replace any other path parameters like {id} directly with realistic sample values (e.g. 1, SKU-LAPTOP-01).
+    Use {{VAR}} ONLY for variables extracted by an earlier step's `extract` map; for numeric {id} path parameters use 1 (or extracted {{ENTITY_ID}}), and use SKU-LAPTOP-01 ONLY for {sku}/{productCode} parameters. Do NOT repeat identical (service, method, path) steps.
     """);
 
   boolean hasCustomUrl=customAiEndpointUrl!=null&&!customAiEndpointUrl.isBlank();
@@ -952,6 +962,8 @@ public class RuntimePlanningService {
   Map<String,String> sampleInputs=new LinkedHashMap<>();
   List<GeneratedStepDraft> validSteps=new ArrayList<>();
   Set<String> availableExtractedVars=new LinkedHashSet<>();
+  Map<String,String> extractedByResource=new LinkedHashMap<>();
+  Set<String> seenStepRoutes=new HashSet<>();
   int idx=1;
   for(JsonNode item:parsed.path("steps")){
    if(idx>10)break;
@@ -975,6 +987,34 @@ public class RuntimePlanningService {
     }
    }
 
+   String resRoot=resourceEntityToken(matchedEp!=null&&matchedEp.getPath()!=null?matchedEp.getPath():rawPath);
+   if(matchedEp!=null&&matchedEp.getPath()!=null){
+    String[] epSegs=matchedEp.getPath().split("\\?",2)[0].split("/");
+    String[] rawParts=rawPath.split("\\?",2);
+    String[] reqSegs=rawParts[0].split("/");
+    if(epSegs.length==reqSegs.length){
+     boolean modifiedSeg=false;
+     for(int si=0;si<epSegs.length;si++){
+      String es=epSegs[si],rs=reqSegs[si];
+      if(es.startsWith("{")&&es.endsWith("}")){
+       String epParam=es.substring(1,es.length()-1);
+       String chained=resolveChainedVariableForParam(epParam,resRoot,extractedByResource);
+       boolean rsIsUnboundOrMisplacedSku="SKU-LAPTOP-01".equalsIgnoreCase(rs)&&!epParam.toLowerCase(Locale.ROOT).contains("sku")&&!epParam.toLowerCase(Locale.ROOT).contains("code");
+       if(chained!=null&&availableExtractedVars.contains(chained)&&(rs.startsWith("{")||rsIsUnboundOrMisplacedSku)){
+        reqSegs[si]="{{"+chained+"}}";
+        modifiedSeg=true;
+       }else if(rsIsUnboundOrMisplacedSku){
+        reqSegs[si]="{"+epParam+"}";
+        modifiedSeg=true;
+       }
+      }
+     }
+     if(modifiedSeg){
+      rawPath=String.join("/",reqSegs)+(rawParts.length>1?"?"+rawParts[1]:"");
+     }
+    }
+   }
+
    String serviceKey=safeServiceEnvPrefix(svc);
    Map<String,String> stepVars=new LinkedHashMap<>();
    // Preserve {{VAR}} in rawPath only when VAR is already in availableExtractedVars; convert unbound {{VAR}} or single {param} to {{V0}}
@@ -991,15 +1031,21 @@ public class RuntimePlanningService {
    Matcher m=PATH_PARAM_PATTERN.matcher(pathSingleBracesOnly);
    while(m.find()){
     String param=m.group(1);
-    String alias="V"+stepVars.size();
-    String envName=(serviceKey+"_"+param.replaceAll("[^A-Za-z0-9]","_").toUpperCase(Locale.ROOT));
-    if(envName.length()>60)envName=envName.substring(0,60);
-    stepVars.put(alias,envName);
-    sampleInputs.putIfAbsent(envName,inferSampleParamValue(param));
-    m.appendReplacement(rewrittenSingle,"{{"+alias+"}}");
+    String chainedVar=resolveChainedVariableForParam(param,resRoot,extractedByResource);
+    if(chainedVar!=null&&availableExtractedVars.contains(chainedVar)){
+     m.appendReplacement(rewrittenSingle,"__MAVIS_VAR_"+chainedVar+"__");
+    }else{
+     String alias="V"+stepVars.size();
+     String envName=(serviceKey+"_"+param.replaceAll("[^A-Za-z0-9]","_").toUpperCase(Locale.ROOT));
+     if(envName.length()>60)envName=envName.substring(0,60);
+     stepVars.put(alias,envName);
+     sampleInputs.putIfAbsent(envName,inferSampleParamValue(param,rawPath));
+     m.appendReplacement(rewrittenSingle,"{{"+alias+"}}");
+    }
    }
    m.appendTail(rewrittenSingle);
    String finalPath=rewrittenSingle.toString().replaceAll("__MAVIS_VAR_([a-zA-Z][a-zA-Z0-9_]*)__","{{$1}}");
+   if(!seenStepRoutes.add(svc+":"+verb+":"+finalPath))continue;
 
    String bodyRef=null;
    if(Set.of("POST","PUT","PATCH").contains(verb)){
@@ -1067,8 +1113,20 @@ public class RuntimePlanningService {
      if(!ek.isEmpty()&&ptr.startsWith("/")&&ptr.length()<=512){
       stepExtract.put(ek,ptr);
       availableExtractedVars.add(ek);
+      if(!resRoot.isEmpty()&&!"AUTH_ENTRY".equals(phase)){
+       extractedByResource.putIfAbsent(resRoot,ek);
+      }
      }
     });
+   }
+   if("POST".equals(verb)&&!"AUTH_ENTRY".equals(phase)&&stepExtract.isEmpty()&&matchedEp!=null&&matchedEp.getResponseFields()!=null&&!resRoot.isEmpty()){
+    String idPtr=findMatchingPointer(matchedEp.getResponseFields(),List.of("id",resRoot.toLowerCase(Locale.ROOT)+"id","code","sku","orderid","productid"));
+    if(idPtr!=null){
+     String varName=toScenarioEnvKey(resRoot+"_ID");
+     stepExtract.put(varName,idPtr);
+     availableExtractedVars.add(varName);
+     extractedByResource.putIfAbsent(resRoot,varName);
+    }
    }
 
    String rationale=SecretRedactor.redactString(item.path("rationale").asText("Verify API workflow proposed by AI + Static Analysis."));
@@ -1400,8 +1458,16 @@ public class RuntimePlanningService {
  }
 
  private String inferSampleParamValue(String param){
+  return inferSampleParamValue(param,"");
+ }
+
+ private String inferSampleParamValue(String param,String pathContext){
   String lower=param==null?"":param.toLowerCase(Locale.ROOT);
+  String lowCtx=pathContext==null?"":pathContext.toLowerCase(Locale.ROOT);
   if(lower.contains("uuid")||lower.contains("guid"))return "00000000-0000-0000-0000-000000000001";
+  if(lower.contains("coupon")||lowCtx.contains("coupon")||lower.contains("voucher")||lowCtx.contains("voucher")||lower.contains("promo")||lowCtx.contains("promo")){
+   return lower.contains("code")?"SAVE10":"1";
+  }
   if(lower.contains("code")||lower.contains("sku"))return "SKU-LAPTOP-01";
   if(lower.contains("slug")||lower.contains("name"))return "sample-item-1";
   return "1";
@@ -1457,7 +1523,19 @@ public class RuntimePlanningService {
     ||(pre.getSandboxComposeYaml()!=null&&!pre.getSandboxComposeYaml().isBlank()&&(pre.getUnresolvableRunnerIssues()==null||pre.getUnresolvableRunnerIssues().isEmpty()));
   List<String> blockingIssues=hasRemediatedCompose?List.of():(pre.getUnresolvableRunnerIssues()!=null&&!pre.getUnresolvableRunnerIssues().isEmpty()?pre.getUnresolvableRunnerIssues():pre.getRunnerIssues());
   if(blockingIssues!=null&&!blockingIssues.isEmpty())throw new BusinessException(ErrorCode.BAD_REQUEST,"The sandbox runner cannot execute this Compose file: "+String.join("; ",blockingIssues.subList(0,Math.min(3,blockingIssues.size()))));
-  var apps=c.getProfile().path("applications");
+  ObjectNode profileCopy=c.getProfile().deepCopy();
+  var apps=profileCopy.path("applications");
+  if(apps instanceof ObjectNode appsObj){
+   List<String> rawAppKeys=new ArrayList<>();
+   appsObj.fieldNames().forEachRemaining(rawAppKeys::add);
+   for(String k:rawAppKeys){
+    if(ComposePreflightValidator.isInfrastructureService(k,"")&&appsObj.size()>1){
+     appsObj.remove(k);
+    }else if(appsObj.get(k) instanceof ObjectNode an&&!an.has("allowClientErrorReadiness")){
+     an.put("allowClientErrorReadiness",true);
+    }
+   }
+  }
   Set<String> appKeys=new LinkedHashSet<>();
   if(apps.isObject())apps.fieldNames().forEachRemaining(appKeys::add);
   Set<String> knownComposeOrDetected=new LinkedHashSet<>();
@@ -1496,8 +1574,8 @@ public class RuntimePlanningService {
   Map<String,String> boundedProtectedEnv=capProtectedEnvironment(protectedEnv,execEnv.bindings(),normalizedSteps);
 
   var config=json.createObjectNode();
-  ObjectNode profileCopy=c.getProfile().deepCopy();
   profileCopy.remove("sealedInputs");
+  if(!profileCopy.hasNonNull("memoryMiB"))profileCopy.put("memoryMiB",512);
   if(!profileCopy.hasNonNull("collectorImage")&&runnerCollectorImage!=null&&!runnerCollectorImage.isBlank())profileCopy.put("collectorImage",runnerCollectorImage.trim());
   if(!profileCopy.hasNonNull("scenarioRunnerImage")&&runnerScenarioImage!=null&&!runnerScenarioImage.isBlank())profileCopy.put("scenarioRunnerImage",runnerScenarioImage.trim());
   if(profileCopy.has("approvedForLocalPoc")&&!profileHasPinnedRunnerImages(profileCopy)){
@@ -1563,6 +1641,16 @@ public class RuntimePlanningService {
 
  private void normalizeAndBindScenarioVariables(ArrayNode steps){
   if(steps==null)return;
+  Set<String> seenAuthRoutes=new HashSet<>();
+  for(int i=0;i<steps.size();i++){
+   JsonNode n=steps.get(i);
+   String m=n.path("method").asText("").toUpperCase(Locale.ROOT);
+   String p=n.path("path").asText("").toLowerCase(Locale.ROOT);
+   if("POST".equals(m)&&(p.endsWith("/register")||p.endsWith("/login")||p.endsWith("/signin")||p.endsWith("/signup"))
+     &&!seenAuthRoutes.add(n.path("service").asText("")+":"+m+":"+p)&&steps.size()>1){
+    steps.remove(i--);
+   }
+  }
   Set<String> available=new HashSet<>();
   Map<String,String> aliasByOrig=new LinkedHashMap<>();
   int safeAliasSeq=0;
@@ -1570,10 +1658,13 @@ public class RuntimePlanningService {
    if(!(node instanceof ObjectNode step))continue;
    if(step.path("path").isTextual()){
     String rawPath=step.get("path").asText();
+    if(rawPath.toLowerCase(Locale.ROOT).contains("coupon")&&rawPath.endsWith("/SKU-LAPTOP-01")){
+     rawPath=rawPath.substring(0,rawPath.length()-"/SKU-LAPTOP-01".length())+(available.contains("COUPON_ID")?"/{{COUPON_ID}}":"/1");
+    }
     Matcher single=SINGLE_BRACE_PATH_PARAM.matcher(rawPath);
     StringBuilder sb=new StringBuilder();
     while(single.find()){
-     single.appendReplacement(sb,Matcher.quoteReplacement(inferSampleParamValue(single.group(1))));
+     single.appendReplacement(sb,Matcher.quoteReplacement(inferSampleParamValue(single.group(1),rawPath)));
     }
     single.appendTail(sb);
     step.put("path",sb.toString());
@@ -1964,7 +2055,7 @@ public class RuntimePlanningService {
   java.security.KeyPair[] rsaPair=new java.security.KeyPair[1];
   for(var v:orderedVars){
    String key=v.getName();
-   if(userOverriddenKeys.contains(key)||v.isDefaultPresent()||!isBindableEnvName(key))continue;
+   if(userOverriddenKeys.contains(key)||!isBindableEnvName(key))continue;
    List<String> owners=owningServices(v,composeServices,appServices);
    List<String> orderedOwners=new ArrayList<>();
    owners.forEach(s->{if(infra.contains(s))orderedOwners.add(s);});

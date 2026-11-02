@@ -1082,4 +1082,106 @@ class RuntimePlanningServiceTest {
         verify(environments).store(eq(sessionId), storedEnv.capture());
         assertThat(storedEnv.getValue().get("AUTH_TOKEN")).startsWith("eyJ");
     }
+
+    @Test
+    @DisplayName("STEP 2 MULTI-SERVICE: Deprioritizes /ai/ & /inactive endpoints, balances across services, and infers category JSON payload")
+    void testGenerateScenario_BalancesMultiServiceDeprioritizesAiAuxiliaryAndInfersCategoryPayload() {
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.empty());
+
+        PreflightCheckResponseDTO preflight = PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("catalog-service", "identity-service", "order-service", "service-discovery"))
+                .composeServices(List.of("catalog-service", "identity-service", "order-service", "service-discovery"))
+                .serviceHealthPaths(Map.of("service-discovery", "/actuator/health"))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder().service("catalog-service").method("POST").path("/api/catalog/ai/chat").source("AiAssistantController.java").build(),
+                        DetectedEndpointDTO.builder().service("catalog-service").method("POST").path("/api/catalog/ai/generate-description").source("AiAssistantController.java").build(),
+                        DetectedEndpointDTO.builder().service("catalog-service").method("GET").path("/api/catalog/categories").source("CategoryController.java").build(),
+                        DetectedEndpointDTO.builder().service("catalog-service").method("GET").path("/api/catalog/categories/inactive").source("CategoryController.java").build(),
+                        DetectedEndpointDTO.builder().service("catalog-service").method("POST").path("/api/catalog/categories").source("CategoryController.java").build(),
+                        DetectedEndpointDTO.builder().service("identity-service").method("POST").path("/api/identity/auth/login").source("AuthController.java").build(),
+                        DetectedEndpointDTO.builder().service("order-service").method("POST").path("/api/order/cart/add").source("CartController.java").build(),
+                        DetectedEndpointDTO.builder().service("order-service").method("GET").path("/api/order/orders").source("OrderController.java").build()
+                ))
+                .build();
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(preflight);
+
+        GeneratedScenarioDraftView draft = planningService.generateScenario(
+                projectId, new GenerateScenarioRequest(snapshotId, modelId, null));
+
+        assertThat(draft.steps()).extracting(RuntimePlanningService.GeneratedStepDraft::service)
+                .contains("catalog-service", "identity-service", "order-service")
+                .doesNotContain("service-discovery");
+        assertThat(draft.steps()).extracting(RuntimePlanningService.GeneratedStepDraft::path)
+                .doesNotContain("/api/catalog/ai/chat", "/api/catalog/ai/generate-description", "/api/catalog/categories/inactive");
+
+        List<RuntimePlanningService.GeneratedStepDraft> catalogSteps = draft.steps().stream()
+                .filter(s -> "catalog-service".equals(s.service()))
+                .toList();
+        assertThat(catalogSteps.get(0).method()).isEqualTo("POST");
+        assertThat(catalogSteps.get(0).path()).isEqualTo("/api/catalog/categories");
+        assertThat(draft.sampleInputs().get(catalogSteps.get(0).bodyReference()))
+                .contains("Tinh dau thien nhien")
+                .doesNotContain("SKU-MOUSE-02");
+    }
+
+    @Test
+    @DisplayName("STEP 2 & 3 FIX: Deduplicates repeated AI auth routes and chains coupon {id} instead of SKU-LAPTOP-01")
+    void testAiScenarioDeduplicatesAuthAndChainsCouponIdInsteadOfSku() throws Exception {
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("api-gateway"))
+                .composeServices(List.of("api-gateway"))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/identity/auth/register").build(),
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/identity/auth/login").build(),
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/order/admin/coupons").responseFields(List.of("/id", "/code")).build(),
+                        DetectedEndpointDTO.builder().service("api-gateway").method("GET").path("/api/order/admin/coupons/{id}").build()
+                ))
+                .build());
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
+
+        HttpServer mockOpenAi = HttpServer.create(new InetSocketAddress(0), 0);
+        mockOpenAi.createContext("/v1/chat/completions", exchange -> {
+            String resp = """
+                    {
+                      "choices": [{
+                        "message": {
+                          "content": "{\\"suggestedName\\":\\"Coupon Flow\\",\\"summary\\":\\"End-to-end\\",\\"steps\\":[{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/identity/auth/register\\",\\"expectedStatus\\":201},{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/identity/auth/register\\",\\"expectedStatus\\":201},{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/identity/auth/login\\",\\"expectedStatus\\":200},{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/identity/auth/login\\",\\"expectedStatus\\":200},{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/order/admin/coupons\\",\\"expectedStatus\\":201},{\\"service\\":\\"api-gateway\\",\\"method\\":\\"GET\\",\\"path\\":\\"/api/order/admin/coupons/SKU-LAPTOP-01\\",\\"expectedStatus\\":200}]}"
+                        }
+                      }]
+                    }
+                    """;
+            byte[] bytes = resp.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        mockOpenAi.start();
+        try {
+            int port = mockOpenAi.getAddress().getPort();
+            ReflectionTestUtils.setField(planningService, "customAiEndpointUrl", "http://127.0.0.1:" + port + "/v1/chat/completions");
+            when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.of("sk-proj-test-key"));
+
+            GeneratedScenarioDraftView aiDraft = planningService.generateScenario(
+                    projectId, new GenerateScenarioRequest(snapshotId, modelId, "Coupon journey"));
+
+            assertThat(aiDraft.steps()).extracting(RuntimePlanningService.GeneratedStepDraft::path)
+                    .containsExactly(
+                            "/api/identity/auth/register",
+                            "/api/identity/auth/login",
+                            "/api/order/admin/coupons",
+                            "/api/order/admin/coupons/{{COUPON_ID}}"
+                    );
+        } finally {
+            mockOpenAi.stop(0);
+        }
+    }
 }

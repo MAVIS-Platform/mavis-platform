@@ -2915,6 +2915,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 disabled={
                   !modelId ||
                   !steps.length ||
+                  generateAiDraft.isPending ||
                   buildImages.isPending ||
                   autoSaveConfig.isPending ||
                   saveDraft.isPending ||
@@ -2923,9 +2924,11 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 }
                 onClick={() => handleCreateAndRun(true)}
               >
-                {buildImages.isPending || autoSaveConfig.isPending || start.isPending
-                  ? "Saving & launching into Step 3..."
-                  : "Confirm & Run in Step 3 →"}
+                {generateAiDraft.isPending
+                  ? "Generating AI Scenario..."
+                  : buildImages.isPending || autoSaveConfig.isPending || start.isPending
+                    ? "Saving & launching into Step 3..."
+                    : "Confirm & Run in Step 3 →"}
               </Button>
               <Button
                 type="button"
@@ -2933,6 +2936,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 disabled={
                   !modelId ||
                   !steps.length ||
+                  generateAiDraft.isPending ||
                   saveDraft.isPending ||
                   updateDraft.isPending ||
                   start.isPending
