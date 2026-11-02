@@ -770,9 +770,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         onStep2Click={() => void proceedToStep2()}
         blockedReason={step1BlockedReason}
       />
-      {step1StatusMsg && (
+      {step1StatusMsg && !(buildImages.isPending || isAutoBuilding) && (
         <div role="status" className="flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs text-foreground">
-          {(buildImages.isPending || isAutoBuilding || preflight.isPending) && (
+          {preflight.isPending && (
             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-400" aria-hidden="true" />
           )}
           <span>{step1StatusMsg}</span>
@@ -860,9 +860,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
               </div>
             </div>
 
-            {!isStep1Ready && step1BlockedReason && (preflight.isPending || buildImages.isPending || isAutoBuilding || hasCheckedPreflight) && (
+            {!isStep1Ready && step1BlockedReason && !(buildImages.isPending || isAutoBuilding) && (preflight.isPending || !hasCheckedPreflight) && (
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                {(preflight.isPending || buildImages.isPending || isAutoBuilding) && (
+                {preflight.isPending && (
                   <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" aria-hidden="true" />
                 )}
                 <span>{step1BlockedReason}</span>
@@ -945,10 +945,10 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                         buildImages.isPending || isAutoBuilding ? (
                           <div className="space-y-2.5">
                             <div className="flex items-center gap-2 text-xs text-foreground">
-                              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" aria-hidden="true" />
+                              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-400" aria-hidden="true" />
                               <span>
-                                <strong>Automatically building sandbox images from source ({servicesNeedingImage.length - unpinnedServices.length}/{servicesNeedingImage.length})</strong>
-                                {" — no manual input needed."}
+                                {step1StatusMsg ||
+                                  `Building sandbox image (${servicesNeedingImage.length - unpinnedServices.length + 1}/${servicesNeedingImage.length})...`}
                               </span>
                             </div>
                             <div className="grid gap-2 sm:grid-cols-3">
@@ -964,8 +964,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                                     {isBuilt ? (
                                       <span className="shrink-0 text-[11px] font-sans font-medium text-emerald-500">✓ Built</span>
                                     ) : isCurrent ? (
-                                      <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-sans text-sky-400">
-                                        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                      <span className="shrink-0 text-[11px] font-sans font-medium text-sky-400">
                                         Building...
                                       </span>
                                     ) : (
