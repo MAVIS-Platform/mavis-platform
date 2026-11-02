@@ -973,8 +973,31 @@ public class RuntimePlanningService {
   Set<String> availableExtractedVars=new LinkedHashSet<>();
   Map<String,String> extractedByResource=new LinkedHashMap<>();
   Set<String> seenStepRoutes=new HashSet<>();
+  List<JsonNode> rawSteps=new ArrayList<>();
+  parsed.path("steps").forEach(rawSteps::add);
+  if(goal==null||!goal.toLowerCase(Locale.ROOT).contains("only")){
+   boolean hasOrderOrCheckoutWrite=rawSteps.stream().anyMatch(n->"POST".equalsIgnoreCase(n.path("method").asText(""))
+     &&(n.path("path").asText("").toLowerCase(Locale.ROOT).endsWith("/checkout")||n.path("path").asText("").toLowerCase(Locale.ROOT).endsWith("/orders")));
+   if(!hasOrderOrCheckoutWrite&&rawSteps.size()<10){
+    DetectedEndpointDTO checkoutEp=promptCandidates.stream()
+      .filter(ep->"POST".equalsIgnoreCase(ep.getMethod())&&ep.getPath()!=null&&ep.getPath().toLowerCase(Locale.ROOT).endsWith("/checkout")&&allowedServices.contains(ep.getService()))
+      .findFirst().orElse(null);
+    if(checkoutEp!=null){
+     ObjectNode injected=json.createObjectNode();
+     injected.put("service",checkoutEp.getService());
+     injected.put("method","POST");
+     injected.put("path",checkoutEp.getPath());
+     injected.put("expectedStatus",checkoutEp.getExpectedStatus()!=null?checkoutEp.getExpectedStatus():201);
+     injected.put("journeyPhase","CROSS_SERVICE_WORKFLOW: Order & Coupon Checkout");
+     injected.put("rationale","Place an order via checkout to trigger cross-service inventory deduction and notification events.");
+     int insertAt=rawSteps.size();
+     while(insertAt>0&&"GET".equalsIgnoreCase(rawSteps.get(insertAt-1).path("method").asText("")))insertAt--;
+     rawSteps.add(insertAt,injected);
+    }
+   }
+  }
   int idx=1;
-  for(JsonNode item:parsed.path("steps")){
+  for(JsonNode item:rawSteps){
    if(idx>10)break;
    String rawSvc=item.path("service").asText("").trim();
    String svc=resolveServiceToAllowed(rawSvc,null,allowedServices,savedProfile,pre,false);
