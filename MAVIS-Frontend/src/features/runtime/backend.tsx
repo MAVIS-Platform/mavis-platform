@@ -540,7 +540,7 @@ function RuntimeWorkflowTopologyCanvas({
 
     const maxRows = Math.max(1, ...columns.map((c) => c.length));
     const svgW = Math.max(880, columns.length * 300 + 120);
-    const svgH = Math.max(340, maxRows * 130 + 90);
+    const svgH = Math.max(360, maxRows * 130 + 110);
 
     const posMap = new Map<string, { x: number; y: number; tier: number }>();
     columns.forEach((col, colIdx) => {
@@ -564,14 +564,28 @@ function RuntimeWorkflowTopologyCanvas({
     () =>
       baseNodes.map((n) => {
         const custom = customPositions[n.name];
-        return custom ? { ...n, x: custom.x, y: custom.y } : n;
+        return custom
+          ? {
+              ...n,
+              x: Math.max(84, Math.min(width - 84, custom.x)),
+              y: Math.max(40, Math.min(height - 40, custom.y)),
+            }
+          : n;
       }),
-    [baseNodes, customPositions],
+    [baseNodes, customPositions, width, height],
   );
 
   const toSvgPoint = (clientX: number, clientY: number) => {
     const svg = svgRef.current;
     if (!svg) return { x: clientX, y: clientY };
+    const ctm = svg.getScreenCTM?.();
+    if (ctm && typeof svg.createSVGPoint === "function") {
+      const pt = svg.createSVGPoint();
+      pt.x = clientX;
+      pt.y = clientY;
+      const transformed = pt.matrixTransform(ctm.inverse());
+      return { x: transformed.x, y: transformed.y };
+    }
     const rect = svg.getBoundingClientRect();
     return {
       x: ((clientX - rect.left) / Math.max(1, rect.width)) * width,
@@ -698,6 +712,52 @@ function RuntimeWorkflowTopologyCanvas({
                     />
                   )}
                 </line>
+                {!planned && (
+                  <>
+                    <circle r="7" fill={stroke} fillOpacity="0.28">
+                      <animateMotion
+                        dur="2.4s"
+                        repeatCount="indefinite"
+                        keyPoints="0;0;1;1"
+                        keyTimes={
+                          p1.tier <= 1
+                            ? "0;0.04;0.48;1"
+                            : "0;0.48;0.94;1"
+                        }
+                        calcMode="linear"
+                        path={`M ${x1} ${y1} L ${x2} ${y2}`}
+                      />
+                      <animate
+                        attributeName="opacity"
+                        values={p1.tier <= 1 ? "0;1;1;0;0" : "0;0;1;1;0"}
+                        keyTimes={p1.tier <= 1 ? "0;0.04;0.46;0.50;1" : "0;0.46;0.50;0.92;1"}
+                        dur="2.4s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                    <circle r="4" fill="#f8fafc" stroke={stroke} strokeWidth="2">
+                      <animateMotion
+                        dur="2.4s"
+                        repeatCount="indefinite"
+                        keyPoints="0;0;1;1"
+                        keyTimes={
+                          p1.tier <= 1
+                            ? "0;0.04;0.48;1"
+                            : "0;0.48;0.94;1"
+                        }
+                        calcMode="linear"
+                        path={`M ${x1} ${y1} L ${x2} ${y2}`}
+                      />
+                      <animate
+                        attributeName="opacity"
+                        values={p1.tier <= 1 ? "0;1;1;0;0" : "0;0;1;1;0"}
+                        keyTimes={p1.tier <= 1 ? "0;0.04;0.46;0.50;1" : "0;0.46;0.50;0.92;1"}
+                        dur="2.4s"
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                  </>
+                )}
                 <rect
                   x={midX - 58}
                   y={midY - 14}
@@ -911,11 +971,12 @@ function RuntimeSequenceDiagramCanvas({
         </div>
       </div>
 
-      <div className="overflow-x-auto overflow-y-auto max-h-[620px] rounded-lg border border-slate-800 bg-[#0b1120] p-2 flex justify-center">
+      <div className="overflow-x-auto overflow-y-auto max-h-[620px] rounded-lg border border-slate-800 bg-[#0b1120] p-2">
         <div
+          className="w-fit mx-auto"
           style={{
             transform: `scale(${zoomPct / 100})`,
-            transformOrigin: "top center",
+            transformOrigin: "top left",
           }}
           dangerouslySetInnerHTML={{ __html: svgMarkup }}
         />
@@ -1130,6 +1191,38 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   );
   const observed = workflowData.mode === "OBSERVED";
 
+  const rootMetaByTraceId = useMemo(() => {
+    const map = new Map<string, ApiFeatureClusterMeta>();
+    for (const sr of session.data?.stepResults ?? []) {
+      const tid = sr.traceId?.trim().toLowerCase();
+      if (!tid || map.has(tid)) continue;
+      const routeKey = `${(sr.method ?? "GET").toUpperCase()}:${sr.path ?? "/"}`;
+      const aiPhase = aiPhaseByRoute.get(routeKey) ?? aiPhaseByRoute.get(sr.path ?? "");
+      map.set(tid, classifyApiFeatureCluster(sr.path, "api-gateway", sr.service, aiPhase));
+    }
+    for (const st of workflowData.steps) {
+      const tid = st.traceId?.trim().toLowerCase();
+      if (!tid || map.has(tid)) continue;
+      const callerLow = (st.callerService ?? "").toLowerCase();
+      if (callerLow.includes("gateway") || isRunnerActor(st.callerService)) {
+        const routeKey = `${(st.httpMethod ?? "GET").toUpperCase()}:${st.operation ?? "/"}`;
+        const aiPhase = aiPhaseByRoute.get(routeKey) ?? aiPhaseByRoute.get(st.operation ?? "");
+        map.set(tid, classifyApiFeatureCluster(st.operation, st.callerService, st.calleeService, aiPhase));
+      }
+    }
+    return map;
+  }, [session.data?.stepResults, workflowData.steps, aiPhaseByRoute]);
+
+  const resolveStepClusterMeta = (st: ObservedStepItem): ApiFeatureClusterMeta => {
+    const tid = st.traceId?.trim().toLowerCase();
+    if (tid && rootMetaByTraceId.has(tid)) {
+      return rootMetaByTraceId.get(tid)!;
+    }
+    const routeKey = `${(st.httpMethod ?? "GET").toUpperCase()}:${st.operation ?? "/"}`;
+    const aiPhase = aiPhaseByRoute.get(routeKey) ?? aiPhaseByRoute.get(st.operation ?? "");
+    return classifyApiFeatureCluster(st.operation, st.callerService, st.calleeService, aiPhase);
+  };
+
   const featureClusters = useMemo(() => {
     const byId = new Map<
       ApiFeatureClusterId,
@@ -1138,15 +1231,14 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         steps: ObservedStepItem[];
         services: Set<string>;
         routes: string[];
+        firstIndex: number;
       }
     >();
-    for (const st of workflowData.steps) {
-      const routeKey = `${(st.httpMethod ?? "GET").toUpperCase()}:${st.operation ?? "/"}`;
-      const aiPhase = aiPhaseByRoute.get(routeKey) ?? aiPhaseByRoute.get(st.operation ?? "");
-      const meta = classifyApiFeatureCluster(st.operation, st.callerService, st.calleeService, aiPhase);
+    workflowData.steps.forEach((st, idx) => {
+      const meta = resolveStepClusterMeta(st);
       let entry = byId.get(meta.id);
       if (!entry) {
-        entry = { meta, steps: [], services: new Set<string>(), routes: [] };
+        entry = { meta, steps: [], services: new Set<string>(), routes: [], firstIndex: idx };
         byId.set(meta.id, entry);
       }
       entry.steps.push(st);
@@ -1157,16 +1249,16 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       if (!entry.routes.includes(routeLabel)) {
         entry.routes.push(routeLabel);
       }
-    }
-    return Array.from(byId.values()).sort((a, b) => a.meta.order - b.meta.order);
-  }, [workflowData.steps, aiPhaseByRoute]);
+    });
+    return Array.from(byId.values()).sort(
+      (a, b) => a.firstIndex - b.firstIndex || a.meta.order - b.meta.order,
+    );
+  }, [workflowData.steps, rootMetaByTraceId, aiPhaseByRoute]);
 
   const filteredSteps = useMemo(() => {
     return workflowData.steps.filter((s) => {
       if (selectedClusterFilter) {
-        const routeKey = `${(s.httpMethod ?? "GET").toUpperCase()}:${s.operation ?? "/"}`;
-        const aiPhase = aiPhaseByRoute.get(routeKey) ?? aiPhaseByRoute.get(s.operation ?? "");
-        const meta = classifyApiFeatureCluster(s.operation, s.callerService, s.calleeService, aiPhase);
+        const meta = resolveStepClusterMeta(s);
         if (meta.id !== selectedClusterFilter) return false;
       }
       if (selectedServiceFilter) {
@@ -1176,7 +1268,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       }
       return true;
     });
-  }, [workflowData.steps, selectedClusterFilter, selectedServiceFilter, aiPhaseByRoute]);
+  }, [workflowData.steps, selectedClusterFilter, selectedServiceFilter, rootMetaByTraceId, aiPhaseByRoute]);
 
   const maxStepDuration = useMemo(
     () => Math.max(1, ...workflowData.steps.map((s) => s.durationMs ?? 0)),
@@ -1786,7 +1878,11 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               </span>
               {publicationGate && (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border border-emerald-600/40 bg-emerald-600/15 text-emerald-900 dark:text-emerald-200">
-                  {publicationGate}
+                  {publicationGate === "PROMOTED"
+                    ? "PROMOTED (LATEST VALID)"
+                    : publicationGate === "HELD_NON_PROMOTED"
+                      ? "ENRICHED SNAPSHOT (BASELINE KEPT)"
+                      : publicationGate}
                 </span>
               )}
               {capturedSpans != null && (
@@ -1866,14 +1962,13 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               {sessionOptions.length > 0 && (
                 <select
                   aria-label="Runtime session"
-                  className="h-8 rounded-md border bg-background px-2.5 text-xs font-mono"
+                  className="h-8 rounded-md border bg-background px-2.5 text-xs font-mono text-foreground"
                   value={selectedId}
                   onChange={(e) => setSelected(e.target.value)}
                 >
-                  {sessionOptions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.scenarioName ?? s.id.slice(0, 8)} ·{" "}
-                      {translatedStatusLabel(s.executionStatus, t)}
+                  {sessionOptions.map((s, idx) => (
+                    <option key={s.id} value={s.id} className="bg-slate-900 text-slate-100">
+                      {`#${sessionOptions.length - idx} (${s.id.slice(0, 6)}) · ${s.scenarioName ?? s.id.slice(0, 8)} · ${translatedStatusLabel(s.executionStatus, t)}`}
                     </option>
                   ))}
                 </select>

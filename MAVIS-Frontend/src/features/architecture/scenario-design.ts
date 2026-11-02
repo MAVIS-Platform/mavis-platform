@@ -1257,7 +1257,7 @@ export function interactionToDrawioXml(
 
   const cleanSdTitle = effectiveDoc.name.replace(/\s*\(\d+\s*steps?\)\s*$/i, "").trim();
   const sdHeaderLabel = cleanSdTitle.startsWith("sd ") ? cleanSdTitle : `sd ${cleanSdTitle}`;
-  const sdTabWidth = Math.min(380, Math.max(150, Math.round(sdHeaderLabel.length * 7.5 + 28)));
+  const sdTabWidth = Math.min(Math.max(420, width - 80), Math.max(180, Math.round(sdHeaderLabel.length * 8.2 + 36)));
 
   const cells: string[] = [
     '<mxCell id="0"/><mxCell id="1" parent="0"/>',
@@ -1543,6 +1543,34 @@ export function interactionToDrawioXml(
 
     cells.push(
       `<mxCell id="step-${i}" mavisId="${escapeXml(primarySourceRelId)}" mavisMessageId="${escapeXml(msg.messageId)}" mavisMessageSort="${escapeXml(msg.messageSort)}" mavisFromParticipantId="${escapeXml(msg.fromParticipantId)}" mavisToParticipantId="${escapeXml(msg.toParticipantId)}"${underlyingAttr} mavisRole="edge" value="${escapeXml(label)}" style="edgeStyle=none;html=0;${arrowStyle}fontFamily=Arial;fontSize=12;fontColor=#102c4f;labelBackgroundColor=none;${exitPortStyle}${entryPortStyle}" edge="1" parent="1" source="${sourceCellId}" target="${targetCellId}"><mxGeometry relative="1" as="geometry">${points}</mxGeometry></mxCell>`,
+      ...(msg.messageSort === "SYNCH_CALL" &&
+      !isFoundEndpoint &&
+      !isLostEndpoint &&
+      fromIdx !== undefined &&
+      toIdx !== undefined &&
+      fromIdx !== toIdx &&
+      !(
+        effectiveDoc.messages[i + 1] &&
+        effectiveDoc.messages[i + 1]?.messageSort === "REPLY" &&
+        effectiveDoc.messages[i + 1]?.fromParticipantId === msg.toParticipantId &&
+        effectiveDoc.messages[i + 1]?.toParticipantId === msg.fromParticipantId
+      ) &&
+      (msg.httpStatusCode != null || msg.durationMs != null || effectiveDoc.mode === "OBSERVED")
+        ? (() => {
+            const replyY = y + 22;
+            const replyExitPos = Math.max(0.05, Math.min(0.98, (replyY - toStartY) / toHeight));
+            const replyEntryPos = Math.max(0.05, Math.min(0.98, (replyY - fromStartY) / fromHeight));
+            const replyStatus = msg.httpStatusCode ?? 200;
+            const replyDur = msg.durationMs != null ? `${msg.durationMs}ms` : "";
+            const replyLabel = replyDur ? `HTTP ${replyStatus} (${replyDur})` : `HTTP ${replyStatus}`;
+            const replyStyle = styleForMessageSort("REPLY");
+            const replyExitPort = `exitX=${entryXFraction};exitY=${replyExitPos};exitPerimeter=0;`;
+            const replyEntryPort = `entryX=${exitXFraction};entryY=${replyEntryPos};entryPerimeter=0;`;
+            return [
+              `<mxCell id="step-${i}-reply" mavisMessageId="${escapeXml(msg.messageId)}" mavisRole="visual-reply-edge" value="${escapeXml(replyLabel)}" style="edgeStyle=none;html=0;${replyStyle}fontFamily=Arial;fontSize=11;fontColor=#047857;labelBackgroundColor=none;${replyExitPort}${replyEntryPort}" edge="1" parent="1" source="${targetCellId}" target="${sourceCellId}"><mxGeometry relative="1" as="geometry"><mxPoint y="-9" as="offset"/></mxGeometry></mxCell>`,
+            ];
+          })()
+        : []),
     );
   });
 
@@ -1675,7 +1703,11 @@ export function extractInteractionFromDrawioXml(
             }
           }
         }
-      } else if ((role === "edge" || (cellId && cellId.startsWith("step-"))) && cellId) {
+      } else if (
+        (role === "edge" || (cellId && cellId.startsWith("step-") && !cellId.endsWith("-reply"))) &&
+        role !== "visual-reply-edge" &&
+        cellId
+      ) {
         const msgId =
           attrs["mavisMessageId"] ??
           doc.messages[Number(cellId.replace("step-", ""))]?.messageId ??
@@ -1735,6 +1767,7 @@ export function extractInteractionFromDrawioXml(
       // 4b. Check messages (deletion, endpoint rewiring, label edit, or sort/style edit)
       doc.messages.forEach((msg, idx) => {
         expectedEdgeCellIds.add(`step-${idx}`);
+        expectedEdgeCellIds.add(`step-${idx}-reply`);
         expectedVertexCellIds.add(`found-origin-${msg.messageId}`);
         expectedVertexCellIds.add(`lost-target-${msg.messageId}`);
         const xmlEdge = xmlStepMessages.get(msg.messageId);

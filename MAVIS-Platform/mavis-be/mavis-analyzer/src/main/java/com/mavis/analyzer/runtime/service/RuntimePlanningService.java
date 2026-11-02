@@ -911,6 +911,7 @@ public class RuntimePlanningService {
   prompt.append("3. Stateful Variable Chaining: When a POST step returns JSON fields (see `responseFields`), you may attach `\"extract\": {\"ORDER_ID\": \"/id\"}` (variable names MUST match `[A-Z][A-Z0-9_]*`, pointers MUST start with `/`), and reference `{{ORDER_ID}}` in subsequent steps' `path`, `sampleJsonBody`, or `headers`.\n");
   prompt.append("4. Respect `validationHints` and `dtoSample` so every POST/PUT/PATCH body passes Bean Validation (@NotBlank, @Email, @Positive, etc.) on the first try.\n");
   prompt.append("5. NEVER invent a POST/PUT/PATCH verb for a path that is only listed as GET in Discovered endpoints (some write routes require multipart/form-data file uploads and are excluded; use the listed GET route or a listed POST route instead).\n");
+  prompt.append("6. Before calling cart/order creation (e.g. POST /api/order/cart/add), include a catalog read step (e.g. GET /api/catalog/products) if available. Avoid redundant direct external calls to internal service-to-service endpoints (such as /inventory/deduct or /inventory/restore) when top-level business workflows (/checkout or /cancel) already invoke them internally.\n");
   prompt.append("Allowed services: ").append(String.join(", ",allowedServices)).append("\n");
   if(!relationships.isEmpty()){
    prompt.append("Architecture C4 relationships (target these cross-service paths):\n");
@@ -1218,6 +1219,8 @@ public class RuntimePlanningService {
 
    Map<String,String> stepHeaders=new LinkedHashMap<>();
    boolean aiRequestedAuthHeader=false;
+   boolean requiresAdmin=(rawPath.toLowerCase(Locale.ROOT).contains("/admin/"))
+     ||(matchedEp!=null&&matchedEp.getRequiredRoles()!=null&&matchedEp.getRequiredRoles().stream().anyMatch(r->r!=null&&r.toUpperCase(Locale.ROOT).contains("ADMIN")));
    if(item.path("headers").isObject()){
     for(Iterator<Map.Entry<String,JsonNode>> it=item.path("headers").fields();it.hasNext();){
      Map.Entry<String,JsonNode> e=it.next();
@@ -1225,7 +1228,7 @@ public class RuntimePlanningService {
      String rawHv=e.getValue().asText("").trim();
      if("Authorization".equalsIgnoreCase(hk)){
       aiRequestedAuthHeader=true;
-      if(sandboxBearer!=null)continue;
+      if(sandboxBearer!=null&&(requiresAdmin||!availableExtractedVars.contains("AUTH_TOKEN")))continue;
      }
      boolean hasUnboundVar=false;
      Matcher hm=SCENARIO_VAR_PATTERN.matcher(rawHv);
@@ -1244,12 +1247,12 @@ public class RuntimePlanningService {
    boolean isAuthPhase=phase!=null&&(phase.equalsIgnoreCase("AUTH_ENTRY")||phase.toUpperCase(Locale.ROOT).startsWith("AUTH_ENTRY:")||phase.toUpperCase(Locale.ROOT).startsWith("AUTH_IDENTITY"));
    boolean needsAuth=(matchedEp!=null&&Boolean.TRUE.equals(matchedEp.getRequiresAuth())&&!isAuthPhase)||aiRequestedAuthHeader;
    if(needsAuth&&!stepHeaders.containsKey("Authorization")){
-    if(sandboxBearer!=null){
+    if(availableExtractedVars.contains("AUTH_TOKEN")&&!requiresAdmin){
+     stepHeaders.put("Authorization","Bearer {{AUTH_TOKEN}}");
+    }else if(sandboxBearer!=null){
      String authRef=serviceKey+"_AUTHORIZATION";
      stepEnvHeaders=List.of(Map.of("name","Authorization","reference",authRef));
      sampleInputs.putIfAbsent(authRef,sandboxBearer);
-    }else if(availableExtractedVars.contains("AUTH_TOKEN")){
-     stepHeaders.put("Authorization","Bearer {{AUTH_TOKEN}}");
     }
    }
 

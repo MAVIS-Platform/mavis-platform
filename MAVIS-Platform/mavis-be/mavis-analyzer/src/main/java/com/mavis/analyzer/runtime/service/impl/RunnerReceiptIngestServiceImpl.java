@@ -207,8 +207,17 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         // [CHẶNG 12]: Tập hợp danh sách externalRootSpanIds từ outcome.scenario.steps
         Set<String> externalRootSpanIds = new HashSet<>();
         Map<String, JsonNode> externalRootStepByTraceParent = new LinkedHashMap<>();
+        Map<String, Integer> traceOrderByTraceId = new LinkedHashMap<>();
         if (outcome.getScenario() != null && outcome.getScenario().has("steps") && outcome.getScenario().get("steps").isArray()) {
+            int traceOrdIdx = 1;
             for (JsonNode stepNode : outcome.getScenario().get("steps")) {
+                if (stepNode.hasNonNull("traceId")) {
+                    String tid = stepNode.get("traceId").asText("").trim().toLowerCase(Locale.ROOT);
+                    if (!tid.isEmpty()) {
+                        traceOrderByTraceId.putIfAbsent(tid, traceOrdIdx);
+                    }
+                }
+                traceOrdIdx++;
                 if (stepNode.hasNonNull("parentSpanId")) {
                     String pSpanId = stepNode.get("parentSpanId").asText().toLowerCase(Locale.ROOT);
                     externalRootSpanIds.add(pSpanId);
@@ -598,7 +607,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 RunnerObservedInteractionDTO ib = interactions.get(b);
                 RunnerCorrelatedSpanDTO ca = spanMap.get((ia.getTraceId() + ":" + ia.getChildSpanId()).toLowerCase(Locale.ROOT));
                 RunnerCorrelatedSpanDTO cb = spanMap.get((ib.getTraceId() + ":" + ib.getChildSpanId()).toLowerCase(Locale.ROOT));
-                return compareCausalSpanOrder(ca, a, cb, b, spanMap);
+                return compareCausalSpanOrder(ca, a, cb, b, spanMap, traceOrderByTraceId);
             });
             for (int idx : orderedIndices) {
                 RunnerObservedInteractionDTO interaction = interactions.get(idx);
@@ -639,7 +648,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 RunnerCausalEdgeDTO eb = causalEdges.get(b);
                 RunnerCorrelatedSpanDTO ca = spanMap.get((ea.getTraceId() + ":" + ea.getChildSpanId()).toLowerCase(Locale.ROOT));
                 RunnerCorrelatedSpanDTO cb = spanMap.get((eb.getTraceId() + ":" + eb.getChildSpanId()).toLowerCase(Locale.ROOT));
-                return compareCausalSpanOrder(ca, a, cb, b, spanMap);
+                return compareCausalSpanOrder(ca, a, cb, b, spanMap, traceOrderByTraceId);
             });
             for (int idx : orderedIndices) {
                 RunnerCausalEdgeDTO edge = causalEdges.get(idx);
@@ -671,7 +680,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             // Fallback sang spans có parentSpanId
             List<Integer> orderedIndices = new ArrayList<>(spans.size());
             for (int i = 0; i < spans.size(); i++) orderedIndices.add(i);
-            orderedIndices.sort((a, b) -> compareCausalSpanOrder(spans.get(a), a, spans.get(b), b, spanMap));
+            orderedIndices.sort((a, b) -> compareCausalSpanOrder(spans.get(a), a, spans.get(b), b, spanMap, traceOrderByTraceId));
             for (int idx : orderedIndices) {
                 RunnerCorrelatedSpanDTO childSpan = spans.get(idx);
                 if (childSpan.getParentSpanId() != null && !childSpan.getParentSpanId().isBlank()) {
@@ -855,6 +864,18 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 String pinnedPath = SecretRedactor.redactString(directEntryPinnedStep.get("path").asText("").trim());
                 if (pinnedPath != null) {
                     rawRoute = pinnedPath;
+                }
+            }
+            if (rawRoute.isEmpty() && step.relationship != null && step.relationship.getProperties() != null) {
+                JsonNode relProps = step.relationship.getProperties();
+                for (String rk : List.of("calleeRoute", "httpPath", "path", "route")) {
+                    if (relProps.hasNonNull(rk)) {
+                        String candRoute = SecretRedactor.redactString(relProps.get(rk).asText("").trim());
+                        if (candRoute != null && candRoute.startsWith("/")) {
+                            rawRoute = candRoute;
+                            break;
+                        }
+                    }
                 }
             }
             String operation;
@@ -1255,6 +1276,26 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             newEvidences.add(ev);
             return new InteractionPersistenceResult(matchedRel, ev);
         } else {
+            // If caller communicates with callee via a static MESSAGE_CHANNEL / QUEUE_BROKER in newRelationships,
+            // enrich those two channel edges to STATIC_AND_RUNTIME as well so the Architecture Graph highlights the queue path.
+            for (ModelRelationship relOut : newRelationships) {
+                if (relOut.getSourceElement() == null || relOut.getTargetElement() == null) continue;
+                ModelElement mid = relOut.getTargetElement();
+                String midType = mid.getElementType() != null ? mid.getElementType().toUpperCase(Locale.ROOT) : "";
+                if (!midType.contains("MESSAGE") && !midType.contains("QUEUE")) continue;
+                ModelElement srcContainer = resolveContainer(relOut.getSourceElement());
+                if (srcContainer == null || !caller.getName().equalsIgnoreCase(srcContainer.getName())) continue;
+                for (ModelRelationship relIn : newRelationships) {
+                    if (relIn.getSourceElement() == null || relIn.getTargetElement() == null) continue;
+                    if (!mid.equals(relIn.getSourceElement())) continue;
+                    ModelElement dstContainer = resolveContainer(relIn.getTargetElement());
+                    if (dstContainer != null && callee.getName().equalsIgnoreCase(dstContainer.getName())) {
+                        relOut.setOriginLayer("STATIC_AND_RUNTIME");
+                        relIn.setOriginLayer("STATIC_AND_RUNTIME");
+                    }
+                }
+            }
+
             ModelRelationship newRel = ModelRelationship.builder()
                     .modelVersion(enrichedVersion)
                     .sourceElement(caller)
@@ -1299,7 +1340,15 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                                               int idxA,
                                               RunnerCorrelatedSpanDTO childB,
                                               int idxB,
-                                              Map<String, RunnerCorrelatedSpanDTO> spanMap) {
+                                              Map<String, RunnerCorrelatedSpanDTO> spanMap,
+                                              Map<String, Integer> traceOrderByTraceId) {
+        if (traceOrderByTraceId != null && !traceOrderByTraceId.isEmpty() && childA != null && childB != null) {
+            Integer ordA = childA.getTraceId() != null ? traceOrderByTraceId.get(childA.getTraceId().trim().toLowerCase(Locale.ROOT)) : null;
+            Integer ordB = childB.getTraceId() != null ? traceOrderByTraceId.get(childB.getTraceId().trim().toLowerCase(Locale.ROOT)) : null;
+            if (ordA != null && ordB != null && !ordA.equals(ordB)) {
+                return Integer.compare(ordA, ordB);
+            }
+        }
         Long startA = effectiveCausalStartNanos(childA, spanMap);
         Long startB = effectiveCausalStartNanos(childB, spanMap);
         if (startA != null && startB != null && !startA.equals(startB)) {
