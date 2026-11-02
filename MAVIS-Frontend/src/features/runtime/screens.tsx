@@ -1534,7 +1534,12 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     return detectedServiceNames.filter((s) => !isKnownInfraName(s));
   }, [generatedRunnableServices, config.data?.profile, projectId, detectedServiceNames]);
 
-  const defaultSvc = runnableServices[0] ?? detectedServiceNames[0] ?? "gateway";
+  const defaultSvc =
+    runnableServices.find((s) => /gateway|bff|edge|proxy/i.test(s)) ??
+    runnableServices.find((s) => !/discovery|eureka|consul|config/i.test(s)) ??
+    runnableServices[0] ??
+    detectedServiceNames[0] ??
+    "gateway";
 
   const [scenarioName, setScenarioName] = useState("Auto-generated Architecture Verification Scenario");
   const [aiGoal, setAiGoal] = useState("");
@@ -2829,7 +2834,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                     : "";
                   const payloadValid = !isWrite || isValidJsonPayloadString(payloadText);
                   const authHeader = st.envHeaders?.find((h) => h.name.toLowerCase() === "authorization");
-                  const serviceOptions = Array.from(new Set([...runnableServices, ...(st.service ? [st.service] : [])]));
 
                   return (
                     <div key={i} className="rounded-lg border p-3 bg-muted/20 space-y-2">
@@ -2878,45 +2882,27 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                           <option value="PATCH">PATCH</option>
                           <option value="DELETE">DELETE</option>
                         </select>
-                        {serviceOptions.length > 0 ? (
-                          <select
-                            className="h-8 rounded border bg-background px-2 font-mono text-xs min-w-36"
-                            title="Runnable Compose Application Service"
-                            value={st.service}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setSteps((arr) =>
-                                arr.map((item, idx) => (idx === i ? { ...item, service: val } : item)),
-                              );
-                            }}
-                          >
-                            {serviceOptions.map((svcOpt) => (
-                              <option key={svcOpt} value={svcOpt}>
-                                {svcOpt}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <Input
-                            className="w-36 font-mono text-xs h-8"
-                            placeholder="Service"
-                            value={st.service}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setSteps((arr) =>
-                                arr.map((item, idx) => (idx === i ? { ...item, service: val } : item)),
-                              );
-                            }}
-                          />
-                        )}
+                        <span
+                          className="inline-flex h-8 items-center rounded border bg-muted/40 px-2.5 font-mono text-xs text-muted-foreground shrink-0"
+                          title="Target service automatically selected by AI + Static Analysis"
+                        >
+                          {st.service || defaultSvc}
+                        </span>
                         <Input
                           className="flex-1 min-w-48 font-mono text-xs h-8"
                           placeholder="/api/path"
                           value={st.path}
                           onChange={(e) => {
                             const val = e.target.value;
+                            const matchedSvc =
+                              !/gateway|bff|edge|proxy/i.test(defaultSvc) &&
+                              discoveredEndpoints.find((ep) => ep.path === val && ep.service)?.service;
                             setSteps((arr) =>
-                              arr.map((item, idx) => (idx === i ? { ...item, path: val } : item)),
+                              arr.map((item, idx) =>
+                                idx === i
+                                  ? { ...item, path: val, ...(matchedSvc ? { service: matchedSvc } : {}) }
+                                  : item,
+                              ),
                             );
                           }}
                         />
