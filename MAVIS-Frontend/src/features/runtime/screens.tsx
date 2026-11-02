@@ -426,17 +426,23 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     if (activeServices.length) {
       setServiceMappings((prev) => {
         const next = { ...prev };
+        const hasModelNames = Object.keys(modelServiceNames).length > 0;
         for (const s of activeServices) {
           const rec = recommendedServiceMappings[s];
           const cur = next[s];
-          if (!cur || (rec && cur === s && cur !== rec)) {
+          const staleUuid =
+            Boolean(cur) &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cur!) &&
+            hasModelNames &&
+            !(cur! in modelServiceNames);
+          if (!cur || staleUuid || (rec && cur === s && cur !== rec)) {
             next[s] = rec || s;
           }
         }
         return next;
       });
     }
-  }, [activeServices.join(","), JSON.stringify(recommendedServiceMappings)]);
+  }, [activeServices.join(","), JSON.stringify(recommendedServiceMappings), JSON.stringify(modelServiceNames)]);
 
   useEffect(() => {
     const discovered = preflight.data?.serviceImageOverrides;
@@ -510,8 +516,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const autoSecretKeys = allSecretKeys.filter((k) => !externalSecretKeys.includes(k));
   const renderedSecretKeys = showSecretOverrides ? allSecretKeys : externalSecretKeys;
 
+  const isKnownInfraName = (svc: string) =>
+    /^(sandbox-|redis$|kafka$|zookeeper$|postgres$|postgresql$|mysql$|mariadb$|mongo$|mongodb$|rabbitmq$|zipkin$|jaeger$)/i.test(
+      svc.trim(),
+    );
   const isInfraRole = (svc: string) =>
-    serviceRoles[svc] ? serviceRoles[svc] === "INFRA" : infrastructureServices.includes(svc);
+    isKnownInfraName(svc) ? true : serviceRoles[svc] ? serviceRoles[svc] === "INFRA" : infrastructureServices.includes(svc);
   const appServicesCount = activeServices.filter((s) => !isInfraRole(s)).length;
   const infraServicesCount = activeServices.filter((s) => isInfraRole(s)).length;
 
@@ -537,7 +547,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
 
   const resolveMappingLabel = (svc: string) => {
     const mapped = serviceMappings[svc] ?? recommendedServiceMappings[svc] ?? svc;
-    return modelServiceNames[mapped] ?? mapped;
+    if (modelServiceNames[mapped]) return modelServiceNames[mapped];
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(mapped)) {
+      return `${svc} (${mapped.slice(0, 8)})`;
+    }
+    return mapped;
   };
 
   const handleBuildLocalImages = async (explicitTargets?: string[]) => {
@@ -727,6 +741,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           const chosen = candidateModels.find((m) => m.id === nextModelId);
                           if (chosen?.snapshotId && chosen.snapshotId !== snapshotId) {
                             setSnapshotId(chosen.snapshotId);
+                            setServiceMappings({});
                             preflight.reset();
                           }
                         }}
