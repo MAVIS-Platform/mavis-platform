@@ -12,6 +12,21 @@ flock -w 300 9
 incoming="/opt/mavis/incoming-$tag"
 test -f "$incoming/compose.production.yml"
 test -f .env.production
+python3 - <<'PY'
+import base64, os
+from pathlib import Path
+p = Path('/opt/mavis/.env.production')
+lines = p.read_text().splitlines()
+keys = {l.split('=', 1)[0]: l.split('=', 1)[1] for l in lines if '=' in l and not l.startswith('#')}
+if not keys.get('MAVIS_RUNTIME_ENVIRONMENT_KEY'):
+    lines = [l for l in lines if not l.startswith('MAVIS_RUNTIME_ENVIRONMENT_KEY=')]
+    lines.append('MAVIS_RUNTIME_ENVIRONMENT_KEY=' + base64.b64encode(os.urandom(32)).decode())
+if Path('/var/run/docker.sock').exists():
+    lines = [l for l in lines if not l.startswith('DOCKER_GID=')]
+    lines.append('DOCKER_GID=' + str(Path('/var/run/docker.sock').stat().st_gid))
+p.write_text('\n'.join(lines) + '\n')
+p.chmod(0o600)
+PY
 previous="/opt/mavis/releases/$(date -u +%Y%m%dT%H%M%SZ)-before-$tag"
 mkdir -p "$previous"
 cp deploy/compose.production.yml "$previous/compose.production.yml"

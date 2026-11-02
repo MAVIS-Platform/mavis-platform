@@ -68,6 +68,28 @@ public class SandboxImageBuilderService {
         return ok;
     }
 
+    public static String sandboxTag(UUID projectId, String serviceName) {
+        String projPrefix = projectId.toString().replace("-", "").substring(0, 8).toLowerCase(Locale.ROOT);
+        String safeSvc = serviceName.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "-");
+        if (safeSvc.length() > 40) safeSvc = safeSvc.substring(0, 40);
+        return "mavis-sandbox-" + projPrefix + "-" + safeSvc + ":latest";
+    }
+
+    public Map<String, String> discoverExistingBuiltImages(UUID projectId, java.util.Collection<String> services) {
+        if (projectId == null || services == null || services.isEmpty() || !isLocalBuildAvailable()) {
+            return Map.of();
+        }
+        Map<String, String> discovered = new LinkedHashMap<>();
+        for (String svc : services) {
+            if (svc == null || svc.isBlank() || ComposePreflightValidator.isInfrastructureService(svc, "")) continue;
+            String imageId = inspectImageId(sandboxTag(projectId, svc));
+            if (imageId != null) {
+                discovered.put(svc, imageId);
+            }
+        }
+        return discovered;
+    }
+
     public BuildImagesResult buildSnapshotImages(UUID projectId, Path snapshotStoragePath, List<String> requestedServices) {
         if (!allowLocalImageBuild) {
             throw new BusinessException(ErrorCode.FORBIDDEN,
@@ -162,7 +184,6 @@ public class SandboxImageBuilderService {
             }
 
             Map<String, String> builtImages = new LinkedHashMap<>();
-            String projPrefix = projectId.toString().replace("-", "").substring(0, 8).toLowerCase(Locale.ROOT);
 
             for (Map.Entry<String, BuildSpec> entry : targetsToBuild.entrySet()) {
                 String svc = entry.getKey();
@@ -178,9 +199,8 @@ public class SandboxImageBuilderService {
                     continue;
                 }
 
-                String safeSvc = svc.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "-");
-                if (safeSvc.length() > 40) safeSvc = safeSvc.substring(0, 40);
-                String tag = "mavis-sandbox-" + projPrefix + "-" + safeSvc + ":latest";
+                prepareAutoBuildDockerfile(dockerfile, contextDir);
+                String tag = sandboxTag(projectId, svc);
 
                 String buildErr = runDockerBuild(projectId, tag, dockerfile, contextDir, spec.target(), spec.args());
                 if (buildErr != null) {
@@ -208,6 +228,33 @@ public class SandboxImageBuilderService {
     }
 
     protected record BuildSpec(String context, String dockerfile, String target, Map<String, String> args) {}
+
+    private static void prepareAutoBuildDockerfile(Path dockerfile, Path contextDir) {
+        try {
+            if (Files.isDirectory(contextDir.resolve("target")) || !Files.isRegularFile(contextDir.resolve("pom.xml"))) {
+                return;
+            }
+            String content = Files.readString(dockerfile, StandardCharsets.UTF_8);
+            String lower = content.toLowerCase(Locale.ROOT);
+            if (lower.contains("--from=") || lower.contains("mvn ") || lower.contains("./mvnw")) {
+                return;
+            }
+            if (Pattern.compile("(?im)^\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?(?:\\./)?target/").matcher(content).find()) {
+                String rewritten = content.replaceAll(
+                        "(?im)^(\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?)(?:\\./)?target/",
+                        "$1--from=mavis_auto_builder /mavis_build/target/");
+                String header = """
+                        FROM maven:3.9.6-eclipse-temurin-21-alpine AS mavis_auto_builder
+                        WORKDIR /mavis_build
+                        COPY pom.xml .
+                        COPY src ./src
+                        RUN mvn clean package -DskipTests -B
+
+                        """;
+                Files.writeString(dockerfile, header + rewritten, StandardCharsets.UTF_8);
+            }
+        } catch (IOException ignored) {}
+    }
 
     private static ComposePreflightValidator.DiscoveredDockerfile matchDiscoveredDockerfile(
             String serviceName,

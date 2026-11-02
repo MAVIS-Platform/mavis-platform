@@ -218,7 +218,27 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             result.setLocalImageBuildAvailable(sandboxImageBuilderService != null && sandboxImageBuilderService.isLocalBuildAvailable());
             composePreflightValidator.inspectSnapshotSource(path, result);
             enrichPreflightFromModel(snapshot, result);
+            if (result.isLocalImageBuildAvailable() && snapshot.getProject() != null && snapshot.getProject().getId() != null) {
+                Set<String> candidates = new LinkedHashSet<>();
+                if (result.getComposeServices() != null) candidates.addAll(result.getComposeServices());
+                if (result.getDetectedServices() != null) candidates.addAll(result.getDetectedServices());
+                sandboxImageBuilderService.discoverExistingBuiltImages(snapshot.getProject().getId(), candidates)
+                        .forEach(savedOverrides::putIfAbsent);
+            }
             composePreflightValidator.finalizeSandboxTopology(path, result, rawYamlContent, savedOverrides, envFiles);
+            if (result.isLocalImageBuildAvailable() && rawYamlContent == null && snapshot.getProject() != null && snapshot.getProject().getId() != null
+                    && result.getComposeServices() != null && !result.getComposeServices().isEmpty()) {
+                Map<String, String> synthDiscovered = sandboxImageBuilderService.discoverExistingBuiltImages(
+                        snapshot.getProject().getId(), result.getComposeServices());
+                boolean added = false;
+                for (Map.Entry<String, String> e : synthDiscovered.entrySet()) {
+                    if (savedOverrides.putIfAbsent(e.getKey(), e.getValue()) == null) added = true;
+                }
+                if (added) {
+                    composePreflightValidator.finalizeSandboxTopology(path, result, null, savedOverrides, envFiles);
+                }
+            }
+            result.setServiceImageOverrides(new LinkedHashMap<>(savedOverrides));
             ComposePreflightValidator.assignEnvResolutions(result);
             refreshRecommendedMappingsForSynthesizedServices(result);
             if (!result.isCompatible() && result.getDetectedServices() != null && !result.getDetectedServices().isEmpty()

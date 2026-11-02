@@ -1047,6 +1047,7 @@ export async function executeJava(
           recommendedServiceMappings: z.record(z.string()).optional(),
           modelServiceNames: z.record(z.string()).optional(),
           localImageBuildAvailable: z.boolean().optional(),
+          serviceImageOverrides: z.record(z.string()).optional(),
         })
         .parse(await post(`analyzer/runtime/preflight?snapshotId=${snapshot}`));
       return { ...result, recommendedProfile: result.recommendedProfile ?? null };

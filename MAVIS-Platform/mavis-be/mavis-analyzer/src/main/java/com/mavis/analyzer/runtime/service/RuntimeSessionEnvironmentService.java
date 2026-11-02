@@ -18,7 +18,7 @@ import java.util.*;
 @Service
 public class RuntimeSessionEnvironmentService {
  private final RuntimeSessionRepository sessions;private final RunnerServiceAuthGuard runner;private final ObjectMapper json;private final String key;
- public RuntimeSessionEnvironmentService(RuntimeSessionRepository sessions,RunnerServiceAuthGuard runner,ObjectMapper json,@Value("${mavis.runtime.environment-key:}") String key){this.sessions=sessions;this.runner=runner;this.json=json;this.key=key;}
+ public RuntimeSessionEnvironmentService(RuntimeSessionRepository sessions,RunnerServiceAuthGuard runner,ObjectMapper json,@Value("${mavis.runtime.environment-key:}") String key){this.sessions=sessions;this.runner=runner;this.json=json;this.key=(key!=null&&!key.isBlank())?key:(runner!=null&&runner.derivedEnvironmentKey()!=null?runner.derivedEnvironmentKey():"");}
  private BusinessException invalid(String message){return new BusinessException(ErrorCode.BAD_REQUEST,message);}
  private byte[] key(){try{byte[] bytes=Base64.getDecoder().decode(key);if(bytes.length!=32)throw new IllegalArgumentException();return bytes;}catch(Exception e){throw invalid("Protected runtime environment storage is not configured");}}
  private byte[] projectKey(){try{return key();}catch(Exception ignored){try{return MessageDigest.getInstance("SHA-256").digest(("mavis-project-sealed:"+(key==null?"":key)).getBytes(StandardCharsets.UTF_8));}catch(Exception e){throw invalid("Could not derive project key");}}}

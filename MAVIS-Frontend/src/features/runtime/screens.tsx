@@ -232,6 +232,8 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const [serviceImageOverrides, setServiceImageOverrides] = useState<Record<string, string>>({});
   const [showSandboxCompose, setShowSandboxCompose] = useState(false);
   const [step1StatusMsg, setStep1StatusMsg] = useState("");
+  const [isAutoBuilding, setIsAutoBuilding] = useState(false);
+  const autoBuildTriggeredRef = useRef("");
 
   useEffect(() => {
     if (preflight.data?.recommendedProfile) {
@@ -433,6 +435,13 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   }, [activeServices.join(","), JSON.stringify(recommendedServiceMappings)]);
 
   useEffect(() => {
+    const discovered = preflight.data?.serviceImageOverrides;
+    if (discovered && Object.keys(discovered).length > 0) {
+      setServiceImageOverrides((prev) => ({ ...discovered, ...prev }));
+    }
+  }, [preflight.data?.serviceImageOverrides]);
+
+  useEffect(() => {
     if (!projectId || !snapshotId) return;
     preflight.mutate({ projectId, snapshotId });
   }, [projectId, snapshotId]);
@@ -523,41 +532,70 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         .filter((s): s is string => Boolean(s)),
     ),
   );
+  const unpinnedServices = servicesNeedingImage.filter(
+    (svc) => !/^(.+@)?sha256:[0-9a-fA-F]{64}$/.test(serviceImageOverrides[svc]?.trim() ?? ""),
+  );
 
   const resolveMappingLabel = (svc: string) => {
     const mapped = serviceMappings[svc] ?? recommendedServiceMappings[svc] ?? svc;
     return modelServiceNames[mapped] ?? mapped;
   };
 
-  const handleBuildLocalImages = () => {
+  const handleBuildLocalImages = async (explicitTargets?: string[]) => {
+    const targets =
+      explicitTargets && explicitTargets.length > 0
+        ? explicitTargets
+        : unpinnedServices.length > 0
+          ? unpinnedServices
+          : servicesNeedingImage;
+    setIsAutoBuilding(true);
     setStep1StatusMsg("");
-    buildImages.mutate(
-      {
-        projectId,
-        ...(snapshotId ? { snapshotId } : {}),
-        ...(servicesNeedingImage.length > 0 ? { services: servicesNeedingImage } : {}),
-      },
-      {
-        onSuccess: (res) => {
-          const count = Object.keys(res.builtImages).length;
-          if (count > 0) {
-            setServiceImageOverrides((prev) => ({ ...prev, ...res.builtImages }));
-            if (snapshotId) {
-              preflight.mutate({ projectId, snapshotId });
-            }
-          }
-          if (res.errors.length > 0) {
-            setStep1StatusMsg(res.errors.join("; "));
-          } else {
-            setStep1StatusMsg(`Built and digest-pinned ${count} sandbox image(s) from snapshot.`);
-          }
-        },
-        onError: (err) => {
-          setStep1StatusMsg(err instanceof Error ? err.message : String(err));
-        },
-      },
-    );
+    const builtTotal: Record<string, string> = {};
+    const errorsTotal: string[] = [];
+    try {
+      const batches = targets.length > 0 ? targets.map((s) => [s]) : [[]];
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i]!;
+        if (batch[0]) {
+          setStep1StatusMsg(`Building sandbox image (${i + 1}/${batches.length}): ${batch[0]}...`);
+        }
+        const res = await buildImages.mutateAsync({
+          projectId,
+          ...(snapshotId ? { snapshotId } : {}),
+          ...(batch.length > 0 ? { services: batch } : {}),
+        });
+        Object.assign(builtTotal, res.builtImages);
+        if (Object.keys(res.builtImages).length > 0) {
+          setServiceImageOverrides((prev) => ({ ...prev, ...res.builtImages }));
+        }
+        if (res.errors.length > 0) errorsTotal.push(...res.errors);
+      }
+      const count = Object.keys(builtTotal).length;
+      if (count > 0 && snapshotId) {
+        preflight.mutate({ projectId, snapshotId });
+      }
+      if (errorsTotal.length > 0) {
+        setStep1StatusMsg(errorsTotal.join("; "));
+      } else {
+        setStep1StatusMsg(`Built and digest-pinned ${count} sandbox image(s) from snapshot.`);
+      }
+    } catch (err) {
+      setStep1StatusMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsAutoBuilding(false);
+    }
   };
+
+  useEffect(() => {
+    if (!projectId || !snapshotId || !preflight.data || preflight.isPending || isAutoBuilding || buildImages.isPending) {
+      return;
+    }
+    if (!localImageBuildAvailable || unpinnedServices.length === 0) return;
+    const key = `${projectId}:${snapshotId}`;
+    if (autoBuildTriggeredRef.current === key) return;
+    autoBuildTriggeredRef.current = key;
+    void handleBuildLocalImages(unpinnedServices);
+  }, [projectId, snapshotId, preflight.data, preflight.isPending, localImageBuildAvailable, unpinnedServices.join(",")]);
 
   const proceedToStep2 = async () => {
     const combinedSecretRefs = Array.from(
@@ -633,6 +671,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     !snapshots.isPending &&
     !preflight.isPending &&
     !buildImages.isPending &&
+    !isAutoBuilding &&
     isPreflightSecure &&
     effectiveUnresolvedIssues.length === 0;
   const step1BlockedReason = snapshots.isPending
@@ -641,7 +680,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       ? "Import a source snapshot first"
       : preflight.isPending
         ? "Inspecting source snapshot & Compose..."
-        : buildImages.isPending
+        : buildImages.isPending || isAutoBuilding
           ? "Building sandbox images..."
           : !hasInspectedStep1
             ? "Waiting for Step 1 preflight inspection..."
@@ -828,10 +867,10 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                                 size="sm"
                                 variant="outline"
                                 className="h-7 text-xs"
-                                disabled={buildImages.isPending}
-                                onClick={handleBuildLocalImages}
+                                disabled={buildImages.isPending || isAutoBuilding}
+                                onClick={() => void handleBuildLocalImages()}
                               >
-                                {buildImages.isPending
+                                {buildImages.isPending || isAutoBuilding
                                   ? "Building images..."
                                   : "Build from snapshot"}
                               </Button>
