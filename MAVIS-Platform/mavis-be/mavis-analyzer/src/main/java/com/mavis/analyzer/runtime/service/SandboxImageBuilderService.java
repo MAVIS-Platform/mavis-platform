@@ -191,6 +191,8 @@ public class SandboxImageBuilderService {
             }
 
             Map<String, String> builtImages = new LinkedHashMap<>();
+            record PreparedTarget(String svc, String tag, Path dockerfile, Path contextDir, BuildSpec spec) {}
+            List<PreparedTarget> preparedTargets = new ArrayList<>();
 
             for (Map.Entry<String, BuildSpec> entry : targetsToBuild.entrySet()) {
                 String svc = entry.getKey();
@@ -214,23 +216,45 @@ public class SandboxImageBuilderService {
 
                 Path effectiveContextDir = prepareAutoBuildDockerfile(dockerfile, contextDir, workspace);
                 String tag = sandboxTag(projectId, svc);
+                preparedTargets.add(new PreparedTarget(svc, tag, dockerfile, effectiveContextDir, spec));
+            }
 
-                String buildErr = runDockerBuild(projectId, tag, dockerfile, effectiveContextDir, spec.target(), spec.args());
-                if (buildErr != null && buildErr.toLowerCase(Locale.ROOT).contains("no space left on device")) {
-                    pruneDockerDisk(true);
-                    buildErr = runDockerBuild(projectId, tag, dockerfile, effectiveContextDir, spec.target(), spec.args());
+            if (!preparedTargets.isEmpty()) {
+                int parallelism = Math.min(3, preparedTargets.size());
+                var pool = java.util.concurrent.Executors.newFixedThreadPool(parallelism);
+                try {
+                    record SingleBuildOutcome(String svc, String imageId, String error) {}
+                    List<java.util.concurrent.Future<SingleBuildOutcome>> futures = new ArrayList<>();
+                    for (PreparedTarget pt : preparedTargets) {
+                        futures.add(pool.submit(() -> {
+                            String buildErr = runDockerBuild(projectId, pt.tag(), pt.dockerfile(), pt.contextDir(), pt.spec().target(), pt.spec().args());
+                            if (buildErr != null && buildErr.toLowerCase(Locale.ROOT).contains("no space left on device")) {
+                                pruneDockerDisk(true);
+                                buildErr = runDockerBuild(projectId, pt.tag(), pt.dockerfile(), pt.contextDir(), pt.spec().target(), pt.spec().args());
+                            }
+                            if (buildErr != null) {
+                                return new SingleBuildOutcome(pt.svc(), null, "Service '" + pt.svc() + "': " + buildErr);
+                            }
+                            String imageId = inspectImageId(pt.tag());
+                            if (imageId != null) {
+                                return new SingleBuildOutcome(pt.svc(), imageId, null);
+                            }
+                            return new SingleBuildOutcome(pt.svc(), null, "Service '" + pt.svc() + "': image built but content digest could not be inspected");
+                        }));
+                    }
+                    for (var f : futures) {
+                        SingleBuildOutcome outcome = f.get();
+                        if (outcome.imageId() != null) {
+                            builtImages.put(outcome.svc(), outcome.imageId());
+                        } else if (outcome.error() != null) {
+                            errors.add(outcome.error());
+                        }
+                    }
+                } finally {
+                    pool.shutdownNow();
                 }
-                if (buildErr != null) {
-                    errors.add("Service '" + svc + "': " + buildErr);
-                    continue;
-                }
-
-                String imageId = inspectImageId(tag);
-                if (imageId != null) {
-                    builtImages.put(svc, imageId);
+                if (!builtImages.isEmpty()) {
                     pruneDockerDisk(false);
-                } else {
-                    errors.add("Service '" + svc + "': image built but content digest could not be inspected");
                 }
             }
 
@@ -296,46 +320,63 @@ public class SandboxImageBuilderService {
 
     private static Path prepareAutoBuildDockerfile(Path dockerfile, Path contextDir, Path workspace) {
         try {
-            if (Files.isDirectory(contextDir.resolve("target")) || !Files.isRegularFile(contextDir.resolve("pom.xml"))) {
-                return contextDir;
-            }
             String content = Files.readString(dockerfile, StandardCharsets.UTF_8);
-            String lower = content.toLowerCase(Locale.ROOT);
-            if (lower.contains("--from=") || lower.contains("mvn ") || lower.contains("./mvnw")) {
-                return contextDir;
-            }
-            if (Pattern.compile("(?im)^\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?(?:\\./)?target/").matcher(content).find()) {
-                Path reactorRoot = findMavenReactorRoot(contextDir, workspace);
-                if (reactorRoot != null && !reactorRoot.equals(contextDir)) {
-                    String relMod = reactorRoot.relativize(contextDir).toString().replace('\\', '/');
-                    String rewritten = content.replaceAll(
-                            "(?im)^(\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?)(?:\\./)?target/",
-                            "$1--from=mavis_auto_builder /mavis_build/" + relMod + "/target/");
-                    String header = """
-                            FROM maven:3.9.6-eclipse-temurin-21-alpine AS mavis_auto_builder
-                            WORKDIR /mavis_build
-                            COPY . .
-                            RUN mvn clean package -pl %s -am -DskipTests -B && rm -rf /root/.m2/repository
+            if (!Files.isDirectory(contextDir.resolve("target")) && Files.isRegularFile(contextDir.resolve("pom.xml"))) {
+                String lower = content.toLowerCase(Locale.ROOT);
+                if (!lower.contains("--from=") && !lower.contains("mvn ") && !lower.contains("./mvnw")) {
+                    if (Pattern.compile("(?im)^\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?(?:\\./)?target/").matcher(content).find()) {
+                        Path reactorRoot = findMavenReactorRoot(contextDir, workspace);
+                        if (reactorRoot != null && !reactorRoot.equals(contextDir)) {
+                            String relMod = reactorRoot.relativize(contextDir).toString().replace('\\', '/');
+                            String rewritten = content.replaceAll(
+                                    "(?im)^(\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?)(?:\\./)?target/",
+                                    "$1--from=mavis_auto_builder /mavis_build/" + relMod + "/target/");
+                            String header = """
+                                    FROM maven:3.9.6-eclipse-temurin-21-alpine AS mavis_auto_builder
+                                    WORKDIR /mavis_build
+                                    COPY . .
+                                    RUN --mount=type=cache,sharing=shared,target=/root/.m2 mvn clean package -pl %s -am -DskipTests -B
 
-                            """.formatted(relMod);
-                    Files.writeString(dockerfile, header + rewritten, StandardCharsets.UTF_8);
-                    return reactorRoot;
+                                    """.formatted(relMod);
+                            Files.writeString(dockerfile, injectBuildKitCacheMounts(header + rewritten), StandardCharsets.UTF_8);
+                            return reactorRoot;
+                        }
+                        String rewritten = content.replaceAll(
+                                "(?im)^(\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?)(?:\\./)?target/",
+                                "$1--from=mavis_auto_builder /mavis_build/target/");
+                        String header = """
+                                FROM maven:3.9.6-eclipse-temurin-21-alpine AS mavis_auto_builder
+                                WORKDIR /mavis_build
+                                COPY pom.xml .
+                                COPY src ./src
+                                RUN --mount=type=cache,sharing=shared,target=/root/.m2 mvn clean package -DskipTests -B
+
+                                """;
+                        Files.writeString(dockerfile, injectBuildKitCacheMounts(header + rewritten), StandardCharsets.UTF_8);
+                        return contextDir;
+                    }
                 }
-                String rewritten = content.replaceAll(
-                        "(?im)^(\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?)(?:\\./)?target/",
-                        "$1--from=mavis_auto_builder /mavis_build/target/");
-                String header = """
-                        FROM maven:3.9.6-eclipse-temurin-21-alpine AS mavis_auto_builder
-                        WORKDIR /mavis_build
-                        COPY pom.xml .
-                        COPY src ./src
-                        RUN mvn clean package -DskipTests -B && rm -rf /root/.m2/repository
-
-                        """;
-                Files.writeString(dockerfile, header + rewritten, StandardCharsets.UTF_8);
+            }
+            String optimized = injectBuildKitCacheMounts(content);
+            if (!optimized.equals(content)) {
+                Files.writeString(dockerfile, optimized, StandardCharsets.UTF_8);
             }
         } catch (IOException ignored) {}
         return contextDir;
+    }
+
+    static String injectBuildKitCacheMounts(String dockerfileContent) {
+        if (dockerfileContent == null || dockerfileContent.isBlank() || dockerfileContent.contains("--mount=type=cache")) {
+            return dockerfileContent;
+        }
+        String updated = dockerfileContent
+                .replaceAll("(?im)^\\s*RUN\\s+(?:\\./)?mvn(?:w)?\\s+dependency:go-offline[^\\r\\n]*$", "RUN true")
+                .replaceAll("(?im)^(\\s*RUN\\s+)((?:\\./)?mvn(?:w)?\\b)", "$1--mount=type=cache,sharing=shared,target=/root/.m2 $2")
+                .replaceAll("(?im)^(\\s*RUN\\s+)((?:\\./)?gradle(?:w)?\\b)", "$1--mount=type=cache,sharing=shared,target=/root/.gradle $2");
+        if (!updated.equals(dockerfileContent) && !updated.stripLeading().startsWith("# syntax=")) {
+            updated = "# syntax=docker/dockerfile:1\n" + updated;
+        }
+        return updated;
     }
 
     private static Path findMavenReactorRoot(Path contextDir, Path workspace) {
@@ -532,9 +573,9 @@ public class SandboxImageBuilderService {
                 }
             }
             cmd.add(contextDir.toString());
-            Process process = new ProcessBuilder(cmd)
-                    .redirectErrorStream(true)
-                    .start();
+            ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
+            pb.environment().put("DOCKER_BUILDKIT", "1");
+            Process process = pb.start();
             var tail = new java.io.ByteArrayOutputStream();
             Thread reader = Thread.ofVirtual().start(() -> {
                 try (InputStream in = process.getInputStream()) {
@@ -604,9 +645,9 @@ public class SandboxImageBuilderService {
             runQuietCommand(List.of("docker", "image", "prune", "-f"), 15);
             if (aggressive) {
                 runQuietCommand(List.of("docker", "container", "prune", "-f"), 15);
-                runQuietCommand(List.of("docker", "builder", "prune", "-af"), 30);
+                runQuietCommand(List.of("docker", "builder", "prune", "-af", "--filter", "type!=exec.cachemount"), 30);
             } else {
-                runQuietCommand(List.of("docker", "builder", "prune", "-f", "--keep-storage", "1500mb"), 20);
+                runQuietCommand(List.of("docker", "builder", "prune", "-f", "--keep-storage", "2500mb", "--filter", "type!=exec.cachemount"), 20);
             }
         } catch (Exception ignored) {}
     }
