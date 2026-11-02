@@ -1164,7 +1164,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const filteredSteps = useMemo(() => {
     return workflowData.steps.filter((s) => {
       if (selectedClusterFilter) {
-        const meta = classifyApiFeatureCluster(s.operation, s.callerService, s.calleeService);
+        const routeKey = `${(s.httpMethod ?? "GET").toUpperCase()}:${s.operation ?? "/"}`;
+        const aiPhase = aiPhaseByRoute.get(routeKey) ?? aiPhaseByRoute.get(s.operation ?? "");
+        const meta = classifyApiFeatureCluster(s.operation, s.callerService, s.calleeService, aiPhase);
         if (meta.id !== selectedClusterFilter) return false;
       }
       if (selectedServiceFilter) {
@@ -1174,7 +1176,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       }
       return true;
     });
-  }, [workflowData.steps, selectedClusterFilter, selectedServiceFilter]);
+  }, [workflowData.steps, selectedClusterFilter, selectedServiceFilter, aiPhaseByRoute]);
 
   const maxStepDuration = useMemo(
     () => Math.max(1, ...workflowData.steps.map((s) => s.durationMs ?? 0)),
@@ -2170,13 +2172,14 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       {/* Per-Step HTTP Scenario Execution Verification */}
       {stepResults.length > 0 && (
         <DetailPanel
-          title={`2. Scenario HTTP Step Verification (${stepResults.filter((s) => s.status === "PASSED").length}/${stepResults.length} Passed)`}
+          title={`2. Scenario HTTP Step Verification (${stepResults.filter((s) => s.status === "PASSED" && !(s.statusCode != null && s.statusCode >= 500)).length}/${stepResults.length} Passed)`}
         >
           <div className="space-y-2">
             {stepResults.map((sr, idx) => {
               const stUpper = (sr.status || "PENDING").toUpperCase();
-              const passed = stUpper === "PASSED";
-              const failed = stUpper === "FAILED" || stUpper === "TIMED_OUT";
+              const isServerError = sr.statusCode != null && sr.statusCode >= 500;
+              const passed = stUpper === "PASSED" && !isServerError;
+              const failed = stUpper === "FAILED" || stUpper === "TIMED_OUT" || isServerError;
               const verb = (sr.method || "GET").toUpperCase();
               return (
                 <div
@@ -2199,7 +2202,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     )}
                     <span className="text-[11px] text-muted-foreground">#{idx + 1}</span>
                     {(() => {
-                      const clusterMeta = classifyApiFeatureCluster(sr.path, sr.service, sr.service);
+                      const aiPhase = aiPhaseByRoute.get(`${verb}:${sr.path ?? "/"}`) ?? aiPhaseByRoute.get(sr.path ?? "");
+                      const clusterMeta = classifyApiFeatureCluster(sr.path, sr.service, sr.service, aiPhase);
                       return (
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold border ${clusterMeta.badgeClass}`}
