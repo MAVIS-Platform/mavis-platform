@@ -90,6 +90,10 @@ public class PreflightCheckResponseDTO {
     @Builder.Default
     private boolean localImageBuildAvailable = false;
 
+    /** Saved or locally discovered digest-pinned image overrides keyed by Compose service name. */
+    @Builder.Default
+    private Map<String, String> serviceImageOverrides = new HashMap<>();
+
     /** Literal credentials of sandbox database containers (e.g. POSTGRES_PASSWORD). Server-side only, never serialized. */
     @com.fasterxml.jackson.annotation.JsonIgnore
     @Builder.Default

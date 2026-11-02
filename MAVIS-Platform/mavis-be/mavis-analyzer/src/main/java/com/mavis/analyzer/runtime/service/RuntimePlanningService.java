@@ -134,6 +134,10 @@ public class RuntimePlanningService {
    profileNode.set("recommendedServiceMappings",json.valueToTree(pre.getRecommendedServiceMappings()));
    profileNode.set("modelServiceNames",json.valueToTree(pre.getModelServiceNames()));
    profileNode.put("localImageBuildAvailable",pre.isLocalImageBuildAvailable());
+   if(pre.getServiceImageOverrides()!=null&&!pre.getServiceImageOverrides().isEmpty()){
+    ObjectNode overrides=profileNode.has("serviceImageOverrides")&&profileNode.get("serviceImageOverrides").isObject()?(ObjectNode)profileNode.get("serviceImageOverrides"):profileNode.putObject("serviceImageOverrides");
+    pre.getServiceImageOverrides().forEach((k,v)->{if(!overrides.hasNonNull(k)||overrides.get(k).asText("").isBlank())overrides.put(k,v);});
+   }
   }
   boolean imagesReady=runnerImagesConfigured()||profileHasPinnedRunnerImages(profileNode);
   if(!imagesReady)warnings.add("Sandbox runner images are not configured (MAVIS_RUNNER_COLLECTOR_IMAGE, MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE); runs cannot start until an operator sets them");
@@ -151,15 +155,30 @@ public class RuntimePlanningService {
   var source=sources.findById(snapshotId).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));
   if(!source.getProject().getId().equals(id))throw new BusinessException(ErrorCode.BAD_REQUEST,"Snapshot scope mismatch");
   var res=imageBuilder.buildSnapshotImages(id,java.nio.file.Paths.get(source.getStoragePath()),r!=null?r.services():null);
-  if(c!=null&&snapshotId.equals(c.getSourceSnapshotId())&&!res.builtImages().isEmpty()&&c.getProfile()!=null&&c.getProfile().isObject()){
-   ObjectNode p=(ObjectNode)c.getProfile().deepCopy();
-   ObjectNode overrides=p.has("serviceImageOverrides")&&p.get("serviceImageOverrides").isObject()?(ObjectNode)p.get("serviceImageOverrides"):p.putObject("serviceImageOverrides");
-   res.builtImages().forEach(overrides::put);
-   String existingSealed=p.hasNonNull("sealedInputs")?p.get("sealedInputs").asText(null):null;
-   JsonNode normalized=normalizeStep1Profile(id,snapshotId,c.getProfileId(),p,existingSealed);
-   c.setProfile(normalized.deepCopy());
-   c.setRevision(c.getRevision()+1);
-   configurations.saveAndFlush(c);
+  if(!res.builtImages().isEmpty()){
+   if(c==null){
+    var model=models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(id).orElse(null);
+    if(model!=null&&"RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin())&&model.getBaseModelVersion()!=null)model=model.getBaseModelVersion();
+    if(model!=null&&model.getSourceSnapshot()!=null&&snapshotId.equals(model.getSourceSnapshot().getId())){
+     c=new RuntimeConfiguration();
+     c.setProjectId(id);
+     c.setSourceSnapshotId(snapshotId);
+     c.setModelVersionId(model.getId());
+     c.setProfileId("SPRING_BOOT_DOTNET_COMPOSE_V1");
+     c.setProfile(json.createObjectNode());
+    }
+   }
+   if(c!=null&&c.getProfile()!=null&&c.getProfile().isObject()){
+    ObjectNode p=(ObjectNode)c.getProfile().deepCopy();
+    ObjectNode overrides=p.has("serviceImageOverrides")&&p.get("serviceImageOverrides").isObject()?(ObjectNode)p.get("serviceImageOverrides"):p.putObject("serviceImageOverrides");
+    res.builtImages().forEach(overrides::put);
+    String existingSealed=p.hasNonNull("sealedInputs")?p.get("sealedInputs").asText(null):null;
+    JsonNode normalized=normalizeStep1Profile(id,snapshotId,c.getProfileId()!=null?c.getProfileId():"SPRING_BOOT_DOTNET_COMPOSE_V1",p,existingSealed);
+    c.setSourceSnapshotId(snapshotId);
+    c.setProfile(normalized.deepCopy());
+    c.setRevision(c.getRevision()+1);
+    configurations.saveAndFlush(c);
+   }
   }
   return new BuildImagesView(id,snapshotId,res.builtImages(),res.errors());
  }
@@ -256,6 +275,11 @@ public class RuntimePlanningService {
 
   PreflightCheckResponseDTO pre=null;
   try{pre=runtime.runComposePreflight(snapshotId);}catch(Exception ignored){}
+  if(pre!=null&&pre.getServiceImageOverrides()!=null&&!pre.getServiceImageOverrides().isEmpty()){
+   pre.getServiceImageOverrides().forEach(imageOverrides::putIfAbsent);
+   ObjectNode overridesNode=p.has("serviceImageOverrides")&&p.get("serviceImageOverrides").isObject()?(ObjectNode)p.get("serviceImageOverrides"):p.putObject("serviceImageOverrides");
+   imageOverrides.forEach((k,v)->{if(!overridesNode.hasNonNull(k)||overridesNode.get(k).asText("").isBlank())overridesNode.put(k,v);});
+  }
   if(pre!=null&&pre.getSandboxComposeYaml()!=null&&!pre.getSandboxComposeYaml().isBlank()){
    String candidateYaml=pre.getSandboxComposeYaml();
    List<String> unresolved=pre.getUnresolvableRunnerIssues()!=null?pre.getUnresolvableRunnerIssues():List.of();

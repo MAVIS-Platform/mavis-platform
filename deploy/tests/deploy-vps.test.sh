@@ -29,6 +29,7 @@ done
 printf 'test-token\n' | bash /source/deploy-vps.sh "$tag1" ghcr.io/mavis-platform/mavis-platform test-user
 grep -q "IMAGE_TAG=$tag1" /opt/mavis/.release.env
 grep -q 'INITIAL_ENV=preserved' /opt/mavis/.env.production
+grep -q '^MAVIS_RUNTIME_ENVIRONMENT_KEY=.\+' /opt/mavis/.env.production
 test "$(stat -c %a /opt/mavis/.env.production)" = 600
 echo "$tag2" > /tmp/fail-tag
 if printf 'test-token\n' | bash /source/deploy-vps.sh "$tag2" ghcr.io/mavis-platform/mavis-platform test-user; then

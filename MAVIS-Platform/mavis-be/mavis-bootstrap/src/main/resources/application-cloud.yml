@@ -20,6 +20,10 @@ server:
 mavis:
   security:
     dev-bypass-enabled: false
+  runtime:
+    environment-key: ${MAVIS_RUNTIME_ENVIRONMENT_KEY:}
   runner:
     service-key: ${MAVIS_RUNNER_SERVICE_KEY}
+    collector-image: ${MAVIS_RUNNER_COLLECTOR_IMAGE:otel/opentelemetry-collector-contrib@sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806}
+    scenario-runner-image: ${MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE:mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac}
     allow-unverified-poc-promotion: false

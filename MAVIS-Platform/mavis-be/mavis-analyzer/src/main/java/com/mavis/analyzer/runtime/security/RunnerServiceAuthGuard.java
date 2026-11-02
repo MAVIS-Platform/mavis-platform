@@ -46,6 +46,16 @@ public class RunnerServiceAuthGuard {
         return runnerServiceKey != null && !runnerServiceKey.isBlank() && !runnerServiceKey.equals("mavis-local-runner-secret-key");
     }
 
+    public String derivedEnvironmentKey() {
+        if (!isConfigured()) return null;
+        try {
+            return java.util.Base64.getEncoder().encodeToString(
+                    MessageDigest.getInstance("SHA-256").digest(("mavis-runtime-env:" + runnerServiceKey).getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public boolean isRunnerServiceKeyValid() {
         if (Boolean.TRUE.equals(INTERNAL_DISPATCH.get())) {
             return true;

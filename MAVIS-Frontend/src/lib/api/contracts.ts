@@ -179,6 +179,7 @@ export const contracts = {
       recommendedServiceMappings: z.record(z.string()).optional(),
       modelServiceNames: z.record(z.string()).optional(),
       localImageBuildAvailable: z.boolean().optional(),
+      serviceImageOverrides: z.record(z.string()).optional(),
     }),
     true,
   ),

@@ -13,8 +13,8 @@ $example = Join-Path $repo '.env.backend.example'
 if ($Initialize) {
     if (Test-Path -LiteralPath $SettingsPath) { throw 'Local settings already exist; edit them rather than overwriting keys/passwords.' }
     $template = [IO.File]::ReadAllText($example)
-    foreach ($name in @('MAVIS_JWT_SECRET','MAVIS_RUNNER_SERVICE_KEY','MAVIS_WORKER_SERVICE_KEY','MAVIS_WORKER_GRANT_KEY')) {
-        $bytes = New-Object byte[] 48
+    foreach ($name in @('MAVIS_JWT_SECRET','MAVIS_RUNNER_SERVICE_KEY','MAVIS_WORKER_SERVICE_KEY','MAVIS_WORKER_GRANT_KEY','MAVIS_RUNTIME_ENVIRONMENT_KEY')) {
+        $bytes = New-Object byte[] $(if ($name -eq 'MAVIS_RUNTIME_ENVIRONMENT_KEY') { 32 } else { 48 })
         $generator = [Security.Cryptography.RandomNumberGenerator]::Create()
         try { $generator.GetBytes($bytes) } finally { $generator.Dispose() }
         $template = $template.Replace("$name=<GENERATED_BY_INITIALIZE>", "$name=$([Convert]::ToBase64String($bytes))")
@@ -71,6 +71,17 @@ $environment.MAVIS_WORKER_GRANT_KEY_ID=if($values.MAVIS_WORKER_GRANT_KEY_ID){$va
 $environment.MAVIS_WORKER_SNAPSHOT_ROOT=$uploads
 $environment.MAVIS_WORKER_ARTIFACT_ROOT=$artifacts
 $environment.MAVIS_STORAGE_UPLOAD_DIR=$uploads
+if (-not $environment.ContainsKey('MAVIS_RUNTIME_ENVIRONMENT_KEY') -or [string]::IsNullOrWhiteSpace($environment.MAVIS_RUNTIME_ENVIRONMENT_KEY)) {
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try { $environment.MAVIS_RUNTIME_ENVIRONMENT_KEY=[Convert]::ToBase64String($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes("mavis-runtime-env:$($values.MAVIS_RUNNER_SERVICE_KEY)"))) } finally { $sha.Dispose() }
+}
+if (-not $environment.ContainsKey('MAVIS_RUNNER_COLLECTOR_IMAGE') -or [string]::IsNullOrWhiteSpace($environment.MAVIS_RUNNER_COLLECTOR_IMAGE)) {
+    $environment.MAVIS_RUNNER_COLLECTOR_IMAGE='otel/opentelemetry-collector-contrib@sha256:1175b03003053962012f5a231f5567f66a3e8fdb960c7835c0e48f7aa1555806'
+}
+if (-not $environment.ContainsKey('MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE') -or [string]::IsNullOrWhiteSpace($environment.MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE)) {
+    $pocRunnerId = try { (& docker image inspect --format '{{.Id}}' 'mavis-poc-runner:1' 2>$null | Select-Object -First 1).Trim() } catch { $null }
+    $environment.MAVIS_RUNNER_SCENARIO_RUNNER_IMAGE = if ($pocRunnerId -match '^sha256:[0-9a-f]{64}$') { $pocRunnerId } else { 'mcr.microsoft.com/dotnet/aspnet@sha256:d5633778c754e89a386882eddf8dbee6942447a8a4b8267c19cf1e1158d0b0ac' }
+}
 $environment.SPRING_JPA_SHOW_SQL='false'
 $environment.WorkerAccess__ApiKey=$values.MAVIS_WORKER_SERVICE_KEY
 $environment.ArtifactScope__Root=$artifacts

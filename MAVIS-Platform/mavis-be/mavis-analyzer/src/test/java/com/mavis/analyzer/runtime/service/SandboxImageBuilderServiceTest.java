@@ -136,4 +136,58 @@ class SandboxImageBuilderServiceTest {
         assertThat(missing.builtImages()).isEmpty();
         assertThat(missing.errors()).anyMatch(e -> e.contains("closed-vendor-api") && e.contains("no build section or matching Dockerfile"));
     }
+
+    @Test
+    void autoWrapsSingleStageMavenDockerfileWithoutTargetDirAndDiscoversExistingImages(@TempDir Path tempDir) throws Exception {
+        UUID projectId = UUID.fromString("2f24c1fb-7978-48f5-8c62-e239f357aaff");
+        Files.writeString(tempDir.resolve("docker-compose.yml"), """
+                services:
+                  catalog-service:
+                    build: ./catalog-service
+                """);
+        Path svcDir = Files.createDirectories(tempDir.resolve("catalog-service"));
+        Files.writeString(svcDir.resolve("pom.xml"), "<project/>");
+        Files.writeString(svcDir.resolve("Dockerfile"), """
+                FROM eclipse-temurin:21-jre-alpine
+                WORKDIR /app
+                COPY target/*.jar app.jar
+                ENTRYPOINT ["java", "-jar", "app.jar"]
+                """);
+
+        List<String> builtDockerfiles = new ArrayList<>();
+        String fakeDigest = "sha256:" + "e".repeat(64);
+        SandboxImageBuilderService builder = new SandboxImageBuilderService() {
+            @Override
+            public boolean isLocalBuildAvailable() {
+                return true;
+            }
+
+            @Override
+            protected String runDockerBuild(UUID projId, String tag, Path dockerfile, Path contextDir, String target, Map<String, String> buildArgs) {
+                try {
+                    builtDockerfiles.add(Files.readString(dockerfile));
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                return null;
+            }
+
+            @Override
+            protected String inspectImageId(String tag) {
+                return tag.equals(SandboxImageBuilderService.sandboxTag(projectId, "catalog-service")) ? fakeDigest : null;
+            }
+        };
+
+        SandboxImageBuilderService.BuildImagesResult built = builder.buildSnapshotImages(
+                projectId, tempDir, List.of("catalog-service"));
+        assertThat(built.errors()).isEmpty();
+        assertThat(built.builtImages()).containsEntry("catalog-service", fakeDigest);
+        assertThat(builtDockerfiles).singleElement().satisfies(df -> {
+            assertThat(df).contains("FROM maven:3.9.6-eclipse-temurin-21-alpine AS mavis_auto_builder");
+            assertThat(df).contains("COPY --from=mavis_auto_builder /mavis_build/target/*.jar app.jar");
+        });
+
+        Map<String, String> discovered = builder.discoverExistingBuiltImages(projectId, List.of("catalog-service", "missing-svc"));
+        assertThat(discovered).containsOnlyKeys("catalog-service").containsEntry("catalog-service", fakeDigest);
+    }
 }
