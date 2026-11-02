@@ -805,9 +805,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                         }}
                         options={candidateModels.map((m) => {
                           const snap = (snapshots.data ?? []).find((s) => s.id === m.snapshotId);
+                          const cleanSnapName = snap?.name
+                            .replace(/^GITHUB_COMMIT\s*[·\-:]\s*/i, "")
+                            .replace(/\s*·\s*/g, " - ");
                           return {
                             value: m.id,
-                            label: `Revision ${m.revision}${m.latest ? " (Latest)" : ""} · ${snap ? snap.name : m.id.slice(0, 8)}`,
+                            label: `Revision ${m.revision}${m.latest ? " (Latest)" : ""} · ${cleanSnapName || m.id.slice(0, 8)}`,
                           };
                         })}
                       />
@@ -824,7 +827,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                       }}
                       options={(snapshots.data ?? []).map((s, idx) => ({
                         value: s.id,
-                        label: `Snapshot #${(snapshots.data?.length ?? idx) - idx} · ${s.name}`,
+                        label: `Snapshot #${(snapshots.data?.length ?? idx) - idx} · ${s.name.replace(/^GITHUB_COMMIT\s*[·\-:]\s*/i, "").replace(/\s*·\s*/g, " - ")}`,
                       }))}
                     />
                   );
@@ -2519,11 +2522,12 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             const activeSnap =
               (snapshots.data ?? []).find((s) => s.id === (activeModel?.snapshotId || snapshotId)) ??
               snapshots.data?.[0];
+            const cleanSnapName = activeSnap?.name
+              .replace(/^GITHUB_COMMIT\s*[·\-:]\s*/i, "")
+              .replace(/\s*·\s*/g, " - ");
             const revLabel = activeModel
-              ? `${"label" in activeModel && activeModel.label ? activeModel.label : `Revision ${activeModel.revision}`}${activeModel.latest ? " (Latest)" : ""} · ${activeSnap ? activeSnap.name : activeModel.id.slice(0, 8)}`
-              : activeSnap
-                ? activeSnap.name
-                : "Inheriting from Step 1...";
+              ? `${"label" in activeModel && activeModel.label ? activeModel.label : `Revision ${activeModel.revision}`}${activeModel.latest ? " (Latest)" : ""} · ${cleanSnapName || activeModel.id.slice(0, 8)}`
+              : cleanSnapName || "Inheriting from Step 1...";
             return (
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
                 <div className="flex flex-wrap items-center gap-2">
@@ -2550,20 +2554,22 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                       : "Static Analysis"}
                   </span>
                 </div>
-                <Link
-                  href={`/runtime-config?project=${projectId}`}
-                  className="text-primary hover:underline font-medium"
-                >
-                  ← Step 1
-                </Link>
-                <Button
-                  size="sm"
-                  className="h-8 text-xs"
-                  disabled={!modelId || !steps.length || generateAiDraft.isPending || buildImages.isPending || autoSaveConfig.isPending || saveDraft.isPending || updateDraft.isPending || start.isPending}
-                  onClick={() => handleCreateAndRun(true)}
-                >
-                  {generateAiDraft.isPending ? "Generating AI Scenario..." : "Confirm & Run in Step 3 →"}
-                </Button>
+                <div className="flex items-center gap-3">
+                  <Link
+                    href={`/runtime-config?project=${projectId}`}
+                    className="text-primary hover:underline font-medium"
+                  >
+                    ← Step 1
+                  </Link>
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs"
+                    disabled={!modelId || !steps.length || generateAiDraft.isPending || buildImages.isPending || autoSaveConfig.isPending || saveDraft.isPending || updateDraft.isPending || start.isPending}
+                    onClick={() => handleCreateAndRun(true)}
+                  >
+                    {generateAiDraft.isPending ? "Generating AI Scenario..." : "Confirm & Run in Step 3 →"}
+                  </Button>
+                </div>
               </div>
             );
           })()}
