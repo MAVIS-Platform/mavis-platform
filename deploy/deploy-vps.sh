@@ -50,10 +50,10 @@ compose() {
   IMAGE_PREFIX="$image_prefix" IMAGE_TAG="$image_tag" docker compose --project-name mavis --env-file /opt/mavis/.env.production -f "$file" "$@"
 }
 healthy() {
-  for attempt in $(seq 1 30); do
+  for attempt in $(seq 1 45); do
     if docker exec mavis-frontend-1 node -e '
       Promise.all(["http://127.0.0.1:3000/api/auth-config","http://backend:8080/v3/api-docs","http://worker:8080/api/health/ready"].map(async u=>{
-        const r=await fetch(u,{signal:AbortSignal.timeout(4000)});if(!r.ok)throw new Error("Unhealthy upstream");
+        const r=await fetch(u,{signal:AbortSignal.timeout(10000)});if(!r.ok)throw new Error("Unhealthy upstream");
       })).catch(()=>process.exit(1));' >/dev/null 2>&1 &&
        curl -fsS --max-time 10 https://maviss.site/login -o /dev/null; then return 0; fi
     sleep 4

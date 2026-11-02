@@ -159,6 +159,10 @@ public class RuntimePlanningService {
    if(c==null){
     var model=models.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(id).orElse(null);
     if(model!=null&&"RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin())&&model.getBaseModelVersion()!=null)model=model.getBaseModelVersion();
+    if(model==null||model.getSourceSnapshot()==null||!snapshotId.equals(model.getSourceSnapshot().getId())){
+     var all=models.findByProjectIdOrderByRevisionDesc(id);
+     if(all!=null)model=all.stream().map(m->"RUNTIME_ENRICHED".equalsIgnoreCase(m.getOrigin())&&m.getBaseModelVersion()!=null?m.getBaseModelVersion():m).filter(m->m.getSourceSnapshot()!=null&&snapshotId.equals(m.getSourceSnapshot().getId())).findFirst().orElse(null);
+    }
     if(model!=null&&model.getSourceSnapshot()!=null&&snapshotId.equals(model.getSourceSnapshot().getId())){
      c=new RuntimeConfiguration();
      c.setProjectId(id);
@@ -345,7 +349,7 @@ public class RuntimePlanningService {
    Map<String,String> modelNames=pre.getModelServiceNames()!=null?pre.getModelServiceNames():Map.of();
    recommended.forEach((svc,recUuid)->{
     String cur=mappings.get(svc);
-    if(cur==null||cur.isBlank()||(!isUuidString(cur)&&cur.equalsIgnoreCase(svc)))mappings.put(svc,recUuid);
+    if(cur==null||cur.isBlank()||(isUuidString(cur)&&!modelNames.isEmpty()&&!modelNames.containsKey(cur))||(!isUuidString(cur)&&cur.equalsIgnoreCase(svc)))mappings.put(svc,recUuid);
    });
    if(!modelNames.isEmpty()){
     for(Map.Entry<String,String> e:new ArrayList<>(mappings.entrySet())){
