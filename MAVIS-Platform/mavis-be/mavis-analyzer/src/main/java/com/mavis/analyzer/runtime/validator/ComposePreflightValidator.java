@@ -1447,7 +1447,9 @@ public class ComposePreflightValidator {
                 || combined.contains("[Authorize") || combined.contains(".RequireAuthorization(")
                 || combined.contains("@UseGuards") || combined.contains("JwtAuthGuard") || combined.contains("AuthGuard")
                 || combined.contains("Depends(get_current_user") || combined.contains("Depends(require_auth")
-                || combined.contains("Security(") || combined.contains("HTTPBearer")) {
+                || combined.contains("Security(") || combined.contains("HTTPBearer")
+                || combined.contains("SecurityUtils.") || combined.contains("SecurityContextHolder.")
+                || combined.contains("@AuthenticationPrincipal")) {
             return Boolean.TRUE;
         }
         return null;
@@ -1499,7 +1501,9 @@ public class ComposePreflightValidator {
     private static String extractJavaRequestBodyType(String window) {
         if (window == null) return null;
         Matcher m = JAVA_REQUEST_BODY_PATTERN.matcher(window);
-        return m.find() ? simplifyDtoTypeName(m.group(1)) : null;
+        if (m.find()) return simplifyDtoTypeName(m.group(1));
+        Matcher om = Pattern.compile("readValue\\s*\\([^,]+,\\s*([A-Z][A-Za-z0-9_]*)\\.class\\s*\\)").matcher(window);
+        return om.find() ? simplifyDtoTypeName(om.group(1)) : null;
     }
 
     private static String extractJavaResponseBodyType(String window) {
@@ -2489,9 +2493,13 @@ public class ComposePreflightValidator {
                 || lowPath.contains("dispatch") || lowPath.contains("fulfill") || lowPath.contains("assign") || lowPath.contains("booking")
                 || !targets.isEmpty());
 
+        boolean isAuxiliary = lowPath.contains("/ai/") || lowPath.endsWith("/chat") || lowPath.contains("/generate-")
+                || lowPath.contains("/suggest-") || lowPath.endsWith("/inactive") || lowPath.endsWith("/invoice-pdf")
+                || lowPath.endsWith("/forgot-password") || lowPath.endsWith("/reset-password") || lowPath.endsWith("/logout");
         String role;
         if (isHealthEndpointPath(lowPath)) role = "HEALTH_FALLBACK";
         else if (isAuth) role = "AUTH_ENTRY";
+        else if (isAuxiliary) role = "STATE_VERIFICATION";
         else if (isWorkflowAction) role = "CROSS_SERVICE_WORKFLOW";
         else if ("POST".equals(verb) && !lowPath.contains("{")) role = "PREREQUISITE_SEED";
         else if ("GET".equals(verb)) role = "STATE_VERIFICATION";
@@ -2502,7 +2510,8 @@ public class ComposePreflightValidator {
         int score = 10;
         if (isGateway) score += 35;
         score += targets.size() * 25;
-        if ("AUTH_ENTRY".equals(role)) score += 30;
+        if (isAuxiliary) score -= 8;
+        else if ("AUTH_ENTRY".equals(role)) score += 30;
         else if ("CROSS_SERVICE_WORKFLOW".equals(role)) score += 25;
         else if ("PREREQUISITE_SEED".equals(role)) score += 20;
         else if ("STATE_VERIFICATION".equals(role)) score += (lowPath.contains("{") ? 12 : 6);
@@ -3866,6 +3875,9 @@ public class ComposePreflightValidator {
             provisionedAny = true;
 
             infraSet.add(containerName);
+            if (dto.getInfrastructureServices() != null && !dto.getInfrastructureServices().contains(containerName)) {
+                dto.getInfrastructureServices().add(containerName);
+            }
             if (!dto.getDetectedServices().contains(containerName)) dto.getDetectedServices().add(containerName);
             if (!dto.getComposeServices().contains(containerName)) dto.getComposeServices().add(containerName);
             dto.getServicePorts().put(containerName, port);

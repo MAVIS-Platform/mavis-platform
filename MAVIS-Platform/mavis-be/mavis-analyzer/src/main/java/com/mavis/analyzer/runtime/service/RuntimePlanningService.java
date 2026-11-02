@@ -174,6 +174,7 @@ public class RuntimePlanningService {
    }
    if(c!=null&&c.getProfile()!=null&&c.getProfile().isObject()){
     ObjectNode p=(ObjectNode)c.getProfile().deepCopy();
+    p.remove("applications");
     ObjectNode overrides=p.has("serviceImageOverrides")&&p.get("serviceImageOverrides").isObject()?(ObjectNode)p.get("serviceImageOverrides"):p.putObject("serviceImageOverrides");
     res.builtImages().forEach(overrides::put);
     String existingSealed=p.hasNonNull("sealedInputs")?p.get("sealedInputs").asText(null):null;
@@ -313,9 +314,10 @@ public class RuntimePlanningService {
    // P1.6: Databases, brokers and proxies run from Compose unless explicitly overridden as APP in serviceRoles.
    if(pre!=null&&pre.getInfrastructureServices()!=null){
     for(String infraSvc:pre.getInfrastructureServices()){
-     if(!"APP".equalsIgnoreCase(roleOverrides.get(infraSvc)))svcNames.remove(infraSvc);
+     if(!"APP".equalsIgnoreCase(roleOverrides.get(infraSvc))||ComposePreflightValidator.isInfrastructureService(infraSvc,""))svcNames.remove(infraSvc);
     }
    }
+   svcNames.removeIf(svc->ComposePreflightValidator.isInfrastructureService(svc,""));
    roleOverrides.forEach((svc,role)->{
     if("INFRA".equalsIgnoreCase(role))svcNames.remove(svc);
    });
@@ -407,10 +409,10 @@ public class RuntimePlanningService {
   Set<String> infraSet=new LinkedHashSet<>();
   if(pre!=null&&pre.getInfrastructureServices()!=null){
    for(String inf:pre.getInfrastructureServices()){
-    if(!"APP".equalsIgnoreCase(roleOverrides.get(inf)))infraSet.add(inf);
+    if(!"APP".equalsIgnoreCase(roleOverrides.get(inf))||ComposePreflightValidator.isInfrastructureService(inf,""))infraSet.add(inf);
    }
   }
-  roleOverrides.forEach((svc,role)->{if("INFRA".equalsIgnoreCase(role))infraSet.add(svc);});
+  roleOverrides.forEach((svc,role)->{if("INFRA".equalsIgnoreCase(role)||ComposePreflightValidator.isInfrastructureService(svc,""))infraSet.add(svc);});
 
   Set<String> allowedServices=new LinkedHashSet<>();
   if(pre!=null&&pre.getComposeServices()!=null&&!pre.getComposeServices().isEmpty()){
@@ -419,10 +421,12 @@ public class RuntimePlanningService {
    allowedServices.addAll(pre.getDetectedServices());
   }
   allowedServices.removeAll(infraSet);
+  allowedServices.removeIf(svc->ComposePreflightValidator.isInfrastructureService(svc,""));
   if(savedProfile!=null&&savedProfile.path("applications").isObject()){
    Set<String> profileApps=new LinkedHashSet<>();
    savedProfile.path("applications").fieldNames().forEachRemaining(profileApps::add);
    profileApps.removeAll(infraSet);
+   profileApps.removeIf(svc->ComposePreflightValidator.isInfrastructureService(svc,""));
    if(!profileApps.isEmpty()){
     if(allowedServices.isEmpty())allowedServices.addAll(profileApps);
     else allowedServices.retainAll(profileApps);
@@ -614,32 +618,47 @@ public class RuntimePlanningService {
 
   List<DetectedEndpointDTO> selected=new ArrayList<>();
   Set<DetectedEndpointDTO> pickedSet=new LinkedHashSet<>();
-  // Pass 1: ensure up to 2 causal business endpoints per runnable service so multi-service repos get full coverage
+  // Pass 1: ensure up to 2 primary causal business endpoints per runnable service so multi-service repos get balanced coverage
   Map<String,Integer> perServiceCount=new HashMap<>();
   for(DetectedEndpointDTO ep:business){
    if(pickedSet.size()>=10)break;
+   if(isAuxiliaryEndpointPath(ep.getPath())||"DELETE".equals(ep.getMethod()))continue;
    int cnt=perServiceCount.getOrDefault(ep.getService(),0);
    if(cnt<2){
     pickedSet.add(ep);
     perServiceCount.put(ep.getService(),cnt+1);
    }
   }
-  // Pass 2: fill remaining slots up to 10 in causal priority order
+  // Pass 2: allow a 3rd primary endpoint per service before falling back to auxiliary/DELETE endpoints
   for(DetectedEndpointDTO ep:business){
    if(pickedSet.size()>=10)break;
-   pickedSet.add(ep);
+   if(isAuxiliaryEndpointPath(ep.getPath()))continue;
+   int cnt=perServiceCount.getOrDefault(ep.getService(),0);
+   if(cnt<3&&pickedSet.add(ep)){
+    perServiceCount.put(ep.getService(),cnt+1);
+   }
+  }
+  for(DetectedEndpointDTO ep:business){
+   if(pickedSet.size()>=10)break;
+   if(perServiceCount.getOrDefault(ep.getService(),0)==0||pickedSet.size()<6){
+    if(pickedSet.add(ep)){
+     perServiceCount.put(ep.getService(),perServiceCount.getOrDefault(ep.getService(),0)+1);
+    }
+   }
   }
   // Pass 3: for any runnable service with 0 business endpoints, include 1 health/readiness probe
   Set<String> coveredServices=new HashSet<>();
   pickedSet.forEach(ep->coveredServices.add(ep.getService()));
   for(DetectedEndpointDTO hp:healthOnly){
    if(pickedSet.size()>=10)break;
+   if(!coveredServices.isEmpty()&&isDiscoveryRegistryService(hp.getService()))continue;
    if(coveredServices.add(hp.getService())){
     pickedSet.add(hp);
    }
   }
   for(String svc:allowedServices){
    if(pickedSet.size()>=10)break;
+   if(!coveredServices.isEmpty()&&isDiscoveryRegistryService(svc))continue;
    String probePath=serviceHealthPaths!=null?serviceHealthPaths.get(svc):null;
    if(probePath!=null&&probePath.startsWith("/")&&coveredServices.add(svc)){
     pickedSet.add(DetectedEndpointDTO.builder()
@@ -1308,10 +1327,25 @@ public class RuntimePlanningService {
   }
  }
 
+ private static boolean isAuxiliaryEndpointPath(String path){
+  if(path==null)return false;
+  String low=path.toLowerCase(Locale.ROOT);
+  return low.contains("/ai/")||low.endsWith("/chat")||low.contains("/generate-")||low.contains("/suggest-")
+    ||low.endsWith("/inactive")||low.endsWith("/invoice-pdf")||low.endsWith("/forgot-password")
+    ||low.endsWith("/reset-password")||low.endsWith("/logout")||low.endsWith("/verify-email");
+ }
+
+ private static boolean isDiscoveryRegistryService(String service){
+  if(service==null)return false;
+  String low=service.toLowerCase(Locale.ROOT);
+  return low.equals("service-discovery")||low.equals("discovery-service")||low.equals("eureka-server")||low.equals("eureka")||low.equals("config-server");
+ }
+
  private static int causalEndpointPhase(DetectedEndpointDTO ep,Set<String> crudResourceRoots){
   if(isHealthProbePath(ep.getPath()))return 5;
   String verb=ep.getMethod();
   String low=ep.getPath().toLowerCase(Locale.ROOT);
+  if(isAuxiliaryEndpointPath(low))return 4;
   if("POST".equals(verb)&&(low.contains("/auth/")||low.endsWith("/login")||low.endsWith("/signin")||low.endsWith("/register")||low.endsWith("/signup")||low.endsWith("/token"))){
    return 0;
   }
@@ -1381,8 +1415,13 @@ public class RuntimePlanningService {
   if(lower.contains("department"))return "{\"name\":\"Engineering\",\"organizationId\":1}";
   if(lower.contains("organization"))return "{\"name\":\"MAVIS Corp\",\"address\":\"Hanoi\"}";
   if(lower.contains("status"))return "{\"status\":\"COMPLETED\"}";
+  if(lower.contains("/cart"))return "{\"productId\":1,\"variantId\":1,\"quantity\":1}";
   if(lower.contains("order")||lower.contains("checkout"))return "{\"customerEmail\":\"alice@mavis.io\",\"productCode\":\"SKU-LAPTOP-01\",\"itemId\":\"item-1\",\"quantity\":1}";
   if(lower.contains("payment")||lower.contains("charge"))return "{\"orderId\":1,\"amount\":1299.00,\"paymentMethod\":\"CREDIT_CARD\"}";
+  if(lower.contains("categor"))return "{\"name\":\"Tinh dau thien nhien\",\"description\":\"Danh muc tinh dau cao cap\",\"sortOrder\":1,\"isActive\":true}";
+  if(lower.contains("coupon"))return "{\"code\":\"WELCOME10\",\"discountValue\":10,\"minOrderAmount\":100000}";
+  if(lower.contains("review"))return "{\"productId\":1,\"orderId\":1,\"rating\":5,\"comment\":\"San pham chat luong tot\"}";
+  if(lower.contains("address"))return "{\"receiverName\":\"Nguyen Van A\",\"phone\":\"0901234567\",\"province\":\"TP.HCM\",\"district\":\"Quan 1\",\"ward\":\"Ben Nghe\",\"streetAddress\":\"123 Le Loi\",\"isDefault\":true}";
   if(lower.contains("product")||lower.contains("catalog")||lower.contains("inventory")||lower.contains("item"))return "{\"code\":\"SKU-MOUSE-02\",\"name\":\"Wireless Mouse\",\"price\":49.00,\"stock\":20,\"quantity\":1,\"categoryId\":1}";
   if(lower.contains("user")||lower.contains("account")||lower.contains("customer"))return "{\"name\":\"Test User\",\"email\":\"user@example.org\"}";
   return "{\"name\":\"sample-entity\",\"organizationId\":1,\"departmentId\":1}";
