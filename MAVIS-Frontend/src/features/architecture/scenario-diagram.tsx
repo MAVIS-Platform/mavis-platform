@@ -15,6 +15,10 @@ import { download } from "./selectable-diagram-preview";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
 import type { DrawioTheme } from "@/lib/drawio/rules";
 import {
+  classifyApiFeatureCluster,
+  type ApiFeatureClusterMeta,
+} from "@/features/runtime/scenario-suggestions";
+import {
   createDesignedCopyFromObserved,
   interactionToDrawioXml,
   projectObservedSequenceToInteraction,
@@ -86,18 +90,67 @@ function ObservedScenarioDiagram({
   const hasSteps = Boolean(sequence.data?.steps && sequence.data.steps.length > 0);
   const valid = lineageCheck.valid || hasSteps;
 
+  const featureClusters = useMemo(() => {
+    const rawSteps = sequence.data?.steps ?? [];
+    const byId = new Map<
+      string,
+      {
+        meta: ApiFeatureClusterMeta;
+        steps: typeof rawSteps;
+      }
+    >();
+    for (const st of rawSteps) {
+      const meta = classifyApiFeatureCluster(st.operation, st.callerService, st.calleeService);
+      let entry = byId.get(meta.id);
+      if (!entry) {
+        entry = { meta, steps: [] };
+        byId.set(meta.id, entry);
+      }
+      entry.steps.push(st);
+    }
+    return Array.from(byId.values()).sort((a, b) => a.meta.order - b.meta.order);
+  }, [sequence.data?.steps]);
+
   const projection = useMemo(() => {
     if (!sequence.data || !valid) return null;
-    return projectObservedSequenceToInteraction(sequence.data, model, {
-      traceId: trace && trace !== "all" ? trace : null,
+    const isClusterFilter = trace.startsWith("cluster:");
+    const clusterId = isClusterFilter ? trace.slice("cluster:".length) : null;
+    const activeCluster = clusterId
+      ? featureClusters.find((c) => c.meta.id === clusterId)
+      : null;
+    const effectiveData = activeCluster
+      ? { ...sequence.data, steps: activeCluster.steps }
+      : sequence.data;
+    const baseTitle = selected?.scenarioName ?? "Runtime scenario";
+    const effectiveTitle = activeCluster
+      ? `${baseTitle} · ${activeCluster.meta.shortTitle}`
+      : baseTitle;
+    return projectObservedSequenceToInteraction(effectiveData, model, {
+      traceId: !isClusterFilter && trace && trace !== "all" ? trace : null,
       page,
       pageSize: 30,
-      scenarioName: selected?.scenarioName ?? null,
+      scenarioName: effectiveTitle,
     });
-  }, [sequence.data, valid, model, selected?.scenarioName, trace, page]);
+  }, [sequence.data, valid, model, selected?.scenarioName, trace, page, featureClusters]);
 
-  const traces = projection?.availableTraceIds ?? [];
-  const chosen = trace && trace !== "all" && traces.includes(trace) ? trace : "all";
+  const allTraces = useMemo(() => {
+    const rawSteps = sequence.data?.steps ?? [];
+    return [
+      ...new Set(
+        rawSteps
+          .map((s) => (typeof s.traceId === "string" && s.traceId.trim() ? s.traceId.trim() : null))
+          .filter((t): t is string => Boolean(t)),
+      ),
+    ];
+  }, [sequence.data?.steps]);
+
+  const chosen =
+    trace === "all" ||
+    (trace.startsWith("cluster:") &&
+      featureClusters.some((c) => `cluster:${c.meta.id}` === trace)) ||
+    allTraces.includes(trace)
+      ? trace
+      : "all";
 
   const traceOptions = useMemo(() => {
     const rawSteps = sequence.data?.steps ?? [];
@@ -105,10 +158,16 @@ function ObservedScenarioDiagram({
     const opts: Array<{ value: string; label: string }> = [
       {
         value: "all",
-        label: `All steps (${totalCount} observed call${totalCount === 1 ? "" : "s"})`,
+        label: `Full End-to-End Scenario (${totalCount} observed call${totalCount === 1 ? "" : "s"})`,
       },
     ];
-    traces.forEach((tid, idx) => {
+    featureClusters.forEach((cluster, cIdx) => {
+      opts.push({
+        value: `cluster:${cluster.meta.id}`,
+        label: `Flow ${cIdx + 1}: ${cluster.meta.shortTitle} (${cluster.steps.length} call${cluster.steps.length === 1 ? "" : "s"})`,
+      });
+    });
+    allTraces.forEach((tid, idx) => {
       const matching = rawSteps.filter((s) => s.traceId === tid);
       const first = matching[0];
       if (first) {
@@ -130,7 +189,7 @@ function ObservedScenarioDiagram({
       }
     });
     return opts;
-  }, [sequence.data?.steps, traces]);
+  }, [sequence.data?.steps, featureClusters, allTraces]);
 
   const interaction = useMemo<InteractionDocument | null>(() => {
     const doc = projection?.document;
@@ -187,7 +246,7 @@ function ObservedScenarioDiagram({
     if (!interaction) return;
     const seqCtx = resolveSequenceSelectionContext(interaction, itemId, {
       sessionId: selected?.id ?? null,
-      traceId: chosen !== "all" ? chosen : null,
+      traceId: chosen !== "all" && !chosen.startsWith("cluster:") ? chosen : null,
     });
     let canonicalTargetId = itemId;
     if (
@@ -221,7 +280,7 @@ function ObservedScenarioDiagram({
         ) : (
           <>
             <SelectField
-              label="Scenario"
+              label="Runtime Session"
               value={selected?.id ?? ""}
               onChange={(v) => {
                 setSession(v);
@@ -266,7 +325,7 @@ function ObservedScenarioDiagram({
                             const copy = createDesignedCopyFromObserved(
                               interaction,
                               model,
-                              `${selected?.scenarioName ?? "Observed scenario"} (Designed copy)`,
+                              `${interaction.name} (Designed copy)`,
                             );
                             onCreateDesignedCopy(copy);
                           }}
@@ -291,9 +350,49 @@ function ObservedScenarioDiagram({
                       </div>
                     </div>
 
-                    {traces.length > 1 && (
+                    {featureClusters.length > 1 && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-xs font-medium text-muted-foreground mr-1">
+                          Feature Flows:
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 px-2.5 text-xs"
+                          variant={chosen === "all" ? "default" : "outline"}
+                          onClick={() => {
+                            setTrace("all");
+                            setPage(0);
+                            onSelectSequence?.(null, null);
+                          }}
+                        >
+                          Full End-to-End ({sequence.data?.steps?.length ?? 0})
+                        </Button>
+                        {featureClusters.map((cluster, idx) => {
+                          const val = `cluster:${cluster.meta.id}`;
+                          return (
+                            <Button
+                              key={cluster.meta.id}
+                              type="button"
+                              size="sm"
+                              className="h-7 px-2.5 text-xs"
+                              variant={chosen === val ? "default" : "outline"}
+                              onClick={() => {
+                                setTrace(val);
+                                setPage(0);
+                                onSelectSequence?.(null, null);
+                              }}
+                            >
+                              {idx + 1}. {cluster.meta.shortTitle} ({cluster.steps.length})
+                            </Button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {allTraces.length > 1 && (
                       <SelectField
-                        label="Filter by HTTP step"
+                        label="Filter by Flow or HTTP step"
                         value={chosen}
                         onChange={(v) => {
                           setTrace(v);
