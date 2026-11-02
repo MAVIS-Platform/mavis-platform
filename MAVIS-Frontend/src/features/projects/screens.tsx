@@ -89,7 +89,7 @@ export function ProjectOverview() {
           )}
 
           {/* 5-Step Architecture Workflow Bar */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div data-tour="project-workflow-bar" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Link
               href={`/snapshots?project=${projectId}`}
               className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"

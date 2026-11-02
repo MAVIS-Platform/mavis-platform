@@ -21,6 +21,8 @@ import {
 import { useLocale } from "@/lib/i18n/locale-context";
 import { useApiQuery, useSelection } from "@/hooks/use-api";
 import { ProjectStatusBadge, CreateProjectAction } from "@/features/projects/components";
+import { ScreenSpotlightOverlay } from "@/components/shared/screen-guided-tour";
+import { SCREEN_TOUR_CATALOG } from "@/lib/guided-tours/catalog";
 import { ResourceDeleteAction } from "@/features/projects/resource-delete-action";
 import type { Project } from "@/types/domain";
 export default function Index() {
@@ -53,10 +55,10 @@ function runtimeSummary(projects: Project[] | undefined): string | number {
   if (unchecked === projects.length) return "Not checked";
   return `${projects.filter((p) => p.runtimeSupported).length} of ${projects.length}`;
 }
-function OverviewHelp({ onStart }: { onStart: () => void }) {
+function OverviewHelp({ onStart, onStartDashboardTour }: { onStart: () => void; onStartDashboardTour: () => void }) {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
-  const startingTour = useRef(false);
+  const startingTour = useRef<"import" | "dashboard" | null>(null);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -75,8 +77,10 @@ function OverviewHelp({ onStart }: { onStart: () => void }) {
         onCloseAutoFocus={(event) => {
           if (startingTour.current) {
             event.preventDefault();
-            startingTour.current = false;
-            onStart();
+            const mode = startingTour.current;
+            startingTour.current = null;
+            if (mode === "dashboard") onStartDashboardTour();
+            else onStart();
           }
         }}
       >
@@ -103,7 +107,7 @@ function OverviewHelp({ onStart }: { onStart: () => void }) {
             </p>
             <Button
               onClick={() => {
-                startingTour.current = true;
+                startingTour.current = "import";
                 setOpen(false);
               }}
             >
@@ -122,6 +126,15 @@ function OverviewHelp({ onStart }: { onStart: () => void }) {
               <strong>Assignments &amp; Submit</strong> → Create coursework project and submit your
               model.
             </p>
+            <Button
+              variant="outline"
+              onClick={() => {
+                startingTour.current = "dashboard";
+                setOpen(false);
+              }}
+            >
+              {t("Tour dashboard", "Hướng dẫn màn hình")}
+            </Button>
           </div>
         </div>
       </DialogContent>
@@ -136,6 +149,7 @@ function Projects() {
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(1);
   const [tourStep, setTourStep] = useState<number | null>(null);
+  const [dashboardTourStep, setDashboardTourStep] = useState<number | null>(null);
   const filtered = (projects.data ?? []).filter(
     (p) =>
       p.name.toLowerCase().includes(search.toLowerCase()) &&
@@ -148,12 +162,21 @@ function Projects() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
-            <OverviewHelp onStart={() => setTourStep(0)} />
+            <OverviewHelp onStart={() => setTourStep(0)} onStartDashboardTour={() => setDashboardTourStep(0)} />
           </div>
-          <CreateProjectAction tourStep={tourStep} onTourStepChange={setTourStep} />
+          <div data-tour="overview-import">
+            <CreateProjectAction tourStep={tourStep} onTourStepChange={setTourStep} />
+          </div>
         </div>
+        {dashboardTourStep !== null && SCREEN_TOUR_CATALOG.overview && (
+          <ScreenSpotlightOverlay
+            tour={SCREEN_TOUR_CATALOG.overview}
+            stepIndex={dashboardTourStep}
+            onStepChange={setDashboardTourStep}
+          />
+        )}
         <RequestState query={projects}>
-          <div className="grid grid-cols-2 gap-3 [&>article>div]:text-xl sm:gap-4 sm:[&>article>div]:text-2xl xl:grid-cols-4">
+          <div data-tour="overview-summary" className="grid grid-cols-2 gap-3 [&>article>div]:text-xl sm:gap-4 sm:[&>article>div]:text-2xl xl:grid-cols-4">
             <SummaryCard label="Projects" value={projects.data?.length ?? 0} />
             <SummaryCard label="Services indexed" value={servicesSummary(projects.data)} />
             <SummaryCard label="Ready projects" value={readySummary(projects.data)} />
@@ -161,7 +184,7 @@ function Projects() {
           </div>
 
           <div className="mt-6 min-w-0 space-y-5">
-            <section className="min-w-0">
+            <section data-tour="overview-projects" className="min-w-0">
               <DetailPanel title="Recent projects">
                 <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
                   <SearchInput

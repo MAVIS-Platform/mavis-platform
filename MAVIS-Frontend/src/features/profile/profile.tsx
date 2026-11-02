@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState, LoadingState } from "@/components/shared/request-state";
+import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { hasPermission } from "@/lib/auth/permissions";
 import { roleLabels } from "@/lib/navigation";
@@ -19,7 +20,10 @@ export function Profile() {
   return (
     <div className="mx-auto w-full min-w-0 max-w-3xl space-y-5">
       <header>
-        <h1 className="text-xl font-semibold tracking-tight">{t("My Profile")}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-semibold tracking-tight">{t("My Profile")}</h1>
+          <ScreenHelpTrigger screenId="profile" />
+        </div>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
           {t("Manage your personal information and account security.")}
         </p>

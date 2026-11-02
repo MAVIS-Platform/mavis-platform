@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/app-shell";
+import { PageContainer, SectionHeader } from "@/components/layout/page";
 import { SubmissionReview } from "@/features/submissions/screens";
 export default async function SubmissionPage({
   params,
@@ -13,7 +14,13 @@ export default async function SubmissionPage({
       pageTitle="Submission Details & Review"
       contextName={submissionId}
     >
-      <SubmissionReview submissionId={submissionId} />
+      <PageContainer>
+        <SectionHeader
+          title="Submission Details & Review"
+          screenId="submission-review"
+        />
+        <SubmissionReview submissionId={submissionId} />
+      </PageContainer>
     </AppShell>
   );
 }
