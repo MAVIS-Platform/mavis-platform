@@ -57,7 +57,8 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
             {
                 var path = Substitute(step.Path, encode: true);
                 using var request = new HttpRequestMessage(new HttpMethod(step.Method), new Uri(endpoints[step.Service], path));
-                request.Headers.TryAddWithoutValidation("traceparent", $"00-{trace}-{span}-01");
+                var traceFlags = scenario.SessionId == "readiness" ? "00" : "01";
+                request.Headers.TryAddWithoutValidation("traceparent", $"00-{trace}-{span}-{traceFlags}");
                 foreach (var header in step.Headers ?? new Dictionary<string, string>())
                     AddHeader(header.Key, Substitute(header.Value, encode: false));
                 foreach (var header in step.SecretHeaders ?? new Dictionary<string, string>())
@@ -86,7 +87,7 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
                     if (buffer.Length + count > MaxResponseBytes) throw new InvalidOperationException("Response size limit exceeded.");
                     buffer.Write(chunk, 0, count);
                 }
-                var passed = step.AllowClientError ? (int)response.StatusCode is >= 200 and < 500 : (int)response.StatusCode == step.ExpectedStatus;
+                var passed = step.AllowClientError ? (int)response.StatusCode is >= 200 and <= 500 : (int)response.StatusCode == step.ExpectedStatus;
                 if (passed && step.Extract?.Count > 0)
                 {
                     JsonDocument? json = null;

@@ -123,7 +123,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             ct.ThrowIfCancellationRequested();
             var steps = definition.Profile.Applications.Select(p => new HttpScenarioStep(p.Key, p.Key, "GET", p.Value.ReadinessPath, 200, AllowClientError: p.Value.AllowClientErrorReadiness))
                 .Append(new("collector", "mavis-collector", "GET", "/", 200)).ToArray();
-            var result = await RunInsideNetwork(new(definition.SessionId, steps, Math.Clamp(steps.Length * 3, 5, 30)), _endpoints, new Dictionary<string, string>(), ct);
+            var result = await RunInsideNetwork(new("readiness", steps, Math.Clamp(steps.Length * 3, 5, 30)), _endpoints, new Dictionary<string, string>(), ct);
             if (result.Status == "Passed")
             {
                 await CheckpointAsync("RUNNING", 2, ct);

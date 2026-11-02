@@ -103,6 +103,8 @@ import {
   toServiceEnvPrefix,
   boundRuntimeEnvironment,
   resolveRuntimeTargetModel,
+  classifyApiFeatureCluster,
+  type ApiFeatureClusterMeta,
   type RuntimeDraftStep,
   type RuntimeInput,
 } from "./scenario-suggestions";
@@ -536,7 +538,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   ).filter((k) => !dismissedSecretKeys.includes(k));
 
   const isExternalSecretName = (name: string) =>
-    /OPENAI|GEMINI|ANTHROPIC|CLAUDE|AZURE|AWS_|GOOGLE|GCP|STRIPE|PAYPAL|TWILIO|SENDGRID|MAILGUN|SMTP|MAIL_|SLACK|GITHUB|DISCORD|FIREBASE|CLOUDINARY|S3_|MAPS|OAUTH|CLIENT_SECRET|API_KEY|APIKEY|ACCESS_KEY|DASHSCOPE|HUGGINGFACE|DEEPSEEK|MISTRAL|COHERE/i.test(
+    /OPENAI|GEMINI|ANTHROPIC|CLAUDE|AZURE|AWS_|GOOGLE|GCP|STRIPE|PAYPAL|TWILIO|SENDGRID|MAILGUN|SLACK|GITHUB|DISCORD|FIREBASE|CLOUDINARY|S3_|MAPS|OAUTH|CLIENT_SECRET|API_KEY|APIKEY|ACCESS_KEY|DASHSCOPE|HUGGINGFACE|DEEPSEEK|MISTRAL|COHERE/i.test(
       name,
     );
 
@@ -549,6 +551,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     return effectiveScope === "EXTERNAL" && !meta.defaultPresent;
   });
   const autoSecretKeys = allSecretKeys.filter((k) => !externalSecretKeys.includes(k));
+  const missingExternalApiKeys = allSecretKeys.filter((k) => {
+    if (configuredSecretKeys.includes(k) || Boolean(secretValues[k]?.trim())) return false;
+    const meta = requiredEnvVars.find((r) => r.name === k);
+    if (!meta || meta.defaultPresent) return false;
+    const isExtScope = meta.scope === "EXTERNAL" || (!meta.scope && isExternalSecretName(k));
+    const isUserReq = meta.resolution ? meta.resolution === "USER_REQUIRED" : true;
+    return isExtScope && isUserReq;
+  });
   const renderedSecretKeys = showSecretOverrides ? allSecretKeys : externalSecretKeys;
 
   const isInfraRole = (svc: string) =>
@@ -884,8 +894,24 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs"
-                    onClick={() => setShowStep1Details((prev) => !prev)}
+                    onClick={() => {
+                      setShowStep1Details((prev) => {
+                        const next = !prev;
+                        if (next && missingExternalApiKeys.length > 0) setShowSecretOverrides(true);
+                        return next;
+                      });
+                    }}
                   >
+                    {missingExternalApiKeys.length > 0 && (
+                      <span
+                        className="relative mr-1.5 flex h-2 w-2 shrink-0"
+                        title={`Missing external API key: ${missingExternalApiKeys.join(", ")}`}
+                        aria-label={`${missingExternalApiKeys.length} external API key required`}
+                      >
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-destructive" />
+                      </span>
+                    )}
                     {showStep1Details ? "Hide Details" : "Customize / View Details"}
                   </Button>
                 </div>
@@ -1162,12 +1188,16 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           <div className="space-y-2 pt-1">
                             {renderedSecretKeys.map((sKey) => (
                               <div key={sKey} className="flex items-center gap-2">
-                                <span className="w-36 font-mono text-[11px] truncate" title={sKey}>{sKey}</span>
+                                <span className={`w-36 font-mono text-[11px] truncate inline-flex items-center gap-1.5 ${missingExternalApiKeys.includes(sKey) ? "text-destructive font-semibold" : ""}`} title={sKey}>
+                                  {missingExternalApiKeys.includes(sKey) && <span className="h-1.5 w-1.5 rounded-full bg-destructive shrink-0" aria-hidden="true" />}
+                                  <span className="truncate">{sKey}</span>
+                                </span>
                                 <Input
                                   type="password"
                                   autoComplete="new-password"
                                   className="flex-1 font-mono text-xs h-7"
-                                  placeholder={configuredSecretKeys.includes(sKey) ? "•••••••• (Saved)" : "Override value"}
+                                  placeholder={configuredSecretKeys.includes(sKey) ? "•••••••• (Saved)" : missingExternalApiKeys.includes(sKey) ? "Missing external API key (required for live calls)" : "Override value"}
+                                  aria-invalid={missingExternalApiKeys.includes(sKey) || undefined}
                                   value={secretValues[sKey] ?? ""}
                                   onChange={(e) => {
                                     const val = e.target.value;
@@ -1799,7 +1829,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       if (discoveredEndpoints.length > 0) {
         const sampleEnv: Record<string, string> = {};
         const isAuxPath = (p: string) =>
-          /\/ai\/|\/chat$|\/generate-|\/suggest-|\/inactive$|\/invoice-pdf$|\/forgot-password$|\/reset-password$|\/logout$|\/verify-email$/i.test(p);
+          /\/ai\/|\/chat$|\/generate-|\/suggest-|\/inactive$|\/invoice-pdf$|\/forgot-password$|\/reset-password$|\/logout$|\/verify-email$|\/google$|\/oauth|\/refresh$/i.test(p);
         const nonHealth = discoveredEndpoints.filter(
           (ep) => !["/health", "/actuator/health", "/ready", "/readyz"].includes((ep.path || "").toLowerCase()),
         );
@@ -1843,14 +1873,17 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         });
 
         const picked: typeof normalizedPool = [];
+        const seenRoutes = new Set<string>();
         const perSvcCount = new Map<string, number>();
         for (const maxPerSvc of [2, 3]) {
           for (const ep of normalizedPool) {
             if (picked.length >= 8) break;
-            if (picked.includes(ep)) continue;
+            const routeKey = `${(ep.method || "GET").toUpperCase()}:${(ep.path || "").toLowerCase()}`;
+            if (picked.includes(ep) || seenRoutes.has(routeKey)) continue;
             const cnt = perSvcCount.get(ep.cleanSvc) ?? 0;
             if (cnt < maxPerSvc) {
               picked.push(ep);
+              seenRoutes.add(routeKey);
               perSvcCount.set(ep.cleanSvc, cnt + 1);
             }
           }
@@ -1993,14 +2026,23 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           obj["extract"] && typeof obj["extract"] === "object"
             ? (obj["extract"] as Record<string, string>)
             : undefined;
+        const journeyPhase =
+          typeof obj["journeyPhase"] === "string" && obj["journeyPhase"].trim()
+            ? obj["journeyPhase"].trim()
+            : undefined;
+        const savedRationale =
+          typeof obj["rationale"] === "string" && obj["rationale"].trim()
+            ? obj["rationale"].trim()
+            : `Loaded from saved scenario "${savedItem.name}" (rev ${savedItem.revision})`;
         parsedSteps.push({
           service: svc,
           method,
           path,
           status: String(obj["expectedStatus"] ?? 200),
-          rationale: `Loaded from saved scenario "${savedItem.name}" (rev ${savedItem.revision})`,
-          source: "Saved scenario",
+          rationale: savedRationale,
+          source: journeyPhase ? "AI + Static Analysis" : "Saved scenario",
           allowClientError: typeof obj["allowClientError"] === "boolean" ? obj["allowClientError"] : true,
+          ...(journeyPhase ? { journeyPhase } : {}),
           ...(envVars ? { environmentVariables: envVars } : {}),
           ...(envHeaders?.length ? { envHeaders } : {}),
           ...(headers && Object.keys(headers).length ? { headers } : {}),
@@ -2323,6 +2365,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         path: normalizedPath,
         expectedStatus: Number(step.status),
         allowClientError: step.allowClientError !== false,
+        ...(step.journeyPhase ? { journeyPhase: step.journeyPhase } : {}),
+        ...(step.rationale ? { rationale: step.rationale } : {}),
         ...(step.environmentVariables ? { environmentVariables: step.environmentVariables } : {}),
         ...(step.envHeaders?.length ? { envHeaders: step.envHeaders } : {}),
         ...(step.headers && Object.keys(step.headers).length ? { headers: step.headers } : {}),
@@ -2496,6 +2540,14 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 >
                   ← Step 1
                 </Link>
+                <Button
+                  size="sm"
+                  className="h-8 text-xs"
+                  disabled={!modelId || !steps.length || generateAiDraft.isPending || buildImages.isPending || autoSaveConfig.isPending || saveDraft.isPending || updateDraft.isPending || start.isPending}
+                  onClick={() => handleCreateAndRun(true)}
+                >
+                  {generateAiDraft.isPending ? "Generating AI Scenario..." : "Confirm & Run in Step 3 →"}
+                </Button>
               </div>
             );
           })()}
@@ -2603,34 +2655,161 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   ),
               ),
             );
+
+            // Group current scenario steps into visual API Feature Clusters
+            const clusterMap = new Map<
+              string,
+              {
+                meta: ApiFeatureClusterMeta;
+                stepIndices: number[];
+                routes: string[];
+                extractedVars: string[];
+              }
+            >();
+            steps.forEach((st, idx) => {
+              const meta = classifyApiFeatureCluster(st.path, st.service, st.service, st.journeyPhase);
+              let entry = clusterMap.get(meta.id);
+              if (!entry) {
+                entry = { meta, stepIndices: [], routes: [], extractedVars: [] };
+                clusterMap.set(meta.id, entry);
+              }
+              entry.stepIndices.push(idx + 1);
+              entry.routes.push(`${st.method.toUpperCase()} ${st.path}`);
+              if (st.extract) {
+                for (const varName of Object.keys(st.extract)) {
+                  if (!entry.extractedVars.includes(varName)) entry.extractedVars.push(varName);
+                }
+              }
+            });
+            const stepClusters = Array.from(clusterMap.values()).sort(
+              (a, b) => a.meta.order - b.meta.order,
+            );
+
             return (
-              <div className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
-                <span className="text-muted-foreground font-medium mr-1">Flow:</span>
-                <span className="rounded border bg-background px-2 py-0.5 font-mono font-medium text-foreground">
-                  MAVIS Runner
-                </span>
-                <span className="text-muted-foreground font-mono">→</span>
-                {uniqueEntryServices.map((entrySvc) => (
-                  <span
-                    key={entrySvc}
-                    className="rounded border bg-background px-2 py-0.5 font-mono font-medium text-foreground"
-                  >
-                    {entrySvc}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+                  <span className="text-muted-foreground font-medium mr-1">Service Chain:</span>
+                  <span className="rounded border bg-background px-2 py-0.5 font-mono font-medium text-foreground">
+                    MAVIS Runner
                   </span>
-                ))}
-                {downstreamServices.length > 0 && (
-                  <>
-                    <span className="text-muted-foreground font-mono">→</span>
-                    {downstreamServices.map((ds) => (
-                      <span
-                        key={ds}
-                        className="rounded border bg-muted/40 px-2 py-0.5 font-mono text-muted-foreground"
-                      >
-                        {ds}
-                      </span>
+                  <span className="text-muted-foreground font-mono">→</span>
+                  {uniqueEntryServices.map((entrySvc) => (
+                    <span
+                      key={entrySvc}
+                      className="rounded border bg-background px-2 py-0.5 font-mono font-medium text-foreground"
+                    >
+                      {entrySvc}
+                    </span>
+                  ))}
+                  {downstreamServices.length > 0 && (
+                    <>
+                      <span className="text-muted-foreground font-mono">→</span>
+                      {downstreamServices.map((ds) => (
+                        <span
+                          key={ds}
+                          className="rounded border bg-muted/40 px-2 py-0.5 font-mono text-muted-foreground"
+                        >
+                          {ds}
+                        </span>
+                      ))}
+                    </>
+                  )}
+                </div>
+
+                {/* Visual API Feature Clusters Pipeline */}
+                <div className="rounded-xl border border-slate-800 bg-slate-950/75 p-3.5 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs font-bold uppercase tracking-wider text-sky-400">
+                          🧩 API Feature Flow Visualization ({stepClusters.length} Functional Clusters · {steps.length} Steps)
+                        </p>
+                        <span
+                          className={`rounded px-2 py-0.5 font-mono text-[10px] font-semibold border ${
+                            generatorMode === "AI_ASSISTED" || stepClusters.some((c) => c.meta.isAiEvaluated)
+                              ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                              : "border-slate-600 bg-slate-800/80 text-slate-300"
+                          }`}
+                        >
+                          {generatorMode === "AI_ASSISTED" || stepClusters.some((c) => c.meta.isAiEvaluated)
+                            ? `🤖 AI-Evaluated Flow (${aiModelName || "gemini-2.5-pro"} + AST + DTO + C4)`
+                            : "📐 Static AST + C4 Topology Fallback"}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        APIs are grouped by business capability in execution order. Click a preset below to ask AI to synthesize a focused single-feature flow or full end-to-end flow.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {[
+                        { label: "🌐 Full End-to-End Flow", goal: "" },
+                        { label: "🔐 Auth & Identity Only", goal: "Authentication & User Identity flow: register, login, get profile and user addresses" },
+                        { label: "📦 Catalog & Inventory Only", goal: "Catalog & Inventory flow: login, create category, create product and verify inventory" },
+                        { label: "🛒 Order & Payment Only", goal: "Order & Payment Checkout flow: login, apply coupon, create order and create payment URL" },
+                      ].map((preset) => (
+                        <Button
+                          key={preset.label}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={!snapshotId || generateAiDraft.isPending}
+                          className="h-7 px-2.5 text-[11px]"
+                          onClick={() => {
+                            setAiGoal(preset.goal);
+                            setSelectedScenarioId("");
+                            edited.current = false;
+                            triggerSystemAiGeneration(preset.goal);
+                          }}
+                        >
+                          {preset.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-stretch gap-2 pt-1">
+                    {stepClusters.map((c, idx) => (
+                      <div key={c.meta.id} className="flex items-center gap-2">
+                        {idx > 0 && (
+                          <span className="text-slate-500 font-mono text-sm select-none">→</span>
+                        )}
+                        <div
+                          className={`rounded-lg border p-2.5 min-w-[220px] max-w-[320px] space-y-1.5 ${c.meta.cardBorderClass}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-slate-100">
+                              {c.meta.icon} {idx + 1}. {c.meta.shortTitle}
+                            </span>
+                            <span
+                              className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold border ${c.meta.badgeClass}`}
+                            >
+                              Steps {c.stepIndices.map((n) => `#${n}`).join(", ")}
+                            </span>
+                          </div>
+                          <div className="space-y-0.5 font-mono text-[10px] text-slate-300">
+                            {c.routes.map((r, rIdx) => (
+                              <div key={rIdx} className="truncate">
+                                • {r}
+                              </div>
+                            ))}
+                          </div>
+                          {c.extractedVars.length > 0 && (
+                            <div className="flex flex-wrap gap-1 pt-0.5">
+                              {c.extractedVars.map((v) => (
+                                <span
+                                  key={v}
+                                  className="rounded bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 font-mono text-[9px] text-emerald-300"
+                                >
+                                  📤 {`{{${v}}}`}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     ))}
-                  </>
-                )}
+                  </div>
+                </div>
               </div>
             );
           })()}
@@ -2680,6 +2859,16 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                         <span className="px-2 py-0.5 rounded bg-muted text-xs font-mono font-semibold">
                           #{i + 1}
                         </span>
+                        {(() => {
+                          const clusterMeta = classifyApiFeatureCluster(st.path, st.service, st.service, st.journeyPhase);
+                          return (
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${clusterMeta.badgeClass}`}
+                            >
+                              {clusterMeta.icon} {clusterMeta.shortTitle}
+                            </span>
+                          );
+                        })()}
                         <div className="flex items-center">
                           <button
                             type="button"

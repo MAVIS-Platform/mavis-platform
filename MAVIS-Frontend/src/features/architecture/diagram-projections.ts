@@ -10,7 +10,7 @@ const deployed = (edge: Edge) =>
 const interaction = (edge: Edge) =>
   !deployed(edge) &&
   [
-    "SERVICE_HTTP_CALL",
+    "SERVICE_HTTP_CALL", "RUNTIME_OBSERVED", "GATEWAY_ROUTE",
     "DATABASE_ACCESS",
     "DATABASE_QUERY",
     "MESSAGE_PUBLISH",
