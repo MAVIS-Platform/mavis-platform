@@ -1656,6 +1656,10 @@ public class RuntimePlanningService {
   int safeAliasSeq=0;
   for(JsonNode node:steps){
    if(!(node instanceof ObjectNode step))continue;
+   if("POST".equalsIgnoreCase(step.path("method").asText(""))&&step.path("path").asText("").toLowerCase(Locale.ROOT).endsWith("/coupons")){
+    ObjectNode ext=step.path("extract").isObject()?(ObjectNode)step.get("extract"):step.putObject("extract");
+    if(!ext.has("COUPON_ID"))ext.put("COUPON_ID","/id");
+   }
    if(step.path("path").isTextual()){
     String rawPath=step.get("path").asText();
     if(rawPath.toLowerCase(Locale.ROOT).contains("coupon")&&rawPath.endsWith("/SKU-LAPTOP-01")){
@@ -1846,7 +1850,10 @@ public class RuntimePlanningService {
    }
    if(step.hasNonNull("bodyReference")){
     String bodyRef=step.get("bodyReference").asText("");
-    if(!bodyRef.isBlank()&&!isValidJsonObject(protectedEnv.get(bodyRef))){
+    String existingBody=protectedEnv.get(bodyRef);
+    boolean isGenericOrderFallback="{\"customerEmail\":\"alice@mavis.io\",\"productCode\":\"SKU-LAPTOP-01\",\"quantity\":1}".equals(existingBody)
+      &&!path.toLowerCase(Locale.ROOT).contains("order")&&!path.toLowerCase(Locale.ROOT).contains("checkout");
+    if(!bodyRef.isBlank()&&(!isValidJsonObject(existingBody)||isGenericOrderFallback)){
      String defBody=step1Defaults!=null?step1Defaults.get(bodyRef):null;
      String fallback=isValidJsonObject(defBody)?defBody:detectedBodyByRoute.get((svc+":"+method+":"+path).toLowerCase(Locale.ROOT));
      if(fallback==null)fallback=detectedBodyByRoute.get(canonicalRouteKey(svc,method,path));
