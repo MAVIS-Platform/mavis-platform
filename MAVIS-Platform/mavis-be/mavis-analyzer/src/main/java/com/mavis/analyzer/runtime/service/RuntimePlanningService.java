@@ -1837,7 +1837,10 @@ public class RuntimePlanningService {
     if(ep!=null&&ep.getRequiredRoles()!=null)allRequiredRoles.addAll(ep.getRequiredRoles());
    }
   }
-  String mintedBearer=null;
+  String mintedBearer=mintSandboxBearerToken(protectedEnv,allRequiredRoles);
+  if(protectedEnv.containsKey("SANDBOX_BEARER_TOKEN")&&(step1Defaults==null||!step1Defaults.containsKey("SANDBOX_BEARER_TOKEN"))){
+   protectedEnv.put("SANDBOX_BEARER_TOKEN",mintedBearer);
+  }
   Set<String> availableVars=new HashSet<>();
   for(JsonNode step:steps){
    if(step==null||!step.isObject())continue;
@@ -1893,7 +1896,6 @@ public class RuntimePlanningService {
       if(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0){
        protectedEnv.put(envRef,defVal);
       }else if(envRef.contains("TOKEN")||envRef.contains("AUTH")||envRef.contains("JWT")){
-       if(mintedBearer==null)mintedBearer=mintSandboxBearerToken(protectedEnv,allRequiredRoles);
        protectedEnv.put(envRef,mintedBearer.replaceFirst("(?i)^Bearer\\s+",""));
       }else{
        protectedEnv.put(envRef,inferSampleParamValue(envRef));
@@ -1905,15 +1907,19 @@ public class RuntimePlanningService {
     for(JsonNode h:step.path("envHeaders")){
      String hName=h.path("name").asText("");
      String hRef=h.path("reference").asText("");
-     if(!hRef.isBlank()&&hRef.matches("[A-Z][A-Z0-9_]{0,63}")&&(protectedEnv.get(hRef)==null||protectedEnv.get(hRef).isBlank())){
-      String defVal=step1Defaults!=null?step1Defaults.get(hRef):null;
-      if(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0){
-       protectedEnv.put(hRef,defVal);
-      }else if("Authorization".equalsIgnoreCase(hName)){
-       if(mintedBearer==null)mintedBearer=mintSandboxBearerToken(protectedEnv,allRequiredRoles);
+     if(!hRef.isBlank()&&hRef.matches("[A-Z][A-Z0-9_]{0,63}")){
+      String cur=protectedEnv.get(hRef);
+      boolean autoAuth="Authorization".equalsIgnoreCase(hName)&&(step1Defaults==null||!step1Defaults.containsKey(hRef))
+        &&(cur==null||cur.isBlank()||"Bearer sandbox-verification-token".equals(cur)||"SANDBOX_BEARER_TOKEN".equals(hRef)||hRef.endsWith("_AUTHORIZATION"));
+      if(autoAuth){
        protectedEnv.put(hRef,mintedBearer);
-      }else{
-       protectedEnv.put(hRef,"sandbox-verification-value");
+      }else if(cur==null||cur.isBlank()){
+       String defVal=step1Defaults!=null?step1Defaults.get(hRef):null;
+       if(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0){
+        protectedEnv.put(hRef,defVal);
+       }else{
+        protectedEnv.put(hRef,"sandbox-verification-value");
+       }
       }
      }
     }
