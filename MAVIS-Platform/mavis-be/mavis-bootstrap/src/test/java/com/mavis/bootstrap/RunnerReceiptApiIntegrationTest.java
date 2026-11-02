@@ -268,7 +268,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
                 .runConfigurationVersionId("run-config/1.0")
                 .scenarioVersionId("scenario/1.0")
                 .resourceProject(resourceProject)
-                .sandboxEnforcementConfirmed(true)
+                .imageSourceCorrespondence("Verified").sandboxEnforcementConfirmed(true)
                 .outcome(outcome)
                 .build();
 
@@ -315,7 +315,7 @@ class RunnerReceiptApiIntegrationTest extends ApiIntegrationContext {
                 .runConfigurationVersionId("run-config/1.0")
                 .scenarioVersionId("scenario/1.0")
                 .resourceProject(resourceProject)
-                .sandboxEnforcementConfirmed(true)
+                .imageSourceCorrespondence("Verified").sandboxEnforcementConfirmed(true)
                 .outcome(RunnerOutcomeDTO.builder().executionStatus("Failed").scenarioStatus("Failed").build())
                 .build();
 

@@ -27,7 +27,7 @@ public static class ComposeOverrideBuilder
             var config = new Dictionary<string, object>
             {
                 ["cap_drop"] = new[] { "ALL" }, ["security_opt"] = new[] { "no-new-privileges:true" },
-                ["pids_limit"] = 128, ["mem_limit"] = profile.MemoryMiB + "m", ["cpus"] = profile.Cpus,
+                ["pids_limit"] = 256, ["mem_limit"] = profile.MemoryMiB + "m", ["cpus"] = profile.Cpus,
                 ["read_only"] = true, ["tmpfs"] = new[] { "/tmp:rw,noexec,nosuid,size=64m" }, ["restart"] = "no",
                 ["networks"] = new[] { "default" }
             };
@@ -55,9 +55,11 @@ public static class ComposeOverrideBuilder
                 };
                 if (app.Runtime == "java")
                 {
-                    environment["JAVA_TOOL_OPTIONS"] = "-javaagent:/mavis-otel/java/opentelemetry-javaagent.jar";
+                    environment["JAVA_TOOL_OPTIONS"] = "-javaagent:/mavis-otel/java/opentelemetry-javaagent.jar -XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0";
                     // Ensure OTel Java agent stays active for JEP-330 single-file `java Server.java` launchers.
                     environment["OTEL_JAVAAGENT_ENABLED"] = "true";
+                    // Air-gapped internal network blocks outbound SMTP; prevent MailHealthIndicator from failing /actuator/health with 503.
+                    environment["MANAGEMENT_HEALTH_MAIL_ENABLED"] = "false";
                     config["volumes"] = new[] { new { type = "volume", source = "mavis-instrumentation", target = "/mavis-otel", read_only = true } };
                 }
                 else if (app.Runtime == "dotnet8-linux-x64-glibc")

@@ -1,8 +1,13 @@
 package com.mavis.analyzer.javaanalyzer.visitor;
 
+import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.body.CallableDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MemberValuePair;
@@ -13,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -21,12 +27,15 @@ import java.util.regex.Pattern;
 @Slf4j
 public class HttpClientVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>> {
 
-    private static final Set<String> REST_TEMPLATE_METHODS = Set.of(
-            "getForObject", "postForObject", "exchange", "getForEntity", "postForEntity",
-            "put", "delete", "patchForObject"
+    private static final Set<String> EXCLUSIVE_REST_TEMPLATE_METHODS = Set.of(
+            "getForObject", "postForObject", "getForEntity", "postForEntity", "patchForObject"
     );
 
-    private static final Pattern URL_HOST_PATTERN = Pattern.compile("https?://([^:/]+)(?::\\d+)?.*");
+    private static final Set<String> AMBIGUOUS_REST_TEMPLATE_METHODS = Set.of(
+            "exchange", "put", "delete"
+    );
+
+    private static final Pattern URL_HOST_PATTERN = Pattern.compile("(?i)(?:https?|lb)://([^:/]+)(?::\\d+)?.*");
 
     protected final String currentFilePath;
 
@@ -104,14 +113,98 @@ public class HttpClientVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>>
         String methodName = n.getNameAsString();
 
         // 2. Phân tích lời gọi RestTemplate
-        if (REST_TEMPLATE_METHODS.contains(methodName)) {
+        if (EXCLUSIVE_REST_TEMPLATE_METHODS.contains(methodName)
+                || (AMBIGUOUS_REST_TEMPLATE_METHODS.contains(methodName) && isRestTemplateReceiver(n))) {
             handleRestTemplateCall(n, arg);
-        } else if ("uri".equals(methodName)) {
+        } else if ("uri".equals(methodName) && isWebClientOrRestClientCall(n)) {
             // 3. Phân tích lời gọi WebClient .uri(...)
             handleWebClientCall(n, arg);
         }
 
         super.visit(n, arg);
+    }
+
+    private boolean isRestTemplateReceiver(MethodCallExpr n) {
+        if (n.getScope().isEmpty()) {
+            return n.findAncestor(ClassOrInterfaceDeclaration.class)
+                    .map(c -> c.getExtendedTypes().stream().anyMatch(t -> isRestTemplateTypeName(t.getNameAsString())))
+                    .orElse(false);
+        }
+        String rawScope = n.getScope().get().toString().trim();
+        String lowerScope = rawScope.toLowerCase(Locale.ROOT);
+        if (lowerScope.contains("resttemplate") || lowerScope.contains("restoperations")) {
+            return true;
+        }
+        String varName = rawScope.replaceFirst("^this\\.", "");
+        if (!varName.matches("[a-zA-Z_$][a-zA-Z0-9_$]*")) {
+            return false;
+        }
+        return hasDeclaredTypeMatching(n, varName, this::isRestTemplateTypeName);
+    }
+
+    private boolean isWebClientOrRestClientCall(MethodCallExpr n) {
+        if (n.getScope().isPresent()) {
+            String lowerScope = n.getScope().get().toString().toLowerCase(Locale.ROOT);
+            if (lowerScope.contains("webclient") || lowerScope.contains("restclient")) {
+                return true;
+            }
+        }
+        boolean hasImport = n.findAncestor(CompilationUnit.class)
+                .map(cu -> cu.getImports().stream().anyMatch(imp -> {
+                    String name = imp.getNameAsString();
+                    return name.startsWith("org.springframework.web.reactive.function.client")
+                            || name.equals("org.springframework.web.client.RestClient")
+                            || (imp.isAsterisk() && name.equals("org.springframework.web.client"));
+                }))
+                .orElse(false);
+        if (hasImport) {
+            return true;
+        }
+        return n.findAncestor(ClassOrInterfaceDeclaration.class)
+                .map(c -> c.getFields().stream()
+                        .flatMap(f -> f.getVariables().stream())
+                        .anyMatch(v -> isWebOrRestClientTypeName(v.getTypeAsString())))
+                .orElse(false);
+    }
+
+    private boolean hasDeclaredTypeMatching(Node context, String varName, java.util.function.Predicate<String> typeMatcher) {
+        Optional<CallableDeclaration> callableOpt = context.findAncestor(CallableDeclaration.class);
+        if (callableOpt.isPresent()) {
+            CallableDeclaration<?> callable = callableOpt.get();
+            for (Parameter param : callable.getParameters()) {
+                if (varName.equals(param.getNameAsString())) {
+                    return typeMatcher.test(param.getTypeAsString());
+                }
+            }
+            for (VariableDeclarator local : callable.findAll(VariableDeclarator.class)) {
+                if (varName.equals(local.getNameAsString())) {
+                    return typeMatcher.test(local.getTypeAsString());
+                }
+            }
+        }
+        Optional<ClassOrInterfaceDeclaration> classOpt = context.findAncestor(ClassOrInterfaceDeclaration.class);
+        if (classOpt.isPresent()) {
+            for (FieldDeclaration field : classOpt.get().getFields()) {
+                for (VariableDeclarator v : field.getVariables()) {
+                    if (varName.equals(v.getNameAsString())) {
+                        return typeMatcher.test(v.getTypeAsString());
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isRestTemplateTypeName(String typeName) {
+        if (typeName == null) return false;
+        String lower = typeName.toLowerCase(Locale.ROOT);
+        return lower.contains("resttemplate") || lower.contains("restoperations");
+    }
+
+    private boolean isWebOrRestClientTypeName(String typeName) {
+        if (typeName == null) return false;
+        String lower = typeName.toLowerCase(Locale.ROOT);
+        return lower.contains("webclient") || lower.contains("restclient");
     }
 
     private void handleRestTemplateCall(MethodCallExpr n, List<CodeEvidenceDTO> arg) {
@@ -177,7 +270,10 @@ public class HttpClientVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>>
         String raw = expr.toString();
 
         if (expr.isStringLiteralExpr()) {
-            String val = expr.asStringLiteralExpr().getValue();
+            String val = expr.asStringLiteralExpr().getValue().trim();
+            if (val.isEmpty() || val.startsWith("/")) {
+                return null;
+            }
             return extractHostFromUrl(val);
         }
 

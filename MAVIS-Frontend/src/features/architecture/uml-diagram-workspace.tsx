@@ -37,6 +37,15 @@ import {
 import type { DrawioTheme } from "@/lib/drawio/rules";
 import { useLocale } from "@/lib/i18n/locale-context";
 
+export function sanitizeDocumentViewId(raw: string): string {
+  if (/^[a-zA-Z0-9:_-]{1,160}$/.test(raw)) return raw;
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i++) h = Math.imul(h ^ raw.charCodeAt(i), 16777619);
+  const hashHex = (h >>> 0).toString(16).padStart(8, "0");
+  const slug = raw.replace(/[^a-zA-Z0-9:_-]+/g, "_").replace(/^_+|_+$/g, "");
+  return slug.slice(0, Math.max(8, 160 - 9)) + "_" + hashHex;
+}
+
 const clientUmlAiCache = new Map<string, UmlAiDiagramEnrichment>();
 
 export function UmlDiagramWorkspace({
@@ -84,11 +93,17 @@ export function UmlDiagramWorkspace({
   const activeStateTargetId = selectedStateTargetId || stateTargets[0]?.targetId || "";
 
   const viewKey = useMemo(() => {
-    if (kind === "UML_CLASS") return `uml-class:${serviceId || "all"}:${packageFilter || "all"}`;
-    if (kind === "UML_PACKAGE") return `uml-package:${serviceId || "all"}`;
-    if (kind === "UML_DEPLOYMENT") return `uml-deployment:${environmentFilter || "default"}`;
-    if (kind === "UML_ACTIVITY") return `uml-activity:${activeOpId || activityView + ":none"}`;
-    return `uml-state:${activeStateTargetId || "default"}`;
+    const rawKey =
+      kind === "UML_CLASS"
+        ? `uml-class:${serviceId || "all"}:${packageFilter || "all"}`
+        : kind === "UML_PACKAGE"
+          ? `uml-package:${serviceId || "all"}`
+          : kind === "UML_DEPLOYMENT"
+            ? `uml-deployment:${environmentFilter || "default"}`
+            : kind === "UML_ACTIVITY"
+              ? `uml-activity:${activeOpId || activityView + ":none"}`
+              : `uml-state:${activeStateTargetId || "default"}`;
+    return sanitizeDocumentViewId(rawKey);
   }, [kind, serviceId, packageFilter, environmentFilter, activeOpId, activeStateTargetId, activityView]);
 
   const documentScope = `${model.id}:${viewKey}`;

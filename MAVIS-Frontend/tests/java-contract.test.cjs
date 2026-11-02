@@ -109,10 +109,12 @@ test("element evidence context preserves direct/relationship attribution and rej
 test("regenerate explanation explicitly refreshes the backend cache", async t => {
  environment(t);let body;
  t.mock.method(globalThis,"fetch",async(_url,options)=>{body=JSON.parse(options.body);return Response.json({code:200,data:{id:job,modelVersionId:model,elementId:node,explanationText:"Based on the linked relationship",citedEvidenceIds:[],providerMode:"DETERMINISTIC_EVIDENCE_SYNTHESIS",epistemicBadge:"Model context"}});});
- const result=await executeJava("explain",{modelId:model,elementId:node,forceRefresh:true},"jwt",new AbortController().signal);
+ const result=await executeJava("explain",{modelId:model,elementId:node,forceRefresh:true,userQuestion:"Why does OrderService call Catalog?"},"jwt",new AbortController().signal);
  assert.equal(body.forceRefresh,true);
  assert.equal(body.explanationScope,"ELEMENT");
+ assert.equal(body.userQuestion,"Why does OrderService call Catalog?");
  assert.equal(result.modelId,model);
+ assert.equal(result.userQuestion,"Why does OrderService call Catalog?");
 });
 test("wire project/snapshot preserve unknown coverage and runtime capability",()=>{
  const p=wire.projectView({id:project,name:"Actual project",repositoryUrl:null});assert.equal(p.services,null);assert.equal(p.runtimeSupported,null);assert.equal(p.status,"unknown");

@@ -573,3 +573,64 @@ test("performance: DOM translation visits changed subtrees, restores English, an
   assert.equal(body.children[1].children[0].nodeValue, "Password");
   assert.equal(added.getAttribute("title"), "Confirm password");
 });
+
+test("performance: large multi-service UML_CLASS Draw.io XML routes orthogonally under 2s", () => {
+  const { projectUmlClassDiagram, buildUmlDrawioXml, parseDrawioXmlStructure } = require("../src/features/architecture/uml-diagrams.ts");
+  const elements = [];
+  const edges = [];
+  for (let s = 0; s < 6; s++) {
+    const svcId = `svc-${s}`;
+    elements.push({ id: svcId, name: `service-${s}`, elementType: "SERVICE_CONTAINER", evidence: [] });
+    for (let c = 0; c < 25; c++) {
+      const clsId = `cls-${s}-${c}`;
+      const suffix = c % 4 === 0 ? "Controller" : c % 4 === 1 ? "Service" : c % 4 === 2 ? "Entity" : "Repository";
+      const name = `Order${s}_${c}${suffix}`;
+      elements.push({
+        id: clsId,
+        parentId: svcId,
+        name,
+        elementType: "CLASS_INTERFACE",
+        evidence: [],
+        properties: {
+          umlClassifier: {
+            name,
+            qualifiedName: `com.mochuong.svc${s}.${name}`,
+            packageName: `com.mochuong.svc${s}`,
+            kind: suffix === "Repository" ? "INTERFACE" : "CLASS",
+            attributes: [{ name: "id", type: "UUID", visibility: "PRIVATE" }],
+            operations: [{ name: "execute", returnType: "void", visibility: "PUBLIC", parameters: [] }],
+          },
+        },
+      });
+      if (c > 0) {
+        edges.push({
+          id: `rel-${s}-${c}`,
+          from: `cls-${s}-${Math.max(0, c - 1 - (c % 3))}`,
+          to: clsId,
+          protocol: "CODE_DEPENDENCY",
+          evidence: [],
+          properties: { umlRelationKind: c % 3 === 0 ? "ASSOCIATION" : "DEPENDENCY" },
+        });
+      }
+    }
+  }
+  const largeModel = { id: "large-uml", label: "Large UML", projectId: "p1", revision: 1, elements, edges };
+  const t0 = performance.now();
+  const proj = projectUmlClassDiagram(largeModel);
+  const xml = buildUmlDrawioXml(proj);
+  const parsed = parseDrawioXmlStructure(xml);
+  const elapsedMs = performance.now() - t0;
+  assert.equal(parsed.wellFormed, true);
+  assert.equal(proj.classifiers.length, 150);
+  assert.ok(elapsedMs < 2000, `Expected < 2000ms for 150 classifiers / 144 edges, took ${Math.round(elapsedMs)}ms`);
+});
+test("UML workspace viewId sanitization keeps complex method signatures BFF-safe and collision-free", () => {
+  const { sanitizeDocumentViewId } = require("../src/features/architecture/uml-diagram-workspace.tsx");
+  const clean = sanitizeDocumentViewId("uml-class:all:all");
+  assert.equal(clean, "uml-class:all:all");
+  const activitySigA = sanitizeDocumentViewId("uml-activity:workflow:9b9821c2::fetchCatalogProducts(): List<Map<String,Object>>");
+  const activitySigB = sanitizeDocumentViewId("uml-activity:workflow:9b9821c2::fetchCatalogProducts(Long): List<Map<String,Object>>");
+  assert.match(activitySigA, /^[a-zA-Z0-9:_-]{1,160}$/);
+  assert.match(activitySigB, /^[a-zA-Z0-9:_-]{1,160}$/);
+  assert.notEqual(activitySigA, activitySigB);
+});

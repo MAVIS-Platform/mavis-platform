@@ -123,7 +123,10 @@ public class DiagramExportServiceImpl implements DiagramExportService {
 
         // Tạo mới bản vẽ 4+1 DEPLOYMENT
         List<ModelElement> allElements = modelElementRepository.findByModelVersionId(modelVersionId);
-        List<ModelRelationship> allRelationships = modelRelationshipRepository.findByModelVersionId(modelVersionId);
+        List<ModelRelationship> allRelationships = modelRelationshipRepository.findRawByModelVersionId(modelVersionId);
+        if (allRelationships == null || allRelationships.isEmpty()) {
+            allRelationships = modelRelationshipRepository.findByModelVersionId(modelVersionId);
+        }
 
         Set<String> deploymentKinds = Set.of("SERVICE_CONTAINER", "DATABASE", "QUEUE_BROKER", "EXTERNAL_SYSTEM");
         List<ModelElement> deploymentNodes = allElements.stream()

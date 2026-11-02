@@ -364,11 +364,17 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         boolean hadSourceEndpoints = !endpoints.isEmpty();
 
         if (modelRelationshipRepository != null) {
-            List<ModelRelationship> rels = modelRelationshipRepository.findByModelVersionId(model.getId());
+            List<ModelRelationship> rels = modelRelationshipRepository.findRawByModelVersionId(model.getId());
+            if (rels == null || rels.isEmpty()) {
+                rels = modelRelationshipRepository.findByModelVersionId(model.getId());
+            }
             if (rels != null) {
                 for (ModelRelationship rel : rels) {
                     if ("SERVICE_HTTP_CALL".equalsIgnoreCase(rel.getRelationType()) || "GATEWAY_ROUTE".equalsIgnoreCase(rel.getRelationType())) {
-                        ModelElement tgt = resolveContainer(rel.getTargetElement(), elementById);
+                        ModelElement rawTgt = rel.getTargetElement() != null && rel.getTargetElement().getId() != null
+                                ? elementById.getOrDefault(rel.getTargetElement().getId(), rel.getTargetElement())
+                                : rel.getTargetElement();
+                        ModelElement tgt = resolveContainer(rawTgt, elementById);
                         if (tgt != null && tgt.getName() != null) {
                             String method = rel.getProperties() != null && rel.getProperties().hasNonNull("httpMethod")
                                     ? rel.getProperties().get("httpMethod").asText("GET").toUpperCase(Locale.ROOT)
@@ -805,8 +811,10 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 appNode.put("runtime", runnerRuntime);
                 appNode.put("containerPort", (port >= 1 && port <= 65535) ? port : 8080);
                 appNode.put("readinessPath", readinessPath.startsWith("/") ? readinessPath : "/health");
-                if (preflight != null && preflight.getServiceHealthConfidence() != null
-                        && "ASSUMED".equalsIgnoreCase(preflight.getServiceHealthConfidence().get(sName))) {
+                boolean allowClientErr = preflight != null && (
+                        (preflight.getServiceHealthConfidence() != null && "ASSUMED".equalsIgnoreCase(preflight.getServiceHealthConfidence().get(sName)))
+                        || (preflight.getSecuredActuatorServices() != null && preflight.getSecuredActuatorServices().contains(sName)));
+                if (allowClientErr) {
                     appNode.put("allowClientErrorReadiness", true);
                 }
             }

@@ -159,21 +159,59 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
         // 3. Dò tìm Database container từ SpringConfigDetectorService nếu chưa phát hiện
         if (springConfigDetectorService != null && sourcePath != null) {
             try {
+                Set<String> composeBoundServices = new HashSet<>();
+                for (DetectedContainerDTO c : detectedContainers) {
+                    if (c.getServiceName() != null && c.getDatasourceHost() != null && !c.getDatasourceHost().isBlank()) {
+                        composeBoundServices.add(c.getServiceName().trim().toLowerCase(Locale.ROOT));
+                    }
+                }
                 List<DetectedSpringConfigDTO> configs = springConfigDetectorService.detectConfigs(sourcePath);
                 for (DetectedSpringConfigDTO cfg : configs) {
+                    String cfgSvc = cfg.getApplicationName() != null ? cfg.getApplicationName() : cfg.getServiceName();
+                    if (cfgSvc != null && composeBoundServices.contains(cfgSvc.trim().toLowerCase(Locale.ROOT))) {
+                        continue;
+                    }
                     if (cfg.getDatasourceHost() != null && !cfg.getDatasourceHost().isBlank() && !cfg.getDatasourceHost().equalsIgnoreCase("localhost") && !cfg.getDatasourceHost().equals("127.0.0.1")) {
-                        String dbHost = cfg.getDatasourceHost().toLowerCase();
-                        if (addedElementNames.add(dbHost)) {
-                            ModelElement dbElement = ModelElement.builder()
-                                    .modelVersion(modelVersion)
-                                    .name(cfg.getDatasourceHost())
-                                    .elementType("DATABASE")
-                                    .languageStack("SQL")
-                                    .scope(sourcePath)
-                                    .properties(createPropertiesNode(sourcePath))
-                                    .status("VALIDATED")
-                                    .build();
-                            elements.add(dbElement);
+                        if (cfg.getDatasourceDatabase() != null && !cfg.getDatasourceDatabase().isBlank()) {
+                            String logicalName = cfg.getDatasourceDatabase() + " @ " + cfg.getDatasourceHost();
+                            if (addedElementNames.add(logicalName.toLowerCase(Locale.ROOT))) {
+                                String protocol = extractJdbcProtocol(cfg.getDatasourceUrl());
+                                var properties = objectMapper.createObjectNode()
+                                        .put("resourceRole", "LOGICAL_DATASTORE")
+                                        .put("physicalHost", cfg.getDatasourceHost())
+                                        .put("database", cfg.getDatasourceDatabase())
+                                        .put("ownerService", cfgSvc != null ? cfgSvc : "")
+                                        .put("classificationSource", "SPRING_CONFIG_JDBC_BINDING")
+                                        .put("locator", (cfg.getConfigFilePath() != null ? cfg.getConfigFilePath() : sourcePath)
+                                                + (cfg.getDatasourceLineNumber() != null ? ":" + cfg.getDatasourceLineNumber() : ""))
+                                        .put("responsibility", "Stores application data for " + (cfgSvc != null ? cfgSvc : "application"));
+                                if (protocol != null && !protocol.isBlank()) {
+                                    properties.put("protocol", protocol);
+                                }
+                                elements.add(ModelElement.builder()
+                                        .modelVersion(modelVersion)
+                                        .name(logicalName)
+                                        .elementType("DATABASE")
+                                        .languageStack(protocol != null && !protocol.isBlank() ? protocol + " protocol" : "SQL")
+                                        .scope(sourcePath)
+                                        .properties(properties)
+                                        .status("VALIDATED")
+                                        .build());
+                            }
+                        } else {
+                            String dbHost = cfg.getDatasourceHost().toLowerCase();
+                            if (addedElementNames.add(dbHost)) {
+                                ModelElement dbElement = ModelElement.builder()
+                                        .modelVersion(modelVersion)
+                                        .name(cfg.getDatasourceHost())
+                                        .elementType("DATABASE")
+                                        .languageStack("SQL")
+                                        .scope(sourcePath)
+                                        .properties(createPropertiesNode(sourcePath))
+                                        .status("VALIDATED")
+                                        .build();
+                                elements.add(dbElement);
+                            }
                         }
                     }
                 }
@@ -615,8 +653,16 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     if (targetServiceName == null || targetServiceName.isBlank()) continue;
 
                     ModelElement targetElement = elementByNameMap.get(targetServiceName.toLowerCase().trim());
+                    if (targetElement != null && !"SERVICE_CONTAINER".equals(targetElement.getElementType())
+                            && !"EXTERNAL_SYSTEM".equals(targetElement.getElementType())) {
+                        targetElement = null;
+                    }
                     if (targetElement == null) {
-                        targetElement = matchTargetElement(elements, targetServiceName);
+                        targetElement = matchTargetElement(
+                                elements.stream()
+                                        .filter(e -> "SERVICE_CONTAINER".equals(e.getElementType()) || "EXTERNAL_SYSTEM".equals(e.getElementType()))
+                                        .toList(),
+                                targetServiceName);
                     }
                     if (targetElement == null && "FEIGN_CLIENT".equalsIgnoreCase(type) && !targetServiceName.contains("${")) {
                         ObjectNode extProps = createPropertiesNode(ev.getFilePath());
@@ -1295,8 +1341,11 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
                     if (cfg.getDatasourceHost() != null && !cfg.getDatasourceHost().isBlank() && !cfg.getDatasourceHost().equalsIgnoreCase("localhost") && !cfg.getDatasourceHost().equals("127.0.0.1")) {
                         String sName = cfg.getApplicationName() != null ? cfg.getApplicationName() : cfg.getServiceName();
                         if (sName != null) {
-                            String previous = map.putIfAbsent(sName, cfg.getDatasourceHost());
-                            if (previous != null && !previous.equals(cfg.getDatasourceHost())) map.put(sName, "");
+                            String targetDb = (cfg.getDatasourceDatabase() != null && !cfg.getDatasourceDatabase().isBlank())
+                                    ? cfg.getDatasourceDatabase() + " @ " + cfg.getDatasourceHost()
+                                    : cfg.getDatasourceHost();
+                            String previous = map.putIfAbsent(sName, targetDb);
+                            if (previous != null && !previous.equals(targetDb)) map.put(sName, "");
                         }
                     }
                 }
@@ -1309,6 +1358,17 @@ public class GraphBuilderServiceImpl implements GraphBuilderService {
             }
         }
         return map;
+    }
+
+    private static String extractJdbcProtocol(String url) {
+        if (url == null) return null;
+        String low = url.trim().toLowerCase(Locale.ROOT);
+        if (low.startsWith("jdbc:") || low.startsWith("r2dbc:")) {
+            int first = low.indexOf(':');
+            int second = low.indexOf(':', first + 1);
+            if (second > first + 1) return low.substring(first + 1, second);
+        }
+        return null;
     }
 
     private String extractHostFromUrl(String url) {

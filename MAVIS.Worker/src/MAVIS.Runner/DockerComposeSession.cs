@@ -77,7 +77,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         }
         _resourcesMayExist = true; // Even a failed `up` may allocate partial resources.
         Stage = "DOCKER_UP";
-        await Require(["up", "--detach", "--wait", "--wait-timeout", "30"], ct);
+        await Require(["up", "--detach", "--wait", "--wait-timeout", "90"], ct);
         Stage = "IMAGE_PROVENANCE";
         foreach (var service in preflight.Services.Append("mavis-collector"))
         {
@@ -96,7 +96,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             var settings = host.RootElement;
             var memory = service == "mavis-collector" ? 256 : definition.Profile.MemoryMiB;
             var cpus = service == "mavis-collector" ? 1 : definition.Profile.Cpus;
-            var pids = service == "mavis-collector" ? 64 : 128;
+            var pids = service == "mavis-collector" ? 64 : 256;
             if (settings.GetProperty("Privileged").GetBoolean() || !settings.GetProperty("ReadonlyRootfs").GetBoolean() ||
                 settings.GetProperty("Memory").GetInt64() != memory * 1024L * 1024L ||
                 settings.GetProperty("NanoCpus").GetInt64() != (long)(cpus * 1_000_000_000) ||
@@ -116,12 +116,12 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     public async Task WaitUntilReadyAsync(CancellationToken ct)
     {
         Stage = "READINESS";
-        for (var attempt = 0; attempt < 30; attempt++)
+        for (var attempt = 0; attempt < 90; attempt++)
         {
             ct.ThrowIfCancellationRequested();
             var steps = definition.Profile.Applications.Select(p => new HttpScenarioStep(p.Key, p.Key, "GET", p.Value.ReadinessPath, 200, AllowClientError: p.Value.AllowClientErrorReadiness))
                 .Append(new("collector", "mavis-collector", "GET", "/", 200)).ToArray();
-            var result = await RunInsideNetwork(new(definition.SessionId, steps, 2), _endpoints, new Dictionary<string, string>(), ct);
+            var result = await RunInsideNetwork(new(definition.SessionId, steps, Math.Clamp(steps.Length * 3, 5, 30)), _endpoints, new Dictionary<string, string>(), ct);
             if (result.Status == "Passed")
             {
                 await CheckpointAsync("RUNNING", 2, ct);
@@ -238,7 +238,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
     private Task<DockerCommandResult> Command(IReadOnlyList<string> arguments, CancellationToken ct) => docker.RunAsync(
         new[] { "compose", "--project-name", ResourceProject, "--file", Path.Combine(_directory!, "compose.yaml"), "--file", Path.Combine(_directory!, "override.json") }.Concat(arguments).ToArray(),
-        _directory!, arguments[0] == "up" ? 45 : 15, ct);
+        _directory!, arguments[0] == "up" ? 120 : (arguments[0] is "down" or "stop" ? 45 : 15), ct);
 
     private static bool PinnedRunnerImage(string? image)
     {

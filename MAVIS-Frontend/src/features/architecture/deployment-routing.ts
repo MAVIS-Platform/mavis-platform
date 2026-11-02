@@ -30,21 +30,26 @@ export function deploymentSegmentHitsBox(
     : a.y > top && a.y < bottom && Math.max(a.x, b.x) > left && Math.min(a.x, b.x) < right;
 }
 
-// Search a rectilinear visibility grid built from actual box boundaries. Unlike
-// fixed column corridors, these tracks also work with centered rows and moved boxes.
-export function routeDeploymentPath(
+interface RouteTrack {
+  a: DeploymentPoint;
+  b: DeploymentPoint;
+}
+
+function solveGridRoute(
   start: DeploymentPoint,
   end: DeploymentPoint,
-  boxes: DeploymentBox[],
-  previousPaths: DeploymentPoint[][],
+  gridBoxes: DeploymentBox[],
+  obstacleBoxes: DeploymentBox[],
+  tracks: RouteTrack[],
   lane: number,
+  singleClearance: boolean,
 ): DeploymentPoint[] | null {
   const clearance = 24 + (lane % 7) * 12;
-  const altClearance = 24 + ((lane + 3) % 7) * 12;
+  const clearances = singleClearance ? [clearance] : [clearance, 24 + ((lane + 3) % 7) * 12];
   const xs = new Set([start.x, end.x, snap4((start.x + end.x) / 2)]);
   const ys = new Set([start.y, end.y, snap4((start.y + end.y) / 2)]);
-  for (const b of boxes) {
-    for (const c of [clearance, altClearance]) {
+  for (const b of gridBoxes) {
+    for (const c of clearances) {
       xs.add(snap4(b.x - c));
       xs.add(snap4(b.x + b.w + c));
       ys.add(snap4(b.y - c));
@@ -65,7 +70,7 @@ export function routeDeploymentPath(
   for (let id = 0; id < count; id++) {
     const p = point(id);
     if (
-      boxes.some(
+      obstacleBoxes.some(
         (b) => p.x > b.x - 10 && p.x < b.x + b.w + 10 && p.y > b.y - 10 && p.y < b.y + b.h + 10,
       )
     )
@@ -75,13 +80,13 @@ export function routeDeploymentPath(
   // Include direction in the search state so unnecessary bends have a cost.
   const dist = new Float64Array(count * 2).fill(Infinity);
   const parent = new Int32Array(count * 2).fill(-1);
-  const heap: Array<{ state: number; cost: number }> = [];
-  const push = (item: { state: number; cost: number }) => {
+  const heap: Array<{ state: number; cost: number; prio: number }> = [];
+  const push = (item: { state: number; cost: number; prio: number }) => {
     let i = heap.length;
     heap.push(item);
     while (i > 0) {
       const p = (i - 1) >> 1;
-      if (heap[p]!.cost <= item.cost) break;
+      if (heap[p]!.prio <= item.prio) break;
       heap[i] = heap[p]!;
       i = p;
     }
@@ -94,8 +99,8 @@ export function routeDeploymentPath(
       let i = 0;
       while (i * 2 + 1 < heap.length) {
         let child = i * 2 + 1;
-        if (child + 1 < heap.length && heap[child + 1]!.cost < heap[child]!.cost) child++;
-        if (last.cost <= heap[child]!.cost) break;
+        if (child + 1 < heap.length && heap[child + 1]!.prio < heap[child]!.prio) child++;
+        if (last.prio <= heap[child]!.prio) break;
         heap[i] = heap[child]!;
         i = child;
       }
@@ -103,10 +108,10 @@ export function routeDeploymentPath(
     }
     return first;
   };
-  const tracks = previousPaths.flatMap((path) => path.slice(1).map((b, i) => ({ a: path[i]!, b })));
+  const initHeuristic = Math.abs(start.x - end.x) + Math.abs(start.y - end.y);
   for (const dir of [0, 1]) {
     dist[source * 2 + dir] = 0;
-    push({ state: source * 2 + dir, cost: 0 });
+    push({ state: source * 2 + dir, cost: 0, prio: initHeuristic });
   }
   let final = -1;
   while (heap.length) {
@@ -124,11 +129,11 @@ export function routeDeploymentPath(
     for (const next of nextIds) {
       if (next < 0 || next >= count || blocked[next]) continue;
       const b = point(next);
-      if (boxes.some((box) => deploymentSegmentHitsBox(a, b, box))) continue;
+      if (obstacleBoxes.some((box) => deploymentSegmentHitsBox(a, b, box))) continue;
       const dir = a.y === b.y ? 0 : 1;
       let penalty = direction === dir ? 0 : 32;
       // Penalize riding within 14px of a box border (diagram-design rides_border guard)
-      for (const box of boxes) {
+      for (const box of obstacleBoxes) {
         if (dir === 0) {
           const nearH = Math.abs(a.y - box.y) < 14 || Math.abs(a.y - (box.y + box.h)) < 14;
           if (nearH && Math.min(Math.max(a.x, b.x), box.x + box.w) - Math.max(Math.min(a.x, b.x), box.x) > 4)
@@ -168,7 +173,8 @@ export function routeDeploymentPath(
       if (nextCost < dist[nextState]!) {
         dist[nextState] = nextCost;
         parent[nextState] = state;
-        push({ state: nextState, cost: nextCost });
+        const h = Math.abs(b.x - end.x) + Math.abs(b.y - end.y);
+        push({ state: nextState, cost: nextCost, prio: nextCost + h });
       }
     }
   }
@@ -177,6 +183,61 @@ export function routeDeploymentPath(
   for (let s = final; s >= 0; s = parent[s]!) path.push(point(Math.floor(s / 2)));
   path.reverse();
   return simplifyOrthogonalPoints(path);
+}
+
+// Search a rectilinear visibility grid built from actual box boundaries. Unlike
+// fixed column corridors, these tracks also work with centered rows and moved boxes.
+export function routeDeploymentPath(
+  start: DeploymentPoint,
+  end: DeploymentPoint,
+  boxes: DeploymentBox[],
+  previousPaths: DeploymentPoint[][],
+  lane: number,
+): DeploymentPoint[] | null {
+  const allTracks = previousPaths.flatMap((path) => path.slice(1).map((b, i) => ({ a: path[i]!, b })));
+  if (boxes.length <= 24) {
+    return solveGridRoute(start, end, boxes, boxes, allTracks, lane, false);
+  }
+  for (const pad of [112, 360]) {
+    let wLeft = Math.min(start.x, end.x) - pad;
+    let wRight = Math.max(start.x, end.x) + pad;
+    let wTop = Math.min(start.y, end.y) - pad;
+    let wBottom = Math.max(start.y, end.y) + pad;
+    const gridBoxes = boxes.filter(
+      (b) => b.x + b.w >= wLeft && b.x <= wRight && b.y + b.h >= wTop && b.y <= wBottom,
+    );
+    for (const b of gridBoxes) {
+      if (b.x - pad < wLeft) wLeft = b.x - pad;
+      if (b.x + b.w + pad > wRight) wRight = b.x + b.w + pad;
+      if (b.y - pad < wTop) wTop = b.y - pad;
+      if (b.y + b.h + pad > wBottom) wBottom = b.y + b.h + pad;
+    }
+    const obstacleBoxes = boxes.filter(
+      (b) =>
+        b.x + b.w >= wLeft - 16 &&
+        b.x <= wRight + 16 &&
+        b.y + b.h >= wTop - 16 &&
+        b.y <= wBottom + 16,
+    );
+    const localTracks = allTracks.filter(
+      (t) =>
+        Math.max(t.a.x, t.b.x) >= wLeft - 20 &&
+        Math.min(t.a.x, t.b.x) <= wRight + 20 &&
+        Math.max(t.a.y, t.b.y) >= wTop - 20 &&
+        Math.min(t.a.y, t.b.y) <= wBottom + 20,
+    );
+    const routed = solveGridRoute(
+      start,
+      end,
+      gridBoxes,
+      obstacleBoxes,
+      localTracks,
+      lane,
+      gridBoxes.length > 18 || pad > 112,
+    );
+    if (routed) return routed;
+  }
+  return null;
 }
 
 export function placeDeploymentEdgeLabel(
@@ -245,4 +306,3 @@ export function placeDeploymentEdgeLabel(
   const position = Number(((2 * picked.distance) / totalLength - 1).toFixed(3));
   return { position, dx: picked.dx, dy: picked.dy, box: picked.box };
 }
-

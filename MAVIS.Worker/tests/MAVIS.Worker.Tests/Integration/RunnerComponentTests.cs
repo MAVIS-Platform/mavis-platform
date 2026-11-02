@@ -213,6 +213,7 @@ public sealed class RunnerComponentTests
             Path.Combine(Path.GetTempPath(), "collector.yaml"),
             values));
         Assert.Equal("true", javaOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment").GetProperty("OTEL_JAVAAGENT_ENABLED").GetString());
+        Assert.Equal("false", javaOverride.RootElement.GetProperty("services").GetProperty("node-api").GetProperty("environment").GetProperty("MANAGEMENT_HEALTH_MAIL_ENABLED").GetString());
         Assert.Equal("node_secret_1", nodeEnv.GetProperty("DB_PASSWORD").GetString());
         Assert.Equal("order_secret_2", overrideDoc.RootElement.GetProperty("services").GetProperty("order-svc").GetProperty("environment").GetProperty("DB_PASSWORD").GetString());
         Assert.False(overrideDoc.RootElement.GetProperty("volumes").TryGetProperty("mavis-instrumentation", out _));
@@ -276,5 +277,39 @@ public sealed class RunnerComponentTests
         Assert.Equal(JsonValueKind.Number, doc.RootElement.GetProperty("userId").ValueKind);
         Assert.Equal(42, doc.RootElement.GetProperty("userId").GetInt64());
         Assert.Equal("user-42", doc.RootElement.GetProperty("label").GetString());
+    }
+
+    [Fact]
+    public async Task MissingExtractPointerPreservesStatusCodeWhenStrictAndFallsBackWhenAllowClientError()
+    {
+        string? secondPath = null;
+        using var handler = new Handler((req, call) =>
+        {
+            if (call == 2) secondPath = req.RequestUri!.PathAndQuery;
+            return new(HttpStatusCode.OK) { Content = new StringContent("{\"nested\":{\"id\":7}}", Encoding.UTF8, "application/json") };
+        });
+        using var client = new HttpClient(handler);
+        var endpoints = new Dictionary<string, Uri> { ["app"] = new("http://127.0.0.1:12345") };
+
+        var strict = await new HttpScenarioRunner().ExecuteAsync(client,
+            new("strict-extract", [new("s1", "app", "POST", "/checkout", 200, AllowClientError: false, Extract: new Dictionary<string, string> { ["ORDER_ID"] = "/orderId" })]),
+            endpoints, new Dictionary<string, string>());
+        Assert.Equal("Failed", strict.Status);
+        Assert.Equal(200, strict.Steps[0].StatusCode);
+
+        using var handler2 = new Handler((req, call) =>
+        {
+            if (call == 2) secondPath = req.RequestUri!.PathAndQuery;
+            return new(HttpStatusCode.OK) { Content = new StringContent("{\"nested\":{\"id\":7}}", Encoding.UTF8, "application/json") };
+        });
+        using var client2 = new HttpClient(handler2);
+        var exploratory = await new HttpScenarioRunner().ExecuteAsync(client2,
+            new("exploratory-extract", [
+                new("s1", "app", "POST", "/checkout", 200, AllowClientError: true, Extract: new Dictionary<string, string> { ["ORDER_ID"] = "/orderId" }),
+                new("s2", "app", "GET", "/orders/{{ORDER_ID}}", 200, AllowClientError: true)
+            ]),
+            endpoints, new Dictionary<string, string>());
+        Assert.Equal("Passed", exploratory.Status);
+        Assert.Equal("/orders/1", secondPath);
     }
 }

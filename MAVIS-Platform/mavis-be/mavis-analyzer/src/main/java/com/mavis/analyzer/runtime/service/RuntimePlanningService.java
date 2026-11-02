@@ -306,7 +306,9 @@ public class RuntimePlanningService {
     appNode.put("runtime",mapStackToRuntime(stack));
     appNode.put("containerPort",(port>=1&&port<=65535)?port:8080);
     appNode.put("readinessPath",healthPaths.getOrDefault(sName,"/health"));
-    if("ASSUMED".equalsIgnoreCase(healthConfidence.get(sName)))appNode.put("allowClientErrorReadiness",true);
+    boolean allowClientErr="ASSUMED".equalsIgnoreCase(healthConfidence.get(sName))
+      ||(pre!=null&&pre.getSecuredActuatorServices()!=null&&pre.getSecuredActuatorServices().contains(sName));
+    if(allowClientErr)appNode.put("allowClientErrorReadiness",true);
     count++;
    }
   }
@@ -353,7 +355,6 @@ public class RuntimePlanningService {
   try{UUID.fromString(value);return true;}catch(IllegalArgumentException ex){return false;}
  }
 
- @Transactional(readOnly=true)
  public GeneratedScenarioDraftView generateScenario(UUID id,GenerateScenarioRequest r){
   project(id,false);
   var cfg=configurations.findById(id).orElse(null);
@@ -402,9 +403,11 @@ public class RuntimePlanningService {
 
   List<DetectedEndpointDTO> rawEndpoints=new ArrayList<>();
   if(pre!=null&&pre.getDetectedEndpoints()!=null)rawEndpoints.addAll(pre.getDetectedEndpoints());
-  if(model!=null&&modelElements!=null&&allowedServices.isEmpty()){
+  Map<UUID,ModelElement> modelElById=new HashMap<>();
+  if(model!=null&&modelElements!=null){
    for(ModelElement el:modelElements.findByModelVersionId(model.getId())){
-    if("SERVICE_CONTAINER".equals(el.getElementType())&&el.getName()!=null&&!el.getName().isBlank()&&!infraSet.contains(el.getName())){
+    if(el.getId()!=null)modelElById.put(el.getId(),el);
+    if(allowedServices.isEmpty()&&"SERVICE_CONTAINER".equals(el.getElementType())&&el.getName()!=null&&!el.getName().isBlank()&&!infraSet.contains(el.getName())){
      allowedServices.add(el.getName());
     }
    }
@@ -419,11 +422,15 @@ public class RuntimePlanningService {
    if(low.contains("gateway")||low.contains("bff")||low.equals("edge")||low.startsWith("edge-"))upstreamServices.add(svc);
   }
   if(model!=null&&modelRelationships!=null){
-   for(ModelRelationship rel:modelRelationships.findByModelVersionId(model.getId())){
-    String sName=rel.getSourceElement()!=null?rel.getSourceElement().getName():"";
-    String tName=rel.getTargetElement()!=null?rel.getTargetElement().getName():"";
+   List<ModelRelationship> rels=modelRelationships.findRawByModelVersionId(model.getId());
+   if(rels==null||rels.isEmpty())rels=modelRelationships.findByModelVersionId(model.getId());
+   for(ModelRelationship rel:rels){
     UUID sId=rel.getSourceElement()!=null?rel.getSourceElement().getId():null;
     UUID tId=rel.getTargetElement()!=null?rel.getTargetElement().getId():null;
+    ModelElement srcEl=sId!=null&&modelElById.containsKey(sId)?modelElById.get(sId):rel.getSourceElement();
+    ModelElement tgtEl=tId!=null&&modelElById.containsKey(tId)?modelElById.get(tId):rel.getTargetElement();
+    String sName=srcEl!=null&&srcEl.getName()!=null?srcEl.getName():"";
+    String tName=tgtEl!=null&&tgtEl.getName()!=null?tgtEl.getName():"";
     if(!sName.isBlank()&&!tName.isBlank()){
      String resolvedSrc=resolveServiceToAllowed(sName,sId,allowedServices,savedProfile,pre);
      String resolvedTgt=resolveServiceToAllowed(tName,tId,allowedServices,savedProfile,pre);
@@ -911,13 +918,28 @@ public class RuntimePlanningService {
    if(!rawPath.startsWith("/")||rawPath.startsWith("//")||rawPath.contains("\\")||rawPath.contains("\n")||rawPath.contains("\r"))continue;
    if(status<100||status>599)status=200;
 
-   DetectedEndpointDTO matchedEp=endpointLookup.get(svc+":"+verb+":"+rawPath);
-   if(matchedEp==null)matchedEp=endpointLookup.get(canonicalRouteKey(svc,verb,rawPath));
+   DetectedEndpointDTO matchedEp=matchCandidateEndpoint(svc,verb,rawPath,endpointLookup,candidates);
+   if(matchedEp==null&&rawPath.matches("^/api/[A-Za-z0-9_.-]+/api/.*")){
+    String dedupedPath=rawPath.replaceFirst("^/api/[A-Za-z0-9_.-]+(?=/api/)","");
+    DetectedEndpointDTO dedupedMatch=matchCandidateEndpoint(svc,verb,dedupedPath,endpointLookup,candidates);
+    if(dedupedMatch!=null){
+     rawPath=dedupedPath;
+     matchedEp=dedupedMatch;
+    }
+   }
 
    String serviceKey=safeServiceEnvPrefix(svc);
    Map<String,String> stepVars=new LinkedHashMap<>();
-   // Preserve {{VAR}} in rawPath when VAR is already in availableExtractedVars; convert single {param} to {{V0}}
-   String pathSingleBracesOnly=rawPath.replaceAll("\\{\\{([a-zA-Z][a-zA-Z0-9_]*)}}","__MAVIS_VAR_$1__");
+   // Preserve {{VAR}} in rawPath only when VAR is already in availableExtractedVars; convert unbound {{VAR}} or single {param} to {{V0}}
+   Matcher rawVarMatcher=SCENARIO_VAR_PATTERN.matcher(rawPath);
+   StringBuilder normalizedRawPath=new StringBuilder();
+   while(rawVarMatcher.find()){
+    String vName=rawVarMatcher.group(1);
+    String repl=availableExtractedVars.contains(vName)?"__MAVIS_VAR_"+vName+"__":"{"+vName+"}";
+    rawVarMatcher.appendReplacement(normalizedRawPath,Matcher.quoteReplacement(repl));
+   }
+   rawVarMatcher.appendTail(normalizedRawPath);
+   String pathSingleBracesOnly=normalizedRawPath.toString();
    StringBuffer rewrittenSingle=new StringBuffer();
    Matcher m=PATH_PARAM_PATTERN.matcher(pathSingleBracesOnly);
    while(m.find()){
@@ -935,7 +957,17 @@ public class RuntimePlanningService {
    String bodyRef=null;
    if(Set.of("POST","PUT","PATCH").contains(verb)){
     bodyRef=serviceKey+"_BODY_"+idx;
-    String aiSampleBody=SecretRedactor.redactString(item.path("sampleJsonBody").asText(""));
+    String aiSampleBody=SecretRedactor.redactString(item.path("sampleJsonBody").asText(""))
+      .replaceAll("(\"\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.\\d+)?Z\"","$1\"");
+    Matcher bodyVarMatcher=SCENARIO_VAR_PATTERN.matcher(aiSampleBody);
+    StringBuilder cleanedBody=new StringBuilder();
+    while(bodyVarMatcher.find()){
+     String bv=bodyVarMatcher.group(1);
+     String bRepl=availableExtractedVars.contains(bv)?"{{"+bv+"}}":inferSampleParamValue(bv);
+     bodyVarMatcher.appendReplacement(cleanedBody,Matcher.quoteReplacement(bRepl));
+    }
+    bodyVarMatcher.appendTail(cleanedBody);
+    aiSampleBody=cleanedBody.toString();
     String fallbackBody=(matchedEp!=null&&isValidJsonObject(matchedEp.getSampleJsonBody()))
       ?SecretRedactor.redactString(matchedEp.getSampleJsonBody())
       :inferSampleJsonBody(rawPath);
@@ -943,24 +975,38 @@ public class RuntimePlanningService {
    }
 
    Map<String,String> stepHeaders=new LinkedHashMap<>();
+   boolean aiRequestedAuthHeader=false;
    if(item.path("headers").isObject()){
-    item.path("headers").fields().forEachRemaining(e->{
+    for(Iterator<Map.Entry<String,JsonNode>> it=item.path("headers").fields();it.hasNext();){
+     Map.Entry<String,JsonNode> e=it.next();
      String hk=e.getKey().trim();
-     String hv=SecretRedactor.redactString(e.getValue().asText("").trim());
+     String rawHv=e.getValue().asText("").trim();
+     if("Authorization".equalsIgnoreCase(hk)){
+      aiRequestedAuthHeader=true;
+      if(sandboxBearer!=null)continue;
+     }
+     boolean hasUnboundVar=false;
+     Matcher hm=SCENARIO_VAR_PATTERN.matcher(rawHv);
+     while(hm.find()){
+      if(!availableExtractedVars.contains(hm.group(1))){hasUnboundVar=true;break;}
+     }
+     if(hasUnboundVar)continue;
+     String hv=SecretRedactor.redactString(rawHv);
      if(hk.matches("[A-Za-z][A-Za-z0-9-]{0,63}")&&!Set.of("host","traceparent","tracestate").contains(hk.toLowerCase(Locale.ROOT))&&!hv.isEmpty()&&!hv.contains("\r")&&!hv.contains("\n")){
       stepHeaders.put(hk,hv);
      }
-    });
+    }
    }
    List<Map<String,String>> stepEnvHeaders=null;
    String phase=item.path("journeyPhase").asText(matchedEp!=null&&matchedEp.getJourneyRole()!=null?matchedEp.getJourneyRole():inferJourneyPhase(matchedEp!=null?matchedEp:DetectedEndpointDTO.builder().service(svc).method(verb).path(rawPath).build()));
-   if(matchedEp!=null&&Boolean.TRUE.equals(matchedEp.getRequiresAuth())&&!"AUTH_ENTRY".equals(phase)&&!stepHeaders.containsKey("Authorization")){
-    if(availableExtractedVars.contains("AUTH_TOKEN")){
-     stepHeaders.put("Authorization","Bearer {{AUTH_TOKEN}}");
-    }else if(sandboxBearer!=null){
+   boolean needsAuth=(matchedEp!=null&&Boolean.TRUE.equals(matchedEp.getRequiresAuth())&&!"AUTH_ENTRY".equals(phase))||aiRequestedAuthHeader;
+   if(needsAuth&&!stepHeaders.containsKey("Authorization")){
+    if(sandboxBearer!=null){
      String authRef=serviceKey+"_AUTHORIZATION";
      stepEnvHeaders=List.of(Map.of("name","Authorization","reference",authRef));
      sampleInputs.putIfAbsent(authRef,sandboxBearer);
+    }else if(availableExtractedVars.contains("AUTH_TOKEN")){
+     stepHeaders.put("Authorization","Bearer {{AUTH_TOKEN}}");
     }
    }
 
@@ -1433,9 +1479,26 @@ public class RuntimePlanningService {
   }
  }
 
+ private static void applyScenarioVarRewrites(ObjectNode step,String fromVar,String toVar){
+  if(fromVar==null||toVar==null||fromVar.equals(toVar))return;
+  String from="{{"+fromVar+"}}",to="{{"+toVar+"}}";
+  if(step.path("path").isTextual())step.put("path",step.get("path").asText().replace(from,to));
+  if(step.hasNonNull("jsonBody")&&step.get("jsonBody").isTextual())step.put("jsonBody",step.get("jsonBody").asText().replace(from,to));
+  if(step.path("headers").isObject()){
+   ObjectNode hdrs=(ObjectNode)step.get("headers");
+   List<String> hNames=new ArrayList<>();
+   hdrs.fieldNames().forEachRemaining(hNames::add);
+   for(String hn:hNames){
+    if(hdrs.path(hn).isTextual())hdrs.put(hn,hdrs.get(hn).asText().replace(from,to));
+   }
+  }
+ }
+
  private void normalizeAndBindScenarioVariables(ArrayNode steps){
   if(steps==null)return;
   Set<String> available=new HashSet<>();
+  Map<String,String> aliasByOrig=new LinkedHashMap<>();
+  int safeAliasSeq=0;
   for(JsonNode node:steps){
    if(!(node instanceof ObjectNode step))continue;
    if(step.path("path").isTextual()){
@@ -1447,6 +1510,9 @@ public class RuntimePlanningService {
     }
     single.appendTail(sb);
     step.put("path",sb.toString());
+   }
+   for(Map.Entry<String,String> prior:aliasByOrig.entrySet()){
+    if(!available.contains(prior.getKey()))applyScenarioVarRewrites(step,prior.getKey(),prior.getValue());
    }
    if(step.path("environmentVariables").isObject()){
     step.path("environmentVariables").fieldNames().forEachRemaining(available::add);
@@ -1466,23 +1532,18 @@ public class RuntimePlanningService {
     for(Map.Entry<String,String> rw:rewrites.entrySet()){
      String orig=rw.getKey();
      String envKey=rw.getValue();
-     if(envVars.size()<64&&!envVars.has(envKey)){
-      envVars.put(envKey,envKey);
+     String aliasKey=envKey;
+     if(SecretRedactor.isSensitiveKey(orig)||SecretRedactor.isSensitiveKey(envKey)){
+      do{
+       aliasKey="V_REF_"+(safeAliasSeq++);
+      }while(envVars.has(aliasKey)||available.contains(aliasKey));
      }
-     available.add(envKey);
-     if(!orig.equals(envKey)){
-      String from="{{"+orig+"}}",to="{{"+envKey+"}}";
-      if(step.path("path").isTextual())step.put("path",step.get("path").asText().replace(from,to));
-      if(step.hasNonNull("jsonBody")&&step.get("jsonBody").isTextual())step.put("jsonBody",step.get("jsonBody").asText().replace(from,to));
-      if(step.path("headers").isObject()){
-       ObjectNode hdrs=(ObjectNode)step.get("headers");
-       List<String> hNames=new ArrayList<>();
-       hdrs.fieldNames().forEachRemaining(hNames::add);
-       for(String hn:hNames){
-        if(hdrs.path(hn).isTextual())hdrs.put(hn,hdrs.get(hn).asText().replace(from,to));
-       }
-      }
+     if(envVars.size()<64&&!envVars.has(aliasKey)){
+      envVars.put(aliasKey,envKey);
      }
+     available.add(aliasKey);
+     aliasByOrig.put(orig,aliasKey);
+     applyScenarioVarRewrites(step,orig,aliasKey);
     }
    }
    if(step.path("extract").isObject()){
@@ -1574,6 +1635,33 @@ public class RuntimePlanningService {
   return (ComposePreflightValidator.cleanServiceCandidate(service)+":"+(method==null?"GET":method)+":"+cleanPath).toLowerCase(Locale.ROOT);
  }
 
+ private static DetectedEndpointDTO matchCandidateEndpoint(String svc,String verb,String rawPath,Map<String,DetectedEndpointDTO> endpointLookup,List<DetectedEndpointDTO> candidates){
+  if(svc==null||verb==null||rawPath==null)return null;
+  DetectedEndpointDTO exact=endpointLookup.get(svc+":"+verb+":"+rawPath);
+  if(exact!=null)return exact;
+  DetectedEndpointDTO canonical=endpointLookup.get(canonicalRouteKey(svc,verb,rawPath));
+  if(canonical!=null)return canonical;
+  String reqNoQuery=rawPath.split("\\?",2)[0];
+  String[] reqSegs=reqNoQuery.split("/");
+  for(DetectedEndpointDTO ep:candidates){
+   if(!svc.equalsIgnoreCase(ep.getService())||!verb.equalsIgnoreCase(ep.getMethod())||ep.getPath()==null)continue;
+   String epNoQuery=ep.getPath().split("\\?",2)[0];
+   String[] epSegs=epNoQuery.split("/");
+   if(epSegs.length!=reqSegs.length)continue;
+   boolean allMatch=true;
+   for(int i=0;i<epSegs.length;i++){
+    String es=epSegs[i],rs=reqSegs[i];
+    if(es.startsWith("{")&&es.endsWith("}")){
+     if(rs.isEmpty()){allMatch=false;break;}
+    }else if(!es.equalsIgnoreCase(rs)){
+     allMatch=false;break;
+    }
+   }
+   if(allMatch)return ep;
+  }
+  return null;
+ }
+
  private void ensureScenarioStepReferences(ArrayNode steps,PreflightCheckResponseDTO pre,Map<String,String> step1Defaults,Map<String,String> protectedEnv){
   if(steps==null||protectedEnv==null)return;
   Map<String,String> detectedBodyByRoute=new HashMap<>();
@@ -1632,13 +1720,21 @@ public class RuntimePlanningService {
     }
    }
    if(step.path("environmentVariables").isObject()){
-    step.path("environmentVariables").fields().forEachRemaining(e->{
+    for(Iterator<Map.Entry<String,JsonNode>> it=step.path("environmentVariables").fields();it.hasNext();){
+     Map.Entry<String,JsonNode> e=it.next();
      String envRef=e.getValue().asText("");
      if(!envRef.isBlank()&&envRef.matches("[A-Z][A-Z0-9_]{0,63}")&&(protectedEnv.get(envRef)==null||protectedEnv.get(envRef).isBlank())){
       String defVal=step1Defaults!=null?step1Defaults.get(envRef):null;
-      protectedEnv.put(envRef,(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0)?defVal:inferSampleParamValue(envRef));
+      if(defVal!=null&&!defVal.isBlank()&&defVal.length()<=16000&&defVal.indexOf('\0')<0){
+       protectedEnv.put(envRef,defVal);
+      }else if(envRef.contains("TOKEN")||envRef.contains("AUTH")||envRef.contains("JWT")){
+       if(mintedBearer==null)mintedBearer=mintSandboxBearerToken(protectedEnv,allRequiredRoles);
+       protectedEnv.put(envRef,mintedBearer.replaceFirst("(?i)^Bearer\\s+",""));
+      }else{
+       protectedEnv.put(envRef,inferSampleParamValue(envRef));
+      }
      }
-    });
+    }
    }
    if(step.path("envHeaders").isArray()){
     for(JsonNode h:step.path("envHeaders")){
@@ -1715,18 +1811,38 @@ public class RuntimePlanningService {
   Map<String,String> step1=runtime.getProjectExecutionEnvironment(projectId);
   if(step1!=null)candidates.putAll(step1);
 
+  Set<String> autoProvisionedDbServices=new HashSet<>();
+  if(pre.getDatabaseChecks()!=null){
+   for(var dc:pre.getDatabaseChecks()){
+    if(dc!=null&&"AUTO_PROVISIONED_SANDBOX_DB".equals(dc.getStatus())&&dc.getService()!=null){
+     autoProvisionedDbServices.add(dc.getService());
+    }
+   }
+  }
   Set<String> userOverriddenKeys=new HashSet<>();
   candidates.forEach((k,v)->{
    if(k==null||!k.matches("[A-Z][A-Z0-9_]{0,63}")||v==null||v.isBlank()||v.length()>16000)return;
    var meta=known.get(k);
    // Unchanged defaults already live in Compose/source; only real overrides are injected.
    if(meta!=null&&meta.isDefaultPresent()&&v.equals(meta.getDefaultValue()))return;
+   // Host-local loopback infra endpoints (e.g. REDIS=localhost, KAFKA=localhost:9092, EUREKA=http://localhost:8761) break multi-container Compose DNS.
+   if(composeServices.size()>1&&isContainerInfraEndpointKey(k)&&pointsToLoopback(v))return;
+   if(!isBindableEnvName(k)){
+    userOverriddenKeys.add(k);
+    protectedEnv.put(k,v);
+    return;
+   }
+   boolean dbOverrideKey=isExternalDatasourceOverrideKey(k);
+   List<String> boundTargets=new ArrayList<>();
+   for(String target:owningServices(meta,composeServices,appServices)){
+    if(dbOverrideKey&&autoProvisionedDbServices.contains(target))continue;
+    boundTargets.add(target);
+   }
+   if(boundTargets.isEmpty())return;
    userOverriddenKeys.add(k);
    protectedEnv.put(k,v);
-   if(isBindableEnvName(k)){
-    for(String target:owningServices(meta,composeServices,appServices)){
-     serviceBindings.computeIfAbsent(target,x->new LinkedHashMap<>()).put(k,k);
-    }
+   for(String target:boundTargets){
+    serviceBindings.computeIfAbsent(target,x->new LinkedHashMap<>()).put(k,k);
    }
   });
 
@@ -1907,6 +2023,46 @@ public class RuntimePlanningService {
   return name!=null&&name.matches("[A-Z][A-Z0-9_]{0,63}")&&!"PATH".equals(name)&&RESERVED_ENV_PREFIXES.stream().noneMatch(name::startsWith);
  }
 
+ private static final Set<String> EXTERNAL_DATASOURCE_OVERRIDE_KEYS=Set.of(
+   "SPRING_DATASOURCE_URL","SPRING_DATASOURCE_USERNAME","SPRING_DATASOURCE_PASSWORD",
+   "DATABASE_URL","DB_CONNECTION_STRING","CONNECTIONSTRINGS__DEFAULTCONNECTION",
+   "DB_HOST","DB_PORT","DB_NAME","DB_USER","DB_USERNAME","DB_PASSWORD",
+   "SPRING_DATA_MONGODB_URI","MONGODB_URI");
+
+ private static boolean isExternalDatasourceOverrideKey(String key){
+  return key!=null&&EXTERNAL_DATASOURCE_OVERRIDE_KEYS.contains(key);
+ }
+
+ private static boolean isContainerInfraEndpointKey(String key){
+  if(key==null)return false;
+  return key.startsWith("EUREKA_CLIENT_")
+    ||key.startsWith("MANAGEMENT_ZIPKIN_")
+    ||key.startsWith("MANAGEMENT_OTLP_")
+    ||key.startsWith("OTEL_EXPORTER_")
+    ||key.contains("KAFKA_BOOTSTRAP")
+    ||"KAFKA_BROKERS".equals(key)
+    ||"KAFKA_HOST".equals(key)
+    ||"SPRING_DATA_REDIS_HOST".equals(key)
+    ||"SPRING_REDIS_HOST".equals(key)
+    ||"REDIS_HOST".equals(key)
+    ||"REDIS_URL".equals(key)
+    ||"SPRING_RABBITMQ_HOST".equals(key)
+    ||"RABBITMQ_HOST".equals(key)
+    ||"RABBITMQ_URL".equals(key)
+    ||"AMQP_URL".equals(key);
+ }
+
+ private static boolean pointsToLoopback(String value){
+  if(value==null)return false;
+  String low=value.trim().toLowerCase(Locale.ROOT);
+  return "localhost".equals(low)
+    ||"127.0.0.1".equals(low)
+    ||low.startsWith("localhost:")
+    ||low.startsWith("127.0.0.1:")
+    ||low.contains("://localhost")
+    ||low.contains("://127.0.0.1");
+ }
+
  static String safeServiceEnvPrefix(String serviceName){
   String prefix=serviceName==null?"SVC":serviceName.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_]","_").replaceAll("_+","_").replaceAll("^_|_$","");
   if(prefix.isEmpty()||!Character.isLetter(prefix.charAt(0)))prefix="SVC_"+prefix;
@@ -2045,13 +2201,19 @@ public class RuntimePlanningService {
    }
    if(n.hasNonNull("extract")){
     if(!n.get("extract").isObject()||n.get("extract").size()>32)throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid extract map");
-    n.get("extract").fields().forEachRemaining(e->{
-     String ek=e.getKey();
-     String ptr=e.getValue().asText("");
+    ObjectNode ext=(ObjectNode)n.get("extract");
+    List<String> extKeys=new ArrayList<>();
+    ext.fieldNames().forEachRemaining(extKeys::add);
+    for(String ek:extKeys){
+     String ptr=ext.path(ek).asText("").trim();
+     if(ptr.startsWith("$.")&&ptr.length()>2){
+      ptr="/"+ptr.substring(2).replaceAll("\\[(\\d+)]","/$1").replace('.','/').replaceAll("/+","/");
+      ext.put(ek,ptr);
+     }
      if(!ek.matches("[a-zA-Z][a-zA-Z0-9_]{0,63}")||!ptr.startsWith("/")||ptr.length()>512){
       throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid extract variable or JSON pointer");
      }
-    });
+    }
    }
    if(n.hasNonNull("jsonBody")){try{var body=json.readTree(n.get("jsonBody").asText());if(body==null||!body.equals(SecretRedactor.redactJson(body)))throw new IllegalArgumentException();}catch(Exception ex){throw new BusinessException(ErrorCode.BAD_REQUEST,"JSON body must not contain literal secrets");}}
    result.add(n);

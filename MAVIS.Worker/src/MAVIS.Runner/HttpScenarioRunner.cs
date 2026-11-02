@@ -52,6 +52,7 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
             var watch = Stopwatch.StartNew();
             var trace = ActivityTraceId.CreateRandom().ToHexString();
             var span = ActivitySpanId.CreateRandom().ToHexString();
+            int? receivedStatusCode = null;
             try
             {
                 var path = Substitute(step.Path, encode: true);
@@ -75,6 +76,7 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
                 using var stepTimeout = CancellationTokenSource.CreateLinkedTokenSource(deadline.Token);
                 stepTimeout.CancelAfter(TimeSpan.FromSeconds(30));
                 using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, stepTimeout.Token);
+                receivedStatusCode = (int)response.StatusCode;
                 await using var stream = await response.Content.ReadAsStreamAsync(stepTimeout.Token);
                 using var buffer = new MemoryStream();
                 var chunk = new byte[8192];
@@ -87,31 +89,43 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
                 var passed = step.AllowClientError ? (int)response.StatusCode is >= 200 and < 500 : (int)response.StatusCode == step.ExpectedStatus;
                 if (passed && step.Extract?.Count > 0)
                 {
-                    using var json = JsonDocument.Parse(buffer.ToArray());
-                    foreach (var extract in step.Extract)
+                    JsonDocument? json = null;
+                    try { json = JsonDocument.Parse(buffer.ToArray()); }
+                    catch (JsonException) when (step.AllowClientError) { }
+                    using (json)
                     {
-                        var resolved = false;
-                        foreach (var candidatePointer in extract.Value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        foreach (var extract in step.Extract)
                         {
-                            var value = json.RootElement;
-                            var ok = true;
-                            foreach (var segment in candidatePointer.TrimStart('/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+                            var resolved = false;
+                            if (json is not null)
                             {
-                                var unescaped = segment.Replace("~1", "/").Replace("~0", "~");
-                                if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty(unescaped, out var prop))
-                                    value = prop;
-                                else if (value.ValueKind == JsonValueKind.Array && int.TryParse(unescaped, out var idx) && idx >= 0 && idx < value.GetArrayLength())
-                                    value = value[idx];
-                                else { ok = false; break; }
+                                foreach (var candidatePointer in extract.Value.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                                {
+                                    var value = json.RootElement;
+                                    var ok = true;
+                                    foreach (var segment in candidatePointer.TrimStart('/').Split('/', StringSplitOptions.RemoveEmptyEntries))
+                                    {
+                                        var unescaped = segment.Replace("~1", "/").Replace("~0", "~");
+                                        if (value.ValueKind == JsonValueKind.Object && value.TryGetProperty(unescaped, out var prop))
+                                            value = prop;
+                                        else if (value.ValueKind == JsonValueKind.Array && int.TryParse(unescaped, out var idx) && idx >= 0 && idx < value.GetArrayLength())
+                                            value = value[idx];
+                                        else { ok = false; break; }
+                                    }
+                                    if (ok && value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null))
+                                    {
+                                        variables[extract.Key] = value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText();
+                                        resolved = true;
+                                        break;
+                                    }
+                                }
                             }
-                            if (ok && value.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null))
+                            if (!resolved)
                             {
-                                variables[extract.Key] = value.ValueKind == JsonValueKind.String ? value.GetString()! : value.GetRawText();
-                                resolved = true;
-                                break;
+                                if (step.AllowClientError) variables.TryAdd(extract.Key, "1");
+                                else throw new KeyNotFoundException($"Missing JSON pointer '{extract.Value}'.");
                             }
                         }
-                        if (!resolved) throw new KeyNotFoundException($"Missing JSON pointer '{extract.Value}'.");
                     }
                 }
                 outcomes.Add(new(step.Id, passed ? "Passed" : "Failed", (int)response.StatusCode, trace, span, watch.ElapsedMilliseconds));
@@ -127,12 +141,12 @@ public sealed class HttpScenarioRunner(bool allowContainerDns = false)
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
             catch (OperationCanceledException)
             {
-                outcomes.Add(new(step.Id, "TimedOut", null, trace, span, watch.ElapsedMilliseconds));
+                outcomes.Add(new(step.Id, "TimedOut", receivedStatusCode, trace, span, watch.ElapsedMilliseconds));
                 return new(scenario.SessionId, "TimedOut", outcomes);
             }
             catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or JsonException or KeyNotFoundException or ArgumentException or FormatException)
             {
-                outcomes.Add(new(step.Id, "Failed", null, trace, span, watch.ElapsedMilliseconds));
+                outcomes.Add(new(step.Id, "Failed", receivedStatusCode, trace, span, watch.ElapsedMilliseconds));
                 return new(scenario.SessionId, "Failed", outcomes);
             }
         }

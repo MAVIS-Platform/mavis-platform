@@ -135,6 +135,11 @@ public class PreflightCheckResponseDTO {
     @Builder.Default
     private java.util.Set<String> migrationManagedServices = new java.util.HashSet<>();
 
+    /** Services whose Actuator readiness endpoint sits behind Spring Security without explicit permitAll, so 401/403 proves HTTP stack readiness. Server-side only. */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @Builder.Default
+    private java.util.Set<String> securedActuatorServices = new java.util.HashSet<>();
+
     @Data
     @Builder
     @NoArgsConstructor

@@ -626,5 +626,68 @@ class GraphBuilderServiceTest {
                 sampleSnapshot, sampleModelVersion, List.of(element), List.of(fact));
         verify(evidenceRepository, never()).saveAll(anyList());
     }
+
+    @Test
+    void skipsFallbackSpringDatasourceNodeWhenServiceAlreadyHasComposeDatasourceAndNeverBindsHttpCallToClassifier() {
+        var catalogCompose = DetectedContainerDTO.builder()
+                .serviceName("catalog-service").elementType("SERVICE_CONTAINER")
+                .datasourceHost("mysql").datasourceDatabase("catalog_db").datasourceTechnology("mysql")
+                .composeFilePath("/repo/docker-compose.yml").datasourceLineNumber(12).build();
+        var mysqlCompose = DetectedContainerDTO.builder()
+                .serviceName("mysql").elementType("DATABASE").image("mysql:8.0").build();
+        when(dockerDetectorService.detectContainers(anyString())).thenReturn(List.of(catalogCompose, mysqlCompose));
+        when(springConfigDetectorService.detectConfigs(anyString())).thenReturn(List.of(
+                DetectedSpringConfigDTO.builder()
+                        .serviceName("catalog-service").applicationName("catalog-service")
+                        .datasourceHost("pg-cloud.aivencloud.com").datasourceDatabase("defaultdb").build()));
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(call -> {
+            List<ModelElement> values = call.getArgument(0);
+            values.forEach(e -> { if (e.getId() == null) e.setId(UUID.randomUUID()); });
+            return values;
+        });
+
+        var elements = graphBuilderService.buildAndSaveElements(sampleModelVersion, List.of(), "/repo");
+        assertThat(elements).extracting(ModelElement::getName)
+                .contains("catalog-service", "mysql", "catalog_db @ mysql")
+                .doesNotContain("pg-cloud.aivencloud.com");
+
+        var entityFact = CodeEvidenceDTO.builder()
+                .elementType("CLASS_INTERFACE").identifier("Product").qualifiedName("com.shop.catalog.entity.Product")
+                .filePath("/repo/catalog-service/Product.java").lineNumber(5).codeSnippet("class Product {}").build();
+        var bogusRestCall = CodeEvidenceDTO.builder()
+                .elementType("REST_TEMPLATE_CALL").identifier("Product").sourceComponent("ProductServiceImpl")
+                .filePath("/repo/catalog-service/ProductServiceImpl.java").lineNumber(20).codeSnippet("repo.delete(product)").build();
+
+        graphBuilderService.buildRelationshipsAndEvidences(sampleSnapshot, sampleModelVersion, elements, List.of(entityFact, bogusRestCall));
+        verify(modelRelationshipRepository, never()).saveAll(anyList());
+    }
+
+    @Test
+    void createsLogicalDatastoreNodeFromSpringConfigJdbcBindingWhenComposeLacksDatasourceUrl() {
+        var postgresCompose = DetectedContainerDTO.builder()
+                .serviceName("postgres-db").elementType("DATABASE").image("postgres:16-alpine").build();
+        var orderCompose = DetectedContainerDTO.builder()
+                .serviceName("order-service").elementType("SERVICE_CONTAINER").build();
+        when(dockerDetectorService.detectContainers(anyString())).thenReturn(List.of(postgresCompose, orderCompose));
+        when(springConfigDetectorService.detectConfigs(anyString())).thenReturn(List.of(
+                DetectedSpringConfigDTO.builder()
+                        .serviceName("order-service").applicationName("order-service")
+                        .datasourceUrl("jdbc:postgresql://postgres-db:5432/testseed?sslmode=require")
+                        .datasourceHost("postgres-db").datasourceDatabase("testseed")
+                        .configFilePath("/repo/order-service/src/main/resources/application.yml").datasourceLineNumber(9)
+                        .build()));
+        when(modelElementRepository.saveAll(anyList())).thenAnswer(call -> {
+            List<ModelElement> values = call.getArgument(0);
+            values.forEach(e -> { if (e.getId() == null) e.setId(UUID.randomUUID()); });
+            return values;
+        });
+
+        var elements = graphBuilderService.buildAndSaveElements(sampleModelVersion, List.of(), "/repo");
+        var logicalDb = elements.stream().filter(e -> "testseed @ postgres-db".equals(e.getName())).findFirst().orElseThrow();
+        assertThat(logicalDb.getProperties().path("resourceRole").asText()).isEqualTo("LOGICAL_DATASTORE");
+        assertThat(logicalDb.getProperties().path("physicalHost").asText()).isEqualTo("postgres-db");
+        assertThat(logicalDb.getProperties().path("database").asText()).isEqualTo("testseed");
+        assertThat(logicalDb.getProperties().path("protocol").asText()).isEqualTo("postgresql");
+    }
 }
 

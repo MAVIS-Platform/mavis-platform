@@ -168,6 +168,7 @@ export function AuthFlow({
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         <p className="mb-7 mt-3 text-sm leading-6 text-muted-foreground">{description}</p>
         <form
+          method="post"
           className="space-y-5"
           onSubmit={(e) => {
             e.preventDefault();

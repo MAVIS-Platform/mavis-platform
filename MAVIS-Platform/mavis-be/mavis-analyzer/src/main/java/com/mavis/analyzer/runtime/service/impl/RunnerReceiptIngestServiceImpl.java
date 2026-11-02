@@ -453,7 +453,10 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         modelElementRepository.saveAll(savedElements);
 
         // (4.2) Sao chép relationships từ baseVersion (bảo toàn properties và khóa ghép UUID)
-        List<ModelRelationship> baseRelationships = modelRelationshipRepository.findByModelVersionId(baseVersion.getId());
+        List<ModelRelationship> baseRelationships = modelRelationshipRepository.findRawByModelVersionId(baseVersion.getId());
+        if (baseRelationships == null || baseRelationships.isEmpty()) {
+            baseRelationships = modelRelationshipRepository.findByModelVersionId(baseVersion.getId());
+        }
         List<ModelRelationship> newRelationships = new ArrayList<>();
         Map<String, ModelRelationship> relByPairKey = new HashMap<>();
         Map<UUID, ModelRelationship> oldToNewRelMap = new HashMap<>();

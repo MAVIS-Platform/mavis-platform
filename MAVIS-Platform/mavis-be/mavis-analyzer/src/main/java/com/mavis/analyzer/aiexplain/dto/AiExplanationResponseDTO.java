@@ -23,6 +23,7 @@ public class AiExplanationResponseDTO {
     private String elementName;
     private UUID relationshipId;
     private UUID runtimeSessionId;
+    private String userQuestion;
     private String explanationText;
     private String contractVersion;
     private UUID findingId;

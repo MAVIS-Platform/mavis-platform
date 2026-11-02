@@ -401,10 +401,10 @@ public class SandboxImageBuilderService {
                     }
                 } catch (IOException ignored) {}
             });
-            boolean finished = process.waitFor(180, TimeUnit.SECONDS);
+            boolean finished = process.waitFor(360, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
-                return "docker build timed out after 180s";
+                return "docker build timed out after 360s";
             }
             reader.join(1000);
             if (process.exitValue() == 0) return null;

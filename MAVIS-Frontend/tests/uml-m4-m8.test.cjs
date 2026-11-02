@@ -2985,3 +2985,112 @@ test("UML_STATE: dynamically discovers project-specific state machines from AST 
   assert.equal(+undoCancelStyle.exitY, 0, "undoCancel() must exit from top face of CANCEL_PENDING (exitY = 0)");
   assert.equal(+undoCancelStyle.entryX, 1, "undoCancel() must enter right face of AWAITING_ACCEPTANCE (entryX = 1)");
 });
+
+test("UML_STATE: discovers cross-class service setStatus transitions when entity has enumOnlyNoTransitions and ranks real state machines first", () => {
+  const { listStateTargets, projectUmlStateDiagram } = require("../src/features/architecture/uml-diagrams.ts");
+  const model = {
+    id: "m-cross-cls",
+    projectId: "p-cross-cls",
+    snapshotId: "s-cross-cls",
+    version: 1,
+    elements: [
+      { id: "svc:identity", name: "identity-service", elementType: "SERVICE_CONTAINER", parentId: null, properties: {} },
+      {
+        id: "cls:role",
+        name: "Role",
+        elementType: "CLASS_INTERFACE",
+        parentId: "svc:identity",
+        properties: {
+          umlClassifier: {
+            name: "Role",
+            typeKind: "ENUM",
+            stateLifecycle: {
+              stateMachineKind: "ENUM_DECLARATION",
+              states: ["CUSTOMER", "ADMIN"],
+              transitions: [],
+              enumOnlyNoTransitions: true,
+            },
+          },
+        },
+      },
+      { id: "svc:order", name: "order-service", elementType: "SERVICE_CONTAINER", parentId: null, properties: {} },
+      {
+        id: "cls:order",
+        name: "Order",
+        elementType: "CLASS_INTERFACE",
+        parentId: "svc:order",
+        properties: {
+          umlClassifier: {
+            name: "Order",
+            typeKind: "CLASS",
+            annotations: ["Entity"],
+            stateLifecycle: {
+              stateMachineKind: "STATEFUL_CLASS",
+              stateFieldName: "status",
+              states: ["PENDING_PAYMENT"],
+              transitions: [],
+              enumOnlyNoTransitions: true,
+            },
+          },
+        },
+      },
+      {
+        id: "cls:orderStatus",
+        name: "OrderStatus",
+        elementType: "CLASS_INTERFACE",
+        parentId: "svc:order",
+        properties: {
+          umlClassifier: {
+            name: "OrderStatus",
+            typeKind: "ENUM",
+            stateLifecycle: {
+              stateMachineKind: "ENUM_DECLARATION",
+              states: ["PENDING_PAYMENT", "CONFIRMED", "SHIPPING", "COMPLETED", "CANCELLED"],
+              transitions: [],
+              enumOnlyNoTransitions: true,
+            },
+          },
+        },
+      },
+      {
+        id: "comp:orderServiceImpl",
+        name: "OrderServiceImpl",
+        elementType: "COMPONENT",
+        parentId: "svc:order",
+        properties: {
+          umlClassifier: {
+            name: "OrderServiceImpl",
+            typeKind: "CLASS",
+            methodsCfg: [
+              {
+                methodName: "confirmOrder",
+                nodes: [{ id: "n1", kind: "ACTION", label: 'order.setStatus("CONFIRMED")' }],
+              },
+              {
+                methodName: "cancelOrder",
+                nodes: [{ id: "n2", kind: "ACTION", label: 'order.setStatus("CANCELLED")' }],
+              },
+            ],
+          },
+        },
+      },
+    ],
+    edges: [],
+    evidence: [],
+  };
+
+  const targets = listStateTargets(model);
+  assert.ok(targets.length >= 2);
+  assert.equal(targets[0].enumOnlyNoTransitions, false, "First default target must have real extracted transitions");
+  assert.match(targets[0].classifierName, /Order/);
+
+  const defaultProj = projectUmlStateDiagram(model);
+  assert.equal(defaultProj.enumOnlyNoTransitions, false);
+  assert.ok(defaultProj.transitions.length > 0, "Cross-class OrderServiceImpl setStatus transitions must be projected");
+
+  const roleTarget = targets.find((t) => t.classifierName === "Role");
+  assert.ok(roleTarget);
+  const roleProj = projectUmlStateDiagram(model, { targetId: roleTarget.targetId });
+  assert.equal(roleProj.enumOnlyNoTransitions, true, "Pure enum Role in identity-service must remain enumOnlyNoTransitions without invented transitions");
+  assert.equal(roleProj.transitions.length, 0);
+});

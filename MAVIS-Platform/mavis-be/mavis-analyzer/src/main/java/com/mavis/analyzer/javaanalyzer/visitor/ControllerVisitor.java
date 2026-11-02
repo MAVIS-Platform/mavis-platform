@@ -12,10 +12,12 @@ public class ControllerVisitor extends VoidVisitorAdapter<List<CodeEvidenceDTO>>
     @Override public void visit(ClassOrInterfaceDeclaration type,List<CodeEvidenceDTO> evidence) {
         boolean controller=type.getAnnotations().stream().anyMatch(a->Set.of("RestController","Controller").contains(a.getName().getIdentifier()));
         if(controller && evidence!=null) {
+            String anns=type.getAnnotations().stream().map(Object::toString).collect(java.util.stream.Collectors.joining("\n"));
+            String decl=(type.isPublic()?"public ":"")+"class "+type.getNameAsString();
             evidence.add(CodeEvidenceDTO.builder().elementType("CONTROLLER_COMPONENT").identifier(type.getNameAsString())
                     .sourceComponent(type.getNameAsString()).filePath(currentFilePath)
                     .lineNumber(type.getBegin().map(p->p.line).orElse(1))
-                    .codeSnippet(type.getAnnotations()+"\npublic class "+type.getNameAsString()).build());
+                    .codeSnippet(anns.isEmpty()?decl:anns+"\n"+decl).build());
             var classMapping=type.getAnnotations().stream().filter(a->a.getName().getIdentifier().equals("RequestMapping")).findFirst();
             List<String> roots=classMapping.map(SpringHttpMappings::paths).orElse(List.of(""));
             for(var method:type.getMethods()) for(var mapping:SpringHttpMappings.method(method,false)) for(String root:roots) {

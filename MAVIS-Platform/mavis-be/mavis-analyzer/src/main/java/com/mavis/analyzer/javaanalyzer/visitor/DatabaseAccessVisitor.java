@@ -49,7 +49,7 @@ public class DatabaseAccessVisitor extends VoidVisitorAdapter<List<CodeEvidenceD
         if (isRepoInterface || hasRepoAnnotation) {
             String managedEntity = extractManagedEntity(n);
             Integer line = n.getBegin().map(p -> p.line).orElse(null);
-            String snippet = n.getAnnotations().toString() + "\npublic interface " + name;
+            String snippet = declarationSnippet(n);
 
             log.info("Detected Database Repository: {} (managed entity: {})", name, managedEntity);
 
@@ -69,7 +69,7 @@ public class DatabaseAccessVisitor extends VoidVisitorAdapter<List<CodeEvidenceD
         if (isEntity && !n.isInterface()) {
             String tableName = extractTableName(n);
             Integer line = n.getBegin().map(p -> p.line).orElse(null);
-            String snippet = n.getAnnotations().toString() + "\npublic class " + name;
+            String snippet = declarationSnippet(n);
 
             log.info("Detected Database Entity: {} (table: {})", name, tableName);
 
@@ -85,6 +85,14 @@ public class DatabaseAccessVisitor extends VoidVisitorAdapter<List<CodeEvidenceD
         }
 
         super.visit(n, arg);
+    }
+
+    private static String declarationSnippet(ClassOrInterfaceDeclaration n) {
+        String anns = n.getAnnotations().stream()
+                .map(AnnotationExpr::toString)
+                .collect(java.util.stream.Collectors.joining("\n"));
+        String decl = (n.isPublic() ? "public " : "") + (n.isInterface() ? "interface " : "class ") + n.getNameAsString();
+        return anns.isEmpty() ? decl : anns + "\n" + decl;
     }
 
     private boolean extendsSpringDataRepository(ClassOrInterfaceDeclaration n) {

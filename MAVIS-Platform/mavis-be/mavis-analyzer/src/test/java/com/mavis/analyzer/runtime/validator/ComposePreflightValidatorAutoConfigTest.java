@@ -726,4 +726,204 @@ class ComposePreflightValidatorAutoConfigTest {
         assertThat(invOpenApi.getRequiresAuth()).isTrue();
         assertThat(invOpenApi.getResponseFields()).contains("/reservationId");
     }
+
+    @Test
+    void multiContainerComposeNormalizesKraftKafkaWiresMissingRedisMirrorsEurekaDetectsSecuredActuatorAndPrunesReplacedInfra(@TempDir Path tempDir) throws Exception {
+        ComposePreflightValidator fullValidator = new ComposePreflightValidator(new ImageDigestResolver(null, null, false, Map.of(
+                "postgres", "postgres@sha256:" + "9".repeat(64),
+                "redis", "redis@sha256:" + "4".repeat(64),
+                "apache/kafka-native", "apache/kafka-native@sha256:" + "5".repeat(64)
+        )));
+        String rawCompose = """
+                services:
+                  mysql:
+                    image: mysql:8.0
+                    environment:
+                      MYSQL_ROOT_PASSWORD: rootpass
+                    volumes:
+                      - mysql-data:/var/lib/mysql
+                  redis:
+                    image: redis:7-alpine
+                  zookeeper:
+                    image: confluentinc/cp-zookeeper:7.5.0
+                  kafka:
+                    image: confluentinc/cp-kafka:7.5.0
+                    depends_on:
+                      - zookeeper
+                    environment:
+                      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+                  zipkin:
+                    image: openzipkin/zipkin:latest
+                  identity-service:
+                    image: demo/identity@sha256:%s
+                    depends_on:
+                      mysql:
+                        condition: service_healthy
+                    environment:
+                      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/identity_db
+                      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+                      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://service-discovery:8761/eureka/
+                volumes:
+                  mysql-data:
+                """.formatted("a".repeat(64));
+
+        Path idDir = Files.createDirectories(tempDir.resolve("identity-service"));
+        Files.writeString(idDir.resolve("pom.xml"), """
+                <project><dependencies>
+                  <dependency><artifactId>spring-boot-starter-actuator</artifactId></dependency>
+                  <dependency><artifactId>spring-boot-starter-security</artifactId></dependency>
+                  <dependency><artifactId>spring-boot-starter-data-redis</artifactId></dependency>
+                  <dependency><artifactId>postgresql</artifactId></dependency>
+                </dependencies></project>
+                """);
+        Path idRes = Files.createDirectories(idDir.resolve("src/main/resources"));
+        Files.writeString(idRes.resolve("application.yml"), """
+                spring:
+                  datasource:
+                    url: jdbc:postgresql://pg-cloud.aivencloud.com:5432/defaultdb
+                """);
+        Path idSec = Files.createDirectories(idDir.resolve("src/main/java/sec"));
+        Files.writeString(idSec.resolve("SecurityConfig.java"), """
+                package sec;
+                public class SecurityConfig {
+                    public Object SecurityFilterChain() { return null; }
+                }
+                """);
+
+        PreflightCheckResponseDTO dto = fullValidator.validate(rawCompose);
+        fullValidator.inspectSnapshotSource(tempDir, dto);
+        fullValidator.finalizeSandboxTopology(tempDir, dto, rawCompose, Map.of(), Map.of());
+
+        assertThat(dto.getSecuredActuatorServices()).contains("identity-service");
+        assertThat(dto.getComposeServices())
+                .contains("sandbox-postgres", "redis", "kafka", "identity-service")
+                .doesNotContain("mysql", "zookeeper", "zipkin");
+        assertThat(dto.getUnresolvableRunnerIssues()).isEmpty();
+        assertThat(dto.getSandboxComposeYaml())
+                .contains("KAFKA_LISTENERS: PLAINTEXT://:9092,PLAINTEXT_INTERNAL://:29092,CONTROLLER://:9093")
+                .contains("SPRING_DATA_REDIS_HOST: redis")
+                .contains("EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE: http://service-discovery:8761/eureka/")
+                .contains("EUREKA_CLIENT_REGISTRY_FETCH_INTERVAL_SECONDS: '2'")
+                .contains("SPRING_CLOUD_LOADBALANCER_CACHE_TTL: 1s")
+                .doesNotContain("mysql-data")
+                .doesNotContain("zookeeper")
+                .doesNotContain("zipkin");
+        assertThat(com.mavis.analyzer.runtime.util.SecretRedactor.isSensitiveKey("CLOUDINARY_URL")).isTrue();
+        assertThat(com.mavis.analyzer.runtime.util.SecretRedactor.redactString("cloudinary://12345:topSecret@demo"))
+                .isEqualTo("cloudinary://12345:[REDACTED]@demo");
+    }
+
+    @Test
+    void multiRouteSpringCloudGatewayWithPassThroughRewriteAliasesAndOpenApiDocsNeverCrossBleedsPrefixes(@TempDir Path tempDir) throws Exception {
+        PreflightCheckResponseDTO dto = PreflightCheckResponseDTO.builder()
+                .detectedServices(List.of("api-gateway", "identity-service", "catalog-service", "order-service"))
+                .servicePorts(new LinkedHashMap<>(Map.of("api-gateway", 8080, "identity-service", 8081, "catalog-service", 8082, "order-service", 8083)))
+                .serviceStacks(new LinkedHashMap<>(Map.of("api-gateway", "java", "identity-service", "java", "catalog-service", "java", "order-service", "java")))
+                .build();
+
+        Path gwRes = Files.createDirectories(tempDir.resolve("api-gateway/src/main/resources"));
+        Files.writeString(gwRes.resolve("application.yml"), """
+                spring:
+                  cloud:
+                    gateway:
+                      routes:
+                        - id: identity-service
+                          uri: lb://identity-service
+                          predicates:
+                            - Path=/api/identity/**
+                        - id: catalog-service
+                          uri: lb://catalog-service
+                          predicates:
+                            - Path=/api/catalog/**
+                        - id: order-service
+                          uri: lb://order-service
+                          predicates:
+                            - Path=/api/order/**
+                        - id: auth-alias
+                          uri: lb://identity-service
+                          predicates:
+                            - Path=/api/auth/**
+                          filters:
+                            - RewritePath=/api/auth/(?<segment>.*), /api/identity/auth/${segment}
+                        - id: products-alias
+                          uri: lb://catalog-service
+                          predicates:
+                            - Path=/api/products/**
+                          filters:
+                            - RewritePath=/api/products/(?<segment>.*), /api/catalog/products/${segment}
+                        - id: orders-alias
+                          uri: lb://order-service
+                          predicates:
+                            - Path=/api/orders/**
+                          filters:
+                            - RewritePath=/api/orders/(?<segment>.*), /api/order/orders/${segment}
+                        - id: openapi-identity
+                          uri: lb://identity-service
+                          predicates:
+                            - Path=/v3/api-docs/identity
+                          filters:
+                            - RewritePath=/v3/api-docs/identity, /v3/api-docs
+                """);
+
+        Path idJava = Files.createDirectories(tempDir.resolve("identity-service/src/main/java/id"));
+        Files.writeString(idJava.resolve("AuthController.java"), """
+                package id;
+                import org.springframework.web.bind.annotation.*;
+                @RestController
+                @RequestMapping("/api/identity/auth")
+                public class AuthController {
+                    @PostMapping("/login")
+                    public String login() { return "ok"; }
+                }
+                """);
+        Files.writeString(idJava.resolve("AddressController.java"), """
+                package id;
+                import org.springframework.web.bind.annotation.*;
+                @RestController
+                @RequestMapping("/api/identity/users/me/addresses")
+                public class AddressController {
+                    @PostMapping
+                    public String addAddress() { return "ok"; }
+                }
+                """);
+
+        Path catJava = Files.createDirectories(tempDir.resolve("catalog-service/src/main/java/cat"));
+        Files.writeString(catJava.resolve("ProductVariantController.java"), """
+                package cat;
+                import org.springframework.web.bind.annotation.*;
+                @RestController
+                @RequestMapping("/api/catalog/products")
+                public class ProductVariantController {
+                    @PostMapping("/{id}/variants")
+                    public String addVariant(@PathVariable Long id) { return "ok"; }
+                }
+                """);
+
+        Path ordJava = Files.createDirectories(tempDir.resolve("order-service/src/main/java/ord"));
+        Files.writeString(ordJava.resolve("OrderController.java"), """
+                package ord;
+                import org.springframework.web.bind.annotation.*;
+                @RestController
+                @RequestMapping("/api/order/orders")
+                public class OrderController {
+                    @PostMapping
+                    public String createOrder() { return "ok"; }
+                }
+                """);
+
+        validator.inspectSnapshotSource(tempDir, dto);
+
+        List<String> gwPaths = dto.getDetectedEndpoints().stream()
+                .filter(ep -> "api-gateway".equals(ep.getService()))
+                .map(PreflightCheckResponseDTO.DetectedEndpointDTO::getPath)
+                .toList();
+
+        assertThat(gwPaths).containsExactlyInAnyOrder(
+                "/api/identity/auth/login",
+                "/api/identity/users/me/addresses",
+                "/api/catalog/products/{id}/variants",
+                "/api/order/orders"
+        );
+        assertThat(gwPaths).noneMatch(p -> p.startsWith("/api/auth/api/") || p.startsWith("/api/orders/api/") || p.startsWith("/v3/api-docs"));
+    }
 }

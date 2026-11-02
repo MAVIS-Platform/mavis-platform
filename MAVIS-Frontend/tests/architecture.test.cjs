@@ -2130,11 +2130,13 @@ test("English UI labels remain English across 3E, Runtime and Change Impact", ()
 });
 test("Vietnamese input keeps scope guardrails but returns an English refusal",()=>{
  const {checkThreeEScopeGuardrail}=require("../src/features/architecture/three-e-content.ts");
- const context={title:"order-service",type:"Service",inboundPeers:[],outboundPeers:[],childComponents:[],codeSnippets:[],otherElementNames:["billing-engine"]};
+ const context={title:"order-service",type:"Service",inboundPeers:[],outboundPeers:[],childComponents:[],codeSnippets:[],otherElementNames:["billing-engine","notification-service"]};
  const result=checkThreeEScopeGuardrail("ăn gì hôm nay",context);
  assert.equal(result.allowed,false);assert.match(result.refusalMessage,/I only answer/);
  const wrong=checkThreeEScopeGuardrail("billing-engine có chức năng gì",context);
  assert.equal(wrong.allowed,false);assert.match(wrong.refusalMessage,/You currently have/);
+ const wrongSiblingSvc=checkThreeEScopeGuardrail("Explain the internal implementation of notification-service only",context);
+ assert.equal(wrongSiblingSvc.allowed,false);assert.equal(wrongSiblingSvc.reason,"wrong-service");
 });
 
 test("context review metadata never creates actors until confirmed and AI cannot rewrite confirmed claims",()=>{

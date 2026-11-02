@@ -17,11 +17,12 @@ public class SecretRedactor {
 
     private static final Set<String> SENSITIVE_KEY_SUBSTRINGS = Set.of(
             "password", "token", "secret", "authorization", "apikey", "api_key",
-            "access_token", "client_secret", "private_key", "credential"
+            "access_token", "client_secret", "private_key", "credential", "cloudinary_url"
     );
 
     private static final Pattern BEARER_PATTERN = Pattern.compile("(?i)(bearer\\s+)[A-Za-z0-9_\\-\\.]+", Pattern.CASE_INSENSITIVE);
     private static final Pattern QUERY_PARAM_SECRET = Pattern.compile("(?i)(password|token|secret|apikey|api_key)=([^&\\s]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern URI_USERINFO_PATTERN = Pattern.compile("([a-zA-Z][a-zA-Z0-9+.-]*://[^/:@\\s]+:)([^@\\s/]+)(@)");
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -94,6 +95,7 @@ public class SecretRedactor {
 
         String result = BEARER_PATTERN.matcher(input).replaceAll("$1" + REDACTED_MARKER);
         result = QUERY_PARAM_SECRET.matcher(result).replaceAll("$1=" + REDACTED_MARKER);
+        result = URI_USERINFO_PATTERN.matcher(result).replaceAll("$1" + REDACTED_MARKER + "$3");
         return result;
     }
 

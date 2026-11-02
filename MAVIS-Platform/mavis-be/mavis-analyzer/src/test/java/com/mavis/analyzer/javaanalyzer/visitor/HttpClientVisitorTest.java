@@ -122,4 +122,34 @@ class HttpClientVisitorTest {
         assertThat(webCalls.get(0).getIdentifier()).isEqualTo("catalog-service");
         assertThat(webCalls.get(0).getSourceComponent()).isEqualTo("GatewayRouter");
     }
+
+    @Test
+    @DisplayName("Should ignore Map.put and JpaRepository.delete while detecting real RestOperations put/delete")
+    void shouldIgnoreMapPutAndRepositoryDelete() {
+        String code = """
+                package com.mavis.catalog.service;
+
+                import java.util.Map;
+                import org.springframework.web.client.RestOperations;
+
+                public class ProductServiceImpl {
+                    private ProductRepository productRepository;
+                    private RestOperations httpOps;
+
+                    public void sync(Map<String, Object> claims, Object product) {
+                        claims.put("role", "ADMIN");
+                        productRepository.delete(product);
+                        httpOps.delete("http://inventory-service/stock/1");
+                    }
+                }
+                """;
+
+        CompilationUnit cu = StaticJavaParser.parse(code);
+        List<CodeEvidenceDTO> evidences = new ArrayList<>();
+        new HttpClientVisitor("/app/ProductServiceImpl.java").visit(cu, evidences);
+
+        assertThat(evidences).hasSize(1);
+        assertThat(evidences.get(0).getElementType()).isEqualTo("REST_TEMPLATE_CALL");
+        assertThat(evidences.get(0).getIdentifier()).isEqualTo("inventory-service");
+    }
 }

@@ -160,6 +160,7 @@ export default function LoginPage() {
             </div>
           ) : (
             <form
+              method="post"
               className="space-y-4"
               onSubmit={(event) => {
                 event.preventDefault();
