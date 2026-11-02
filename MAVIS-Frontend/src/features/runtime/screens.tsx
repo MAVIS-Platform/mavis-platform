@@ -2727,76 +2727,43 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 </div>
 
                 {/* Visual API Feature Clusters Pipeline */}
-                <div className="rounded-xl border border-slate-800 bg-slate-950/75 p-3.5 space-y-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-xs font-bold uppercase tracking-wider text-sky-400">
-                          🧩 API Feature Flow Visualization ({stepClusters.length} Functional Clusters · {steps.length} Steps)
-                        </p>
-                        <span
-                          className={`rounded px-2 py-0.5 font-mono text-[10px] font-semibold border ${
-                            generatorMode === "AI_ASSISTED" || stepClusters.some((c) => c.meta.isAiEvaluated)
-                              ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-                              : "border-slate-600 bg-slate-800/80 text-slate-300"
-                          }`}
-                        >
-                          {generatorMode === "AI_ASSISTED" || stepClusters.some((c) => c.meta.isAiEvaluated)
-                            ? `🤖 AI-Evaluated Flow (${aiModelName || "gemini-2.5-pro"} + AST + DTO + C4)`
-                            : "📐 Static AST + C4 Topology Fallback"}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-400">
-                        APIs are grouped by business capability in execution order. Click a preset below to ask AI to synthesize a focused single-feature flow or full end-to-end flow.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {[
-                        { label: "🌐 Full End-to-End Flow", goal: "" },
-                        { label: "🔐 Auth & Identity Only", goal: "Authentication & User Identity flow: register, login, get profile and user addresses" },
-                        { label: "📦 Catalog & Inventory Only", goal: "Catalog & Inventory flow: login, create category, create product and verify inventory" },
-                        { label: "🛒 Order & Payment Only", goal: "Order & Payment Checkout flow: login, apply coupon, create order and create payment URL" },
-                      ].map((preset) => (
-                        <Button
-                          key={preset.label}
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          disabled={!snapshotId || generateAiDraft.isPending}
-                          className="h-7 px-2.5 text-[11px]"
-                          onClick={() => {
-                            setAiGoal(preset.goal);
-                            setSelectedScenarioId("");
-                            edited.current = false;
-                            triggerSystemAiGeneration(preset.goal);
-                          }}
-                        >
-                          {preset.label}
-                        </Button>
-                      ))}
-                    </div>
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold text-foreground">
+                      Flow Groups ({stepClusters.length} groups · {steps.length} steps)
+                    </p>
                   </div>
 
-                  <div className="flex flex-wrap items-stretch gap-2 pt-1">
+                  <div className="flex flex-wrap items-stretch gap-2">
                     {stepClusters.map((c, idx) => (
                       <div key={c.meta.id} className="flex items-center gap-2">
                         {idx > 0 && (
-                          <span className="text-slate-500 font-mono text-sm select-none">→</span>
+                          <span className="text-muted-foreground font-mono text-sm select-none">→</span>
                         )}
-                        <div
-                          className={`rounded-lg border p-2.5 min-w-[220px] max-w-[320px] space-y-1.5 ${c.meta.cardBorderClass}`}
-                        >
+                        <div className="rounded-md border bg-background/80 p-2.5 min-w-[210px] max-w-[300px] space-y-1.5">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-bold text-slate-100">
-                              {c.meta.icon} {idx + 1}. {c.meta.shortTitle}
+                            <span className="text-xs font-semibold text-foreground truncate">
+                              {idx + 1}. {c.meta.shortTitle}
                             </span>
-                            <span
-                              className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold border ${c.meta.badgeClass}`}
-                            >
-                              Steps {c.stepIndices.map((n) => `#${n}`).join(", ")}
-                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className="rounded border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                                {c.stepIndices.map((n) => `#${n}`).join(", ")}
+                              </span>
+                              <button
+                                type="button"
+                                title={`Remove ${c.meta.shortTitle} (${c.stepIndices.length} step${c.stepIndices.length > 1 ? "s" : ""})`}
+                                onClick={() => {
+                                  edited.current = true;
+                                  const removeSet = new Set(c.stepIndices);
+                                  setSteps((prev) => prev.filter((_, sIdx) => !removeSet.has(sIdx + 1)));
+                                }}
+                                className="inline-flex h-5 w-5 items-center justify-center rounded text-xs text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                              >
+                                ×
+                              </button>
+                            </div>
                           </div>
-                          <div className="space-y-0.5 font-mono text-[10px] text-slate-300">
+                          <div className="space-y-0.5 font-mono text-[10px] text-muted-foreground">
                             {c.routes.map((r, rIdx) => (
                               <div key={rIdx} className="truncate">
                                 • {r}
@@ -2808,9 +2775,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                               {c.extractedVars.map((v) => (
                                 <span
                                   key={v}
-                                  className="rounded bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 font-mono text-[9px] text-emerald-300"
+                                  className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground"
                                 >
-                                  📤 {`{{${v}}}`}
+                                  {`{{${v}}}`}
                                 </span>
                               ))}
                             </div>
