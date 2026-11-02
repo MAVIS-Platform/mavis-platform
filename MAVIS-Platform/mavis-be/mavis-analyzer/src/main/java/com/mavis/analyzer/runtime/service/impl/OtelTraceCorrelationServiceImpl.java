@@ -181,6 +181,15 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
                 elementsByLowerName.computeIfAbsent(baseEl.getName().toLowerCase(Locale.ROOT), k -> new ArrayList<>()).add(copy);
             }
         }
+        for (ModelElement baseEl : baseElements) {
+            if (baseEl.getId() != null && baseEl.getParentElement() != null && baseEl.getParentElement().getId() != null) {
+                ModelElement childCopy = oldToNewElementMap.get(baseEl.getId());
+                ModelElement parentCopy = oldToNewElementMap.get(baseEl.getParentElement().getId());
+                if (childCopy != null && parentCopy != null && childCopy != parentCopy) {
+                    childCopy.setParentElement(parentCopy);
+                }
+            }
+        }
 
         Map<String, String> confirmedMappings = session.getConfirmedServiceMappings() != null
                 ? session.getConfirmedServiceMappings()
@@ -266,7 +275,10 @@ public class OtelTraceCorrelationServiceImpl implements OtelTraceCorrelationServ
         }
 
         // (2) Kế thừa 100% cạnh tĩnh và nâng cấp / thêm mới theo bước gọi nhân quả
-        List<ModelRelationship> baseRelationships = modelRelationshipRepository.findByModelVersionId(baseModelVersionId);
+        List<ModelRelationship> baseRelationships = modelRelationshipRepository.findRawByModelVersionId(baseModelVersionId);
+        if (baseRelationships == null || baseRelationships.isEmpty()) {
+            baseRelationships = modelRelationshipRepository.findByModelVersionId(baseModelVersionId);
+        }
         List<ModelRelationship> newRelationships = new ArrayList<>();
         IdentityHashMap<ModelRelationship, UUID> newToBaseRelIdMap = new IdentityHashMap<>();
         Map<UUID, ModelRelationship> copiedByBaseRelId = new LinkedHashMap<>();

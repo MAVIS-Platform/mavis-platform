@@ -3267,9 +3267,29 @@ function discoverDomainEntityStateMachines(
       >;
       const rawUml = elProps["umlClassifier"] as Record<string, unknown> | undefined;
       if (!rawUml || typeof rawUml !== "object") continue;
-      if (rawUml["stateLifecycle"]) continue; // Handled directly by extractedTargets
-
       const clsName = String(rawUml["name"] ?? el.name ?? "").trim();
+      const sl = rawUml["stateLifecycle"] as Record<string, unknown> | undefined;
+      if (sl) {
+        const hasVerifiedTransitions =
+          !sl["enumOnlyNoTransitions"] &&
+          Array.isArray(sl["transitions"]) &&
+          sl["transitions"].length > 0;
+        if (hasVerifiedTransitions) continue;
+        if (typeof sl["stateFieldName"] === "string" && sl["stateFieldName"].trim()) {
+          if (!carrierEntityName || isDomainClassifier(rawUml)) {
+            carrierEntityName = clsName;
+            carrierFieldName = sl["stateFieldName"].trim();
+          }
+        }
+        if (
+          Array.isArray(sl["states"]) &&
+          (/(Status|State|Phase|Stage)$/i.test(clsName) || typeof sl["stateFieldName"] === "string")
+        ) {
+          for (const st of sl["states"]) {
+            if (typeof st === "string") recordState(st);
+          }
+        }
+      }
       const typeKind = String(
         rawUml["typeKind"] ?? rawUml["kind"] ?? elProps["typeKind"] ?? "CLASS",
       ).toUpperCase();
@@ -3356,6 +3376,7 @@ function discoverDomainEntityStateMachines(
             /"(\w*(?:status|state|phase|stage))"\s*,\s*"([A-Za-z0-9_-]+)"/gi,
             /\.equals(?:IgnoreCase)?\(\s*"([A-Z][A-Z0-9_]{2,})"\s*\)/g,
             /"([A-Z][A-Z0-9_]{2,})"\.equals(?:IgnoreCase)?\(/g,
+            /\.set\w*(?:Status|State|Phase|Stage)\(\s*(?:[A-Z]\w*\.)?([A-Z][A-Z0-9_]{2,})(?:\.name\(\)|\.toString\(\))?\s*\)/g,
           ]) {
             for (const match of label.matchAll(pat)) {
               const stateVal = match[2] ?? match[1]!;
@@ -3418,19 +3439,25 @@ function discoverDomainEntityStateMachines(
 
   if (hasClassifierElements) {
     for (const svc of serviceContainers) {
-      // Skip if this service already has an explicit backend stateLifecycle target
-      const hasExplicitLifecycleInSvc = model.elements.some(
-        (el) =>
-          ownerOf(el.id) === svc.id &&
-          Boolean(
+      const svcLifecycles = model.elements
+        .filter((el) => ownerOf(el.id) === svc.id)
+        .map(
+          (el) =>
             (getElProps(el)["umlClassifier"] as Record<string, unknown> | undefined)?.[
               "stateLifecycle"
-            ],
-          ),
+            ] as Record<string, unknown> | undefined,
+        )
+        .filter((sl): sl is Record<string, unknown> => Boolean(sl));
+      const hasVerifiedLifecycleInSvc = svcLifecycles.some(
+        (sl) =>
+          !sl["enumOnlyNoTransitions"] &&
+          Array.isArray(sl["transitions"]) &&
+          sl["transitions"].length > 0,
       );
-      if (hasExplicitLifecycleInSvc) continue;
+      if (hasVerifiedLifecycleInSvc) continue;
 
       const extracted = extractStatesAndMethodsForService(svc.id);
+      if (svcLifecycles.length > 0 && extracted.methodByState.size === 0) continue;
       if (!extracted.carrierEntityName && extracted.discoveredStates.length === 0) continue;
 
       const rawEntity =
@@ -4000,10 +4027,20 @@ export function listStateTargets(model: ArchitecturalModel): UmlStateTargetOptio
     return a.classifierName.localeCompare(b.classifierName);
   });
 
-  const statefulClasses = extractedTargets.filter((t) => t.lifecycleKind === "STATEFUL_CLASS");
+  const statefulWithTransitions = extractedTargets.filter(
+    (t) => t.lifecycleKind === "STATEFUL_CLASS" && !t.enumOnlyNoTransitions,
+  );
+  const statefulNoTransitions = extractedTargets.filter(
+    (t) => t.lifecycleKind === "STATEFUL_CLASS" && t.enumOnlyNoTransitions,
+  );
   const enumDeclarations = extractedTargets.filter((t) => t.lifecycleKind === "ENUM_DECLARATION");
   const domainMachines = discoverDomainEntityStateMachines(model).map((m) => m.option);
-  return [...statefulClasses, ...domainMachines, ...enumDeclarations];
+  return [
+    ...statefulWithTransitions,
+    ...domainMachines,
+    ...statefulNoTransitions,
+    ...enumDeclarations,
+  ];
 }
 
 export function validateStateStructure(
@@ -5273,6 +5310,7 @@ export function buildUmlDrawioXml(
     const classPaths: DeploymentPoint[][] = [];
     const classLabels: DeploymentBox[] = [];
     const classMarkerBoxes: DeploymentBox[] = [];
+    const classifierBoxes = [...boxById.values()].map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
     const sortedEdgePlans = [...edgePlans].sort((a, b) => {
       const sa = boxById.get(a.rel.fromClassifierId)!,
         ta = boxById.get(a.rel.toClassifierId)!,
@@ -5368,7 +5406,6 @@ export function buildUmlDrawioXml(
       if (rel.fromClassifierId !== rel.toClassifierId) {
         const start = { x: exitAbsX + (srcSide === "right" ? 24 : srcSide === "left" ? -24 : 0), y: exitAbsY + (srcSide === "bottom" ? 24 : srcSide === "top" ? -24 : 0) };
         const finish = { x: entryAbsX + (tgtSide === "right" ? 24 : tgtSide === "left" ? -24 : 0), y: entryAbsY + (tgtSide === "bottom" ? 24 : tgtSide === "top" ? -24 : 0) };
-        const classifierBoxes = [...boxById.values()].map((b) => ({ x: b.x, y: b.y, w: b.w, h: b.h }));
         const safeRoute = routeDeploymentPath(start, finish, classifierBoxes, classPaths, planIdx);
         if (safeRoute) {
           waypoints.splice(0, waypoints.length, ...safeRoute);

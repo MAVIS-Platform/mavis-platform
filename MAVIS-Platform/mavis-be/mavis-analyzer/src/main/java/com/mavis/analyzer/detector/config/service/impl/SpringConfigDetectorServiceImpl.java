@@ -156,7 +156,7 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
                         .build());
             } else if (isTargetServiceUrlKey(key)) {
                 for (String candidate : val.split(",")) {
-                    String target = stripQuotes(candidate.trim()).replaceFirst("^optional:", "").replaceFirst("^configserver:", "");
+                    String target = cleanPlaceholder(stripQuotes(candidate.trim()).replaceFirst("^optional:", "").replaceFirst("^configserver:", ""));
                     if (!target.matches("(?i)^(https?|lb)://.+")) continue;
                     String profile = prop.getProfile();
                     if (profile == null && fileName.matches("(application|bootstrap)-.+\\.(yml|yaml|properties)")) profile = fileName.replaceFirst("^(application|bootstrap)-", "").replaceFirst("\\.(yml|yaml|properties)$", "");
@@ -184,7 +184,7 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
             return;
         }
 
-        String url = jdbcUrl.trim();
+        String url = cleanPlaceholder(jdbcUrl.trim());
         int doubleSlash = url.indexOf("://");
         if (doubleSlash == -1) {
             return;
@@ -246,7 +246,7 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
             return false;
         }
         return lower.equals("spring.config.import") || lower.equals("spring.cloud.config.uri")
-                || lower.equals("eureka.client.serviceurl.defaultzone")
+                || lower.startsWith("eureka.client.serviceurl.") || lower.startsWith("eureka.client.service-url.") || lower.startsWith("eureka.client.service_url.") || lower.startsWith("eureka.client.service.url.")
                 || (lower.equals("management.zipkin.tracing.endpoint") || lower.equals("management.otlp.tracing.endpoint")) || lower.equals("spring.zipkin.base-url")
                 || (lower.contains(".gateway.") && (lower.contains(".routes.") || lower.contains(".routes[")) && lower.endsWith(".uri"))
                 || lower.endsWith(".url")
@@ -263,7 +263,7 @@ public class SpringConfigDetectorServiceImpl implements SpringConfigDetectorServ
     public static String relationTypeForKey(String key) {
         String lower = key == null ? "" : key.toLowerCase(java.util.Locale.ROOT);
         if (lower.equals("spring.config.import") || lower.equals("spring.cloud.config.uri")) return "CONFIGURATION_DEPENDENCY";
-        if (lower.startsWith("eureka.client.serviceurl.")) return "SERVICE_DISCOVERY";
+        if (lower.startsWith("eureka.client.serviceurl.") || lower.startsWith("eureka.client.service-url.") || lower.startsWith("eureka.client.service_url.") || lower.startsWith("eureka.client.service.url.")) return "SERVICE_DISCOVERY";
         if (lower.contains("zipkin") || lower.contains("tracing.endpoint")) return "TRACING_EXPORT";
         if (lower.contains(".gateway.") && (lower.contains(".routes.") || lower.contains(".routes[")) && lower.endsWith(".uri")) return "GATEWAY_ROUTE";
         return "CONFIGURED_ENDPOINT"; // An endpoint setting alone does not prove an HTTP invocation.

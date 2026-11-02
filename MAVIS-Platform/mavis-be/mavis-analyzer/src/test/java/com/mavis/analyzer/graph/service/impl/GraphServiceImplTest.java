@@ -169,4 +169,25 @@ class GraphServiceImplTest {
   // Verify exactly 1 batch call (O(1) query) across all edges
   verify(evidenceRepo, times(1)).findRelationshipEvidenceIdsByModelVersionId(model);
  }
+
+ @Test void impactGraphLoaderAcceptsRuntimeEnrichedModelAndResolvesScopeFallback(){
+  JobRepository jobs=mock(JobRepository.class);
+  ImpactGraphLoader loader=new ImpactGraphLoader(models,elements,relationships,evidenceRepo,jobs,new ObjectMapper());
+  UUID modelId=UUID.randomUUID(),orderSvcId=UUID.randomUUID(),catalogSvcId=UUID.randomUUID(),compId=UUID.randomUUID(),relId=UUID.randomUUID(),snapId=UUID.randomUUID();
+  SourceSnapshot snap=SourceSnapshot.builder().id(snapId).build();
+  ModelVersion mv=ModelVersion.builder().id(modelId).origin("RUNTIME_ENRICHED").sourceSnapshot(snap).project(Project.builder().id(UUID.randomUUID()).build()).build();
+  ModelElement orderSvc=ModelElement.builder().id(orderSvcId).name("order-service").elementType("SERVICE_CONTAINER").build();
+  ModelElement catalogSvc=ModelElement.builder().id(catalogSvcId).name("catalog-service").elementType("SERVICE_CONTAINER").build();
+  ModelElement orderComp=ModelElement.builder().id(compId).name("OrderServiceImpl").elementType("COMPONENT").scope("order-service/src/main/java/OrderServiceImpl.java").build();
+  ModelRelationship rel=ModelRelationship.builder().id(relId).relationType("RUNTIME_OBSERVED").sourceElement(orderComp).targetElement(catalogSvc).build();
+  when(models.findById(modelId)).thenReturn(Optional.of(mv));
+  when(elements.findByModelVersionId(modelId)).thenReturn(List.of(orderSvc,catalogSvc,orderComp));
+  when(relationships.findByModelVersionId(modelId)).thenReturn(List.of(rel));
+  when(evidenceRepo.findByRelationshipIdIn(anyList())).thenReturn(List.of());
+  var snapshot=loader.load(modelId,catalogSvcId,null,10,100);
+  assertEquals(1,snapshot.request().edges().size());
+  assertEquals(orderSvcId.toString(),snapshot.request().edges().get(0).from());
+  assertEquals(catalogSvcId.toString(),snapshot.request().edges().get(0).to());
+  verifyNoInteractions(jobs);
+ }
 }

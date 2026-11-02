@@ -69,7 +69,7 @@ public class ImpactGraphLoader {
         if (accessPolicy != null) {
             accessPolicy.requireProjectReadAccess(model.getProject());
         }
-        boolean ready="USER_CONFIRMED".equals(model.getOrigin())||jobs.findBySourceSnapshotId(model.getSourceSnapshot().getId()).stream().anyMatch(j->"COMPLETED".equals(j.getStatus())&&j.getResultManifest()!=null&&modelId.toString().equals(j.getResultManifest().path("modelVersionId").asText())&&"ADAPTERS_COMPLETED".equals(j.getResultManifest().path("completeness").asText()));
+        boolean ready="USER_CONFIRMED".equals(model.getOrigin())||"RUNTIME_ENRICHED".equals(model.getOrigin())||jobs.findBySourceSnapshotId(model.getSourceSnapshot().getId()).stream().anyMatch(j->"COMPLETED".equals(j.getStatus())&&j.getResultManifest()!=null&&modelId.toString().equals(j.getResultManifest().path("modelVersionId").asText())&&"ADAPTERS_COMPLETED".equals(j.getResultManifest().path("completeness").asText()));
         if(!ready)throw new BusinessException(ErrorCode.BAD_REQUEST,"Impact requires a completed, version-pinned model");
         var allEls = elements.findByModelVersionId(modelId);
         var names = new TreeMap<String, String>();
@@ -81,7 +81,7 @@ public class ImpactGraphLoader {
         if (!names.containsKey(target.toString())) {
             var matching = allEls.stream().filter(e -> target.equals(e.getId())).findFirst().orElse(null);
             if (matching != null) {
-                var container = resolveContainer(matching);
+                var container = resolveContainer(matching, allEls);
                 if (container != null && names.containsKey(container.getId().toString())) {
                     resolvedTargetId = container.getId();
                 }
@@ -98,12 +98,27 @@ public class ImpactGraphLoader {
             "MESSAGE_SUBSCRIBE",
             "DECLARED_COMPOSE",
             "DECLARED_LINK",
-            "DATABASE_ACCESS"
+            "DATABASE_ACCESS",
+            "RUNTIME_OBSERVED"
         );
-        for (var r : relationships.findByModelVersionId(modelId)) {
+        Map<UUID, ModelElement> elById = new HashMap<>();
+        for (var el : allEls) {
+            if (el.getId() != null) elById.put(el.getId(), el);
+        }
+        List<ModelRelationship> rels = relationships.findRawByModelVersionId(modelId);
+        if (rels == null || rels.isEmpty()) {
+            rels = relationships.findByModelVersionId(modelId);
+        }
+        for (var r : rels) {
             if (!impactRelTypes.contains(r.getRelationType())) continue;
-            var src = resolveContainer(r.getSourceElement());
-            var tgt = resolveContainer(r.getTargetElement());
+            var rawSrc = r.getSourceElement() != null && r.getSourceElement().getId() != null
+                    ? elById.getOrDefault(r.getSourceElement().getId(), r.getSourceElement())
+                    : r.getSourceElement();
+            var rawTgt = r.getTargetElement() != null && r.getTargetElement().getId() != null
+                    ? elById.getOrDefault(r.getTargetElement().getId(), r.getTargetElement())
+                    : r.getTargetElement();
+            var src = resolveContainer(rawSrc, allEls);
+            var tgt = resolveContainer(rawTgt, allEls);
             if (src == null || tgt == null || src.getId().equals(tgt.getId())) continue;
             if (!names.containsKey(src.getId().toString()) || !names.containsKey(tgt.getId().toString())) continue;
 
@@ -130,7 +145,8 @@ public class ImpactGraphLoader {
             if (!e.getModelVersion().getId().equals(modelId)) throw invalid();
             String id = e.getId().toString();
             grouped.computeIfAbsent(e.getRelationship().getId(), ignored -> new ArrayList<>()).add(id);
-            evidenceViews.put(id, new EvidenceView(id, e.getSourceSnapshot().getId(), e.getLocator(), e.getAdapterVersion(), e.getSourceType(), e.getProvenance()));
+            UUID evSnapshotId = e.getSourceSnapshot() != null ? e.getSourceSnapshot().getId() : (model.getSourceSnapshot() != null ? model.getSourceSnapshot().getId() : null);
+            evidenceViews.put(id, new EvidenceView(id, evSnapshotId, e.getLocator(), e.getAdapterVersion(), e.getSourceType(), e.getProvenance()));
         }
 
         List<ImpactWorkerClient.Edge> edges = new ArrayList<>();
@@ -210,7 +226,7 @@ public class ImpactGraphLoader {
         return "MESSAGE_CHANNEL".equalsIgnoreCase(el.getElementType()) || "QUEUE_BROKER".equalsIgnoreCase(el.getElementType());
     }
 
-    private ModelElement resolveContainer(ModelElement element) {
+    private ModelElement resolveContainer(ModelElement element, List<ModelElement> allEls) {
         if (element == null) return null;
         if (element.getElementType() != null && IMPACT_NODE_TYPES.contains(element.getElementType())) {
             return element;
@@ -219,6 +235,20 @@ public class ImpactGraphLoader {
         for (ModelElement cur = element; cur != null && visited.add(cur); cur = cur.getParentElement()) {
             if (cur.getElementType() != null && IMPACT_NODE_TYPES.contains(cur.getElementType())) {
                 return cur;
+            }
+        }
+        String hint = element.getProperties() != null && element.getProperties().hasNonNull("serviceName")
+                ? element.getProperties().get("serviceName").asText()
+                : element.getScope();
+        if (hint != null && !hint.isBlank()) {
+            String normalized = hint.replace('\\', '/').toLowerCase(Locale.ROOT);
+            for (ModelElement candidate : allEls) {
+                if ("SERVICE_CONTAINER".equals(candidate.getElementType()) && candidate.getName() != null) {
+                    String svc = candidate.getName().toLowerCase(Locale.ROOT);
+                    if (normalized.equals(svc) || normalized.startsWith(svc + "/") || normalized.contains("/" + svc + "/")) {
+                        return candidate;
+                    }
+                }
             }
         }
         return element;

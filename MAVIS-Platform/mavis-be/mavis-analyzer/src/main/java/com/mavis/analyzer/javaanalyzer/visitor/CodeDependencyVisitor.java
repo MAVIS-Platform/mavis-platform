@@ -47,7 +47,9 @@ public class CodeDependencyVisitor extends VoidVisitorAdapter<List<CodeEvidenceD
         // 1. Nếu là @Service hoặc @Component, ghi nhận component
         if (isService || isComponent) {
             Integer line = n.getBegin().map(p -> p.line).orElse(null);
-            String snippet = n.getAnnotations().toString() + "\npublic class " + className;
+            String anns = n.getAnnotations().stream().map(Object::toString).collect(java.util.stream.Collectors.joining("\n"));
+            String decl = (n.isPublic() ? "public " : "") + "class " + className;
+            String snippet = anns.isEmpty() ? decl : anns + "\n" + decl;
 
             log.info("Detected Component [Service/Component]: {}", className);
             arg.add(CodeEvidenceDTO.builder()

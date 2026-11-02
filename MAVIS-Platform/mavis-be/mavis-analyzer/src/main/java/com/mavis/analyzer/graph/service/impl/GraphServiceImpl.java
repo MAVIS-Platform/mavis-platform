@@ -52,7 +52,10 @@ public class GraphServiceImpl implements GraphService {
         accessPolicy.requireProjectReadAccess(target.getProject());
         UUID targetModelVersionId = target.getId();
         List<ModelElement> modelElements = modelElementRepository.findByModelVersionId(targetModelVersionId);
-        List<ModelRelationship> relationships = modelRelationshipRepository.findByModelVersionId(targetModelVersionId);
+        List<ModelRelationship> relationships = modelRelationshipRepository.findRawByModelVersionId(targetModelVersionId);
+        if (relationships == null || relationships.isEmpty()) {
+            relationships = modelRelationshipRepository.findByModelVersionId(targetModelVersionId);
+        }
 
         // O(1) single batch query for all relationship evidence in this model version
         Map<UUID, List<UUID>> evidenceMap = new HashMap<>();

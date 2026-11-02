@@ -44,8 +44,11 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
         // [TỐI ƯU HIỆU NĂNG]: Nạp toàn bộ Elements, Relationships, Evidences lên RAM trong 3 câu query đầu tiên
         // Query 1: Elements
         List<ModelElement> elements = modelElementRepository.findByModelVersionId(modelVersionId);
-        // Query 2: Relationships
-        List<ModelRelationship> relationships = modelRelationshipRepository.findByModelVersionId(modelVersionId);
+        // Query 2: Relationships (ModelElements are already in L1 cache from Query 1)
+        List<ModelRelationship> relationships = modelRelationshipRepository.findRawByModelVersionId(modelVersionId);
+        if (relationships == null || relationships.isEmpty()) {
+            relationships = modelRelationshipRepository.findByModelVersionId(modelVersionId);
+        }
         // Query 3: Evidences
         List<Evidence> evidences = evidenceRepository.findByModelVersionId(modelVersionId);
 

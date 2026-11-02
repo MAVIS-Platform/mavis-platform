@@ -43,6 +43,7 @@ class CodeDependencyVisitorTest {
                 "SERVICE_COMPONENT".equals(e.getElementType())
                         && "OrderService".equals(e.getIdentifier())
                         && "OrderService".equals(e.getSourceComponent())
+                        && "@Service\npublic class OrderService".equals(e.getCodeSnippet())
         );
 
         // 2. Dependencies via constructor

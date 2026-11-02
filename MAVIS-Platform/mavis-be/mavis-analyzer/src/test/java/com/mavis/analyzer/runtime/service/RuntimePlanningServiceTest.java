@@ -930,4 +930,156 @@ class RuntimePlanningServiceTest {
         assertThat(exportedSteps.get(2).has("bodyReference")).isFalse();
         assertThat(exportedSteps.get(2).path("jsonBody").asText()).contains("{{ORDER_ID}}");
     }
+
+    @Test
+    @DisplayName("STEP 2 AI: Concrete path params match parameterized candidates and accidental double /api/<x>/api/<y> prefix is normalized")
+    void testGenerateScenario_NormalizesDoubleGatewayPrefixAndMatchesConcretePathParams() throws Exception {
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("api-gateway"))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder()
+                                .service("api-gateway")
+                                .method("POST")
+                                .path("/api/catalog/products/{id}/variants")
+                                .requiresAuth(true)
+                                .sampleJsonBody("{\"sku\":\"VAR-1\",\"price\":99.0}")
+                                .source("Gateway Route -> catalog-service")
+                                .build()
+                ))
+                .build());
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
+
+        HttpServer mockOpenAi = HttpServer.create(new InetSocketAddress(0), 0);
+        mockOpenAi.createContext("/v1/chat/completions", exchange -> {
+            String resp = """
+                    {
+                      "choices": [{
+                        "message": {
+                          "content": "{\\"suggestedName\\":\\"Variant Flow\\",\\"summary\\":\\"Verify variants\\",\\"steps\\":[{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/auth/api/catalog/products/1/variants\\",\\"expectedStatus\\":200,\\"rationale\\":\\"Create variant\\"}]}"
+                        }
+                      }]
+                    }
+                    """;
+            byte[] bytes = resp.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        mockOpenAi.start();
+        try {
+            int port = mockOpenAi.getAddress().getPort();
+            ReflectionTestUtils.setField(planningService, "customAiEndpointUrl", "http://127.0.0.1:" + port + "/v1/chat/completions");
+            when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.of("sk-proj-test-key"));
+
+            GeneratedScenarioDraftView aiDraft = planningService.generateScenario(
+                    projectId, new GenerateScenarioRequest(snapshotId, modelId, "Verify variants"));
+
+            assertThat(aiDraft.steps()).hasSize(1);
+            assertThat(aiDraft.steps().get(0).path()).isEqualTo("/api/catalog/products/1/variants");
+            assertThat(aiDraft.steps().get(0).envHeaders()).isNotEmpty();
+            assertThat(aiDraft.sampleInputs().get(aiDraft.steps().get(0).bodyReference())).contains("VAR-1");
+        } finally {
+            mockOpenAi.stop(0);
+        }
+    }
+
+    @Test
+    @DisplayName("STEP 2 AI & START: Unbound Authorization {{AUTH_TOKEN}} uses sandboxBearer envHeaders in AI generation and safe V_REF_0 alias in start() so SecretRedactor never corrupts environmentVariables")
+    void testUnboundAuthTokenHeaderConvertsToEnvHeadersAndUsesSafeAliasInStart() throws Exception {
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(projects.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("api-gateway"))
+                .composeServices(List.of("api-gateway"))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder()
+                                .service("api-gateway")
+                                .method("POST")
+                                .path("/api/order/admin/coupons")
+                                .requiresAuth(true)
+                                .requiredRoles(List.of("ADMIN"))
+                                .source("Gateway Route -> order-service")
+                                .build()
+                ))
+                .build());
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
+
+        HttpServer mockOpenAi = HttpServer.create(new InetSocketAddress(0), 0);
+        mockOpenAi.createContext("/v1/chat/completions", exchange -> {
+            String resp = """
+                    {
+                      "choices": [{
+                        "message": {
+                          "content": "{\\"suggestedName\\":\\"Coupon Flow\\",\\"summary\\":\\"Verify coupons\\",\\"steps\\":[{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/order/admin/coupons\\",\\"expectedStatus\\":201,\\"headers\\":{\\"Authorization\\":\\"Bearer {{AUTH_TOKEN}}\\"},\\"sampleJsonBody\\":\\"{\\\\\\"code\\\\\\":\\\\\\"SAVE10\\\\\\",\\\\\\"startsAt\\\\\\":\\\\\\"2026-01-01T00:00:00Z\\\\\\"}\\",\\"rationale\\":\\"Create coupon\\"}]}"
+                        }
+                      }]
+                    }
+                    """;
+            byte[] bytes = resp.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        mockOpenAi.start();
+        try {
+            int port = mockOpenAi.getAddress().getPort();
+            ReflectionTestUtils.setField(planningService, "customAiEndpointUrl", "http://127.0.0.1:" + port + "/v1/chat/completions");
+            when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.of("sk-proj-test-key"));
+
+            GeneratedScenarioDraftView aiDraft = planningService.generateScenario(
+                    projectId, new GenerateScenarioRequest(snapshotId, modelId, "Verify coupons"));
+
+            assertThat(aiDraft.steps()).hasSize(1);
+            assertThat(aiDraft.steps().get(0).headers()).isNull();
+            assertThat(aiDraft.steps().get(0).envHeaders()).isNotEmpty();
+            assertThat(aiDraft.sampleInputs().get("API_GATEWAY_AUTHORIZATION")).startsWith("Bearer eyJ");
+            assertThat(aiDraft.sampleInputs().get(aiDraft.steps().get(0).bodyReference())).contains("\"2026-01-01T00:00:00\"");
+        } finally {
+            mockOpenAi.stop(0);
+        }
+
+        // Also verify start() with a manually saved step containing unbound {{AUTH_TOKEN}} in headers
+        final RuntimeScenario[] savedHolder = new RuntimeScenario[1];
+        when(scenarios.saveAndFlush(any())).thenAnswer(inv -> {
+            RuntimeScenario sc = inv.getArgument(0);
+            if (sc.getId() == null) sc.setId(UUID.randomUUID());
+            savedHolder[0] = sc;
+            return sc;
+        });
+
+        var savedScenarioView = planningService.saveScenario(projectId, null,
+                new RuntimePlanningService.ScenarioRequest("Manual Auth Var", List.of(
+                        "{\"id\":\"step-1\",\"service\":\"api-gateway\",\"method\":\"POST\",\"path\":\"/api/order/admin/coupons\",\"expectedStatus\":201,\"allowClientError\":true,\"headers\":{\"Authorization\":\"Bearer {{AUTH_TOKEN}}\"}}"
+                ), 0));
+
+        when(configurations.findById(projectId)).thenReturn(Optional.of(savedConfig("api-gateway")));
+        when(scenarios.findById(savedScenarioView.id())).thenReturn(Optional.of(savedHolder[0]));
+        UUID sessionId = UUID.randomUUID();
+        when(runtime.createRuntimeSession(any())).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).build());
+        when(runtime.approveAndStartSession(sessionId)).thenReturn(RuntimeSessionResponseDTO.builder().id(sessionId).executionStatus("READY_FOR_DISPATCH").build());
+
+        planningService.start(projectId, new StartRequest(snapshotId, savedScenarioView.id(), 1, 1, true, Map.of()));
+
+        ArgumentCaptor<com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest> created =
+                ArgumentCaptor.forClass(com.mavis.analyzer.runtime.dto.RuntimeSessionCreateRequest.class);
+        verify(runtime).createRuntimeSession(created.capture());
+        var redactedConfig = com.mavis.analyzer.runtime.util.SecretRedactor.redactJson(created.getValue().getScenarioConfig());
+        var exportedStep = redactedConfig.path("scenario").path("steps").get(0);
+        assertThat(exportedStep.path("headers").path("Authorization").asText()).isEqualTo("Bearer {{V_REF_0}}");
+        assertThat(exportedStep.path("environmentVariables").path("V_REF_0").asText()).isEqualTo("AUTH_TOKEN");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> storedEnv = ArgumentCaptor.forClass(Map.class);
+        verify(environments).store(eq(sessionId), storedEnv.capture());
+        assertThat(storedEnv.getValue().get("AUTH_TOKEN")).startsWith("eyJ");
+    }
 }

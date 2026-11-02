@@ -1330,10 +1330,12 @@ export function buildThreeEAiContext(
     relatedElementIds.add(edge.from);
     relatedElementIds.add(edge.to);
   }
-  const otherElementNames = model.elements
+  const isTopLevelArchEl = (t?: string) => t !== "CLASS_INTERFACE" && t !== "COMPONENT";
+  const otherElementNames = [...model.elements]
     .filter((el) => !relatedElementIds.has(el.id) && el.name.trim().length >= 4)
+    .sort((a, b) => Number(isTopLevelArchEl(b.elementType)) - Number(isTopLevelArchEl(a.elementType)))
     .map((el) => el.name.trim())
-    .slice(0, 40);
+    .slice(0, 60);
 
   let evidenceHash = 2166136261;
   for (const char of JSON.stringify(codeSnippets)) {
@@ -1398,12 +1400,13 @@ export function checkThreeEScopeGuardrail(
 
   const lower = q.toLowerCase();
   const normalizePeer = (p: string) => p.replace(/\s*\[.*\]$/, "").trim().toLowerCase();
+  const genericArchTokens = new Set(["service", "services", "server", "client", "controller", "repository", "component", "gateway", "module", "handler", "manager", "adapter", "config", "entity"]);
   const scopedTerms = [
     tCtx.title.toLowerCase(),
     ...tCtx.title
       .toLowerCase()
       .split(/[-_.\s/→]+/)
-      .filter((tok) => tok.length >= 4),
+      .filter((tok) => tok.length >= 4 && !genericArchTokens.has(tok)),
     ...tCtx.inboundPeers.map(normalizePeer),
     ...tCtx.outboundPeers.map(normalizePeer),
     ...tCtx.childComponents.map((c) => c.toLowerCase()),

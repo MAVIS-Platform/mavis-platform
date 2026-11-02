@@ -17,7 +17,7 @@ export function useModel({ loadDetail = true }: { loadDetail?: boolean } = {}) {
     [summaries.data],
   );
   const chosen = params.get("model");
-  const selected = chosen || models[0]?.id || "";
+  const selected = chosen || (models.find((m) => "latest" in m && m.latest) ?? models[0])?.id || "";
   useEffect(() => {
     if (api.mode === "backend" && !chosen && selected) {
       const next = new URLSearchParams(params.toString());

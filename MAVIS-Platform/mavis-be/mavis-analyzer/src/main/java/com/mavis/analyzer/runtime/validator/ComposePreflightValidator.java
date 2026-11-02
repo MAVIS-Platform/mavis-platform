@@ -434,6 +434,22 @@ public class ComposePreflightValidator {
                     if (listConverted) {
                         changes.add("Converted list 'environment' to map format on '" + svc + "'");
                     }
+                    if (cleanEnv.containsKey("EUREKA_CLIENT_SERVICEURL_DEFAULTZONE") && !cleanEnv.containsKey("EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE")) {
+                        cleanEnv.put("EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE", cleanEnv.get("EUREKA_CLIENT_SERVICEURL_DEFAULTZONE"));
+                        changes.add("Mirrored EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE on '" + svc + "' for Spring Boot relaxed-binding compatibility");
+                    } else if (cleanEnv.containsKey("EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE") && !cleanEnv.containsKey("EUREKA_CLIENT_SERVICEURL_DEFAULTZONE")) {
+                        cleanEnv.put("EUREKA_CLIENT_SERVICEURL_DEFAULTZONE", cleanEnv.get("EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE"));
+                        changes.add("Mirrored EUREKA_CLIENT_SERVICEURL_DEFAULTZONE on '" + svc + "' for Spring Boot relaxed-binding compatibility");
+                    }
+                    if ("false".equalsIgnoreCase(cleanEnv.get("EUREKA_CLIENT_REGISTER_WITH_EUREKA"))) {
+                        cleanEnv.putIfAbsent("EUREKA_SERVER_RESPONSE_CACHE_UPDATE_INTERVAL_MS", "1000");
+                        cleanEnv.putIfAbsent("EUREKA_SERVER_ENABLE_SELF_PRESERVATION", "false");
+                    }
+                    if (cleanEnv.containsKey("EUREKA_CLIENT_SERVICE_URL_DEFAULTZONE")) {
+                        cleanEnv.putIfAbsent("EUREKA_CLIENT_REGISTRY_FETCH_INTERVAL_SECONDS", "2");
+                        cleanEnv.putIfAbsent("EUREKA_INSTANCE_LEASE_RENEWAL_INTERVAL_IN_SECONDS", "3");
+                        cleanEnv.putIfAbsent("SPRING_CLOUD_LOADBALANCER_CACHE_TTL", "1s");
+                    }
                     if (!cleanEnv.isEmpty()) {
                         outSvc.put("environment", cleanEnv);
                     }
@@ -742,6 +758,8 @@ public class ComposePreflightValidator {
         }
         Map<String, String> explicitHealth = new HashMap<>();
         Set<String> actuatorServices = new HashSet<>();
+        Set<String> springSecurityServices = new HashSet<>();
+        Set<String> actuatorPermittedServices = new HashSet<>();
         Map<String, String> contextPaths = new HashMap<>();
         Map<String, String> actuatorBasePaths = new HashMap<>();
         Map<String, Integer> actuatorPorts = new HashMap<>();
@@ -775,7 +793,8 @@ public class ComposePreflightValidator {
                         try (InputStream is = zipFile.getInputStream(entry)) {
                             String content = new String(is.readNBytes(256_000), StandardCharsets.UTF_8);
                             inspectFileContent(entryName, content, dto, envMap, dbChecks, endpoints, endpointKeys,
-                                    explicitHealth, actuatorServices, contextPaths, actuatorBasePaths, actuatorPorts, sourcePorts,
+                                    explicitHealth, actuatorServices, springSecurityServices, actuatorPermittedServices,
+                                    contextPaths, actuatorBasePaths, actuatorPorts, sourcePorts,
                                     dtoSchemas, responseSchemas, dtoValidationHints, enumFirstValues, gatewayRoutes, serviceOutboundTargets);
                         }
                     }
@@ -801,7 +820,8 @@ public class ComposePreflightValidator {
                                 String rel = dirToScan.relativize(file).toString().replace('\\', '/');
                                 String content = Files.readString(file, StandardCharsets.UTF_8);
                                 inspectFileContent(rel, content, dto, envMap, dbChecks, endpoints, endpointKeys,
-                                        explicitHealth, actuatorServices, contextPaths, actuatorBasePaths, actuatorPorts, sourcePorts,
+                                        explicitHealth, actuatorServices, springSecurityServices, actuatorPermittedServices,
+                                        contextPaths, actuatorBasePaths, actuatorPorts, sourcePorts,
                                         dtoSchemas, responseSchemas, dtoValidationHints, enumFirstValues, gatewayRoutes, serviceOutboundTargets);
                             }
                         } catch (Exception ignored) {}
@@ -886,6 +906,10 @@ public class ComposePreflightValidator {
                 health.put(svc, hp);
                 confidence.put(svc, "DETECTED");
                 reasons.put(svc, "Spring Boot Actuator (" + hp + ")");
+                if (springSecurityServices.contains(svc) && !actuatorPermittedServices.contains(svc)
+                        && dto.getSecuredActuatorServices() != null) {
+                    dto.getSecuredActuatorServices().add(svc);
+                }
             } else {
                 health.put(svc, "/");
                 confidence.put(svc, "ASSUMED");
@@ -954,7 +978,15 @@ public class ComposePreflightValidator {
                 || lower.endsWith(".js") || lower.endsWith(".ts") || lower.endsWith(".py") || lower.endsWith(".go");
     }
 
-    record GatewayRouteRule(String gatewayService, String pathPrefix, String targetService, int stripPrefix) {}
+    record GatewayRouteRule(
+            String gatewayService,
+            String pathPrefix,
+            boolean wildcard,
+            String targetService,
+            int stripPrefix,
+            String rewriteFromPrefix,
+            String rewriteToPrefix
+    ) {}
 
     private void inspectFileContent(
             String relativePath,
@@ -966,6 +998,8 @@ public class ComposePreflightValidator {
             Set<String> endpointKeys,
             Map<String, String> explicitHealth,
             Set<String> actuatorServices,
+            Set<String> springSecurityServices,
+            Set<String> actuatorPermittedServices,
             Map<String, String> contextPaths,
             Map<String, String> actuatorBasePaths,
             Map<String, Integer> actuatorPorts,
@@ -1193,9 +1227,25 @@ public class ComposePreflightValidator {
                 && lowerContent.contains("spring-boot-starter-actuator")) {
             actuatorServices.add(inferredService);
         }
+        if ((lowerPath.endsWith("pom.xml") || lowerPath.endsWith("build.gradle") || lowerPath.endsWith("build.gradle.kts"))
+                && lowerContent.contains("spring-boot-starter-security") && inferredService != null) {
+            springSecurityServices.add(inferredService);
+        }
+        if ((lowerPath.endsWith(".yml") || lowerPath.endsWith(".yaml") || lowerPath.endsWith(".properties"))
+                && lowerContent.contains("management.security.enabled") && lowerContent.contains("false") && inferredService != null) {
+            actuatorPermittedServices.add(inferredService);
+        }
         if (lowerPath.endsWith(".java")) {
             Matcher healthRoute = JAVA_HEALTH_ROUTE_PATTERN.matcher(content);
             if (healthRoute.find()) explicitHealth.putIfAbsent(inferredService, healthRoute.group(1));
+            if (inferredService != null && (content.contains("SecurityFilterChain") || content.contains("SecurityWebFilterChain")
+                    || content.contains("@EnableWebSecurity") || content.contains("@EnableWebFluxSecurity"))) {
+                springSecurityServices.add(inferredService);
+                if ((lowerContent.contains("\"/actuator") || lowerContent.contains("endpointrequest.toanyendpoint") || lowerContent.contains("endpointrequest.to("))
+                        && (content.contains("permitAll") || content.contains("ignoring()"))) {
+                    actuatorPermittedServices.add(inferredService);
+                }
+            }
         }
         if (lowerPath.endsWith(".cs")) {
             Matcher healthChecks = MAP_HEALTH_CHECKS_PATTERN.matcher(content);
@@ -2045,32 +2095,290 @@ public class ComposePreflightValidator {
             String content,
             List<String> detectedServices,
             List<GatewayRouteRule> gatewayRoutes) {
-        // 1. Spring Cloud Gateway YAML / Properties: Path=/api/orders/** + uri: lb://order-service or http://order-service:8080
-        if (lowerPath.endsWith(".yml") || lowerPath.endsWith(".yaml") || lowerPath.endsWith(".properties")) {
-            Matcher yamlBlocks = Pattern.compile("(?s)uri\\s*[:=]\\s*['\"]?(?:lb|https?)://([a-zA-Z0-9_.-]+)(?::\\d+)?['\"]?.*?Path\\s*=\\s*([/a-zA-Z0-9_*.-]+)|Path\\s*=\\s*([/a-zA-Z0-9_*.-]+).*?uri\\s*[:=]\\s*['\"]?(?:lb|https?)://([a-zA-Z0-9_.-]+)").matcher(content);
-            while (yamlBlocks.find()) {
-                String rawTarget = yamlBlocks.group(1) != null ? yamlBlocks.group(1) : yamlBlocks.group(4);
-                String rawPath = yamlBlocks.group(2) != null ? yamlBlocks.group(2) : yamlBlocks.group(3);
-                String matchedTarget = matchDetectedService(rawTarget, detectedServices);
-                String targetSvc = matchedTarget != null ? matchedTarget : cleanServiceCandidate(rawTarget);
-                String prefix = rawPath.replaceAll("/\\*\\*$", "").replaceAll("/\\*$", "");
-                int strip = content.contains("StripPrefix=1") ? 1 : (content.contains("StripPrefix=2") ? 2 : 0);
-                if (!targetSvc.isBlank() && !targetSvc.equalsIgnoreCase(service) && prefix.startsWith("/")) {
-                    gatewayRoutes.add(new GatewayRouteRule(service, prefix, targetSvc, strip));
+        // 1. Spring Cloud Gateway YAML / Properties: parse each route definition independently so predicates/filters never bleed across routes
+        if (lowerPath.endsWith(".yml") || lowerPath.endsWith(".yaml")) {
+            int before = gatewayRoutes.size();
+            try {
+                Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
+                for (Object doc : yaml.loadAll(content)) {
+                    collectYamlGatewayRoutes(doc, service, detectedServices, gatewayRoutes);
                 }
+            } catch (Exception ignored) {}
+            if (gatewayRoutes.size() == before && content.contains("Path=")) {
+                for (String block : content.split("(?m)^[ \\t]*-[ \\t]+")) {
+                    parseIsolatedGatewayRouteBlock(service, block, detectedServices, gatewayRoutes);
+                }
+            }
+        } else if (lowerPath.endsWith(".properties") && content.contains("Path=")) {
+            Map<String, StringBuilder> byIndex = new LinkedHashMap<>();
+            Matcher idxLine = Pattern.compile("(?m)^\\s*[^#\\r\\n]*routes\\[(\\d+)]\\.(.+)$").matcher(content);
+            while (idxLine.find()) {
+                byIndex.computeIfAbsent(idxLine.group(1), k -> new StringBuilder()).append(idxLine.group(2)).append('\n');
+            }
+            if (!byIndex.isEmpty()) {
+                for (StringBuilder sb : byIndex.values()) {
+                    parseIsolatedGatewayRouteBlock(service, sb.toString(), detectedServices, gatewayRoutes);
+                }
+            } else {
+                parseIsolatedGatewayRouteBlock(service, content, detectedServices, gatewayRoutes);
             }
         }
         // 2. Nginx proxy_pass: location /api/orders/ { proxy_pass http://order-service:8080/; }
-        Matcher nginx = Pattern.compile("location\\s+(?:~\\*?\\s+)?([/a-zA-Z0-9_-]+)\\s*\\{[^}]*proxy_pass\\s+https?://([a-zA-Z0-9_.-]+)").matcher(content);
+        Matcher nginx = Pattern.compile("location\\s+(?:~\\*?\\s+)?([/a-zA-Z0-9_.-]+)\\s*\\{[^}]*proxy_pass\\s+https?://([a-zA-Z0-9_.-]+)(?::\\d+)?(/[^;\\s}]*)?").matcher(content);
         while (nginx.find()) {
-            String prefix = nginx.group(1);
+            String cleanPrefix = stripTrailingSlashExceptRoot(nginx.group(1));
             String rawTarget = nginx.group(2);
+            String targetUri = nginx.group(3);
             String matchedTarget = matchDetectedService(rawTarget, detectedServices);
             String targetSvc = matchedTarget != null ? matchedTarget : cleanServiceCandidate(rawTarget);
-            if (!targetSvc.isBlank() && !targetSvc.equalsIgnoreCase(service)) {
-                gatewayRoutes.add(new GatewayRouteRule(service, prefix, targetSvc, 0));
+            if (!targetSvc.isBlank() && !targetSvc.equalsIgnoreCase(service) && cleanPrefix.startsWith("/")) {
+                if (targetUri != null && !targetUri.isBlank()) {
+                    gatewayRoutes.add(new GatewayRouteRule(service, cleanPrefix, true, targetSvc, 0, cleanPrefix, stripTrailingSlashExceptRoot(targetUri.trim())));
+                } else {
+                    gatewayRoutes.add(new GatewayRouteRule(service, cleanPrefix, true, targetSvc, 0, null, null));
+                }
             }
         }
+    }
+
+    private static void collectYamlGatewayRoutes(
+            Object node,
+            String service,
+            List<String> detectedServices,
+            List<GatewayRouteRule> gatewayRoutes) {
+        if (node instanceof Map<?, ?> map) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if ("routes".equals(String.valueOf(entry.getKey())) && entry.getValue() instanceof List<?> routeList) {
+                    for (Object item : routeList) {
+                        if (item instanceof Map<?, ?> routeMap) {
+                            parseYamlGatewayRouteMap(service, routeMap, detectedServices, gatewayRoutes);
+                        }
+                    }
+                } else {
+                    collectYamlGatewayRoutes(entry.getValue(), service, detectedServices, gatewayRoutes);
+                }
+            }
+        } else if (node instanceof Iterable<?> it) {
+            for (Object child : it) {
+                collectYamlGatewayRoutes(child, service, detectedServices, gatewayRoutes);
+            }
+        }
+    }
+
+    private static void parseYamlGatewayRouteMap(
+            String service,
+            Map<?, ?> routeMap,
+            List<String> detectedServices,
+            List<GatewayRouteRule> gatewayRoutes) {
+        Object uriObj = routeMap.get("uri");
+        if (uriObj == null) return;
+        Matcher uriM = Pattern.compile("(?:lb|https?)://([a-zA-Z0-9_.-]+)(?::\\d+)?").matcher(String.valueOf(uriObj).trim());
+        if (!uriM.find()) return;
+        String matchedTarget = matchDetectedService(uriM.group(1), detectedServices);
+        String targetSvc = matchedTarget != null ? matchedTarget : cleanServiceCandidate(uriM.group(1));
+        if (targetSvc.isBlank() || targetSvc.equalsIgnoreCase(service)) return;
+
+        List<String> rawPredPaths = new ArrayList<>();
+        if (routeMap.get("predicates") instanceof Iterable<?> preds) {
+            for (Object pred : preds) {
+                if (pred instanceof String ps) {
+                    Matcher pm = Pattern.compile("(?<![A-Za-z0-9_.-])Path\\s*=\\s*(.+)").matcher(ps.trim());
+                    if (pm.find()) {
+                        for (String part : pm.group(1).split(",")) {
+                            if (!part.isBlank()) rawPredPaths.add(part.trim());
+                        }
+                    }
+                } else if (pred instanceof Map<?, ?> pm) {
+                    if ("Path".equalsIgnoreCase(String.valueOf(pm.get("name"))) && pm.get("args") != null) {
+                        Object args = pm.get("args");
+                        if (args instanceof Map<?, ?> am) {
+                            for (Object v : am.values()) {
+                                for (String part : String.valueOf(v).split(",")) {
+                                    if (!part.isBlank()) rawPredPaths.add(part.trim());
+                                }
+                            }
+                        } else {
+                            for (String part : String.valueOf(args).split(",")) {
+                                if (!part.isBlank()) rawPredPaths.add(part.trim());
+                            }
+                        }
+                    } else if (pm.get("Path") != null) {
+                        for (String part : String.valueOf(pm.get("Path")).split(",")) {
+                            if (!part.isBlank()) rawPredPaths.add(part.trim());
+                        }
+                    }
+                }
+            }
+        }
+
+        int strip = 0;
+        String rewriteFrom = null;
+        String rewriteTo = null;
+        if (routeMap.get("filters") instanceof Iterable<?> filters) {
+            for (Object filt : filters) {
+                if (filt instanceof String fs) {
+                    Matcher sm = Pattern.compile("StripPrefix\\s*=\\s*(\\d+)").matcher(fs);
+                    if (sm.find()) strip = Integer.parseInt(sm.group(1));
+                    Matcher rm = Pattern.compile("RewritePath\\s*=\\s*([^,]+),\\s*(.+)").matcher(fs);
+                    if (rm.find()) {
+                        String[] rw = parseRewritePathPrefixes(rm.group(1), rm.group(2));
+                        if (rw != null) {
+                            rewriteFrom = rw[0];
+                            rewriteTo = rw[1];
+                        }
+                    }
+                } else if (filt instanceof Map<?, ?> fm) {
+                    String fName = String.valueOf(fm.get("name"));
+                    if ("StripPrefix".equalsIgnoreCase(fName) && fm.get("args") != null) {
+                        Matcher sm = Pattern.compile("(\\d+)").matcher(String.valueOf(fm.get("args")));
+                        if (sm.find()) strip = Integer.parseInt(sm.group(1));
+                    } else if ("RewritePath".equalsIgnoreCase(fName) && fm.get("args") instanceof Map<?, ?> am) {
+                        Object rx = am.get("regexp");
+                        Object rep = am.get("replacement");
+                        if (rx != null && rep != null) {
+                            String[] rw = parseRewritePathPrefixes(String.valueOf(rx), String.valueOf(rep));
+                            if (rw != null) {
+                                rewriteFrom = rw[0];
+                                rewriteTo = rw[1];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for (String rawPath : rawPredPaths) {
+            addParsedGatewayRoute(service, targetSvc, rawPath, strip, rewriteFrom, rewriteTo, gatewayRoutes);
+        }
+    }
+
+    private static void parseIsolatedGatewayRouteBlock(
+            String service,
+            String block,
+            List<String> detectedServices,
+            List<GatewayRouteRule> gatewayRoutes) {
+        Matcher uriM = Pattern.compile("uri\\s*[:=]\\s*['\"]?(?:lb|https?)://([a-zA-Z0-9_.-]+)(?::\\d+)?['\"]?").matcher(block);
+        if (!uriM.find()) return;
+        String matchedTarget = matchDetectedService(uriM.group(1), detectedServices);
+        String targetSvc = matchedTarget != null ? matchedTarget : cleanServiceCandidate(uriM.group(1));
+        if (targetSvc.isBlank() || targetSvc.equalsIgnoreCase(service)) return;
+
+        int strip = 0;
+        Matcher sm = Pattern.compile("StripPrefix\\s*=\\s*(\\d+)").matcher(block);
+        if (sm.find()) strip = Integer.parseInt(sm.group(1));
+
+        String rewriteFrom = null;
+        String rewriteTo = null;
+        Matcher rm = Pattern.compile("RewritePath\\s*=\\s*([^,\\r\\n]+),\\s*([^\\r\\n#]+)").matcher(block);
+        if (rm.find()) {
+            String[] rw = parseRewritePathPrefixes(rm.group(1), rm.group(2));
+            if (rw != null) {
+                rewriteFrom = rw[0];
+                rewriteTo = rw[1];
+            }
+        }
+
+        Matcher pm = Pattern.compile("(?<![A-Za-z0-9_.-])Path\\s*=\\s*([^\\r\\n#]+)").matcher(block);
+        while (pm.find()) {
+            for (String part : pm.group(1).split(",")) {
+                String cleanPart = part.trim().replaceAll("^['\"]|['\"]$", "");
+                if (!cleanPart.isBlank()) {
+                    addParsedGatewayRoute(service, targetSvc, cleanPart, strip, rewriteFrom, rewriteTo, gatewayRoutes);
+                }
+            }
+        }
+    }
+
+    private static void addParsedGatewayRoute(
+            String gatewayService,
+            String targetService,
+            String rawPathPattern,
+            int stripPrefix,
+            String rewriteFromPrefix,
+            String rewriteToPrefix,
+            List<GatewayRouteRule> gatewayRoutes) {
+        if (rawPathPattern == null) return;
+        String p = rawPathPattern.trim().replaceAll("^['\"]|['\"]$", "");
+        if (!p.startsWith("/")) return;
+        boolean wildcard = p.endsWith("/**") || p.endsWith("/*");
+        String prefix = stripTrailingSlashExceptRoot(p.replaceAll("/\\*\\*$", "").replaceAll("/\\*$", ""));
+        gatewayRoutes.add(new GatewayRouteRule(gatewayService, prefix, wildcard, targetService, stripPrefix, rewriteFromPrefix, rewriteToPrefix));
+    }
+
+    private static String[] parseRewritePathPrefixes(String rawRegex, String rawReplacement) {
+        if (rawRegex == null || rawReplacement == null) return null;
+        String lhs = rawRegex.trim().replaceAll("^['\"]|['\"]$", "");
+        String rhs = rawReplacement.trim().replaceAll("^['\"]|['\"]$", "");
+        String from = lhs.replaceFirst("[(\\[*+?\\\\$].*$", "");
+        String to = rhs.replaceFirst("[\\\\$].*$", "");
+        from = stripTrailingSlashExceptRoot(from);
+        to = stripTrailingSlashExceptRoot(to);
+        if (!from.startsWith("/") || !to.startsWith("/")) return null;
+        return new String[]{from, to};
+    }
+
+    private static String stripTrailingSlashExceptRoot(String path) {
+        if (path == null || path.isBlank()) return "";
+        String t = path.trim();
+        while (t.length() > 1 && t.endsWith("/")) {
+            t = t.substring(0, t.length() - 1);
+        }
+        return t;
+    }
+
+    static String projectGatewayPath(GatewayRouteRule rule, String fullEpPath) {
+        if (rule == null || fullEpPath == null || !fullEpPath.startsWith("/")) return null;
+        int qIdx = fullEpPath.indexOf('?');
+        String epPath = qIdx >= 0 ? fullEpPath.substring(0, qIdx) : fullEpPath;
+        String query = qIdx >= 0 ? fullEpPath.substring(qIdx) : "";
+        String prefix = rule.pathPrefix();
+        if (prefix == null || !prefix.startsWith("/")) return null;
+
+        if (rule.rewriteFromPrefix() != null && rule.rewriteToPrefix() != null) {
+            String from = rule.rewriteFromPrefix();
+            String to = rule.rewriteToPrefix();
+            if (!rule.wildcard()) {
+                return epPath.equals(to) ? from + query : null;
+            }
+            if ("/".equals(to)) {
+                return normalizeEndpointPath(from, epPath) + query;
+            }
+            if (epPath.equals(to)) {
+                return from + query;
+            }
+            if (epPath.startsWith(to + "/")) {
+                return normalizeEndpointPath(from, epPath.substring(to.length())) + query;
+            }
+            return null;
+        }
+
+        if (rule.stripPrefix() > 0) {
+            List<String> segs = new ArrayList<>();
+            for (String s : prefix.split("/")) {
+                if (!s.isEmpty()) segs.add(s);
+            }
+            int n = Math.min(rule.stripPrefix(), segs.size());
+            String strippedPart = n == 0 ? "" : "/" + String.join("/", segs.subList(0, n));
+            String forwardedPrefix = n < segs.size() ? "/" + String.join("/", segs.subList(n, segs.size())) : "";
+            if (forwardedPrefix.isEmpty()) {
+                return normalizeEndpointPath(strippedPart, epPath) + query;
+            }
+            if (!rule.wildcard()) {
+                return epPath.equals(forwardedPrefix) ? normalizeEndpointPath(strippedPart, epPath) + query : null;
+            }
+            if (epPath.equals(forwardedPrefix) || epPath.startsWith(forwardedPrefix + "/")) {
+                return normalizeEndpointPath(strippedPart, epPath) + query;
+            }
+            return null;
+        }
+
+        if (!rule.wildcard()) {
+            return epPath.equals(prefix) ? epPath + query : null;
+        }
+        if ("/".equals(prefix) || epPath.equals(prefix) || epPath.startsWith(prefix + "/")) {
+            return epPath + query;
+        }
+        return null;
     }
 
     private static void projectGatewayEntryEndpoints(
@@ -2080,17 +2388,14 @@ public class ComposePreflightValidator {
             List<String> detectedServices) {
         if (gatewayRoutes == null || gatewayRoutes.isEmpty() || endpoints.isEmpty()) return;
         List<DetectedEndpointDTO> snapshot = new ArrayList<>(endpoints);
+        Set<String> projectedDownstreamByGateway = new HashSet<>();
         for (GatewayRouteRule rule : gatewayRoutes) {
             for (DetectedEndpointDTO ep : snapshot) {
                 if (!rule.targetService().equalsIgnoreCase(ep.getService()) || isHealthEndpointPath(ep.getPath())) continue;
-                String gwPath;
-                if (rule.stripPrefix() > 0) {
-                    gwPath = normalizeEndpointPath(rule.pathPrefix(), ep.getPath());
-                } else if (ep.getPath().startsWith(rule.pathPrefix())) {
-                    gwPath = ep.getPath();
-                } else {
-                    gwPath = normalizeEndpointPath(rule.pathPrefix(), ep.getPath());
-                }
+                String gwPath = projectGatewayPath(rule, ep.getPath());
+                if (gwPath == null) continue;
+                String downstreamKey = (rule.gatewayService() + "->" + ep.getService() + ":" + ep.getMethod() + ":" + ep.getPath()).toLowerCase(Locale.ROOT);
+                if (!projectedDownstreamByGateway.add(downstreamKey)) continue;
                 String key = (rule.gatewayService() + ":" + ep.getMethod() + ":" + gwPath).toLowerCase(Locale.ROOT);
                 if (endpointKeys.add(key)) {
                     List<String> down = new ArrayList<>();
@@ -2589,7 +2894,8 @@ public class ComposePreflightValidator {
 
     private static String sanitizeConnectionPreview(String raw) {
         if (raw == null) return "";
-        String cleaned = raw.replaceAll("(?i)(password|pwd)\\s*[:=]\\s*[^;&\\s\"']+", "$1=***");
+        String cleaned = SecretRedactor.redactString(raw)
+                .replaceAll("(?i)(password|pwd)\\s*[:=]\\s*[^;&\\s\"']+", "$1=***");
         return cleaned.length() > 140 ? cleaned.substring(0, 140) + "..." : cleaned;
     }
 
@@ -3389,10 +3695,12 @@ public class ComposePreflightValidator {
             return;
         }
         Map<String, Object> servicesMap = (Map<String, Object>) rawServices;
-        boolean provisionedDb = autoProvisionMissingSandboxDatabases(dto, servicesMap, safeEnvFiles, topologyChanges);
+        Set<String> replacedDbContainers = new LinkedHashSet<>();
+        boolean provisionedDb = autoProvisionMissingSandboxDatabases(dto, servicesMap, safeEnvFiles, replacedDbContainers, topologyChanges);
+        boolean normalizedInfra = normalizeSandboxComposeInfra(dto, rootMap, servicesMap, replacedDbContainers, topologyChanges);
 
         boolean hasDockerfileVols = dto.getServiceDockerfileVolumes() != null && !dto.getServiceDockerfileVolumes().isEmpty();
-        if (synthesizedFromDockerfiles || provisionedDb || hasDockerfileVols || !safeOverrides.isEmpty()) {
+        if (synthesizedFromDockerfiles || provisionedDb || normalizedInfra || hasDockerfileVols || !safeOverrides.isEmpty()) {
             if (synthesizedFromDockerfiles) {
                 DumperOptions rawDumpOpts = new DumperOptions();
                 rawDumpOpts.setDefaultFlowStyle(DumperOptions.FlowStyle.BLOCK);
@@ -3419,6 +3727,7 @@ public class ComposePreflightValidator {
             PreflightCheckResponseDTO dto,
             Map<String, Object> servicesMap,
             Map<String, String> envFiles,
+            Set<String> replacedDbContainers,
             List<String> topologyChanges) {
         List<DatabaseCheckDTO> checks = dto.getDatabaseChecks();
         if (checks == null || checks.isEmpty() || servicesMap.isEmpty()) return false;
@@ -3565,14 +3874,35 @@ public class ComposePreflightValidator {
                 creds.forEach(dto.getSandboxDatabaseCredentials()::putIfAbsent);
             }
 
+            Set<String> localReplacedDbs = new LinkedHashSet<>();
+            if (Set.of("postgres", "mysql", "mariadb").contains(family)) {
+                for (Map.Entry<String, Object> se : servicesMap.entrySet()) {
+                    String cand = se.getKey();
+                    if (cand.equals(containerName)) continue;
+                    String candImg = (se.getValue() instanceof Map<?, ?> m && m.get("image") != null)
+                            ? String.valueOf(m.get("image")).toLowerCase(Locale.ROOT) : "";
+                    String candLow = cand.toLowerCase(Locale.ROOT);
+                    if (isInfrastructureService(candLow, candImg)
+                            && (candLow.contains("mysql") || candLow.contains("mariadb") || candLow.contains("postgres")
+                            || candImg.contains("mysql") || candImg.contains("mariadb") || candImg.contains("postgres"))) {
+                        localReplacedDbs.add(cand);
+                        if (replacedDbContainers != null) replacedDbContainers.add(cand);
+                    }
+                }
+            }
+
             Set<String> targetServices = new LinkedHashSet<>();
             for (DatabaseCheckDTO c : familyChecks) targetServices.add(c.getService());
 
             for (String appSvc : targetServices) {
                 if (!(servicesMap.get(appSvc) instanceof Map<?, ?> rawAppCfg)) continue;
                 Map<String, Object> appCfg = (Map<String, Object>) rawAppCfg;
-                addServiceDependency(appCfg, containerName);
                 List<String> depList = dto.getServiceDependencies().computeIfAbsent(appSvc, k -> new ArrayList<>());
+                for (String oldDb : localReplacedDbs) {
+                    removeServiceDependency(appCfg, oldDb);
+                    depList.remove(oldDb);
+                }
+                addServiceDependency(appCfg, containerName);
                 depList.remove(containerName);
                 depList.add(0, containerName);
 
@@ -3764,6 +4094,231 @@ public class ComposePreflightValidator {
         } else {
             appCfg.put("depends_on", new ArrayList<>(List.of(depName)));
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void removeServiceDependency(Map<String, Object> appCfg, String depName) {
+        Object existing = appCfg.get("depends_on");
+        if (existing instanceof List<?> list) {
+            List<Object> copy = new ArrayList<>(list);
+            copy.removeIf(x -> depName.equals(String.valueOf(x)));
+            if (copy.isEmpty()) appCfg.remove("depends_on");
+            else appCfg.put("depends_on", copy);
+        } else if (existing instanceof Map<?, ?> map) {
+            Map<String, Object> copy = new LinkedHashMap<>((Map<String, Object>) map);
+            copy.remove(depName);
+            if (copy.isEmpty()) appCfg.remove("depends_on");
+            else appCfg.put("depends_on", copy);
+        }
+    }
+
+    private static String findInfraServiceForFamily(Map<String, Object> servicesMap, String family) {
+        for (Map.Entry<String, Object> e : servicesMap.entrySet()) {
+            String name = e.getKey();
+            String low = name.toLowerCase(Locale.ROOT);
+            String img = (e.getValue() instanceof Map<?, ?> m && m.get("image") != null)
+                    ? String.valueOf(m.get("image")).toLowerCase(Locale.ROOT) : "";
+            if (!isInfrastructureService(low, img)) continue;
+            boolean match = switch (family) {
+                case "redis" -> low.contains("redis") || img.contains("redis");
+                case "kafka" -> low.contains("kafka") || img.contains("kafka") || low.contains("redpanda") || img.contains("redpanda");
+                default -> false;
+            };
+            if (match) return name;
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean normalizeSandboxComposeInfra(
+            PreflightCheckResponseDTO dto,
+            Map<String, Object> rootMap,
+            Map<String, Object> servicesMap,
+            Set<String> replacedDbContainers,
+            List<String> topologyChanges) {
+        if (servicesMap == null || servicesMap.isEmpty()) return false;
+        boolean changed = false;
+
+        // 1. Upgrade ZooKeeper-bound Kafka (cp-kafka / wurstmeister / KAFKA_ZOOKEEPER_CONNECT) to lightweight KRaft apache/kafka-native listening on 9092 & 29092
+        Set<String> zookeeperNames = new LinkedHashSet<>();
+        for (Map.Entry<String, Object> e : servicesMap.entrySet()) {
+            String low = e.getKey().toLowerCase(Locale.ROOT);
+            String img = (e.getValue() instanceof Map<?, ?> m && m.get("image") != null) ? String.valueOf(m.get("image")).toLowerCase(Locale.ROOT) : "";
+            if (isInfrastructureService(low, img) && (low.contains("zookeeper") || img.contains("zookeeper"))) {
+                zookeeperNames.add(e.getKey());
+            }
+        }
+        for (Map.Entry<String, Object> e : servicesMap.entrySet()) {
+            String svc = e.getKey();
+            if (!(e.getValue() instanceof Map<?, ?> rawCfg)) continue;
+            Map<String, Object> cfg = (Map<String, Object>) rawCfg;
+            String img = cfg.get("image") != null ? String.valueOf(cfg.get("image")).toLowerCase(Locale.ROOT) : "";
+            Map<String, String> env = composeEnvironment(cfg.get("environment"));
+            if (isInfrastructureService(svc, img)
+                    && (img.contains("cp-kafka") || img.contains("wurstmeister/kafka") || env.containsKey("KAFKA_ZOOKEEPER_CONNECT"))) {
+                cfg.put("image", "apache/kafka-native:3.9.0");
+                cfg.put("expose", new ArrayList<>(List.of("9092", "29092")));
+                cfg.remove("ports");
+                for (String zk : zookeeperNames) {
+                    removeServiceDependency(cfg, zk);
+                    if (dto.getServiceDependencies() != null && dto.getServiceDependencies().containsKey(svc)) {
+                        dto.getServiceDependencies().get(svc).remove(zk);
+                    }
+                }
+                Map<String, String> kraftEnv = new LinkedHashMap<>();
+                kraftEnv.put("KAFKA_NODE_ID", "1");
+                kraftEnv.put("KAFKA_PROCESS_ROLES", "broker,controller");
+                kraftEnv.put("KAFKA_LISTENERS", "PLAINTEXT://:9092,PLAINTEXT_INTERNAL://:29092,CONTROLLER://:9093");
+                kraftEnv.put("KAFKA_ADVERTISED_LISTENERS", "PLAINTEXT://" + svc + ":9092,PLAINTEXT_INTERNAL://" + svc + ":29092");
+                kraftEnv.put("KAFKA_CONTROLLER_LISTENER_NAMES", "CONTROLLER");
+                kraftEnv.put("KAFKA_LISTENER_SECURITY_PROTOCOL_MAP", "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT");
+                kraftEnv.put("KAFKA_CONTROLLER_QUORUM_VOTERS", "1@" + svc + ":9093");
+                kraftEnv.put("KAFKA_INTER_BROKER_LISTENER_NAME", "PLAINTEXT_INTERNAL");
+                kraftEnv.put("KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR", "1");
+                kraftEnv.put("KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR", "1");
+                kraftEnv.put("KAFKA_TRANSACTION_STATE_LOG_MIN_ISR", "1");
+                kraftEnv.put("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "true");
+                kraftEnv.put("KAFKA_LOG_DIRS", "/opt/kafka/config/kraft-logs");
+                cfg.put("environment", kraftEnv);
+                if (dto.getServicePorts() != null) dto.getServicePorts().put(svc, 9092);
+                topologyChanges.add("Normalized '" + svc + "' to ZooKeeper-free KRaft 'apache/kafka-native:3.9.0' (ports 9092, 29092)");
+                changed = true;
+            }
+        }
+
+        // 2. Wire missing SPRING_DATA_REDIS_HOST / SPRING_KAFKA_BOOTSTRAP_SERVERS onto services whose source uses Redis/Kafka when Compose already has the container
+        if (dto.getDatabaseChecks() != null) {
+            String redisSvc = findInfraServiceForFamily(servicesMap, "redis");
+            String kafkaSvc = findInfraServiceForFamily(servicesMap, "kafka");
+            for (DatabaseCheckDTO check : dto.getDatabaseChecks()) {
+                if (check == null || !"DETECTED_IN_SOURCE".equals(check.getStatus()) || check.getService() == null) continue;
+                String appSvc = check.getService();
+                if (!(servicesMap.get(appSvc) instanceof Map<?, ?> rawApp)) continue;
+                Map<String, Object> appCfg = (Map<String, Object>) rawApp;
+                String stack = dto.getServiceStacks() != null ? dto.getServiceStacks().getOrDefault(appSvc, "java") : "java";
+                if (!"java".equals(stack)) continue;
+                Map<String, String> appEnv = composeEnvironment(appCfg.get("environment"));
+                if ("Redis".equals(check.getDbType()) && redisSvc != null
+                        && !appEnv.containsKey("SPRING_DATA_REDIS_HOST") && !appEnv.containsKey("SPRING_REDIS_HOST") && !appEnv.containsKey("REDIS_HOST")) {
+                    int rPort = dto.getServicePorts() != null ? dto.getServicePorts().getOrDefault(redisSvc, 6379) : 6379;
+                    appEnv.put("SPRING_DATA_REDIS_HOST", redisSvc);
+                    appEnv.putIfAbsent("SPRING_DATA_REDIS_PORT", String.valueOf(rPort));
+                    appCfg.put("environment", appEnv);
+                    addServiceDependency(appCfg, redisSvc);
+                    List<String> deps = dto.getServiceDependencies().computeIfAbsent(appSvc, k -> new ArrayList<>());
+                    if (!deps.contains(redisSvc)) deps.add(redisSvc);
+                    check.setStatus("DETECTED_CONTAINER");
+                    topologyChanges.add("Wired missing Redis host '" + redisSvc + "' on '" + appSvc + "'");
+                    changed = true;
+                } else if ("Kafka".equals(check.getDbType()) && kafkaSvc != null
+                        && !appEnv.containsKey("SPRING_KAFKA_BOOTSTRAP_SERVERS") && !appEnv.containsKey("KAFKA_BOOTSTRAP_SERVERS")) {
+                    appEnv.put("SPRING_KAFKA_BOOTSTRAP_SERVERS", kafkaSvc + ":9092");
+                    appCfg.put("environment", appEnv);
+                    addServiceDependency(appCfg, kafkaSvc);
+                    List<String> deps = dto.getServiceDependencies().computeIfAbsent(appSvc, k -> new ArrayList<>());
+                    if (!deps.contains(kafkaSvc)) deps.add(kafkaSvc);
+                    check.setStatus("DETECTED_CONTAINER");
+                    topologyChanges.add("Wired missing Kafka bootstrap '" + kafkaSvc + ":9092' on '" + appSvc + "'");
+                    changed = true;
+                }
+            }
+        }
+
+        // 3. Prune completely unreferenced replaced DB, ZooKeeper, and external tracing/UI collector containers
+        Set<String> pruneCandidates = new LinkedHashSet<>();
+        if (replacedDbContainers != null) pruneCandidates.addAll(replacedDbContainers);
+        pruneCandidates.addAll(zookeeperNames);
+        for (Map.Entry<String, Object> e : servicesMap.entrySet()) {
+            String cand = e.getKey();
+            String low = cand.toLowerCase(Locale.ROOT);
+            String img = (e.getValue() instanceof Map<?, ?> m && m.get("image") != null) ? String.valueOf(m.get("image")).toLowerCase(Locale.ROOT) : "";
+            if (isInfrastructureService(low, img)
+                    && (low.equals("zipkin") || img.contains("zipkin") || low.equals("jaeger") || img.contains("jaeger")
+                    || low.equals("kibana") || img.contains("kibana") || low.equals("pgadmin") || img.contains("pgadmin")
+                    || low.equals("adminer") || img.contains("adminer"))) {
+                pruneCandidates.add(cand);
+            }
+        }
+
+        Set<String> pruned = new LinkedHashSet<>();
+        for (String cand : pruneCandidates) {
+            if (!servicesMap.containsKey(cand)) continue;
+            String candLow = cand.toLowerCase(Locale.ROOT);
+            boolean referenced = false;
+            for (Map.Entry<String, Object> otherEntry : servicesMap.entrySet()) {
+                if (cand.equals(otherEntry.getKey()) || pruned.contains(otherEntry.getKey())) continue;
+                if (!(otherEntry.getValue() instanceof Map<?, ?> otherCfg)) continue;
+                if (extractServiceDependencies(otherCfg).contains(cand)) {
+                    referenced = true;
+                    break;
+                }
+                for (String ev : composeEnvironment(otherCfg.get("environment")).values()) {
+                    String evLow = ev == null ? "" : ev.toLowerCase(Locale.ROOT);
+                    if (evLow.equals(candLow) || evLow.contains("://" + candLow) || evLow.contains(candLow + ":")) {
+                        referenced = true;
+                        break;
+                    }
+                }
+                if (referenced) break;
+            }
+            if (!referenced) {
+                servicesMap.remove(cand);
+                pruned.add(cand);
+                topologyChanges.add("Pruned unreferenced sandbox infrastructure container '" + cand + "'");
+                changed = true;
+            }
+        }
+
+        if (!pruned.isEmpty()) {
+            if (dto.getDetectedServices() != null) dto.getDetectedServices().removeAll(pruned);
+            if (dto.getComposeServices() != null) dto.getComposeServices().removeAll(pruned);
+            if (dto.getInfrastructureServices() != null) dto.getInfrastructureServices().removeAll(pruned);
+            if (dto.getServicePorts() != null) pruned.forEach(dto.getServicePorts()::remove);
+            if (dto.getServiceStacks() != null) pruned.forEach(dto.getServiceStacks()::remove);
+            if (dto.getRelocatedComposeSecrets() != null) pruned.forEach(dto.getRelocatedComposeSecrets()::remove);
+            if (dto.getServiceDependencies() != null) {
+                pruned.forEach(dto.getServiceDependencies()::remove);
+                dto.getServiceDependencies().values().forEach(deps -> deps.removeAll(pruned));
+            }
+            if (dto.getServiceDatabaseCredentials() != null) {
+                pruned.forEach(dto.getServiceDatabaseCredentials()::remove);
+                Map<String, String> rebuiltCreds = new LinkedHashMap<>();
+                dto.getServiceDatabaseCredentials().values().forEach(m -> {
+                    if (m != null) m.forEach(rebuiltCreds::putIfAbsent);
+                });
+                dto.setSandboxDatabaseCredentials(rebuiltCreds);
+            }
+            if (dto.getRequiredEnvVars() != null) {
+                List<RequiredEnvVarDTO> keptVars = new ArrayList<>();
+                for (RequiredEnvVarDTO v : dto.getRequiredEnvVars()) {
+                    if (v.getServices() != null && !v.getServices().isEmpty()) {
+                        List<String> remOwners = new ArrayList<>(v.getServices().stream().filter(s -> !pruned.contains(s)).toList());
+                        if (remOwners.isEmpty()) continue;
+                        v.setServices(remOwners);
+                        if (pruned.contains(v.getService())) v.setService(remOwners.get(0));
+                    } else if (v.getService() != null && pruned.contains(v.getService())) {
+                        continue;
+                    }
+                    keptVars.add(v);
+                }
+                dto.setRequiredEnvVars(keptVars);
+            }
+            if (rootMap.get("volumes") instanceof Map<?, ?> rawVols) {
+                Set<String> mountedVols = new HashSet<>();
+                for (Object svcObj : servicesMap.values()) {
+                    if (!(svcObj instanceof Map<?, ?> sc) || !(sc.get("volumes") instanceof List<?> mounts)) continue;
+                    for (Object m : mounts) {
+                        if (m instanceof Map<?, ?> mm && mm.get("source") != null) mountedVols.add(String.valueOf(mm.get("source")));
+                        else if (m instanceof String sm && sm.contains(":")) mountedVols.add(sm.substring(0, sm.indexOf(':')).trim());
+                    }
+                }
+                Map<String, Object> volCopy = new LinkedHashMap<>((Map<String, Object>) rawVols);
+                volCopy.keySet().removeIf(k -> !mountedVols.contains(String.valueOf(k)));
+                if (volCopy.isEmpty()) rootMap.remove("volumes");
+                else rootMap.put("volumes", volCopy);
+            }
+        }
+        return changed;
     }
 
     private static String dbFamilyForType(String dbType) {

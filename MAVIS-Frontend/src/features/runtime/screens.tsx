@@ -2215,7 +2215,12 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       setRunMessage("Complete request services, relative paths (starting with '/', no '\\'), and 3-digit status codes.");
       return;
     }
-    let activeConfigRevision = Math.max(config.data?.revision ?? 0, readStep1Target(projectId).savedRevision ?? 0);
+    let currentConfig = config.data;
+    if (!currentConfig) {
+      const initialLoad = await config.refetch();
+      currentConfig = initialLoad.data;
+    }
+    let activeConfigRevision = Math.max(currentConfig?.revision ?? 0, readStep1Target(projectId).savedRevision ?? 0);
     if (approveAndDispatch) {
       try {
         let autoBuiltOverrides: Record<string, string> = {};
@@ -2242,7 +2247,16 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         }
         setRunMessage("Saving complete Step 1 & Step 2 runtime configuration...");
         const stored = readStep1Target(projectId);
-        const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
+        const hasLocalStep1Edits =
+          Object.keys(autoBuiltOverrides).length > 0 ||
+          Object.keys(stored.serviceMappings ?? {}).length > 0 ||
+          Object.keys(stored.serviceRoles ?? {}).length > 0 ||
+          Object.keys(stored.serviceImageOverrides ?? {}).length > 0 ||
+          Object.keys(stored.envVars ?? {}).length > 0 ||
+          Object.keys(stored.secretValues ?? {}).length > 0 ||
+          (stored.secretReferences?.length ?? 0) > 0 ||
+          (stored.dismissedSecretKeys?.length ?? 0) > 0;
+        const rawProf = ((currentConfig ?? config.data)?.profile ?? {}) as Record<string, unknown>;
         const mergedMappings = {
           ...(rawProf["serviceMappings"] && typeof rawProf["serviceMappings"] === "object"
             ? (rawProf["serviceMappings"] as Record<string, string>)
@@ -2291,25 +2305,27 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             secretReferences: mergedSecretRefs,
           },
         };
-        let pinned: { revision: number };
-        try {
-          pinned = await autoSaveConfig.mutateAsync({
-            ...configPayload,
-            expectedRevision: activeConfigRevision,
-          });
-        } catch (firstPinErr) {
-          const refreshed = await config.refetch();
-          if (refreshed.data?.revision !== undefined && refreshed.data.revision !== activeConfigRevision) {
+        if (hasLocalStep1Edits || activeConfigRevision === 0 || !(currentConfig ?? config.data)?.ready) {
+          let pinned: { revision: number };
+          try {
             pinned = await autoSaveConfig.mutateAsync({
               ...configPayload,
-              expectedRevision: refreshed.data.revision,
+              expectedRevision: activeConfigRevision,
             });
-          } else {
-            throw firstPinErr;
+          } catch (firstPinErr) {
+            const refreshed = await config.refetch();
+            if (refreshed.data?.revision !== undefined && refreshed.data.revision !== activeConfigRevision) {
+              pinned = await autoSaveConfig.mutateAsync({
+                ...configPayload,
+                expectedRevision: refreshed.data.revision,
+              });
+            } else {
+              throw firstPinErr;
+            }
           }
+          activeConfigRevision = pinned.revision;
+          writeStep1Target(projectId, { savedRevision: pinned.revision });
         }
-        activeConfigRevision = pinned.revision;
-        writeStep1Target(projectId, { savedRevision: pinned.revision });
       } catch (pinErr) {
         setRunMessage(
           `Could not save runtime configuration: ${pinErr instanceof Error ? pinErr.message : String(pinErr)}`,

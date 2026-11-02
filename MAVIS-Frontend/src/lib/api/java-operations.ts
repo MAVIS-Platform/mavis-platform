@@ -1541,7 +1541,7 @@ export async function executeJava(
         elementId,
         ...(relationshipId ? { relationshipId } : {}),
         explanationScope: a.explanationScope ?? scope,
-        ...(a.userQuestion !== undefined ? { userQuestion: a.userQuestion } : {}),
+        ...((a.userQuestion ?? userQuestion) !== undefined ? { userQuestion: a.userQuestion ?? userQuestion } : {}),
         text: a.explanationText,
         evidenceIds: a.citedEvidenceIds,
         ...(a.citedEvidences

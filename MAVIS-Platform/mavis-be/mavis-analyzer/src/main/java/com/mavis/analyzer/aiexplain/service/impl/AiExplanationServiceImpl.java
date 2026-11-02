@@ -225,7 +225,9 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         log.info("Lưu thành công lời giải thích AI ID: {}, providerMode: {}, trích dẫn: {} bằng chứng",
                 entity.getId(), genResult.providerMode, validatedCitedIds.size());
 
-        return mapToResponseDTO(entity, false, genResult.providerMode, isVietnamese(request));
+        AiExplanationResponseDTO responseDto = mapToResponseDTO(entity, false, genResult.providerMode, isVietnamese(request));
+        responseDto.setUserQuestion(sanitizedQuestion);
+        return responseDto;
     }
 
     @Override

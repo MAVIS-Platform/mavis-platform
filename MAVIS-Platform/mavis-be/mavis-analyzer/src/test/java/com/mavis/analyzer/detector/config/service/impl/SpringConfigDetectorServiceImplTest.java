@@ -248,4 +248,26 @@ class SpringConfigDetectorServiceImplTest {
         var config=detectorService.detectConfigs(tempDir.toString()).get(0);
         assertThat(config.getTargetServiceUrls()).hasSize(2).allMatch(target->"GATEWAY_ROUTE".equals(target.getRelationType()));
     }
+
+    @Test void wholeJdbcUrlPlaceholderAndKebabEurekaServiceUrlUnwrapCleanly() throws Exception {
+        var folder = tempDir.resolve("order-service/src/main/resources");
+        Files.createDirectories(folder);
+        Files.writeString(folder.resolve("application.yml"), """
+                spring:
+                  application:
+                    name: order-service
+                  datasource:
+                    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://pg-cloud.example.com:21480/order_db}
+                eureka:
+                  client:
+                    service-url:
+                      defaultZone: ${EUREKA_URI:http://service-discovery:8761/eureka/}
+                """);
+        var config = detectorService.detectConfigs(tempDir.toString()).get(0);
+        assertThat(config.getDatasourceHost()).isEqualTo("pg-cloud.example.com");
+        assertThat(config.getDatasourceDatabase()).isEqualTo("order_db");
+        assertThat(config.getTargetServiceUrls()).hasSize(1);
+        assertThat(config.getTargetServiceUrls().get(0).getRelationType()).isEqualTo("SERVICE_DISCOVERY");
+        assertThat(config.getTargetServiceUrls().get(0).getTargetUrl()).isEqualTo("http://service-discovery:8761/eureka/");
+    }
 }

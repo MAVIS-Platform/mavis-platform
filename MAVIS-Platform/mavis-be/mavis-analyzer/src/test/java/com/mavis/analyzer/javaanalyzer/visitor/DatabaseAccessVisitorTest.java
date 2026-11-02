@@ -38,6 +38,7 @@ class DatabaseAccessVisitorTest {
         assertThat(evidence.getSourceComponent()).isEqualTo("OrderRepository");
         assertThat(evidence.getTargetComponent()).isEqualTo("Order");
         assertThat(evidence.getFilePath()).isEqualTo("/app/OrderRepository.java");
+        assertThat(evidence.getCodeSnippet()).isEqualTo("public interface OrderRepository");
     }
 
     @Test
@@ -90,6 +91,7 @@ class DatabaseAccessVisitorTest {
         assertThat(evidence.getIdentifier()).isEqualTo("tbl_customer_orders");
         assertThat(evidence.getSourceComponent()).isEqualTo("Order");
         assertThat(evidence.getTargetComponent()).isEqualTo("tbl_customer_orders");
+        assertThat(evidence.getCodeSnippet()).doesNotContain("[").contains("@Entity").contains("public class Order");
     }
 
     @Test
