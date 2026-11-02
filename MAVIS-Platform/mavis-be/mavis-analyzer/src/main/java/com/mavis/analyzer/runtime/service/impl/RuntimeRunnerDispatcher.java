@@ -463,7 +463,7 @@ public class RuntimeRunnerDispatcher {
             String volumeName = profile.path("instrumentationVolume").asText("mavis-agents-v1").trim();
             if (volumeName.matches("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")) {
                 String labels = captureCommandStdout(List.of("docker", "volume", "inspect", "--format", "{{json .Labels}}", volumeName), 10);
-                if (labels == null || !labels.contains("1.17.0") || !labels.contains("2.32.0")) {
+                if (labels == null || !labels.contains("1.17.0") || !labels.contains("2.32.0") || !labels.contains("\"mavis.bundle.rev\":\"2\"")) {
                     for (Path b : List.of(
                             Path.of("/app/otel-bundle"),
                             Path.of("../MAVIS.Worker/samples/runtime-poc/artifacts/bundle"),
@@ -475,17 +475,22 @@ public class RuntimeRunnerDispatcher {
                             probeCommandZeroExit(List.of("docker", "volume", "rm", "-f", volumeName), 10);
                             probeCommandZeroExit(List.of("docker", "volume", "create",
                                     "--label", "mavis.poc.managed=true",
+                                    "--label", "mavis.bundle.rev=2",
                                     "--label", "mavis.dotnet.version=1.17.0",
                                     "--label", "mavis.java.version=2.32.0",
                                     volumeName), 15);
                             probeCommandZeroExit(List.of("docker", "pull", helperImg), 120);
                             String tmpContainer = "mavis-agent-seed-" + UUID.randomUUID().toString().substring(0, 8);
+                            boolean seeded = false;
                             try {
                                 if (probeCommandZeroExit(List.of("docker", "create", "--name", tmpContainer, "-v", volumeName + ":/agents", helperImg), 20)) {
-                                    probeCommandZeroExit(List.of("docker", "cp", absBundle.toString() + "/.", tmpContainer + ":/agents/"), 30);
+                                    seeded = probeCommandZeroExit(List.of("docker", "cp", absBundle.toString() + "/.", tmpContainer + ":/agents/"), 30);
                                 }
                             } finally {
                                 probeCommandZeroExit(List.of("docker", "rm", "-f", tmpContainer), 10);
+                            }
+                            if (!seeded) {
+                                probeCommandZeroExit(List.of("docker", "volume", "rm", "-f", volumeName), 10);
                             }
                             break;
                         }
@@ -538,6 +543,7 @@ public class RuntimeRunnerDispatcher {
                 }
                 if (runnerImgId != null && runnerImgId.matches("^sha256:[0-9a-f]{64}$")) {
                     profile.put("scenarioRunnerImage", runnerImgId);
+                    session.setScenarioConfig(session.getScenarioConfig().deepCopy());
                     session = runtimeSessionRepository.save(session);
                 }
             }

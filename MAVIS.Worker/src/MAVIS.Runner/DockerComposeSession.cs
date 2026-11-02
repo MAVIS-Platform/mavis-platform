@@ -52,6 +52,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         Stage = "OVERRIDE";
         var overrides = ComposeOverrideBuilder.Build(preflight, definition.Profile, collectorPath, secrets);
         await File.WriteAllTextAsync(collectorPath, collectorConfiguration, ct);
+        if (!OperatingSystem.IsWindows())
+            File.SetUnixFileMode(collectorPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
         await File.WriteAllTextAsync(Path.Combine(_directory, "compose.yaml"), definition.ComposeYaml, ct);
         await File.WriteAllTextAsync(Path.Combine(_directory, "override.json"), overrides, ct);
         await CheckpointAsync("ALLOCATED", 1, ct);
@@ -148,6 +150,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         await Task.Delay(1500, ct); // Collector stays alive while application shutdown hooks flush spans.
         await Require(["stop", "--timeout", "5", "mavis-collector"], ct);
         var directory = Path.Combine(_directory, "raw-traces");
+        Directory.CreateDirectory(directory);
         var copied = await Command(["cp", "mavis-collector:/traces/.", directory], ct);
         if (copied.ExitCode != 0 || !Directory.Exists(directory)) return null;
         var paths = Directory.EnumerateFiles(directory, "traces*.json").Order(StringComparer.Ordinal).ToArray();
