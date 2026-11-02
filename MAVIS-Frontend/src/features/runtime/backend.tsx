@@ -1233,8 +1233,16 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 /^[A-Z][A-Z0-9_]{0,63}$/.test(st.bodyReference) &&
                 ["POST", "PUT", "PATCH"].includes(method)
               ) {
-                environment[st.bodyReference] =
-                  stored.plannedInputs?.[st.bodyReference]?.trim() || defaultBody;
+                const matchedSample = runnableEndpoints.find(
+                  (ep) =>
+                    (!ep.service || ep.service === (st.service || defaultSvc)) &&
+                    (ep.method || "POST").toUpperCase() === method &&
+                    ep.path === st.path,
+                )?.sampleJsonBody;
+                const candidate = stored.plannedInputs?.[st.bodyReference]?.trim() || matchedSample?.trim();
+                if (candidate) {
+                  environment[st.bodyReference] = candidate;
+                }
               }
               for (const hdr of st.envHeaders ?? []) {
                 if (hdr.reference && /^[A-Z][A-Z0-9_]{0,63}$/.test(hdr.reference) && !environment[hdr.reference]) {
@@ -1271,7 +1279,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             ? fallbackSavedScenario.steps.map((rawStep) => {
                 try {
                   const parsed = JSON.parse(rawStep) as {
+                    service?: string;
                     method?: string;
+                    path?: string;
                     bodyReference?: string;
                     envHeaders?: Array<{ reference?: string }>;
                     environmentVariables?: Record<string, string>;
@@ -1281,7 +1291,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     /^[A-Z][A-Z0-9_]{0,63}$/.test(parsed.bodyReference) &&
                     !environment[parsed.bodyReference]
                   ) {
-                    environment[parsed.bodyReference] = defaultBody;
+                    const matchedSample = runnableEndpoints.find(
+                      (ep) =>
+                        (!ep.service || ep.service === parsed.service) &&
+                        (ep.method || "POST").toUpperCase() === (parsed.method || "POST").toUpperCase() &&
+                        ep.path === parsed.path,
+                    )?.sampleJsonBody;
+                    if (matchedSample?.trim()) {
+                      environment[parsed.bodyReference] = matchedSample.trim();
+                    }
                   }
                   for (const hdr of parsed.envHeaders ?? []) {
                     if (hdr.reference && /^[A-Z][A-Z0-9_]{0,63}$/.test(hdr.reference) && !environment[hdr.reference]) {
