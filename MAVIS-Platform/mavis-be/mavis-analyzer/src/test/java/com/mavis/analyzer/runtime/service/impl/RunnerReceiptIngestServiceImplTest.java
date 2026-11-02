@@ -836,5 +836,120 @@ class RunnerReceiptIngestServiceImplTest {
         assertThat(steps.get(1).path("callerService").asText()).isEqualTo("payment-service");
         assertThat(steps.get(1).path("calleeService").asText()).isEqualTo("ledger-service");
         assertThat(steps.get(1).path("causalParentMessageIds").get(0).asText()).isEqualTo("msg-obs-1");
+        filtersDiscoveryHeartbeatsAndResolvesGatewayDownstreamPinnedRoute();
+    }
+
+    private void filtersDiscoveryHeartbeatsAndResolvesGatewayDownstreamPinnedRoute() {
+        setUp();
+        UUID gatewayId = UUID.randomUUID();
+        UUID discoveryId = UUID.randomUUID();
+        ModelElement gatewayEl = ModelElement.builder()
+                .id(gatewayId)
+                .modelVersion(baseModelVersion)
+                .name("api-gateway")
+                .elementType("SERVICE_CONTAINER")
+                .status("ACTIVE")
+                .build();
+        ModelElement discoveryEl = ModelElement.builder()
+                .id(discoveryId)
+                .modelVersion(baseModelVersion)
+                .name("service-discovery")
+                .elementType("SERVICE_CONTAINER")
+                .status("ACTIVE")
+                .build();
+        when(modelElementRepository.findByModelVersionId(modelVersionId))
+                .thenReturn(List.of(gatewayEl, discoveryEl, elementA, elementB));
+
+        ObjectNode pinnedConfig = objectMapper.createObjectNode();
+        ArrayNode pinnedSteps = pinnedConfig.putObject("scenario").putArray("steps");
+        pinnedSteps.addObject()
+                .put("id", "step-checkout")
+                .put("service", "api-gateway")
+                .put("method", "PUT")
+                .put("path", "/api/orders/checkout")
+                .put("expectedStatus", 200);
+        session.setScenarioConfig(pinnedConfig);
+
+        RunnerCorrelatedSpanDTO gwHeartbeat = RunnerCorrelatedSpanDTO.builder()
+                .traceId("11111111111111111111111111111111")
+                .spanId("aaaa000000000001")
+                .runtimeService("api-gateway")
+                .modelServiceId(gatewayId.toString())
+                .startTimeUnixNano("1793542780000000000")
+                .durationNanoseconds("5000000")
+                .build();
+        RunnerCorrelatedSpanDTO eurekaServer = RunnerCorrelatedSpanDTO.builder()
+                .traceId("11111111111111111111111111111111")
+                .spanId("aaaa000000000002")
+                .parentSpanId("aaaa000000000001")
+                .runtimeService("service-discovery")
+                .modelServiceId(discoveryId.toString())
+                .startTimeUnixNano("1793542780001000000")
+                .durationNanoseconds("4000000")
+                .build();
+
+        RunnerCorrelatedSpanDTO gwEntry = RunnerCorrelatedSpanDTO.builder()
+                .traceId("22222222222222222222222222222222")
+                .spanId("bbbb000000000001")
+                .parentSpanId("0000000000000099")
+                .runtimeService("api-gateway")
+                .modelServiceId(gatewayId.toString())
+                .scenarioStepId("step-checkout")
+                .startTimeUnixNano("1793542785000000000")
+                .durationNanoseconds("30000000")
+                .build();
+        RunnerCorrelatedSpanDTO orderDownstream = RunnerCorrelatedSpanDTO.builder()
+                .traceId("22222222222222222222222222222222")
+                .spanId("bbbb000000000002")
+                .parentSpanId("bbbb000000000001")
+                .runtimeService("order-service")
+                .modelServiceId(serviceAId.toString())
+                .scenarioStepId("step-checkout")
+                .startTimeUnixNano("1793542785005000000")
+                .durationNanoseconds("20000000")
+                .build();
+
+        RunnerTraceCorrelationDTO trace = RunnerTraceCorrelationDTO.builder()
+                .sessionId(sessionId.toString())
+                .modelVersionId(modelVersionId.toString())
+                .spans(List.of(gwHeartbeat, eurekaServer, gwEntry, orderDownstream))
+                .causalEdges(List.of(
+                        new RunnerCausalEdgeDTO("11111111111111111111111111111111", "aaaa000000000001", "aaaa000000000002"),
+                        new RunnerCausalEdgeDTO("22222222222222222222222222222222", "bbbb000000000001", "bbbb000000000002")))
+                .build();
+
+        RunnerOutcomeDTO outcome = RunnerOutcomeDTO.builder()
+                .executionStatus("Completed")
+                .scenarioStatus("Passed")
+                .evidenceStatus("Available")
+                .cleanupStatus("Confirmed")
+                .traceQuality("Complete")
+                .mappingStatus("Mapped")
+                .trace(trace)
+                .build();
+
+        runnerReceiptIngestService.ingestRunnerReceiptAck(
+                sessionId,
+                createValidReceiptBuilder().imageSourceCorrespondence("Verified").outcome(outcome).build());
+
+        ArgumentCaptor<DiagramVersion> diagCaptor = ArgumentCaptor.forClass(DiagramVersion.class);
+        verify(diagramVersionRepository, atLeastOnce()).save(diagCaptor.capture());
+        List<DiagramVersion> savedDiagrams = diagCaptor.getAllValues();
+        var steps = savedDiagrams.get(savedDiagrams.size() - 1).getLayoutJson().path("steps");
+        assertThat(steps).hasSize(1);
+        assertThat(steps.get(0).path("stepOrder").asInt()).isEqualTo(1);
+        assertThat(steps.get(0).path("callerService").asText()).isEqualTo("api-gateway");
+        assertThat(steps.get(0).path("calleeService").asText()).isEqualTo("order-service");
+        assertThat(steps.get(0).path("httpMethod").asText()).isEqualTo("PUT");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelRelationship>> relCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository, atLeastOnce()).saveAll(relCaptor.capture());
+        List<ModelRelationship> lastSavedRels = relCaptor.getAllValues().get(relCaptor.getAllValues().size() - 1);
+        assertThat(lastSavedRels)
+                .filteredOn(r -> "RUNTIME".equals(r.getOriginLayer()) || "STATIC_AND_RUNTIME".equals(r.getOriginLayer()))
+                .extracting(r -> r.getSourceElement().getName() + "->" + r.getTargetElement().getName())
+                .containsExactly("api-gateway->order-service");
+        assertThat(steps.get(0).path("operation").asText()).isEqualTo("/api/orders/checkout");
     }
 }

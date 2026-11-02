@@ -814,11 +814,12 @@ public class RuntimePlanningService {
   prompt.append("Design a TOP-DOWN, STATEFUL, END-TO-END Business Journey scenario (max 10 steps) using ONLY the allowed services and discovered endpoints below.\n");
   prompt.append("CRITICAL DESIGN RULES:\n");
   prompt.append("1. DO NOT generate isolated, naive per-table CRUD loops (avoid calling DELETE on seeded entities right after creating them unless testing a compensation/cancellation workflow).\n");
-  prompt.append("2. Follow a Top-Down Business Journey across services:\n");
-  prompt.append("   - Phase 0 (AUTH_ENTRY): If auth/register/login endpoints exist and downstream routes require auth, authenticate first and extract AUTH_TOKEN.\n");
-  prompt.append("   - Phase 1 (PREREQUISITE_SEED): Seed prerequisite master data (e.g. organization/department/catalog/inventory/account) via POST and extract created IDs/codes using `extract`.\n");
-  prompt.append("   - Phase 2 (CROSS_SERVICE_WORKFLOW): Invoke high-fan-out Gateway/Orchestrator business actions (e.g. checkout, order creation, payment, transfer, booking) referencing extracted `{{VAR}}` values in `path` or `sampleJsonBody` to trigger cross-service OpenTelemetry spans.\n");
-  prompt.append("   - Phase 3 (STATE_VERIFICATION): Verify side effects and state transitions across downstream services using GET with `{{VAR}}`.\n");
+  prompt.append("2. Group consecutive steps into cohesive FUNCTIONAL FEATURE CLUSTERS based on the project's actual domain and controllers, following a Top-Down Business Journey:\n");
+  prompt.append("   - Cluster 0 (AUTH_ENTRY): If auth/register/login/profile endpoints exist and downstream routes require auth, group them into an Auth & Identity cluster first and extract AUTH_TOKEN.\n");
+  prompt.append("   - Cluster 1 (PREREQUISITE_SEED): Group prerequisite master-data creation & lookup APIs by business domain (e.g. Catalog & Inventory, Organization & Department, Account Setup) via POST and extract created IDs/codes using `extract`.\n");
+  prompt.append("   - Cluster 2 (CROSS_SERVICE_WORKFLOW): Group high-fan-out Gateway/Orchestrator transactional APIs by business capability (e.g. Order & Coupon Checkout, Payment & Billing, Booking/Transfer) referencing extracted `{{VAR}}` values in `path` or `sampleJsonBody` to trigger cross-service OpenTelemetry spans.\n");
+  prompt.append("   - Cluster 3 (STATE_VERIFICATION): Verify side effects and state transitions across downstream services using GET with `{{VAR}}`.\n");
+  prompt.append("   - Set `journeyPhase` on each step to `<PHASE_CODE>: <Domain Feature Cluster Name>` (e.g. `AUTH_ENTRY: Auth & User Identity`, `PREREQUISITE_SEED: Catalog & Inventory`, `CROSS_SERVICE_WORKFLOW: Order & Coupon Checkout`, `STATE_VERIFICATION: Order & Payment Verification`). Steps belonging to the same functional feature cluster MUST share the exact same `<Domain Feature Cluster Name>`.\n");
   prompt.append("3. Stateful Variable Chaining: When a POST step returns JSON fields (see `responseFields`), you may attach `\"extract\": {\"ORDER_ID\": \"/id\"}` (variable names MUST match `[A-Z][A-Z0-9_]*`, pointers MUST start with `/`), and reference `{{ORDER_ID}}` in subsequent steps' `path`, `sampleJsonBody`, or `headers`.\n");
   prompt.append("4. Respect `validationHints` and `dtoSample` so every POST/PUT/PATCH body passes Bean Validation (@NotBlank, @Email, @Positive, etc.) on the first try.\n");
   prompt.append("Allowed services: ").append(String.join(", ",allowedServices)).append("\n");
@@ -860,8 +861,8 @@ public class RuntimePlanningService {
           "method": "GET|POST|PUT|PATCH|DELETE",
           "path": "/concrete/path/or/chained/{{ENTITY_ID}}",
           "expectedStatus": 200,
-          "journeyPhase": "AUTH_ENTRY|PREREQUISITE_SEED|CROSS_SERVICE_WORKFLOW|STATE_VERIFICATION",
-          "rationale": "1-line architectural reason for this step",
+          "journeyPhase": "AUTH_ENTRY: Auth & User Identity",
+          "rationale": "1-line architectural reason explaining why this step is called in this cluster and what data it produces/consumes",
           "sampleJsonBody": "{\\"optional\\":\\"sample\\"}",
           "headers": {"Authorization": "Bearer {{AUTH_TOKEN}}"},
           "extract": {"ENTITY_ID": "/id"}
@@ -1092,7 +1093,8 @@ public class RuntimePlanningService {
    }
    List<Map<String,String>> stepEnvHeaders=null;
    String phase=item.path("journeyPhase").asText(matchedEp!=null&&matchedEp.getJourneyRole()!=null?matchedEp.getJourneyRole():inferJourneyPhase(matchedEp!=null?matchedEp:DetectedEndpointDTO.builder().service(svc).method(verb).path(rawPath).build()));
-   boolean needsAuth=(matchedEp!=null&&Boolean.TRUE.equals(matchedEp.getRequiresAuth())&&!"AUTH_ENTRY".equals(phase))||aiRequestedAuthHeader;
+   boolean isAuthPhase=phase!=null&&(phase.equalsIgnoreCase("AUTH_ENTRY")||phase.toUpperCase(Locale.ROOT).startsWith("AUTH_ENTRY:")||phase.toUpperCase(Locale.ROOT).startsWith("AUTH_IDENTITY"));
+   boolean needsAuth=(matchedEp!=null&&Boolean.TRUE.equals(matchedEp.getRequiresAuth())&&!isAuthPhase)||aiRequestedAuthHeader;
    if(needsAuth&&!stepHeaders.containsKey("Authorization")){
     if(sandboxBearer!=null){
      String authRef=serviceKey+"_AUTHORIZATION";
@@ -1113,13 +1115,13 @@ public class RuntimePlanningService {
      if(!ek.isEmpty()&&ptr.startsWith("/")&&ptr.length()<=512){
       stepExtract.put(ek,ptr);
       availableExtractedVars.add(ek);
-      if(!resRoot.isEmpty()&&!"AUTH_ENTRY".equals(phase)){
+      if(!resRoot.isEmpty()&&!isAuthPhase){
        extractedByResource.putIfAbsent(resRoot,ek);
       }
      }
     });
    }
-   if("POST".equals(verb)&&!"AUTH_ENTRY".equals(phase)&&stepExtract.isEmpty()&&matchedEp!=null&&matchedEp.getResponseFields()!=null&&!resRoot.isEmpty()){
+   if("POST".equals(verb)&&!isAuthPhase&&stepExtract.isEmpty()&&matchedEp!=null&&matchedEp.getResponseFields()!=null&&!resRoot.isEmpty()){
     String idPtr=findMatchingPointer(matchedEp.getResponseFields(),List.of("id",resRoot.toLowerCase(Locale.ROOT)+"id","code","sku","orderid","productid"));
     if(idPtr!=null){
      String varName=toScenarioEnvKey(resRoot+"_ID");
@@ -2080,7 +2082,7 @@ public class RuntimePlanningService {
     if(serviceBindings.getOrDefault(svc,Map.of()).containsKey(key))continue;
     String val=ComposePreflightValidator.databaseCredentialFor(key,svc,perServiceCreds,pre.getServiceDependencies(),credentials);
     if(val==null&&secret&&ComposePreflightValidator.isGeneratableSandboxSecret(key)){
-     if(sharedGenerated==null)sharedGenerated=randomSecretFor(key,rsaPair);
+     if(sharedGenerated==null)sharedGenerated=randomSecretFor(key,rsaPair);val=sharedGenerated;}else if(val==null&&secret&&"EXTERNAL".equals(v.getScope())&&v.getSource()!=null&&!"STATIC_MODEL".equals(v.getSource())){if(sharedGenerated==null)sharedGenerated="sandbox-dummy-api-key";
      val=sharedGenerated;
     }
     if(val!=null){

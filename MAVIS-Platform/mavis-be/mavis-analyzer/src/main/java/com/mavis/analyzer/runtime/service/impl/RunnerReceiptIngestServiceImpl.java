@@ -546,6 +546,31 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 ? trace.getCausalEdges()
                 : Collections.emptyList();
 
+        boolean hasExternalRootSpan = !spans.isEmpty() && !externalRootStepByTraceParent.isEmpty()
+                && spans.stream().anyMatch(s -> s.getTraceId() != null
+                        && s.getParentSpanId() != null
+                        && externalRootStepByTraceParent.containsKey((s.getTraceId() + ":" + s.getParentSpanId()).toLowerCase(Locale.ROOT)));
+        boolean hasNonRegistryInteraction = interactions.stream().anyMatch(ia -> {
+            RunnerCorrelatedSpanDTO ps = spanMap.get((ia.getTraceId() + ":" + ia.getParentSpanId()).toLowerCase(Locale.ROOT));
+            RunnerCorrelatedSpanDTO cs = spanMap.get((ia.getTraceId() + ":" + ia.getChildSpanId()).toLowerCase(Locale.ROOT));
+            String fs = ia.getFromService() != null ? ia.getFromService() : (ps != null ? ps.getRuntimeService() : null);
+            String ts = ia.getToService() != null ? ia.getToService() : (cs != null ? cs.getRuntimeService() : null);
+            return !isDiscoveryOrConfigRegistryService(fs) && !isDiscoveryOrConfigRegistryService(ts);
+        }) || causalEdges.stream().anyMatch(ea -> {
+            RunnerCorrelatedSpanDTO ps = spanMap.get((ea.getTraceId() + ":" + ea.getParentSpanId()).toLowerCase(Locale.ROOT));
+            RunnerCorrelatedSpanDTO cs = spanMap.get((ea.getTraceId() + ":" + ea.getChildSpanId()).toLowerCase(Locale.ROOT));
+            return ps != null && cs != null
+                    && !isDiscoveryOrConfigRegistryService(ps.getRuntimeService())
+                    && !isDiscoveryOrConfigRegistryService(cs.getRuntimeService());
+        }) || spans.stream().anyMatch(cs -> {
+            if (cs.getParentSpanId() == null) return false;
+            RunnerCorrelatedSpanDTO ps = spanMap.get((cs.getTraceId() + ":" + cs.getParentSpanId()).toLowerCase(Locale.ROOT));
+            return ps != null
+                    && !isDiscoveryOrConfigRegistryService(ps.getRuntimeService())
+                    && !isDiscoveryOrConfigRegistryService(cs.getRuntimeService());
+        });
+        boolean skipRegistryNoise = hasNonRegistryInteraction || hasExternalRootSpan;
+
         if (!interactions.isEmpty()) {
             List<Integer> orderedIndices = new ArrayList<>(interactions.size());
             for (int i = 0; i < interactions.size(); i++) orderedIndices.add(i);
@@ -572,6 +597,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     ModelElement callee = resolveElement(toModelServiceId, toService, oldToNewElementMap, serviceNameToElementMap);
 
                     if (caller != null && callee != null && !caller.getId().equals(callee.getId())) {
+                        if (skipRegistryNoise && (isDiscoveryOrConfigRegistryService(caller.getName()) || isDiscoveryOrConfigRegistryService(callee.getName()))) {
+                            continue;
+                        }
                         Long durationMs = childSpan != null ? parseDurationMs(childSpan.getDurationNanoseconds()) : null;
                         InteractionPersistenceResult persisted = processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs != null ? durationMs : 0L, trace, outcome, relByPairKey, newRelationships, newEvidences);
                         if (parentSpan != null && childSpan != null) {
@@ -606,6 +634,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                         ModelElement callee = resolveElement(childSpan.getModelServiceId(), childSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
 
                         if (caller != null && callee != null && !caller.getId().equals(callee.getId())) {
+                            if (skipRegistryNoise && (isDiscoveryOrConfigRegistryService(caller.getName()) || isDiscoveryOrConfigRegistryService(callee.getName()))) {
+                                continue;
+                            }
                             Long durationMs = parseDurationMs(childSpan.getDurationNanoseconds());
                             InteractionPersistenceResult persisted = processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs != null ? durationMs : 0L, trace, outcome, relByPairKey, newRelationships, newEvidences);
                             int ord = stepOrder++;
@@ -633,6 +664,9 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                             ModelElement callee = resolveElement(childSpan.getModelServiceId(), childSpan.getRuntimeService(), oldToNewElementMap, serviceNameToElementMap);
 
                             if (caller != null && callee != null && !caller.getId().equals(callee.getId())) {
+                                if (skipRegistryNoise && (isDiscoveryOrConfigRegistryService(caller.getName()) || isDiscoveryOrConfigRegistryService(callee.getName()))) {
+                                    continue;
+                                }
                                 Long durationMs = parseDurationMs(childSpan.getDurationNanoseconds());
                                 InteractionPersistenceResult persisted = processInteraction(enrichedVersion, session, caller, callee, childSpan, durationMs != null ? durationMs : 0L, trace, outcome, relByPairKey, newRelationships, newEvidences);
                                 int ord = stepOrder++;
@@ -644,6 +678,30 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                         }
                     }
                 }
+            }
+        }
+
+        if (!sequenceSteps.isEmpty()) {
+            boolean hasBusinessSteps = sequenceSteps.stream().anyMatch(s -> !isDiscoveryOrConfigRegistryStep(s));
+            if (hasBusinessSteps) {
+                List<CausalStepRecord> filtered = new ArrayList<>(sequenceSteps.size());
+                Map<String, String> oldToNewMsgId = new HashMap<>();
+                int nextOrd = 1;
+                for (CausalStepRecord s : sequenceSteps) {
+                    if (isDiscoveryOrConfigRegistryStep(s)) continue;
+                    String newMsgId = "msg-obs-" + nextOrd;
+                    oldToNewMsgId.put(s.messageId, newMsgId);
+                    List<String> remappedParents = s.causalParentMessageIds == null ? Collections.emptyList()
+                            : s.causalParentMessageIds.stream().map(oldToNewMsgId::get).filter(Objects::nonNull).toList();
+                    filtered.add(new CausalStepRecord(nextOrd++, newMsgId, s.parentSpan, s.childSpan, s.durationMs,
+                            s.caller, s.callee, s.relationship, s.evidence, remappedParents));
+                }
+                sequenceSteps.clear();
+                sequenceSteps.addAll(filtered);
+                stepOrder = nextOrd;
+            } else if (hasExternalRootSpan) {
+                sequenceSteps.clear();
+                stepOrder = 1;
             }
         }
 
@@ -762,6 +820,14 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     if (stepId != null) {
                         directEntryPinnedStep = pinnedStepById.get(stepId);
                     }
+                }
+            }
+            if (directEntryPinnedStep == null && step.childSpan.getScenarioStepId() != null) {
+                JsonNode candidatePinned = pinnedStepById.get(step.childSpan.getScenarioStepId());
+                if (candidatePinned != null && resolvedCallerName != null
+                        && (resolvedCallerName.toLowerCase(Locale.ROOT).contains("gateway")
+                                || resolvedCallerName.equalsIgnoreCase(candidatePinned.path("service").asText("")))) {
+                    directEntryPinnedStep = candidatePinned;
                 }
             }
 
@@ -1374,6 +1440,26 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     && latest.getCreatedAt().isAfter(session.getCreatedAt()));
         }
         return false;
+    }
+
+    private static boolean isDiscoveryOrConfigRegistryStep(CausalStepRecord step) {
+        if (step == null) return false;
+        String callerName = step.caller != null && step.caller.getName() != null ? step.caller.getName()
+                : (step.parentSpan != null ? step.parentSpan.getRuntimeService() : null);
+        String calleeName = step.callee != null && step.callee.getName() != null ? step.callee.getName()
+                : (step.childSpan != null ? step.childSpan.getRuntimeService() : null);
+        return isDiscoveryOrConfigRegistryService(callerName) || isDiscoveryOrConfigRegistryService(calleeName);
+    }
+
+    private static boolean isDiscoveryOrConfigRegistryService(String name) {
+        if (name == null) return false;
+        String lower = name.trim().toLowerCase(Locale.ROOT);
+        return lower.equals("service-discovery")
+                || lower.equals("discovery-service")
+                || lower.equals("eureka-server")
+                || lower.equals("eureka")
+                || lower.equals("config-server")
+                || lower.equals("consul");
     }
 
     private ModelElement resolveContainer(ModelElement element) {

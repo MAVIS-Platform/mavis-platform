@@ -190,4 +190,42 @@ class SandboxImageBuilderServiceTest {
         Map<String, String> discovered = builder.discoverExistingBuiltImages(projectId, List.of("catalog-service", "missing-svc"));
         assertThat(discovered).containsOnlyKeys("catalog-service").containsEntry("catalog-service", fakeDigest);
     }
+
+    @Test
+    void autoSynthesizesMissingDockerfileInMultiModuleMavenReactor(@TempDir Path tempDir) throws Exception {
+        UUID projectId = UUID.randomUUID();
+        Files.writeString(tempDir.resolve("pom.xml"), "<project><modules><module>order-service</module></modules></project>");
+        Path orderDir = Files.createDirectories(tempDir.resolve("order-service/src/main/java"));
+        Files.writeString(tempDir.resolve("order-service/pom.xml"), "<project><parent><groupId>demo</groupId><artifactId>root</artifactId><version>1.0</version></parent></project>");
+        Files.writeString(orderDir.resolve("App.java"), "class App {}");
+
+        List<String> builtDockerfiles = new ArrayList<>();
+        List<Path> builtContexts = new ArrayList<>();
+        String fakeDigest = "sha256:" + "9".repeat(64);
+        SandboxImageBuilderService builder = new SandboxImageBuilderService() {
+            @Override
+            protected String runDockerBuild(UUID projId, String tag, Path dockerfile, Path contextDir, String target, Map<String, String> buildArgs) {
+                try {
+                    builtDockerfiles.add(Files.readString(dockerfile));
+                    builtContexts.add(contextDir);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+                return null;
+            }
+
+            @Override
+            protected String inspectImageId(String tag) {
+                return fakeDigest;
+            }
+        };
+
+        SandboxImageBuilderService.BuildImagesResult built = builder.buildSnapshotImages(projectId, tempDir, List.of("order-service"));
+        assertThat(built.errors()).isEmpty();
+        assertThat(built.builtImages()).containsEntry("order-service", fakeDigest);
+        assertThat(builtDockerfiles).singleElement().satisfies(df -> {
+            assertThat(df).contains("mvn clean package -pl order-service -am -DskipTests -B");
+            assertThat(df).contains("/mavis_build/order-service/target/*.jar");
+        });
+    }
 }

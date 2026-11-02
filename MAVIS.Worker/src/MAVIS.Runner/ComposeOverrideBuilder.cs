@@ -58,8 +58,11 @@ public static class ComposeOverrideBuilder
                     environment["JAVA_TOOL_OPTIONS"] = "-javaagent:/mavis-otel/java/opentelemetry-javaagent.jar -XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0";
                     // Ensure OTel Java agent stays active for JEP-330 single-file `java Server.java` launchers.
                     environment["OTEL_JAVAAGENT_ENABLED"] = "true";
-                    // Air-gapped internal network blocks outbound SMTP; prevent MailHealthIndicator from failing /actuator/health with 503.
+                    // Air-gapped read-only sandbox: prevent Actuator health contributors from failing /actuator/health with 503.
                     environment["MANAGEMENT_HEALTH_MAIL_ENABLED"] = "false";
+                    environment["MANAGEMENT_HEALTH_DISKSPACE_ENABLED"] = "false";
+                    environment["MANAGEMENT_ENDPOINT_HEALTH_STATUS_HTTP_MAPPING_DOWN"] = "200";
+                    environment["MANAGEMENT_ENDPOINT_HEALTH_STATUS_HTTP_MAPPING_OUT_OF_SERVICE"] = "200";
                     config["volumes"] = new[] { new { type = "volume", source = "mavis-instrumentation", target = "/mavis-otel", read_only = true } };
                 }
                 else if (app.Runtime == "dotnet8-linux-x64-glibc")

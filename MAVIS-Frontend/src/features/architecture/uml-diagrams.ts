@@ -1235,6 +1235,7 @@ export function projectUmlDeploymentDiagram(
     if (
       [
         "SERVICE_HTTP_CALL",
+        "RUNTIME_OBSERVED",
         "CONFIGURATION_DEPENDENCY", "SERVICE_DISCOVERY", "TRACING_EXPORT", "GATEWAY_ROUTE", "CONFIGURED_ENDPOINT",
         "DATABASE_ACCESS",
         "DATABASE_QUERY",
@@ -1261,8 +1262,8 @@ export function projectUmlDeploymentDiagram(
         targetElem?.properties?.["protocol"] ??
         "TCP/DB";
       const protocolName =
-        ["SERVICE_HTTP_CALL", "CONFIGURATION_DEPENDENCY", "SERVICE_DISCOVERY", "TRACING_EXPORT", "GATEWAY_ROUTE", "CONFIGURED_ENDPOINT"].includes(edge.protocol)
-          ? edge.protocol === "SERVICE_HTTP_CALL" ? "HTTP" : edge.protocol
+        ["SERVICE_HTTP_CALL", "RUNTIME_OBSERVED", "CONFIGURATION_DEPENDENCY", "SERVICE_DISCOVERY", "TRACING_EXPORT", "GATEWAY_ROUTE", "CONFIGURED_ENDPOINT"].includes(edge.protocol)
+          ? edge.protocol === "SERVICE_HTTP_CALL" || edge.protocol === "RUNTIME_OBSERVED" ? "HTTP" : edge.protocol
           : edge.protocol === "DATABASE_ACCESS" || edge.protocol === "DATABASE_QUERY"
             ? String(resolvedDbProtocol).toUpperCase()
             : String(targetElem?.properties?.["protocol"] ?? "MESSAGING").toUpperCase();
@@ -2417,7 +2418,7 @@ function discoverBusinessFlowActivities(
     if (
       edge.uncertain ||
       edge.originLayer === "DEPLOYMENT" ||
-      !/^(HTTP|HTTPS|REST|GRPC|SERVICE_HTTP_CALL|MESSAGE_PUBLISH|MESSAGE_SUBSCRIBE)$/i.test(
+      !/^(HTTP|HTTPS|REST|GRPC|SERVICE_HTTP_CALL|RUNTIME_OBSERVED|GATEWAY_ROUTE|MESSAGE_PUBLISH|MESSAGE_SUBSCRIBE)$/i.test(
         edge.protocol,
       )
     )

@@ -69,7 +69,7 @@ public static class TraceCorrelator
         {
             if (span.ParentSpanId is null) continue;
             var parent = (span.TraceId, span.ParentSpanId);
-            if (!spans.ContainsKey(parent)) { warnings.Add("MISSING_PARENT_SPAN"); continue; }
+            if (!spans.ContainsKey(parent)) { if (traceSteps?.ContainsKey(span.TraceId) != true) warnings.Add("MISSING_PARENT_SPAN"); continue; }
             if (!children.TryGetValue(parent, out var list)) children[parent] = list = [];
             list.Add(key); pending[key]++;
             edges.Add(new(span.TraceId, span.ParentSpanId, span.SpanId));

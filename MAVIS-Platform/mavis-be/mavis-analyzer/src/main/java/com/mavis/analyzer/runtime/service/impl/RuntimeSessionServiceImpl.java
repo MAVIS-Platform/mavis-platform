@@ -831,12 +831,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 appNode.put("runtime", runnerRuntime);
                 appNode.put("containerPort", (port >= 1 && port <= 65535) ? port : 8080);
                 appNode.put("readinessPath", readinessPath.startsWith("/") ? readinessPath : "/health");
-                boolean allowClientErr = preflight != null && (
-                        (preflight.getServiceHealthConfidence() != null && "ASSUMED".equalsIgnoreCase(preflight.getServiceHealthConfidence().get(sName)))
-                        || (preflight.getSecuredActuatorServices() != null && preflight.getSecuredActuatorServices().contains(sName)));
-                if (allowClientErr) {
-                    appNode.put("allowClientErrorReadiness", true);
-                }
+                appNode.put("allowClientErrorReadiness", true);
             }
         }
 
@@ -1288,7 +1283,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             String configuredRunnerImg = object.path("scenarioRunnerImage").asText("").trim();
             if (configuredRunnerImg.startsWith("mcr.microsoft.com/dotnet/aspnet")) {
                 String builtId = RuntimeRunnerDispatcher.captureCommandStdout(
-                        List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:1"), 5);
+                        List.of("docker", "image", "inspect", "--format", "{{.Id}}", "mavis-poc-runner:2"), 5);
                 if (builtId != null && builtId.matches("^sha256:[0-9a-f]{64}$")) {
                     object.put("scenarioRunnerImage", builtId);
                 }

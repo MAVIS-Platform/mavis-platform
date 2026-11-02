@@ -78,7 +78,7 @@ public class ComposePreflightValidator {
     private static final List<String> REDIS_PASSWORD_VARS = List.of("REDIS_PASSWORD", "SPRING_DATA_REDIS_PASSWORD", "SPRING_REDIS_PASSWORD");
     private static final List<String> DB_NAME_KEYS = List.of("POSTGRES_DB", "MYSQL_DATABASE", "MARIADB_DATABASE", "MONGO_INITDB_DATABASE");
     private static final List<String> EXTERNAL_SECRET_MARKERS = List.of("OPENAI", "GEMINI", "ANTHROPIC", "CLAUDE", "AZURE", "AWS_",
-            "GOOGLE", "GCP", "STRIPE", "PAYPAL", "TWILIO", "SENDGRID", "MAILGUN", "SMTP", "MAIL_", "SLACK", "GITHUB", "DISCORD",
+            "GOOGLE", "GCP", "STRIPE", "PAYPAL", "TWILIO", "SENDGRID", "MAILGUN", "SLACK", "GITHUB", "DISCORD",
             "FIREBASE", "CLOUDINARY", "S3_", "MAPS", "OAUTH", "CLIENT_SECRET", "API_KEY", "APIKEY", "ACCESS_KEY", "DASHSCOPE",
             "HUGGINGFACE", "DEEPSEEK", "MISTRAL", "COHERE");
 
@@ -2665,6 +2665,9 @@ public class ComposePreflightValidator {
         if (cleanName.startsWith("OTEL_") || cleanName.startsWith("JAVA_TOOL_OPTIONS")) return;
         String category = classifyEnvCategory(cleanName);
         boolean secret = "DB_SECRET".equals(category) || "SECRET".equals(category);
+        if (!secret && (defaultValue == null || defaultValue.isBlank())) {
+            defaultValue = sandboxFallbackEnvDefault(cleanName);
+        }
         boolean hasDefault = defaultValue != null && !defaultValue.isBlank();
         String cleanService = service != null && !service.isBlank() ? service.trim() : "global";
         RequiredEnvVarDTO existing = envVarMap.get(cleanName);
@@ -2712,6 +2715,17 @@ public class ComposePreflightValidator {
     public static String classifySecretScope(String name) {
         String u = name == null ? "" : name.toUpperCase(Locale.ROOT);
         return EXTERNAL_SECRET_MARKERS.stream().anyMatch(u::contains) ? "EXTERNAL" : "SANDBOX";
+    }
+
+    public static String sandboxFallbackEnvDefault(String name) {
+        if (name == null) return null;
+        return switch (name.trim().toUpperCase(Locale.ROOT)) {
+            case "MAIL_HOST", "SMTP_HOST", "SPRING_MAIL_HOST" -> "localhost";
+            case "MAIL_PORT", "SMTP_PORT", "SPRING_MAIL_PORT" -> "1025";
+            case "MAIL_USERNAME", "SMTP_USERNAME", "SPRING_MAIL_USERNAME", "MAIL_FROM", "SMTP_FROM" -> "sandbox@mavis.local";
+            case "APP_URL", "FRONTEND_URL", "CLIENT_URL", "ALLOWED_ORIGINS", "CORS_ALLOWED_ORIGINS" -> "http://localhost:3000";
+            default -> null;
+        };
     }
 
     /** Sandbox secrets that are plain random material (passwords, signing keys), never URLs or connection strings. */
@@ -3512,18 +3526,35 @@ public class ComposePreflightValidator {
         return !lower.endsWith(".bak") && !lower.endsWith(".orig") && !lower.contains("test");
     }
 
+    private static boolean isBuildableManifestName(String baseName) {
+        if (baseName == null) return false;
+        String lower = baseName.toLowerCase(Locale.ROOT);
+        if (lower.equals("pom.xml") || lower.equals("build.gradle") || lower.equals("build.gradle.kts")) return true;
+        return lower.endsWith(".csproj") && !lower.contains("test");
+    }
+
     public static List<DiscoveredDockerfile> discoverDockerfilesInDirectory(Path root) {
         if (root == null || !Files.isDirectory(root)) return List.of();
         List<String> relPaths = new ArrayList<>();
+        List<String> manifestDirs = new ArrayList<>();
         try (Stream<Path> stream = Files.walk(root, 6)) {
             stream.filter(Files::isRegularFile)
                     .forEach(p -> {
                         String rel = root.relativize(p).toString().replace('\\', '/');
-                        if (!isIgnoredArchiveEntry(rel) && isCandidateDockerfileName(p.getFileName().toString())) {
+                        String fileName = p.getFileName().toString();
+                        if (isIgnoredArchiveEntry(rel)) return;
+                        if (isCandidateDockerfileName(fileName)) {
                             relPaths.add(rel);
+                        } else if (isBuildableManifestName(fileName)) {
+                            Path parent = p.getParent();
+                            if (parent != null && (fileName.toLowerCase(Locale.ROOT).endsWith(".csproj") || Files.isDirectory(parent.resolve("src")))) {
+                                String relDir = root.relativize(parent).toString().replace('\\', '/');
+                                manifestDirs.add(relDir.isEmpty() ? "Dockerfile" : relDir + "/Dockerfile");
+                            }
                         }
                     });
         } catch (IOException ignored) {}
+        appendMissingManifestDockerfiles(relPaths, manifestDirs);
         return buildDiscoveredDockerfiles(relPaths, false);
     }
 
@@ -3536,20 +3567,53 @@ public class ComposePreflightValidator {
             return List.of();
         }
         List<String> relPaths = new ArrayList<>();
+        List<String> manifestFiles = new ArrayList<>();
+        Set<String> dirsWithSrc = new HashSet<>();
         try (ZipFile zipFile = new ZipFile(storagePath.toFile())) {
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
             while (entries.hasMoreElements() && relPaths.size() < 200) {
                 ZipEntry entry = entries.nextElement();
-                if (entry.isDirectory()) continue;
                 String entryName = entry.getName().replace('\\', '/');
                 if (isIgnoredArchiveEntry(entryName)) continue;
+                int srcIdx = entryName.indexOf("/src/");
+                if (srcIdx > 0) dirsWithSrc.add(entryName.substring(0, srcIdx));
+                else if (entryName.startsWith("src/")) dirsWithSrc.add(".");
+                if (entry.isDirectory()) continue;
                 String baseName = entryName.contains("/") ? entryName.substring(entryName.lastIndexOf('/') + 1) : entryName;
                 if (isCandidateDockerfileName(baseName)) {
                     relPaths.add(entryName);
+                } else if (isBuildableManifestName(baseName)) {
+                    manifestFiles.add(entryName);
                 }
             }
         } catch (Exception ignored) {}
+        List<String> manifestDirs = new ArrayList<>();
+        for (String mf : manifestFiles) {
+            int slash = mf.lastIndexOf('/');
+            String dir = slash >= 0 ? mf.substring(0, slash) : ".";
+            String base = slash >= 0 ? mf.substring(slash + 1) : mf;
+            if (base.toLowerCase(Locale.ROOT).endsWith(".csproj") || dirsWithSrc.contains(dir)) {
+                manifestDirs.add(".".equals(dir) ? "Dockerfile" : dir + "/Dockerfile");
+            }
+        }
+        appendMissingManifestDockerfiles(relPaths, manifestDirs);
         return buildDiscoveredDockerfiles(relPaths, true);
+    }
+
+    private static void appendMissingManifestDockerfiles(List<String> relPaths, List<String> manifestDockerfiles) {
+        if (manifestDockerfiles == null || manifestDockerfiles.isEmpty()) return;
+        Set<String> coveredDirs = new HashSet<>();
+        for (String p : relPaths) {
+            int slash = p.lastIndexOf('/');
+            coveredDirs.add(slash >= 0 ? p.substring(0, slash) : ".");
+        }
+        for (String cand : manifestDockerfiles) {
+            int slash = cand.lastIndexOf('/');
+            String dir = slash >= 0 ? cand.substring(0, slash) : ".";
+            if (coveredDirs.add(dir)) {
+                relPaths.add(cand);
+            }
+        }
     }
 
     private static List<DiscoveredDockerfile> buildDiscoveredDockerfiles(List<String> rawRelPaths, boolean stripArchiveRootFromContext) {
@@ -4237,6 +4301,43 @@ public class ComposePreflightValidator {
                     check.setStatus("DETECTED_CONTAINER");
                     topologyChanges.add("Wired missing Kafka bootstrap '" + kafkaSvc + ":9092' on '" + appSvc + "'");
                     changed = true;
+                }
+            }
+        }
+
+        // 2b. When a DB container has a stripped host .sql / docker-entrypoint-initdb.d bind-mount, auto-enable JPA schema creation on dependent Java services
+        Set<String> dbsWithInitSqlMount = new LinkedHashSet<>();
+        for (Map.Entry<String, Object> e : servicesMap.entrySet()) {
+            String svc = e.getKey();
+            if (!(e.getValue() instanceof Map<?, ?> cfg) || !(cfg.get("volumes") instanceof List<?> vols)) continue;
+            String img = cfg.get("image") != null ? String.valueOf(cfg.get("image")).toLowerCase(Locale.ROOT) : "";
+            if (!isDatabaseContainer(svc.toLowerCase(Locale.ROOT), img)) continue;
+            for (Object v : vols) {
+                String vs = String.valueOf(v).toLowerCase(Locale.ROOT);
+                if (vs.contains("docker-entrypoint-initdb.d") || vs.contains(".sql")) {
+                    dbsWithInitSqlMount.add(svc);
+                    break;
+                }
+            }
+        }
+        if (!dbsWithInitSqlMount.isEmpty()) {
+            for (Map.Entry<String, Object> e : servicesMap.entrySet()) {
+                String appSvc = e.getKey();
+                if (dbsWithInitSqlMount.contains(appSvc) || !(e.getValue() instanceof Map<?, ?> rawApp)) continue;
+                String stack = dto.getServiceStacks() != null ? dto.getServiceStacks().getOrDefault(appSvc, "java") : "java";
+                if (!"java".equals(stack)) continue;
+                if (dto.getMigrationManagedServices() != null && dto.getMigrationManagedServices().contains(appSvc)) continue;
+                Map<String, Object> appCfg = (Map<String, Object>) rawApp;
+                List<String> deps = new ArrayList<>(extractServiceDependencies(appCfg));
+                if (dto.getServiceDependencies() != null) deps.addAll(dto.getServiceDependencies().getOrDefault(appSvc, List.of()));
+                if (deps.stream().anyMatch(dbsWithInitSqlMount::contains)) {
+                    Map<String, String> appEnv = composeEnvironment(appCfg.get("environment"));
+                    if (!appEnv.containsKey("SPRING_JPA_HIBERNATE_DDL_AUTO")) {
+                        appEnv.put("SPRING_JPA_HIBERNATE_DDL_AUTO", "update");
+                        appCfg.put("environment", appEnv);
+                        topologyChanges.add("Enabled SPRING_JPA_HIBERNATE_DDL_AUTO=update on '" + appSvc + "' to replace stripped host SQL init mount");
+                        changed = true;
+                    }
                 }
             }
         }

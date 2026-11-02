@@ -24,7 +24,13 @@ import {
   isKnownInfraName,
   sanitizeServiceRoles,
 } from "./screens";
-import { boundRuntimeEnvironment, resolveRuntimeTargetModel } from "./scenario-suggestions";
+import {
+  boundRuntimeEnvironment,
+  classifyApiFeatureCluster,
+  resolveRuntimeTargetModel,
+  type ApiFeatureClusterId,
+  type ApiFeatureClusterMeta,
+} from "./scenario-suggestions";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { DetailPanel, StatusLabel } from "@/components/shared/data";
@@ -138,7 +144,18 @@ export function deriveWorkflowSteps(
   serviceMappings?: Record<string, string>,
 ): { steps: ObservedStepItem[]; mode: WorkflowMode } {
   if (observedSteps && observedSteps.length > 0) {
-    return { steps: observedSteps, mode: "OBSERVED" };
+    const isRegistryName = (name?: string | null) =>
+      /^(service-discovery|discovery-service|eureka-server|eureka|config-server|consul)$/i.test(
+        (name ?? "").trim(),
+      );
+    const businessSteps = observedSteps.filter(
+      (s) => !isRegistryName(s.callerService) && !isRegistryName(s.calleeService),
+    );
+    const activeSteps =
+      businessSteps.length > 0
+        ? businessSteps.map((s, idx) => ({ ...s, stepOrder: idx + 1 }))
+        : observedSteps;
+    return { steps: activeSteps, mode: "OBSERVED" };
   }
 
   const elements = modelData?.elements ?? [];
@@ -451,7 +468,19 @@ function RuntimeWorkflowTopologyCanvas({
   selectedService: string | null;
   onSelectService: (svc: string | null) => void;
 }) {
-  const { nodes, edges, width, height } = useMemo(() => {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [customPositions, setCustomPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [draggingNode, setDraggingNode] = useState<string | null>(null);
+  const dragRef = useRef<{
+    name: string;
+    offsetX: number;
+    offsetY: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+  } | null>(null);
+
+  const { baseNodes, edges, width, height } = useMemo(() => {
     const svcSet = new Set<string>();
     const edgeMap = new Map<
       string,
@@ -510,26 +539,45 @@ function RuntimeWorkflowTopologyCanvas({
     if (columns.length === 0) columns.push(["api-gateway"]);
 
     const maxRows = Math.max(1, ...columns.map((c) => c.length));
-    const svgW = Math.max(820, columns.length * 260 + 80);
-    const svgH = Math.max(300, maxRows * 115 + 80);
+    const svgW = Math.max(880, columns.length * 300 + 120);
+    const svgH = Math.max(340, maxRows * 130 + 90);
 
     const posMap = new Map<string, { x: number; y: number; tier: number }>();
     columns.forEach((col, colIdx) => {
-      const colX = 130 + colIdx * 250;
-      const totalColH = (col.length - 1) * 110;
+      const colX = 140 + colIdx * 290;
+      const totalColH = (col.length - 1) * 125;
       const startY = svgH / 2 - totalColH / 2;
       col.forEach((svc, rowIdx) => {
-        posMap.set(svc, { x: colX, y: startY + rowIdx * 110, tier: colIdx });
+        posMap.set(svc, { x: colX, y: startY + rowIdx * 125, tier: colIdx });
       });
     });
 
     return {
-      nodes: Array.from(posMap.entries()).map(([name, pos]) => ({ name, ...pos })),
+      baseNodes: Array.from(posMap.entries()).map(([name, pos]) => ({ name, ...pos })),
       edges: Array.from(edgeMap.values()),
       width: svgW,
       height: svgH,
     };
   }, [steps]);
+
+  const nodes = useMemo(
+    () =>
+      baseNodes.map((n) => {
+        const custom = customPositions[n.name];
+        return custom ? { ...n, x: custom.x, y: custom.y } : n;
+      }),
+    [baseNodes, customPositions],
+  );
+
+  const toSvgPoint = (clientX: number, clientY: number) => {
+    const svg = svgRef.current;
+    if (!svg) return { x: clientX, y: clientY };
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / Math.max(1, rect.width)) * width,
+      y: ((clientY - rect.top) / Math.max(1, rect.height)) * height,
+    };
+  };
 
   return (
     <div className="rounded-xl border border-emerald-500/30 bg-slate-950/90 p-4 space-y-3 shadow-md">
@@ -541,28 +589,42 @@ function RuntimeWorkflowTopologyCanvas({
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
             {planned
-              ? "PLANNED: built from your Step 2 requests and real model edges. Not executed yet, so no latency or status is shown."
-              : "OBSERVED: built from captured trace spans. Click a service node to filter the calls below."}
+              ? "PLANNED: built from your Step 2 requests and real model edges. Drag nodes to rearrange or click a node to filter."
+              : "OBSERVED: built from captured trace spans. Drag nodes to rearrange or click a service node to filter calls below."}
           </p>
         </div>
-        {selectedService && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs border-sky-500/40 text-sky-300"
-            onClick={() => onSelectService(null)}
-          >
-            ✕ Clear Filter ({selectedService})
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {Object.keys(customPositions).length > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-slate-700 text-slate-300 hover:bg-slate-800"
+              onClick={() => setCustomPositions({})}
+            >
+              ↺ Reset Layout
+            </Button>
+          )}
+          {selectedService && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs border-sky-500/40 text-sky-300"
+              onClick={() => onSelectService(null)}
+            >
+              ✕ Clear Filter ({selectedService})
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-800 bg-[#070d19] p-2">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
           width="100%"
-          style={{ minWidth: `${Math.min(width, 760)}px`, maxHeight: "420px" }}
+          style={{ maxHeight: "460px", touchAction: "none" }}
           className="font-mono select-none"
         >
           <defs>
@@ -665,6 +727,7 @@ function RuntimeWorkflowTopologyCanvas({
             const isRunner = isRunnerActor(node.name);
             const isGateway = node.name.toLowerCase().includes("gateway");
             const isSelected = selectedService === node.name;
+            const isDragging = draggingNode === node.name;
             const borderCol = isSelected
               ? "#facc15"
               : isRunner
@@ -681,8 +744,53 @@ function RuntimeWorkflowTopologyCanvas({
             return (
               <g
                 key={node.name}
-                style={{ cursor: "pointer" }}
-                onClick={() => onSelectService(isSelected ? null : node.name)}
+                style={{ cursor: isDragging ? "grabbing" : "grab" }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  const pt = toSvgPoint(e.clientX, e.clientY);
+                  dragRef.current = {
+                    name: node.name,
+                    offsetX: pt.x - node.x,
+                    offsetY: pt.y - node.y,
+                    startX: e.clientX,
+                    startY: e.clientY,
+                    moved: false,
+                  };
+                  setDraggingNode(node.name);
+                }}
+                onPointerMove={(e) => {
+                  const activeDrag = dragRef.current;
+                  if (!activeDrag || activeDrag.name !== node.name) return;
+                  if (Math.hypot(e.clientX - activeDrag.startX, e.clientY - activeDrag.startY) > 4) {
+                    activeDrag.moved = true;
+                  }
+                  const pt = toSvgPoint(e.clientX, e.clientY);
+                  const nextX = Math.max(84, Math.min(width - 84, pt.x - activeDrag.offsetX));
+                  const nextY = Math.max(36, Math.min(height - 36, pt.y - activeDrag.offsetY));
+                  setCustomPositions((prev) => ({
+                    ...prev,
+                    [node.name]: { x: nextX, y: nextY },
+                  }));
+                }}
+                onPointerUp={(e) => {
+                  const activeDrag = dragRef.current;
+                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }
+                  dragRef.current = null;
+                  setDraggingNode(null);
+                  if (activeDrag && !activeDrag.moved) {
+                    onSelectService(isSelected ? null : node.name);
+                  }
+                }}
+                onPointerCancel={(e) => {
+                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }
+                  dragRef.current = null;
+                  setDraggingNode(null);
+                }}
               >
                 <rect
                   x={node.x - 76}
@@ -692,7 +800,7 @@ function RuntimeWorkflowTopologyCanvas({
                   rx="10"
                   fill={isSelected ? "#1e293b" : "#0f172a"}
                   stroke={borderCol}
-                  strokeWidth={isSelected ? "2.5" : "1.8"}
+                  strokeWidth={isSelected || isDragging ? "2.5" : "1.8"}
                 />
                 <circle cx={node.x - 60} cy={node.y - 10} r="4" fill={borderCol} />
                 <text
@@ -765,34 +873,32 @@ function RuntimeSequenceDiagramCanvas({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 px-2 text-xs bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white"
-            onClick={() => setZoomPct((z) => Math.max(60, z - 15))}
-          >
-            −
-          </Button>
-          <span className="font-mono text-xs text-slate-300 px-1.5">{zoomPct}%</span>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 px-2 text-xs bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white"
-            onClick={() => setZoomPct((z) => Math.min(160, z + 15))}
-          >
-            +
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-7 px-2.5 text-xs bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800 hover:text-white"
-            onClick={() => setZoomPct(100)}
-          >
-            100%
-          </Button>
+          <div className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900">
+            <button
+              type="button"
+              title="Zoom out"
+              className="h-7 px-2 text-xs text-slate-200 hover:bg-slate-800 hover:text-white rounded-l-md"
+              onClick={() => setZoomPct((z) => Math.max(60, z - 15))}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              title="Reset zoom to 100%"
+              className="h-7 px-2 font-mono text-xs text-slate-300 hover:bg-slate-800 hover:text-white border-x border-slate-700"
+              onClick={() => setZoomPct(100)}
+            >
+              {zoomPct}%
+            </button>
+            <button
+              type="button"
+              title="Zoom in"
+              className="h-7 px-2 text-xs text-slate-200 hover:bg-slate-800 hover:text-white rounded-r-md"
+              onClick={() => setZoomPct((z) => Math.min(160, z + 15))}
+            >
+              +
+            </button>
+          </div>
           <Button
             type="button"
             size="sm"
@@ -800,23 +906,8 @@ function RuntimeSequenceDiagramCanvas({
             className="h-7 px-2.5 text-xs bg-slate-900 border-sky-400/50 text-sky-300 hover:bg-sky-950 hover:text-sky-200"
             onClick={handleDownloadSvg}
           >
-            ⬇️ Download .SVG
+            Download .SVG
           </Button>
-          {sessionId !== "preview" && projectId && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-7 px-2.5 text-xs bg-slate-900 border-emerald-400/50 text-emerald-300 hover:bg-emerald-950 hover:text-emerald-200"
-              asChild
-            >
-              <Link
-                href={`/diagrams?project=${encodeURIComponent(projectId)}${targetGraphModelId ? `&model=${encodeURIComponent(targetGraphModelId)}` : ""}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(sessionId)}`}
-              >
-                📐 Open in Full Diagram Workspace
-              </Link>
-            </Button>
-          )}
         </div>
       </div>
 
@@ -843,6 +934,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const { projectId } = useSelection();
   const [vizMode, setVizMode] = useState<"both" | "topology" | "sequence">("both");
   const [selectedServiceFilter, setSelectedServiceFilter] = useState<string | null>(null);
+  const [selectedClusterFilter, setSelectedClusterFilter] = useState<ApiFeatureClusterId | null>(null);
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: !!projectId });
   const config = useApiQuery("runtimeConfiguration", { projectId }, { enabled: !!projectId });
   const autoSaveConfig = useApiMutation("saveRuntimeConfiguration");
@@ -918,6 +1010,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
 
   useEffect(() => {
     setSelectedServiceFilter(null);
+    setSelectedClusterFilter(null);
   }, [selectedId]);
 
   const lastSyncedSignature = useRef("");
@@ -971,6 +1064,46 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     [config.data?.profile, storedDraft.serviceMappings],
   );
 
+  const savedScenarioSteps = useMemo(
+    () =>
+      (scenarios.data?.[0]?.steps ?? []).flatMap((raw) => {
+        try {
+          const st = JSON.parse(raw) as {
+            service?: string;
+            method?: string;
+            path?: string;
+            journeyPhase?: string;
+            rationale?: string;
+          };
+          return st.service && st.path
+            ? [
+                {
+                  service: st.service,
+                  method: st.method ?? "GET",
+                  path: st.path,
+                  ...(st.journeyPhase ? { journeyPhase: st.journeyPhase } : {}),
+                  ...(st.rationale ? { rationale: st.rationale } : {}),
+                },
+              ]
+            : [];
+        } catch {
+          return [];
+        }
+      }),
+    [scenarios.data],
+  );
+
+  const aiPhaseByRoute = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of [...savedScenarioSteps, ...(storedDraft.plannedSteps ?? [])]) {
+      if (s.journeyPhase && s.path) {
+        map.set(`${(s.method ?? "GET").toUpperCase()}:${s.path}`, s.journeyPhase);
+        map.set(s.path, s.journeyPhase);
+      }
+    }
+    return map;
+  }, [savedScenarioSteps, storedDraft.plannedSteps]);
+
   const plannedRequests = useMemo(() => {
     if (session.data?.stepResults?.length) {
       return session.data.stepResults
@@ -982,16 +1115,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         }));
     }
     if (storedDraft.plannedSteps?.length) return storedDraft.plannedSteps;
-    const saved = (scenarios.data?.[0]?.steps ?? []).flatMap((raw) => {
-      try {
-        const st = JSON.parse(raw) as { service?: string; method?: string; path?: string };
-        return st.service && st.path ? [{ service: st.service, method: st.method ?? "GET", path: st.path }] : [];
-      } catch {
-        return [];
-      }
-    });
-    return saved.length ? saved : detectedEndpoints.slice(0, 6);
-  }, [session.data?.stepResults, storedDraft.plannedSteps, scenarios.data, detectedEndpoints]);
+    return savedScenarioSteps.length ? savedScenarioSteps : detectedEndpoints.slice(0, 6);
+  }, [session.data?.stepResults, storedDraft.plannedSteps, savedScenarioSteps, detectedEndpoints]);
 
   const workflowData = useMemo(
     () =>
@@ -1005,13 +1130,51 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   );
   const observed = workflowData.mode === "OBSERVED";
 
+  const featureClusters = useMemo(() => {
+    const byId = new Map<
+      ApiFeatureClusterId,
+      {
+        meta: ApiFeatureClusterMeta;
+        steps: ObservedStepItem[];
+        services: Set<string>;
+        routes: string[];
+      }
+    >();
+    for (const st of workflowData.steps) {
+      const routeKey = `${(st.httpMethod ?? "GET").toUpperCase()}:${st.operation ?? "/"}`;
+      const aiPhase = aiPhaseByRoute.get(routeKey) ?? aiPhaseByRoute.get(st.operation ?? "");
+      const meta = classifyApiFeatureCluster(st.operation, st.callerService, st.calleeService, aiPhase);
+      let entry = byId.get(meta.id);
+      if (!entry) {
+        entry = { meta, steps: [], services: new Set<string>(), routes: [] };
+        byId.set(meta.id, entry);
+      }
+      entry.steps.push(st);
+      if (st.calleeService && st.calleeService !== "mavis-runner") {
+        entry.services.add(st.calleeService);
+      }
+      const routeLabel = `${(st.httpMethod ?? "GET").toUpperCase()} ${st.operation ?? "/"}`;
+      if (!entry.routes.includes(routeLabel)) {
+        entry.routes.push(routeLabel);
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) => a.meta.order - b.meta.order);
+  }, [workflowData.steps, aiPhaseByRoute]);
+
   const filteredSteps = useMemo(() => {
-    if (!selectedServiceFilter) return workflowData.steps;
-    return workflowData.steps.filter(
-      (s) =>
-        s.callerService === selectedServiceFilter || s.calleeService === selectedServiceFilter,
-    );
-  }, [workflowData.steps, selectedServiceFilter]);
+    return workflowData.steps.filter((s) => {
+      if (selectedClusterFilter) {
+        const meta = classifyApiFeatureCluster(s.operation, s.callerService, s.calleeService);
+        if (meta.id !== selectedClusterFilter) return false;
+      }
+      if (selectedServiceFilter) {
+        if (s.callerService !== selectedServiceFilter && s.calleeService !== selectedServiceFilter) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [workflowData.steps, selectedClusterFilter, selectedServiceFilter]);
 
   const maxStepDuration = useMemo(
     () => Math.max(1, ...workflowData.steps.map((s) => s.durationMs ?? 0)),
@@ -1490,10 +1653,16 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   className={`px-2 py-0.5 rounded-full border text-[11px] font-mono font-semibold ${
                     observed
                       ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
-                      : "bg-slate-500/15 text-slate-700 dark:text-slate-200 border-slate-500/40"
+                      : active.has(upperExecStatus)
+                        ? "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/40 animate-pulse"
+                        : "bg-slate-500/15 text-slate-700 dark:text-slate-200 border-slate-500/40"
                   }`}
                 >
-                  {observed ? "🟢 Observed trace" : "◌ Planned workflow (not executed)"}
+                  {observed
+                    ? "🟢 Observed trace"
+                    : active.has(upperExecStatus)
+                      ? `⏳ Executing in Sandbox (${execStatus})...`
+                      : "◌ Planned workflow (not executed)"}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground">
@@ -1525,11 +1694,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               </Button>
               <Button
                 onClick={handleQuickRun}
-                disabled={quickRunRunning || !snapshots.data?.length}
+                disabled={quickRunRunning || active.has(upperExecStatus) || !snapshots.data?.length}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs h-9 shadow"
               >
                 <Play className="h-3.5 w-3.5 mr-1.5" />
-                {quickRunRunning ? "Saving & Running Workflow..." : "⚡ Save & Run Workflow Now"}
+                {quickRunRunning
+                  ? "Saving & Running Workflow..."
+                  : active.has(upperExecStatus)
+                    ? `⏳ Sandbox Running (${execStatus})...`
+                    : "⚡ Save & Run Workflow Now"}
               </Button>
             </div>
           </div>
@@ -1629,22 +1802,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               <Link
                 href={`/architecture?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}`}
               >
-                <ExternalLink className="h-3 w-3 mr-1" />
-                Enriched C4 Graph
+                <ExternalLink className="h-3 w-3 mr-1.5" />
+                Architecture Graph
               </Link>
             </Button>
             <Button size="sm" variant="outline" className="h-8 text-xs border-emerald-600/40 text-emerald-800 dark:text-emerald-300" asChild>
               <Link
                 href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(selectedId)}`}
               >
-                📐 Observed Sequence
-              </Link>
-            </Button>
-            <Button size="sm" variant="outline" className="h-8 text-xs" asChild>
-              <Link
-                href={`/model?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}`}
-              >
-                Model Elements
+                Architecture Diagrams
               </Link>
             </Button>
           </div>
@@ -1655,37 +1821,43 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       <DetailPanel title="1. Runtime Workflow Visualization">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
+            <div className="inline-flex flex-wrap items-center rounded-lg border bg-muted/30 p-0.5 gap-0.5">
+              <button
                 type="button"
-                size="sm"
-                variant={vizMode === "both" ? "default" : "outline"}
-                className="h-8 text-xs"
                 onClick={() => setVizMode("both")}
+                className={`inline-flex items-center h-7 px-3 rounded-md text-xs font-medium transition ${
+                  vizMode === "both"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
               >
                 <Layers className="h-3.5 w-3.5 mr-1.5" />
-                Split View (Topology + Sequence)
-              </Button>
-              <Button
+                Split View
+              </button>
+              <button
                 type="button"
-                size="sm"
-                variant={vizMode === "topology" ? "default" : "outline"}
-                className="h-8 text-xs"
                 onClick={() => setVizMode("topology")}
+                className={`inline-flex items-center h-7 px-3 rounded-md text-xs font-medium transition ${
+                  vizMode === "topology"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
               >
                 <Network className="h-3.5 w-3.5 mr-1.5" />
-                🕸️ Service Workflow Topology
-              </Button>
-              <Button
+                Topology
+              </button>
+              <button
                 type="button"
-                size="sm"
-                variant={vizMode === "sequence" ? "default" : "outline"}
-                className="h-8 text-xs"
                 onClick={() => setVizMode("sequence")}
+                className={`inline-flex items-center h-7 px-3 rounded-md text-xs font-medium transition ${
+                  vizMode === "sequence"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
               >
                 <GitCommit className="h-3.5 w-3.5 mr-1.5" />
-                📐 UML 2.5.1 Sequence Diagram
-              </Button>
+                Sequence
+              </button>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -1704,7 +1876,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   ))}
                 </select>
               )}
-              {projectId && (
+              {projectId && !enrichedModelId && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -1713,13 +1885,11 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 >
                   <Link
                     href={`/architecture?project=${encodeURIComponent(projectId)}${
-                      (enrichedModelId ?? targetModelId)
-                        ? `&model=${encodeURIComponent((enrichedModelId ?? targetModelId)!)}`
-                        : ""
+                      targetModelId ? `&model=${encodeURIComponent(targetModelId)}` : ""
                     }`}
                   >
-                    <ExternalLink className="h-3 w-3 mr-1" />
-                    Open Architecture Graph Explorer
+                    <ExternalLink className="h-3 w-3 mr-1.5" />
+                    Architecture Graph
                   </Link>
                 </Button>
               )}
@@ -1847,36 +2017,153 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             );
           })()}
 
-          {/* Visual Canvas 1: Service Workflow Topology */}
-          {(vizMode === "both" || vizMode === "topology") && (
-            <RuntimeWorkflowTopologyCanvas
-              steps={workflowData.steps}
-              planned={!observed}
-              selectedService={selectedServiceFilter}
-              onSelectService={setSelectedServiceFilter}
-            />
+          {/* Visual Feature Cluster Flow Pipeline */}
+          {featureClusters.length > 0 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-sky-400">
+                    🧩 API Feature Flow Clusters ({featureClusters.length} Functional Groups)
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    Click any functional cluster to isolate its Topology, Sequence Diagram & API calls
+                  </span>
+                </div>
+                {(selectedClusterFilter || selectedServiceFilter) && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs border-sky-500/40 text-sky-300"
+                    onClick={() => {
+                      setSelectedClusterFilter(null);
+                      setSelectedServiceFilter(null);
+                    }}
+                  >
+                    ✕ Show Full End-to-End Flow ({workflowData.steps.length})
+                  </Button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-stretch gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedClusterFilter(null)}
+                  className={`rounded-lg border px-3 py-2 text-left transition flex flex-col justify-between min-w-[155px] ${
+                    selectedClusterFilter === null
+                      ? "border-primary bg-primary/15 text-foreground shadow-sm"
+                      : "border-slate-800 bg-slate-900/70 text-slate-300 hover:border-slate-700"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold">🌐 Full End-to-End</span>
+                    <span className="rounded-full bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] text-slate-200">
+                      {featureClusters.length} flows
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    All {workflowData.steps.length} {observed ? "observed" : "planned"} hops combined
+                  </p>
+                </button>
+
+                {featureClusters.map((cluster, idx) => {
+                  const isSelected = selectedClusterFilter === cluster.meta.id;
+                  const svcs = Array.from(cluster.services);
+                  return (
+                    <div key={cluster.meta.id} className="flex items-center gap-1.5">
+                      <span className="text-slate-500 font-mono text-xs select-none">
+                        {idx === 0 ? "∶" : "→"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedClusterFilter(isSelected ? null : cluster.meta.id)
+                        }
+                        className={`rounded-lg border px-3 py-2 text-left transition min-w-[200px] max-w-[290px] space-y-1 ${
+                          isSelected
+                            ? `${cluster.meta.badgeClass} ring-1 ring-sky-400/50 shadow-sm`
+                            : `${cluster.meta.cardBorderClass} hover:border-slate-600`
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-slate-100 truncate">
+                            <span className="mr-1">{cluster.meta.icon}</span>
+                            { idx + 1 }. {cluster.meta.shortTitle}
+                          </span>
+                          <span
+                            className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold border shrink-0 ${cluster.meta.badgeClass}`}
+                          >
+                            {cluster.routes.length} API{cluster.routes.length === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                        {svcs.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {svcs.map((svc) => (
+                              <span
+                                key={svc}
+                                className="rounded bg-slate-900/90 border border-slate-700/80 px-1.5 py-0.2 font-mono text-[10px] text-emerald-300"
+                              >
+                                {svc}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="font-mono text-[10px] text-slate-400 truncate">
+                          {cluster.routes.slice(0, 2).join(" → ")}
+                          {cluster.routes.length > 2 ? ` (+${cluster.routes.length - 2})` : ""}
+                        </p>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
 
-          {/* Visual Canvas 2: UML 2.5.1 Sequence Diagram */}
-          {(vizMode === "both" || vizMode === "sequence") && !observed && (
-            <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
-              The UML sequence diagram is drawn only from captured trace spans. It appears after a run records
-              evidence.
-            </p>
-          )}
-          {(vizMode === "both" || vizMode === "sequence") && observed && (
-            <RuntimeSequenceDiagramCanvas
-              steps={filteredSteps}
-              sessionTitle={
-                session.data?.scenarioName ??
-                storedDraft.scenarioName ??
-                "Architecture Verification Workflow"
-              }
-              projectId={projectId}
-              targetGraphModelId={enrichedModelId ?? targetModelId}
-              sessionId={selectedId || "preview"}
-            />
-          )}
+          <div
+            className={
+              vizMode === "both"
+                ? "grid grid-cols-1 lg:grid-cols-2 gap-4 items-start"
+                : "space-y-4"
+            }
+          >
+            {/* Visual Canvas 1: Service Workflow Topology */}
+            {(vizMode === "both" || vizMode === "topology") && (
+              <div className="min-w-0">
+                <RuntimeWorkflowTopologyCanvas
+                  steps={filteredSteps}
+                  planned={!observed}
+                  selectedService={selectedServiceFilter}
+                  onSelectService={setSelectedServiceFilter}
+                />
+              </div>
+            )}
+
+            {/* Visual Canvas 2: UML 2.5.1 Sequence Diagram */}
+            {(vizMode === "both" || vizMode === "sequence") && !observed && (
+              <div className="min-w-0">
+                <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
+                  The UML sequence diagram is drawn only from captured trace spans. It appears after a run records
+                  evidence.
+                </p>
+              </div>
+            )}
+            {(vizMode === "both" || vizMode === "sequence") && observed && (
+              <div className="min-w-0">
+                <RuntimeSequenceDiagramCanvas
+                  steps={filteredSteps}
+                  sessionTitle={
+                    session.data?.scenarioName ??
+                    storedDraft.scenarioName ??
+                    "Architecture Verification Workflow"
+                  }
+                  projectId={projectId}
+                  targetGraphModelId={enrichedModelId ?? targetModelId}
+                  sessionId={selectedId || "preview"}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </DetailPanel>
 
@@ -1911,6 +2198,16 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                       <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     )}
                     <span className="text-[11px] text-muted-foreground">#{idx + 1}</span>
+                    {(() => {
+                      const clusterMeta = classifyApiFeatureCluster(sr.path, sr.service, sr.service);
+                      return (
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold border ${clusterMeta.badgeClass}`}
+                        >
+                          {clusterMeta.icon} {clusterMeta.shortTitle}
+                        </span>
+                      );
+                    })()}
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${httpMethodBadgeClass(verb)}`}>
                       {verb}
                     </span>
@@ -1969,86 +2266,220 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               <Activity className="h-3.5 w-3.5 text-primary" />
               {observed ? "Observed calls" : "Planned calls"} ({filteredSteps.length} of {workflowData.steps.length})
             </p>
-            {selectedServiceFilter && (
+            {(selectedServiceFilter || selectedClusterFilter) && (
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-7 text-xs"
-                onClick={() => setSelectedServiceFilter(null)}
+                onClick={() => {
+                  setSelectedServiceFilter(null);
+                  setSelectedClusterFilter(null);
+                }}
               >
                 Show all ({workflowData.steps.length})
               </Button>
             )}
           </div>
 
-          <div className="space-y-2">
-            {filteredSteps.map((step, i) => {
-              const dur = step.durationMs;
-              const widthPct = dur == null ? 0 : Math.max(4, Math.min(100, Math.round((dur / maxStepDuration) * 100)));
-              const method = (step.httpMethod ?? "GET").toUpperCase();
-              const statusCode = step.httpStatusCode;
-              return (
-                <div
-                  key={`${step.traceId ?? "trace"}:${i}`}
-                  className="rounded-lg border border-border/80 bg-muted/15 p-3 shadow-sm space-y-2"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
-                      <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-bold">
-                        {step.stepOrder ?? i + 1}
-                      </span>
-                      <span
-                        className={`px-2 py-0.5 rounded text-[11px] font-bold ${httpMethodBadgeClass(method)}`}
-                      >
-                        {method}
-                      </span>
-                      <span className="rounded bg-sky-500/15 text-sky-400 border border-sky-500/30 px-2 py-0.5 font-semibold">
-                        {step.callerService ?? "Caller"}
-                      </span>
-                      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 font-semibold">
-                        {step.calleeService ?? "Receiver"}
-                      </span>
-                      <span className="text-foreground font-semibold">
-                        {normalizeEndpointDisplay(step.httpMethod, step.operation, step.calleeService)}
+          {(() => {
+            // Merge consecutive PLANNED gateway -> downstream hops into a single chained call row
+            type ChainedCallItem = {
+              step: ObservedStepItem;
+              chainServices: string[];
+              cluster: ApiFeatureClusterMeta;
+              displayIndex: number;
+            };
+            const chainedItems: ChainedCallItem[] = [];
+            for (let i = 0; i < filteredSteps.length; i++) {
+              const cur = filteredSteps[i]!;
+              const next = filteredSteps[i + 1];
+              if (
+                !observed &&
+                cur.callerService === "mavis-runner" &&
+                next &&
+                next.callerService === cur.calleeService &&
+                next.operation === cur.operation &&
+                next.httpMethod === cur.httpMethod
+              ) {
+                const chain = [
+                  cur.callerService ?? "mavis-runner",
+                  cur.calleeService ?? "api-gateway",
+                  next.calleeService ?? "service",
+                ];
+                const aiPhase =
+                  aiPhaseByRoute.get(`${(next.httpMethod ?? "GET").toUpperCase()}:${next.operation ?? "/"}`) ??
+                  aiPhaseByRoute.get(next.operation ?? "");
+                const cluster = classifyApiFeatureCluster(
+                  next.operation,
+                  cur.calleeService,
+                  next.calleeService,
+                  aiPhase,
+                );
+                chainedItems.push({
+                  step: next,
+                  chainServices: chain,
+                  cluster,
+                  displayIndex: chainedItems.length + 1,
+                });
+                i++;
+              } else {
+                const chain = [
+                  cur.callerService ?? "Caller",
+                  cur.calleeService ?? "Receiver",
+                ];
+                const aiPhase =
+                  aiPhaseByRoute.get(`${(cur.httpMethod ?? "GET").toUpperCase()}:${cur.operation ?? "/"}`) ??
+                  aiPhaseByRoute.get(cur.operation ?? "");
+                const cluster = classifyApiFeatureCluster(
+                  cur.operation,
+                  cur.callerService,
+                  cur.calleeService,
+                  aiPhase,
+                );
+                chainedItems.push({
+                  step: cur,
+                  chainServices: chain,
+                  cluster,
+                  displayIndex: chainedItems.length + 1,
+                });
+              }
+            }
+
+            // Group chained items into visual Feature Cluster sections
+            const clusterGroups: Array<{
+              meta: ApiFeatureClusterMeta;
+              items: ChainedCallItem[];
+            }> = [];
+            const groupById = new Map<
+              ApiFeatureClusterId,
+              { meta: ApiFeatureClusterMeta; items: ChainedCallItem[] }
+            >();
+            for (const item of chainedItems) {
+              let grp = groupById.get(item.cluster.id);
+              if (!grp) {
+                grp = { meta: item.cluster, items: [] };
+                groupById.set(item.cluster.id, grp);
+                clusterGroups.push(grp);
+              }
+              grp.items.push(item);
+            }
+
+            return (
+              <div className="space-y-4">
+                {clusterGroups.map((grp, gIdx) => (
+                  <div
+                    key={grp.meta.id}
+                    className={`rounded-xl border p-3.5 space-y-2.5 ${grp.meta.cardBorderClass}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-xs font-bold border ${grp.meta.badgeClass}`}
+                        >
+                          {grp.meta.icon} Flow Group {gIdx + 1}: {grp.meta.title}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {grp.meta.description}
+                        </span>
+                      </div>
+                      <span className="font-mono text-[11px] text-slate-300">
+                        {grp.items.length} {grp.items.length === 1 ? "API step" : "API steps"}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 text-[11px] font-mono">
-                      {statusCode != null ? (
-                        <span
-                          className={`px-1.5 py-0.5 rounded font-bold ${
-                            statusCode >= 200 && statusCode < 300
-                              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                              : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
-                          }`}
-                        >
-                          HTTP {statusCode}
-                        </span>
-                      ) : (
-                        <span className="px-1.5 py-0.5 rounded border border-dashed text-muted-foreground">PLANNED</span>
-                      )}
-                      {dur != null && (
-                        <span className="flex items-center gap-1 text-muted-foreground">
-                          <Clock className="h-3 w-3" />
-                          {dur} ms
-                        </span>
-                      )}
+                    <div className="space-y-2">
+                      {grp.items.map(({ step, chainServices, displayIndex }, i) => {
+                        const dur = step.durationMs;
+                        const widthPct =
+                          dur == null
+                            ? 0
+                            : Math.max(4, Math.min(100, Math.round((dur / maxStepDuration) * 100)));
+                        const method = (step.httpMethod ?? "GET").toUpperCase();
+                        const statusCode = step.httpStatusCode;
+                        return (
+                          <div
+                            key={`${step.traceId ?? "trace"}:${displayIndex}:${i}`}
+                            className="rounded-lg border border-border/80 bg-slate-950/70 p-2.5 shadow-sm space-y-2"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
+                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-bold">
+                                  {displayIndex}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[11px] font-bold ${httpMethodBadgeClass(method)}`}
+                                >
+                                  {method}
+                                </span>
+                                {chainServices.map((svcName, sIdx) => (
+                                  <span key={`${svcName}:${sIdx}`} className="inline-flex items-center gap-1.5">
+                                    {sIdx > 0 && (
+                                      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                    )}
+                                    <span
+                                      className={`rounded px-2 py-0.5 font-semibold border ${
+                                        sIdx === 0
+                                          ? "bg-slate-800/90 text-slate-300 border-slate-700"
+                                          : sIdx === chainServices.length - 1
+                                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                            : "bg-sky-500/15 text-sky-400 border-sky-500/30"
+                                      }`}
+                                    >
+                                      {svcName}
+                                    </span>
+                                  </span>
+                                ))}
+                                <span className="text-foreground font-semibold ml-1">
+                                  {normalizeEndpointDisplay(
+                                    step.httpMethod,
+                                    step.operation,
+                                    step.calleeService,
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2 text-[11px] font-mono">
+                                {statusCode != null ? (
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded font-bold ${
+                                      statusCode >= 200 && statusCode < 300
+                                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                        : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                                    }`}
+                                  >
+                                    HTTP {statusCode}
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded border border-dashed text-muted-foreground">
+                                    PLANNED
+                                  </span>
+                                )}
+                                {dur != null && (
+                                  <span className="flex items-center gap-1 text-muted-foreground">
+                                    <Clock className="h-3 w-3" />
+                                    {dur} ms
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {dur != null && (
+                              <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-400"
+                                  style={{ width: `${widthPct}%` }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-
-                  {dur != null && (
-                    <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-400"
-                        style={{ width: `${widthPct}%` }}
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {session.data && (
             <div className="border-t pt-4 mt-4 space-y-3">

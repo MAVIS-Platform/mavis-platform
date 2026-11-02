@@ -198,6 +198,12 @@ public class SandboxImageBuilderService {
                 Path contextDir = baseDir.resolve(spec.context()).normalize();
                 Path dockerfile = contextDir.resolve(spec.dockerfile()).normalize();
 
+                if (contextDir.startsWith(workspace) && dockerfile.startsWith(workspace)
+                        && !Files.isSymbolicLink(contextDir) && Files.isDirectory(contextDir, LinkOption.NOFOLLOW_LINKS)
+                        && !Files.exists(dockerfile, LinkOption.NOFOLLOW_LINKS)) {
+                    synthesizeMissingDockerfileIfBuildable(dockerfile, contextDir);
+                }
+
                 if (!contextDir.startsWith(workspace) || !dockerfile.startsWith(workspace)
                         || Files.isSymbolicLink(contextDir) || Files.isSymbolicLink(dockerfile)
                         || !Files.isDirectory(contextDir, LinkOption.NOFOLLOW_LINKS)
@@ -206,13 +212,13 @@ public class SandboxImageBuilderService {
                     continue;
                 }
 
-                prepareAutoBuildDockerfile(dockerfile, contextDir);
+                Path effectiveContextDir = prepareAutoBuildDockerfile(dockerfile, contextDir, workspace);
                 String tag = sandboxTag(projectId, svc);
 
-                String buildErr = runDockerBuild(projectId, tag, dockerfile, contextDir, spec.target(), spec.args());
+                String buildErr = runDockerBuild(projectId, tag, dockerfile, effectiveContextDir, spec.target(), spec.args());
                 if (buildErr != null && buildErr.toLowerCase(Locale.ROOT).contains("no space left on device")) {
                     pruneDockerDisk(true);
-                    buildErr = runDockerBuild(projectId, tag, dockerfile, contextDir, spec.target(), spec.args());
+                    buildErr = runDockerBuild(projectId, tag, dockerfile, effectiveContextDir, spec.target(), spec.args());
                 }
                 if (buildErr != null) {
                     errors.add("Service '" + svc + "': " + buildErr);
@@ -244,17 +250,77 @@ public class SandboxImageBuilderService {
 
     protected record BuildSpec(String context, String dockerfile, String target, Map<String, String> args) {}
 
-    private static void prepareAutoBuildDockerfile(Path dockerfile, Path contextDir) {
+    private static void synthesizeMissingDockerfileIfBuildable(Path dockerfile, Path contextDir) {
+        try {
+            if (Files.isRegularFile(contextDir.resolve("pom.xml"))) {
+                Files.writeString(dockerfile, """
+                        FROM eclipse-temurin:21-jre-alpine
+                        WORKDIR /app
+                        COPY target/*.jar app.jar
+                        ENTRYPOINT ["java", "-jar", "app.jar"]
+                        """, StandardCharsets.UTF_8);
+                return;
+            }
+            if (Files.isRegularFile(contextDir.resolve("build.gradle")) || Files.isRegularFile(contextDir.resolve("build.gradle.kts"))) {
+                Files.writeString(dockerfile, """
+                        FROM gradle:8.7-jdk21-alpine AS mavis_auto_builder
+                        WORKDIR /mavis_build
+                        COPY . .
+                        RUN gradle bootJar --no-daemon -x test
+                        FROM eclipse-temurin:21-jre-alpine
+                        WORKDIR /app
+                        COPY --from=mavis_auto_builder /mavis_build/build/libs/*.jar app.jar
+                        ENTRYPOINT ["java", "-jar", "app.jar"]
+                        """, StandardCharsets.UTF_8);
+                return;
+            }
+            try (Stream<Path> s = Files.list(contextDir)) {
+                Optional<Path> csproj = s.filter(p -> Files.isRegularFile(p) && p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".csproj")).findFirst();
+                if (csproj.isPresent()) {
+                    String csprojName = csproj.get().getFileName().toString();
+                    String dllName = csprojName.substring(0, csprojName.length() - ".csproj".length()) + ".dll";
+                    Files.writeString(dockerfile, """
+                            FROM mcr.microsoft.com/dotnet/sdk:8.0-alpine AS mavis_auto_builder
+                            WORKDIR /mavis_build
+                            COPY . .
+                            RUN dotnet publish "%s" -c Release -o /mavis_out
+                            FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine
+                            WORKDIR /app
+                            COPY --from=mavis_auto_builder /mavis_out .
+                            ENTRYPOINT ["dotnet", "%s"]
+                            """.formatted(csprojName, dllName), StandardCharsets.UTF_8);
+                }
+            }
+        } catch (IOException ignored) {}
+    }
+
+    private static Path prepareAutoBuildDockerfile(Path dockerfile, Path contextDir, Path workspace) {
         try {
             if (Files.isDirectory(contextDir.resolve("target")) || !Files.isRegularFile(contextDir.resolve("pom.xml"))) {
-                return;
+                return contextDir;
             }
             String content = Files.readString(dockerfile, StandardCharsets.UTF_8);
             String lower = content.toLowerCase(Locale.ROOT);
             if (lower.contains("--from=") || lower.contains("mvn ") || lower.contains("./mvnw")) {
-                return;
+                return contextDir;
             }
             if (Pattern.compile("(?im)^\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?(?:\\./)?target/").matcher(content).find()) {
+                Path reactorRoot = findMavenReactorRoot(contextDir, workspace);
+                if (reactorRoot != null && !reactorRoot.equals(contextDir)) {
+                    String relMod = reactorRoot.relativize(contextDir).toString().replace('\\', '/');
+                    String rewritten = content.replaceAll(
+                            "(?im)^(\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?)(?:\\./)?target/",
+                            "$1--from=mavis_auto_builder /mavis_build/" + relMod + "/target/");
+                    String header = """
+                            FROM maven:3.9.6-eclipse-temurin-21-alpine AS mavis_auto_builder
+                            WORKDIR /mavis_build
+                            COPY . .
+                            RUN mvn clean package -pl %s -am -DskipTests -B && rm -rf /root/.m2/repository
+
+                            """.formatted(relMod);
+                    Files.writeString(dockerfile, header + rewritten, StandardCharsets.UTF_8);
+                    return reactorRoot;
+                }
                 String rewritten = content.replaceAll(
                         "(?im)^(\\s*(?:COPY|ADD)\\s+(?:--chown=\\S+\\s+)?)(?:\\./)?target/",
                         "$1--from=mavis_auto_builder /mavis_build/target/");
@@ -269,6 +335,25 @@ public class SandboxImageBuilderService {
                 Files.writeString(dockerfile, header + rewritten, StandardCharsets.UTF_8);
             }
         } catch (IOException ignored) {}
+        return contextDir;
+    }
+
+    private static Path findMavenReactorRoot(Path contextDir, Path workspace) {
+        try {
+            String childPom = Files.readString(contextDir.resolve("pom.xml"), StandardCharsets.UTF_8);
+            if (!childPom.contains("<parent>")) return null;
+            Path parent = contextDir.getParent();
+            while (parent != null && parent.startsWith(workspace)) {
+                Path parentPom = parent.resolve("pom.xml");
+                if (Files.isRegularFile(parentPom, LinkOption.NOFOLLOW_LINKS)) {
+                    String pContent = Files.readString(parentPom, StandardCharsets.UTF_8);
+                    if (pContent.contains("<modules>")) return parent;
+                }
+                if (parent.equals(workspace)) break;
+                parent = parent.getParent();
+            }
+        } catch (IOException ignored) {}
+        return null;
     }
 
     private static ComposePreflightValidator.DiscoveredDockerfile matchDiscoveredDockerfile(

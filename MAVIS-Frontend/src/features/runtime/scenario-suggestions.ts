@@ -94,6 +94,170 @@ export function suggestRuntimeScenarios(model:ArchitecturalModel,profile?:Record
  return result.sort((a,b)=>Number(b.selected)-Number(a.selected)||a.key.localeCompare(b.key)).slice(0,30);
 }
 
+export type BuiltinClusterKey =
+  | "AUTH_IDENTITY"
+  | "CATALOG_INVENTORY"
+  | "ORDER_CART"
+  | "PAYMENT_BILLING"
+  | "NOTIFICATION"
+  | "DISCOVERY_INFRA"
+  | "GENERAL_BUSINESS";
+
+export type ApiFeatureClusterId = string;
+
+export interface ApiFeatureClusterMeta {
+  id: ApiFeatureClusterId;
+  order: number;
+  icon: string;
+  title: string;
+  shortTitle: string;
+  description: string;
+  badgeClass: string;
+  cardBorderClass: string;
+  isAiEvaluated?: boolean;
+}
+
+const FEATURE_CLUSTERS: Record<BuiltinClusterKey, ApiFeatureClusterMeta> = {
+  AUTH_IDENTITY: {
+    id: "AUTH_IDENTITY",
+    order: 1,
+    icon: "🔐",
+    title: "Auth & User Identity Flow",
+    shortTitle: "Auth & Identity",
+    description: "Register, login (issue JWT token), user profile & addresses",
+    badgeClass: "border-violet-500/40 bg-violet-500/15 text-violet-300",
+    cardBorderClass: "border-violet-500/35 bg-violet-950/15",
+  },
+  CATALOG_INVENTORY: {
+    id: "CATALOG_INVENTORY",
+    order: 2,
+    icon: "📦",
+    title: "Catalog & Inventory Flow",
+    shortTitle: "Catalog & Inventory",
+    description: "Categories, products, variants & stock inventory lookup/deduction",
+    badgeClass: "border-sky-500/40 bg-sky-500/15 text-sky-300",
+    cardBorderClass: "border-sky-500/35 bg-sky-950/15",
+  },
+  ORDER_CART: {
+    id: "ORDER_CART",
+    order: 3,
+    icon: "🛒",
+    title: "Order, Cart & Coupon Flow",
+    shortTitle: "Order & Coupon",
+    description: "Shopping cart, discount coupons, order creation & order status verification",
+    badgeClass: "border-emerald-500/40 bg-emerald-500/15 text-emerald-300",
+    cardBorderClass: "border-emerald-500/35 bg-emerald-950/15",
+  },
+  PAYMENT_BILLING: {
+    id: "PAYMENT_BILLING",
+    order: 4,
+    icon: "💳",
+    title: "Payment & Checkout URL Flow",
+    shortTitle: "Payment & Checkout",
+    description: "Payment URL generation, transaction verification & billing callbacks",
+    badgeClass: "border-amber-500/40 bg-amber-500/15 text-amber-300",
+    cardBorderClass: "border-amber-500/35 bg-amber-950/15",
+  },
+  NOTIFICATION: {
+    id: "NOTIFICATION",
+    order: 5,
+    icon: "🔔",
+    title: "Notification & Messaging Flow",
+    shortTitle: "Notification",
+    description: "Email/SMS/push notifications & event alerts",
+    badgeClass: "border-pink-500/40 bg-pink-500/15 text-pink-300",
+    cardBorderClass: "border-pink-500/35 bg-pink-950/15",
+  },
+  GENERAL_BUSINESS: {
+    id: "GENERAL_BUSINESS",
+    order: 6,
+    icon: "⚡",
+    title: "Core Business API Flow",
+    shortTitle: "Core Business",
+    description: "Domain service operations & state verification",
+    badgeClass: "border-cyan-500/40 bg-cyan-500/15 text-cyan-300",
+    cardBorderClass: "border-cyan-500/35 bg-cyan-950/15",
+  },
+  DISCOVERY_INFRA: {
+    id: "DISCOVERY_INFRA",
+    order: 7,
+    icon: "⚙️",
+    title: "Service Discovery & Health",
+    shortTitle: "Discovery / Health",
+    description: "Service registry heartbeats & health probes",
+    badgeClass: "border-slate-500/40 bg-slate-500/15 text-slate-300",
+    cardBorderClass: "border-slate-700/60 bg-slate-900/30",
+  },
+};
+
+export function classifyApiFeatureCluster(
+  path?: string | null,
+  service?: string | null,
+  calleeService?: string | null,
+  aiJourneyPhase?: string | null,
+): ApiFeatureClusterMeta {
+  const p = (path ?? "").toLowerCase();
+  const s = `${service ?? ""} ${calleeService ?? ""}`.toLowerCase();
+  const rawPhase = (aiJourneyPhase ?? "").trim();
+
+  // 1. If AI (Gemini 2.5 Pro / GPT-5.4) evaluated a descriptive domain cluster (e.g. "PREREQUISITE_SEED: Catalog & Inventory"), use AI's cluster directly!
+  if (rawPhase && rawPhase.includes(":")) {
+    const [phaseCodeRaw, ...rest] = rawPhase.split(":");
+    const phaseCode = (phaseCodeRaw ?? "").trim().toUpperCase();
+    const customLabel = rest.join(":").trim();
+    if (customLabel) {
+      const lowerLabel = customLabel.toLowerCase();
+      const baseTemplate =
+        /auth|identity|login|user|account/.test(lowerLabel) || phaseCode === "AUTH_ENTRY"
+          ? FEATURE_CLUSTERS.AUTH_IDENTITY!
+          : /payment|billing|checkout url|vnpay|stripe|invoice/.test(lowerLabel)
+            ? FEATURE_CLUSTERS.PAYMENT_BILLING!
+            : /catalog|inventory|product|category|stock|master/.test(lowerLabel) || phaseCode === "PREREQUISITE_SEED"
+              ? FEATURE_CLUSTERS.CATALOG_INVENTORY!
+              : /order|cart|coupon|booking|transfer|workflow/.test(lowerLabel) || phaseCode === "CROSS_SERVICE_WORKFLOW"
+                ? FEATURE_CLUSTERS.ORDER_CART!
+                : /notify|notification|alert|mail/.test(lowerLabel)
+                  ? FEATURE_CLUSTERS.NOTIFICATION!
+                  : FEATURE_CLUSTERS.GENERAL_BUSINESS!;
+      const normalizedId = `AI_${customLabel.replace(/[^A-Za-z0-9]+/g, "_").toUpperCase()}`;
+      return {
+        ...baseTemplate,
+        id: normalizedId,
+        title: customLabel,
+        shortTitle: customLabel,
+        isAiEvaluated: true,
+      };
+    }
+  }
+
+  // 2. Fallback heuristic + standard AI journeyPhase enum
+  if (
+    /service-discovery|discovery-service|eureka|config-server|consul/.test(p) ||
+    /service-discovery|discovery-service|eureka|config-server|consul/.test(s)
+  ) {
+    return FEATURE_CLUSTERS.DISCOVERY_INFRA!;
+  }
+  if (/^AUTH_ENTRY$/i.test(rawPhase)) {
+    return { ...FEATURE_CLUSTERS.AUTH_IDENTITY!, isAiEvaluated: true };
+  }
+  if (/\/(payment|payments|vnpay|momo|stripe|billing|charge|refund)\b/.test(p) || /payment|billing/.test(s)) {
+    return { ...FEATURE_CLUSTERS.PAYMENT_BILLING!, isAiEvaluated: Boolean(rawPhase) };
+  }
+  if (/\/(auth|login|logout|register|signup|token|refresh|users|user|identity|profile|me|addresses)\b/.test(p) || /identity|auth|user-service/.test(s)) {
+    return { ...FEATURE_CLUSTERS.AUTH_IDENTITY!, isAiEvaluated: Boolean(rawPhase) };
+  }
+  if (/\/(catalog|categories|category|products|product|inventory|stock|variants|variant|brands|reviews)\b/.test(p) || /catalog|inventory|product/.test(s)) {
+    return { ...FEATURE_CLUSTERS.CATALOG_INVENTORY!, isAiEvaluated: Boolean(rawPhase) };
+  }
+  if (/\/(order|orders|cart|checkout|coupons|coupon|shipping|delivery)\b/.test(p) || /order|cart|delivery/.test(s)) {
+    return { ...FEATURE_CLUSTERS.ORDER_CART!, isAiEvaluated: Boolean(rawPhase) };
+  }
+  if (/\/(notification|notifications|notify|mail|sms|alerts)\b/.test(p) || /notification|notify/.test(s)) {
+    return { ...FEATURE_CLUSTERS.NOTIFICATION!, isAiEvaluated: Boolean(rawPhase) };
+  }
+  return { ...FEATURE_CLUSTERS.GENERAL_BUSINESS!, isAiEvaluated: Boolean(rawPhase) };
+}
+
 export function parseRuntimeEnvFile(text:string):Record<string,string> {
  if(text.length>65536)throw new Error("Environment file exceeds the supported size");
  const result:Record<string,string>={};
