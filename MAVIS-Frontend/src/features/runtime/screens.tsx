@@ -96,6 +96,7 @@ export function RuntimeStepperBanner({
 
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { Loader2 } from "lucide-react";
 import {
   suggestRuntimeScenarios,
   automaticRuntimeDraft,
@@ -699,8 +700,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         blockedReason={step1BlockedReason}
       />
       {step1StatusMsg && (
-        <div role="status" className="rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs text-foreground">
-          {step1StatusMsg}
+        <div role="status" className="flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs text-foreground">
+          {(buildImages.isPending || isAutoBuilding || preflight.isPending) && (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-400" aria-hidden="true" />
+          )}
+          <span>{step1StatusMsg}</span>
         </div>
       )}
 
@@ -759,30 +763,37 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   type="button"
                   variant={hasCheckedPreflight ? "outline" : "default"}
                   size="sm"
-                  className="h-9 px-4 text-xs"
+                  className="h-9 px-4 text-xs inline-flex items-center gap-1.5"
                   disabled={!snapshotId || preflight.isPending}
                   onClick={() => {
                     autoBuildTriggeredRef.current = "";
                     preflight.mutate({ projectId, snapshotId });
                   }}
                 >
+                  {preflight.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
                   {preflight.isPending ? "Checking..." : hasCheckedPreflight ? "↻ Re-check" : "Check"}
                 </Button>
                 <Button
                   type="button"
                   size="sm"
-                  className="h-9 px-4 text-xs"
+                  className="h-9 px-4 text-xs inline-flex items-center gap-1.5"
                   disabled={!isStep1Ready || save.isPending}
                   title={!isStep1Ready ? step1BlockedReason : undefined}
                   onClick={() => void proceedToStep2()}
                 >
+                  {save.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
                   {save.isPending ? "Saving..." : "Continue to Step 2 →"}
                 </Button>
               </div>
             </div>
 
             {!isStep1Ready && step1BlockedReason && (preflight.isPending || buildImages.isPending || isAutoBuilding || hasCheckedPreflight) && (
-              <p className="text-xs text-muted-foreground">{step1BlockedReason}</p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {(preflight.isPending || buildImages.isPending || isAutoBuilding) && (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" aria-hidden="true" />
+                )}
+                <span>{step1BlockedReason}</span>
+              </div>
             )}
 
             {preflight.isError && <ErrorState error={preflight.error} />}
@@ -795,11 +806,13 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                       status={
                         !isPreflightSecure
                           ? "Rejected"
-                          : effectiveUnresolvedIssues.length
-                            ? `Needs changes (${effectiveUnresolvedIssues.length})`
-                            : sandboxComposeChanges.length > 0
-                              ? "Ready (Auto-Configured)"
-                              : "Ready"
+                          : buildImages.isPending || isAutoBuilding
+                            ? `Auto-building images (${servicesNeedingImage.length - unpinnedServices.length}/${servicesNeedingImage.length})`
+                            : effectiveUnresolvedIssues.length
+                              ? `Needs changes (${effectiveUnresolvedIssues.length})`
+                              : sandboxComposeChanges.length > 0
+                                ? "Ready (Auto-Configured)"
+                                : "Ready"
                       }
                       variant={!isPreflightSecure ? "destructive" : effectiveUnresolvedIssues.length ? "warning" : "success"}
                     />
@@ -840,46 +853,79 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                         </ul>
                       )}
                       {servicesNeedingImage.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <span className="text-muted-foreground">
-                              <strong className="text-foreground">Image digests required ({servicesNeedingImage.length}):</strong>{" "}
-                              Services using <code className="font-mono">build:</code> or unpinned tags need a <code className="font-mono">name@sha256:...</code> image.
-                            </span>
-                            {localImageBuildAvailable && (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-7 text-xs"
-                                disabled={buildImages.isPending || isAutoBuilding}
-                                onClick={() => void handleBuildLocalImages()}
-                              >
-                                {buildImages.isPending || isAutoBuilding
-                                  ? "Building images..."
-                                  : "Build from snapshot"}
-                              </Button>
-                            )}
+                        buildImages.isPending || isAutoBuilding ? (
+                          <div className="space-y-2.5">
+                            <div className="flex items-center gap-2 text-xs text-foreground">
+                              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" aria-hidden="true" />
+                              <span>
+                                <strong>Automatically building sandbox images from source ({servicesNeedingImage.length - unpinnedServices.length}/{servicesNeedingImage.length})</strong>
+                                {" — no manual input needed."}
+                              </span>
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-3">
+                              {servicesNeedingImage.map((svc) => {
+                                const isBuilt = /^(.+@)?sha256:[0-9a-fA-F]{64}$/.test(serviceImageOverrides[svc]?.trim() ?? "");
+                                const isCurrent = !isBuilt && step1StatusMsg.includes(svc);
+                                return (
+                                  <div
+                                    key={svc}
+                                    className="flex items-center justify-between gap-2 rounded border bg-background/80 px-2.5 py-1.5 font-mono text-xs"
+                                  >
+                                    <span className="truncate text-foreground" title={svc}>{svc}</span>
+                                    {isBuilt ? (
+                                      <span className="shrink-0 text-[11px] font-sans font-medium text-emerald-500">✓ Built</span>
+                                    ) : isCurrent ? (
+                                      <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-sans text-sky-400">
+                                        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                                        Building...
+                                      </span>
+                                    ) : (
+                                      <span className="shrink-0 text-[11px] font-sans text-muted-foreground">Queued</span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {servicesNeedingImage.map((svc) => (
-                              <div key={svc} className="flex items-center gap-2">
-                                <span className="w-32 font-mono text-[11px] truncate text-foreground" title={svc}>
-                                  {svc}
-                                </span>
-                                <Input
-                                  className="flex-1 font-mono text-xs h-8"
-                                  placeholder={`ghcr.io/org/${svc}@sha256:...`}
-                                  value={serviceImageOverrides[svc] ?? ""}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setServiceImageOverrides((prev) => ({ ...prev, [svc]: val }));
-                                  }}
-                                />
-                              </div>
-                            ))}
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="text-muted-foreground">
+                                <strong className="text-foreground">Image digests required ({unpinnedServices.length}):</strong>{" "}
+                                Click <strong className="text-foreground">Auto-build images</strong> or paste a <code className="font-mono">name@sha256:...</code> digest.
+                              </span>
+                              {localImageBuildAvailable && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="default"
+                                  className="h-7 text-xs inline-flex items-center gap-1.5"
+                                  onClick={() => void handleBuildLocalImages()}
+                                >
+                                  Auto-build images
+                                </Button>
+                              )}
+                            </div>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {servicesNeedingImage.map((svc) => (
+                                <div key={svc} className="flex items-center gap-2">
+                                  <span className="w-32 font-mono text-[11px] truncate text-foreground" title={svc}>
+                                    {svc}
+                                  </span>
+                                  <Input
+                                    className="flex-1 font-mono text-xs h-8"
+                                    placeholder={`ghcr.io/org/${svc}@sha256:...`}
+                                    value={serviceImageOverrides[svc] ?? ""}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setServiceImageOverrides((prev) => ({ ...prev, [svc]: val }));
+                                    }}
+                                  />
+                                </div>
+                              ))}
+                            </div>
                           </div>
-                        </div>
+                        )
                       )}
                     </div>
                   );
@@ -929,7 +975,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                               ))}
                             </ul>
                             {sandboxComposeYaml && (
-                              <pre className="max-h-48 overflow-auto rounded border bg-background p-2 font-mono text-[11px] text-foreground">
+                              <pre className="h-56 min-h-32 max-h-[70vh] resize-y overflow-auto rounded border bg-background p-2 font-mono text-[11px] text-foreground">
                                 {sandboxComposeYaml}
                               </pre>
                             )}
@@ -1132,7 +1178,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           </Button>
                         </div>
                         {showEnvInputs && (
-                          <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1 pt-1">
+                          <div className="space-y-1.5 h-56 min-h-32 max-h-[70vh] resize-y overflow-y-auto pr-1 pt-1">
                             {Object.entries(envVars).map(([k, v]) => (
                               <div key={k} className="flex items-center gap-1.5">
                                 <span className="w-40 font-mono text-[11px] truncate" title={k}>{k}</span>
@@ -1207,7 +1253,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                             Profile: {profileId}
                           </span>
                         </div>
-                        <div className="max-h-36 overflow-y-auto rounded border bg-background/80 divide-y text-xs">
+                        <div className="h-64 min-h-36 max-h-[70vh] resize-y overflow-y-auto rounded border bg-background/80 divide-y text-xs">
                           {detectedEndpoints.map((ep, idx) => (
                             <div
                               key={`${ep.service}-${ep.method}-${ep.path}-${idx}`}
