@@ -323,6 +323,8 @@ export function ArchitectureDiagrams({
           onSelect={onSelect}
           theme={theme}
           onThemeChange={setTheme}
+          requestedMode={searchParams.get("mode")}
+          requestedSessionId={searchParams.get("session")}
         />
       ) : !document ? (
         <p role="status" className="rounded-xl border bg-card p-5 text-sm text-muted-foreground">

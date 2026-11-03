@@ -634,3 +634,35 @@ test("UML workspace viewId sanitization keeps complex method signatures BFF-safe
   assert.match(activitySigB, /^[a-zA-Z0-9:_-]{1,160}$/);
   assert.notEqual(activitySigA, activitySigB);
 });
+test("Observed runtime UML_ACTIVITY projects multi-swimlane actions, decision branches, and valid Draw.io XML", () => {
+  const { projectObservedRuntimeActivityDiagram, buildUmlDrawioXml } = require("../src/features/architecture/uml-diagrams.ts");
+  const model = {
+    id: "m1",
+    projectId: "p1",
+    snapshotId: "s1",
+    revision: 2,
+    label: "Test",
+    elements: [
+      { id: "gw", name: "api-gateway", elementType: "SERVICE_CONTAINER", evidence: [] },
+      { id: "ord", name: "order-service", elementType: "SERVICE_CONTAINER", evidence: [] },
+      { id: "cat", name: "catalog-service", elementType: "SERVICE_CONTAINER", evidence: [] },
+    ],
+    edges: [],
+  };
+  const proj = projectObservedRuntimeActivityDiagram(
+    model,
+    [
+      { stepOrder: 1, callerService: "mavis-runner", calleeService: "api-gateway", httpMethod: "POST", operation: "/api/orders/checkout", httpStatusCode: 201, durationMs: 85 },
+      { stepOrder: 2, callerService: "api-gateway", calleeService: "order-service", httpMethod: "POST", operation: "/api/orders/checkout", httpStatusCode: 201, durationMs: 62 },
+      { stepOrder: 3, callerService: "order-service", calleeService: "catalog-service", httpMethod: "GET", operation: "/api/catalog/products/1", httpStatusCode: 404, durationMs: 14 },
+      { stepOrder: 4, callerService: "order-service", calleeService: "catalog-service", httpMethod: "GET", operation: "/api/catalog/products/2", httpStatusCode: 200, durationMs: 19 },
+    ],
+    { scenarioName: "Checkout Flow" },
+  );
+  assert.equal(proj.partitions.length, 3);
+  assert.equal(proj.nodes.filter((n) => n.kind === "ACTION").length, 4);
+  assert.equal(proj.nodes.filter((n) => n.kind === "DECISION").length, 1);
+  assert.equal(proj.validationIssues.filter((i) => i.severity === "ERROR").length, 0);
+  const xml = buildUmlDrawioXml(proj);
+  assert.ok(xml.includes("api-gateway") && xml.includes("order-service") && xml.includes("catalog-service"));
+});

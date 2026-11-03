@@ -2983,6 +2983,311 @@ export function projectUmlActivityDiagram(
   };
 }
 
+export interface ObservedActivityStepInput {
+  stepOrder?: number | null | undefined;
+  callerService?: string | null | undefined;
+  calleeService?: string | null | undefined;
+  callerElementId?: string | null | undefined;
+  calleeElementId?: string | null | undefined;
+  operation?: string | null | undefined;
+  httpMethod?: string | null | undefined;
+  httpStatusCode?: number | null | undefined;
+  durationMs?: number | null | undefined;
+  traceId?: string | null | undefined;
+}
+
+export function projectObservedRuntimeActivityDiagram(
+  model: ArchitecturalModel,
+  steps: ObservedActivityStepInput[],
+  options?: {
+    operationId?: string | undefined;
+    scenarioName?: string | undefined;
+    overlay?: UmlActivityOverlay | undefined;
+  },
+): UmlActivityDiagramProjection {
+  const opId = options?.operationId ?? "flow:runtime:observed";
+  const scenarioTitle = options?.scenarioName?.trim() || "Observed Runtime Workflow";
+  const serviceElements = model.elements.filter(
+    (e) => e.elementType === "SERVICE_CONTAINER" || e.elementType === "EXTERNAL_SYSTEM",
+  );
+  const findServiceElement = (name: string, explicitId?: string | null) => {
+    if (explicitId) {
+      const byId = model.elements.find((e) => e.id === explicitId);
+      if (byId) return byId;
+    }
+    const clean = name.trim().toLowerCase();
+    return (
+      serviceElements.find((e) => e.name.trim().toLowerCase() === clean) ??
+      model.elements.find((e) => e.name.trim().toLowerCase() === clean) ??
+      null
+    );
+  };
+
+  const isRunnerName = (name: string) =>
+    /^(mavis[-_ ]?runner|test[-_ ]?runner|runner)$/i.test(name.trim());
+
+  const partitions: Array<{ partitionId: string; name: string; serviceId: string | null }> = [];
+  const partitionByKey = new Map<
+    string,
+    { partitionId: string; name: string; serviceId: string | null }
+  >();
+
+  const ensurePartition = (rawName: string, explicitId?: string | null) => {
+    const cleanName = rawName.trim() || "service";
+    const key = cleanName.toLowerCase();
+    const existing = partitionByKey.get(key);
+    if (existing) return existing;
+    const matchedEl = findServiceElement(cleanName, explicitId);
+    const part = {
+      partitionId: matchedEl
+        ? `partition:${matchedEl.id}`
+        : `partition:runtime:${cleanName.replace(/[^a-zA-Z0-9_-]+/g, "_")}`,
+      name: matchedEl?.name ?? cleanName,
+      serviceId: matchedEl?.id ?? null,
+    };
+    partitionByKey.set(key, part);
+    partitions.push(part);
+    return part;
+  };
+
+  for (const step of steps) {
+    const caller = (step.callerService ?? "").trim();
+    const callee = (step.calleeService ?? "").trim();
+    if (caller && !isRunnerName(caller)) {
+      ensurePartition(caller, step.callerElementId);
+    }
+    if (callee && !isRunnerName(callee)) {
+      ensurePartition(callee, step.calleeElementId);
+    }
+  }
+  if (partitions.length === 0 && steps.length > 0) {
+    const fallbackName =
+      (steps[0]?.calleeService ?? steps[0]?.callerService ?? "service").trim() || "service";
+    ensurePartition(fallbackName, steps[0]?.calleeElementId ?? steps[0]?.callerElementId);
+  }
+
+  const nodes: UmlActivityNode[] = [];
+  const edges: UmlActivityEdge[] = [];
+
+  if (steps.length > 0 && partitions.length > 0) {
+    const firstStep = steps[0]!;
+    const firstTargetName =
+      (firstStep.calleeService && !isRunnerName(firstStep.calleeService)
+        ? firstStep.calleeService
+        : firstStep.callerService && !isRunnerName(firstStep.callerService)
+          ? firstStep.callerService
+          : partitions[0]!.name) ?? partitions[0]!.name;
+    const firstPart = ensurePartition(firstTargetName, firstStep.calleeElementId);
+
+    const initialId = `${opId}:initial`;
+    nodes.push({
+      nodeId: initialId,
+      kind: "INITIAL",
+      label: "Initial",
+      partitionId: firstPart.partitionId,
+      partitionName: firstPart.name,
+      provenance: "EXTRACTED",
+    });
+
+    let prevNodeId = initialId;
+    let prevPartId = firstPart.partitionId;
+    let pendingGuard: string | null = null;
+    let finalEmitted = false;
+
+    steps.forEach((step, idx) => {
+      const targetName =
+        (step.calleeService && !isRunnerName(step.calleeService)
+          ? step.calleeService
+          : step.callerService && !isRunnerName(step.callerService)
+            ? step.callerService
+            : partitions[0]!.name) ?? partitions[0]!.name;
+      const part = ensurePartition(targetName, step.calleeElementId);
+      const verb = (step.httpMethod ?? "CALL").trim().toUpperCase();
+      const rawOp = (step.operation ?? "/").trim();
+      const endpoint = rawOp.toUpperCase().startsWith(`${verb} `) ? rawOp : `${verb} ${rawOp}`;
+      const status = typeof step.httpStatusCode === "number" ? step.httpStatusCode : null;
+      const dur = typeof step.durationMs === "number" ? `${step.durationMs}ms` : null;
+      const caller = (step.callerService ?? "").trim();
+      const callerHint =
+        caller && !isRunnerName(caller) && caller.toLowerCase() !== part.name.toLowerCase()
+          ? `from ${caller}`
+          : null;
+      const meta = [callerHint, status != null ? `HTTP ${status}` : null, dur]
+        .filter(Boolean)
+        .join(" · ");
+      const actionId = `${opId}:step:${idx + 1}`;
+      nodes.push({
+        nodeId: actionId,
+        kind: "ACTION",
+        label: meta ? `#${idx + 1} ${endpoint}\n${meta}` : `#${idx + 1} ${endpoint}`,
+        partitionId: part.partitionId,
+        partitionName: part.name,
+        objectState: status != null ? `HTTP ${status}` : null,
+        provenance: "EXTRACTED",
+      });
+
+      const edgeGuard =
+        pendingGuard ??
+        (prevPartId !== part.partitionId && prevNodeId !== initialId ? `${verb}` : null);
+      edges.push({
+        edgeId: `${opId}:e:${edges.length + 1}`,
+        from: prevNodeId,
+        to: actionId,
+        flowKind: "CONTROL_FLOW",
+        guard: edgeGuard,
+        provenance: "EXTRACTED",
+      });
+
+      if (status != null && status >= 400) {
+        const decisionId = `${opId}:decision:${idx + 1}`;
+        nodes.push({
+          nodeId: decisionId,
+          kind: "DECISION",
+          label: `HTTP ${status} status?`,
+          partitionId: part.partitionId,
+          partitionName: part.name,
+          provenance: "EXTRACTED",
+        });
+        edges.push({
+          edgeId: `${opId}:e:${edges.length + 1}`,
+          from: actionId,
+          to: decisionId,
+          flowKind: "CONTROL_FLOW",
+          guard: null,
+          provenance: "EXTRACTED",
+        });
+
+        if (idx < steps.length - 1) {
+          const abortId = `${opId}:abort:${idx + 1}`;
+          nodes.push({
+            nodeId: abortId,
+            kind: "FLOW_FINAL",
+            label: "Flow Final",
+            partitionId: part.partitionId,
+            partitionName: part.name,
+            provenance: "EXTRACTED",
+          });
+          edges.push({
+            edgeId: `${opId}:e:${edges.length + 1}`,
+            from: decisionId,
+            to: abortId,
+            flowKind: "CONTROL_FLOW",
+            guard: `HTTP ${status} abort`,
+            provenance: "EXTRACTED",
+          });
+          prevNodeId = decisionId;
+          prevPartId = part.partitionId;
+          pendingGuard = `HTTP ${status} handled`;
+        } else {
+          const finalErrId = `${opId}:final`;
+          nodes.push({
+            nodeId: finalErrId,
+            kind: "FLOW_FINAL",
+            label: "Flow Final",
+            partitionId: part.partitionId,
+            partitionName: part.name,
+            provenance: "EXTRACTED",
+          });
+          edges.push({
+            edgeId: `${opId}:e:${edges.length + 1}`,
+            from: decisionId,
+            to: finalErrId,
+            flowKind: "CONTROL_FLOW",
+            guard: `HTTP ${status}`,
+            provenance: "EXTRACTED",
+          });
+          finalEmitted = true;
+        }
+      } else {
+        prevNodeId = actionId;
+        prevPartId = part.partitionId;
+        pendingGuard = status != null ? `HTTP ${status}` : null;
+      }
+    });
+
+    if (!finalEmitted) {
+      const lastPart =
+        partitions.find((p) => p.partitionId === prevPartId) ??
+        partitions[partitions.length - 1]!;
+      const finalId = `${opId}:final`;
+      nodes.push({
+        nodeId: finalId,
+        kind: "ACTIVITY_FINAL",
+        label: "Activity Final",
+        partitionId: lastPart.partitionId,
+        partitionName: lastPart.name,
+        provenance: "EXTRACTED",
+      });
+      edges.push({
+        edgeId: `${opId}:e:${edges.length + 1}`,
+        from: prevNodeId,
+        to: finalId,
+        flowKind: "CONTROL_FLOW",
+        guard: pendingGuard,
+        provenance: "EXTRACTED",
+      });
+    }
+  }
+
+  const knownNodeIds = new Set(nodes.map((n) => n.nodeId));
+  const knownEdgeIds = new Set(edges.map((e) => e.edgeId));
+  const fallbackPart = partitions[0] ?? {
+    partitionId: "partition:runtime:default",
+    name: "Runtime Service",
+    serviceId: null,
+  };
+  for (const dn of options?.overlay?.designedNodes ?? []) {
+    if (isGeneratedActivityItem(dn) || knownNodeIds.has(dn.nodeId)) continue;
+    knownNodeIds.add(dn.nodeId);
+    if (dn.partitionId && !partitions.some((p) => p.partitionId === dn.partitionId)) {
+      partitions.push({
+        partitionId: dn.partitionId,
+        name: dn.partitionName || dn.partitionId,
+        serviceId: null,
+      });
+    }
+    nodes.push({
+      ...dn,
+      partitionId: dn.partitionId || fallbackPart.partitionId,
+      partitionName: dn.partitionName || fallbackPart.name,
+      provenance: "DESIGNED",
+    });
+  }
+  for (const de of options?.overlay?.designedEdges ?? []) {
+    if (isGeneratedActivityItem(de) || knownEdgeIds.has(de.edgeId)) continue;
+    knownEdgeIds.add(de.edgeId);
+    edges.push({
+      ...de,
+      provenance: "DESIGNED",
+    });
+  }
+
+  const runtimeOption: UmlActivityOperationOption = {
+    operationId: opId,
+    classifierId: partitions[0]?.serviceId ?? model.elements[0]?.id ?? "runtime",
+    classifierName: "Observed Runtime Trace",
+    serviceId: partitions[0]?.serviceId ?? null,
+    serviceName: partitions.map((p) => p.name).join(" → ") || "Runtime",
+    methodName: scenarioTitle,
+    signatureKey: `${scenarioTitle} (${steps.length} calls)`,
+    extractionCompleteness: "COMPLETE",
+    unsupportedConstructs: [],
+  };
+
+  return {
+    diagramKind: "UML_ACTIVITY",
+    modelId: model.id,
+    selectedOperationId: opId,
+    availableOperations: [runtimeOption],
+    extractionCompleteness: "COMPLETE",
+    unsupportedConstructs: [],
+    partitions,
+    nodes,
+    edges,
+    validationIssues: validateActivityStructure(nodes, edges),
+  };
+}
+
 // ============================================================================
 // 5. M7 — UML STATE MACHINE DIAGRAM
 // ============================================================================
