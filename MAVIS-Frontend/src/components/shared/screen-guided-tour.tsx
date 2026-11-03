@@ -230,6 +230,10 @@ export function ScreenSpotlightOverlay({
     };
 
     const scrollAndMeasure = () => {
+      const tabBtn = document.querySelector<HTMLElement>(`[data-tour-tab="${currentStep.id}"]`);
+      if (tabBtn && typeof tabBtn.click === "function") {
+        tabBtn.click();
+      }
       const targetEl = findBestTargetElement(currentStep.selectors);
       if (targetEl) {
         scrollTargetIntoSpotlightView(targetEl);

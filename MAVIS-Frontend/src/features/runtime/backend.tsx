@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   Network,
   GitCommit,
-  Layers,
   Play,
   RotateCcw,
   CheckCircle2,
@@ -993,7 +992,7 @@ export function BackendRuntime({ administrative = false }: { administrative?: bo
 function RuntimeProject({ administrative = false }: { administrative?: boolean }) {
   const { t } = useLocale();
   const { projectId } = useSelection();
-  const [vizMode, setVizMode] = useState<"both" | "topology" | "sequence">("both");
+  const [vizMode, setVizMode] = useState<"topology" | "sequence">("topology");
   const [selectedServiceFilter, setSelectedServiceFilter] = useState<string | null>(null);
   const [selectedClusterFilter, setSelectedClusterFilter] = useState<ApiFeatureClusterId | null>(null);
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: !!projectId });
@@ -1922,18 +1921,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             <div className="inline-flex flex-wrap items-center rounded-lg border bg-muted/30 p-0.5 gap-0.5">
               <button
                 type="button"
-                onClick={() => setVizMode("both")}
-                className={`inline-flex items-center h-7 px-3 rounded-md text-xs font-medium transition ${
-                  vizMode === "both"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Layers className="h-3.5 w-3.5 mr-1.5" />
-                Split View
-              </button>
-              <button
-                type="button"
+                data-tour-tab="sess-topology"
                 onClick={() => setVizMode("topology")}
                 className={`inline-flex items-center h-7 px-3 rounded-md text-xs font-medium transition ${
                   vizMode === "topology"
@@ -1946,6 +1934,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               </button>
               <button
                 type="button"
+                data-tour-tab="sess-sequence"
                 onClick={() => setVizMode("sequence")}
                 className={`inline-flex items-center h-7 px-3 rounded-md text-xs font-medium transition ${
                   vizMode === "sequence"
@@ -2217,15 +2206,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             </div>
           )}
 
-          <div
-            className={
-              vizMode === "both"
-                ? "grid grid-cols-1 lg:grid-cols-2 gap-4 items-start"
-                : "space-y-4"
-            }
-          >
+          <div className="space-y-4">
             {/* Visual Canvas 1: Service Workflow Topology */}
-            {(vizMode === "both" || vizMode === "topology") && (
+            {vizMode === "topology" && (
               <div data-tour="session-topology" className="min-w-0">
                 <RuntimeWorkflowTopologyCanvas
                   steps={filteredSteps}
@@ -2237,7 +2220,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             )}
 
             {/* Visual Canvas 2: UML 2.5.1 Sequence Diagram */}
-            {(vizMode === "both" || vizMode === "sequence") && !observed && (
+            {vizMode === "sequence" && !observed && (
               <div data-tour="session-sequence" className="min-w-0">
                 <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
                   The UML sequence diagram is drawn only from captured trace spans. It appears after a run records
@@ -2245,7 +2228,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 </p>
               </div>
             )}
-            {(vizMode === "both" || vizMode === "sequence") && observed && (
+            {vizMode === "sequence" && observed && (
               <div data-tour="session-sequence" className="min-w-0">
                 <RuntimeSequenceDiagramCanvas
                   steps={filteredSteps}
