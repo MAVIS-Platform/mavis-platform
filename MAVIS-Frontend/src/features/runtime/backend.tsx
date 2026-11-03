@@ -11,6 +11,7 @@ import {
   Network,
   GitCommit,
   Play,
+  Loader2,
   RotateCcw,
   CheckCircle2,
   XCircle,
@@ -1742,21 +1743,6 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 <h4 className="font-bold text-sm text-foreground">
                   Step 3: Live Runtime Workflow Execution & Architecture Visualization
                 </h4>
-                <span
-                  className={`px-2 py-0.5 rounded-full border text-[11px] font-mono font-semibold ${
-                    observed
-                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/40"
-                      : active.has(upperExecStatus)
-                        ? "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/40 animate-pulse"
-                        : "bg-slate-500/15 text-slate-700 dark:text-slate-200 border-slate-500/40"
-                  }`}
-                >
-                  {observed
-                    ? "🟢 Observed trace"
-                    : active.has(upperExecStatus)
-                      ? `⏳ Executing in Sandbox (${execStatus})...`
-                      : "◌ Planned workflow (not executed)"}
-                </span>
               </div>
               <p className="text-xs text-muted-foreground">
                 Saves your complete Step 1 & Step 2 runtime configuration, executes the HTTP test workflow, and visualizes service call topology and UML sequence diagrams in real time.
@@ -1790,11 +1776,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 disabled={quickRunRunning || active.has(upperExecStatus) || !snapshots.data?.length}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs h-9 shadow"
               >
-                <Play className="h-3.5 w-3.5 mr-1.5" />
+                {quickRunRunning || active.has(upperExecStatus) ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin shrink-0" aria-hidden="true" />
+                ) : (
+                  <Play className="h-3.5 w-3.5 mr-1.5" />
+                )}
                 {quickRunRunning
                   ? "Saving & Running Workflow..."
                   : active.has(upperExecStatus)
-                    ? `⏳ Sandbox Running (${execStatus})...`
+                    ? `Sandbox Running (${execStatus})...`
                     : "⚡ Save & Run Workflow Now"}
               </Button>
             </div>
