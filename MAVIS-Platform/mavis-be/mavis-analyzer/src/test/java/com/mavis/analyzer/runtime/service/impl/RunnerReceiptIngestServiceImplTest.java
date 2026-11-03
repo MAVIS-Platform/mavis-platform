@@ -837,6 +837,120 @@ class RunnerReceiptIngestServiceImplTest {
         assertThat(steps.get(1).path("calleeService").asText()).isEqualTo("ledger-service");
         assertThat(steps.get(1).path("causalParentMessageIds").get(0).asText()).isEqualTo("msg-obs-1");
         filtersDiscoveryHeartbeatsAndResolvesGatewayDownstreamPinnedRoute();
+        groupsAsyncDownstreamSpansByScenarioTraceOrderAndEnrichesKafkaChannelAndCalleeRoute();
+    }
+
+    private void groupsAsyncDownstreamSpansByScenarioTraceOrderAndEnrichesKafkaChannelAndCalleeRoute() {
+        setUp();
+        UUID gatewayId = UUID.randomUUID();
+        UUID catalogId = UUID.randomUUID();
+        UUID notificationId = UUID.randomUUID();
+        UUID kafkaTopicId = UUID.randomUUID();
+
+        ModelElement gatewayEl = ModelElement.builder().id(gatewayId).modelVersion(baseModelVersion).name("api-gateway").elementType("SERVICE_CONTAINER").status("ACTIVE").build();
+        ModelElement orderEl = ModelElement.builder().id(serviceAId).modelVersion(baseModelVersion).name("order-service").elementType("SERVICE_CONTAINER").status("ACTIVE").build();
+        ModelElement catalogEl = ModelElement.builder().id(catalogId).modelVersion(baseModelVersion).name("catalog-service").elementType("SERVICE_CONTAINER").status("ACTIVE").build();
+        ModelElement notifEl = ModelElement.builder().id(notificationId).modelVersion(baseModelVersion).name("notification-service").elementType("SERVICE_CONTAINER").status("ACTIVE").build();
+        ModelElement topicEl = ModelElement.builder().id(kafkaTopicId).modelVersion(baseModelVersion).name("order.created").elementType("MESSAGE_CHANNEL").status("ACTIVE").build();
+
+        when(modelElementRepository.findByModelVersionId(modelVersionId))
+                .thenReturn(List.of(gatewayEl, orderEl, catalogEl, notifEl, topicEl));
+
+        ObjectNode deductProps = objectMapper.createObjectNode().put("calleeRoute", "/api/catalog/inventory/deduct").put("httpMethod", "POST");
+        ModelRelationship staticOrderToCatalog = ModelRelationship.builder()
+                .id(UUID.randomUUID())
+                .modelVersion(baseModelVersion)
+                .sourceElement(orderEl)
+                .targetElement(catalogEl)
+                .relationType("REST_CALL")
+                .originLayer("STATIC")
+                .properties(deductProps)
+                .build();
+        ModelRelationship staticOrderToTopic = ModelRelationship.builder()
+                .id(UUID.randomUUID())
+                .modelVersion(baseModelVersion)
+                .sourceElement(orderEl)
+                .targetElement(topicEl)
+                .relationType("PUBLISHES_EVENT")
+                .originLayer("STATIC")
+                .build();
+        ModelRelationship staticTopicToNotif = ModelRelationship.builder()
+                .id(UUID.randomUUID())
+                .modelVersion(baseModelVersion)
+                .sourceElement(topicEl)
+                .targetElement(notifEl)
+                .relationType("CONSUMES_EVENT")
+                .originLayer("STATIC")
+                .build();
+        when(modelRelationshipRepository.findByModelVersionId(modelVersionId))
+                .thenReturn(List.of(staticOrderToCatalog, staticOrderToTopic, staticTopicToNotif));
+
+        ObjectNode pinnedConfig = objectMapper.createObjectNode();
+        ArrayNode pinnedSteps = pinnedConfig.putObject("scenario").putArray("steps");
+        pinnedSteps.addObject().put("id", "step-7").put("service", "api-gateway").put("method", "POST").put("path", "/api/order/orders/checkout").put("expectedStatus", 200);
+        pinnedSteps.addObject().put("id", "step-9").put("service", "api-gateway").put("method", "PUT").put("path", "/api/order/orders/1/cancel").put("expectedStatus", 200);
+        session.setScenarioConfig(pinnedConfig);
+
+        String traceCheckout = "77ad575777ad575777ad575777ad5757";
+        String traceCancel = "8fe2e1688fe2e1688fe2e1688fe2e168";
+
+        RunnerCorrelatedSpanDTO gwCheckout = RunnerCorrelatedSpanDTO.builder()
+                .traceId(traceCheckout).spanId("c001").runtimeService("api-gateway").modelServiceId(gatewayId.toString())
+                .scenarioStepId("step-7").startTimeUnixNano("1793542790000000000").durationNanoseconds("50000000").httpStatusCode(200).build();
+        RunnerCorrelatedSpanDTO orderCheckout = RunnerCorrelatedSpanDTO.builder()
+                .traceId(traceCheckout).spanId("c002").parentSpanId("c001").runtimeService("order-service").modelServiceId(serviceAId.toString())
+                .scenarioStepId("step-7").startTimeUnixNano("1793542790005000000").durationNanoseconds("40000000").httpStatusCode(200).build();
+        RunnerCorrelatedSpanDTO catalogDeduct = RunnerCorrelatedSpanDTO.builder()
+                .traceId(traceCheckout).spanId("c003").parentSpanId("c002").runtimeService("catalog-service").modelServiceId(catalogId.toString())
+                .scenarioStepId("step-7").startTimeUnixNano("1793542790010000000").durationNanoseconds("15000000").httpStatusCode(200).build();
+        RunnerCorrelatedSpanDTO notifAsync = RunnerCorrelatedSpanDTO.builder()
+                .traceId(traceCheckout).spanId("c004").parentSpanId("c002").runtimeService("notification-service").modelServiceId(notificationId.toString())
+                .scenarioStepId("step-7").startTimeUnixNano("1793542799000000000").durationNanoseconds("10000000").httpStatusCode(200).build();
+
+        RunnerCorrelatedSpanDTO gwCancel = RunnerCorrelatedSpanDTO.builder()
+                .traceId(traceCancel).spanId("d001").runtimeService("api-gateway").modelServiceId(gatewayId.toString())
+                .scenarioStepId("step-9").startTimeUnixNano("1793542795000000000").durationNanoseconds("25000000").httpStatusCode(200).build();
+        RunnerCorrelatedSpanDTO orderCancel = RunnerCorrelatedSpanDTO.builder()
+                .traceId(traceCancel).spanId("d002").parentSpanId("d001").runtimeService("order-service").modelServiceId(serviceAId.toString())
+                .scenarioStepId("step-9").startTimeUnixNano("1793542795005000000").durationNanoseconds("20000000").httpStatusCode(200).build();
+
+        RunnerTraceCorrelationDTO trace = RunnerTraceCorrelationDTO.builder()
+                .sessionId(sessionId.toString())
+                .modelVersionId(modelVersionId.toString())
+                .spans(List.of(gwCheckout, orderCheckout, catalogDeduct, gwCancel, orderCancel, notifAsync))
+                .causalEdges(List.of(
+                        new RunnerCausalEdgeDTO(traceCheckout, "c001", "c002"),
+                        new RunnerCausalEdgeDTO(traceCheckout, "c002", "c003"),
+                        new RunnerCausalEdgeDTO(traceCheckout, "c002", "c004"),
+                        new RunnerCausalEdgeDTO(traceCancel, "d001", "d002")))
+                .build();
+
+        RunnerOutcomeDTO outcome = RunnerOutcomeDTO.builder()
+                .executionStatus("Completed").scenarioStatus("Passed").evidenceStatus("Available")
+                .cleanupStatus("Confirmed").traceQuality("Complete").mappingStatus("Mapped").trace(trace).build();
+
+        runnerReceiptIngestService.ingestRunnerReceiptAck(
+                sessionId,
+                createValidReceiptBuilder().imageSourceCorrespondence("Verified").outcome(outcome).build());
+
+        ArgumentCaptor<DiagramVersion> diagCaptor = ArgumentCaptor.forClass(DiagramVersion.class);
+        verify(diagramVersionRepository, atLeastOnce()).save(diagCaptor.capture());
+        List<DiagramVersion> savedDiagrams = diagCaptor.getAllValues();
+        var steps = savedDiagrams.get(savedDiagrams.size() - 1).getLayoutJson().path("steps");
+        assertThat(steps).hasSize(4);
+        assertThat(steps.get(0).path("operation").asText()).isEqualTo("/api/order/orders/checkout");
+        assertThat(steps.get(1).path("operation").asText()).isEqualTo("/api/catalog/inventory/deduct");
+        assertThat(steps.get(2).path("calleeService").asText()).isEqualTo("notification-service");
+        assertThat(steps.get(3).path("operation").asText()).isEqualTo("/api/order/orders/1/cancel");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<ModelRelationship>> relCaptor = ArgumentCaptor.forClass(List.class);
+        verify(modelRelationshipRepository, atLeastOnce()).saveAll(relCaptor.capture());
+        List<ModelRelationship> lastSavedRels = relCaptor.getAllValues().get(relCaptor.getAllValues().size() - 1);
+        assertThat(lastSavedRels)
+                .filteredOn(r -> "STATIC_AND_RUNTIME".equals(r.getOriginLayer()))
+                .extracting(r -> r.getSourceElement().getName() + "->" + r.getTargetElement().getName())
+                .contains("order-service->catalog-service", "order-service->order.created", "order.created->notification-service");
     }
 
     private void filtersDiscoveryHeartbeatsAndResolvesGatewayDownstreamPinnedRoute() {

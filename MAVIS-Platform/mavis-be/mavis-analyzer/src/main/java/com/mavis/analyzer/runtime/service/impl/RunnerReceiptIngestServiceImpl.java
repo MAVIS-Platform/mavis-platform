@@ -208,9 +208,20 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         Set<String> externalRootSpanIds = new HashSet<>();
         Map<String, JsonNode> externalRootStepByTraceParent = new LinkedHashMap<>();
         Map<String, Integer> traceOrderByTraceId = new LinkedHashMap<>();
+        Map<String, Integer> stepOrderByStepId = new LinkedHashMap<>();
+        if (session.getScenarioConfig() != null && session.getScenarioConfig().path("scenario").path("steps").isArray()) {
+            int cfgIdx = 1;
+            for (JsonNode st : session.getScenarioConfig().path("scenario").path("steps")) {
+                String sid = st.path("id").asText("").trim().toLowerCase(Locale.ROOT);
+                if (!sid.isEmpty()) stepOrderByStepId.putIfAbsent(sid, cfgIdx);
+                cfgIdx++;
+            }
+        }
         if (outcome.getScenario() != null && outcome.getScenario().has("steps") && outcome.getScenario().get("steps").isArray()) {
             int traceOrdIdx = 1;
             for (JsonNode stepNode : outcome.getScenario().get("steps")) {
+                String sid = stepNode.path("id").asText(stepNode.path("stepId").asText("")).trim().toLowerCase(Locale.ROOT);
+                if (!sid.isEmpty()) stepOrderByStepId.putIfAbsent(sid, traceOrdIdx);
                 if (stepNode.hasNonNull("traceId")) {
                     String tid = stepNode.get("traceId").asText("").trim().toLowerCase(Locale.ROOT);
                     if (!tid.isEmpty()) {
@@ -232,6 +243,31 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                     // External parent identity is scoped to its trace, never spanId alone.
                     if (stepNode.hasNonNull("traceId")) {
                         externalRootSpanIds.add((stepNode.get("traceId").asText() + ":" + sSpanId).toLowerCase(Locale.ROOT));
+                    }
+                }
+            }
+        }
+        if (!spans.isEmpty()) {
+            Map<String, Long> minStartByTrace = new LinkedHashMap<>();
+            for (RunnerCorrelatedSpanDTO s : spans) {
+                if (s == null || s.getTraceId() == null || s.getTraceId().isBlank()) continue;
+                String tid = s.getTraceId().trim().toLowerCase(Locale.ROOT);
+                if (s.getScenarioStepId() != null && !s.getScenarioStepId().isBlank()) {
+                    Integer stepOrd = stepOrderByStepId.get(s.getScenarioStepId().trim().toLowerCase(Locale.ROOT));
+                    if (stepOrd != null) traceOrderByTraceId.putIfAbsent(tid, stepOrd);
+                }
+                Long startNano = parseUnsignedNanos(s.getStartTimeUnixNano());
+                if (startNano != null) {
+                    minStartByTrace.merge(tid, startNano, (a, b) -> Long.compareUnsigned(a, b) <= 0 ? a : b);
+                }
+            }
+            if (minStartByTrace.size() > 1) {
+                List<Map.Entry<String, Long>> sortedTraces = new ArrayList<>(minStartByTrace.entrySet());
+                sortedTraces.sort((a, b) -> Long.compareUnsigned(a.getValue(), b.getValue()));
+                int nextOrd = traceOrderByTraceId.values().stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+                for (Map.Entry<String, Long> e : sortedTraces) {
+                    if (!traceOrderByTraceId.containsKey(e.getKey())) {
+                        traceOrderByTraceId.put(e.getKey(), nextOrd++);
                     }
                 }
             }
