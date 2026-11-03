@@ -68,6 +68,7 @@ function OverviewHelp({ onStart, onStartDashboardTour }: { onStart: () => void; 
           className="size-9 rounded-full text-muted-foreground hover:text-foreground"
           aria-label={t("Overview help", "Hướng dẫn tổng quan")}
           title={t("Overview help", "Hướng dẫn tổng quan")}
+          data-tour-trigger="overview"
         >
           <CircleHelp className="size-5" aria-hidden="true" />
         </Button>
@@ -341,7 +342,9 @@ function Projects() {
                 )}
               </DetailPanel>
             </section>
-            <ProjectActivity />
+            <section data-tour="overview-activity" className="min-w-0">
+              <ProjectActivity />
+            </section>
           </div>
         </RequestState>
       </PageContainer>

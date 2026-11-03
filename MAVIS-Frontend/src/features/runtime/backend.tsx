@@ -1735,7 +1735,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       <RuntimeStepperBanner currentStep={3} projectId={projectId} />
 
       {!administrative && (
-        <div className="rounded-xl border border-primary/30 bg-gradient-to-r from-primary/10 via-sky-500/5 to-emerald-500/10 p-4 shadow-sm space-y-4">
+        <div data-tour="session-launch-bar" className="rounded-xl border border-primary/30 bg-gradient-to-r from-primary/10 via-sky-500/5 to-emerald-500/10 p-4 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -2116,7 +2116,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
 
           {/* Visual Feature Cluster Flow Pipeline */}
           {featureClusters.length > 0 && (
-            <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 space-y-2.5">
+            <div data-tour="session-flow-clusters" className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 space-y-2.5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-sky-400">
@@ -2226,7 +2226,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           >
             {/* Visual Canvas 1: Service Workflow Topology */}
             {(vizMode === "both" || vizMode === "topology") && (
-              <div className="min-w-0">
+              <div data-tour="session-topology" className="min-w-0">
                 <RuntimeWorkflowTopologyCanvas
                   steps={filteredSteps}
                   planned={!observed}
@@ -2238,7 +2238,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
 
             {/* Visual Canvas 2: UML 2.5.1 Sequence Diagram */}
             {(vizMode === "both" || vizMode === "sequence") && !observed && (
-              <div className="min-w-0">
+              <div data-tour="session-sequence" className="min-w-0">
                 <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
                   The UML sequence diagram is drawn only from captured trace spans. It appears after a run records
                   evidence.
@@ -2246,7 +2246,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               </div>
             )}
             {(vizMode === "both" || vizMode === "sequence") && observed && (
-              <div className="min-w-0">
+              <div data-tour="session-sequence" className="min-w-0">
                 <RuntimeSequenceDiagramCanvas
                   steps={filteredSteps}
                   sessionTitle={

@@ -2405,4 +2405,33 @@ test("Screen Guided Tour catalog covers all 28 screens with bilingual EN/VI step
  const {SectionHeader}=require("../src/components/layout/page.tsx");
  const headerHtml=renderToStaticMarkup(React.createElement(SectionHeader,{title:"Runtime Configuration"}));
  assert.ok(headerHtml.includes('data-tour-trigger="runtime-config"'),"SectionHeader must render ScreenHelpTrigger matching title");
+ const {findBestTargetElement}=require("../src/components/shared/screen-guided-tour.tsx");
+ const origDoc=global.document;
+ try{
+  const triggerBtn={hasAttribute:(k)=>k==="data-tour-trigger",closest:()=>null,getBoundingClientRect:()=>({width:36,height:36})};
+  const realBtn={hasAttribute:()=>false,closest:()=>null,getBoundingClientRect:()=>({width:140,height:36})};
+  global.document={querySelectorAll:(sel)=>sel==="main button"?[triggerBtn,realBtn]:[]};
+  assert.equal(findBestTargetElement(["main button"]),realBtn,"findBestTargetElement must skip [data-tour-trigger] buttons and select the real action button");
+ }finally{
+  global.document=origDoc;
+ }
+ const tourFiles=[
+  "src/routes/index.tsx","src/routes/architecture.tsx","src/routes/impact.tsx","src/routes/explain.tsx",
+  "src/features/projects/components.tsx","src/features/projects/screens.tsx",
+  "src/features/architecture/components.tsx","src/features/architecture/dependency-network.tsx",
+  "src/features/architecture/architecture-diagrams.tsx",
+  "src/features/runtime/screens.tsx","src/features/runtime/backend.tsx",
+  "src/components/shared/screen-guided-tour.tsx"
+ ].map(f=>fs.readFileSync(path.join(root,f),"utf8")).join("\n");
+ assert.ok(tourFiles.includes('hasAttribute("data-tour-trigger")'),"findBestTargetElement must skip [data-tour-trigger] buttons");
+ for(const id of expectedScreens){
+  const tour=resolveScreenTour(id);
+  for(const step of tour.steps){
+   const firstSel=step.selectors[0];
+   const m=/^\[data-tour="([^"]+)"\]$/.exec(firstSel);
+   if(m){
+    assert.ok(tourFiles.includes(`"${m[1]}"`),`Missing data-tour="${m[1]}" in frontend source for ${id}:${step.id}`);
+   }
+  }
+ }
 });

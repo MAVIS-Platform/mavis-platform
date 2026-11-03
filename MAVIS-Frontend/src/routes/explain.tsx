@@ -182,7 +182,7 @@ function Explanation({ model }: { model: ArchitecturalModel }) {
         }));
 
   return (
-    <div className="mt-5 space-y-4">
+    <div data-tour="explain-workspace" className="mt-5 space-y-4">
       <div className="space-y-3 rounded-xl border bg-card p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5">

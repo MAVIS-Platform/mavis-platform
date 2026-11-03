@@ -69,22 +69,24 @@ export function ProjectSelector({
     : projects;
   return (
     <RequestState query={query} empty={!options.length}>
-      <SelectField
-        disabled={busy}
-        label="Selected project"
-        value={selection.projectId}
-        onChange={selection.setProjectId}
-        options={[
-          ...options
-            .filter(
-              (p) =>
-                !workspaceId ||
-                (p.workspaceId === workspaceId &&
-                  (!p.assignmentId || p.assignmentId === assignmentId)),
-            )
-            .map((p) => ({ value: p.id, label: p.name })),
-        ]}
-      />
+      <div data-tour="project-selector">
+        <SelectField
+          disabled={busy}
+          label="Selected project"
+          value={selection.projectId}
+          onChange={selection.setProjectId}
+          options={[
+            ...options
+              .filter(
+                (p) =>
+                  !workspaceId ||
+                  (p.workspaceId === workspaceId &&
+                    (!p.assignmentId || p.assignmentId === assignmentId)),
+              )
+              .map((p) => ({ value: p.id, label: p.name })),
+          ]}
+        />
+      </div>
     </RequestState>
   );
 }
@@ -149,7 +151,11 @@ function ProjectImportDialog({
         onSkip={() => onTourStepChange?.(null)}
       >
         <DialogTrigger asChild>
-          <Button size={create ? "default" : "sm"} disabled={!create && !projectId}>
+          <Button
+            data-tour={create ? "overview-import-btn" : "snapshot-import-action"}
+            size={create ? "default" : "sm"}
+            disabled={!create && !projectId}
+          >
             {create ? t("Import project source", "Nhập mã nguồn dự án") : t("Import new snapshot", "Nhập bản chụp mới")}
           </Button>
         </DialogTrigger>

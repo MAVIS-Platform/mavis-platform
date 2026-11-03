@@ -825,7 +825,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         <RequestState query={snapshots} empty={!snapshots.data?.length}>
           <div className="space-y-4">
             <div className="flex flex-wrap items-end gap-3">
-              <div className="flex-1 min-w-64">
+              <div data-tour="runtime-target-revision" className="flex-1 min-w-64">
                 {(() => {
                   const candidateModels = staticModels.length ? staticModels : (models.data ?? []);
                   if (candidateModels.length > 0) {
@@ -893,6 +893,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 <Button
                   type="button"
                   size="sm"
+                  data-tour="runtime-next-step2"
                   className="h-9 px-4 text-xs inline-flex items-center gap-1.5"
                   disabled={!isStep1Ready || save.isPending}
                   title={!isStep1Ready ? step1BlockedReason : undefined}
@@ -916,7 +917,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
             {preflight.isError && <ErrorState error={preflight.error} />}
 
             {hasCheckedPreflight && (
-              <div className="rounded-lg border p-4 space-y-4 bg-muted/30">
+              <div data-tour="runtime-detected-services" className="rounded-lg border p-4 space-y-4 bg-muted/30">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-2.5">
                     <StatusBadge
@@ -2604,6 +2605,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   </Link>
                   <Button
                     size="sm"
+                    data-tour="scenario-confirm-run"
                     className="h-8 text-xs"
                     disabled={!modelId || !steps.length || generateAiDraft.isPending || buildImages.isPending || autoSaveConfig.isPending || saveDraft.isPending || updateDraft.isPending || start.isPending}
                     onClick={() => handleCreateAndRun(true)}
@@ -2635,6 +2637,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             </div>
           )}
 
+          <div data-tour="scenario-header" className="space-y-3">
           <div className="grid gap-3 md:grid-cols-2">
             <FormField label="Scenario Name">
               {(props) => (
@@ -2685,6 +2688,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           {aiSummary && (
             <p className="text-xs text-muted-foreground">{aiSummary}</p>
           )}
+          </div>
 
           {steps.length > 0 && (() => {
             const uniqueEntryServices = Array.from(new Set(steps.map((s) => s.service)));
@@ -2780,7 +2784,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 </div>
 
                 {/* Visual API Feature Clusters Pipeline */}
-                <div className="rounded-lg border bg-muted/20 p-3 space-y-2.5">
+                <div data-tour="scenario-flow-clusters" className="rounded-lg border bg-muted/20 p-3 space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-semibold text-foreground">
                       Flow Groups ({stepClusters.length} groups · {steps.length} steps)
@@ -2844,7 +2848,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             );
           })()}
 
-          <div className="space-y-3">
+          <div data-tour="scenario-http-steps" className="space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-semibold">
                 HTTP Steps ({steps.length})

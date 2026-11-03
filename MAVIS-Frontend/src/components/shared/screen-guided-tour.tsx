@@ -24,12 +24,15 @@ interface TargetRect {
   height: number;
 }
 
-function findBestTargetElement(selectors: readonly string[]): HTMLElement | null {
+export function findBestTargetElement(selectors: readonly string[]): HTMLElement | null {
   if (typeof document === "undefined") return null;
   for (const selector of selectors) {
     try {
       const elements = document.querySelectorAll<HTMLElement>(selector);
       for (const el of elements) {
+        if (el.hasAttribute("data-tour-trigger") || el.closest("[data-tour-trigger]")) {
+          continue;
+        }
         const rect = el.getBoundingClientRect();
         if (rect.width > 8 && rect.height > 8) {
           return el;

@@ -249,7 +249,7 @@ export function ArchitectureDiagrams({
   const showServiceScopeSelect = ["UML_CLASS", "UML_PACKAGE"].includes(kind);
   return (
     <section aria-label="Architecture diagrams" className="min-w-0 space-y-2.5">
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
+      <div data-tour="diagram-type-bar" className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
         <div className="w-full sm:w-64">
           <SelectField
             label="Diagram type"
@@ -296,6 +296,7 @@ export function ArchitectureDiagrams({
           {selection.notice}
         </p>
       )}
+      <div data-tour="diagram-canvas">
       {kind === "SCENARIOS" || kind === "UML_SEQUENCE" ? (
         <ScenarioDiagram
           model={model}
@@ -413,6 +414,7 @@ export function ArchitectureDiagrams({
           />
         </div>
       )}
+      </div>
     </section>
   );
 }

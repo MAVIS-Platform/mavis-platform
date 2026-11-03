@@ -532,7 +532,7 @@ export function DependencyNetwork({
       aria-label="Dependency graph"
     >
       <Tooltip.Provider delayDuration={250}>
-        <div className="flex flex-wrap items-center gap-2 border-b p-3">
+        <div data-tour="graph-controls" className="flex flex-wrap items-center gap-2 border-b p-3">
           {showPresentationOptions && (
             <div
               role="group"
@@ -675,6 +675,7 @@ export function DependencyNetwork({
                     size="sm"
                     className="size-9 shrink-0 rounded-xl p-0 text-base font-semibold"
                     aria-label="Graph help"
+                    data-tour-trigger="graph-help"
                   >
                     ?
                   </Button>
@@ -904,6 +905,7 @@ export function DependencyNetwork({
           aria-description="Drag nodes or background (or right-click drag to pan). Scroll or right-click to zoom. Use Graph elements above to inspect nodes and relationships with the keyboard."
           tabIndex={0}
           className={`relative ${fillHeight ? "h-full min-h-24" : "h-[620px]"} touch-none select-none overflow-hidden ${mode === "explore" ? "bg-[#080b16] text-slate-200" : "bg-background text-foreground"}`}
+          data-tour="graph-canvas"
           data-renderer="cytoscape"
           data-mode={mode}
           data-zoom="1"
