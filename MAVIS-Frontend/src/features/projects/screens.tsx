@@ -60,6 +60,17 @@ export function ProjectOverview() {
   const jobList = jobs.data ?? [];
 
   const snapshotById = new Map(snapshotList.map((s) => [s.id, s]));
+  const latestNonCancelledJob = jobList.find((j) => j.status !== "cancelled");
+  const effectiveStatus: typeof query.data extends undefined ? never : NonNullable<typeof query.data>["status"] =
+    jobList.some(analysisInProgress)
+      ? "processing"
+      : latestNonCancelledJob?.status === "completed" || models.length > 0
+        ? "ready"
+        : latestNonCancelledJob?.status === "failed" || latestNonCancelledJob?.status === "timed-out"
+          ? "failed"
+          : jobs.isSuccess
+            ? "unknown"
+            : (query.data?.status ?? "unknown");
 
   return (
     <RequestState query={query}>
@@ -145,7 +156,7 @@ export function ProjectOverview() {
             }
           >
             <div className="flex flex-wrap items-center gap-2.5 text-xs text-muted-foreground">
-              <ProjectStatusBadge status={query.data.status} />
+              <ProjectStatusBadge status={effectiveStatus} />
               {query.data.repository && (
                 <span className="rounded-md border bg-muted/40 px-2 py-0.5 font-mono">
                   {query.data.repository}

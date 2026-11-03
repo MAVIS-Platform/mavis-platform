@@ -207,7 +207,7 @@ function Projects() {
                       { value: "ready", label: "Ready" },
                       { value: "processing", label: "Processing" },
                       { value: "failed", label: "Failed" },
-                      { value: "partial", label: "Partial" },
+                      { value: "unknown", label: "Not analyzed" },
                     ]}
 
                   />

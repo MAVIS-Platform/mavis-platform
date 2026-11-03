@@ -255,6 +255,7 @@ test("project status mapping keeps partial, cancelled and invented states honest
  assert.equal(wire.projectStatusFromJobs([{status:"COMPLETED",analysisState:"PARTIAL"}]),"partial");
  assert.equal(wire.projectStatusFromJobs([{status:"CANCELLED",analysisState:"CANCELLED"}]),"unknown");
  assert.equal(wire.projectStatusFromJobs([{status:"TIMED_OUT",analysisState:"TIMED_OUT"}]),"failed");
+ assert.equal(wire.projectStatusFromJobs([{status:"FAILED",analysisState:"FAILED"},{status:"COMPLETED",analysisState:"COMPLETED"}]),"failed");
  assert.equal(wire.projectStatusFromJobs([{status:"WEIRD",analysisState:null}]),"unknown");
 });
 test("latest model selection prefers the latest-valid revision and falls back to newest draft",()=>{

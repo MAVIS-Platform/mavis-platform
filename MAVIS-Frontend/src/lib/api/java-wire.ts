@@ -73,10 +73,12 @@ export function projectStatusFromJobs(rows: unknown[]): Project["status"] {
   });
   const upper = (value: string | null | undefined) => value?.toUpperCase() ?? "";
   if (jobs.some((j) => processingJobStatuses.has(upper(j.status)))) return "processing";
-  if (jobs.some((j) => upper(j.status) === "COMPLETED" && upper(j.analysisState) !== "PARTIAL"))
+  const latest = jobs.find((j) => upper(j.status) !== "CANCELLED");
+  if (!latest) return "unknown";
+  if (upper(latest.status) === "COMPLETED" && upper(latest.analysisState) !== "PARTIAL")
     return "ready";
-  if (jobs.some((j) => upper(j.analysisState) === "PARTIAL")) return "partial";
-  if (jobs.some((j) => failedJobStatuses.has(upper(j.status)))) return "failed";
+  if (upper(latest.analysisState) === "PARTIAL") return "partial";
+  if (failedJobStatuses.has(upper(latest.status))) return "failed";
   return "unknown";
 }
 export function latestModelSummaryId(models: unknown[]): string | null {

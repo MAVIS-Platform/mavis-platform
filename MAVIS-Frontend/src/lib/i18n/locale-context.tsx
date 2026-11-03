@@ -1413,6 +1413,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "failed": "Thất bại",
   "hidden within collapsed containers": "ẩn bên trong container thu gọn",
   "not analyzed": "chưa phân tích",
+  "Not analyzed": "Chưa phân tích",
   "partial": "Hoàn tất một phần",
   "peer(s)": "phần tử kết nối",
   "pending": "đang chờ",
