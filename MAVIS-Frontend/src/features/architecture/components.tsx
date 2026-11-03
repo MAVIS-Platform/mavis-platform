@@ -1,7 +1,7 @@
 "use client";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import { RequestState } from "@/components/shared/request-state";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DetailPanel } from "@/components/shared/data";
@@ -289,6 +289,10 @@ export function ElementDetailsPanel({
   selectedId: string | null;
   onSelect?: (id: string) => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"overview" | "relationships" | "evidence">("overview");
+  useEffect(() => {
+    setActiveTab("overview");
+  }, [selectedId]);
   const element = model.elements.find((e) => e.id === selectedId);
   const edge = model.edges.find((e) => e.id === selectedId);
   const incoming = element ? model.edges.filter((relation) => relation.to === element.id) : [];
@@ -399,11 +403,53 @@ export function ElementDetailsPanel({
         subject={element ? "element" : "relationship"}
       />
     );
+  const detailTabs = element
+    ? [
+        { id: "overview" as const, label: "Overview" },
+        {
+          id: "relationships" as const,
+          label: `Relationships (${incoming.length + outgoing.length})`,
+        },
+        { id: "evidence" as const, label: "Evidence" },
+      ]
+    : [
+        { id: "overview" as const, label: "Overview" },
+        { id: "evidence" as const, label: "Evidence" },
+      ];
   return (
     <DetailPanel title={edge && !element ? "Relationship details" : "Element details"}>
+      {(element || edge) && (
+        <div
+          role="tablist"
+          aria-label={element ? "Element detail sections" : "Relationship detail sections"}
+          className="grid gap-1 rounded-lg border bg-muted/40 p-1"
+          style={{ gridTemplateColumns: `repeat(${detailTabs.length}, minmax(0, 1fr))` }}
+        >
+          {detailTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${
+                activeTab === tab.id
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
       {element ? (
         <>
-          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+          <div
+            role="tabpanel"
+            hidden={activeTab !== "overview"}
+            className="space-y-2 rounded-lg border bg-muted/20 p-3"
+          >
             <div className="flex flex-wrap items-center gap-1.5">
               {element.elementType && (
                 <Badge variant="outline" className="font-mono text-[11px]">
@@ -475,78 +521,87 @@ export function ElementDetailsPanel({
               </div>
             )}
           </div>
-          {connectionList("Incoming", incoming)}
-          {connectionList("Outgoing", outgoing)}
-          <h4 className="text-sm font-semibold">Saved evidence context</h4>
-          {resolved}
+          <div role="tabpanel" hidden={activeTab !== "relationships"} className="space-y-4">
+            {connectionList("Incoming", incoming)}
+            {connectionList("Outgoing", outgoing)}
+          </div>
+          <div role="tabpanel" hidden={activeTab !== "evidence"} className="space-y-3">
+            <h4 className="text-sm font-semibold">Saved evidence context</h4>
+            {resolved}
+          </div>
         </>
       ) : edge ? (
         <>
-          <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <Badge variant="outline" className="font-mono text-[11px]">
-                {edge.protocol}
-              </Badge>
-              <Badge variant={edge.uncertain ? "warning" : "secondary"} className="text-[11px]">
-                {edge.resolutionStatus ?? (edge.uncertain ? "UNRESOLVED" : "RESOLVED")}
-              </Badge>
-              {edge.originLayer && (
-                <Badge variant="outline" className="text-[11px]">
-                  Origin: {edge.originLayer}
+          <div role="tabpanel" hidden={activeTab !== "overview"} className="space-y-3">
+            <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant="outline" className="font-mono text-[11px]">
+                  {edge.protocol}
                 </Badge>
+                <Badge variant={edge.uncertain ? "warning" : "secondary"} className="text-[11px]">
+                  {edge.resolutionStatus ?? (edge.uncertain ? "UNRESOLVED" : "RESOLVED")}
+                </Badge>
+                {edge.originLayer && (
+                  <Badge variant="outline" className="text-[11px]">
+                    Origin: {edge.originLayer}
+                  </Badge>
+                )}
+              </div>
+              <h3 className="font-mono text-sm font-semibold">
+                {nameOf(edge.from)} → {nameOf(edge.to)} · {edge.protocol}
+              </h3>
+              {onSelect && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => onSelect(edge.from)}
+                  >
+                    Source: {nameOf(edge.from)}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => onSelect(edge.to)}
+                  >
+                    Target: {nameOf(edge.to)}
+                  </Button>
+                </div>
               )}
             </div>
-            <h3 className="font-mono text-sm font-semibold">
-              {nameOf(edge.from)} → {nameOf(edge.to)} · {edge.protocol}
-            </h3>
-            {onSelect && (
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => onSelect(edge.from)}
-                >
-                  Source: {nameOf(edge.from)}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => onSelect(edge.to)}
-                >
-                  Target: {nameOf(edge.to)}
-                </Button>
-              </div>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Origin: {edge.originLayer ?? "unknown"} · Resolution:{" "}
-            {edge.resolutionStatus ?? "unknown"}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Linked evidence:{" "}
-            <span className="font-medium text-foreground">
-              {edge.evidenceCount === null || edge.evidenceCount === undefined
-                ? "— (unverified / not loaded)"
-                : edge.evidenceCount === 0
-                  ? "0 (verified: no evidence attached)"
-                  : `${edge.evidenceCount} verified evidence item(s)${
-                      edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 1
-                        ? ` (deduplicated across ${edge.underlyingEdgeIds.length} member relationships)`
-                        : ""
-                    }`}
-            </span>
-          </p>
-          {edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 1 && (
             <p className="text-xs text-muted-foreground">
-              Aggregated relationship ({edge.underlyingEdgeIds.length} member relationships)
+              Origin: {edge.originLayer ?? "unknown"} · Resolution:{" "}
+              {edge.resolutionStatus ?? "unknown"}
             </p>
-          )}
-          {edge.uncertain && <Badge variant="warning">Uncertain mapping</Badge>}
-          {resolved}
+            <p className="text-xs text-muted-foreground">
+              Linked evidence:{" "}
+              <span className="font-medium text-foreground">
+                {edge.evidenceCount === null || edge.evidenceCount === undefined
+                  ? "— (unverified / not loaded)"
+                  : edge.evidenceCount === 0
+                    ? "0 (verified: no evidence attached)"
+                    : `${edge.evidenceCount} verified evidence item(s)${
+                        edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 1
+                          ? ` (deduplicated across ${edge.underlyingEdgeIds.length} member relationships)`
+                          : ""
+                      }`}
+              </span>
+            </p>
+            {edge.underlyingEdgeIds && edge.underlyingEdgeIds.length > 1 && (
+              <p className="text-xs text-muted-foreground">
+                Aggregated relationship ({edge.underlyingEdgeIds.length} member relationships)
+              </p>
+            )}
+            {edge.uncertain && <Badge variant="warning">Uncertain mapping</Badge>}
+          </div>
+          <div role="tabpanel" hidden={activeTab !== "evidence"} className="space-y-3">
+            <h4 className="text-sm font-semibold">Saved evidence context</h4>
+            {resolved}
+          </div>
         </>
       ) : (
         <p className="text-sm text-muted-foreground">Select a service or relationship.</p>

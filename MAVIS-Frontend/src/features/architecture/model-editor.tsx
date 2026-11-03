@@ -61,7 +61,10 @@ export function ModelEditor() {
       {state.model && (
         <div className="space-y-5">
           <div className="flex flex-wrap items-end justify-between gap-4">
-            <div className={`min-w-64 flex-1 ${dirty ? "pointer-events-none opacity-50" : ""}`} inert={dirty}>
+            <div
+              className={`min-w-64 flex-1 ${dirty ? "pointer-events-none opacity-50" : ""}`}
+              inert={dirty}
+            >
               <ModelVersionSelector
                 models={state.models}
                 value={state.model.id}
@@ -90,7 +93,11 @@ export function ModelEditor() {
                 <strong>Revision {newestRevision}</strong>).
               </span>
               {state.models[0] && (
-                <Button size="sm" variant="outline" onClick={() => state.selectModel(state.models[0]!.id)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => state.selectModel(state.models[0]!.id)}
+                >
                   Switch to Revision {newestRevision}
                 </Button>
               )}
@@ -169,7 +176,8 @@ function ElementDraft({
 
   // 2. Add element state
   const [addName, setAddName] = useState("");
-  const [addType, setAddType] = useState<(typeof ELEMENT_TYPE_OPTIONS)[number]["value"]>("SERVICE_CONTAINER");
+  const [addType, setAddType] =
+    useState<(typeof ELEMENT_TYPE_OPTIONS)[number]["value"]>("SERVICE_CONTAINER");
   const [addTech, setAddTech] = useState("");
   const [addDesc, setAddDesc] = useState("");
   const [addParentId, setAddParentId] = useState("");
@@ -179,7 +187,8 @@ function ElementDraft({
   const [relToId, setRelToId] = useState(
     model.elements.find((e) => e.id !== element.id)?.id ?? element.id,
   );
-  const [relType, setRelType] = useState<(typeof RELATION_TYPE_OPTIONS)[number]["value"]>("SERVICE_HTTP_CALL");
+  const [relType, setRelType] =
+    useState<(typeof RELATION_TYPE_OPTIONS)[number]["value"]>("SERVICE_HTTP_CALL");
 
   // 4. Remove state
   const [removeTargetKind, setRemoveTargetKind] = useState<"element" | "connection">("element");
@@ -216,8 +225,7 @@ function ElementDraft({
     technology.trim() !== (element.technology ?? "") ||
     layer !== (element.layer ?? "unclassified");
 
-  const editChanged =
-    hasMetadataChange || description.trim() !== element.description.trim();
+  const editChanged = hasMetadataChange || description.trim() !== element.description.trim();
 
   const editValid =
     newName.trim().length > 0 &&
@@ -227,8 +235,7 @@ function ElementDraft({
 
   const addElementValid = addName.trim().length > 0 && addName.trim().length <= 255;
   const addConnectionValid = Boolean(relFromId && relToId && relFromId !== relToId);
-  const removeValid =
-    removeTargetKind === "element" ? Boolean(element.id) : Boolean(removeEdgeId);
+  const removeValid = removeTargetKind === "element" ? Boolean(element.id) : Boolean(removeEdgeId);
 
   const dirty =
     mode === "edit-element"
@@ -356,8 +363,43 @@ function ElementDraft({
             ? `Remove element "${element.name}" and its incident relationships`
             : `Remove relationship ${edgeOptions.find((e) => e.value === removeEdgeId)?.label ?? removeEdgeId}`;
 
+  if (!isLatest) {
+    return (
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+        <DetailPanel title={`Revision ${model.revision} snapshot`}>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-muted-foreground">
+              This revision is frozen for auditability. Inspect its elements here, or switch to the
+              latest revision above to create a new revision.
+            </div>
+            <SearchableThreeESelect
+              label="Element to inspect"
+              selectedValue={element.id}
+              onSelect={onElement}
+              options={elementOptions}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <SummaryCard label="Elements" value={model.elements.length} />
+              <SummaryCard label="Relationships" value={model.edges.length} />
+            </div>
+            <div className="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">Selected element</p>
+              <p className="mt-1 font-mono">{element.name}</p>
+              <p className="mt-1">
+                {[element.elementType, element.technology, element.layer]
+                  .filter(Boolean)
+                  .join(" · ") || "No classification metadata"}
+              </p>
+            </div>
+          </div>
+        </DetailPanel>
+        <ElementDetailsPanel model={model} selectedId={element.id} onSelect={onElement} />
+      </div>
+    );
+  }
+
   return (
-    <div className="grid items-start gap-5 xl:grid-cols-2">
+    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
       <DetailPanel title={`Create Revision ${model.revision + 1}`}>
         <div className="space-y-4">
           {/* Mode selector tabs */}
@@ -699,10 +741,7 @@ function extractElementSide(
   };
 }
 
-function elementSemanticKey(
-  el: Record<string, unknown>,
-  idToName?: Map<string, string>,
-): string {
+function elementSemanticKey(el: Record<string, unknown>, idToName?: Map<string, string>): string {
   const side = extractElementSide(el, idToName);
   const props =
     el["properties"] && typeof el["properties"] === "object"
@@ -747,10 +786,12 @@ function computeElementFieldDiffs(
 }
 
 export function reconcileModelDiff(result: Record<string, unknown>): ReconciledModelDiff {
-  const rawAddedEls = (Array.isArray(result["addedElements"]) ? result["addedElements"] : [])
-    .filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"));
-  const rawRemovedEls = (Array.isArray(result["removedElements"]) ? result["removedElements"] : [])
-    .filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"));
+  const rawAddedEls = (
+    Array.isArray(result["addedElements"]) ? result["addedElements"] : []
+  ).filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"));
+  const rawRemovedEls = (
+    Array.isArray(result["removedElements"]) ? result["removedElements"] : []
+  ).filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"));
   const rawModifiedEls = (
     Array.isArray(result["modifiedElements"]) ? result["modifiedElements"] : []
   ).filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object"));
@@ -1066,8 +1107,7 @@ export function reconcileModelDiff(result: Record<string, unknown>): ReconciledM
   const totalUnchanged = unchangedElementsCount + unchangedRelationshipsCount;
 
   return {
-    baseRevision:
-      typeof result["baseRevision"] === "number" ? result["baseRevision"] : undefined,
+    baseRevision: typeof result["baseRevision"] === "number" ? result["baseRevision"] : undefined,
     targetRevision:
       typeof result["targetRevision"] === "number" ? result["targetRevision"] : undefined,
     addedElementsCount,
@@ -1101,7 +1141,7 @@ export function buildModelDiffResultFromModels(
       elementType: e.elementType ?? "SERVICE_CONTAINER",
       languageStack: e.technology ?? "",
       parentElementId: e.parentId ?? null,
-      parentElementName: e.parentId ? beforeParents.get(e.parentId) ?? "" : "",
+      parentElementName: e.parentId ? (beforeParents.get(e.parentId) ?? "") : "",
       properties: { ...e.properties, layer: e.layer, description: e.description },
     })),
     addedElements: after.elements.map((e) => ({
@@ -1110,7 +1150,7 @@ export function buildModelDiffResultFromModels(
       elementType: e.elementType ?? "SERVICE_CONTAINER",
       languageStack: e.technology ?? "",
       parentElementId: e.parentId ?? null,
-      parentElementName: e.parentId ? afterParents.get(e.parentId) ?? "" : "",
+      parentElementName: e.parentId ? (afterParents.get(e.parentId) ?? "") : "",
       properties: { ...e.properties, layer: e.layer, description: e.description },
     })),
     removedRelationships: before.edges.map((r) => ({
@@ -1264,7 +1304,8 @@ function RevisionCompareBar({
   );
 }
 
-type DiffFilterMode = "all-changes" | "added" | "modified" | "removed" | "connections" | "unchanged";
+type DiffFilterMode =
+  "all-changes" | "added" | "modified" | "removed" | "connections" | "unchanged";
 type DiffViewLayout = "split" | "unified";
 
 function ComparisonResult({
@@ -1293,7 +1334,10 @@ function ComparisonResult({
       if (filterMode === "added" && row.status !== "added") return false;
       if (filterMode === "modified" && row.status !== "modified") return false;
       if (filterMode === "removed" && row.status !== "removed") return false;
-      if (filterMode === "connections" && (row.category !== "relationship" || row.status === "unchanged"))
+      if (
+        filterMode === "connections" &&
+        (row.category !== "relationship" || row.status === "unchanged")
+      )
         return false;
       if (filterMode === "unchanged" && row.status !== "unchanged") return false;
 
@@ -1328,9 +1372,7 @@ function ComparisonResult({
           <span className="inline-flex items-center gap-1 rounded-md bg-red-500/15 px-2 py-0.5 font-mono font-semibold text-red-700 dark:text-red-300">
             −{diff.totalDeletions} removed
           </span>
-          <span className="text-muted-foreground">
-            ({diff.totalUnchanged} unchanged)
-          </span>
+          <span className="text-muted-foreground">({diff.totalUnchanged} unchanged)</span>
         </div>
 
         {/* Split vs Unified Mode Switcher */}
@@ -1407,7 +1449,8 @@ function ComparisonResult({
               </p>
               <p className="text-xs text-muted-foreground">
                 All {diff.unchangedElementsCount} architecture elements and{" "}
-                {diff.unchangedRelationshipsCount} connections are structurally and semantically identical.
+                {diff.unchangedRelationshipsCount} connections are structurally and semantically
+                identical.
               </p>
               {diff.totalUnchanged > 0 && (
                 <div className="pt-1">
@@ -1423,9 +1466,7 @@ function ComparisonResult({
               )}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              No diff items match the current filter.
-            </p>
+            <p className="text-sm text-muted-foreground">No diff items match the current filter.</p>
           )}
         </div>
       ) : viewLayout === "split" ? (
@@ -1559,9 +1600,7 @@ function SplitDiffRowView({ row }: { row: DiffRow }) {
               </span>
             )}
             {row.baseSide.technology && (
-              <span className="text-[11px] text-muted-foreground">
-                [{row.baseSide.technology}]
-              </span>
+              <span className="text-[11px] text-muted-foreground">[{row.baseSide.technology}]</span>
             )}
           </div>
           {row.baseSide.description && (
@@ -1681,13 +1720,9 @@ function UnifiedDiffRowView({ row }: { row: DiffRow }) {
           <Badge variant="outline" className="text-[10px]">
             {row.baseSide.elementType}
           </Badge>
-          <span className="font-semibold text-red-900 dark:text-red-200">
-            {row.baseSide.name}
-          </span>
+          <span className="font-semibold text-red-900 dark:text-red-200">{row.baseSide.name}</span>
           {row.baseSide.parentName && row.category === "element" && (
-            <span className="text-[11px] text-muted-foreground">
-              in {row.baseSide.parentName}
-            </span>
+            <span className="text-[11px] text-muted-foreground">in {row.baseSide.parentName}</span>
           )}
         </div>
       </div>
@@ -1727,5 +1762,3 @@ function UnifiedDiffRowView({ row }: { row: DiffRow }) {
     </div>
   );
 }
-
-

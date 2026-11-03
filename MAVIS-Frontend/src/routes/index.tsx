@@ -55,7 +55,13 @@ function runtimeSummary(projects: Project[] | undefined): string | number {
   if (unchecked === projects.length) return "Not checked";
   return `${projects.filter((p) => p.runtimeSupported).length} of ${projects.length}`;
 }
-function OverviewHelp({ onStart, onStartDashboardTour }: { onStart: () => void; onStartDashboardTour: () => void }) {
+function OverviewHelp({
+  onStart,
+  onStartDashboardTour,
+}: {
+  onStart: () => void;
+  onStartDashboardTour: () => void;
+}) {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const startingTour = useRef<"import" | "dashboard" | null>(null);
@@ -142,6 +148,8 @@ function OverviewHelp({ onStart, onStartDashboardTour }: { onStart: () => void; 
     </Dialog>
   );
 }
+const RECENT_PAGE_SIZE = 5;
+
 function Projects() {
   const { t } = useLocale();
   const projects = useApiQuery("projectOverviews", {});
@@ -156,14 +164,17 @@ function Projects() {
       p.name.toLowerCase().includes(search.toLowerCase()) &&
       (status === "all" || p.status === status),
   );
-  const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / 10)));
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / RECENT_PAGE_SIZE)));
   return (
     <div className="mx-auto w-full max-w-[1600px]">
       <PageContainer>
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight">Overview</h1>
-            <OverviewHelp onStart={() => setTourStep(0)} onStartDashboardTour={() => setDashboardTourStep(0)} />
+            <OverviewHelp
+              onStart={() => setTourStep(0)}
+              onStartDashboardTour={() => setDashboardTourStep(0)}
+            />
           </div>
           <div data-tour="overview-import">
             <CreateProjectAction tourStep={tourStep} onTourStepChange={setTourStep} />
@@ -177,7 +188,10 @@ function Projects() {
           />
         )}
         <RequestState query={projects}>
-          <div data-tour="overview-summary" className="grid grid-cols-2 gap-3 [&>article>div]:text-xl sm:gap-4 sm:[&>article>div]:text-2xl xl:grid-cols-4">
+          <div
+            data-tour="overview-summary"
+            className="grid grid-cols-2 gap-3 [&>article>div]:text-xl sm:gap-4 sm:[&>article>div]:text-2xl xl:grid-cols-4"
+          >
             <SummaryCard label="Projects" value={projects.data?.length ?? 0} />
             <SummaryCard label="Services indexed" value={servicesSummary(projects.data)} />
             <SummaryCard label="Ready projects" value={readySummary(projects.data)} />
@@ -210,7 +224,6 @@ function Projects() {
                       { value: "failed", label: "Failed" },
                       { value: "unknown", label: "Not analyzed" },
                     ]}
-
                   />
                 </div>
                 {filtered.length === 0 ? (
@@ -228,7 +241,10 @@ function Projects() {
                 ) : (
                   <DataTable
                     caption="Your architecture projects"
-                    rows={filtered.slice((currentPage - 1) * 10, currentPage * 10)}
+                    rows={filtered.slice(
+                      (currentPage - 1) * RECENT_PAGE_SIZE,
+                      currentPage * RECENT_PAGE_SIZE,
+                    )}
                     rowKey={(p) => p.id}
                     columns={[
                       {
@@ -334,10 +350,10 @@ function Projects() {
                     ]}
                   />
                 )}
-                {Math.ceil(filtered.length / 10) > 1 && (
+                {Math.ceil(filtered.length / RECENT_PAGE_SIZE) > 1 && (
                   <Pagination
                     page={currentPage}
-                    pageCount={Math.ceil(filtered.length / 10)}
+                    pageCount={Math.ceil(filtered.length / RECENT_PAGE_SIZE)}
                     onPageChange={setPage}
                   />
                 )}
@@ -355,7 +371,7 @@ function Projects() {
 function ProjectActivity() {
   const { t } = useLocale();
   const [page, setPage] = useState(0);
-  const q = useApiQuery("projectActivity", { page, size: 10 }, { refreshMs: 30000 });
+  const q = useApiQuery("projectActivity", { page, size: RECENT_PAGE_SIZE }, { refreshMs: 30000 });
   return (
     <DetailPanel
       title="Recent activity"
@@ -431,8 +447,8 @@ function ProjectActivity() {
                       <>
                         <AnalysisStatusIndicator job={row.job} compact />
                         <p className="text-xs text-muted-foreground">
-                          {t("Run", "Lần chạy")} {row.job.id.slice(0, 8)} · {t("Snapshot", "Bản chụp")}{" "}
-                          {row.job.snapshotId.slice(0, 8)}
+                          {t("Run", "Lần chạy")} {row.job.id.slice(0, 8)} ·{" "}
+                          {t("Snapshot", "Bản chụp")} {row.job.snapshotId.slice(0, 8)}
                         </p>
                       </>
                     ) : (
@@ -485,7 +501,10 @@ function ProjectActivity() {
                       {row.kind === "PROJECT_DELETED"
                         ? t("Soft delete · history retained", "Xóa mềm · giữ lại lịch sử")
                         : row.kind === "SNAPSHOT_DELETED"
-                          ? t("Snapshot and generated revisions removed", "Đã xóa bản chụp và các phiên bản đã tạo")
+                          ? t(
+                              "Snapshot and generated revisions removed",
+                              "Đã xóa bản chụp và các phiên bản đã tạo",
+                            )
                           : t("Project removed", "Đã xóa dự án")}
                       <span className="mt-1 block font-mono" title={row.targetId ?? row.id}>
                         {(row.targetId ?? row.id).slice(0, 8)}
@@ -497,10 +516,10 @@ function ProjectActivity() {
           />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">{q.data?.total ?? 0} activity events</p>
-            {(q.data?.total ?? 0) > 10 && (
+            {(q.data?.total ?? 0) > RECENT_PAGE_SIZE && (
               <Pagination
                 page={page + 1}
-                pageCount={Math.ceil((q.data?.total ?? 0) / 10)}
+                pageCount={Math.ceil((q.data?.total ?? 0) / RECENT_PAGE_SIZE)}
                 onPageChange={(n) => setPage(n - 1)}
               />
             )}

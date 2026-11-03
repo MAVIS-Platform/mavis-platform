@@ -738,7 +738,7 @@ test("auth form prevents incomplete OTPs and duplicate submissions while preserv
  }
 });
 
-test("profile renders real account data, compact statistics and separate personal/security forms", () => {
+test("profile renders real account data, compact statistics and a modal password action", () => {
   const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
   const hooks={useApi:()=>({mode:"backend"}),useApiMutation:()=>({isPending:false,error:null}),useApiQuery:op=>({data:op==="projectOverviews"?[{services:2},{services:null}]:[{}],isPending:false,isError:false})};
   const {ProfileDetails}=loadRoutedComponent("src/features/profile/profile.tsx",{"@/hooks/use-api":hooks});
@@ -746,10 +746,9 @@ test("profile renders real account data, compact statistics and separate persona
   const html=renderToStaticMarkup(React.createElement(ProfileDetails,{user}));
   for(const text of [user.email,"Lecturer","Full Name","Email","Role","Change Password"]) assert.ok(html.includes(text),text);
   assert.ok(html.includes("overflow-wrap:anywhere"));
-  assert.equal((html.match(/<form/g)||[]).length,2);
-  const personal=html.slice(html.indexOf('aria-labelledby="profile-information"'),html.indexOf('aria-labelledby="profile-security"'));
-  assert.ok(!personal.includes('id="current-password"'),"password fields are not part of the personal information form");
-  assert.equal((html.match(/type="password"/g)||[]).length,3);assert.ok(html.includes("2+"));assert.ok(html.includes("Account statistics"));
+  assert.equal((html.match(/<form/g)||[]).length,1);
+  assert.ok(!html.includes('id="current-password"'),"password fields remain unmounted until the modal opens");
+  assert.equal((html.match(/type="password"/g)||[]).length,0);assert.ok(html.includes("2+"));assert.ok(html.includes("Account statistics"));
   for(const removed of ["Appearance preferences","Role permissions &amp; quick access","Recent projects","Diagram palette","active session"])assert.ok(!html.includes(removed),removed);
   assert.equal((html.match(/type="email"/g)||[]).length,0,"email remains read-only");
   assert.ok(renderToStaticMarkup(React.createElement(ProfileDetails,{user:{...user,email:null}})).includes("Email not available"));
@@ -781,6 +780,7 @@ test("profile name editing uses the existing payload, prevents duplicates and re
  input().props.onChange({target:{value:"  Updated Name  "}});const pending=submit();await submit();assert.equal(calls.length,1);assert.equal(JSON.stringify(calls[0]),JSON.stringify({fullName:"Updated Name"}));release({user:{name:"Updated Name"}});await pending;assert.equal(input().props.value,"Updated Name");
  fail=true;input().props.onChange({target:{value:"Correctable Name"}});await submit();assert.equal(input().props.value,"Correctable Name");
  render().find(n=>n.props?.children==="Reset").props.onClick();assert.equal(input().props.value,"Saved Name");
+ const changePassword=render().find(n=>typeof n.props?.onClick==="function"&&React.Children.toArray(n.props?.children).includes("Change Password"));assert.ok(changePassword);changePassword.props.onClick();
  const security=render().find(n=>n.props?.fullName==="Saved Name");assert.ok(security,"password payload uses the stored name rather than an unsaved edit");
  security.props.onBusyChange(true);input().props.onChange({target:{value:"Another Name"}});const before=calls.length;await submit();assert.equal(calls.length,before);
 });
@@ -791,9 +791,10 @@ test("profile route reuses shared shell and profile feature without appearance o
  const feature=loadRoutedComponent("src/features/profile/profile.tsx",{"@/hooks/use-api":hooks});
  const page=loadRoutedComponent("app/profile/page.tsx",{"@/components/app-shell":{AppShell:({children})=>React.createElement("main",null,children)},"@/features/profile/profile":feature}).default;
  const html=renderToStaticMarkup(React.createElement(page));
- for(const text of ["My Profile","Actual Name","actual@example.org","Personal Information","Account Security","Confirm New Password"])assert.ok(html.includes(text),text);
+ for(const text of ["My Profile","Actual Name","actual@example.org","Personal Information","Change Password"])assert.ok(html.includes(text),text);
+ for(const text of ["Account Security","Confirm New Password"])assert.ok(!html.includes(text),text);
  for(const text of ["Appearance preferences","Role permissions","Recent projects","Diagram palette","project:read","workspace:read","active session"])assert.ok(!html.includes(text),text);
- assert.ok(html.indexOf('aria-label="Profile summary"')<html.indexOf('aria-labelledby="profile-information"'));assert.ok(html.indexOf('aria-labelledby="profile-information"')<html.indexOf('aria-labelledby="profile-security"'));
+ assert.ok(html.indexOf('aria-label="Profile summary"')<html.indexOf('aria-labelledby="profile-information"'));
  const shell=fs.readFileSync(path.join(root,"src/components/app-shell.tsx"),"utf8");assert.ok(shell.includes("<AppearanceSelector"));assert.ok(shell.includes("<RequireSession"));
 });
 
@@ -802,7 +803,8 @@ test("profile labels and password visibility controls use existing Vietnamese lo
  const hooks={useApi:()=>({mode:"backend"}),useApiMutation:()=>({isPending:false,error:null}),useApiQuery:()=>({data:[],isPending:false,isError:false})};
  const {ProfileDetails}=loadRoutedComponent("src/features/profile/profile.tsx",{"@/hooks/use-api":hooks,"@/lib/i18n/locale-context":{useLocale:()=>({t:s=>translateText(s,"vi")})}});
  const html=renderToStaticMarkup(React.createElement(ProfileDetails,{user:{id:"user",name:"Nguyễn Văn An",email:"actual@example.org",role:"student"}}));
- for(const text of ["Nguyễn Văn An","actual@example.org","Thông tin cá nhân","Bảo mật tài khoản","Mật khẩu hiện tại","Xác nhận mật khẩu mới","Hiện mật khẩu xác nhận"])assert.ok(html.includes(text),text);
+ for(const text of ["Nguyễn Văn An","actual@example.org","Thông tin cá nhân","Đổi mật khẩu"])assert.ok(html.includes(text),text);
+ for(const text of ["Bảo mật tài khoản","Mật khẩu hiện tại","Xác nhận mật khẩu mới"])assert.ok(!html.includes(text),text);
  assert.ok(!html.includes("Appearance preferences"));
 });
 

@@ -37,7 +37,7 @@ import { DetailPanel, StatusLabel } from "@/components/shared/data";
 import { translatedStatusLabel } from "@/lib/status-label";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { ErrorState } from "@/components/shared/request-state";
-import { SelectField, ConfirmDialog, SearchInput } from "@/components/shared/forms";
+import { ConfirmDialog, Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { AdminToolbar } from "@/features/administration/operations";
 import { Button } from "@/components/ui/button";
 
@@ -50,6 +50,8 @@ const active = new Set([
   "RUNNING",
   "CANCELLING",
 ]);
+
+const TRACE_GROUP_PAGE_SIZE = 5;
 
 function isRunnerActor(serviceName: string | null | undefined): boolean {
   const s = (serviceName ?? "").trim().toLowerCase();
@@ -153,7 +155,9 @@ export function deriveWorkflowSteps(
     );
     const activeSteps =
       businessSteps.length > 0 && businessSteps.length < observedSteps.length
-        ? businessSteps.map((s, idx) => (s.stepOrder !== undefined ? { ...s, stepOrder: idx + 1 } : s))
+        ? businessSteps.map((s, idx) =>
+            s.stepOrder !== undefined ? { ...s, stepOrder: idx + 1 } : s,
+          )
         : observedSteps;
     return { steps: activeSteps, mode: "OBSERVED" };
   }
@@ -222,7 +226,7 @@ export function deriveWorkflowSteps(
   for (const [composeSvc, targetToken] of mappingEntries) {
     const resolvedId = elemById.has(targetToken)
       ? resolveContainerId(targetToken)
-      : lowerNameToId.get(targetToken.trim().toLowerCase()) ?? null;
+      : (lowerNameToId.get(targetToken.trim().toLowerCase()) ?? null);
     if (resolvedId && composeSvc.trim()) {
       elementIdToDisplayName.set(resolvedId, composeSvc.trim());
     }
@@ -313,11 +317,7 @@ function buildRuntimeSequenceSvgString(
   };
 
   const escapeXml = (str: string) =>
-    str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+    str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
   const parts: string[] = [];
   parts.push(
@@ -391,7 +391,8 @@ function buildRuntimeSequenceSvgString(
 
   steps.forEach((step, idx) => {
     const caller = (step.callerService ?? "").trim() || participants[0]!;
-    const callee = (step.calleeService ?? "").trim() || participants[Math.min(1, participants.length - 1)]!;
+    const callee =
+      (step.calleeService ?? "").trim() || participants[Math.min(1, participants.length - 1)]!;
     const x1 = xOf(caller);
     const x2 = xOf(callee);
     const callY = topMargin + idx * rowHeight + 18;
@@ -436,7 +437,10 @@ function buildRuntimeSequenceSvgString(
         `<line x1="${startX}" y1="${callY}" x2="${endX}" y2="${callY}" stroke="${strokeCol}" stroke-width="2" marker-end="url(#${markerId})" />`,
       );
 
-      const labelWidth = Math.min(Math.abs(endX - startX) + 90, Math.max(150, endpointLabel.length * 6.8 + 16));
+      const labelWidth = Math.min(
+        Math.abs(endX - startX) + 90,
+        Math.max(150, endpointLabel.length * 6.8 + 16),
+      );
       parts.push(
         `<rect x="${midX - labelWidth / 2}" y="${callY - 19}" width="${labelWidth}" height="15" rx="3" fill="#0f172a" opacity="0.92" />`,
       );
@@ -469,7 +473,9 @@ function RuntimeWorkflowTopologyCanvas({
   onSelectService: (svc: string | null) => void;
 }) {
   const svgRef = useRef<SVGSVGElement | null>(null);
-  const [customPositions, setCustomPositions] = useState<Record<string, { x: number; y: number }>>({});
+  const [customPositions, setCustomPositions] = useState<Record<string, { x: number; y: number }>>(
+    {},
+  );
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const dragRef = useRef<{
     name: string;
@@ -521,7 +527,9 @@ function RuntimeWorkflowTopologyCanvas({
     const allServices = Array.from(svcSet);
     const tier0 = allServices.filter((s) => isRunnerActor(s) || s.toLowerCase().includes("client"));
     const tier1 = allServices.filter(
-      (s) => !tier0.includes(s) && (s.toLowerCase().includes("gateway") || s.toLowerCase().includes("bff")),
+      (s) =>
+        !tier0.includes(s) &&
+        (s.toLowerCase().includes("gateway") || s.toLowerCase().includes("bff")),
     );
     const tier2 = allServices.filter((s) => !tier0.includes(s) && !tier1.includes(s));
 
@@ -599,7 +607,8 @@ function RuntimeWorkflowTopologyCanvas({
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
             <Network className="h-3.5 w-3.5" />
-            {planned ? "Planned" : "Observed"} Service Call Topology ({nodes.length} Nodes · {edges.length} Channels)
+            {planned ? "Planned" : "Observed"} Service Call Topology ({nodes.length} Nodes ·{" "}
+            {edges.length} Channels)
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
             {planned
@@ -642,13 +651,34 @@ function RuntimeWorkflowTopologyCanvas({
           className="font-mono select-none"
         >
           <defs>
-            <marker id="wf-arrow-ok" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+            <marker
+              id="wf-arrow-ok"
+              markerWidth="9"
+              markerHeight="7"
+              refX="8"
+              refY="3.5"
+              orient="auto"
+            >
               <polygon points="0 0, 9 3.5, 0 7" fill="#38bdf8" />
             </marker>
-            <marker id="wf-arrow-get" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+            <marker
+              id="wf-arrow-get"
+              markerWidth="9"
+              markerHeight="7"
+              refX="8"
+              refY="3.5"
+              orient="auto"
+            >
               <polygon points="0 0, 9 3.5, 0 7" fill="#10b981" />
             </marker>
-            <marker id="wf-arrow-err" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto">
+            <marker
+              id="wf-arrow-err"
+              markerWidth="9"
+              markerHeight="7"
+              refX="8"
+              refY="3.5"
+              orient="auto"
+            >
               <polygon points="0 0, 9 3.5, 0 7" fill="#f43f5e" />
             </marker>
           </defs>
@@ -719,11 +749,7 @@ function RuntimeWorkflowTopologyCanvas({
                         dur="2.4s"
                         repeatCount="indefinite"
                         keyPoints="0;0;1;1"
-                        keyTimes={
-                          p1.tier <= 1
-                            ? "0;0.04;0.48;1"
-                            : "0;0.48;0.94;1"
-                        }
+                        keyTimes={p1.tier <= 1 ? "0;0.04;0.48;1" : "0;0.48;0.94;1"}
                         calcMode="linear"
                         path={`M ${x1} ${y1} L ${x2} ${y2}`}
                       />
@@ -740,11 +766,7 @@ function RuntimeWorkflowTopologyCanvas({
                         dur="2.4s"
                         repeatCount="indefinite"
                         keyPoints="0;0;1;1"
-                        keyTimes={
-                          p1.tier <= 1
-                            ? "0;0.04;0.48;1"
-                            : "0;0.48;0.94;1"
-                        }
+                        keyTimes={p1.tier <= 1 ? "0;0.04;0.48;1" : "0;0.48;0.94;1"}
                         calcMode="linear"
                         path={`M ${x1} ${y1} L ${x2} ${y2}`}
                       />
@@ -822,7 +844,9 @@ function RuntimeWorkflowTopologyCanvas({
                 onPointerMove={(e) => {
                   const activeDrag = dragRef.current;
                   if (!activeDrag || activeDrag.name !== node.name) return;
-                  if (Math.hypot(e.clientX - activeDrag.startX, e.clientY - activeDrag.startY) > 4) {
+                  if (
+                    Math.hypot(e.clientX - activeDrag.startX, e.clientY - activeDrag.startY) > 4
+                  ) {
                     activeDrag.moved = true;
                   }
                   const pt = toSvgPoint(e.clientX, e.clientY);
@@ -926,10 +950,12 @@ function RuntimeSequenceDiagramCanvas({
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
             <Activity className="h-3.5 w-3.5" />
-            UML 2.5.1 Runtime Sequence Diagram ({participants.length} Lifelines · {steps.length} Causal Calls)
+            UML 2.5.1 Runtime Sequence Diagram ({participants.length} Lifelines · {steps.length}{" "}
+            Causal Calls)
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Sequence diagram reconstructed from runtime trace spans and service interactions. Horizontal axis shows microservice lifelines, vertical axis preserves call order.
+            Sequence diagram reconstructed from runtime trace spans and service interactions.
+            Horizontal axis shows microservice lifelines, vertical axis preserves call order.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -1018,7 +1044,8 @@ function buildRuntimeActivitySvgString(
     ensurePartition(s.calleeService);
   }
   if (partitions.length === 0) {
-    const fallback = (steps[0]?.calleeService ?? steps[0]?.callerService ?? "service").trim() || "service";
+    const fallback =
+      (steps[0]?.calleeService ?? steps[0]?.callerService ?? "service").trim() || "service";
     partitions.push(fallback);
   }
 
@@ -1043,11 +1070,7 @@ function buildRuntimeActivitySvgString(
   const cxOfLane = (idx: number) => leftMargin + idx * laneWidth + laneWidth / 2;
 
   const escapeXml = (str: string) =>
-    str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+    str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
   const parts: string[] = [];
   parts.push(
@@ -1218,10 +1241,12 @@ function RuntimeActivityDiagramCanvas({
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
             <Activity className="h-3.5 w-3.5" />
-            UML 2.5.1 Runtime Activity Diagram ({partitions.length} Swimlanes · {steps.length} Actions)
+            UML 2.5.1 Runtime Activity Diagram ({partitions.length} Swimlanes · {steps.length}{" "}
+            Actions)
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Multi-swimlane activity workflow reconstructed from captured runtime spans. Each column is a microservice partition and each rounded node is an executed action.
+            Multi-swimlane activity workflow reconstructed from captured runtime spans. Each column
+            is a microservice partition and each rounded node is an executed action.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
@@ -1305,7 +1330,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const { projectId } = useSelection();
   const [vizMode, setVizMode] = useState<"topology" | "sequence" | "activity">("topology");
   const [selectedServiceFilter, setSelectedServiceFilter] = useState<string | null>(null);
-  const [selectedClusterFilter, setSelectedClusterFilter] = useState<ApiFeatureClusterId | null>(null);
+  const [selectedClusterFilter, setSelectedClusterFilter] = useState<ApiFeatureClusterId | null>(
+    null,
+  );
+  const [traceGroupPages, setTraceGroupPages] = useState<Record<string, number>>({});
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: !!projectId });
   const config = useApiQuery("runtimeConfiguration", { projectId }, { enabled: !!projectId });
   const autoSaveConfig = useApiMutation("saveRuntimeConfiguration");
@@ -1517,7 +1545,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       if (callerLow.includes("gateway") || isRunnerActor(st.callerService)) {
         const routeKey = `${(st.httpMethod ?? "GET").toUpperCase()}:${st.operation ?? "/"}`;
         const aiPhase = aiPhaseByRoute.get(routeKey) ?? aiPhaseByRoute.get(st.operation ?? "");
-        map.set(tid, classifyApiFeatureCluster(st.operation, st.callerService, st.calleeService, aiPhase));
+        map.set(
+          tid,
+          classifyApiFeatureCluster(st.operation, st.callerService, st.calleeService, aiPhase),
+        );
       }
     }
     return map;
@@ -1572,13 +1603,22 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         if (meta.id !== selectedClusterFilter) return false;
       }
       if (selectedServiceFilter) {
-        if (s.callerService !== selectedServiceFilter && s.calleeService !== selectedServiceFilter) {
+        if (
+          s.callerService !== selectedServiceFilter &&
+          s.calleeService !== selectedServiceFilter
+        ) {
           return false;
         }
       }
       return true;
     });
-  }, [workflowData.steps, selectedClusterFilter, selectedServiceFilter, rootMetaByTraceId, aiPhaseByRoute]);
+  }, [
+    workflowData.steps,
+    selectedClusterFilter,
+    selectedServiceFilter,
+    rootMetaByTraceId,
+    aiPhaseByRoute,
+  ]);
 
   const maxStepDuration = useMemo(
     () => Math.max(1, ...workflowData.steps.map((s) => s.durationMs ?? 0)),
@@ -1592,10 +1632,14 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     setQuickRunError("");
 
     const [snapshotsList, modelsList, configData, scenariosList] = await Promise.all([
-      snapshots.data ? Promise.resolve(snapshots.data) : snapshots.refetch().then((r) => r.data ?? []),
+      snapshots.data
+        ? Promise.resolve(snapshots.data)
+        : snapshots.refetch().then((r) => r.data ?? []),
       models.data ? Promise.resolve(models.data) : models.refetch().then((r) => r.data ?? []),
       config.data ? Promise.resolve(config.data) : config.refetch().then((r) => r.data),
-      scenarios.data ? Promise.resolve(scenarios.data) : scenarios.refetch().then((r) => r.data ?? []),
+      scenarios.data
+        ? Promise.resolve(scenarios.data)
+        : scenarios.refetch().then((r) => r.data ?? []),
     ]);
 
     const stored = readStep1Target(projectId);
@@ -1745,7 +1789,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         });
       } catch (firstErr) {
         const refreshed = await config.refetch();
-        if (refreshed.data?.revision !== undefined && refreshed.data.revision !== activeConfigRevision) {
+        if (
+          refreshed.data?.revision !== undefined &&
+          refreshed.data.revision !== activeConfigRevision
+        ) {
           pinnedConfig = await autoSaveConfig.mutateAsync({
             ...configPayload,
             expectedRevision: refreshed.data.revision,
@@ -1764,7 +1811,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             ? (rawProfile["detectedServices"] as unknown[]).map(String)
             : [];
       const runnableComposeSvcs = composeSvcs.filter(
-        (svc) => !isKnownInfraName(svc) && ((!infraSet.has(svc) && mergedRoles[svc] !== "INFRA") || mergedRoles[svc] === "APP"),
+        (svc) =>
+          !isKnownInfraName(svc) &&
+          ((!infraSet.has(svc) && mergedRoles[svc] !== "INFRA") || mergedRoles[svc] === "APP"),
       );
       const realServices = (modelDetail.data?.elements ?? []).filter(
         (e) => e.elementType === "SERVICE_CONTAINER",
@@ -1775,7 +1824,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         realServices[0]?.name ??
         "api-gateway";
 
-      const defaultBody = '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","quantity":1}';
+      const defaultBody =
+        '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","quantity":1}';
       const environment: Record<string, string> = {};
       for (const [k, v] of Object.entries(stored.plannedInputs ?? {})) {
         if (/^[A-Z][A-Z0-9_]{0,63}$/.test(k) && typeof v === "string" && v.trim()) {
@@ -1806,13 +1856,18 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     (ep.method || "POST").toUpperCase() === method &&
                     ep.path === st.path,
                 )?.sampleJsonBody;
-                const candidate = stored.plannedInputs?.[st.bodyReference]?.trim() || matchedSample?.trim();
+                const candidate =
+                  stored.plannedInputs?.[st.bodyReference]?.trim() || matchedSample?.trim();
                 if (candidate) {
                   environment[st.bodyReference] = candidate;
                 }
               }
               for (const hdr of st.envHeaders ?? []) {
-                if (hdr.reference && /^[A-Z][A-Z0-9_]{0,63}$/.test(hdr.reference) && !environment[hdr.reference]) {
+                if (
+                  hdr.reference &&
+                  /^[A-Z][A-Z0-9_]{0,63}$/.test(hdr.reference) &&
+                  !environment[hdr.reference]
+                ) {
                   environment[hdr.reference] = "Bearer sandbox-verification-token";
                 }
               }
@@ -1821,8 +1876,14 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   environment[refKey] = "1";
                 }
               }
-              const normalizedPath = (st.path || "/health").replace(/(?<!\{)\{([^{}/]+)\}(?!\})/g, (_, p: string) =>
-                /uuid|guid/i.test(p) ? "00000000-0000-0000-0000-000000000001" : /code|sku/i.test(p) ? "SKU-LAPTOP-01" : "1",
+              const normalizedPath = (st.path || "/health").replace(
+                /(?<!\{)\{([^{}/]+)\}(?!\})/g,
+                (_, p: string) =>
+                  /uuid|guid/i.test(p)
+                    ? "00000000-0000-0000-0000-000000000001"
+                    : /code|sku/i.test(p)
+                      ? "SKU-LAPTOP-01"
+                      : "1",
               );
               return JSON.stringify({
                 id: `step-${idx + 1}`,
@@ -1861,7 +1922,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     const matchedSample = runnableEndpoints.find(
                       (ep) =>
                         (!ep.service || ep.service === parsed.service) &&
-                        (ep.method || "POST").toUpperCase() === (parsed.method || "POST").toUpperCase() &&
+                        (ep.method || "POST").toUpperCase() ===
+                          (parsed.method || "POST").toUpperCase() &&
                         ep.path === parsed.path,
                     )?.sampleJsonBody;
                     if (matchedSample?.trim()) {
@@ -1869,7 +1931,11 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     }
                   }
                   for (const hdr of parsed.envHeaders ?? []) {
-                    if (hdr.reference && /^[A-Z][A-Z0-9_]{0,63}$/.test(hdr.reference) && !environment[hdr.reference]) {
+                    if (
+                      hdr.reference &&
+                      /^[A-Z][A-Z0-9_]{0,63}$/.test(hdr.reference) &&
+                      !environment[hdr.reference]
+                    ) {
                       environment[hdr.reference] = "Bearer sandbox-verification-token";
                     }
                   }
@@ -1936,7 +2002,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
 
       // 3. Dispatch runtime session
       const isEnrichedChoice =
-        "origin" in chosenModel && (chosenModel as { origin?: string | null }).origin === "RUNTIME_ENRICHED";
+        "origin" in chosenModel &&
+        (chosenModel as { origin?: string | null }).origin === "RUNTIME_ENRICHED";
       const res = await startRuntime.mutateAsync({
         projectId,
         snapshotId: chosenSnapshotId,
@@ -2005,7 +2072,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       desc: hasSession ? execStatus || "Queued" : "Not started",
       done:
         hasSession &&
-        !["NOT_STARTED", "PENDING", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEOUT"].includes(execStatus),
+        !["NOT_STARTED", "PENDING", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEOUT"].includes(
+          execStatus,
+        ),
       current: ["APPROVED", "READY_FOR_DISPATCH", "ALLOCATED"].includes(execStatus),
     },
     {
@@ -2045,7 +2114,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       <RuntimeStepperBanner currentStep={3} projectId={projectId} />
 
       {!administrative && (
-        <div data-tour="session-launch-bar" className="rounded-xl border border-primary/30 bg-gradient-to-r from-primary/10 via-sky-500/5 to-emerald-500/10 p-4 shadow-sm space-y-4">
+        <div
+          data-tour="session-launch-bar"
+          className="rounded-xl border border-primary/30 bg-gradient-to-r from-primary/10 via-sky-500/5 to-emerald-500/10 p-4 shadow-sm space-y-4"
+        >
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
@@ -2055,10 +2127,14 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 </h4>
               </div>
               <p className="text-xs text-muted-foreground">
-                Saves your complete Step 1 & Step 2 runtime configuration, executes the HTTP test workflow, and visualizes service call topology and UML sequence diagrams in real time.
+                Saves your complete Step 1 & Step 2 runtime configuration, executes the HTTP test
+                workflow, and visualizes service call topology and UML sequence diagrams in real
+                time.
               </p>
               {quickRunMsg && (
-                <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mt-1">{quickRunMsg}</p>
+                <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mt-1">
+                  {quickRunMsg}
+                </p>
               )}
               {quickRunError && (
                 <div
@@ -2071,13 +2147,19 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
-              {selectedId && (isExecFailed || isTimedOut || (isCompleted && scenarioStatus !== "PASSED")) && (
-                <Button variant="outline" size="sm" className="text-xs h-9 border-violet-500/40 text-violet-300" asChild>
-                  <Link href={`/scenarios?project=${projectId}&repairSession=${selectedId}`}>
-                    ✨ AI Repair in Step 2
-                  </Link>
-                </Button>
-              )}
+              {selectedId &&
+                (isExecFailed || isTimedOut || (isCompleted && scenarioStatus !== "PASSED")) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs h-9 border-violet-500/40 text-violet-300"
+                    asChild
+                  >
+                    <Link href={`/scenarios?project=${projectId}&repairSession=${selectedId}`}>
+                      ✨ AI Repair in Step 2
+                    </Link>
+                  </Button>
+                )}
               <Button variant="outline" size="sm" className="text-xs h-9" asChild>
                 <Link href={`/scenarios?project=${projectId}`}>← Edit Scenario in Step 2</Link>
               </Button>
@@ -2087,7 +2169,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs h-9 shadow"
               >
                 {quickRunRunning || active.has(upperExecStatus) ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin shrink-0" aria-hidden="true" />
+                  <Loader2
+                    className="h-3.5 w-3.5 mr-1.5 animate-spin shrink-0"
+                    aria-hidden="true"
+                  />
                 ) : (
                   <Play className="h-3.5 w-3.5 mr-1.5" />
                 )}
@@ -2127,7 +2212,11 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                             : "bg-muted text-muted-foreground"
                     }`}
                   >
-                    {st.done && !st.current ? "✓" : (isExecFailed || isTimedOut) && st.num === 2 ? "✕" : st.num}
+                    {st.done && !st.current
+                      ? "✓"
+                      : (isExecFailed || isTimedOut) && st.num === 2
+                        ? "✕"
+                        : st.num}
                   </span>
                   <span className="truncate">{st.title}</span>
                 </div>
@@ -2191,11 +2280,16 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Model <code className="font-mono text-foreground">{enrichedModelId.slice(0, 8)}</code> combines static source analysis with real OpenTelemetry trace provenance.
+              Model <code className="font-mono text-foreground">{enrichedModelId.slice(0, 8)}</code>{" "}
+              combines static source analysis with real OpenTelemetry trace provenance.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <Button size="sm" className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white" asChild>
+            <Button
+              size="sm"
+              className="h-8 text-xs bg-emerald-600 hover:bg-emerald-500 text-white"
+              asChild
+            >
               <Link
                 href={`/architecture?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}`}
               >
@@ -2203,14 +2297,24 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 Architecture Graph
               </Link>
             </Button>
-            <Button size="sm" variant="outline" className="h-8 text-xs border-emerald-600/40 text-emerald-800 dark:text-emerald-300" asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs border-emerald-600/40 text-emerald-800 dark:text-emerald-300"
+              asChild
+            >
               <Link
                 href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(selectedId)}`}
               >
                 Sequence Diagram
               </Link>
             </Button>
-            <Button size="sm" variant="outline" className="h-8 text-xs border-emerald-600/40 text-emerald-800 dark:text-emerald-300" asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs border-emerald-600/40 text-emerald-800 dark:text-emerald-300"
+              asChild
+            >
               <Link
                 href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_ACTIVITY&mode=observed&session=${encodeURIComponent(selectedId)}`}
               >
@@ -2302,13 +2406,16 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             </div>
           </div>
 
-          {list.isPending && <p className="text-xs text-muted-foreground">Loading runtime sessions…</p>}
+          {list.isPending && (
+            <p className="text-xs text-muted-foreground">Loading runtime sessions…</p>
+          )}
           {list.isError && <ErrorState error={list.error} />}
           {session.isError && <ErrorState error={session.error} />}
           {sequence.isError && <ErrorState error={sequence.error} />}
           {!list.isPending && !list.isError && !visible.length && !selectedId && (
             <p className="text-xs text-muted-foreground">
-              No runtime session yet. The diagram below is the planned workflow; run it to capture a real trace.
+              No runtime session yet. The diagram below is the planned workflow; run it to capture a
+              real trace.
             </p>
           )}
 
@@ -2319,7 +2426,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   Session {selectedId.slice(0, 8)} is queued ({execStatus})
                 </p>
                 <p className="text-muted-foreground">
-                  Waiting for runner execution or receipt sync. You can trigger immediate dispatch / outbox sync now.
+                  Waiting for runner execution or receipt sync. You can trigger immediate dispatch /
+                  outbox sync now.
                 </p>
               </div>
               <Button
@@ -2397,42 +2505,54 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             </div>
           )}
 
-          {observed && (() => {
-            const services = Array.from(
-              new Set(
-                workflowData.steps
-                  .flatMap((s) => [s.callerService, s.calleeService])
-                  .filter((s): s is string => Boolean(s)),
-              ),
-            );
-            const timed = workflowData.steps.filter((s) => s.durationMs != null);
-            const slowest = [...timed].sort((a, b) => (b.durationMs ?? 0) - (a.durationMs ?? 0))[0];
-            return (
-              <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3.5 text-xs space-y-0.5">
-                <p className="font-semibold text-foreground">
-                  Trace summary: {workflowData.steps.length} observed call(s) across {services.length} participant(s)
-                </p>
-                {slowest && (
-                  <p className="text-muted-foreground">
-                    Slowest observed hop: {slowest.callerService} → {slowest.calleeService} (
-                    {normalizeEndpointDisplay(slowest.httpMethod, slowest.operation, slowest.calleeService)},{" "}
-                    {slowest.durationMs} ms)
+          {observed &&
+            (() => {
+              const services = Array.from(
+                new Set(
+                  workflowData.steps
+                    .flatMap((s) => [s.callerService, s.calleeService])
+                    .filter((s): s is string => Boolean(s)),
+                ),
+              );
+              const timed = workflowData.steps.filter((s) => s.durationMs != null);
+              const slowest = [...timed].sort(
+                (a, b) => (b.durationMs ?? 0) - (a.durationMs ?? 0),
+              )[0];
+              return (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3.5 text-xs space-y-0.5">
+                  <p className="font-semibold text-foreground">
+                    Trace summary: {workflowData.steps.length} observed call(s) across{" "}
+                    {services.length} participant(s)
                   </p>
-                )}
-              </div>
-            );
-          })()}
+                  {slowest && (
+                    <p className="text-muted-foreground">
+                      Slowest observed hop: {slowest.callerService} → {slowest.calleeService} (
+                      {normalizeEndpointDisplay(
+                        slowest.httpMethod,
+                        slowest.operation,
+                        slowest.calleeService,
+                      )}
+                      , {slowest.durationMs} ms)
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
           {/* Visual Feature Cluster Flow Pipeline */}
           {featureClusters.length > 0 && (
-            <div data-tour="session-flow-clusters" className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 space-y-2.5">
+            <div
+              data-tour="session-flow-clusters"
+              className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 space-y-2.5"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold uppercase tracking-wider text-sky-400">
                     🧩 API Feature Flow Clusters ({featureClusters.length} Functional Groups)
                   </span>
                   <span className="text-[11px] text-slate-400">
-                    Click any functional cluster to isolate its Topology, Sequence Diagram & API calls
+                    Click any functional cluster to isolate its Topology, Sequence Diagram & API
+                    calls
                   </span>
                 </div>
                 {(selectedClusterFilter || selectedServiceFilter) && (
@@ -2468,7 +2588,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1">
-                    All {workflowData.steps.length} {observed ? "observed" : "planned"} hops combined
+                    All {workflowData.steps.length} {observed ? "observed" : "planned"} hops
+                    combined
                   </p>
                 </button>
 
@@ -2494,7 +2615,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-xs font-bold text-slate-100 truncate">
                             <span className="mr-1">{cluster.meta.icon}</span>
-                            { idx + 1 }. {cluster.meta.shortTitle}
+                            {idx + 1}. {cluster.meta.shortTitle}
                           </span>
                           <span
                             className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold border shrink-0 ${cluster.meta.badgeClass}`}
@@ -2543,8 +2664,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             {vizMode === "sequence" && !observed && (
               <div data-tour="session-sequence" className="min-w-0">
                 <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
-                  The UML sequence diagram is drawn only from captured trace spans. It appears after a run records
-                  evidence.
+                  The UML sequence diagram is drawn only from captured trace spans. It appears after
+                  a run records evidence.
                 </p>
               </div>
             )}
@@ -2568,7 +2689,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             {vizMode === "activity" && !observed && (
               <div data-tour="session-activity" className="min-w-0">
                 <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
-                  The runtime UML activity diagram is drawn from captured trace spans. Run the scenario to record observed swimlane actions, or inspect static code-inferred activity flows in Architecture Diagrams.
+                  The runtime UML activity diagram is drawn from captured trace spans. Run the
+                  scenario to record observed swimlane actions, or inspect static code-inferred
+                  activity flows in Architecture Diagrams.
                 </p>
               </div>
             )}
@@ -2624,8 +2747,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     )}
                     <span className="text-[11px] text-muted-foreground">#{idx + 1}</span>
                     {(() => {
-                      const aiPhase = aiPhaseByRoute.get(`${verb}:${sr.path ?? "/"}`) ?? aiPhaseByRoute.get(sr.path ?? "");
-                      const clusterMeta = classifyApiFeatureCluster(sr.path, sr.service, sr.service, aiPhase);
+                      const aiPhase =
+                        aiPhaseByRoute.get(`${verb}:${sr.path ?? "/"}`) ??
+                        aiPhaseByRoute.get(sr.path ?? "");
+                      const clusterMeta = classifyApiFeatureCluster(
+                        sr.path,
+                        sr.service,
+                        sr.service,
+                        aiPhase,
+                      );
                       return (
                         <span
                           className={`px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold border ${clusterMeta.badgeClass}`}
@@ -2634,7 +2764,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                         </span>
                       );
                     })()}
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${httpMethodBadgeClass(verb)}`}>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${httpMethodBadgeClass(verb)}`}
+                    >
                       {verb}
                     </span>
                     {sr.service && (
@@ -2644,7 +2776,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     )}
                     <span className="text-foreground font-semibold truncate">{sr.path ?? "/"}</span>
                     {sr.failureReason && (
-                      <span className="text-rose-300 font-sans text-[11px]">— {sr.failureReason}</span>
+                      <span className="text-rose-300 font-sans text-[11px]">
+                        — {sr.failureReason}
+                      </span>
                     )}
                   </div>
                   <div className="flex items-center gap-2 font-mono text-[11px] shrink-0">
@@ -2666,7 +2800,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                       <span className="text-muted-foreground">{sr.durationMs} ms</span>
                     )}
                     {sr.traceId && (
-                      <span className="text-[10px] text-slate-400" title={`W3C traceId: ${sr.traceId}`}>
+                      <span
+                        className="text-[10px] text-slate-400"
+                        title={`W3C traceId: ${sr.traceId}`}
+                      >
                         trace:{sr.traceId.slice(0, 8)}
                       </span>
                     )}
@@ -2690,7 +2827,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs font-semibold text-foreground flex items-center gap-1.5 uppercase tracking-wider">
               <Activity className="h-3.5 w-3.5 text-primary" />
-              {observed ? "Observed calls" : "Planned calls"} ({filteredSteps.length} of {workflowData.steps.length})
+              {observed ? "Observed calls" : "Planned calls"} ({filteredSteps.length} of{" "}
+              {workflowData.steps.length})
             </p>
             {(selectedServiceFilter || selectedClusterFilter) && (
               <Button
@@ -2733,8 +2871,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   next.calleeService ?? "service",
                 ];
                 const aiPhase =
-                  aiPhaseByRoute.get(`${(next.httpMethod ?? "GET").toUpperCase()}:${next.operation ?? "/"}`) ??
-                  aiPhaseByRoute.get(next.operation ?? "");
+                  aiPhaseByRoute.get(
+                    `${(next.httpMethod ?? "GET").toUpperCase()}:${next.operation ?? "/"}`,
+                  ) ?? aiPhaseByRoute.get(next.operation ?? "");
                 const cluster = classifyApiFeatureCluster(
                   next.operation,
                   cur.calleeService,
@@ -2749,13 +2888,11 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 });
                 i++;
               } else {
-                const chain = [
-                  cur.callerService ?? "Caller",
-                  cur.calleeService ?? "Receiver",
-                ];
+                const chain = [cur.callerService ?? "Caller", cur.calleeService ?? "Receiver"];
                 const aiPhase =
-                  aiPhaseByRoute.get(`${(cur.httpMethod ?? "GET").toUpperCase()}:${cur.operation ?? "/"}`) ??
-                  aiPhaseByRoute.get(cur.operation ?? "");
+                  aiPhaseByRoute.get(
+                    `${(cur.httpMethod ?? "GET").toUpperCase()}:${cur.operation ?? "/"}`,
+                  ) ?? aiPhaseByRoute.get(cur.operation ?? "");
                 const cluster = classifyApiFeatureCluster(
                   cur.operation,
                   cur.callerService,
@@ -2792,117 +2929,147 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
 
             return (
               <div className="space-y-4">
-                {clusterGroups.map((grp, gIdx) => (
-                  <div
-                    key={grp.meta.id}
-                    className={`rounded-xl border p-3.5 space-y-2.5 ${grp.meta.cardBorderClass}`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span
-                          className={`px-2 py-0.5 rounded-md text-xs font-bold border ${grp.meta.badgeClass}`}
-                        >
-                          {grp.meta.icon} Flow Group {gIdx + 1}: {grp.meta.title}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">
-                          {grp.meta.description}
+                {clusterGroups.map((grp, gIdx) => {
+                  const pageCount = Math.max(
+                    1,
+                    Math.ceil(grp.items.length / TRACE_GROUP_PAGE_SIZE),
+                  );
+                  const currentPage = Math.min(traceGroupPages[grp.meta.id] ?? 1, pageCount);
+                  const pageStart = (currentPage - 1) * TRACE_GROUP_PAGE_SIZE;
+                  const visibleItems = grp.items.slice(
+                    pageStart,
+                    pageStart + TRACE_GROUP_PAGE_SIZE,
+                  );
+                  return (
+                    <div
+                      key={grp.meta.id}
+                      className={`rounded-xl border p-3.5 space-y-2.5 ${grp.meta.cardBorderClass}`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded-md text-xs font-bold border ${grp.meta.badgeClass}`}
+                          >
+                            {grp.meta.icon} Flow Group {gIdx + 1}: {grp.meta.title}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {grp.meta.description}
+                          </span>
+                        </div>
+                        <span className="font-mono text-[11px] text-slate-300">
+                          {grp.items.length} {grp.items.length === 1 ? "API step" : "API steps"}
                         </span>
                       </div>
-                      <span className="font-mono text-[11px] text-slate-300">
-                        {grp.items.length} {grp.items.length === 1 ? "API step" : "API steps"}
-                      </span>
-                    </div>
 
-                    <div className="space-y-2">
-                      {grp.items.map(({ step, chainServices, displayIndex }, i) => {
-                        const dur = step.durationMs;
-                        const widthPct =
-                          dur == null
-                            ? 0
-                            : Math.max(4, Math.min(100, Math.round((dur / maxStepDuration) * 100)));
-                        const method = (step.httpMethod ?? "GET").toUpperCase();
-                        const statusCode = step.httpStatusCode;
-                        return (
-                          <div
-                            key={`${step.traceId ?? "trace"}:${displayIndex}:${i}`}
-                            className="rounded-lg border border-border/80 bg-slate-950/70 p-2.5 shadow-sm space-y-2"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
-                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-bold">
-                                  {displayIndex}
-                                </span>
-                                <span
-                                  className={`px-2 py-0.5 rounded text-[11px] font-bold ${httpMethodBadgeClass(method)}`}
-                                >
-                                  {method}
-                                </span>
-                                {chainServices.map((svcName, sIdx) => (
-                                  <span key={`${svcName}:${sIdx}`} className="inline-flex items-center gap-1.5">
-                                    {sIdx > 0 && (
-                                      <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                                    )}
+                      <div className="space-y-2">
+                        {visibleItems.map(({ step, chainServices, displayIndex }, i) => {
+                          const dur = step.durationMs;
+                          const widthPct =
+                            dur == null
+                              ? 0
+                              : Math.max(
+                                  4,
+                                  Math.min(100, Math.round((dur / maxStepDuration) * 100)),
+                                );
+                          const method = (step.httpMethod ?? "GET").toUpperCase();
+                          const statusCode = step.httpStatusCode;
+                          return (
+                            <div
+                              key={`${step.traceId ?? "trace"}:${displayIndex}:${i}`}
+                              className="rounded-lg border border-border/80 bg-slate-950/70 p-2.5 shadow-sm space-y-2"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
+                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-bold">
+                                    {displayIndex}
+                                  </span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold ${httpMethodBadgeClass(method)}`}
+                                  >
+                                    {method}
+                                  </span>
+                                  {chainServices.map((svcName, sIdx) => (
                                     <span
-                                      className={`rounded px-2 py-0.5 font-semibold border ${
-                                        sIdx === 0
-                                          ? "bg-slate-800/90 text-slate-300 border-slate-700"
-                                          : sIdx === chainServices.length - 1
-                                            ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
-                                            : "bg-sky-500/15 text-sky-400 border-sky-500/30"
+                                      key={`${svcName}:${sIdx}`}
+                                      className="inline-flex items-center gap-1.5"
+                                    >
+                                      {sIdx > 0 && (
+                                        <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                                      )}
+                                      <span
+                                        className={`rounded px-2 py-0.5 font-semibold border ${
+                                          sIdx === 0
+                                            ? "bg-slate-800/90 text-slate-300 border-slate-700"
+                                            : sIdx === chainServices.length - 1
+                                              ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                                              : "bg-sky-500/15 text-sky-400 border-sky-500/30"
+                                        }`}
+                                      >
+                                        {svcName}
+                                      </span>
+                                    </span>
+                                  ))}
+                                  <span className="text-foreground font-semibold ml-1">
+                                    {normalizeEndpointDisplay(
+                                      step.httpMethod,
+                                      step.operation,
+                                      step.calleeService,
+                                    )}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 text-[11px] font-mono">
+                                  {statusCode != null ? (
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded font-bold ${
+                                        statusCode >= 200 && statusCode < 300
+                                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                                          : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
                                       }`}
                                     >
-                                      {svcName}
+                                      HTTP {statusCode}
                                     </span>
-                                  </span>
-                                ))}
-                                <span className="text-foreground font-semibold ml-1">
-                                  {normalizeEndpointDisplay(
-                                    step.httpMethod,
-                                    step.operation,
-                                    step.calleeService,
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 rounded border border-dashed text-muted-foreground">
+                                      PLANNED
+                                    </span>
                                   )}
-                                </span>
+                                  {dur != null && (
+                                    <span className="flex items-center gap-1 text-muted-foreground">
+                                      <Clock className="h-3 w-3" />
+                                      {dur} ms
+                                    </span>
+                                  )}
+                                </div>
                               </div>
 
-                              <div className="flex items-center gap-2 text-[11px] font-mono">
-                                {statusCode != null ? (
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded font-bold ${
-                                      statusCode >= 200 && statusCode < 300
-                                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                                        : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
-                                    }`}
-                                  >
-                                    HTTP {statusCode}
-                                  </span>
-                                ) : (
-                                  <span className="px-1.5 py-0.5 rounded border border-dashed text-muted-foreground">
-                                    PLANNED
-                                  </span>
-                                )}
-                                {dur != null && (
-                                  <span className="flex items-center gap-1 text-muted-foreground">
-                                    <Clock className="h-3 w-3" />
-                                    {dur} ms
-                                  </span>
-                                )}
-                              </div>
+                              {dur != null && (
+                                <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-400"
+                                    style={{ width: `${widthPct}%` }}
+                                  />
+                                </div>
+                              )}
                             </div>
-
-                            {dur != null && (
-                              <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
-                                <div
-                                  className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-400"
-                                  style={{ width: `${widthPct}%` }}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
+                      {pageCount > 1 && (
+                        <Pagination
+                          page={currentPage}
+                          pageCount={pageCount}
+                          onPageChange={(nextPage) =>
+                            setTraceGroupPages((current) => ({
+                              ...current,
+                              [grp.meta.id]: nextPage,
+                            }))
+                          }
+                        />
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             );
           })()}
@@ -2938,8 +3105,14 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   {session.data.profileName ?? "SPRING_BOOT_DOTNET_COMPOSE_V1"}
                 </span>
                 <div className="flex flex-wrap gap-2">
-                  {["NOT_STARTED", "PENDING", "APPROVED", "READY_FOR_DISPATCH"].includes(execStatus) && (
-                    <Button size="sm" disabled={approve.isPending} onClick={() => setAction("approve")}>
+                  {["NOT_STARTED", "PENDING", "APPROVED", "READY_FOR_DISPATCH"].includes(
+                    execStatus,
+                  ) && (
+                    <Button
+                      size="sm"
+                      disabled={approve.isPending}
+                      onClick={() => setAction("approve")}
+                    >
                       Approve & Dispatch Runner
                     </Button>
                   )}
@@ -2976,7 +3149,11 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         onOpenChange={(open) => {
           if (!open) setAction(null);
         }}
-        title={action === "approve" ? "Approve & dispatch this pinned session?" : "Stop this runtime session?"}
+        title={
+          action === "approve"
+            ? "Approve & dispatch this pinned session?"
+            : "Stop this runtime session?"
+        }
         description={
           action === "approve"
             ? "Approves the pinned workload, syncs any completed receipt in the runner outbox, or dispatches the managed runner."

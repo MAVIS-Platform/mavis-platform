@@ -46,8 +46,7 @@ export function WorkspaceOverview() {
     { enabled: Boolean(workspaceId) },
   );
   const workspace = query.data?.find((w) => w.id === workspaceId);
-  const canManage =
-    workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const members = workspace?.members ?? [];
   const studentCount = members.filter((m) => m.role.toUpperCase() === "STUDENT").length;
   const lecturerCount = members.filter((m) => m.role.toUpperCase() === "LECTURER").length;
@@ -74,18 +73,15 @@ export function WorkspaceOverview() {
                 {workspace.description || "No class description added yet."}
               </p>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button asChild size="sm">
-                <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}`}>
-                  {canManage ? "Manage Assignments" : `Open Assignments & Submit (${assignmentList.length})`}
-                </Link>
-              </Button>
-              <Button asChild size="sm" variant="outline">
-                <Link href={`/members?workspace=${encodeURIComponent(workspace.id)}`}>
-                  Members ({members.length})
-                </Link>
-              </Button>
-            </div>
+            {canManage && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button asChild size="sm">
+                  <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}`}>
+                    Manage Assignments
+                  </Link>
+                </Button>
+              </div>
+            )}
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <SummaryCard
@@ -144,7 +140,9 @@ export function WorkspaceOverview() {
                     label: "Action",
                     render: (a) => (
                       <Button asChild size="sm" variant="outline">
-                        <Link href={`/assignments?workspace=${encodeURIComponent(workspace.id)}#assignment-${a.id}`}>
+                        <Link
+                          href={`/assignments?workspace=${encodeURIComponent(workspace.id)}#assignment-${a.id}`}
+                        >
                           {canManage ? "Review" : "Open & Submit →"}
                         </Link>
                       </Button>
@@ -167,7 +165,8 @@ export function WorkspaceOverview() {
                     <div>
                       <p className="font-medium text-foreground">Open Assignment</p>
                       <p className="text-muted-foreground">
-                        Click <strong>Open & Submit →</strong> on an assignment to read instructions, required diagram types, and any attached reference source.
+                        Click <strong>Open & Submit →</strong> on an assignment to read
+                        instructions, required diagram types, and any attached reference source.
                       </p>
                     </div>
                   </div>
@@ -176,9 +175,12 @@ export function WorkspaceOverview() {
                       2
                     </div>
                     <div>
-                      <p className="font-medium text-foreground">Create & Analyze Coursework Project</p>
+                      <p className="font-medium text-foreground">
+                        Create & Analyze Coursework Project
+                      </p>
                       <p className="text-muted-foreground">
-                        Create a project for the assignment, import your GitHub repository or ZIP (or clone the Lecturer&apos;s reference source), and run static analysis.
+                        Create a project for the assignment, import your GitHub repository or ZIP
+                        (or clone the Lecturer&apos;s reference source), and run static analysis.
                       </p>
                     </div>
                   </div>
@@ -187,9 +189,12 @@ export function WorkspaceOverview() {
                       3
                     </div>
                     <div>
-                      <p className="font-medium text-foreground">Review Architecture & Save Diagrams</p>
+                      <p className="font-medium text-foreground">
+                        Review Architecture & Save Diagrams
+                      </p>
                       <p className="text-muted-foreground">
-                        Inspect the Architecture Graph, C4/UML Diagrams, 3E Inspector, and Change Impact. Save your required diagram views.
+                        Inspect the Architecture Graph, C4/UML Diagrams, 3E Inspector, and Change
+                        Impact. Save your required diagram views.
                       </p>
                     </div>
                   </div>
@@ -200,7 +205,8 @@ export function WorkspaceOverview() {
                     <div>
                       <p className="font-medium text-foreground">Freeze & Submit</p>
                       <p className="text-muted-foreground">
-                        Return to the assignment, select your Model Version and diagrams, and submit before the deadline.
+                        Return to the assignment, select your Model Version and diagrams, and submit
+                        before the deadline.
                       </p>
                     </div>
                   </div>
@@ -221,15 +227,13 @@ export function WorkspaceMembers() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const workspace = query.data?.find((w) => w.id === workspaceId);
-  const canManage =
-    workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const filteredMembers = (workspace?.members ?? []).filter((m) => {
     const matchesSearch =
       !search.trim() ||
       m.name.toLowerCase().includes(search.trim().toLowerCase()) ||
       m.role.toLowerCase().includes(search.trim().toLowerCase());
-    const matchesRole =
-      roleFilter === "ALL" || m.role.toUpperCase() === roleFilter;
+    const matchesRole = roleFilter === "ALL" || m.role.toUpperCase() === roleFilter;
     return matchesSearch && matchesRole;
   });
   return (
@@ -241,11 +245,7 @@ export function WorkspaceMembers() {
           </div>
         )}
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
-          <SearchInput
-            label="Filter members"
-            value={search}
-            onChange={setSearch}
-          />
+          <SearchInput label="Filter members" value={search} onChange={setSearch} />
           <SelectField
             label="Role"
             value={roleFilter}

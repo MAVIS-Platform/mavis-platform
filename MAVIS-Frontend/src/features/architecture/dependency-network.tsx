@@ -481,7 +481,10 @@ export function DependencyNetwork({
         const id = node.data("sourceId") as string;
         const match = !search || String(node.data("name")).toLowerCase().includes(search);
         const orphanInRuntime = origin === "runtime" && edges.length > 0 && node.degree() === 0;
-        node.toggleClass("muted", !match || orphanInRuntime || (focus.active && !focus.nodes.has(id)));
+        node.toggleClass(
+          "muted",
+          !match || orphanInRuntime || (focus.active && !focus.nodes.has(id)),
+        );
         node.toggleClass(
           "focused",
           selectedId === id || (highlightIds.length > 0 && focus.nodes.has(id)),
@@ -768,13 +771,14 @@ export function DependencyNetwork({
         </div>
       </Tooltip.Provider>
       {runtimeEdgeCount > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs">
-          <div className="flex items-center gap-2 text-xs text-emerald-300 font-medium">
-            <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-600/30 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-950/30 dark:text-emerald-200">
+          <div className="flex items-center gap-2 text-xs font-medium">
+            <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-emerald-600 dark:bg-emerald-400" />
             <span className="font-semibold">Runtime-Enriched Model Active:</span>
             <span className="font-bold">{runtimeEdgeCount}</span>
             <span>
-              relationships verified via OpenTelemetry traces are highlighted in solid emerald green on the graph. Click any green edge to inspect its runtime trace evidence.
+              relationships verified via OpenTelemetry traces are highlighted in solid emerald green
+              on the graph. Click any green edge to inspect its runtime trace evidence.
             </span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -791,47 +795,59 @@ export function DependencyNetwork({
               type="button"
               size="sm"
               variant={origin === "runtime" ? "default" : "outline"}
-              className="h-7 px-2.5 text-[11px] border-emerald-500/40"
+              className="h-7 border-emerald-600/40 px-2.5 text-[11px] text-emerald-800 hover:bg-emerald-100 dark:border-emerald-500/40 dark:text-emerald-200 dark:hover:bg-emerald-950"
               onClick={() => changeOrigin(origin === "runtime" ? "all" : "runtime")}
             >
-              ⚡ {origin === "runtime" ? "Showing Only Runtime Calls" : `Filter Runtime Calls Only (${runtimeEdgeCount})`}
+              ⚡{" "}
+              {origin === "runtime"
+                ? "Showing Only Runtime Calls"
+                : `Filter Runtime Calls Only (${runtimeEdgeCount})`}
             </Button>
           </div>
         </div>
       )}
-      {(relationshipScopeCount > 0 || projection.unassignedElements > 0 || hiddenCategories.length > 0 || query.trim() !== "" || nodes.length > 300) && <div
-        hidden={fillHeight && !dockToolsOpen}
-        className={`${fillHeight && !dockToolsOpen ? "!hidden" : ""} flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground`}
-      >
-        {relationshipScopeCount > 0 && (
-          <span>{relationshipScopeCount} relationships hidden by type/uncertainty filters.</span>
-        )}
-        {projection.unassignedElements > 0 && (
-          <span>
-            {projection.unassignedElements} unassigned internal elements and{" "}
-            {projection.unassignedRelationships} related connections hidden. Expand service
-            internals to inspect; ownership is unknown.
-          </span>
-        )}
-        {hiddenCategories.length > 0 && (
-          <span>
-            {baseProjection.model.elements.length - nodes.length} elements and{" "}
-            {baseProjection.model.edges.length - edges.length} connections hidden by type.
-          </span>
-        )}
-        {query.trim() !== "" && (
-          <span>
-            <strong className="text-foreground">Search:</strong>{" "}
-            {nodes.filter((n) => n.name.toLowerCase().includes(query.trim().toLowerCase())).length}/
-            {nodes.length} elements highlighted
-          </span>
-        )}
-        {nodes.length > 300 && (
-          <span className="font-medium text-amber-600 dark:text-amber-400">
-            (Grid layout mode: &gt;300 elements active, force simulation bypassed for performance)
-          </span>
-        )}
-      </div>}
+      {(relationshipScopeCount > 0 ||
+        projection.unassignedElements > 0 ||
+        hiddenCategories.length > 0 ||
+        query.trim() !== "" ||
+        nodes.length > 300) && (
+        <div
+          hidden={fillHeight && !dockToolsOpen}
+          className={`${fillHeight && !dockToolsOpen ? "!hidden" : ""} flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-muted/30 px-3 py-2 text-xs text-muted-foreground`}
+        >
+          {relationshipScopeCount > 0 && (
+            <span>{relationshipScopeCount} relationships hidden by type/uncertainty filters.</span>
+          )}
+          {projection.unassignedElements > 0 && (
+            <span>
+              {projection.unassignedElements} unassigned internal elements and{" "}
+              {projection.unassignedRelationships} related connections hidden. Expand service
+              internals to inspect; ownership is unknown.
+            </span>
+          )}
+          {hiddenCategories.length > 0 && (
+            <span>
+              {baseProjection.model.elements.length - nodes.length} elements and{" "}
+              {baseProjection.model.edges.length - edges.length} connections hidden by type.
+            </span>
+          )}
+          {query.trim() !== "" && (
+            <span>
+              <strong className="text-foreground">Search:</strong>{" "}
+              {
+                nodes.filter((n) => n.name.toLowerCase().includes(query.trim().toLowerCase()))
+                  .length
+              }
+              /{nodes.length} elements highlighted
+            </span>
+          )}
+          {nodes.length > 300 && (
+            <span className="font-medium text-amber-600 dark:text-amber-400">
+              (Grid layout mode: &gt;300 elements active, force simulation bypassed for performance)
+            </span>
+          )}
+        </div>
+      )}
       <details hidden={fillHeight && !dockToolsOpen} className="border-b p-3 text-sm">
         <summary className="cursor-pointer">Graph elements (keyboard navigation)</summary>
         <div className="mt-3 max-h-64 space-y-2 overflow-auto">
