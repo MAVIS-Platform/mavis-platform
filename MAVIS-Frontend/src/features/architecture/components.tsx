@@ -33,8 +33,7 @@ export function ModelVersionSelector({
       options={models.map((model) => {
         const date = model.createdAt ? new Date(model.createdAt) : null;
         const created = date && !Number.isNaN(date.getTime()) ? dateFormat.format(date) : "";
-        const customLabel =
-          model.label && !/^Revision \d+$/i.test(model.label) ? model.label : "";
+        const customLabel = model.label && !/^Revision \d+$/i.test(model.label) ? model.label : "";
         return {
           value: model.id,
           label: [
@@ -180,7 +179,9 @@ export function EvidenceViewer({
             <Badge variant={entry.kind}>
               {entry.kind === "source" ? "Source-inferred" : "Runtime-observed"}
             </Badge>
-            <span className="break-all font-mono text-xs">{entry.location}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-xs" title={entry.location}>
+              {shortEvidenceLocation(entry.location)}
+            </span>
             {entry.complete === false && <Badge variant="warning">Incomplete evidence</Badge>}
           </div>
           <pre className="overflow-auto p-3 text-xs">
@@ -190,6 +191,12 @@ export function EvidenceViewer({
       ))}
     </div>
   );
+}
+
+function shortEvidenceLocation(location: string): string {
+  if (!location) return "Unknown location";
+  const normalized = location.replace(/\\/g, "/");
+  return normalized.match(/([^/]+(?::\d+(?::\d+)?)?)$/)?.[1] ?? normalized;
 }
 
 function ElementEvidenceContext({
@@ -203,11 +210,14 @@ function ElementEvidenceContext({
 }) {
   const context = useApiQuery("elementEvidenceContext", { modelId: model.id, elementId });
   const related = context.data?.relationshipEvidence ?? [];
-  const grouped = new Map<string, Evidence[]>();
+  const grouped = new Map<string, { edges: ArchitecturalModel["edges"]; evidence: Evidence[] }>();
   for (const item of related) {
-    const entries = grouped.get(item.relationshipId) ?? [];
-    entries.push(item.evidence);
-    grouped.set(item.relationshipId, entries);
+    const edge = model.edges.find((candidate) => candidate.id === item.relationshipId);
+    const key = edge ? `${edge.from}:${edge.to}` : item.relationshipId;
+    const group = grouped.get(key) ?? { edges: [], evidence: [] };
+    if (edge && !group.edges.some((candidate) => candidate.id === edge.id)) group.edges.push(edge);
+    group.evidence.push(item.evidence);
+    grouped.set(key, group);
   }
   const name = (id: string) => model.elements.find((e) => e.id === id)?.name ?? id;
   return (
@@ -232,25 +242,35 @@ function ElementEvidenceContext({
               These snippets support the listed relationships; they do not by themselves establish
               this element&apos;s internal behavior.
             </p>
-            {[...grouped].map(([relationshipId, entries]) => {
-              const edge = model.edges.find((e) => e.id === relationshipId);
+            {[...grouped].map(([groupKey, group]) => {
+              const edge = group.edges[0];
+              const protocols = [...new Set(group.edges.map((candidate) => candidate.protocol))];
               const label = edge
-                ? `${name(edge.from)} → ${name(edge.to)} · ${edge.protocol}`
-                : `Relationship ${relationshipId}`;
+                ? `${name(edge.from)} → ${name(edge.to)}`
+                : `Relationship ${groupKey}`;
               return (
-                <div className="space-y-2" key={relationshipId}>
+                <div className="space-y-2" key={groupKey}>
                   {onSelect && edge ? (
                     <button
                       type="button"
                       className="break-words text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
-                      onClick={() => onSelect(relationshipId)}
+                      onClick={() => onSelect(edge.id)}
                     >
                       {label}
                     </button>
                   ) : (
                     <p className="break-words text-sm font-medium">{label}</p>
                   )}
-                  <EvidenceViewer evidence={entries} subject="relationship" />
+                  {protocols.length > 0 && (
+                    <div className="flex flex-wrap gap-1">
+                      {protocols.map((protocol) => (
+                        <Badge key={protocol} variant="outline" className="font-mono text-[10px]">
+                          {protocol}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <EvidenceViewer evidence={group.evidence} subject="relationship" />
                 </div>
               );
             })}
@@ -276,57 +296,71 @@ export function ElementDetailsPanel({
   const parent = element?.parentId
     ? model.elements.find((node) => node.id === element.parentId)
     : undefined;
-  const children = element
-    ? model.elements.filter((node) => node.parentId === element.id)
-    : [];
+  const children = element ? model.elements.filter((node) => node.parentId === element.id) : [];
   const nameOf = (id: string) => model.elements.find((node) => node.id === id)?.name ?? id;
   function connectionList(title: string, relations: ArchitecturalModel["edges"]) {
+    const grouped = new Map<string, ArchitecturalModel["edges"]>();
+    for (const relation of relations) {
+      const key = `${relation.from}:${relation.to}`;
+      grouped.set(key, [...(grouped.get(key) ?? []), relation]);
+    }
+    const relationshipGroups = [...grouped.values()];
     return (
       <section aria-label={`${title} relationships`} className="space-y-2">
         <h4 className="text-sm font-semibold">
-          {title} ({relations.length})
+          {title} ({relations.length} relationship{relations.length === 1 ? "" : "s"} ·{" "}
+          {relationshipGroups.length} peer{relationshipGroups.length === 1 ? "" : "s"})
         </h4>
-        {relations.length ? (
+        {relationshipGroups.length ? (
           <ul className="space-y-2">
-            {relations.map((relation) => (
-              <li
-                key={relation.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5 text-xs"
-              >
-                <div className="min-w-0 flex-1">
-                  {onSelect ? (
-                    <button
+            {relationshipGroups.map((group) => {
+              const relation = group[0]!;
+              const protocols = [...new Set(group.map((item) => item.protocol))];
+              const uncertain = group.some((item) => item.uncertain);
+              return (
+                <li
+                  key={`${relation.from}:${relation.to}`}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 p-2.5 text-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    {onSelect ? (
+                      <button
+                        type="button"
+                        className="w-full break-words text-left font-medium text-primary underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2"
+                        onClick={() => onSelect(relation.id)}
+                      >
+                        {nameOf(relation.from)} → {nameOf(relation.to)}
+                      </button>
+                    ) : (
+                      <p className="break-words font-medium">
+                        {nameOf(relation.from)} → {nameOf(relation.to)}
+                      </p>
+                    )}
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {protocols.map((protocol) => (
+                        <Badge key={protocol} variant="outline" className="font-mono text-[10px]">
+                          {protocol}
+                        </Badge>
+                      ))}
+                      {uncertain && <Badge variant="warning">Uncertain mapping</Badge>}
+                    </div>
+                  </div>
+                  {onSelect && (
+                    <Button
                       type="button"
-                      className="w-full break-words text-left font-medium text-primary underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2"
-                      onClick={() => onSelect(relation.id)}
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-[11px]"
+                      onClick={() =>
+                        onSelect(relation.from === element?.id ? relation.to : relation.from)
+                      }
                     >
-                      {nameOf(relation.from)} → {nameOf(relation.to)}
-                    </button>
-                  ) : (
-                    <p className="break-words font-medium">
-                      {nameOf(relation.from)} → {nameOf(relation.to)}
-                    </p>
+                      Inspect peer →
+                    </Button>
                   )}
-                  <p className="mt-1 text-muted-foreground">
-                    {relation.protocol}
-                    {relation.uncertain ? " · Uncertain mapping" : ""}
-                  </p>
-                </div>
-                {onSelect && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 px-2 text-[11px]"
-                    onClick={() =>
-                      onSelect(relation.from === element?.id ? relation.to : relation.from)
-                    }
-                  >
-                    Inspect peer →
-                  </Button>
-                )}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         ) : (
           <p className="text-xs text-muted-foreground">

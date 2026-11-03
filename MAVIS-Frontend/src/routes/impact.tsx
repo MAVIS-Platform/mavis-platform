@@ -1,11 +1,11 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowRight, Flame, AlertTriangle, ShieldAlert, Zap, Layers } from "lucide-react";
+import { ArrowRight, Flame, AlertTriangle, ShieldAlert, Zap, Layers, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { PageContainer, SectionHeader } from "@/components/layout/page";
-import { DetailPanel, SummaryCard } from "@/components/shared/data";
+import { DetailPanel } from "@/components/shared/data";
 import { RequestState } from "@/components/shared/request-state";
 import { SelectField } from "@/components/shared/forms";
 import { Badge } from "@/components/ui/badge";
@@ -70,8 +70,7 @@ export function computeArchitectureImpact(
   workerPaths: readonly (readonly string[])[] = [],
 ): ComputedArchitectureImpact {
   const rawTarget = model.elements.find((e) => e.id === targetId);
-  const showComponents =
-    scope === "components" || rawTarget?.elementType === "COMPONENT";
+  const showComponents = scope === "components" || rawTarget?.elementType === "COMPONENT";
   const originFilter = scope === "source" ? "source" : "all";
 
   const projected =
@@ -161,7 +160,9 @@ export function computeArchitectureImpact(
     if (current.hopIds.length > 8) continue;
     const neighbors = (reverseAdj.get(current.currentId) ?? [])
       .slice()
-      .sort((a, b) => (byId.get(a.neighborId)?.name ?? "").localeCompare(byId.get(b.neighborId)?.name ?? ""));
+      .sort((a, b) =>
+        (byId.get(a.neighborId)?.name ?? "").localeCompare(byId.get(b.neighborId)?.name ?? ""),
+      );
 
     for (const step of neighbors) {
       if (visitedUpstream.has(step.neighborId)) continue;
@@ -199,7 +200,10 @@ export function computeArchitectureImpact(
       projected.elements.find((e) => e.id === firstHop || e.name === firstHop) ??
       model.elements.find((e) => e.id === firstHop || e.name === firstHop);
     const elId = matchedEl?.id ?? firstHop;
-    if (elId !== targetId && !upstreamImpacted.some((u) => u.elementId === elId || u.name === resolvedNames[0])) {
+    if (
+      elId !== targetId &&
+      !upstreamImpacted.some((u) => u.elementId === elId || u.name === resolvedNames[0])
+    ) {
       upstreamImpacted.push({
         elementId: elId,
         name: matchedEl?.name ?? resolvedNames[0]!,
@@ -228,7 +232,9 @@ export function computeArchitectureImpact(
     if (current.hopIds.length > 8) continue;
     const neighbors = (forwardAdj.get(current.currentId) ?? [])
       .slice()
-      .sort((a, b) => (byId.get(a.neighborId)?.name ?? "").localeCompare(byId.get(b.neighborId)?.name ?? ""));
+      .sort((a, b) =>
+        (byId.get(a.neighborId)?.name ?? "").localeCompare(byId.get(b.neighborId)?.name ?? ""),
+      );
 
     for (const step of neighbors) {
       if (visitedDownstream.has(step.neighborId)) continue;
@@ -330,7 +336,6 @@ function ImpactWorkspace() {
   );
 }
 
-
 function BlastRadiusVisualMap({
   impact,
   onSelectNode,
@@ -343,7 +348,7 @@ function BlastRadiusVisualMap({
   const downstreamList = impact.downstreamDependencies;
 
   return (
-    <div className="rounded-xl border-2 border-rose-500/30 bg-card/95 p-4 shadow-sm space-y-4">
+    <div className="space-y-4 rounded-xl border bg-card/95 p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/70 pb-3">
         <div className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-500/15 text-rose-500 border border-rose-500/30">
@@ -354,28 +359,30 @@ function BlastRadiusVisualMap({
               Outage Blast Radius Map
             </h3>
             <p className="text-[11px] text-muted-foreground">
-              Potential failure propagation if <strong className="text-rose-400 font-mono">{impact.targetName}</strong> becomes unavailable
+              Potential failure propagation if{" "}
+              <strong className="text-rose-400 font-mono">{impact.targetName}</strong> becomes
+              unavailable
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[11px]">
-          <span className="flex items-center gap-1 rounded bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 font-medium text-rose-400">
-            🔴 Unavailable
+          <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium text-rose-500">
+            <span className="size-2 rounded-full bg-rose-500" /> Unavailable
           </span>
-          <span className="flex items-center gap-1 rounded bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 font-medium text-amber-400">
-            🟠 Direct impact (1 hop)
+          <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium text-amber-500">
+            <span className="size-2 rounded-full bg-amber-500" /> Direct impact (1 hop)
           </span>
-          <span className="flex items-center gap-1 rounded bg-yellow-500/15 border border-yellow-500/30 px-2 py-0.5 font-medium text-yellow-400">
-            🟡 Indirect impact (2+ hops)
+          <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium text-yellow-600">
+            <span className="size-2 rounded-full bg-yellow-500" /> Indirect impact (2+ hops)
           </span>
-          <span className="flex items-center gap-1 rounded bg-sky-500/15 border border-sky-500/30 px-2 py-0.5 font-medium text-sky-400">
-            🔵 Downstream dependencies
+          <span className="flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium text-sky-500">
+            <span className="size-2 rounded-full bg-sky-500" /> Downstream dependencies
           </span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-stretch">
-        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-3 space-y-2 flex flex-col">
+        <div className="order-3 flex flex-col space-y-2 rounded-lg border border-yellow-500/25 bg-yellow-500/[0.03] p-3">
           <div className="flex items-center justify-between border-b border-yellow-500/20 pb-1.5">
             <span className="text-[11px] font-bold text-yellow-400 uppercase tracking-wider flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" />
@@ -394,7 +401,9 @@ function BlastRadiusVisualMap({
                 >
                   <div className="font-semibold text-foreground flex items-center justify-between">
                     <span>{node.name}</span>
-                    <span className="text-[10px] text-yellow-400 font-mono">-{node.distance} hops</span>
+                    <span className="text-[10px] text-yellow-400 font-mono">
+                      -{node.distance} hops
+                    </span>
                   </div>
                   <div className="text-[10px] text-muted-foreground truncate mt-0.5 font-mono">
                     {node.hops.join(" ➔ ")}
@@ -409,7 +418,7 @@ function BlastRadiusVisualMap({
           </div>
         </div>
 
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2 flex flex-col">
+        <div className="order-2 flex flex-col space-y-2 rounded-lg border border-amber-500/25 bg-amber-500/[0.03] p-3">
           <div className="flex items-center justify-between border-b border-amber-500/20 pb-1.5">
             <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1">
               <Zap className="h-3 w-3" />
@@ -428,7 +437,9 @@ function BlastRadiusVisualMap({
                 >
                   <div className="font-semibold text-foreground flex items-center justify-between">
                     <span>{node.name}</span>
-                    <span className="text-[10px] text-amber-400 font-mono font-bold">503 / Conn Refused</span>
+                    <span className="text-[10px] text-amber-400 font-mono font-bold">
+                      503 / Conn Refused
+                    </span>
                   </div>
                   <div className="text-[10px] text-muted-foreground truncate mt-0.5 font-mono">
                     Protocol: {node.protocols.join(", ") || "HTTP"}
@@ -443,7 +454,7 @@ function BlastRadiusVisualMap({
           </div>
         </div>
 
-        <div className="rounded-lg border-2 border-rose-500 bg-rose-500/10 p-3 space-y-2 flex flex-col justify-center items-center text-center shadow-lg relative overflow-hidden">
+        <div className="relative order-1 flex flex-col items-center justify-center space-y-2 overflow-hidden rounded-lg border border-rose-500/60 bg-rose-500/10 p-3 text-center shadow-sm">
           <div className="absolute top-1.5 right-2 text-[10px] font-mono text-rose-300 animate-pulse">
             💥 OUTAGE
           </div>
@@ -466,7 +477,7 @@ function BlastRadiusVisualMap({
           </p>
         </div>
 
-        <div className="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 space-y-2 flex flex-col">
+        <div className="order-4 flex flex-col space-y-2 rounded-lg border border-sky-500/25 bg-sky-500/[0.03] p-3">
           <div className="flex items-center justify-between border-b border-sky-500/20 pb-1.5">
             <span className="text-[11px] font-bold text-sky-400 uppercase tracking-wider flex items-center gap-1">
               <Layers className="h-3 w-3" />
@@ -542,18 +553,27 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
   }, [model, scope]);
 
   const defaultTargetId =
-    (elementParam && model.elements.some((e) => e.id === elementParam))
+    elementParam && model.elements.some((e) => e.id === elementParam)
       ? elementParam
-      : candidateElements.find((c) => c.incoming > 0)?.element.id ??
-    candidateElements[0]?.element.id ??
-    model.elements[0]?.id ??
-    "";
+      : (candidateElements.find((c) => c.incoming > 0)?.element.id ??
+        candidateElements[0]?.element.id ??
+        model.elements[0]?.id ??
+        "");
 
   const [targetId, setTargetId] = useState(defaultTargetId);
   const activeTargetId = candidateElements.some((c) => c.element.id === targetId)
     ? targetId
     : defaultTargetId;
-  const [inspectedId, setInspectedId] = useState<string | null>(activeTargetId);
+  const [inspectedId, setInspectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!inspectedId) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setInspectedId(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [inspectedId]);
 
   const activeTargetElement = model.elements.find((e) => e.id === activeTargetId);
   const canQueryWorkerImpact =
@@ -567,13 +587,7 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
   );
 
   const impact = useMemo(
-    () =>
-      computeArchitectureImpact(
-        model,
-        activeTargetId,
-        scope,
-        workerQuery.data?.paths ?? [],
-      ),
+    () => computeArchitectureImpact(model, activeTargetId, scope, workerQuery.data?.paths ?? []),
     [model, activeTargetId, scope, workerQuery.data?.paths],
   );
 
@@ -590,12 +604,15 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
 
   function handleSelectTarget(nextId: string) {
     setTargetId(nextId);
-    setInspectedId(nextId);
+    setInspectedId(null);
   }
 
   return (
     <div className="space-y-5">
-      <div data-tour="impact-selectors" className="grid gap-3 rounded-xl border bg-card p-3.5 lg:grid-cols-2">
+      <div
+        data-tour="impact-selectors"
+        className="grid gap-3 rounded-xl border bg-card p-3.5 lg:grid-cols-2"
+      >
         <SearchableThreeESelect
           label="Target element to analyze"
           selectedValue={activeTargetId}
@@ -612,15 +629,28 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
 
       <BlastRadiusVisualMap impact={impact} onSelectNode={handleSelectTarget} />
 
-      <div data-tour="impact-summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <SummaryCard label="Direct impact (1 hop)" value={impact.directImpactCount} />
-        <SummaryCard label="Indirect impact (2+ hops)" value={impact.indirectImpactCount} />
-        <SummaryCard label="Downstream dependencies" value={impact.downstreamCount} />
-        <SummaryCard label="Total blast radius" value={impact.blastRadiusCount} />
+      <div
+        data-tour="impact-summary"
+        className="grid overflow-hidden rounded-xl border bg-card shadow-sm sm:grid-cols-2 lg:grid-cols-4"
+      >
+        {[
+          ["Direct impact (1 hop)", impact.directImpactCount],
+          ["Indirect impact (2+ hops)", impact.indirectImpactCount],
+          ["Downstream dependencies", impact.downstreamCount],
+          ["Total blast radius", impact.blastRadiusCount],
+        ].map(([label, value]) => (
+          <article
+            key={label}
+            className="flex items-center justify-between gap-3 border-b p-3 last:border-b-0 sm:[&:nth-child(odd)]:border-r lg:border-b-0 lg:border-r lg:last:border-r-0"
+          >
+            <p className="text-xs font-medium text-muted-foreground">{label}</p>
+            <strong className="font-mono text-xl font-semibold">{value}</strong>
+          </article>
+        ))}
       </div>
 
-      <div data-tour="impact-paths" className="grid items-start gap-6 xl:grid-cols-3">
-        <div className="space-y-6 xl:col-span-2">
+      <div data-tour="impact-paths" className="space-y-6">
+        <div className="space-y-6">
           <DetailPanel
             title={`Impacted if ${impact.targetName} changes (${impact.upstreamImpacted.length})`}
           >
@@ -697,9 +727,10 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
                 selected scope.{" "}
                 {impact.downstreamCount > 0 && (
                   <span>
-                    However, <strong className="font-mono text-foreground">{impact.targetName}</strong>{" "}
-                    depends on <strong>{impact.downstreamCount}</strong> downstream element(s) listed
-                    below.
+                    However,{" "}
+                    <strong className="font-mono text-foreground">{impact.targetName}</strong>{" "}
+                    depends on <strong>{impact.downstreamCount}</strong> downstream element(s)
+                    listed below.
                   </span>
                 )}
               </div>
@@ -783,16 +814,47 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
             )}
           </DetailPanel>
         </div>
-
-        <div className="xl:col-span-1">
-          <ElementDetailsPanel
-            model={model}
-            selectedId={inspectedId ?? activeTargetId}
-            onSelect={setInspectedId}
-          />
-        </div>
       </div>
+
+      {inspectedId && (
+        <div className="fixed inset-0 z-50" role="presentation">
+          <button
+            type="button"
+            aria-label="Close element details"
+            className="absolute inset-0 bg-slate-950/35 backdrop-blur-[1px]"
+            onClick={() => setInspectedId(null)}
+          />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Element details"
+            className="absolute inset-y-0 right-0 flex w-full max-w-[560px] flex-col border-l bg-background shadow-2xl"
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/95 px-5 py-3 backdrop-blur">
+              <div>
+                <p className="text-sm font-semibold">Element details</p>
+                <p className="text-xs text-muted-foreground">Relationships and saved evidence</p>
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label="Close element details"
+                onClick={() => setInspectedId(null)}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+              <ElementDetailsPanel
+                model={model}
+                selectedId={inspectedId}
+                onSelect={setInspectedId}
+              />
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
   );
 }
-
