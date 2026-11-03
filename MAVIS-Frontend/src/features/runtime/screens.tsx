@@ -2805,9 +2805,51 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             </FormField>
           </div>
 
-          {aiSummary && (
-            <p className="text-xs text-muted-foreground">{aiSummary}</p>
-          )}
+          {aiSummary && (() => {
+            const sentences = aiSummary
+              .split(/(?<=\.)\s+(?=[A-Z])/)
+              .map((s) => s.trim())
+              .filter(Boolean);
+            const primaryFlow = sentences[0] ?? aiSummary;
+            const coverageNote = sentences.slice(1).join(" ");
+            const colonIdx = primaryFlow.indexOf(":");
+            const flowLead = colonIdx > 0 && colonIdx < 48 ? primaryFlow.slice(0, colonIdx).trim() : "Scenario Flow Summary";
+            const flowBody = colonIdx > 0 && colonIdx < 48 ? primaryFlow.slice(colonIdx + 1).trim() : primaryFlow;
+            const flowStages = flowBody
+              .split(/\s*(?:;|,\s*(?=(?:then\s+)?(?:register|login|seed|create|read|add|preview|apply|perform|checkout|verify|call|invoke|check|update|cancel)\b))\s*/i)
+              .map((part) => part.replace(/^then\s+/i, "").replace(/\.$/, "").trim())
+              .filter(Boolean);
+            return (
+              <div className="rounded-lg border border-primary/25 bg-primary/5 px-3.5 py-2.5 space-y-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                    {flowLead}
+                  </span>
+                  <span className="text-[11px] font-mono text-muted-foreground">
+                    {steps.length} steps · {runnableServices.length || 1} services
+                  </span>
+                </div>
+                {flowStages.length > 2 ? (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-xs">
+                    {flowStages.map((stage, sIdx) => (
+                      <span key={sIdx} className="inline-flex items-center gap-1.5">
+                        {sIdx > 0 && <span className="text-primary/70 font-mono">→</span>}
+                        <span className="rounded-md border border-border/80 bg-background/90 px-2 py-0.5 text-foreground font-medium">
+                          <span className="text-primary font-mono mr-1">{sIdx + 1}.</span>
+                          {stage}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[13px] font-medium text-foreground leading-relaxed">{flowBody}</p>
+                )}
+                {coverageNote && (
+                  <p className="text-xs text-muted-foreground leading-relaxed pt-0.5">{coverageNote}</p>
+                )}
+              </div>
+            );
+          })()}
           </div>
 
           {steps.length > 0 && (() => {
