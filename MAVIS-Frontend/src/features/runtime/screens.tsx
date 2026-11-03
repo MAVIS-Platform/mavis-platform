@@ -2708,6 +2708,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                     disabled={!modelId || !steps.length || generateAiDraft.isPending || buildImages.isPending || autoSaveConfig.isPending || saveDraft.isPending || updateDraft.isPending || start.isPending}
                     onClick={() => handleCreateAndRun(true)}
                   >
+                    {(generateAiDraft.isPending || buildImages.isPending || autoSaveConfig.isPending || start.isPending) && (
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    )}
                     {generateAiDraft.isPending
                       ? "Generating AI Scenario..."
                       : buildImages.isPending || autoSaveConfig.isPending || start.isPending
@@ -2794,9 +2797,22 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                         triggerSystemAiGeneration(flowPreset === "__CUSTOM__" ? aiGoal : flowPreset);
                       }}
                     >
-                      {generateAiDraft.isPending ? "Generating..." : "Regenerate"}
+                      {generateAiDraft.isPending ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
+                          <span>Generating...</span>
+                        </>
+                      ) : (
+                        "Regenerate"
+                      )}
                     </Button>
                   </div>
+                  {generateAiDraft.isPending && (
+                    <div role="status" className="flex items-center gap-2 text-xs font-medium text-primary animate-pulse pt-0.5">
+                      <Loader2 className="size-3.5 animate-spin shrink-0" aria-hidden="true" />
+                      <span>Synthesizing end-to-end test flow & variable bindings...</span>
+                    </div>
+                  )}
                   {flowPreset === "__CUSTOM__" && (
                     <Input
                       aria-label="Custom test focus"
