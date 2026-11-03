@@ -6,10 +6,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { SelectField } from "@/components/shared/forms";
 import { DrawioEditor } from "./drawio-editor";
 import { useUmlScopeState } from "./use-uml-scope-state";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
+import {
+  classifyApiFeatureCluster,
+  type ApiFeatureClusterMeta,
+} from "@/features/runtime/scenario-suggestions";
 import {
   applyUmlAiEnrichment,
   buildUmlCompactContext,
@@ -17,6 +22,7 @@ import {
   hydrateUmlWorkspaceFromXml,
   listActivityOperations,
   listStateTargets,
+  projectObservedRuntimeActivityDiagram,
   projectUmlActivityDiagram,
   projectUmlClassDiagram,
   projectUmlDeploymentDiagram,
@@ -57,6 +63,8 @@ export function UmlDiagramWorkspace({
   onSelectUmlContext,
   theme: externalTheme,
   onThemeChange,
+  requestedMode,
+  requestedSessionId,
 }: {
   model: ArchitecturalModel;
   kind: UmlDiagramKind;
@@ -66,6 +74,8 @@ export function UmlDiagramWorkspace({
   onSelectUmlContext?: ((ctx: UmlSelectionContext | null) => void) | undefined;
   theme?: DrawioTheme | undefined;
   onThemeChange?: ((theme: DrawioTheme) => void) | undefined;
+  requestedMode?: string | null | undefined;
+  requestedSessionId?: string | null | undefined;
 }) {
   const { locale } = useLocale();
   const api = useApi();
@@ -76,6 +86,154 @@ export function UmlDiagramWorkspace({
     setInternalTheme(next);
     onThemeChange?.(next);
   };
+
+  const hasRuntimeEvidence = useMemo(
+    () =>
+      model.edges.some(
+        (e) => e.originLayer === "RUNTIME" || e.evidence.some((ev) => ev.kind === "runtime"),
+      ),
+    [model.edges],
+  );
+  const [activitySourceMode, setActivitySourceMode] = useState<"static" | "observed">(
+    requestedMode === "observed" || Boolean(requestedSessionId) || hasRuntimeEvidence
+      ? "observed"
+      : "static",
+  );
+  const [selectedRuntimeSessionId, setSelectedRuntimeSessionId] = useState<string>(
+    requestedSessionId ?? "",
+  );
+  const [selectedRuntimeTrace, setSelectedRuntimeTrace] = useState<string>("all");
+
+  useEffect(() => {
+    if (requestedMode === "observed" || Boolean(requestedSessionId)) {
+      setActivitySourceMode("observed");
+      if (requestedSessionId) setSelectedRuntimeSessionId(requestedSessionId);
+    } else if (requestedMode === "static" || requestedMode === "designed") {
+      setActivitySourceMode("static");
+    }
+  }, [requestedMode, requestedSessionId]);
+
+  const runtimeSessions = useApiQuery(
+    "runtimeReadSessions",
+    { projectId: model.projectId },
+    { enabled: kind === "UML_ACTIVITY" && activitySourceMode === "observed" },
+  );
+  const exactModelRuntimeSessions = useMemo(
+    () =>
+      (runtimeSessions.data ?? []).filter(
+        (s) =>
+          (s.modelId === model.id || s.enrichedModelId === model.id) &&
+          (!s.snapshotId || s.snapshotId === model.snapshotId),
+      ),
+    [runtimeSessions.data, model.id, model.snapshotId],
+  );
+  const availableRuntimeSessions = useMemo(
+    () =>
+      exactModelRuntimeSessions.length > 0
+        ? exactModelRuntimeSessions
+        : (runtimeSessions.data ?? []).filter(
+            (s) => s.executionStatus === "COMPLETED" || s.id === requestedSessionId,
+          ),
+    [exactModelRuntimeSessions, runtimeSessions.data, requestedSessionId],
+  );
+  const activeRuntimeSession =
+    availableRuntimeSessions.find((s) => s.id === selectedRuntimeSessionId) ??
+    availableRuntimeSessions.find((s) => s.id === requestedSessionId) ??
+    availableRuntimeSessions[0];
+  const runtimeSequence = useApiQuery(
+    "runtimeSequence",
+    { sessionId: activeRuntimeSession?.id ?? "" },
+    {
+      enabled:
+        kind === "UML_ACTIVITY" &&
+        activitySourceMode === "observed" &&
+        Boolean(activeRuntimeSession),
+    },
+  );
+  const runtimeRawSteps = runtimeSequence.data?.steps ?? [];
+  const runtimeFeatureClusters = useMemo(() => {
+    const byId = new Map<
+      string,
+      {
+        meta: ApiFeatureClusterMeta;
+        steps: typeof runtimeRawSteps;
+      }
+    >();
+    for (const st of runtimeRawSteps) {
+      const meta = classifyApiFeatureCluster(st.operation, st.callerService, st.calleeService);
+      let entry = byId.get(meta.id);
+      if (!entry) {
+        entry = { meta, steps: [] };
+        byId.set(meta.id, entry);
+      }
+      entry.steps.push(st);
+    }
+    return Array.from(byId.values()).sort((a, b) => a.meta.order - b.meta.order);
+  }, [runtimeRawSteps]);
+  const runtimeAllTraces = useMemo(
+    () => [
+      ...new Set(
+        runtimeRawSteps
+          .map((s) => (typeof s.traceId === "string" && s.traceId.trim() ? s.traceId.trim() : null))
+          .filter((t): t is string => Boolean(t)),
+      ),
+    ],
+    [runtimeRawSteps],
+  );
+  const chosenRuntimeTrace =
+    selectedRuntimeTrace === "all" ||
+    (selectedRuntimeTrace.startsWith("cluster:") &&
+      runtimeFeatureClusters.some((c) => `cluster:${c.meta.id}` === selectedRuntimeTrace)) ||
+    runtimeAllTraces.includes(selectedRuntimeTrace)
+      ? selectedRuntimeTrace
+      : "all";
+  const runtimeTraceOptions = useMemo(() => {
+    const totalCount = runtimeRawSteps.length;
+    const opts: Array<{ value: string; label: string }> = [
+      {
+        value: "all",
+        label: `Full End-to-End Scenario (${totalCount} observed call${totalCount === 1 ? "" : "s"})`,
+      },
+    ];
+    runtimeFeatureClusters.forEach((cluster, cIdx) => {
+      opts.push({
+        value: `cluster:${cluster.meta.id}`,
+        label: `Flow ${cIdx + 1}: ${cluster.meta.shortTitle} (${cluster.steps.length} call${cluster.steps.length === 1 ? "" : "s"})`,
+      });
+    });
+    runtimeAllTraces.forEach((tid, idx) => {
+      const matching = runtimeRawSteps.filter((s) => s.traceId === tid);
+      const first = matching[0];
+      if (first) {
+        const stepNum = typeof first.stepOrder === "number" ? first.stepOrder : idx + 1;
+        const method = first.httpMethod ? `${first.httpMethod.toUpperCase()} ` : "";
+        const op = first.operation ?? "";
+        const opText =
+          method && !op.toUpperCase().startsWith(method.trim()) ? `${method}${op}` : op;
+        const status =
+          typeof first.httpStatusCode === "number" ? ` · HTTP ${first.httpStatusCode}` : "";
+        const dur = typeof first.durationMs === "number" ? ` · ${first.durationMs}ms` : "";
+        const extra = matching.length > 1 ? ` (+${matching.length - 1} downstream)` : "";
+        opts.push({
+          value: tid,
+          label: `Step #${stepNum}: ${opText} → ${first.calleeService ?? "service"}${status}${dur}${extra}`,
+        });
+      } else {
+        opts.push({ value: tid, label: `Step #${idx + 1} (${tid.slice(0, 8)})` });
+      }
+    });
+    return opts;
+  }, [runtimeRawSteps, runtimeFeatureClusters, runtimeAllTraces]);
+  const effectiveRuntimeSteps = useMemo(() => {
+    if (chosenRuntimeTrace.startsWith("cluster:")) {
+      const cid = chosenRuntimeTrace.slice("cluster:".length);
+      return runtimeFeatureClusters.find((c) => c.meta.id === cid)?.steps ?? runtimeRawSteps;
+    }
+    if (chosenRuntimeTrace !== "all") {
+      return runtimeRawSteps.filter((s) => s.traceId === chosenRuntimeTrace);
+    }
+    return runtimeRawSteps;
+  }, [chosenRuntimeTrace, runtimeFeatureClusters, runtimeRawSteps]);
 
   const [packageFilter, setPackageFilter] = useState<string>("");
   const [environmentFilter, setEnvironmentFilter] = useState<string>("default");
@@ -91,6 +249,7 @@ export function UmlDiagramWorkspace({
 
   const activeOpId = activityOps.find(op => op.operationId === selectedOperationId)?.operationId || activityOps[0]?.operationId || "";
   const activeStateTargetId = selectedStateTargetId || stateTargets[0]?.targetId || "";
+  const observedActivityOpId = `flow:runtime:${activeRuntimeSession?.id ?? "none"}:${chosenRuntimeTrace}`;
 
   const viewKey = useMemo(() => {
     const rawKey =
@@ -101,10 +260,23 @@ export function UmlDiagramWorkspace({
           : kind === "UML_DEPLOYMENT"
             ? `uml-deployment:${environmentFilter || "default"}`
             : kind === "UML_ACTIVITY"
-              ? `uml-activity:${activeOpId || activityView + ":none"}`
+              ? activitySourceMode === "observed"
+                ? `uml-activity:observed:${activeRuntimeSession?.id || "none"}:${chosenRuntimeTrace}`
+                : `uml-activity:${activeOpId || activityView + ":none"}`
               : `uml-state:${activeStateTargetId || "default"}`;
     return sanitizeDocumentViewId(rawKey);
-  }, [kind, serviceId, packageFilter, environmentFilter, activeOpId, activeStateTargetId, activityView]);
+  }, [
+    kind,
+    serviceId,
+    packageFilter,
+    environmentFilter,
+    activeOpId,
+    activeStateTargetId,
+    activityView,
+    activitySourceMode,
+    activeRuntimeSession?.id,
+    chosenRuntimeTrace,
+  ]);
 
   const documentScope = `${model.id}:${viewKey}`;
 
@@ -270,6 +442,22 @@ export function UmlDiagramWorkspace({
           overlay: deploymentOverlay,
         });
       case "UML_ACTIVITY":
+        if (activitySourceMode === "observed") {
+          const activeCluster = chosenRuntimeTrace.startsWith("cluster:")
+            ? runtimeFeatureClusters.find(
+                (c) => `cluster:${c.meta.id}` === chosenRuntimeTrace,
+              )
+            : null;
+          const baseTitle = activeRuntimeSession?.scenarioName ?? "Observed Runtime Workflow";
+          const effectiveTitle = activeCluster
+            ? `${baseTitle} · ${activeCluster.meta.shortTitle}`
+            : baseTitle;
+          return projectObservedRuntimeActivityDiagram(model, effectiveRuntimeSteps, {
+            operationId: observedActivityOpId,
+            scenarioName: effectiveTitle,
+            overlay: activityOverlay,
+          });
+        }
         return projectUmlActivityDiagram(model, {
           operationId: activeOpId || (activityView === "workflow" ? "workflow:none" : undefined),
           includeTechnical: activityView === "method",
@@ -294,6 +482,12 @@ export function UmlDiagramWorkspace({
     deploymentOverlay,
     activityOverlay,
     activityView,
+    activitySourceMode,
+    chosenRuntimeTrace,
+    runtimeFeatureClusters,
+    activeRuntimeSession?.scenarioName,
+    effectiveRuntimeSteps,
+    observedActivityOpId,
     stateOverlay,
   ]);
 
@@ -478,6 +672,37 @@ export function UmlDiagramWorkspace({
       data-testid={`uml-workspace-${kind.toLowerCase()}`}
       data-saved-loaded={saved.data !== undefined || Boolean(saved.error) ? "true" : "false"}
     >
+      {kind === "UML_ACTIVITY" && (
+        <div role="tablist" aria-label="Activity source" className="flex gap-1.5">
+          <Button
+            role="tab"
+            size="sm"
+            aria-selected={activitySourceMode === "static"}
+            variant={activitySourceMode === "static" ? "default" : "outline"}
+            onClick={() => {
+              clearDraftConflictState();
+              setActivitySourceMode("static");
+              onSelectUmlContext?.(null);
+            }}
+          >
+            Auto-detected scenario
+          </Button>
+          <Button
+            role="tab"
+            size="sm"
+            aria-selected={activitySourceMode === "observed"}
+            variant={activitySourceMode === "observed" ? "default" : "outline"}
+            onClick={() => {
+              clearDraftConflictState();
+              setActivitySourceMode("observed");
+              onSelectUmlContext?.(null);
+            }}
+          >
+            Observed runtime
+          </Button>
+        </div>
+      )}
+
       {/* Top Scope & 3E Element Inspector Card */}
       <div className="rounded-xl border bg-card p-3 space-y-3" data-testid="uml-top-inspector-card">
         {projection.diagramKind === "UML_CLASS" && (
@@ -538,23 +763,126 @@ export function UmlDiagramWorkspace({
 
         {projection.diagramKind === "UML_ACTIVITY" && (
           <div className="space-y-3">
-            <div role="group" aria-label="Activity perspective" className="flex flex-wrap gap-2">
-              {(["workflow", "method", "reference"] as const).map((view) => <Button key={view} type="button" size="sm"
-                aria-pressed={activityView === view} variant={activityView === view ? "default" : "outline"}
-                onClick={() => { clearDraftConflictState(); setActivityView(view); setSelectedOperationId(""); onSelectUmlContext?.(null); }}>
-                {view === "workflow" ? "Source workflow" : view === "method" ? "Method control flow" : "Dependency reference"}
-              </Button>)}
-            </div>
-            {activityView !== "workflow" && <p className="text-xs leading-5 text-muted-foreground">
-              {activityView === "method" ? "One method's extracted control-flow graph. Technical/configuration methods are available here; a single lane can be correct for a local method."
-                : "Unverified dependency illustrations are reference material and are not executable business workflows."}
-            </p>}
-            {activityOps.length ? <SelectField label={activityView === "reference" ? "Dependency reference" : "Activity flow"}
-              value={activeOpId} onChange={(value) => { clearDraftConflictState(); setSelectedOperationId(value); }}
-              options={activityOps.map((operation) => ({ value: operation.operationId,
-                label: operation.operationId.startsWith("flow:") ? operation.methodName
-                  : `${operation.serviceName} · ${operation.classifierName}.${operation.signatureKey}` }))} />
-              : <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">No source-supported {activityView === "workflow" ? "endpoint/use-case workflow" : activityView === "method" ? "method CFG" : "dependency reference"} is available. Try another perspective or analyze the snapshot again; no behavior has been invented.</p>}
+            {activitySourceMode === "observed" ? (
+              !availableRuntimeSessions.length ? (
+                <div role="status" className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground space-y-2">
+                  <p>
+                    {locale === "vi"
+                      ? "Chưa có phiên chạy Runtime nào gắn với phiên bản mô hình này. Hãy chạy kịch bản ở mục Kịch bản Runtime rồi quay lại đây, hoặc chuyển sang tab kịch bản tĩnh mặc định."
+                      : "No observed runtime session is linked to this model revision. Run a scenario from Runtime, then return here; or switch to Auto-detected scenario."}
+                  </p>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      clearDraftConflictState();
+                      setActivitySourceMode("static");
+                    }}
+                  >
+                    {locale === "vi" ? "Xem luồng tĩnh mặc định" : "Switch to Auto-detected scenario"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge variant="runtime">OBSERVED RUNTIME</Badge>
+                      <Badge variant="outline">
+                        {effectiveProjection.diagramKind === "UML_ACTIVITY"
+                          ? `${effectiveProjection.partitions.length} Swimlanes · ${effectiveProjection.nodes.filter((n) => n.kind === "ACTION").length} Actions`
+                          : "0 Actions"}
+                      </Badge>
+                    </div>
+                  </div>
+                  <SelectField
+                    label="Runtime Session"
+                    value={activeRuntimeSession?.id ?? ""}
+                    onChange={(v) => {
+                      clearDraftConflictState();
+                      setSelectedRuntimeSessionId(v);
+                      setSelectedRuntimeTrace("all");
+                      onSelectUmlContext?.(null);
+                    }}
+                    options={availableRuntimeSessions.map((s) => ({
+                      value: s.id,
+                      label: `${s.scenarioName ?? "Runtime scenario"} · ${s.id.slice(0, 8)}`,
+                    }))}
+                  />
+                  {runtimeFeatureClusters.length > 1 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-xs font-medium text-muted-foreground mr-1">
+                        Feature Flows:
+                      </span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-7 px-2.5 text-xs"
+                        variant={chosenRuntimeTrace === "all" ? "default" : "outline"}
+                        onClick={() => {
+                          clearDraftConflictState();
+                          setSelectedRuntimeTrace("all");
+                          onSelectUmlContext?.(null);
+                        }}
+                      >
+                        Full End-to-End ({runtimeRawSteps.length})
+                      </Button>
+                      {runtimeFeatureClusters.map((cluster, idx) => {
+                        const val = `cluster:${cluster.meta.id}`;
+                        return (
+                          <Button
+                            key={cluster.meta.id}
+                            type="button"
+                            size="sm"
+                            className="h-7 px-2.5 text-xs"
+                            variant={chosenRuntimeTrace === val ? "default" : "outline"}
+                            onClick={() => {
+                              clearDraftConflictState();
+                              setSelectedRuntimeTrace(val);
+                              onSelectUmlContext?.(null);
+                            }}
+                          >
+                            {idx + 1}. {cluster.meta.shortTitle} ({cluster.steps.length})
+                          </Button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {runtimeAllTraces.length > 1 && (
+                    <SelectField
+                      label="Filter by Flow or HTTP step"
+                      value={chosenRuntimeTrace}
+                      onChange={(v) => {
+                        clearDraftConflictState();
+                        setSelectedRuntimeTrace(v);
+                        onSelectUmlContext?.(null);
+                      }}
+                      options={runtimeTraceOptions}
+                    />
+                  )}
+                </div>
+              )
+            ) : (
+              <>
+                <div role="group" aria-label="Activity perspective" className="flex flex-wrap gap-2">
+                  {(["workflow", "method", "reference"] as const).map((view) => <Button key={view} type="button" size="sm"
+                    aria-pressed={activityView === view} variant={activityView === view ? "default" : "outline"}
+                    onClick={() => { clearDraftConflictState(); setActivityView(view); setSelectedOperationId(""); onSelectUmlContext?.(null); }}>
+                    {view === "workflow" ? "Source workflow" : view === "method" ? "Method control flow" : "Dependency reference"}
+                  </Button>)}
+                </div>
+                {activityView !== "workflow" && <p className="text-xs leading-5 text-muted-foreground">
+                  {activityView === "method" ? "One method's extracted control-flow graph. Technical/configuration methods are available here; a single lane can be correct for a local method."
+                    : "Unverified dependency illustrations are reference material and are not executable business workflows."}
+                </p>}
+                {activityOps.length ? <SelectField label={activityView === "reference" ? "Dependency reference" : "Activity flow"}
+                  value={activeOpId} onChange={(value) => { clearDraftConflictState(); setSelectedOperationId(value); }}
+                  options={activityOps.map((operation) => ({ value: operation.operationId,
+                    label: operation.operationId.startsWith("flow:") ? operation.methodName
+                      : `${operation.serviceName} · ${operation.classifierName}.${operation.signatureKey}` }))} />
+                  : <p role="status" className="rounded-lg border bg-muted/30 p-3 text-sm text-muted-foreground">No source-supported {activityView === "workflow" ? "endpoint/use-case workflow" : activityView === "method" ? "method CFG" : "dependency reference"} is available. Try another perspective or analyze the snapshot again; no behavior has been invented.</p>}
+              </>
+            )}
           </div>
         )}
 

@@ -968,6 +968,316 @@ function RuntimeSequenceDiagramCanvas({
           >
             Download .SVG
           </Button>
+          {projectId && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 px-2.5 text-xs bg-slate-900 border-emerald-500/40 text-emerald-300 hover:bg-emerald-950 hover:text-emerald-200"
+              asChild
+            >
+              <Link
+                href={`/diagrams?project=${encodeURIComponent(projectId)}${
+                  targetGraphModelId ? `&model=${encodeURIComponent(targetGraphModelId)}` : ""
+                }&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(sessionId)}`}
+              >
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Open in Architecture Diagrams
+              </Link>
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto overflow-y-auto max-h-[620px] rounded-lg border border-slate-800 bg-[#0b1120] p-2">
+        <div
+          className="w-fit mx-auto"
+          style={{
+            transform: `scale(${zoomPct / 100})`,
+            transformOrigin: "top left",
+          }}
+          dangerouslySetInnerHTML={{ __html: svgMarkup }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function buildRuntimeActivitySvgString(
+  steps: ObservedStepItem[],
+  sessionTitle: string,
+): { svgMarkup: string; width: number; height: number; partitions: string[] } {
+  const partitions: string[] = [];
+  const ensurePartition = (raw: string | null | undefined) => {
+    const clean = (raw ?? "").trim();
+    if (!clean || isRunnerActor(clean)) return;
+    if (!partitions.includes(clean)) partitions.push(clean);
+  };
+  for (const s of steps) {
+    ensurePartition(s.callerService);
+    ensurePartition(s.calleeService);
+  }
+  if (partitions.length === 0) {
+    const fallback = (steps[0]?.calleeService ?? steps[0]?.callerService ?? "service").trim() || "service";
+    partitions.push(fallback);
+  }
+
+  const laneWidth = 310;
+  const leftMargin = 24;
+  const topMargin = 54;
+  const headerHeight = 52;
+  const rowHeight = 104;
+  const nodeW = 246;
+  const nodeH = 58;
+
+  const width = Math.max(760, leftMargin * 2 + partitions.length * laneWidth);
+  const totalRows = Math.max(1, steps.length) + 2;
+  const laneHeight = headerHeight + totalRows * rowHeight + 36;
+  const height = topMargin + laneHeight + 24;
+
+  const laneIndex = (svc: string | null | undefined) => {
+    const clean = (svc ?? "").trim();
+    const idx = partitions.indexOf(clean);
+    return idx >= 0 ? idx : 0;
+  };
+  const cxOfLane = (idx: number) => leftMargin + idx * laneWidth + laneWidth / 2;
+
+  const escapeXml = (str: string) =>
+    str
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  const parts: string[] = [];
+  parts.push(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" style="background:#0b1120;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">`,
+  );
+  parts.push(`
+    <defs>
+      <marker id="act-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+        <polyline points="1 1, 9 4, 1 7" fill="none" stroke="#38bdf8" stroke-width="1.8" />
+      </marker>
+      <marker id="act-err-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+        <polyline points="1 1, 9 4, 1 7" fill="none" stroke="#f43f5e" stroke-width="1.8" />
+      </marker>
+    </defs>
+  `);
+
+  const frameTitle = `act Runtime Activity · ${sessionTitle}`;
+  parts.push(
+    `<text x="${leftMargin}" y="34" fill="#e2e8f0" font-size="12" font-weight="bold">${escapeXml(frameTitle)}</text>`,
+  );
+
+  // Swimlane partitions
+  partitions.forEach((partName, idx) => {
+    const lx = leftMargin + idx * laneWidth;
+    const ly = topMargin;
+    parts.push(
+      `<rect x="${lx}" y="${ly}" width="${laneWidth}" height="${laneHeight}" fill="${
+        idx % 2 === 0 ? "#0f172a" : "#111c33"
+      }" stroke="#334155" stroke-width="1.5" />`,
+    );
+    parts.push(
+      `<rect x="${lx}" y="${ly}" width="${laneWidth}" height="${headerHeight}" fill="#1e293b" stroke="#334155" stroke-width="1.5" />`,
+    );
+    parts.push(
+      `<text x="${lx + laneWidth / 2}" y="${ly + 20}" text-anchor="middle" fill="#94a3b8" font-size="9.5">«partition»</text>`,
+    );
+    parts.push(
+      `<text x="${lx + laneWidth / 2}" y="${ly + 38}" text-anchor="middle" fill="#f8fafc" font-size="11.5" font-weight="bold">${escapeXml(partName)}</text>`,
+    );
+  });
+
+  if (steps.length > 0) {
+    const firstStep = steps[0]!;
+    const firstLane = laneIndex(
+      firstStep.calleeService && !isRunnerActor(firstStep.calleeService)
+        ? firstStep.calleeService
+        : firstStep.callerService,
+    );
+    const initCx = cxOfLane(firstLane);
+    const initCy = topMargin + headerHeight + 36;
+
+    // Initial node
+    parts.push(
+      `<circle cx="${initCx}" cy="${initCy}" r="12" fill="#38bdf8" stroke="#bae6fd" stroke-width="2" />`,
+    );
+
+    let prevCx = initCx;
+    let prevBottomY = initCy + 12;
+
+    steps.forEach((step, idx) => {
+      const targetSvc =
+        step.calleeService && !isRunnerActor(step.calleeService)
+          ? step.calleeService
+          : step.callerService;
+      const lIdx = laneIndex(targetSvc);
+      const cx = cxOfLane(lIdx);
+      const cy = topMargin + headerHeight + (idx + 1) * rowHeight;
+      const topY = cy - nodeH / 2;
+      const bottomY = cy + nodeH / 2;
+      const status = step.httpStatusCode ?? 200;
+      const isError = status >= 400;
+      const verb = (step.httpMethod ?? "GET").toUpperCase();
+      const strokeCol = methodStrokeColor(verb, isError);
+      const endpointLabel = `#${idx + 1} ${normalizeEndpointDisplay(
+        step.httpMethod,
+        step.operation,
+        targetSvc,
+      )}`;
+      const shortEndpoint =
+        endpointLabel.length > 34 ? `${endpointLabel.slice(0, 32)}…` : endpointLabel;
+      const durText = step.durationMs != null ? `${step.durationMs}ms` : "n/a";
+      const caller = (step.callerService ?? "").trim();
+      const fromText =
+        caller && !isRunnerActor(caller) && caller !== targetSvc ? `from ${caller} · ` : "";
+      const subLabel = `${fromText}HTTP ${status} · ${durText}`;
+
+      // Orthogonal control-flow edge from previous node to this action node
+      const midY = Math.round((prevBottomY + topY) / 2);
+      const marker = isError ? "act-err-arrow" : "act-arrow";
+      const edgeStroke = isError ? "#f43f5e" : "#38bdf8";
+      if (prevCx === cx) {
+        parts.push(
+          `<line x1="${prevCx}" y1="${prevBottomY}" x2="${cx}" y2="${topY - 2}" stroke="${edgeStroke}" stroke-width="1.8" marker-end="url(#${marker})" />`,
+        );
+      } else {
+        parts.push(
+          `<path d="M ${prevCx} ${prevBottomY} L ${prevCx} ${midY} L ${cx} ${midY} L ${cx} ${topY - 2}" fill="none" stroke="${edgeStroke}" stroke-width="1.8" marker-end="url(#${marker})" />`,
+        );
+      }
+
+      // Rounded UML Activity Action node
+      parts.push(
+        `<rect x="${cx - nodeW / 2}" y="${topY}" width="${nodeW}" height="${nodeH}" rx="18" fill="${
+          isError ? "#3b0a1e" : "#0f172a"
+        }" stroke="${strokeCol}" stroke-width="1.8" />`,
+      );
+      parts.push(
+        `<text x="${cx}" y="${cy - 4}" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="bold">${escapeXml(shortEndpoint)}</text>`,
+      );
+      parts.push(
+        `<text x="${cx}" y="${cy + 15}" text-anchor="middle" fill="${
+          isError ? "#fda4af" : "#6ee7b7"
+        }" font-size="9.5">${escapeXml(subLabel)}</text>`,
+      );
+
+      prevCx = cx;
+      prevBottomY = bottomY;
+    });
+
+    // Activity Final node (bull's eye)
+    const finalCx = prevCx;
+    const finalCy = prevBottomY + 48;
+    parts.push(
+      `<line x1="${prevCx}" y1="${prevBottomY}" x2="${finalCx}" y2="${finalCy - 16}" stroke="#38bdf8" stroke-width="1.8" marker-end="url(#act-arrow)" />`,
+    );
+    parts.push(
+      `<circle cx="${finalCx}" cy="${finalCy}" r="14" fill="none" stroke="#34d399" stroke-width="2" />`,
+    );
+    parts.push(`<circle cx="${finalCx}" cy="${finalCy}" r="8" fill="#34d399" />`);
+  }
+
+  parts.push(`</svg>`);
+  return { svgMarkup: parts.join("\n"), width, height, partitions };
+}
+
+function RuntimeActivityDiagramCanvas({
+  steps,
+  sessionTitle,
+  projectId,
+  targetGraphModelId,
+  sessionId,
+}: {
+  steps: ObservedStepItem[];
+  sessionTitle: string;
+  projectId: string;
+  targetGraphModelId?: string | null | undefined;
+  sessionId: string;
+}) {
+  const [zoomPct, setZoomPct] = useState(100);
+  const { svgMarkup, partitions } = useMemo(
+    () => buildRuntimeActivitySvgString(steps, sessionTitle),
+    [steps, sessionTitle],
+  );
+
+  const handleDownloadSvg = () => {
+    const blob = new Blob([svgMarkup], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mavis-runtime-activity-${sessionId.slice(0, 8)}.svg`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  return (
+    <div className="rounded-xl border border-primary/30 bg-slate-950/90 p-4 space-y-3 shadow-md">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+            <Activity className="h-3.5 w-3.5" />
+            UML 2.5.1 Runtime Activity Diagram ({partitions.length} Swimlanes · {steps.length} Actions)
+          </p>
+          <p className="text-[11px] text-slate-400 mt-0.5">
+            Multi-swimlane activity workflow reconstructed from captured runtime spans. Each column is a microservice partition and each rounded node is an executed action.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <div className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900">
+            <button
+              type="button"
+              title="Zoom out"
+              className="h-7 px-2 text-xs text-slate-200 hover:bg-slate-800 hover:text-white rounded-l-md"
+              onClick={() => setZoomPct((z) => Math.max(60, z - 15))}
+            >
+              −
+            </button>
+            <button
+              type="button"
+              title="Reset zoom to 100%"
+              className="h-7 px-2 font-mono text-xs text-slate-300 hover:bg-slate-800 hover:text-white border-x border-slate-700"
+              onClick={() => setZoomPct(100)}
+            >
+              {zoomPct}%
+            </button>
+            <button
+              type="button"
+              title="Zoom in"
+              className="h-7 px-2 text-xs text-slate-200 hover:bg-slate-800 hover:text-white rounded-r-md"
+              onClick={() => setZoomPct((z) => Math.min(160, z + 15))}
+            >
+              +
+            </button>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 px-2.5 text-xs bg-slate-900 border-sky-400/50 text-sky-300 hover:bg-sky-950 hover:text-sky-200"
+            onClick={handleDownloadSvg}
+          >
+            Download .SVG
+          </Button>
+          {projectId && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 px-2.5 text-xs bg-slate-900 border-emerald-500/40 text-emerald-300 hover:bg-emerald-950 hover:text-emerald-200"
+              asChild
+            >
+              <Link
+                href={`/diagrams?project=${encodeURIComponent(projectId)}${
+                  targetGraphModelId ? `&model=${encodeURIComponent(targetGraphModelId)}` : ""
+                }&kind=UML_ACTIVITY&mode=observed&session=${encodeURIComponent(sessionId)}`}
+              >
+                <ExternalLink className="h-3 w-3 mr-1" />
+                Open in Architecture Diagrams
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -993,7 +1303,7 @@ export function BackendRuntime({ administrative = false }: { administrative?: bo
 function RuntimeProject({ administrative = false }: { administrative?: boolean }) {
   const { t } = useLocale();
   const { projectId } = useSelection();
-  const [vizMode, setVizMode] = useState<"topology" | "sequence">("topology");
+  const [vizMode, setVizMode] = useState<"topology" | "sequence" | "activity">("topology");
   const [selectedServiceFilter, setSelectedServiceFilter] = useState<string | null>(null);
   const [selectedClusterFilter, setSelectedClusterFilter] = useState<ApiFeatureClusterId | null>(null);
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: !!projectId });
@@ -1897,7 +2207,14 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               <Link
                 href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_SEQUENCE&mode=observed&session=${encodeURIComponent(selectedId)}`}
               >
-                Architecture Diagrams
+                Sequence Diagram
+              </Link>
+            </Button>
+            <Button size="sm" variant="outline" className="h-8 text-xs border-emerald-600/40 text-emerald-800 dark:text-emerald-300" asChild>
+              <Link
+                href={`/diagrams?project=${encodeURIComponent(projectId)}&model=${encodeURIComponent(enrichedModelId)}&kind=UML_ACTIVITY&mode=observed&session=${encodeURIComponent(selectedId)}`}
+              >
+                Activity Diagram
               </Link>
             </Button>
           </div>
@@ -1934,6 +2251,19 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               >
                 <GitCommit className="h-3.5 w-3.5 mr-1.5" />
                 Sequence
+              </button>
+              <button
+                type="button"
+                data-tour-tab="sess-activity"
+                onClick={() => setVizMode("activity")}
+                className={`inline-flex items-center h-7 px-3 rounded-md text-xs font-medium transition ${
+                  vizMode === "activity"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Activity className="h-3.5 w-3.5 mr-1.5" />
+                Activity
               </button>
             </div>
 
@@ -2221,6 +2551,30 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             {vizMode === "sequence" && observed && (
               <div data-tour="session-sequence" className="min-w-0">
                 <RuntimeSequenceDiagramCanvas
+                  steps={filteredSteps}
+                  sessionTitle={
+                    session.data?.scenarioName ??
+                    storedDraft.scenarioName ??
+                    "Architecture Verification Workflow"
+                  }
+                  projectId={projectId}
+                  targetGraphModelId={enrichedModelId ?? targetModelId}
+                  sessionId={selectedId || "preview"}
+                />
+              </div>
+            )}
+
+            {/* Visual Canvas 3: UML 2.5.1 Activity Diagram */}
+            {vizMode === "activity" && !observed && (
+              <div data-tour="session-activity" className="min-w-0">
+                <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
+                  The runtime UML activity diagram is drawn from captured trace spans. Run the scenario to record observed swimlane actions, or inspect static code-inferred activity flows in Architecture Diagrams.
+                </p>
+              </div>
+            )}
+            {vizMode === "activity" && observed && (
+              <div data-tour="session-activity" className="min-w-0">
+                <RuntimeActivityDiagramCanvas
                   steps={filteredSteps}
                   sessionTitle={
                     session.data?.scenarioName ??
