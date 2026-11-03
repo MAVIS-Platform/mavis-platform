@@ -2700,12 +2700,17 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                     disabled={!modelId || !steps.length || generateAiDraft.isPending || buildImages.isPending || autoSaveConfig.isPending || saveDraft.isPending || updateDraft.isPending || start.isPending}
                     onClick={() => handleCreateAndRun(true)}
                   >
-                    {generateAiDraft.isPending ? "Generating AI Scenario..." : "Confirm & Run in Step 3 →"}
+                    {generateAiDraft.isPending
+                      ? "Generating AI Scenario..."
+                      : buildImages.isPending || autoSaveConfig.isPending || start.isPending
+                        ? "Saving & launching into Step 3..."
+                        : "Confirm & Run in Step 3 →"}
                   </Button>
                 </div>
               </div>
             );
           })()}
+          {runMessage && <p className="text-xs font-medium text-primary">{runMessage}</p>}
 
           {(scenarios.data ?? []).length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
@@ -3295,46 +3300,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 })}
               </div>
             )}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-            <div className="flex flex-wrap gap-2.5">
-              <Button
-                disabled={
-                  !modelId ||
-                  !steps.length ||
-                  generateAiDraft.isPending ||
-                  buildImages.isPending ||
-                  autoSaveConfig.isPending ||
-                  saveDraft.isPending ||
-                  updateDraft.isPending ||
-                  start.isPending
-                }
-                onClick={() => handleCreateAndRun(true)}
-              >
-                {generateAiDraft.isPending
-                  ? "Generating AI Scenario..."
-                  : buildImages.isPending || autoSaveConfig.isPending || start.isPending
-                    ? "Saving & launching into Step 3..."
-                    : "Confirm & Run in Step 3 →"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={
-                  !modelId ||
-                  !steps.length ||
-                  generateAiDraft.isPending ||
-                  saveDraft.isPending ||
-                  updateDraft.isPending ||
-                  start.isPending
-                }
-                onClick={() => handleCreateAndRun(false)}
-              >
-                {saveDraft.isPending || updateDraft.isPending ? "Saving..." : "Save Draft"}
-              </Button>
-            </div>
-            {runMessage && <p className="text-xs font-medium text-primary">{runMessage}</p>}
           </div>
         </div>
       </DetailPanel>
