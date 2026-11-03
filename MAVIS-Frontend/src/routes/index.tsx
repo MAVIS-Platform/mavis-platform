@@ -206,6 +206,7 @@ function Projects() {
                       { value: "all", label: "All statuses" },
                       { value: "ready", label: "Ready" },
                       { value: "processing", label: "Processing" },
+                      { value: "partial", label: "Partial" },
                       { value: "failed", label: "Failed" },
                       { value: "unknown", label: "Not analyzed" },
                     ]}
@@ -385,7 +386,7 @@ function ProjectActivity() {
             columns={[
               {
                 key: "time",
-                label: "Time",
+                label: t("Time", "Thời gian"),
                 render: (row) => {
                   const date = row.occurredAt ? new Date(row.occurredAt) : null;
                   return date && !Number.isNaN(date.getTime()) ? (
@@ -423,7 +424,7 @@ function ProjectActivity() {
               },
               {
                 key: "activity",
-                label: "Activity",
+                label: t("Activity", "Hoạt động"),
                 render: (row) => (
                   <div className="space-y-1">
                     {row.job ? (

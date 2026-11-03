@@ -4,6 +4,18 @@ require.extensions['.ts']=(module,file)=>{const out=ts.transpileModule(fs.readFi
 const {importAndAnalyze}=require('../src/features/projects/import-workflow.ts');
 const github=(branch='master',sha='')=>({kind:'github',repositoryUrl:'https://github.com/example/repository',branchName:branch,commitSha:sha});
 function harness(){const calls=[];let n=0;return {calls,api:{mode:'mock',execute:async(op,input)=>{calls.push({op,input});if(op==='createProject')return {id:'project',name:input.name,repository:input.repositoryUrl,defaultBranch:input.defaultBranch};if(op==='importGithub'||op==='importSource')return {id:'snapshot-'+(++n),projectId:input.projectId};if(op==='startAnalysis')return {id:'job-'+n,projectId:input.projectId,snapshotId:input.snapshotId};throw Error('Unexpected operation');}}};}
+test('new project with zip creates project then imports source and analyzes',async()=>{
+  const h=harness(),state={};
+  const fakeFile={name:'archive.zip',size:2048};
+  const result=await importAndAnalyze(h.api,{name:'ZipApp',source:{kind:'zip',file:fakeFile}},state);
+  assert.deepEqual(h.calls.map(c=>c.op),['createProject','importSource','startAnalysis']);
+  assert.equal(h.calls[0].input.name,'ZipApp');
+  assert.equal(h.calls[1].input.name,'archive.zip');
+  assert.equal(h.calls[1].input.size,2048);
+  assert.equal(result.snapshotId,h.calls[2].input.snapshotId);
+  assert.ok(h.calls[2].input.idempotencyKey);
+});
+
 test('new project uses remote default master then imports and analyzes its own snapshot',async()=>{const h=harness(),state={};const result=await importAndAnalyze(h.api,{name:'Example',source:github()},state);assert.deepEqual(h.calls.map(c=>c.op),['createProject','importGithub','startAnalysis']);assert.equal(h.calls[0].input.defaultBranch,'master');assert.equal(h.calls[1].input.branchName,'master');assert.equal(result.snapshotId,h.calls[2].input.snapshotId);assert.ok(h.calls[2].input.idempotencyKey);});
 test('selected branch and full commit SHA reach the initial import unchanged',async()=>{const h=harness(),sha='a'.repeat(40);await importAndAnalyze(h.api,{name:'Pinned',source:github('develop',sha)},{});assert.equal(h.calls[1].input.branchName,'develop');assert.equal(h.calls[1].input.commitSha,sha);});
 test('new snapshot reuses existing project and starts analysis',async()=>{const h=harness();await importAndAnalyze(h.api,{projectId:'existing',source:github('feature/order')},{});assert.deepEqual(h.calls.map(c=>c.op),['importGithub','startAnalysis']);assert.equal(h.calls[0].input.projectId,'existing');});

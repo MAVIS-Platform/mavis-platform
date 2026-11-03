@@ -1,5 +1,6 @@
 import { StatusBadge, StatusLabel } from "@/components/shared/data";
 import type { AnalysisJob } from "@/types/domain";
+import { useLocale } from "@/lib/i18n/locale-context";
 
 export function formatAnalysisJobMessage(job: AnalysisJob): string {
   const raw = (job.message || job.analysisState || job.status || "").trim();
@@ -32,6 +33,7 @@ export function AnalysisStatusIndicator({
   job: AnalysisJob;
   compact?: boolean;
 }) {
+  const { t } = useLocale();
   const isActive =
     job.status === "processing" || job.status === "queued" || job.status === "cancelling";
   const showWorker =
@@ -55,7 +57,7 @@ export function AnalysisStatusIndicator({
         />
         <span className="text-xs text-muted-foreground">
           {job.progress !== null ? `${job.progress}% · ` : ""}
-          {summary}
+          {t(summary)}
         </span>
       </div>
     );
@@ -76,7 +78,7 @@ export function AnalysisStatusIndicator({
         />
         {showWorker && (
           <span className="font-mono text-xs text-muted-foreground">
-            Worker: <StatusLabel status={job.workerStatus ?? ""} />
+            {t("Worker:")} <StatusLabel status={job.workerStatus ?? ""} />
           </span>
         )}
       </div>
@@ -90,7 +92,7 @@ export function AnalysisStatusIndicator({
       )}
       <p className="text-xs text-muted-foreground">
         {job.progress !== null ? `${job.progress}% · ` : ""}
-        {summary}
+        {t(summary)}
       </p>
     </div>
   );

@@ -178,11 +178,21 @@ function ProjectImportDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>{create ? "Import new project" : "Import new snapshot"}</DialogTitle>
+          <DialogTitle>
+            {create
+              ? t("Import new project", "Nhập dự án mới")
+              : t("Import new snapshot", "Nhập bản chụp mới")}
+          </DialogTitle>
           <DialogDescription>
             {create
-              ? "Enter a project name and its public GitHub repository, then choose a branch or pin a commit. The first snapshot will be imported and analyzed."
-              : "Add a new snapshot to this project. Its linked GitHub repository stays the same. Analysis starts after import."}
+              ? t(
+                  "Enter a project name and its public GitHub repository, then choose a branch or pin a commit. The first snapshot will be imported and analyzed.",
+                  "Nhập tên dự án và kho lưu trữ GitHub công khai hoặc tải lên tệp ZIP. Bản chụp đầu tiên sẽ được nhập và phân tích tự động.",
+                )
+              : t(
+                  "Add a new snapshot to this project. Its linked GitHub repository stays the same. Analysis starts after import.",
+                  "Thêm bản chụp mới vào dự án này. Kho lưu trữ GitHub liên kết được giữ nguyên. Quá trình phân tích sẽ bắt đầu sau khi nhập.",
+                )}
           </DialogDescription>
         </DialogHeader>
         {open && (

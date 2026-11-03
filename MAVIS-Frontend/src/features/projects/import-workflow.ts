@@ -35,16 +35,27 @@ export async function importAndAnalyze(
       : JSON.stringify([github!.repositoryUrl, github!.branchName, github!.commitSha ?? ""]);
   let projectId = input.projectId || state.project?.id;
   if (!projectId) {
-    if (!github || !input.name?.trim())
-      throw new Error("A project name and GitHub repository are required.");
-    events.stage?.("Creating project…");
-    state.project = await api.execute("createProject", {
-      name: input.name.trim(),
-      repositoryUrl: github.repositoryUrl,
-      defaultBranch: github.branchName,
-    });
-    projectId = state.project.id;
-    events.created?.(state.project);
+    if (source.kind === "zip") {
+      if (!input.name?.trim())
+        throw new Error("A project name is required.");
+      events.stage?.("Creating project…");
+      state.project = await api.execute("createProject", {
+        name: input.name.trim(),
+      });
+      projectId = state.project.id;
+      events.created?.(state.project);
+    } else {
+      if (!github || !input.name?.trim())
+        throw new Error("A project name and GitHub repository are required.");
+      events.stage?.("Creating project…");
+      state.project = await api.execute("createProject", {
+        name: input.name.trim(),
+        repositoryUrl: github.repositoryUrl,
+        defaultBranch: github.branchName,
+      });
+      projectId = state.project.id;
+      events.created?.(state.project);
+    }
   }
   if (
     !state.snapshot ||
