@@ -158,7 +158,7 @@ export function ProjectOverview() {
               )}
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div data-tour="project-summary-cards" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <SummaryCard label="Services" value={derivedServices ?? "0"} />
               <SummaryCard label="Connections" value={totalEdges ?? "0"} />
               <SummaryCard label="Architecture revisions" value={models.length} />
@@ -166,7 +166,7 @@ export function ProjectOverview() {
             </div>
           </DetailPanel>
 
-          <div className="grid items-start gap-6 lg:grid-cols-2">
+          <div data-tour="project-revisions" className="grid items-start gap-6 lg:grid-cols-2">
             <DetailPanel
               title="Architecture revisions"
               actions={
@@ -457,7 +457,7 @@ export function SourceSnapshots() {
 
   return (
     <RequestState query={query} empty={!snapshotList.length}>
-      <div className="space-y-4">
+      <div data-tour="snapshots-table" className="space-y-4">
         {analysisError && (
           <p role="alert" className="text-xs font-medium text-destructive">
             {analysisError}

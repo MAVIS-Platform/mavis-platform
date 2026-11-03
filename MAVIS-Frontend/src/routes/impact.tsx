@@ -595,7 +595,7 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 rounded-xl border bg-card p-3.5 lg:grid-cols-2">
+      <div data-tour="impact-selectors" className="grid gap-3 rounded-xl border bg-card p-3.5 lg:grid-cols-2">
         <SearchableThreeESelect
           label="Target element to analyze"
           selectedValue={activeTargetId}
@@ -612,14 +612,14 @@ function ImpactResults({ model }: { model: ArchitecturalModel }) {
 
       <BlastRadiusVisualMap impact={impact} onSelectNode={handleSelectTarget} />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div data-tour="impact-summary" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard label="Direct impact (1 hop)" value={impact.directImpactCount} />
         <SummaryCard label="Indirect impact (2+ hops)" value={impact.indirectImpactCount} />
         <SummaryCard label="Downstream dependencies" value={impact.downstreamCount} />
         <SummaryCard label="Total blast radius" value={impact.blastRadiusCount} />
       </div>
 
-      <div className="grid items-start gap-6 xl:grid-cols-3">
+      <div data-tour="impact-paths" className="grid items-start gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">
           <DetailPanel
             title={`Impacted if ${impact.targetName} changes (${impact.upstreamImpacted.length})`}
