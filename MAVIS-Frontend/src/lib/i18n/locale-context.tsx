@@ -1460,9 +1460,73 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Project overview": "Tổng quan dự án",
   "All": "Tất cả trạng thái",
   "unknown": "Không xác định",
+  "HTTP Test Scenario Builder": "Trình dựng kịch bản kiểm thử HTTP",
+  "Test Flow": "Luồng kiểm thử (Test Flow)",
+  "Scenario Flow Summary": "Tóm tắt luồng kịch bản kiểm thử",
+  "Regenerate": "Tạo lại kịch bản",
+  "Generating...": "Đang tạo...",
+  "Generating…": "Đang tạo…",
+  "Synthesizing end-to-end test flow & variable bindings...": "Đang tổng hợp luồng kiểm thử toàn trình & liên kết biến...",
+  "Service Chain": "Chuỗi gọi Service",
+  "Confirm & Run in Step 3": "Xác nhận & Chạy ở Bước 3",
+  "Confirm & Run in Step 3 →": "Xác nhận & Chạy ở Bước 3 →",
+  "← Step 1": "← Bước 1",
+  "↺ Reset": "↺ Đặt lại",
+  "Auth & User Identity Flow": "Luồng Xác thực & Định danh Người dùng",
+  "Auth & User Identity": "Xác thực & Định danh Người dùng",
+  "Auth & Identity": "Xác thực & Định danh",
+  "Catalog & Inventory Flow": "Luồng Danh mục & Kho hàng",
+  "Catalog & Inventory": "Danh mục & Kho hàng",
+  "Catalog & Inventory / Coupons": "Danh mục, Kho hàng & Mã giảm giá",
+  "Order, Cart & Coupon Checkout Flow": "Luồng Giỏ hàng, Mã giảm giá & Đặt hàng",
+  "Order, Cart & Coupon Flow": "Luồng Đơn hàng, Giỏ hàng & Mã giảm giá",
+  "Order & Coupon Checkout": "Đặt hàng & Mã giảm giá",
+  "Order & Coupon": "Đơn hàng & Mã giảm giá",
+  "Order & Payment Verification": "Xác minh Đơn hàng & Thanh toán",
+  "Payment & Billing Flow": "Luồng Thanh toán & Hóa đơn",
+  "Payment & Checkout URL Flow": "Luồng Thanh toán & Cổng Checkout",
+  "Payment & Checkout": "Thanh toán & Checkout",
+  "Payment & Billing": "Thanh toán & Hóa đơn",
+  "Notification & Messaging Flow": "Luồng Thông báo & Sự kiện",
+  "Notification & Messaging": "Thông báo & Sự kiện",
+  "Notification": "Thông báo",
+  "Core Business API Flow": "Luồng Nghiệp vụ Chính",
+  "Core Business": "Nghiệp vụ Chính",
+  "Service Discovery & Health": "Khám phá Dịch vụ & Sức khỏe",
+  "Discovery / Health": "Khám phá / Sức khỏe",
+  "Cleanup & Compensation": "Dọn dẹp & Hoàn tác",
+  "Health & Readiness": "Sức khỏe & Sẵn sàng",
+  "Read-Only Smoke & Health Flow (GET only)": "Luồng Kiểm tra Nhanh & Sức khỏe (Chỉ gọi GET)",
+  "Edge-Case, Status & Compensation Flow": "Luồng Ngoại lệ, Trạng thái & Hoàn tác",
+  "Custom Focus (Describe your own flow...)": "Tùy chỉnh luồng kiểm thử (Tự mô tả luồng...)",
+  "Describe a custom flow or edge case to test and press Enter...": "Mô tả luồng nghiệp vụ hoặc trường hợp biên cần kiểm thử rồi nhấn Enter...",
+  "Auto-generated Architecture Verification Scenario": "Kịch bản Xác thực Kiến trúc Tự động",
+  "End-to-End Business Journey Verification": "Kịch bản Xác thực Luồng Nghiệp vụ Toàn trình",
+  "Auth & User Identity Verification Scenario": "Kịch bản Xác thực & Định danh Người dùng",
+  "Catalog & Inventory Verification Scenario": "Kịch bản Xác thực Danh mục & Kho hàng",
+  "Order, Cart, Coupon Checkout & Payment Scenario": "Kịch bản Giỏ hàng, Mã giảm giá, Đặt hàng & Thanh toán",
+  "Payment & Billing Verification Scenario": "Kịch bản Xác thực Thanh toán & Hóa đơn",
+  "Notification & Messaging Verification Scenario": "Kịch bản Xác thực Thông báo & Sự kiện",
+  "Read-Only Smoke & Health Verification Scenario": "Kịch bản Kiểm tra Nhanh & Sức khỏe (Chỉ đọc)",
+  "Admin & Compensating Workflow Scenario": "Kịch bản Quản trị & Luồng Hoàn tác",
+  "Checkout Fulfillment with Inventory and Payment Verification": "Hoàn tất Đặt hàng kèm Xác minh Tồn kho và Thanh toán",
+  "Authenticated Checkout with Coupon and Inventory Deduction": "Đặt hàng có Xác thực kèm Mã giảm giá và Trừ tồn kho",
+  "Customer Checkout with Coupon and Inventory Deduction": "Khách đặt hàng kèm Mã giảm giá và Trừ tồn kho",
 };
 
 export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/^Full End-to-End Architecture Flow \((\d+) services?\)$/i, "Luồng Kiến trúc Toàn trình End-to-End ($1 service)"],
+  [/^(.+) Workflow \((.+)\)$/i, "Luồng nghiệp vụ $1 ($2)"],
+  [/^(\d+) steps? · (\d+) services?$/i, "$1 bước · $2 service"],
+  [/^Flow Groups \((\d+) groups? · (\d+) steps?\)$/i, "Nhóm Luồng Nghiệp vụ ($1 nhóm · $2 bước)"],
+  [/^HTTP Steps \((\d+)\)$/i, "Các bước gọi HTTP ($1)"],
+  [/^(\d+) runnable apps?$/i, "$1 ứng dụng chạy được"],
+  [/^(\d+) env vars?$/i, "$1 biến môi trường"],
+  [/^Automatically synthesized (\d+) causal test steps covering (\d+) of (\d+) runnable services discovered in Step 1\. Review and confirm below before running\.$/i, "Đã tự động tổng hợp $1 bước kiểm thử theo trình tự nhân quả, bao phủ $2/$3 service chạy được phát hiện ở Bước 1. Vui lòng xem lại và xác nhận bên dưới trước khi chạy."],
+  [/^Entry\/upstream call ([A-Z]+) (\/\S*) on ([A-Za-z0-9_.-]+) to fan out cross-service OpenTelemetry traces\.$/i, "Gọi đầu vào $1 $2 trên $3 để lan tỏa OpenTelemetry trace liên service."],
+  [/^Verify ([A-Z]+) (\/\S*) on ([A-Za-z0-9_.-]+) to capture cross-service OpenTelemetry traces\.$/i, "Xác minh $1 $2 trên $3 để thu thập OpenTelemetry trace liên service."],
+  [/^Verify ([A-Z]+) (\/\S*) on ([A-Za-z0-9_.-]+) \(detected from (.+)\)\.$/i, "Xác minh $1 $2 trên $3 (phát hiện từ $4)."],
+  [/^Ensure end-to-end trace coverage reaches ([A-Za-z0-9_.-]+)\.?$/i, "Đảm bảo độ phủ trace toàn trình đi tới $1."],
   [/^Showing (\d+) extracted\/designed classifiers in the selected scope\. Missing client or model types require inspecting this revision\'s extracted metadata; they are not invented from field names\.$/i, "Đang hiển thị $1 Classifier được trích xuất/thiết kế trong phạm vi đã chọn. Các kiểu dữ liệu chưa rõ cần được kiểm tra từ siêu dữ liệu của phiên bản này chứ không tự suy diễn từ tên trường."],
   [/^Showing (\d+) recognized service containers, including infrastructure and isolated services\. (\d+) lower-level element\(s\) and (\d+) relationship\(s\) are outside this view\. Startup dependencies are shown in Deployment; configuration across profiles is declared, not observed runtime traffic\.$/i, "Đang hiển thị $1 Service Container đã nhận diện (bao gồm cả hạ tầng và các Service độc lập). Có $2 phần tử mức thấp và $3 mối quan hệ nằm ngoài góc nhìn này. Phụ thuộc khởi động được hiển thị ở sơ đồ Triển khai; cấu hình giữa các profile là khai báo tĩnh, không phải lưu lượng thực tế lúc chạy."],
   [/^The analysis declares (\d+) HTTP entrypoint component\(s\), but no external caller or actor is established by this model; the context shows the system alone and callers require review\.$/i, "Kết quả phân tích ghi nhận $1 thành phần HTTP Entrypoint, nhưng chưa xác định được tác nhân hoặc hệ thống gọi từ bên ngoài; sơ đồ ngữ cảnh hiện chỉ hiển thị hệ thống nội bộ và cần rà soát thêm các bên gọi."],
@@ -1563,6 +1627,114 @@ export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [
   ],
 ];
 
+const SCENARIO_PROSE_GUARD =
+  /\b(journey|checkout|catalog|inventory|order|orders|coupon|coupons|payment|payments|verify|verifies|verification|seed|seeds|seeding|register|registers|login|logins|auth|authenticated|exercise|exercises|triggers|trigger|orchestrates|orchestration|endpoint|endpoints|trace|traces|spans|fulfillment|deduction|variant|variants|cart|shipping|address|addresses|wishlist|wishlists|validates|validate|state|transitions|across|response|provides|confirm|sandbox|sellable|product|products|stock|billing|notification|notifications|gateway|read-only|smoke|compensating|workflow|scenario)\b/i;
+
+const SCENARIO_PROSE_RULES: Array<[RegExp, string]> = [
+  [/\bEnd-to-end top-down business journey\b/gi, "Hành trình nghiệp vụ toàn trình từ trên xuống"],
+  [/\bTop-down business journey that\b/gi, "Hành trình nghiệp vụ từ trên xuống:"],
+  [/\bTop-down business journey\b/gi, "Hành trình nghiệp vụ từ trên xuống"],
+  [/\bEnd-to-end business journey\b/gi, "Hành trình nghiệp vụ toàn trình"],
+  [/\bregister\/login to obtain\b/gi, "đăng ký/đăng nhập để lấy"],
+  [/\bregisters?\/logs? in to obtain\b/gi, "đăng ký/đăng nhập để lấy"],
+  [/\bseeds? a sellable product so checkout has a valid catalog item and stock\b/gi, "Khởi tạo sản phẩm có thể bán để bước đặt hàng có mặt hàng và tồn kho hợp lệ"],
+  [/\bresponse provides product id and SKU for later reference\b/gi, "phản hồi trả về ID sản phẩm và mã SKU để tham chiếu ở các bước sau"],
+  [/\bseeds? a product in the catalog\b/gi, "khởi tạo sản phẩm trong danh mục"],
+  [/\bseeds? an admin coupon\b/gi, "tạo mã giảm giá từ quản trị"],
+  [/\bcreates? a user shipping address\b/gi, "tạo địa chỉ giao hàng của người dùng"],
+  [/\breads? catalog variant info\b/gi, "đọc thông tin biến thể sản phẩm"],
+  [/\badds? an item to cart\b/gi, "thêm sản phẩm vào giỏ hàng"],
+  [/\bpreviews? coupon\b/gi, "kiểm tra thử mã giảm giá"],
+  [/\bperforms? a customer checkout via the API Gateway\b/gi, "thực hiện đặt hàng qua API Gateway"],
+  [/\bperforms? checkout\b/gi, "thực hiện đặt hàng (checkout)"],
+  [/\bwhich orchestrates order creation and payment charge across\b/gi, "điều phối việc tạo đơn hàng và thu phí thanh toán qua"],
+  [/\bwhich triggers\b/gi, "kích hoạt"],
+  [/\bthat triggers\b/gi, "kích hoạt"],
+  [/\bthen verifies state across services\b/gi, "sau đó xác minh trạng thái trên các service"],
+  [/\bverifies state across services\b/gi, "xác minh trạng thái trên các service"],
+  [/\bverify state across services\b/gi, "xác minh trạng thái trên các service"],
+  [/\bthen verify order state and inventory\b/gi, "sau đó xác minh trạng thái đơn hàng và tồn kho"],
+  [/\bverif(?:y|ies) order state and inventory\b/gi, "xác minh trạng thái đơn hàng và tồn kho"],
+  [/\(order,\s*product stock,\s*payment\)/gi, "(đơn hàng, tồn kho sản phẩm, thanh toán)"],
+  [/\bThis exercise triggers cross-service orchestration and message flows\b/gi, "Kịch bản này kích hoạt điều phối liên service và luồng thông điệp"],
+  [/\border-events\s*(?:->|→)\s*stock listener\b/gi, "sự kiện đơn hàng → bộ lắng nghe tồn kho"],
+  [/\band validates end-to-end state transitions\b/gi, "đồng thời kiểm chứng chuyển đổi trạng thái toàn trình"],
+  [/\bvalidates end-to-end state transitions\b/gi, "kiểm chứng chuyển đổi trạng thái toàn trình"],
+  [/\bThis exercises\b/gi, "Kịch bản này kiểm thử"],
+  [/\bfan-out via gateway-driven calls\b/gi, "lan tỏa qua các lệnh gọi từ Gateway"],
+  [/\band creates cross-service OpenTelemetry spans across the critical\b/gi, "và sinh các span OpenTelemetry liên service trên các luồng trọng yếu"],
+  [/\border\/coupon\/inventory paths\b/gi, "đơn hàng / mã giảm giá / tồn kho"],
+  [/\bCheck wishlists \(empty by default\) to exercise read-only wishlist endpoint and broaden trace coverage across\b/gi, "Kiểm tra danh sách yêu thích (mặc định trống) để kiểm thử endpoint chỉ đọc và mở rộng độ phủ trace trên"],
+  [/\bVerify inventory state for the variant after checkout\/complete to confirm inventory was deducted by the platform flow\b/gi, "Xác minh trạng thái tồn kho của biến thể sau khi hoàn tất đặt hàng để xác nhận tồn kho đã được trừ bởi luồng hệ thống"],
+  [/\bRegister sandbox user account before login so authentication succeeds on a clean database\b/gi, "Đăng ký tài khoản người dùng sandbox trước khi đăng nhập để xác thực thành công trên cơ sở dữ liệu mới"],
+  [/\bPlace an order via checkout to trigger cross-service inventory deduction and notification events\b/gi, "Đặt đơn hàng qua bước checkout để kích hoạt trừ tồn kho liên service và sự kiện thông báo"],
+  [/\bcross-service OpenTelemetry spans\b/gi, "các span OpenTelemetry liên service"],
+  [/\bcross-service OpenTelemetry traces\b/gi, "các trace OpenTelemetry liên service"],
+  [/\bcross-service orchestration\b/gi, "điều phối liên service"],
+  [/\binventory deduction\b/gi, "trừ tồn kho"],
+  [/\bpayment verification\b/gi, "xác minh thanh toán"],
+  [/\binventory verification\b/gi, "xác minh tồn kho"],
+  [/\border verification\b/gi, "xác minh đơn hàng"],
+  [/\bstate verification\b/gi, "xác minh trạng thái"],
+  [/\bstate transitions\b/gi, "chuyển đổi trạng thái"],
+  [/\border creation\b/gi, "tạo đơn hàng"],
+  [/\bpayment charge\b/gi, "thu phí thanh toán"],
+  [/\bcustomer checkout\b/gi, "khách đặt hàng"],
+  [/\bcheckout fulfillment\b/gi, "hoàn tất đặt hàng"],
+  [/\bshipping address\b/gi, "địa chỉ giao hàng"],
+  [/\bproduct stock\b/gi, "tồn kho sản phẩm"],
+  [/\bcatalog item\b/gi, "mặt hàng trong danh mục"],
+  [/\bsellable product\b/gi, "sản phẩm có thể bán"],
+  [/\bfor later reference\b/gi, "để tham chiếu ở bước sau"],
+  [/\bfor subsequent steps\b/gi, "cho các bước tiếp theo"],
+  [/\bvia the API Gateway\b/gi, "qua API Gateway"],
+  [/\bvia API Gateway\b/gi, "qua API Gateway"],
+  [/\bvia gateway-driven calls\b/gi, "qua các lệnh gọi từ Gateway"],
+  [/\bacross all services\b/gi, "trên toàn bộ các service"],
+  [/\bacross services\b/gi, "trên các service"],
+  [/\bin the catalog\b/gi, "trong danh mục"],
+  [/\bto cart\b/gi, "vào giỏ hàng"],
+  [/\bin cart\b/gi, "trong giỏ hàng"],
+  [/\bfrom cart\b/gi, "từ giỏ hàng"],
+  [/\bto obtain\b/gi, "để lấy"],
+  [/\bto confirm\b/gi, "để xác nhận"],
+  [/\bto verify\b/gi, "để xác minh"],
+  [/\bto trigger\b/gi, "để kích hoạt"],
+  [/\bto exercise\b/gi, "để kiểm thử"],
+  [/\bto ensure\b/gi, "để đảm bảo"],
+  [/\bresponse provides\b/gi, "phản hồi cung cấp"],
+  [/\bresponse returns\b/gi, "phản hồi trả về"],
+  [/\bcross-service\b/gi, "liên service"],
+  [/\bend-to-end\b/gi, "toàn trình"],
+  [/\btop-down\b/gi, "từ trên xuống"],
+  [/\bbusiness journey\b/gi, "hành trình nghiệp vụ"],
+  [/\bread-only\b/gi, "chỉ đọc"],
+];
+
+function translateScenarioProseToVi(text: string): string {
+  if (
+    text.length < 10 ||
+    text.startsWith("/") ||
+    text.startsWith("{") ||
+    /^[A-Za-z0-9_.-]+$/.test(text) ||
+    !SCENARIO_PROSE_GUARD.test(text)
+  ) {
+    return text;
+  }
+  let out = text;
+  for (const [pattern, replacement] of SCENARIO_PROSE_RULES) {
+    out = out.replace(pattern, replacement);
+  }
+  if (out !== text) {
+    out = out
+      .replace(/\bacross\b/gi, "trên")
+      .replace(/\band\b/gi, "và")
+      .replace(/\bwith\b/gi, "kèm")
+      .replace(/\bthen\b/gi, "sau đó");
+  }
+  return out;
+}
+
 export function translateText(text: string, locale: Locale): string {
   if (locale === "en") return text;
   return translateStringToVi(text);
@@ -1607,11 +1779,34 @@ export function translateStringToVi(raw: string): string {
     }
   }
 
-  // 3. Dynamic pattern matching
+  // 3. Numbered prefix or version suffix decomposition (e.g. "1. Catalog & Inventory", "Scenario Name (v1)")
+  const numberedMatch = /^(\d+)\.\s+(.+)$/.exec(trimmed);
+  if (numberedMatch) {
+    const innerTranslated = translateStringToVi(numberedMatch[2]!);
+    if (innerTranslated !== numberedMatch[2]) {
+      return raw.replace(trimmed, `${numberedMatch[1]}. ${innerTranslated}`);
+    }
+  }
+
+  const versionSuffixMatch = /^(.+)\s+\(v(\d+)\)$/i.exec(trimmed);
+  if (versionSuffixMatch) {
+    const innerTranslated = translateStringToVi(versionSuffixMatch[1]!);
+    if (innerTranslated !== versionSuffixMatch[1]) {
+      return raw.replace(trimmed, `${innerTranslated} (v${versionSuffixMatch[2]})`);
+    }
+  }
+
+  // 4. Dynamic pattern matching
   for (const [regex, replacement] of PATTERN_REPLACEMENTS) {
     if (regex.test(trimmed)) {
       return raw.replace(trimmed, trimmed.replace(regex, replacement));
     }
+  }
+
+  // 5. Scenario & architectural prose translation (AI summaries, stage chips, step rationales)
+  const proseTranslated = translateScenarioProseToVi(trimmed);
+  if (proseTranslated !== trimmed) {
+    return raw.replace(trimmed, proseTranslated);
   }
 
   return raw;
