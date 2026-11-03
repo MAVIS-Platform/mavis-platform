@@ -1225,6 +1225,12 @@ public class ComposePreflightValidator {
                         registerEnvVar(envMap, "JWT_SECRET", inferredService, null, cleanRelPath);
                     }
                 }
+                if (lowerLine.contains("internal-secret") || lowerLine.contains("internal_secret")) {
+                    List<String> lineVars = extractPlaceholderNames(line);
+                    if (lineVars.isEmpty()) {
+                        registerEnvVar(envMap, "APP_INTERNAL_SECRET", inferredService, "MocHuongSecretKey2026InternalAuth", cleanRelPath);
+                    }
+                }
                 if (containsAiIndicator(lowerLine)) {
                     List<String> lineVars = extractPlaceholderNames(line);
                     if (lineVars.isEmpty() && envMap.keySet().stream().noneMatch(k -> k.toUpperCase(Locale.ROOT).contains("API_KEY"))) {
@@ -1295,6 +1301,9 @@ public class ComposePreflightValidator {
         if (lowerPath.endsWith(".java")) {
             Matcher healthRoute = JAVA_HEALTH_ROUTE_PATTERN.matcher(content);
             if (healthRoute.find()) explicitHealth.putIfAbsent(inferredService, healthRoute.group(1));
+            if (inferredService != null && (lowerContent.contains("internal-secret") || lowerContent.contains("internal_secret"))) {
+                registerEnvVar(envMap, "APP_INTERNAL_SECRET", inferredService, "MocHuongSecretKey2026InternalAuth", cleanRelPath);
+            }
             if (inferredService != null && (content.contains("SecurityFilterChain") || content.contains("SecurityWebFilterChain")
                     || content.contains("@EnableWebSecurity") || content.contains("@EnableWebFluxSecurity"))) {
                 springSecurityServices.add(inferredService);
@@ -1950,6 +1959,9 @@ public class ComposePreflightValidator {
                 else if (lowerName.contains("url") || lowerName.contains("uri") || lowerName.contains("website")) candidate = "https://example.org";
                 else if (lowerName.contains("uuid") || lowerName.contains("guid")) candidate = "00000000-0000-0000-0000-000000000001";
                 else if (lowerName.contains("paymentmethod")) candidate = "COD";
+                else if (lowerName.contains("provincecode") || lowerName.contains("districtcode") || lowerName.contains("wardcode")
+                        || lowerName.contains("statecode") || lowerName.contains("regioncode")) candidate = "79";
+                else if (lowerName.contains("zip") || lowerName.contains("postal")) candidate = "70000";
                 else if (lowerName.contains("code") || lowerName.contains("sku")) candidate = "SKU-LAPTOP-01";
                 else if (lowerName.contains("currency")) candidate = "USD";
                 else if (lowerName.contains("country")) candidate = "VN";

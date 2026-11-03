@@ -1331,4 +1331,107 @@ class RuntimePlanningServiceTest {
             }
         }
     }
+
+    @Test
+    @DisplayName("STEP 2 AI AUTO-FLOW: Prepends /register before /login, chains {{ADDRESS_ID}} & {{COUPON_CODE}} into checkout body, and backfills uncovered runnable services")
+    void testAiAutoFlowPrependRegisterChainsPrefixedBodyVarsAndBackfillsUncoveredServices() throws Exception {
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("api-gateway", "identity-service", "order-service", "notification-service"))
+                .composeServices(List.of("api-gateway", "identity-service", "order-service", "notification-service"))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/identity/auth/register").expectedStatus(201).build(),
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/identity/auth/login").responseFields(List.of("/data/accessToken")).build(),
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/identity/addresses").responseFields(List.of("/data/id")).build(),
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/order/admin/coupons").responseFields(List.of("/data/id", "/data/code")).build(),
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/order/orders/checkout")
+                                .sampleJsonBody("{\"shippingAddressId\":1,\"couponCode\":\"SAVE10\",\"paymentMethod\":\"COD\"}")
+                                .downstreamTargets(List.of("order-service"))
+                                .build(),
+                        DetectedEndpointDTO.builder().service("notification-service").method("GET").path("/api/notifications").expectedStatus(200).build()
+                ))
+                .build());
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
+
+        HttpServer mockOpenAi = HttpServer.create(new InetSocketAddress(0), 0);
+        mockOpenAi.createContext("/v1/chat/completions", exchange -> {
+            String resp = """
+                    {
+                      "choices": [{
+                        "message": {
+                          "content": "{\\"suggestedName\\":\\"Smart Auto Journey\\",\\"summary\\":\\"End-to-end\\",\\"steps\\":[{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/identity/auth/login\\",\\"expectedStatus\\":200},{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/identity/addresses\\",\\"expectedStatus\\":201,\\"extract\\":{\\"ADDRESS_ID\\":\\"/data/id\\"}},{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/order/admin/coupons\\",\\"expectedStatus\\":201,\\"extract\\":{\\"COUPON_ID\\":\\"/data/id\\",\\"COUPON_CODE\\":\\"/data/code\\"}},{\\"service\\":\\"api-gateway\\",\\"method\\":\\"POST\\",\\"path\\":\\"/api/order/orders/checkout\\",\\"expectedStatus\\":201}]}"
+                        }
+                      }]
+                    }
+                    """;
+            byte[] bytes = resp.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        mockOpenAi.start();
+        try {
+            int port = mockOpenAi.getAddress().getPort();
+            ReflectionTestUtils.setField(planningService, "customAiEndpointUrl", "http://127.0.0.1:" + port + "/v1/chat/completions");
+            when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.of("sk-proj-test-key"));
+
+            GeneratedScenarioDraftView aiDraft = planningService.generateScenario(
+                    projectId, new GenerateScenarioRequest(snapshotId, modelId, null));
+
+            assertThat(aiDraft.steps()).extracting(RuntimePlanningService.GeneratedStepDraft::path)
+                    .containsExactly(
+                            "/api/identity/auth/register",
+                            "/api/identity/auth/login",
+                            "/api/identity/addresses",
+                            "/api/order/admin/coupons",
+                            "/api/order/orders/checkout",
+                            "/api/notifications"
+                    );
+            String checkoutBodyRef = aiDraft.steps().get(4).bodyReference();
+            assertThat(aiDraft.sampleInputs().get(checkoutBodyRef))
+                    .contains("\"shippingAddressId\":\"{{ADDRESS_ID}}\"")
+                    .contains("\"couponCode\":\"{{COUPON_CODE}}\"");
+        } finally {
+            mockOpenAi.stop(0);
+        }
+    }
+
+    @Test
+    @DisplayName("STEP 2 DROPDOWN PRESETS: Filters non-CRUD custom domain service flow (with auth prerequisite) and Read-Only Smoke GET flow")
+    void testDropdownFlowPresetsForCustomDomainAndReadOnlySmoke() {
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+        when(sources.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(models.findById(modelId)).thenReturn(Optional.of(model));
+        when(runtime.runComposePreflight(snapshotId)).thenReturn(PreflightCheckResponseDTO.builder()
+                .compatible(true)
+                .detectedServices(List.of("api-gateway", "identity-service", "loan-service", "audit-service"))
+                .composeServices(List.of("api-gateway", "identity-service", "loan-service", "audit-service"))
+                .detectedEndpoints(List.of(
+                        DetectedEndpointDTO.builder().service("api-gateway").method("POST").path("/api/identity/auth/login").responseFields(List.of("/accessToken")).build(),
+                        DetectedEndpointDTO.builder().service("loan-service").method("POST").path("/api/loans/evaluate-risk").requiresAuth(true).downstreamTargets(List.of("audit-service")).build(),
+                        DetectedEndpointDTO.builder().service("loan-service").method("GET").path("/api/loans/decisions/1").requiresAuth(true).build(),
+                        DetectedEndpointDTO.builder().service("audit-service").method("POST").path("/api/audit/events").build(),
+                        DetectedEndpointDTO.builder().service("audit-service").method("GET").path("/api/audit/summary").build()
+                ))
+                .build());
+        when(runtime.getProjectExecutionEnvironment(projectId)).thenReturn(Map.of());
+        when(apiKeyProvider.resolveApiKey()).thenReturn(Optional.empty());
+
+        GeneratedScenarioDraftView loanFlow = planningService.generateScenario(
+                projectId,
+                new GenerateScenarioRequest(snapshotId, modelId, "Focus on service loan-service: test primary workflow and state verification endpoints of loan-service", null));
+        assertThat(loanFlow.steps()).extracting(RuntimePlanningService.GeneratedStepDraft::path)
+                .contains("/api/identity/auth/login", "/api/loans/evaluate-risk", "/api/loans/decisions/1")
+                .doesNotContain("/api/audit/events");
+
+        GeneratedScenarioDraftView smokeFlow = planningService.generateScenario(
+                projectId,
+                new GenerateScenarioRequest(snapshotId, modelId, "Focus on read-only smoke verification: test GET and readiness endpoints across all services", null));
+        assertThat(smokeFlow.steps()).allSatisfy(st -> assertThat(st.method()).isEqualTo("GET"));
+        assertThat(smokeFlow.suggestedName()).isEqualTo("Read-Only Smoke & Health Verification Scenario");
+    }
 }
