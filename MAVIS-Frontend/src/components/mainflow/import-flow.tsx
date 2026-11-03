@@ -57,7 +57,7 @@ export function ImportFlow({
     workflow = useRef<ImportWorkflowState>({});
   const [importedSnapshot, setImportedSnapshot] = useState("");
   const importedSource = useRef<Parameters<typeof importAndAnalyze>[1]["source"] | null>(null);
-  const sourceType = boundRepository || !projectId ? "github" : source;
+  const sourceType = boundRepository ? "github" : source;
   let repositoryUrl = "";
   try {
     repositoryUrl = githubImportRequest(
@@ -104,9 +104,27 @@ export function ImportFlow({
       if (
         !projectId &&
         !workflow.current.project &&
+        sourceType === "github" &&
         (!name.trim() || !repositoryUrl || !branchesCurrent || !selectedBranch)
       )
-        throw new Error("Enter a project name and a valid public GitHub repository.");
+        throw new Error(
+          t(
+            "Enter a project name and a valid public GitHub repository.",
+            "Vui lòng nhập tên dự án và kho lưu trữ GitHub công khai hợp lệ.",
+          ),
+        );
+      if (
+        !projectId &&
+        !workflow.current.project &&
+        sourceType === "zip" &&
+        (!name.trim() || !file)
+      )
+        throw new Error(
+          t(
+            "Enter a project name and select a ZIP archive.",
+            "Vui lòng nhập tên dự án và chọn tệp nén ZIP.",
+          ),
+        );
       const candidate: Parameters<typeof importAndAnalyze>[1]["source"] =
         sourceType === "github"
           ? {
@@ -148,7 +166,7 @@ export function ImportFlow({
   const valid =
     !!importedSnapshot ||
     (sourceType === "zip"
-      ? !!file && !validation
+      ? !!file && !validation && (projectId ? true : !!name.trim())
       : !!repositoryUrl &&
         (projectId
           ? !!commit.trim() || (branchesCurrent && !!selectedBranch)
@@ -215,12 +233,12 @@ export function ImportFlow({
           )}
         >
           <label className="block space-y-2 text-sm font-medium">
-            <span>Project name</span>
+            <span>{t("Project name", "Tên dự án")}</span>
             <Input
-              aria-label="Project name"
+              aria-label={t("Project name", "Tên dự án")}
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Name your project"
+              placeholder={t("Name your project", "Đặt tên cho dự án")}
               maxLength={255}
               required
               disabled={busy || !!created}
@@ -228,8 +246,8 @@ export function ImportFlow({
           </label>
         </GuidedTarget>
       )}
-      {projectId && !boundRepository && (
-        <div className="flex gap-2" role="group" aria-label="Snapshot source">
+      {!boundRepository && (
+        <div className="flex gap-2" role="group" aria-label={t("Snapshot source", "Nguồn mã nguồn")}>
           <Button
             type="button"
             size="sm"
@@ -237,7 +255,7 @@ export function ImportFlow({
             disabled={busy || !!importedSnapshot}
             onClick={() => setSource("github")}
           >
-            GitHub repository
+            {t("GitHub repository", "Kho lưu trữ GitHub")}
           </Button>
           <Button
             type="button"
@@ -246,7 +264,7 @@ export function ImportFlow({
             disabled={busy || !!importedSnapshot}
             onClick={() => setSource("zip")}
           >
-            Upload ZIP
+            {t("Upload ZIP", "Tải lên tệp ZIP")}
           </Button>
         </div>
       )}
@@ -266,10 +284,12 @@ export function ImportFlow({
             >
               <label className="block space-y-2 text-sm font-medium">
                 <span>
-                  {projectId ? "Link original GitHub repository" : "GitHub repository URL"}
+                  {projectId
+                    ? t("Link original GitHub repository", "Liên kết kho GitHub gốc")
+                    : t("GitHub repository URL", "Đường dẫn kho GitHub")}
                 </span>
                 <Input
-                  aria-label="GitHub repository URL"
+                  aria-label={t("GitHub repository URL", "Đường dẫn kho GitHub")}
                   type="url"
                   value={repository}
                   onChange={(e) => {
@@ -285,7 +305,10 @@ export function ImportFlow({
           )}
           {(boundRepository || repository.trim()) && !repositoryUrl && (
             <p className="text-xs text-destructive">
-              Use a GitHub repository root URL: https://github.com/owner/repository
+              {t(
+                "Use a GitHub repository root URL: https://github.com/owner/repository",
+                "Sử dụng đường dẫn gốc của kho GitHub: https://github.com/owner/repository",
+              )}
             </p>
           )}
           <>
@@ -302,7 +325,7 @@ export function ImportFlow({
             >
               <div className="block space-y-2 text-sm font-medium">
                 <div className="flex items-center gap-1.5">
-                  <label htmlFor="import-branch-select">Branch</label>
+                  <label htmlFor="import-branch-select">{t("Branch", "Nhánh")}</label>
                   <button
                     type="button"
                     aria-label={t("Reload branches", "Tải lại danh sách nhánh")}
@@ -319,7 +342,7 @@ export function ImportFlow({
                 </div>
                 <select
                   id="import-branch-select"
-                  aria-label="Branch"
+                  aria-label={t("Branch", "Nhánh")}
                   className="h-10 w-full rounded-md border bg-card px-3 text-sm"
                   value={selectedBranch}
                   disabled={busy || !!importedSnapshot || !branchesCurrent || !!commit.trim()}
@@ -328,19 +351,21 @@ export function ImportFlow({
                   {!branchesCurrent && (
                     <option value="">
                       {refs.isFetching
-                        ? "Loading branches…"
+                        ? t("Loading branches…", "Đang tải danh sách nhánh…")
                         : repositoryUrl
-                          ? "Branches unavailable"
-                          : "Enter a repository URL first"}
+                          ? t("Branches unavailable", "Không có sẵn danh sách nhánh")
+                          : t("Enter a repository URL first", "Nhập đường dẫn kho trước")}
                     </option>
                   )}
                   {importedSnapshot && selectedBranch && !branches.includes(selectedBranch) && (
-                    <option value={selectedBranch}>{selectedBranch} (imported)</option>
+                    <option value={selectedBranch}>
+                      {selectedBranch} ({t("imported", "đã nhập")})
+                    </option>
                   )}
                   {branches.map((b) => (
                     <option key={b} value={b}>
                       {b}
-                      {b === refs.data?.defaultBranch ? " (default)" : ""}
+                      {b === refs.data?.defaultBranch ? ` (${t("default", "mặc định")})` : ""}
                     </option>
                   ))}
                 </select>
@@ -358,18 +383,20 @@ export function ImportFlow({
               )}
             >
               <label className="block space-y-2 text-sm font-medium">
-                <span>Commit SHA (optional)</span>
+                <span>{t("Commit SHA (optional)", "Commit SHA (tùy chọn)")}</span>
                 <Input
-                  aria-label="Commit SHA"
-                  placeholder="Full 40-character SHA"
+                  aria-label={t("Commit SHA", "Commit SHA")}
+                  placeholder={t("Full 40-character SHA", "Mã SHA đủ 40 ký tự")}
                   value={commit}
                   onChange={(e) => setCommit(e.target.value)}
                   pattern="[a-fA-F0-9]{40}"
                   disabled={busy || !!importedSnapshot}
                 />
                 <span className="block text-xs font-normal text-muted-foreground">
-                  Leave empty for the latest commit on the selected branch. A SHA overrides the
-                  branch selection.
+                  {t(
+                    "Leave empty for the latest commit on the selected branch. A SHA overrides the branch selection.",
+                    "Để trống để lấy commit mới nhất trên nhánh đã chọn. SHA sẽ ghi đè lựa chọn nhánh.",
+                  )}
                 </span>
               </label>
             </GuidedTarget>
@@ -377,15 +404,18 @@ export function ImportFlow({
           {refs.error && <ErrorState error={refs.error} onRetry={() => void refs.refetch()} />}
           {refs.data?.truncated && (
             <p className="text-xs text-muted-foreground">
-              The branch list is truncated. You can pin a commit SHA for an unlisted branch.
+              {t(
+                "The branch list is truncated. You can pin a commit SHA for an unlisted branch.",
+                "Danh sách nhánh đã bị rút gọn. Bạn có thể ghim mã commit SHA cho nhánh không có trong danh sách.",
+              )}
             </p>
           )}
         </>
       ) : (
         <label className="block space-y-2 text-sm font-medium">
-          <span>ZIP archive (up to 100 MB)</span>
+          <span>{t("ZIP archive (up to 100 MB)", "Tệp nén ZIP (tối đa 100 MB)")}</span>
           <Input
-            aria-label="Source archive"
+            aria-label={t("Source archive", "Tệp lưu trữ mã nguồn")}
             type="file"
             accept=".zip"
             required
@@ -395,12 +425,18 @@ export function ImportFlow({
               const error =
                 f &&
                 (!f.name.toLowerCase().endsWith(".zip") || !f.size || f.size > 100 * 1024 * 1024)
-                  ? "Choose a non-empty ZIP up to 100 MB."
+                  ? t("Choose a non-empty ZIP up to 100 MB.", "Vui lòng chọn tệp ZIP hợp lệ không rỗng và tối đa 100 MB.")
                   : "";
               setValidation(error);
               setFile(error ? null : f);
             }}
           />
+          <span className="block text-xs font-normal text-muted-foreground">
+            {t(
+              "Select a ZIP file containing project source code (e.g. Java, Spring, microservices). Maximum file size is 100 MB.",
+              "Chọn tệp ZIP chứa mã nguồn dự án (ví dụ Java, Spring, microservices). Dung lượng tối đa 100 MB.",
+            )}
+          </span>
         </label>
       )}
       {validation && (
@@ -410,13 +446,18 @@ export function ImportFlow({
       )}
       {importedSnapshot && run.isError && (
         <p role="status" className="text-sm text-muted-foreground">
-          Snapshot imported. Retry analysis will reuse this snapshot and the same request key.
+          {t(
+            "Snapshot imported. Retry analysis will reuse this snapshot and the same request key.",
+            "Đã nhập bản chụp. Thử lại phân tích sẽ tái sử dụng bản chụp này cùng mã yêu cầu tương ứng.",
+          )}
         </p>
       )}
       {created && !importedSnapshot && run.isError && (
         <p role="status" className="text-sm text-muted-foreground">
-          Project created. Retry will import into the same project; its name and repository are now
-          fixed.
+          {t(
+            "Project created. Retry will import into the same project; its name and repository are now fixed.",
+            "Đã tạo dự án. Thử lại sẽ nhập vào cùng dự án; tên và kho lưu trữ hiện đã được cố định.",
+          )}
         </p>
       )}
       {run.error && <ErrorState error={run.error} />}
@@ -433,12 +474,12 @@ export function ImportFlow({
         >
           <Button type="submit" disabled={busy || !valid}>
             {busy
-              ? stage || "Working…"
+              ? (stage ? t(stage) : t("Working…", "Đang xử lý…"))
               : importedSnapshot
-                ? "Retry analysis"
+                ? t("Retry analysis", "Thử lại phân tích")
                 : created
-                  ? "Retry import & analyze"
-                  : "Import & analyze"}
+                  ? t("Retry import & analyze", "Thử lại nhập & phân tích")
+                  : t("Import & analyze", "Nhập & phân tích")}
           </Button>
         </GuidedTarget>
         {onCancel && (
@@ -448,7 +489,7 @@ export function ImportFlow({
         )}
         {busy && (
           <p role="status" className="text-xs text-muted-foreground">
-            Keep this dialog open until the import finishes.
+            {t("Keep this dialog open until the import finishes.", "Giữ cửa sổ này mở cho đến khi quá trình nhập hoàn tất.")}
           </p>
         )}
       </div>
