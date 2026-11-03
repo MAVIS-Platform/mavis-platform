@@ -2744,17 +2744,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           )}
 
           <div data-tour="scenario-header" className="space-y-3">
-          <div className="grid gap-3 md:grid-cols-2">
-            <FormField label="Scenario Name">
-              {(props) => (
-                <Input
-                  {...props}
-                  value={scenarioName}
-                  onChange={(e) => setScenarioName(e.target.value)}
-                />
-              )}
-            </FormField>
-
             <FormField label="Test Flow">
               {(props) => (
                 <div className="space-y-2">
@@ -2832,7 +2821,6 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 </div>
               )}
             </FormField>
-          </div>
 
           {aiSummary && (() => {
             const sentences = aiSummary
@@ -2852,7 +2840,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               <div className="rounded-lg border border-primary/25 bg-primary/5 px-3.5 py-2.5 space-y-1.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-primary">
-                    {flowLead}
+                    {scenarioName || flowLead}
                   </span>
                   <span className="text-[11px] font-mono text-muted-foreground">
                     {steps.length} steps · {runnableServices.length || 1} services
