@@ -2988,14 +2988,22 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                         {idx > 0 && (
                           <span className="text-muted-foreground font-mono text-sm select-none">→</span>
                         )}
-                        <div className="rounded-md border bg-background/80 p-2.5 min-w-[210px] max-w-[300px] space-y-1.5">
+                        <div className="rounded-md border bg-background/80 p-2.5 min-w-[220px] max-w-[360px] space-y-1.5">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-semibold text-foreground truncate">
+                            <span
+                              className="text-xs font-semibold text-foreground truncate"
+                              title={c.meta.shortTitle}
+                            >
                               {idx + 1}. {c.meta.shortTitle}
                             </span>
                             <div className="flex items-center gap-1 shrink-0">
-                              <span className="rounded border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                                {c.stepIndices.map((n) => `#${n}`).join(", ")}
+                              <span
+                                className="rounded border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                                title={c.stepIndices.map((n) => `#${n}`).join(", ")}
+                              >
+                                {c.stepIndices.length <= 2
+                                  ? c.stepIndices.map((n) => `#${n}`).join(", ")
+                                  : `#${c.stepIndices[0]}–#${c.stepIndices[c.stepIndices.length - 1]} (${c.stepIndices.length})`}
                               </span>
                               <button
                                 type="button"
