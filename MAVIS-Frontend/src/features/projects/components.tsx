@@ -24,8 +24,16 @@ import { useLocale } from "@/lib/i18n/locale-context";
 export function ProjectStatusBadge({ status }: { status: Project["status"] }) {
   return (
     <StatusBadge
-      status={status}
-      variant={status === "ready" ? "success" : status === "failed" ? "destructive" : "info"}
+      status={status === "unknown" ? "not analyzed" : status}
+      variant={
+        status === "ready"
+          ? "success"
+          : status === "failed"
+            ? "destructive"
+            : status === "unknown"
+              ? "outline"
+              : "info"
+      }
     />
   );
 }
