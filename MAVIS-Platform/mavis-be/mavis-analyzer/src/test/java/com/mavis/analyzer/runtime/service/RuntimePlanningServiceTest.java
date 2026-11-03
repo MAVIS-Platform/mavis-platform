@@ -33,6 +33,10 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
+import com.mavis.analyzer.runtime.validator.ComposePreflightValidator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -1243,6 +1247,88 @@ class RuntimePlanningServiceTest {
             assertThat(aiDraft.steps().get(3).path()).isEqualTo("/api/order/orders/checkout");
         } finally {
             mockOpenAi.stop(0);
+        }
+    }
+
+    @Test
+    @DisplayName("STEP 1 MULTI-REPO PREFLIGHT: Resolves unbraced $VAR in compose, Zuul routes map, root config/ shared YAML, and prunes Turbine/Hystrix sidecars")
+    void testUnbracedComposeVarZuulRoutesRootConfigAndTurbinePruning() throws Exception {
+        Path tempRepo = Files.createTempDirectory("piggymetrics-like-repo");
+        try {
+            String composeYaml = """
+                    version: '2.1'
+                    services:
+                      config:
+                        image: sqshq/piggymetrics-config
+                        environment:
+                          CONFIG_SERVICE_PASSWORD: $CONFIG_SERVICE_PASSWORD
+                      gateway:
+                        image: sqshq/piggymetrics-gateway
+                        ports:
+                          - "4000:4000"
+                      account-service:
+                        image: sqshq/piggymetrics-account-service
+                      monitoring:
+                        image: sqshq/piggymetrics-monitoring
+                      turbine-stream-service:
+                        image: sqshq/piggymetrics-turbine-stream-service
+                    """;
+            Files.writeString(tempRepo.resolve("docker-compose.yml"), composeYaml, StandardCharsets.UTF_8);
+            Files.writeString(tempRepo.resolve(".env"), "CONFIG_SERVICE_PASSWORD=secret-pass\n", StandardCharsets.UTF_8);
+
+            Path sharedDir = tempRepo.resolve("config/src/main/resources/shared");
+            Files.createDirectories(sharedDir);
+            Files.writeString(sharedDir.resolve("gateway.yml"), """
+                    zuul:
+                      routes:
+                        account-service:
+                          path: /accounts/**
+                          serviceId: account-service
+                          stripPrefix: false
+                    server:
+                      port: 4000
+                    """, StandardCharsets.UTF_8);
+            Files.writeString(sharedDir.resolve("account-service.yml"), """
+                    server:
+                      context-path: /accounts
+                      port: 6000
+                    """, StandardCharsets.UTF_8);
+
+            Path controllerDir = tempRepo.resolve("account-service/src/main/java/com/piggymetrics/account/controller");
+            Files.createDirectories(controllerDir);
+            Files.writeString(controllerDir.resolve("AccountController.java"), """
+                    package com.piggymetrics.account.controller;
+                    import org.springframework.web.bind.annotation.*;
+                    @RestController
+                    public class AccountController {
+                        @GetMapping("/current")
+                        public String getCurrentAccount() { return "ok"; }
+                    }
+                    """, StandardCharsets.UTF_8);
+
+            ComposePreflightValidator v = new ComposePreflightValidator();
+            Map<String, String> envFiles = v.collectDirectoryEnvFiles(tempRepo);
+            PreflightCheckResponseDTO pf = v.validate(composeYaml, Map.of(), envFiles);
+            v.inspectSnapshotSource(tempRepo, pf);
+            v.finalizeSandboxTopology(tempRepo, pf, composeYaml, Map.of(), envFiles);
+            ComposePreflightValidator.assignEnvResolutions(pf);
+
+            assertThat(pf.getDetectedServices())
+                    .contains("gateway", "account-service")
+                    .doesNotContain("monitoring", "turbine-stream-service");
+            assertThat(pf.getServicePorts().get("account-service")).isEqualTo(6000);
+            assertThat(pf.getDetectedEndpoints())
+                    .anyMatch(ep -> "gateway".equals(ep.getService()) && "/accounts/current".equals(ep.getPath()));
+            assertThat(pf.getRequiredEnvVars())
+                    .anyMatch(ev -> "CONFIG_SERVICE_PASSWORD".equals(ev.getName())
+                            && ev.isDefaultPresent()
+                            && "DEFAULT".equals(ev.getResolution()));
+        } finally {
+            try (var walk = Files.walk(tempRepo)) {
+                walk.sorted(Comparator.reverseOrder()).forEach(p -> {
+                    try { Files.deleteIfExists(p); } catch (Exception ignored) {}
+                });
+            }
         }
     }
 }

@@ -35,6 +35,7 @@ public class ComposePreflightValidator {
     );
 
     private static final Pattern ENV_PLACEHOLDER_PATTERN = Pattern.compile("\\$\\{([A-Z][A-Z0-9_]+)(?::-?([^}]*))?}");
+    private static final Pattern UNBRACED_ENV_PLACEHOLDER_PATTERN = Pattern.compile("(?<!\\$)\\$([A-Z][A-Z0-9_]+)\\b");
     private static final Pattern SPRING_MAPPING_PATTERN = Pattern.compile("@(GetMapping|PostMapping|PutMapping|DeleteMapping|PatchMapping|RequestMapping)\\s*(?:\\(([^)]*)\\))?");
     private static final Pattern QUOTED_STRING_PATTERN = Pattern.compile("\"([^\"]+)\"");
     private static final Pattern DOTNET_ROUTE_ATTR_PATTERN = Pattern.compile("\\[(HttpGet|HttpPost|HttpPut|HttpDelete|HttpPatch|Route)\\s*(?:\\(\\s*\"([^\"]*)\"\\s*\\))?\\]");
@@ -71,7 +72,8 @@ public class ComposePreflightValidator {
     private static final List<String> INFRASTRUCTURE_KEYWORDS = List.of("kafka", "zookeeper", "rabbitmq", "activemq", "nats",
             "elasticsearch", "opensearch", "kibana", "logstash", "keycloak", "jaeger", "zipkin", "prometheus", "grafana",
             "otel-collector", "opentelemetry-collector", "consul", "vault", "minio", "localstack", "mailhog", "mailpit",
-            "adminer", "pgadmin", "memcached", "cassandra", "neo4j", "influxdb", "nginx", "traefik", "envoy", "haproxy");
+            "adminer", "pgadmin", "memcached", "cassandra", "neo4j", "influxdb", "nginx", "traefik", "envoy", "haproxy",
+            "turbine", "hystrix", "monitoring");
     private static final List<String> DB_PASSWORD_KEYS = List.of("POSTGRES_PASSWORD", "MYSQL_PASSWORD", "MARIADB_PASSWORD",
             "MYSQL_ROOT_PASSWORD", "MARIADB_ROOT_PASSWORD", "MONGO_INITDB_ROOT_PASSWORD", "MSSQL_SA_PASSWORD", "SA_PASSWORD");
     private static final List<String> DB_USER_KEYS = List.of("POSTGRES_USER", "MYSQL_USER", "MARIADB_USER", "MONGO_INITDB_ROOT_USERNAME", "MSSQL_USER");
@@ -695,21 +697,38 @@ public class ComposePreflightValidator {
     }
 
     public static String resolvePlaceholders(String input, Map<String, String> dotEnv) {
-        if (input == null || !input.contains("${")) return input;
-        Matcher m = ENV_PLACEHOLDER_PATTERN.matcher(input);
-        StringBuffer sb = new StringBuffer();
-        while (m.find()) {
-            String varName = m.group(1);
-            String defVal = m.group(2);
-            String envVal = dotEnv != null ? dotEnv.get(varName) : null;
-            if (envVal != null && !envVal.isBlank()) {
-                m.appendReplacement(sb, Matcher.quoteReplacement(envVal));
-            } else if (defVal != null && !defVal.isBlank()) {
-                m.appendReplacement(sb, Matcher.quoteReplacement(defVal));
+        if (input == null || !input.contains("$")) return input;
+        String current = input;
+        if (current.contains("${")) {
+            Matcher m = ENV_PLACEHOLDER_PATTERN.matcher(current);
+            StringBuffer sb = new StringBuffer();
+            while (m.find()) {
+                String varName = m.group(1);
+                String defVal = m.group(2);
+                String envVal = dotEnv != null ? dotEnv.get(varName) : null;
+                if (envVal != null && !envVal.isBlank()) {
+                    m.appendReplacement(sb, Matcher.quoteReplacement(envVal));
+                } else if (defVal != null && !defVal.isBlank()) {
+                    m.appendReplacement(sb, Matcher.quoteReplacement(defVal));
+                }
             }
+            m.appendTail(sb);
+            current = sb.toString();
         }
-        m.appendTail(sb);
-        return sb.toString();
+        if (current.contains("$") && dotEnv != null && !dotEnv.isEmpty()) {
+            Matcher um = UNBRACED_ENV_PLACEHOLDER_PATTERN.matcher(current);
+            StringBuffer usb = new StringBuffer();
+            while (um.find()) {
+                String varName = um.group(1);
+                String envVal = dotEnv.get(varName);
+                if (envVal != null && !envVal.isBlank()) {
+                    um.appendReplacement(usb, Matcher.quoteReplacement(envVal));
+                }
+            }
+            um.appendTail(usb);
+            current = usb.toString();
+        }
+        return current;
     }
 
     private static Object sanitizeYamlNode(Object node, Map<String, String> dotEnv) {
@@ -754,6 +773,20 @@ public class ComposePreflightValidator {
     public void inspectSnapshotSource(Path storagePath, PreflightCheckResponseDTO dto) {
         if (storagePath == null || dto == null || !Files.exists(storagePath)) {
             return;
+        }
+        if (dto.getDetectedServices() == null || dto.getDetectedServices().isEmpty()) {
+            List<DiscoveredDockerfile> preDiscovered = discoverDockerfilesInSnapshot(storagePath);
+            if (!preDiscovered.isEmpty()) {
+                List<String> preServices = new ArrayList<>();
+                for (DiscoveredDockerfile df : preDiscovered) {
+                    if (df.serviceName() != null && !df.serviceName().isBlank() && !preServices.contains(df.serviceName())) {
+                        preServices.add(df.serviceName());
+                    }
+                }
+                if (!preServices.isEmpty()) {
+                    dto.setDetectedServices(preServices);
+                }
+            }
         }
         Map<String, RequiredEnvVarDTO> envMap = new LinkedHashMap<>();
         if (dto.getRequiredEnvVars() != null) {
@@ -2241,6 +2274,12 @@ public class ComposePreflightValidator {
                             parseYamlGatewayRouteMap(service, routeMap, detectedServices, gatewayRoutes);
                         }
                     }
+                } else if ("routes".equals(String.valueOf(entry.getKey())) && entry.getValue() instanceof Map<?, ?> zuulRoutesMap) {
+                    for (Map.Entry<?, ?> routeEntry : zuulRoutesMap.entrySet()) {
+                        if (routeEntry.getValue() instanceof Map<?, ?> rm) {
+                            parseZuulGatewayRouteMap(service, String.valueOf(routeEntry.getKey()), rm, detectedServices, gatewayRoutes);
+                        }
+                    }
                 } else {
                     collectYamlGatewayRoutes(entry.getValue(), service, detectedServices, gatewayRoutes);
                 }
@@ -2250,6 +2289,28 @@ public class ComposePreflightValidator {
                 collectYamlGatewayRoutes(child, service, detectedServices, gatewayRoutes);
             }
         }
+    }
+
+    private static void parseZuulGatewayRouteMap(
+            String service,
+            String routeKey,
+            Map<?, ?> rm,
+            List<String> detectedServices,
+            List<GatewayRouteRule> gatewayRoutes) {
+        Object pathObj = rm.get("path");
+        if (pathObj == null) return;
+        String rawTarget = rm.get("serviceId") != null ? String.valueOf(rm.get("serviceId")).trim() : null;
+        if ((rawTarget == null || rawTarget.isBlank()) && rm.get("url") != null) {
+            Matcher uriM = Pattern.compile("(?:lb|https?)://([a-zA-Z0-9_.-]+)(?::\\d+)?").matcher(String.valueOf(rm.get("url")).trim());
+            if (uriM.find()) rawTarget = uriM.group(1);
+        }
+        if (rawTarget == null || rawTarget.isBlank()) rawTarget = routeKey;
+        String matchedTarget = matchDetectedService(rawTarget, detectedServices);
+        String targetSvc = matchedTarget != null ? matchedTarget : cleanServiceCandidate(rawTarget);
+        if (targetSvc.isBlank() || targetSvc.equalsIgnoreCase(service)) return;
+        Object stripObj = rm.get("stripPrefix");
+        int strip = (Boolean.FALSE.equals(stripObj) || "false".equalsIgnoreCase(String.valueOf(stripObj))) ? 0 : 1;
+        addParsedGatewayRoute(service, targetSvc, String.valueOf(pathObj), strip, null, null, gatewayRoutes);
     }
 
     private static void parseYamlGatewayRouteMap(
@@ -2708,10 +2769,20 @@ public class ComposePreflightValidator {
             placeholders.add(pName);
             registerEnvVar(envVarMap, pName, serviceName, effectiveDef, "docker-compose.yml");
         }
+        Matcher um = UNBRACED_ENV_PLACEHOLDER_PATTERN.matcher(val);
+        while (um.find()) {
+            String pName = um.group(1);
+            if (!placeholders.contains(pName)) {
+                String dotVal = rootDotEnv != null ? rootDotEnv.get(pName) : null;
+                placeholders.add(pName);
+                registerEnvVar(envVarMap, pName, serviceName, dotVal, "docker-compose.yml");
+            }
+        }
         if (!placeholders.isEmpty()) {
             String partiallyResolved = resolvePlaceholders(val, rootDotEnv);
-            if (partiallyResolved.contains("${")) {
-                if (placeholders.size() == 1 && !key.equals(placeholders.get(0)) && val.trim().equals("${" + placeholders.get(0) + "}")) {
+            if (partiallyResolved.contains("$")) {
+                if (placeholders.size() == 1 && !key.equals(placeholders.get(0))
+                        && (val.trim().equals("${" + placeholders.get(0) + "}") || val.trim().equals("$" + placeholders.get(0)))) {
                     composeEnvAliases.computeIfAbsent(serviceName, k -> new LinkedHashMap<>()).put(key, placeholders.get(0));
                 } else {
                     composeEnvTemplates.computeIfAbsent(serviceName, k -> new LinkedHashMap<>()).put(key, partiallyResolved);
@@ -3110,7 +3181,7 @@ public class ComposePreflightValidator {
                 : detectedServices.stream().filter(s -> !isInfrastructureService(s, "")).toList();
         if (!appServices.isEmpty()
                 && (lowerNorm.endsWith(".yml") || lowerNorm.endsWith(".yaml") || lowerNorm.endsWith(".properties"))
-                && (lowerNorm.contains("/config/") || lowerNorm.contains("config-service/") || lowerNorm.contains("config-server/"))) {
+                && (lowerNorm.contains("/config/") || lowerNorm.startsWith("config/") || lowerNorm.contains("config-service/") || lowerNorm.contains("config-server/"))) {
             String fileName = lowerNorm.substring(lowerNorm.lastIndexOf('/') + 1);
             String stem = fileName.replaceFirst("\\.(ya?ml|properties)$", "")
                     .replaceFirst("-(docker|dev|prod|production|local|default|test|stage|staging)$", "");
@@ -3310,7 +3381,8 @@ public class ComposePreflightValidator {
     public static boolean isInfrastructureService(String serviceName, String image) {
         String name = serviceName == null ? "" : serviceName.toLowerCase(Locale.ROOT);
         String img = image == null ? "" : image.toLowerCase(Locale.ROOT);
-        if (name.contains("service") || name.endsWith("-api") || name.endsWith("-app")) return false;
+        if (!name.contains("turbine") && !name.contains("hystrix")
+                && (name.contains("service") || name.endsWith("-api") || name.endsWith("-app"))) return false;
         if (isDatabaseContainer(name, img)) return true;
         String repo = img.contains("@") ? img.substring(0, img.indexOf('@')) : img;
         String lastSegment = repo.contains("/") ? repo.substring(repo.lastIndexOf('/') + 1) : repo;
@@ -4523,7 +4595,8 @@ public class ComposePreflightValidator {
                     && (low.contains("zipkin") || img.contains("zipkin") || low.contains("jaeger") || img.contains("jaeger")
                     || low.contains("kibana") || img.contains("kibana") || low.contains("pgadmin") || img.contains("pgadmin")
                     || low.contains("adminer") || img.contains("adminer") || low.contains("grafana") || img.contains("grafana")
-                    || low.contains("prometheus") || img.contains("prometheus"))) {
+                    || low.contains("prometheus") || img.contains("prometheus") || low.contains("turbine") || img.contains("turbine")
+                    || low.contains("hystrix") || img.contains("hystrix") || low.equals("monitoring") || img.contains("monitoring"))) {
                 pruneCandidates.add(cand);
             }
         }

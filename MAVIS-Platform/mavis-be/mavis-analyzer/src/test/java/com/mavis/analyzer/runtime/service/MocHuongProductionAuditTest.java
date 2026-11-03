@@ -217,7 +217,9 @@ class MocHuongProductionAuditTest {
         String[] repoNames = {
                 "spring-petclinic-microservices",
                 "spring-boot-microservices",
-                "sample-spring-microservices-new"
+                "sample-spring-microservices-new",
+                "piggymetrics",
+                "E-Mart-Microservices"
         };
         for (String repoName : repoNames) {
             Path repoDir = baseDir.resolve(repoName);
@@ -327,6 +329,26 @@ class MocHuongProductionAuditTest {
                 assertThat(draft.steps().get(1).extract()).containsEntry("DEPARTMENT_ID", "/id");
                 assertThat(draft.steps().get(2).path()).isEqualTo("/employee/");
                 assertThat(draft.steps().get(2).extract()).containsEntry("EMPLOYEE_ID", "/id");
+            } else if ("piggymetrics".equals(repoName)) {
+                assertThat(preflight.getDetectedServices())
+                        .contains("gateway", "auth-service", "account-service", "statistics-service", "notification-service")
+                        .doesNotContain("monitoring", "turbine-stream-service");
+                assertThat(preflight.getServicePorts().get("account-service")).isEqualTo(6000);
+                assertThat(preflight.getServicePorts().get("auth-service")).isEqualTo(5000);
+                assertThat(preflight.getServicePorts().get("statistics-service")).isEqualTo(7000);
+                assertThat(preflight.getServicePorts().get("notification-service")).isEqualTo(8000);
+                assertThat(preflight.getDetectedEndpoints())
+                        .anyMatch(ep -> "gateway".equals(ep.getService()) && ep.getPath().startsWith("/accounts"))
+                        .anyMatch(ep -> "gateway".equals(ep.getService()) && ep.getPath().startsWith("/uaa/users"))
+                        .anyMatch(ep -> "gateway".equals(ep.getService()) && ep.getPath().startsWith("/statistics"))
+                        .anyMatch(ep -> "gateway".equals(ep.getService()) && ep.getPath().startsWith("/notifications"));
+                assertThat(preflight.getRequiredEnvVars())
+                        .noneMatch(v -> "USER_REQUIRED".equals(v.getResolution()));
+            } else if ("E-Mart-Microservices".equals(repoName)) {
+                assertThat(preflight.getDetectedServices())
+                        .contains("api-gateway", "eureka-server", "user-service", "product-service", "order-service", "sandbox-mysql");
+                assertThat(preflight.getDetectedEndpoints())
+                        .anyMatch(ep -> "api-gateway".equals(ep.getService()));
             }
 
             // Step 3 variable normalization & payload binding check
