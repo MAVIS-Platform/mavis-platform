@@ -2428,6 +2428,8 @@ test("Screen Guided Tour catalog covers all 28 screens with bilingual EN/VI step
   "src/components/shared/screen-guided-tour.tsx"
  ].map(f=>fs.readFileSync(path.join(root,f),"utf8")).join("\n");
  assert.ok(tourFiles.includes('hasAttribute("data-tour-trigger")'),"findBestTargetElement must skip [data-tour-trigger] buttons");
+ assert.ok(!fs.readFileSync(path.join(root,"src/features/runtime/backend.tsx"),"utf8").includes("Split View"),"Runtime sessions must only offer Topology and Sequence tabs without Split View");
+ assert.ok(tourFiles.includes('data-tour-tab="sess-topology"')&&tourFiles.includes('data-tour-tab="sess-sequence"'),"Runtime sessions must expose data-tour-tab on Topology and Sequence buttons");
  for(const id of expectedScreens){
   const tour=resolveScreenTour(id);
   for(const step of tour.steps){
