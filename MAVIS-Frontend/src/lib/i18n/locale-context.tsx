@@ -1836,33 +1836,20 @@ function AutoDomTranslator({ locale }: { locale: Locale }) {
 
 export function LocaleSwitchButton() {
   const { locale, toggleLocale } = useLocale();
+  const label =
+    locale === "vi"
+      ? "Chuyển sang Tiếng Anh (Switch to English)"
+      : "Chuyển sang Tiếng Việt (Switch to Vietnamese)";
   return (
     <button
       type="button"
       data-no-translate
       onClick={toggleLocale}
-      title={locale === "vi" ? "Chuyển sang Tiếng Anh (Switch to English)" : "Chuyển sang Tiếng Việt (Switch to Vietnamese)"}
-      aria-label="Toggle language between English and Vietnamese"
-      className="inline-flex h-9 items-center gap-1 rounded-full border border-border bg-muted/40 p-0.5 text-xs font-semibold transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      title={label}
+      aria-label={label}
+      className="inline-flex size-11 items-center justify-center rounded-md text-xs font-semibold cursor-pointer transition-colors hover:bg-accent active:bg-pressed hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
-      <span
-        className={`rounded-full px-2 py-1 transition ${
-          locale === "en"
-            ? "bg-primary text-primary-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground"
-        }`}
-      >
-        EN
-      </span>
-      <span
-        className={`rounded-full px-2 py-1 transition ${
-          locale === "vi"
-            ? "bg-primary text-primary-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground"
-        }`}
-      >
-        VI
-      </span>
+      {locale === "vi" ? "VI" : "EN"}
     </button>
   );
 }
