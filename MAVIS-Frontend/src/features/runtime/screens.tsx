@@ -2830,10 +2830,21 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             const primaryFlow = sentences[0] ?? aiSummary;
             const coverageNote = sentences.slice(1).join(" ");
             const colonIdx = primaryFlow.indexOf(":");
-            const flowLead = colonIdx > 0 && colonIdx < 48 ? primaryFlow.slice(0, colonIdx).trim() : "Scenario Flow Summary";
-            const flowBody = colonIdx > 0 && colonIdx < 48 ? primaryFlow.slice(colonIdx + 1).trim() : primaryFlow;
+            const thatMatch = /^(?:end-to-end\s+)?(?:top-down\s+)?business\s+journey\s+(?:that|which)\s+/i.exec(primaryFlow);
+            const flowLead =
+              colonIdx > 0 && colonIdx < 48
+                ? primaryFlow.slice(0, colonIdx).trim()
+                : "Scenario Flow Summary";
+            const flowBody =
+              colonIdx > 0 && colonIdx < 48
+                ? primaryFlow.slice(colonIdx + 1).trim()
+                : thatMatch
+                  ? primaryFlow.slice(thatMatch[0].length).trim()
+                  : primaryFlow;
             const flowStages = flowBody
-              .split(/\s*(?:;|,\s*(?=(?:then\s+)?(?:register|login|seed|create|read|add|preview|apply|perform|checkout|verify|call|invoke|check|update|cancel)\b))\s*/i)
+              .split(
+                /\s*(?:;|,\s*(?=(?:then\s+)?(?:registers?|logins?|seeds?|creates?|reads?|adds?|previews?|applies|apply|performs?|checkouts?|verifies|verify|calls?|invokes?|checks?|updates?|cancels?|places?|fetches?|validates?)\b))\s*/i,
+              )
               .map((part) => part.replace(/^then\s+/i, "").replace(/\.$/, "").trim())
               .filter(Boolean);
             return (
