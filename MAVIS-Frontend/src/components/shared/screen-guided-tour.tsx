@@ -30,10 +30,20 @@ export function findBestTargetElement(selectors: readonly string[]): HTMLElement
     try {
       const elements = document.querySelectorAll<HTMLElement>(selector);
       for (const el of elements) {
-        if (el.hasAttribute("data-tour-trigger") || el.closest("[data-tour-trigger]")) {
+        if (
+          el.hasAttribute("data-tour-trigger") ||
+          el.closest?.("[data-tour-trigger]") ||
+          el.hasAttribute("data-screen-tour-active") ||
+          el.closest?.("[data-screen-tour-active]") ||
+          el.closest?.('[role="dialog"]')
+        ) {
           continue;
         }
         const rect = el.getBoundingClientRect();
+        const tag = (el.tagName || "").toLowerCase();
+        if (tag === "svg" && (rect.width < 120 || rect.height < 80)) {
+          continue;
+        }
         if (rect.width > 8 && rect.height > 8) {
           return el;
         }
@@ -43,6 +53,41 @@ export function findBestTargetElement(selectors: readonly string[]): HTMLElement
     }
   }
   return null;
+}
+
+function getHeaderFloor(el: HTMLElement): number {
+  if (typeof document === "undefined") return 8;
+  const tag = (el.tagName || "").toLowerCase();
+  if (tag === "aside" || el.closest?.("aside")) return 8;
+  const headerEl = document.querySelector("header");
+  if (!headerEl) return 8;
+  const hr = headerEl.getBoundingClientRect();
+  return hr.bottom > 0 && hr.bottom <= 120 ? Math.max(8, Math.round(hr.bottom + 8)) : 8;
+}
+
+function scrollTargetIntoSpotlightView(targetEl: HTMLElement) {
+  if (typeof window === "undefined") return;
+  try {
+    targetEl.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" as ScrollBehavior });
+  } catch {
+    targetEl.scrollIntoView();
+  }
+  const r = targetEl.getBoundingClientRect();
+  const minTop = getHeaderFloor(targetEl);
+  const vh = window.innerHeight;
+  const availableHeight = Math.max(180, vh - minTop - 235);
+  const desiredTop =
+    r.height >= availableHeight
+      ? minTop + 6
+      : minTop + Math.max(10, Math.min(72, Math.round((availableHeight - r.height) / 2)));
+  const deltaY = r.top - desiredTop;
+  if (Math.abs(deltaY) > 6 && typeof window.scrollBy === "function") {
+    try {
+      window.scrollBy({ top: deltaY, left: 0, behavior: "instant" as ScrollBehavior });
+    } catch {
+      window.scrollBy(0, deltaY);
+    }
+  }
 }
 
 export function ScreenHelpTrigger({
@@ -165,11 +210,6 @@ export function ScreenSpotlightOverlay({
   useEffect(() => {
     if (!currentStep || typeof window === "undefined") return;
 
-    const targetEl = findBestTargetElement(currentStep.selectors);
-    if (targetEl) {
-      targetEl.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-    }
-
     let rafId = 0;
     const measure = () => {
       setViewport({ width: window.innerWidth, height: window.innerHeight });
@@ -180,11 +220,21 @@ export function ScreenSpotlightOverlay({
       }
       const r = el.getBoundingClientRect();
       const pad = 6;
-      const top = Math.max(8, r.top - pad);
-      const left = Math.max(8, r.left - pad);
-      const width = Math.min(window.innerWidth - left - 8, r.width + pad * 2);
-      const height = Math.min(window.innerHeight - 16, Math.min(r.height + pad * 2, window.innerHeight * 0.68));
-      setRect({ top, left, width, height });
+      const minTop = getHeaderFloor(el);
+      const top = Math.max(minTop, Math.min(window.innerHeight - 36, r.top - pad));
+      const left = Math.max(8, Math.min(window.innerWidth - 36, r.left - pad));
+      const right = Math.min(window.innerWidth - 8, Math.max(left + 28, (r.right ?? r.left + r.width) + pad));
+      const rawBottom = (r.bottom ?? r.top + r.height) + pad;
+      const bottom = Math.min(window.innerHeight - 8, Math.max(top + 28, rawBottom));
+      setRect({ top, left, width: right - left, height: bottom - top });
+    };
+
+    const scrollAndMeasure = () => {
+      const targetEl = findBestTargetElement(currentStep.selectors);
+      if (targetEl) {
+        scrollTargetIntoSpotlightView(targetEl);
+      }
+      measure();
     };
 
     const scheduleMeasure = () => {
@@ -192,8 +242,9 @@ export function ScreenSpotlightOverlay({
       rafId = requestAnimationFrame(measure);
     };
 
-    scheduleMeasure();
-    const timer = window.setTimeout(scheduleMeasure, 180);
+    scrollAndMeasure();
+    const timer1 = window.setTimeout(scrollAndMeasure, 60);
+    const timer2 = window.setTimeout(scheduleMeasure, 180);
     window.addEventListener("resize", scheduleMeasure, { passive: true });
     window.addEventListener("scroll", scheduleMeasure, { capture: true, passive: true });
 
@@ -214,7 +265,8 @@ export function ScreenSpotlightOverlay({
 
     return () => {
       cancelAnimationFrame(rafId);
-      window.clearTimeout(timer);
+      window.clearTimeout(timer1);
+      window.clearTimeout(timer2);
       window.removeEventListener("resize", scheduleMeasure);
       window.removeEventListener("scroll", scheduleMeasure, true);
       window.removeEventListener("keydown", onKeyDown);
@@ -230,20 +282,24 @@ export function ScreenSpotlightOverlay({
 
   if (rect) {
     const spaceBelow = viewport.height - (rect.top + rect.height);
-    const spaceAbove = rect.top;
+    const spaceAbove = rect.top - 64;
     const spaceRight = viewport.width - (rect.left + rect.width);
+    const spaceLeft = rect.left;
 
     if (spaceBelow >= 230) {
       cardTop = Math.min(viewport.height - 230, rect.top + rect.height + 14);
       cardLeft = Math.min(Math.max(16, rect.left), viewport.width - cardWidth - 16);
-    } else if (spaceAbove >= 230) {
-      cardTop = Math.max(16, rect.top - 220);
+    } else if (spaceAbove >= 220) {
+      cardTop = Math.max(72, rect.top - 220);
       cardLeft = Math.min(Math.max(16, rect.left), viewport.width - cardWidth - 16);
     } else if (spaceRight >= cardWidth + 24) {
-      cardTop = Math.min(Math.max(16, rect.top), viewport.height - 230);
+      cardTop = Math.min(Math.max(72, rect.top), viewport.height - 230);
       cardLeft = rect.left + rect.width + 16;
+    } else if (spaceLeft >= cardWidth + 24) {
+      cardTop = Math.min(Math.max(72, rect.top), viewport.height - 230);
+      cardLeft = rect.left - cardWidth - 16;
     } else {
-      cardTop = Math.max(16, viewport.height - 240);
+      cardTop = Math.max(72, viewport.height - 240);
       cardLeft = Math.max(16, viewport.width - cardWidth - 20);
     }
   }

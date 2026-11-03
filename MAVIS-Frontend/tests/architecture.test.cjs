@@ -2408,10 +2408,14 @@ test("Screen Guided Tour catalog covers all 28 screens with bilingual EN/VI step
  const {findBestTargetElement}=require("../src/components/shared/screen-guided-tour.tsx");
  const origDoc=global.document;
  try{
-  const triggerBtn={hasAttribute:(k)=>k==="data-tour-trigger",closest:()=>null,getBoundingClientRect:()=>({width:36,height:36})};
-  const realBtn={hasAttribute:()=>false,closest:()=>null,getBoundingClientRect:()=>({width:140,height:36})};
-  global.document={querySelectorAll:(sel)=>sel==="main button"?[triggerBtn,realBtn]:[]};
-  assert.equal(findBestTargetElement(["main button"]),realBtn,"findBestTargetElement must skip [data-tour-trigger] buttons and select the real action button");
+  const triggerBtn={tagName:"BUTTON",hasAttribute:(k)=>k==="data-tour-trigger",closest:()=>null,getBoundingClientRect:()=>({width:36,height:36})};
+  const overlayCard={tagName:"DIV",hasAttribute:()=>false,closest:(sel)=>sel==="[data-screen-tour-active]"?{}:null,getBoundingClientRect:()=>({width:360,height:210})};
+  const tinyIconSvg={tagName:"svg",hasAttribute:()=>false,closest:()=>null,getBoundingClientRect:()=>({width:20,height:20})};
+  const realBtn={tagName:"BUTTON",hasAttribute:()=>false,closest:()=>null,getBoundingClientRect:()=>({width:140,height:36})};
+  const realDiagramSvg={tagName:"svg",hasAttribute:()=>false,closest:()=>null,getBoundingClientRect:()=>({width:640,height:420})};
+  global.document={querySelectorAll:(sel)=>sel==="main button"?[triggerBtn,overlayCard,realBtn]:sel==="main svg"?[tinyIconSvg,realDiagramSvg]:[]};
+  assert.equal(findBestTargetElement(["main button"]),realBtn,"findBestTargetElement must skip [data-tour-trigger] and [data-screen-tour-active] elements");
+  assert.equal(findBestTargetElement(["main svg"]),realDiagramSvg,"findBestTargetElement must skip small icon SVGs (<120x80) and select diagram SVGs");
  }finally{
   global.document=origDoc;
  }
