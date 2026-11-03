@@ -178,19 +178,40 @@ class MocHuongProductionAuditTest {
         assertThat(addressEp.getRequestBodyType()).isEqualTo("AddressRequest");
         assertThat(json.readTree(addressEp.getSampleJsonBody()).path("provinceCode").asText()).isEqualTo("79");
 
+        // Verify CheckoutRequest DTO preserves Java @NotBlank fields (paymentMethod="COD", idempotencyKey) even when TS interface exists
+        DetectedEndpointDTO checkoutEp = preflight.getDetectedEndpoints().stream()
+                .filter(ep -> "POST".equals(ep.getMethod()) && "/api/order/orders/checkout".equals(ep.getPath()) && "api-gateway".equals(ep.getService()))
+                .findFirst().orElseThrow();
+        assertThat(json.readTree(checkoutEp.getSampleJsonBody()).path("paymentMethod").asText()).isEqualTo("COD");
+        assertThat(json.readTree(checkoutEp.getSampleJsonBody()).path("idempotencyKey").asText()).isNotBlank();
+
+        // Verify UpdateOrderStatusRequest uses valid OrderStatus ("CONFIRMED") instead of generic "ACTIVE"
+        DetectedEndpointDTO orderStatusEp = preflight.getDetectedEndpoints().stream()
+                .filter(ep -> "PUT".equals(ep.getMethod()) && "/api/order/admin/orders/{orderId}/status".equals(ep.getPath()) && "api-gateway".equals(ep.getService()))
+                .findFirst().orElseThrow();
+        assertThat(json.readTree(orderStatusEp.getSampleJsonBody()).path("status").asText()).isEqualTo("CONFIRMED");
+
         // Verify APP_INTERNAL_SECRET is detected across both catalog-service (@Value in Java) and order-service (application.yml)
         RequiredEnvVarDTO internalSecretVar = preflight.getRequiredEnvVars().stream()
                 .filter(v -> "APP_INTERNAL_SECRET".equals(v.getName()))
                 .findFirst().orElseThrow();
         assertThat(internalSecretVar.getServices()).contains("catalog-service", "order-service");
 
-        // Verify Step 2 FULL_AUTO causal order: register BEFORE login, covers identity + catalog + order + notification readiness
+        // Verify Step 2 FULL_AUTO causal order: register BEFORE login, covers identity + catalog + order + notification readiness, and excludes internal Feign routes
         GeneratedScenarioDraftView fullDraft = draftsByGoal.get("FULL_AUTO");
         assertThat(fullDraft.steps().get(0).path()).isEqualTo("/api/identity/auth/register");
         assertThat(fullDraft.steps().get(1).path()).isEqualTo("/api/identity/auth/login");
         assertThat(fullDraft.steps().get(1).extract()).containsEntry("AUTH_TOKEN", "/data/accessToken");
         assertThat(fullDraft.steps()).anyMatch(s -> s.path().startsWith("/api/catalog/"));
         assertThat(fullDraft.steps()).anyMatch(s -> s.path().startsWith("/api/order/"));
+        assertThat(fullDraft.steps()).noneMatch(s -> s.path().endsWith("/deduct") || s.path().endsWith("/restore")
+                || s.path().endsWith("/batch-info") || s.path().endsWith("/complete"));
+
+        // Verify Admin & Compensating flow attaches elevated Authorization envHeader to internal/staff endpoints (/deduct, /restore)
+        GeneratedScenarioDraftView compDraft = draftsByGoal.get(testGoals[4]);
+        assertThat(compDraft.steps().stream().filter(s -> s.path().endsWith("/deduct") || s.path().endsWith("/restore")).toList())
+                .isNotEmpty()
+                .allSatisfy(s -> assertThat(s.envHeaders()).isNotEmpty());
 
         // Verify focused goals produce distinct domain-specific scenarios
         GeneratedScenarioDraftView authDraft = draftsByGoal.get(testGoals[1]);

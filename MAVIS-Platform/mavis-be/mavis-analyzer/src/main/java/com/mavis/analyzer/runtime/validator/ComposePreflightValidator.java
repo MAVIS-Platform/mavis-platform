@@ -1712,7 +1712,12 @@ public class ComposePreflightValidator {
             }
             if (!reqFields.isEmpty()) {
                 dtoSchemas.merge(className, reqFields, (oldMap, newMap) -> {
-                    newMap.forEach(oldMap::putIfAbsent);
+                    newMap.forEach((k, v) -> {
+                        String oldVal = oldMap.get(k);
+                        if (oldVal == null || (v.contains("|") && !oldVal.contains("|"))) {
+                            oldMap.put(k, v);
+                        }
+                    });
                     return oldMap;
                 });
             }
@@ -1886,6 +1891,8 @@ public class ComposePreflightValidator {
             Object val = synthesizeFieldValue(fName, fType, dtoSchemas, enumFirstValues, depth);
             if (isCouponDto && lowField.contains("code") && "SKU-LAPTOP-01".equals(val)) {
                 val = "SAVE10";
+            } else if (lowDto.contains("order") && lowField.contains("status") && "ACTIVE".equals(val)) {
+                val = "CONFIRMED";
             }
             if (val != null) {
                 out.put(fName, val);

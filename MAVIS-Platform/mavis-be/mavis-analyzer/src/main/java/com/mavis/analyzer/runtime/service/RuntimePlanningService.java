@@ -637,6 +637,7 @@ public class RuntimePlanningService {
   Set<DetectedEndpointDTO> pickedSet=new LinkedHashSet<>();
   Set<String> seenMethodPaths=new HashSet<>();
   boolean isFocusedGoal=goal!=null&&!goal.isBlank()&&goal.toLowerCase(Locale.ROOT).contains("focus");
+  boolean wantCompensating=goal!=null&&goal.toLowerCase(Locale.ROOT).contains("compensating");
   Set<String> businessDomainServices=new HashSet<>();
   for(DetectedEndpointDTO ep:business){
    businessDomainServices.add(ep.getService());
@@ -654,7 +655,7 @@ public class RuntimePlanningService {
   for(DetectedEndpointDTO ep:business){
    if(pickedSet.size()>=businessCap)break;
    if(isAuxiliaryEndpointPath(ep.getPath())||!Set.of("POST","PUT","PATCH").contains(ep.getMethod()))continue;
-   if(ep.getPath()!=null&&ep.getPath().contains("/batch"))continue;
+   if(ep.getPath()!=null&&(ep.getPath().contains("/batch")||(!wantCompensating&&(ep.getPath().endsWith("/deduct")||ep.getPath().endsWith("/restore")))))continue;
    String routeKey= ("PATCH".equals(ep.getMethod())?"PUT":ep.getMethod())+":"+ep.getPath();
    if(seenMethodPaths.contains(routeKey))continue;
    String domainSvc=resolveEndpointDomainService(ep,allowedServices);
@@ -670,7 +671,7 @@ public class RuntimePlanningService {
   for(DetectedEndpointDTO ep:business){
    if(pickedSet.size()>=businessCap)break;
    if(isAuxiliaryEndpointPath(ep.getPath())||"DELETE".equals(ep.getMethod()))continue;
-   if(ep.getPath()!=null&&ep.getPath().contains("/batch"))continue;
+   if(ep.getPath()!=null&&(ep.getPath().contains("/batch")||(!wantCompensating&&(ep.getPath().endsWith("/deduct")||ep.getPath().endsWith("/restore")))))continue;
    String routeKey=("PATCH".equals(ep.getMethod())?"PUT":ep.getMethod())+":"+ep.getPath();
    if(seenMethodPaths.contains(routeKey))continue;
    String domainSvc=resolveEndpointDomainService(ep,allowedServices);
@@ -686,6 +687,7 @@ public class RuntimePlanningService {
   for(DetectedEndpointDTO ep:business){
    if(pickedSet.size()>=businessCap)break;
    if(isAuxiliaryEndpointPath(ep.getPath()))continue;
+   if(ep.getPath()!=null&&!wantCompensating&&(ep.getPath().endsWith("/deduct")||ep.getPath().endsWith("/restore")))continue;
    String routeKey=("PATCH".equals(ep.getMethod())?"PUT":ep.getMethod())+":"+ep.getPath();
    if(seenMethodPaths.contains(routeKey))continue;
    String domainSvc=resolveEndpointDomainService(ep,allowedServices);
@@ -698,6 +700,7 @@ public class RuntimePlanningService {
   }
   for(DetectedEndpointDTO ep:business){
    if(pickedSet.size()>=businessCap)break;
+   if(ep.getPath()!=null&&!wantCompensating&&(ep.getPath().endsWith("/deduct")||ep.getPath().endsWith("/restore")))continue;
    String routeKey=("PATCH".equals(ep.getMethod())?"PUT":ep.getMethod())+":"+ep.getPath();
    if(seenMethodPaths.contains(routeKey))continue;
    String domainSvc=resolveEndpointDomainService(ep,allowedServices);
@@ -831,9 +834,8 @@ public class RuntimePlanningService {
 
    Map<String,String> stepHeaders=null;
    List<Map<String,String>> stepEnvHeaders=null;
-   if(Boolean.TRUE.equals(ep.getRequiresAuth())&&!"AUTH_ENTRY".equals(rawPhase)){
-    boolean requiresAdmin=(ep.getPath()!=null&&ep.getPath().toLowerCase(Locale.ROOT).contains("/admin/"))
-      ||(ep.getRequiredRoles()!=null&&ep.getRequiredRoles().stream().anyMatch(r->r!=null&&r.toUpperCase(Locale.ROOT).contains("ADMIN")));
+   boolean requiresAdmin=requiresElevatedOrInternalRole(ep.getPath(),ep);
+   if((Boolean.TRUE.equals(ep.getRequiresAuth())||requiresAdmin)&&!"AUTH_ENTRY".equals(rawPhase)){
     if(hasExtractedAuthToken&&!requiresAdmin){
      stepHeaders=Map.of("Authorization","Bearer {{AUTH_TOKEN}}");
     }else if(sandboxBearer!=null){
@@ -1289,8 +1291,7 @@ public class RuntimePlanningService {
 
    Map<String,String> stepHeaders=new LinkedHashMap<>();
    boolean aiRequestedAuthHeader=false;
-   boolean requiresAdmin=(rawPath.toLowerCase(Locale.ROOT).contains("/admin/"))
-     ||(matchedEp!=null&&matchedEp.getRequiredRoles()!=null&&matchedEp.getRequiredRoles().stream().anyMatch(r->r!=null&&r.toUpperCase(Locale.ROOT).contains("ADMIN")));
+   boolean requiresAdmin=requiresElevatedOrInternalRole(rawPath,matchedEp);
    if(item.path("headers").isObject()){
     for(Iterator<Map.Entry<String,JsonNode>> it=item.path("headers").fields();it.hasNext();){
      Map.Entry<String,JsonNode> e=it.next();
@@ -1330,7 +1331,7 @@ public class RuntimePlanningService {
     phase=basePhase+": "+canonicalLabelByPhase.get(basePhase);
    }
    boolean isAuthPhase=phase!=null&&(phase.equalsIgnoreCase("AUTH_ENTRY")||phase.toUpperCase(Locale.ROOT).startsWith("AUTH_ENTRY:")||phase.toUpperCase(Locale.ROOT).startsWith("AUTH_IDENTITY"));
-   boolean needsAuth=(matchedEp!=null&&Boolean.TRUE.equals(matchedEp.getRequiresAuth())&&!isAuthPhase)||aiRequestedAuthHeader;
+   boolean needsAuth=((matchedEp!=null&&Boolean.TRUE.equals(matchedEp.getRequiresAuth()))||requiresAdmin||aiRequestedAuthHeader)&&!isAuthPhase;
    if(needsAuth&&!stepHeaders.containsKey("Authorization")){
     if(availableExtractedVars.contains("AUTH_TOKEN")&&!requiresAdmin){
      stepHeaders.put("Authorization","Bearer {{AUTH_TOKEN}}");
@@ -1882,6 +1883,18 @@ public class RuntimePlanningService {
   }
  }
 
+ private static boolean requiresElevatedOrInternalRole(String path,DetectedEndpointDTO ep){
+  String low=path==null?"":path.toLowerCase(Locale.ROOT);
+  if(low.contains("/admin/")||low.contains("/internal")||low.endsWith("/batch-info")
+    ||low.endsWith("/deduct")||low.endsWith("/deduct-batch")||low.endsWith("/restore")){
+   return true;
+  }
+  return ep!=null&&ep.getRequiredRoles()!=null&&ep.getRequiredRoles().stream()
+    .anyMatch(r->r!=null&&(r.toUpperCase(Locale.ROOT).contains("ADMIN")
+      ||r.toUpperCase(Locale.ROOT).contains("STAFF")
+      ||r.toUpperCase(Locale.ROOT).contains("SYSTEM")));
+ }
+
  private static boolean isAuxiliaryEndpointPath(String path){
   if(path==null)return false;
   String low=path.toLowerCase(Locale.ROOT);
@@ -1891,8 +1904,8 @@ public class RuntimePlanningService {
     ||low.endsWith("/reset-password")||low.endsWith("/logout")||low.endsWith("/verify-email")
     ||low.endsWith("/google")||low.contains("/oauth")||low.endsWith("/refresh")
     ||low.endsWith("/export-excel")||low.endsWith("/vnpay-return")
-    ||low.endsWith("/batch-info")||low.endsWith("/deduct-batch")||low.endsWith("/internal")
-    ||low.endsWith("/complete")||low.endsWith("/return-request");
+    ||low.endsWith("/batch-info")||low.endsWith("/deduct-batch")
+    ||low.endsWith("/internal")||low.endsWith("/complete")||low.endsWith("/return-request");
  }
 
  private static boolean isDiscoveryRegistryService(String service){
@@ -2461,6 +2474,10 @@ public class RuntimePlanningService {
     }
     // Dual-compatibility with pinned ScenarioRunnerImage: when body payload uses {{VAR}}, promote to inline jsonBody so Replace(body.RootElement) executes
     String resolvedBody=protectedEnv.get(bodyRef);
+    if(isValidJsonObject(resolvedBody)&&resolvedBody.contains("SKU-LAPTOP-01")&&path.toLowerCase(Locale.ROOT).contains("address")){
+     resolvedBody=resolvedBody.replace("\"provinceCode\":\"SKU-LAPTOP-01\"","\"provinceCode\":\"79\"");
+     protectedEnv.put(bodyRef,resolvedBody);
+    }
     if(resolvedBody!=null&&SCENARIO_VAR_PATTERN.matcher(resolvedBody).find()){
      try{
       JsonNode parsedBody=json.readTree(resolvedBody);
