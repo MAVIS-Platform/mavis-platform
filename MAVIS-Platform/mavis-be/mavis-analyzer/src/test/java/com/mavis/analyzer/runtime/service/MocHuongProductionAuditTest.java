@@ -171,6 +171,19 @@ class MocHuongProductionAuditTest {
         assertThat(loginEp.getSampleJsonBody()).contains("email", "password");
         assertThat(loginEp.getResponseFields()).contains("/data/accessToken");
 
+        // Verify AddressRequest DTO synthesis uses a <= 10 char provinceCode ("79") instead of "SKU-LAPTOP-01"
+        DetectedEndpointDTO addressEp = preflight.getDetectedEndpoints().stream()
+                .filter(ep -> "POST".equals(ep.getMethod()) && "/api/identity/users/me/addresses".equals(ep.getPath()) && "api-gateway".equals(ep.getService()))
+                .findFirst().orElseThrow();
+        assertThat(addressEp.getRequestBodyType()).isEqualTo("AddressRequest");
+        assertThat(json.readTree(addressEp.getSampleJsonBody()).path("provinceCode").asText()).isEqualTo("79");
+
+        // Verify APP_INTERNAL_SECRET is detected across both catalog-service (@Value in Java) and order-service (application.yml)
+        RequiredEnvVarDTO internalSecretVar = preflight.getRequiredEnvVars().stream()
+                .filter(v -> "APP_INTERNAL_SECRET".equals(v.getName()))
+                .findFirst().orElseThrow();
+        assertThat(internalSecretVar.getServices()).contains("catalog-service", "order-service");
+
         // Verify Step 2 FULL_AUTO causal order: register BEFORE login, covers identity + catalog + order + notification readiness
         GeneratedScenarioDraftView fullDraft = draftsByGoal.get("FULL_AUTO");
         assertThat(fullDraft.steps().get(0).path()).isEqualTo("/api/identity/auth/register");

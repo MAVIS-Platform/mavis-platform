@@ -1493,7 +1493,7 @@ function inferStepSampleBody(
     return '{"productId":1,"orderId":1,"rating":5,"comment":"San pham chat luong tot"}';
   }
   if (lower.includes("address")) {
-    return '{"receiverName":"Nguyen Van A","phone":"0901234567","province":"TP.HCM","district":"Quan 1","ward":"Ben Nghe","streetAddress":"123 Le Loi","isDefault":true}';
+    return '{"recipientName":"Nguyen Van A","receiverName":"Nguyen Van A","recipientPhone":"0901234567","phone":"0901234567","provinceCode":"79","provinceName":"TP.HCM","province":"TP.HCM","districtName":"Quan 1","district":"Quan 1","wardName":"Ben Nghe","ward":"Ben Nghe","streetAddress":"123 Le Loi","isDefault":true}';
   }
   if (lower.includes("product") || lower.includes("catalog") || lower.includes("inventory") || lower.includes("item")) {
     return '{"code":"SKU-MOUSE-02","name":"Wireless Mouse","price":49.00,"stock":20,"quantity":1,"categoryId":1}';
@@ -1587,6 +1587,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     "gateway";
 
   const [scenarioName, setScenarioName] = useState("Auto-generated Architecture Verification Scenario");
+  const [flowPreset, setFlowPreset] = useState("");
   const [aiGoal, setAiGoal] = useState("");
   const [aiSummary, setAiSummary] = useState("");
   const [generatorMode, setGeneratorMode] = useState<"AI_ASSISTED" | "SYSTEM_STATIC" | "LOCAL_STATIC">("LOCAL_STATIC");
@@ -1615,6 +1616,95 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     const raw = (config.data?.profile as { detectedEndpoints?: Array<{ service?: string; method?: string; path?: string; source?: string; expectedStatus?: number; sampleJsonBody?: string; requiresAuth?: boolean }> } | undefined)?.detectedEndpoints;
     return Array.isArray(raw) ? raw : [];
   }, [config.data?.profile]);
+
+  const flowPresetOptions = useMemo(() => {
+    const domainServices = runnableServices.filter((s) => !/discovery|eureka|consul|config-server/i.test(s));
+    const options: Array<{ value: string; label: string; defaultTitle: string }> = [
+      {
+        value: "",
+        label: `Full End-to-End Architecture Flow (${domainServices.length || runnableServices.length || 1} services)`,
+        defaultTitle: "End-to-End Business Journey Verification",
+      },
+    ];
+    const clusterGoals: Record<string, { label: string; goal: string; defaultTitle: string }> = {
+      AUTH_IDENTITY: {
+        label: "Auth & User Identity Flow",
+        goal: "Focus on Auth & User Identity flow: register, login, token issuance, and user profile/address verification",
+        defaultTitle: "Auth & User Identity Verification Scenario",
+      },
+      CATALOG_INVENTORY: {
+        label: "Catalog & Inventory Flow",
+        goal: "Focus on Catalog & Inventory flow: categories, products, variants, and inventory lookup",
+        defaultTitle: "Catalog & Inventory Verification Scenario",
+      },
+      ORDER_CART: {
+        label: "Order, Cart & Coupon Checkout Flow",
+        goal: "Focus on Order, Cart & Coupon Checkout flow: cart operations, coupons, checkout, and order verification",
+        defaultTitle: "Order, Cart, Coupon Checkout & Payment Scenario",
+      },
+      PAYMENT_BILLING: {
+        label: "Payment & Billing Flow",
+        goal: "Focus on Payment & Checkout flow: payment URL generation, billing, and transaction verification",
+        defaultTitle: "Payment & Billing Verification Scenario",
+      },
+      NOTIFICATION: {
+        label: "Notification & Messaging Flow",
+        goal: "Focus on Notification & Messaging flow: alerts, email/push dispatch, and status checks",
+        defaultTitle: "Notification & Messaging Verification Scenario",
+      },
+    };
+    const seenClusterIds = new Set<string>();
+    for (const ep of discoveredEndpoints) {
+      const p = (ep.path || "").toLowerCase();
+      if (["/health", "/actuator/health", "/ready", "/readyz"].includes(p)) continue;
+      const meta = classifyApiFeatureCluster(ep.path, ep.service, ep.service);
+      if (clusterGoals[meta.id]) {
+        seenClusterIds.add(meta.id);
+      }
+    }
+    for (const key of ["AUTH_IDENTITY", "CATALOG_INVENTORY", "ORDER_CART", "PAYMENT_BILLING", "NOTIFICATION"]) {
+      if (seenClusterIds.has(key) && clusterGoals[key]) {
+        options.push({
+          value: clusterGoals[key]!.goal,
+          label: clusterGoals[key]!.label,
+          defaultTitle: clusterGoals[key]!.defaultTitle,
+        });
+      }
+    }
+    for (const svc of domainServices) {
+      if (/gateway|bff|edge|proxy/i.test(svc)) continue;
+      const svcCluster = classifyApiFeatureCluster("", svc, svc);
+      if (seenClusterIds.has(svcCluster.id)) continue;
+      const cleanTitle = svc
+        .replace(/-service$/i, "")
+        .split(/[-_]+/)
+        .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : ""))
+        .join(" ");
+      options.push({
+        value: `Focus on service ${svc}: test primary workflow and state verification endpoints of ${svc}`,
+        label: `${cleanTitle} Workflow (${svc})`,
+        defaultTitle: `${cleanTitle} Service Verification Scenario`,
+      });
+    }
+    options.push(
+      {
+        value: "Focus on read-only smoke verification: test GET and readiness endpoints across all services",
+        label: "Read-Only Smoke & Health Flow (GET only)",
+        defaultTitle: "Read-Only Smoke & Health Verification Scenario",
+      },
+      {
+        value: "Focus on compensating transactions, status updates, and cancellation/edge-case flows",
+        label: "Edge-Case, Status & Compensation Flow",
+        defaultTitle: "Admin & Compensating Workflow Scenario",
+      },
+      {
+        value: "__CUSTOM__",
+        label: "Custom Focus (Describe your own flow...)",
+        defaultTitle: scenarioName,
+      },
+    );
+    return options;
+  }, [discoveredEndpoints, runnableServices, scenarioName]);
 
   const step1Readiness = useMemo(() => {
     const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
@@ -2649,37 +2739,67 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               )}
             </FormField>
 
-            <FormField label="Custom Test Focus (Optional)">
+            <FormField label="Test Flow">
               {(props) => (
-                <div className="flex items-center gap-2">
-                  <Input
-                    {...props}
-                    className="flex-1"
-                    placeholder="Leave blank for full auto-flow, or describe a flow to test..."
-                    value={aiGoal}
-                    onChange={(e) => setAiGoal(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && snapshotId && !generateAiDraft.isPending) {
-                        e.preventDefault();
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <select
+                      {...props}
+                      className="h-10 flex-1 min-w-0 rounded-md border bg-card px-3 text-sm disabled:opacity-50"
+                      value={flowPreset}
+                      disabled={!snapshotId || generateAiDraft.isPending}
+                      onChange={(e) => {
+                        const nextPreset = e.target.value;
+                        setFlowPreset(nextPreset);
+                        if (nextPreset === "__CUSTOM__") {
+                          return;
+                        }
+                        const matchedOpt = flowPresetOptions.find((o) => o.value === nextPreset);
+                        if (matchedOpt?.defaultTitle) {
+                          setScenarioName(matchedOpt.defaultTitle);
+                        }
+                        setAiGoal(nextPreset);
                         setSelectedScenarioId("");
                         edited.current = false;
-                        triggerSystemAiGeneration(aiGoal);
-                      }
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="shrink-0 h-10"
-                    disabled={!snapshotId || generateAiDraft.isPending}
-                    onClick={() => {
-                      setSelectedScenarioId("");
-                      edited.current = false;
-                      triggerSystemAiGeneration(aiGoal);
-                    }}
-                  >
-                    {generateAiDraft.isPending ? "Generating..." : "Regenerate"}
-                  </Button>
+                        triggerSystemAiGeneration(nextPreset);
+                      }}
+                    >
+                      {flowPresetOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="shrink-0 h-10"
+                      disabled={!snapshotId || generateAiDraft.isPending}
+                      onClick={() => {
+                        setSelectedScenarioId("");
+                        edited.current = false;
+                        triggerSystemAiGeneration(flowPreset === "__CUSTOM__" ? aiGoal : flowPreset);
+                      }}
+                    >
+                      {generateAiDraft.isPending ? "Generating..." : "Regenerate"}
+                    </Button>
+                  </div>
+                  {flowPreset === "__CUSTOM__" && (
+                    <Input
+                      aria-label="Custom test focus"
+                      placeholder="Describe a custom flow or edge case to test and press Enter..."
+                      value={aiGoal}
+                      onChange={(e) => setAiGoal(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && snapshotId && !generateAiDraft.isPending) {
+                          e.preventDefault();
+                          setSelectedScenarioId("");
+                          edited.current = false;
+                          triggerSystemAiGeneration(aiGoal);
+                        }
+                      }}
+                    />
+                  )}
                 </div>
               )}
             </FormField>

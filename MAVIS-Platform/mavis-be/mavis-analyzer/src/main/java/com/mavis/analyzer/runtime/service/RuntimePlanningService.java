@@ -644,7 +644,9 @@ public class RuntimePlanningService {
   }
   boolean hasHttpLessRunnableService=!isFocusedGoal&&allowedServices.stream()
     .anyMatch(svc->!isDiscoveryRegistryService(svc)&&!businessDomainServices.contains(svc));
-  int businessCap=hasHttpLessRunnableService?9:10;
+  long runnableDomainCount=allowedServices.stream().filter(svc->!isDiscoveryRegistryService(svc)).count();
+  int totalCap=runnableDomainCount>4?Math.min(20,(int)(runnableDomainCount*2+2)):10;
+  int businessCap=hasHttpLessRunnableService?(totalCap-1):totalCap;
   int perSvcWriteCap=isFocusedGoal?4:2;
   int perSvcPass1Cap=isFocusedGoal?7:3;
   // Pass 1a: ensure transactional write endpoints (POST/PUT/PATCH) are represented per domain service before GETs fill the cap
@@ -716,14 +718,14 @@ public class RuntimePlanningService {
   });
   if(!isFocusedGoal){
    for(DetectedEndpointDTO hp:healthOnly){
-    if(pickedSet.size()>=10)break;
+    if(pickedSet.size()>=totalCap)break;
     if(!coveredServices.isEmpty()&&isDiscoveryRegistryService(hp.getService()))continue;
     if(coveredServices.add(hp.getService())){
      pickedSet.add(hp);
     }
    }
    for(String svc:allowedServices){
-    if(pickedSet.size()>=10)break;
+    if(pickedSet.size()>=totalCap)break;
     if(!coveredServices.isEmpty()&&isDiscoveryRegistryService(svc))continue;
     String probePath=serviceHealthPaths!=null?serviceHealthPaths.get(svc):null;
     if(probePath!=null&&probePath.startsWith("/")&&coveredServices.add(svc)){
@@ -897,9 +899,10 @@ public class RuntimePlanningService {
    endpointLookup.putIfAbsent(canonicalRouteKey(ep.getService(),ep.getMethod(),ep.getPath()),ep);
   }
 
+  int aiStepCap=Math.min(24,Math.max(12,(int)(allowedServices.stream().filter(s->!isDiscoveryRegistryService(s)).count()*3)));
   StringBuilder prompt=new StringBuilder();
   prompt.append("You are an elite Principal Distributed Systems Architect and Verification Planner for MAVIS.\n");
-  prompt.append("Design a TOP-DOWN, STATEFUL, END-TO-END Business Journey scenario (max 10 steps) using ONLY the allowed services and discovered endpoints below.\n");
+  prompt.append("Design a TOP-DOWN, STATEFUL, END-TO-END Business Journey scenario (target 8 to ").append(aiStepCap).append(" steps, scaling with the project's services so no workflow or service is truncated) using ONLY the allowed services and discovered endpoints below.\n");
   prompt.append("CRITICAL DESIGN RULES:\n");
   prompt.append("1. DO NOT generate isolated, naive per-table CRUD loops (avoid calling DELETE on seeded entities right after creating them unless testing a compensation/cancellation workflow).\n");
   prompt.append("2. Group consecutive steps into cohesive FUNCTIONAL FEATURE CLUSTERS based on the project's actual domain and controllers, following a Top-Down Business Journey:\n");
@@ -1066,9 +1069,32 @@ public class RuntimePlanningService {
   List<JsonNode> rawSteps=new ArrayList<>();
   parsed.path("steps").forEach(rawSteps::add);
   if(goal==null||!goal.toLowerCase(Locale.ROOT).contains("only")){
+   if(goal==null||goal.isBlank()){
+    boolean hasLogin=rawSteps.stream().anyMatch(n->"POST".equalsIgnoreCase(n.path("method").asText(""))
+      &&(n.path("path").asText("").toLowerCase(Locale.ROOT).endsWith("/login")||n.path("path").asText("").toLowerCase(Locale.ROOT).endsWith("/signin")));
+    boolean hasRegister=rawSteps.stream().anyMatch(n->"POST".equalsIgnoreCase(n.path("method").asText(""))
+      &&(n.path("path").asText("").toLowerCase(Locale.ROOT).endsWith("/register")||n.path("path").asText("").toLowerCase(Locale.ROOT).endsWith("/signup")));
+    if(hasLogin&&!hasRegister&&rawSteps.size()<aiStepCap){
+     DetectedEndpointDTO regEp=promptCandidates.stream()
+       .filter(ep->"POST".equalsIgnoreCase(ep.getMethod())&&ep.getPath()!=null
+         &&(ep.getPath().toLowerCase(Locale.ROOT).endsWith("/register")||ep.getPath().toLowerCase(Locale.ROOT).endsWith("/signup"))
+         &&allowedServices.contains(ep.getService()))
+       .findFirst().orElse(null);
+     if(regEp!=null){
+      ObjectNode regNode=json.createObjectNode();
+      regNode.put("service",regEp.getService());
+      regNode.put("method","POST");
+      regNode.put("path",regEp.getPath());
+      regNode.put("expectedStatus",regEp.getExpectedStatus()!=null?regEp.getExpectedStatus():201);
+      regNode.put("journeyPhase","AUTH_ENTRY: Auth & User Identity");
+      regNode.put("rationale","Register sandbox user account before login so authentication succeeds on a clean database.");
+      rawSteps.add(0,regNode);
+     }
+    }
+   }
    boolean hasOrderOrCheckoutWrite=rawSteps.stream().anyMatch(n->"POST".equalsIgnoreCase(n.path("method").asText(""))
      &&(n.path("path").asText("").toLowerCase(Locale.ROOT).endsWith("/checkout")||n.path("path").asText("").toLowerCase(Locale.ROOT).endsWith("/orders")));
-   if(!hasOrderOrCheckoutWrite&&rawSteps.size()<10){
+   if(!hasOrderOrCheckoutWrite&&rawSteps.size()<aiStepCap){
     DetectedEndpointDTO checkoutEp=promptCandidates.stream()
       .filter(ep->"POST".equalsIgnoreCase(ep.getMethod())&&ep.getPath()!=null&&ep.getPath().toLowerCase(Locale.ROOT).endsWith("/checkout")&&allowedServices.contains(ep.getService()))
       .findFirst().orElse(null);
@@ -1085,10 +1111,50 @@ public class RuntimePlanningService {
      rawSteps.add(insertAt,injected);
     }
    }
+   if(goal==null||goal.isBlank()){
+    Set<String> aiCovered=new HashSet<>();
+    for(JsonNode n:rawSteps){
+     String s=resolveServiceToAllowed(n.path("service").asText("").trim(),null,allowedServices,savedProfile,pre,false);
+     String v=n.path("method").asText("GET").trim().toUpperCase(Locale.ROOT);
+     String p=n.path("path").asText("").trim();
+     if(s!=null){
+      aiCovered.add(s);
+      DetectedEndpointDTO mEp=matchCandidateEndpoint(s,v,p,endpointLookup,candidates);
+      if(mEp!=null){
+       aiCovered.add(resolveEndpointDomainService(mEp,allowedServices));
+       if(mEp.getDownstreamTargets()!=null)aiCovered.addAll(mEp.getDownstreamTargets());
+      }else{
+       aiCovered.add(resolveEndpointDomainService(DetectedEndpointDTO.builder().service(s).method(v).path(p).build(),allowedServices));
+      }
+     }
+    }
+    for(String reqSvc:allowedServices){
+     if(rawSteps.size()>=aiStepCap)break;
+     if(isDiscoveryRegistryService(reqSvc)||aiCovered.contains(reqSvc))continue;
+     DetectedEndpointDTO fillEp=promptCandidates.stream()
+       .filter(ep->!isHealthProbePath(ep.getPath())&&(reqSvc.equals(ep.getService())||reqSvc.equals(resolveEndpointDomainService(ep,allowedServices))
+         ||(ep.getDownstreamTargets()!=null&&ep.getDownstreamTargets().contains(reqSvc))))
+       .findFirst().orElse(null);
+     if(fillEp!=null){
+      ObjectNode fillNode=json.createObjectNode();
+      fillNode.put("service",fillEp.getService());
+      fillNode.put("method",fillEp.getMethod());
+      fillNode.put("path",fillEp.getPath());
+      fillNode.put("expectedStatus",fillEp.getExpectedStatus()!=null?fillEp.getExpectedStatus():200);
+      fillNode.put("rationale","Ensure end-to-end trace coverage reaches "+reqSvc+".");
+      rawSteps.add(fillNode);
+      aiCovered.add(reqSvc);
+     }
+    }
+   }
   }
+  String primaryGateway=allowedServices.stream()
+    .filter(s->{String l=s.toLowerCase(Locale.ROOT);return l.contains("gateway")||l.contains("bff")||l.equals("edge")||l.startsWith("edge-");})
+    .findFirst().orElse(null);
+  Map<String,String> canonicalLabelByPhase=new HashMap<>();
   int idx=1;
   for(JsonNode item:rawSteps){
-   if(idx>10)break;
+   if(idx>aiStepCap)break;
    String rawSvc=item.path("service").asText("").trim();
    String svc=resolveServiceToAllowed(rawSvc,null,allowedServices,savedProfile,pre,false);
    String verb=item.path("method").asText("GET").trim().toUpperCase(Locale.ROOT);
@@ -1098,6 +1164,9 @@ public class RuntimePlanningService {
    if(!Set.of("GET","POST","PUT","PATCH","DELETE").contains(verb))continue;
    if(!rawPath.startsWith("/")||rawPath.startsWith("//")||rawPath.contains("\\")||rawPath.contains("\n")||rawPath.contains("\r"))continue;
    if(status<100||status>599)status=200;
+   if(primaryGateway!=null&&!primaryGateway.equals(svc)&&matchCandidateEndpoint(primaryGateway,verb,rawPath,endpointLookup,candidates)!=null){
+    svc=primaryGateway;
+   }
 
    DetectedEndpointDTO matchedEp=matchCandidateEndpoint(svc,verb,rawPath,endpointLookup,candidates);
    if(matchedEp==null&&rawPath.matches("^/api/[A-Za-z0-9_.-]+/api/.*")){
@@ -1214,6 +1283,7 @@ public class RuntimePlanningService {
     String finalBody=isValidJsonObject(aiSampleBody)
       ?(hasDtoSample?reconcileAiBodyWithDtoSample(aiSampleBody,fallbackBody):aiSampleBody)
       :fallbackBody;
+    finalBody=injectChainedVariablesIntoBody(finalBody,extractedByResource);
     sampleInputs.putIfAbsent(bodyRef,finalBody);
    }
 
@@ -1243,7 +1313,22 @@ public class RuntimePlanningService {
     }
    }
    List<Map<String,String>> stepEnvHeaders=null;
-   String phase=item.path("journeyPhase").asText(matchedEp!=null&&matchedEp.getJourneyRole()!=null?matchedEp.getJourneyRole():inferJourneyPhase(matchedEp!=null?matchedEp:DetectedEndpointDTO.builder().service(svc).method(verb).path(rawPath).build()));
+   DetectedEndpointDTO phaseEp=matchedEp!=null?matchedEp:DetectedEndpointDTO.builder().service(svc).method(verb).path(rawPath).build();
+   String basePhase=matchedEp!=null&&matchedEp.getJourneyRole()!=null?matchedEp.getJourneyRole():inferJourneyPhase(phaseEp);
+   String rawAiPhase=item.path("journeyPhase").asText("").trim();
+   String aiCustomLabel="";
+   if(!rawAiPhase.isEmpty()){
+    String aiCode=rawAiPhase.contains(":")?rawAiPhase.substring(0,rawAiPhase.indexOf(':')).trim().toUpperCase(Locale.ROOT):rawAiPhase.toUpperCase(Locale.ROOT);
+    if(rawAiPhase.contains(":"))aiCustomLabel=rawAiPhase.substring(rawAiPhase.indexOf(':')+1).trim();
+    if(Set.of("AUTH_ENTRY","PREREQUISITE_SEED","CROSS_SERVICE_WORKFLOW","STATE_VERIFICATION","CLEANUP_COMPENSATION","HEALTH_FALLBACK").contains(aiCode)){
+     basePhase=aiCode;
+    }
+   }
+   String phase=inferClusteredJourneyPhase(phaseEp,basePhase);
+   if(!phase.contains(":")&&!aiCustomLabel.isEmpty()){
+    canonicalLabelByPhase.putIfAbsent(basePhase,aiCustomLabel);
+    phase=basePhase+": "+canonicalLabelByPhase.get(basePhase);
+   }
    boolean isAuthPhase=phase!=null&&(phase.equalsIgnoreCase("AUTH_ENTRY")||phase.toUpperCase(Locale.ROOT).startsWith("AUTH_ENTRY:")||phase.toUpperCase(Locale.ROOT).startsWith("AUTH_IDENTITY"));
    boolean needsAuth=(matchedEp!=null&&Boolean.TRUE.equals(matchedEp.getRequiresAuth())&&!isAuthPhase)||aiRequestedAuthHeader;
    if(needsAuth&&!stepHeaders.containsKey("Authorization")){
@@ -1273,6 +1358,11 @@ public class RuntimePlanningService {
       }else{
        return;
       }
+     }else if(matchedForExtract!=null&&matchedForExtract.getResponseFields()!=null&&!matchedForExtract.getResponseFields().isEmpty()
+       &&!ptr.contains("|")&&!matchedForExtract.getResponseFields().contains(ptr)){
+      String leaf=ptr.contains("/")?ptr.substring(ptr.lastIndexOf('/')+1):ptr;
+      String snappedPtr=findMatchingPointer(matchedForExtract.getResponseFields(),List.of(leaf,"id","orderCode","code","accessToken","token"));
+      if(snappedPtr!=null)ptr=snappedPtr;
      }
      if("GET".equals(finalVerbForExtract)&&ptr.startsWith("/data/")&&!ptr.contains("|")){
       ptr=ptr+"|/"+ptr.substring(6);
@@ -1281,7 +1371,8 @@ public class RuntimePlanningService {
       stepExtract.put(ek,ptr);
       availableExtractedVars.add(ek);
       if(!resRoot.isEmpty()&&!isAuthPhase){
-       extractedByResource.putIfAbsent(resRoot,ek);
+       if(ek.endsWith("_CODE")||ek.endsWith("_SKU"))extractedByResource.putIfAbsent(resRoot+"_CODE",ek);
+       else extractedByResource.putIfAbsent(resRoot,ek);
       }
      }
     });
@@ -1353,7 +1444,7 @@ public class RuntimePlanningService {
  private static int aiPromptRolePriority(DetectedEndpointDTO ep){
   if(ep==null||isHealthProbePath(ep.getPath()))return 6;
   String low=ep.getPath()!=null?ep.getPath().toLowerCase(Locale.ROOT):"/";
-  if(isAuxiliaryEndpointPath(low))return 5;
+  if(isAuxiliaryEndpointPath(low)||low.contains("/batch")||low.endsWith("/deduct")||low.endsWith("/restore"))return 5;
   String role=ep.getJourneyRole()!=null?ep.getJourneyRole():"";
   if("AUTH_ENTRY".equals(role))return 0;
   if("PREREQUISITE_SEED".equals(role))return 1;
@@ -1388,6 +1479,7 @@ public class RuntimePlanningService {
     if("paymentMethod".equalsIgnoreCase(k)&&"ONLINE".equalsIgnoreCase(aiVal.asText("")))return;
     String lowK=k.toLowerCase(Locale.ROOT);
     if((lowK.contains("expir")||lowK.contains("end"))&&aiVal.isTextual()&&aiVal.asText("").startsWith("2026-01"))return;
+    if((lowK.contains("provincecode")||lowK.contains("districtcode")||lowK.contains("wardcode"))&&aiVal.isTextual()&&aiVal.asText("").length()>10)return;
     merged.set(k,aiVal);
    });
    return json.writeValueAsString(merged);
@@ -1416,7 +1508,7 @@ public class RuntimePlanningService {
    String rawSeg=segs[i];
    if(rawSeg.contains("{")||rawSeg.contains("}"))continue;
    String s=rawSeg.replaceAll("[^a-z0-9]","");
-   if(s.isEmpty()||s.startsWith("with")||Set.of("api","v1","v2","v3","public","internal","rest","search","query","checkout","cancel","approve","reject","pay","charge","process","confirm","submit","status","health","actuator").contains(s))continue;
+   if(s.isEmpty()||s.startsWith("with")||Set.of("api","v1","v2","v3","public","internal","rest","search","query","checkout","cancel","approve","reject","pay","charge","process","confirm","submit","status","health","actuator","batch","batchinfo","info","preview","deduct","restore","complete","default","me").contains(s))continue;
    if(s.endsWith("ies")&&s.length()>4)s=s.substring(0,s.length()-3)+"y";
    else if(s.endsWith("ses")&&s.length()>4)s=s.substring(0,s.length()-2);
    else if(s.endsWith("s")&&!s.endsWith("ss")&&s.length()>3)s=s.substring(0,s.length()-1);
@@ -1471,12 +1563,15 @@ public class RuntimePlanningService {
    List<String> fields=new ArrayList<>();
    obj.fieldNames().forEachRemaining(fields::add);
    for(String f:fields){
+    JsonNode curVal=obj.get(f);
+    if(curVal!=null&&curVal.isTextual()&&curVal.asText("").contains("{{"))continue;
     String low=f.replaceAll("[^A-Za-z0-9]","").toLowerCase(Locale.ROOT);
     for(Map.Entry<String,String> e:extractedByResource.entrySet()){
      String tok=e.getKey().toLowerCase(Locale.ROOT);
      String val=e.getValue();
      boolean wantsCode=low.endsWith("code")||low.endsWith("sku");
-     if(wantsCode?((low.equals(tok.replace("_",""))||low.equals(tok+"code")||low.equals(tok+"sku"))&&(val.endsWith("_CODE")||val.endsWith("_SKU"))):low.equals(tok+"id")){
+     boolean matchesId=!wantsCode&&(low.equals(tok+"id")||(tok.length()>=4&&low.endsWith(tok+"id")&&!low.startsWith("parent")));
+     if(wantsCode?((low.equals(tok.replace("_",""))||low.equals(tok+"code")||low.equals(tok+"sku"))&&(val.endsWith("_CODE")||val.endsWith("_SKU"))):matchesId){
       obj.put(f,"{{"+val+"}}");
       changed=true;
       break;
@@ -1580,6 +1675,42 @@ public class RuntimePlanningService {
      filtered.add(ep);
     }
    }
+  }else if(lowGoal.contains("read-only")||lowGoal.contains("smoke")){
+   for(DetectedEndpointDTO ep:candidates){
+    if("GET".equalsIgnoreCase(ep.getMethod()))filtered.add(ep);
+   }
+  }
+  if(filtered.isEmpty()){
+   Set<String> tokens=new LinkedHashSet<>();
+   for(String tok:lowGoal.split("[^a-z0-9-]+")){
+    if(tok.length()>=3&&!Set.of("focus","flow","test","verify","service","endpoints","primary","workflow","and","the","for","with","all").contains(tok)){
+     tokens.add(tok);
+     if(tok.endsWith("-service")&&tok.length()>8)tokens.add(tok.substring(0,tok.length()-8));
+    }
+   }
+   if(!tokens.isEmpty()){
+    List<DetectedEndpointDTO> domainMatched=new ArrayList<>();
+    for(DetectedEndpointDTO ep:candidates){
+     String p=ep.getPath()!=null?ep.getPath().toLowerCase(Locale.ROOT):"";
+     String s=ep.getService()!=null?ep.getService().toLowerCase(Locale.ROOT):"";
+     String d=ep.getDownstreamTargets()!=null?String.join(" ",ep.getDownstreamTargets()).toLowerCase(Locale.ROOT):"";
+     if(tokens.stream().anyMatch(t->s.contains(t)||p.contains("/"+t)||d.contains(t))){
+      domainMatched.add(ep);
+     }
+    }
+    if(!domainMatched.isEmpty()){
+     boolean needsAuth=domainMatched.stream().anyMatch(ep->Boolean.TRUE.equals(ep.getRequiresAuth()));
+     if(needsAuth){
+      for(DetectedEndpointDTO ep:candidates){
+       String p=ep.getPath()!=null?ep.getPath().toLowerCase(Locale.ROOT):"";
+       if("POST".equalsIgnoreCase(ep.getMethod())&&(p.endsWith("/register")||p.endsWith("/login")||p.endsWith("/signin"))&&!domainMatched.contains(ep)){
+        filtered.add(ep);
+       }
+      }
+     }
+     filtered.addAll(domainMatched);
+    }
+   }
   }
   return filtered.isEmpty()?candidates:filtered;
  }
@@ -1599,6 +1730,9 @@ public class RuntimePlanningService {
   if(lowGoal.contains("compensating")||lowGoal.contains("cancellation")||lowGoal.contains("edge-case")){
    return "Admin & Compensating Workflow Scenario";
   }
+  if(lowGoal.contains("read-only")||lowGoal.contains("smoke")){
+   return "Read-Only Smoke & Health Verification Scenario";
+  }
   return "Custom Goal Architecture Verification Scenario";
  }
 
@@ -1617,11 +1751,23 @@ public class RuntimePlanningService {
    if(target==null||target.getRunnerReceiptJson()==null)return "";
    StringBuilder sb=new StringBuilder();
    sb.append("- Session ").append(target.getId()).append(" status=").append(target.getScenarioStatus()).append(", traceQuality=").append(target.getTraceQuality()).append("\n");
+   Map<String,String> stepDescById=new HashMap<>();
+   if(target.getScenarioConfig()!=null){
+    JsonNode cfgSteps=target.getScenarioConfig().path("scenario").path("steps");
+    if(cfgSteps.isArray()){
+     for(JsonNode cs:cfgSteps){
+      String sid=cs.path("id").asText("");
+      if(!sid.isBlank())stepDescById.put(sid,cs.path("method").asText("GET")+" "+cs.path("service").asText("")+" "+cs.path("path").asText(""));
+     }
+    }
+   }
    JsonNode stepsNode=target.getRunnerReceiptJson().path("scenario").path("steps");
    if(!stepsNode.isArray())stepsNode=target.getRunnerReceiptJson().path("steps");
    if(stepsNode.isArray()){
     for(JsonNode st:stepsNode){
-     sb.append("  * step ").append(st.path("stepId").asText(st.path("id").asText("?")))
+     String sid=st.path("stepId").asText(st.path("id").asText("?"));
+     String routeInfo=stepDescById.containsKey(sid)?" ("+stepDescById.get(sid)+")":"";
+     sb.append("  * step ").append(sid).append(routeInfo)
        .append(": outcome=").append(st.path("status").asText("?"))
        .append(", httpStatus=").append(st.path("statusCode").asText("null")).append("\n");
     }
@@ -1744,7 +1890,9 @@ public class RuntimePlanningService {
     ||low.endsWith("/inactive")||low.endsWith("/invoice-pdf")||low.endsWith("/forgot-password")
     ||low.endsWith("/reset-password")||low.endsWith("/logout")||low.endsWith("/verify-email")
     ||low.endsWith("/google")||low.contains("/oauth")||low.endsWith("/refresh")
-    ||low.endsWith("/export-excel")||low.endsWith("/vnpay-return");
+    ||low.endsWith("/export-excel")||low.endsWith("/vnpay-return")
+    ||low.endsWith("/batch-info")||low.endsWith("/deduct-batch")||low.endsWith("/internal")
+    ||low.endsWith("/complete")||low.endsWith("/return-request");
  }
 
  private static boolean isDiscoveryRegistryService(String service){
@@ -1869,7 +2017,7 @@ public class RuntimePlanningService {
   if(lower.contains("categor"))return "{\"name\":\"Tinh dau thien nhien\",\"description\":\"Danh muc tinh dau cao cap\",\"sortOrder\":1,\"isActive\":true}";
   if(lower.contains("coupon"))return "{\"code\":\"WELCOME10\",\"discountValue\":10,\"minOrderAmount\":100000}";
   if(lower.contains("review"))return "{\"productId\":1,\"orderId\":1,\"rating\":5,\"comment\":\"San pham chat luong tot\"}";
-  if(lower.contains("address"))return "{\"receiverName\":\"Nguyen Van A\",\"phone\":\"0901234567\",\"province\":\"TP.HCM\",\"district\":\"Quan 1\",\"ward\":\"Ben Nghe\",\"streetAddress\":\"123 Le Loi\",\"isDefault\":true}";
+  if(lower.contains("address"))return "{\"recipientName\":\"Nguyen Van A\",\"receiverName\":\"Nguyen Van A\",\"recipientPhone\":\"0901234567\",\"phone\":\"0901234567\",\"provinceCode\":\"79\",\"provinceName\":\"TP.HCM\",\"province\":\"TP.HCM\",\"districtName\":\"Quan 1\",\"district\":\"Quan 1\",\"wardName\":\"Ben Nghe\",\"ward\":\"Ben Nghe\",\"streetAddress\":\"123 Le Loi\",\"isDefault\":true}";
   if(lower.contains("product")||lower.contains("catalog")||lower.contains("inventory")||lower.contains("item"))return "{\"code\":\"SKU-MOUSE-02\",\"name\":\"Wireless Mouse\",\"price\":49.00,\"stock\":20,\"quantity\":1,\"categoryId\":1}";
   if(lower.contains("user")||lower.contains("account")||lower.contains("customer"))return "{\"name\":\"Test User\",\"email\":\"user@example.org\"}";
   return "{\"name\":\"sample-entity\",\"organizationId\":1,\"departmentId\":1}";
@@ -2059,9 +2207,13 @@ public class RuntimePlanningService {
      step.remove("jsonBody");
     }
    }
+   DetectedEndpointDTO matchedEpForStep=matchCandidateEndpoint(stepSvc,stepVerb,stepPath,detLookup,detList);
    if("POST".equalsIgnoreCase(stepVerb)&&stepPath.toLowerCase(Locale.ROOT).endsWith("/coupons")){
     ObjectNode ext=step.path("extract").isObject()?(ObjectNode)step.get("extract"):step.putObject("extract");
-    if(!ext.has("COUPON_ID"))ext.put("COUPON_ID","/id");
+    String couponIdPtr=(matchedEpForStep!=null&&matchedEpForStep.getResponseFields()!=null)
+      ?findMatchingPointer(matchedEpForStep.getResponseFields(),List.of("id","couponId"))
+      :null;
+    if(!ext.has("COUPON_ID"))ext.put("COUPON_ID",couponIdPtr!=null?couponIdPtr:"/id");
    }
    if(step.path("path").isTextual()){
     String rawPath=step.get("path").asText();
@@ -2121,6 +2273,11 @@ public class RuntimePlanningService {
      else if(!ptr.isEmpty()&&!ptr.startsWith("/"))ptr="/"+ptr.replace('.','/');
      if(ek.contains("TOKEN")&&("/status".equalsIgnoreCase(ptr)||"/message".equalsIgnoreCase(ptr))){
       ptr="/data/accessToken|/accessToken|/token|/jwt";
+     }else if(matchedEpForStep!=null&&matchedEpForStep.getResponseFields()!=null&&!matchedEpForStep.getResponseFields().isEmpty()
+       &&!ptr.contains("|")&&!matchedEpForStep.getResponseFields().contains(ptr)){
+      String leaf=ptr.contains("/")?ptr.substring(ptr.lastIndexOf('/')+1):ptr;
+      String snapped=findMatchingPointer(matchedEpForStep.getResponseFields(),List.of(leaf,"id","orderCode","code","accessToken","token"));
+      if(snapped!=null)ptr=snapped;
      }
      if("GET".equalsIgnoreCase(stepVerb)&&ptr.startsWith("/data/")&&!ptr.contains("|")){
       ptr=ptr+"|/"+ptr.substring(6);
@@ -2618,6 +2775,8 @@ public class RuntimePlanningService {
 
  private static List<String> owningServices(PreflightCheckResponseDTO.RequiredEnvVarDTO meta,List<String> composeServices,List<String> appServices){
   if(meta==null)return appServices;
+  String key=meta.getName()==null?"":meta.getName().toUpperCase(Locale.ROOT);
+  if(isSharedCrossServiceSecretKey(key)&&!appServices.isEmpty())return appServices;
   List<String> targets=new ArrayList<>();
   if(meta.getServices()!=null&&!meta.getServices().isEmpty()){
    for(String s:meta.getServices()){
@@ -2628,6 +2787,17 @@ public class RuntimePlanningService {
    targets.add(meta.getService());
   }
   return targets.isEmpty()?appServices:targets;
+ }
+
+ private static boolean isSharedCrossServiceSecretKey(String upperKey){
+  if(upperKey==null||upperKey.isEmpty())return false;
+  return upperKey.contains("INTERNAL_SECRET")
+    ||upperKey.contains("JWT_SECRET")
+    ||upperKey.contains("TOKEN_SECRET")
+    ||upperKey.contains("SIGNING_KEY")
+    ||upperKey.contains("HMAC_SECRET")
+    ||upperKey.equals("SERVICE_SECRET")
+    ||upperKey.equals("AUTH_SECRET");
  }
 
  private static boolean isBindableEnvName(String name){
