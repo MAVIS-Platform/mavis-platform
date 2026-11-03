@@ -2272,11 +2272,19 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     setSteps((arr) =>
       arr.map((item, idx) => {
         if (idx !== index) return item;
-        const hasAuth = item.envHeaders?.some((h) => h.name.toLowerCase() === "authorization");
-        if (hasAuth) {
-          const remaining = (item.envHeaders ?? []).filter((h) => h.name.toLowerCase() !== "authorization");
-          const { envHeaders: _old, ...rest } = item;
-          return remaining.length ? { ...rest, envHeaders: remaining } : rest;
+        const hasEnvAuth = item.envHeaders?.some((h) => h.name.toLowerCase() === "authorization");
+        const hasInlineAuth = item.headers && Object.keys(item.headers).some((k) => k.toLowerCase() === "authorization");
+        if (hasEnvAuth || hasInlineAuth) {
+          const remainingEnv = (item.envHeaders ?? []).filter((h) => h.name.toLowerCase() !== "authorization");
+          const remainingHeaders = Object.fromEntries(
+            Object.entries(item.headers ?? {}).filter(([k]) => k.toLowerCase() !== "authorization"),
+          );
+          const { envHeaders: _oldEnv, headers: _oldHdrs, ...rest } = item;
+          return {
+            ...rest,
+            ...(remainingEnv.length ? { envHeaders: remainingEnv } : {}),
+            ...(Object.keys(remainingHeaders).length ? { headers: remainingHeaders } : {}),
+          };
         }
         const serviceKey = toServiceEnvPrefix(item.service);
         const ref = `${serviceKey}_AUTHORIZATION`;
@@ -3051,7 +3059,11 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                       inferStepSampleBody(st.path, st.service, st.method, discoveredEndpoints)
                     : "";
                   const payloadValid = !isWrite || isValidJsonPayloadString(payloadText);
-                  const authHeader = st.envHeaders?.find((h) => h.name.toLowerCase() === "authorization");
+                  const envAuthHeader = st.envHeaders?.find((h) => h.name.toLowerCase() === "authorization");
+                  const inlineAuthHeader = st.headers
+                    ? Object.entries(st.headers).find(([k]) => k.toLowerCase() === "authorization")?.[1]
+                    : undefined;
+                  const authHeader = envAuthHeader || inlineAuthHeader;
 
                   return (
                     <div key={i} className="rounded-lg border p-3 bg-muted/20 space-y-2">
