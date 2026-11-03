@@ -5,6 +5,13 @@ import { useApi, useApiMutation, useApiQuery, useSession } from "@/hooks/use-api
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ErrorState, LoadingState } from "@/components/shared/request-state";
 import { ScreenHelpTrigger } from "@/components/shared/screen-guided-tour";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -132,6 +139,7 @@ export function ProfileDetails({ user }: { user: User }) {
   const [nameError, setNameError] = useState("");
   const [notice, setNotice] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [copyNotice, setCopyNotice] = useState("");
   const [copied, setCopied] = useState(false);
   const savingName = useRef(false);
@@ -237,9 +245,21 @@ export function ProfileDetails({ user }: { user: User }) {
         aria-labelledby="profile-information"
         className="min-w-0 rounded-xl border bg-card p-5 sm:p-6 [overflow-wrap:anywhere]"
       >
-        <h2 id="profile-information" className="text-base font-semibold">
-          {t("Personal Information")}
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="profile-information" className="text-base font-semibold">
+            {t("Personal Information")}
+          </h2>
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            disabled={api.mode !== "backend" || update.isPending || !user.name.trim()}
+            onClick={() => setPasswordDialogOpen(true)}
+          >
+            <KeyRound className="size-4" aria-hidden="true" />
+            {t("Change Password")}
+          </Button>
+        </div>
         <form noValidate onSubmit={saveName} className="mt-5 space-y-5">
           <div>
             <label htmlFor="profile-full-name" className="text-sm font-medium">
@@ -319,36 +339,34 @@ export function ProfileDetails({ user }: { user: User }) {
           </div>
         </form>
       </section>
-      <section
-        aria-labelledby="profile-security"
-        className="min-w-0 rounded-xl border bg-card p-5 sm:p-6"
+      <Dialog
+        open={passwordDialogOpen}
+        onOpenChange={(open) => {
+          if (!passwordSaving) setPasswordDialogOpen(open);
+        }}
       >
-        <div className="mb-5 flex items-start gap-3">
-          <KeyRound className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-          <div className="min-w-0">
-            <h2 id="profile-security" className="text-base font-semibold">
-              {t("Account Security")}
-            </h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              {t("Update the password you use to sign in.")}
-            </p>
-          </div>
-        </div>
-        <ChangePasswordForm
-          fullName={user.name}
-          disabled={api.mode !== "backend" || update.isPending || !user.name.trim()}
-          onBusyChange={setPasswordSaving}
-          onCancel={() => setNotice("")}
-          onSuccess={() => setNotice("")}
-        />
-        {api.mode !== "backend" && (
-          <p className="mt-3 text-xs leading-5 text-muted-foreground">
-            {t(
-              "Password changes require a real signed-in account. They are unavailable in sample previews.",
-            )}
-          </p>
-        )}
-      </section>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("Change Password")}</DialogTitle>
+            <DialogDescription>{t("Update the password you use to sign in.")}</DialogDescription>
+          </DialogHeader>
+          {passwordDialogOpen && (
+            <ChangePasswordForm
+              fullName={user.name}
+              disabled={api.mode !== "backend" || update.isPending || !user.name.trim()}
+              onBusyChange={setPasswordSaving}
+              onCancel={() => {
+                setNotice("");
+                setPasswordDialogOpen(false);
+              }}
+              onSuccess={() => {
+                setNotice("Password changed successfully.");
+                setPasswordDialogOpen(false);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

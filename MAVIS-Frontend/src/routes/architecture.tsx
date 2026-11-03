@@ -3,7 +3,10 @@ import { ArchitectureLoading } from "@/features/architecture/architecture-loadin
 import { ArchitecturePresentation } from "@/features/architecture/architecture-presentation";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { canonicalDiagramCatalog, resolveDiagramKind } from "@/features/architecture/diagram-catalog";
+import {
+  canonicalDiagramCatalog,
+  resolveDiagramKind,
+} from "@/features/architecture/diagram-catalog";
 import { useLocale } from "@/lib/i18n/locale-context";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -50,20 +53,25 @@ export function ArchitectureWorkspace({
   const id = selected?.modelId === state.model?.id ? (selected?.elementId ?? null) : null;
   const latestEnriched = state.models.find((m) => "origin" in m && m.origin === "RUNTIME_ENRICHED");
   const currentSummary = state.models.find((m) => m.id === state.model?.id);
-  const currentIsEnriched = Boolean(currentSummary && "origin" in currentSummary && currentSummary.origin === "RUNTIME_ENRICHED");
+  const currentIsEnriched = Boolean(
+    currentSummary && "origin" in currentSummary && currentSummary.origin === "RUNTIME_ENRICHED",
+  );
   return (
     <PageContainer>
       <div className="space-y-2.5">
-        {isAdmin && <Button asChild variant="outline" size="sm">
-          <Link href={returnHref}>← {t("Back to analysis jobs")}</Link>
-        </Button>}
+        {isAdmin && (
+          <Button asChild variant="outline" size="sm">
+            <Link href={returnHref}>← {t("Back to analysis jobs")}</Link>
+          </Button>
+        )}
         {latestEnriched && state.model && !currentIsEnriched && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-950/20 px-3.5 py-2 text-xs">
-            <span className="text-emerald-300">
-              <strong className="font-semibold text-emerald-400">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-600/30 bg-emerald-50 px-3.5 py-2 text-xs text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+            <span>
+              <strong className="font-semibold text-emerald-800 dark:text-emerald-300">
                 ⚡ Runtime-Enriched Revision {latestEnriched.revision} Available:
               </strong>{" "}
-              You are viewing Static Revision {state.model.revision}. Switch to the Runtime-Enriched model to inspect OpenTelemetry-verified service edges and observed sequence traces.
+              You are viewing Static Revision {state.model.revision}. Switch to the Runtime-Enriched
+              model to inspect OpenTelemetry-verified service edges and observed sequence traces.
             </span>
             <Button
               size="sm"
@@ -74,7 +82,10 @@ export function ArchitectureWorkspace({
             </Button>
           </div>
         )}
-        <div data-tour="architecture-toolbar" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3">
+        <div
+          data-tour="architecture-toolbar"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3"
+        >
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-full sm:w-64">
               <ProjectSelector selectedProject={project.data} />
@@ -90,7 +101,9 @@ export function ArchitectureWorkspace({
             )}
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-1.5">
-            <ScreenHelpTrigger screenId={resolvedMode === "diagram" ? "diagrams" : "architecture"} />
+            <ScreenHelpTrigger
+              screenId={resolvedMode === "diagram" ? "diagrams" : "architecture"}
+            />
             {state.projectId && state.model && (
               <>
                 {resolvedMode !== "graph" && (
@@ -134,16 +147,33 @@ export function ArchitectureWorkspace({
           </div>
         </div>
         {isAdmin && state.projectId && state.model && (
-          <nav aria-label="Architecture views" className="flex flex-wrap gap-2 rounded-xl border bg-card p-3">
+          <nav
+            aria-label="Architecture views"
+            className="flex flex-wrap gap-2 rounded-xl border bg-card p-3"
+          >
             <Button asChild size="sm" variant={resolvedMode === "graph" ? "default" : "outline"}>
-              <Link href={`/architecture?${new URLSearchParams({ project: state.projectId, model: state.model.id, ...reviewContext })}`}
-                aria-current={resolvedMode === "graph" ? "page" : undefined}>{t("Graph Explorer")}</Link>
+              <Link
+                href={`/architecture?${new URLSearchParams({ project: state.projectId, model: state.model.id, ...reviewContext })}`}
+                aria-current={resolvedMode === "graph" ? "page" : undefined}
+              >
+                {t("Graph Explorer")}
+              </Link>
             </Button>
             {canonicalDiagramCatalog.map((item) => (
-              <Button key={item.id} asChild size="sm"
-                variant={resolvedMode === "diagram" && activeKind === item.kind ? "default" : "outline"}>
-                <Link href={`/diagrams?${new URLSearchParams({ project: state.projectId, model: state.model!.id, kind: item.kind, ...reviewContext })}`}
-                  aria-current={resolvedMode === "diagram" && activeKind === item.kind ? "page" : undefined}>
+              <Button
+                key={item.id}
+                asChild
+                size="sm"
+                variant={
+                  resolvedMode === "diagram" && activeKind === item.kind ? "default" : "outline"
+                }
+              >
+                <Link
+                  href={`/diagrams?${new URLSearchParams({ project: state.projectId, model: state.model!.id, kind: item.kind, ...reviewContext })}`}
+                  aria-current={
+                    resolvedMode === "diagram" && activeKind === item.kind ? "page" : undefined
+                  }
+                >
                   {t(item.label)}
                 </Link>
               </Button>

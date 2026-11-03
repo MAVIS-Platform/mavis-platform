@@ -15,9 +15,24 @@ export function RuntimeStepperBanner({
   blockedReason?: string | undefined;
 }) {
   const steps = [
-    { num: 1, title: "Step 1: Configure Sandbox", path: "/runtime-config", desc: "Set resource limits and discover services" },
-    { num: 2, title: "Step 2: Test Scenarios", path: "/scenarios", desc: "Define API request steps" },
-    { num: 3, title: "Step 3: Run & Trace", path: "/sessions", desc: "Monitor execution and sequence diagrams" },
+    {
+      num: 1,
+      title: "Step 1: Configure Sandbox",
+      path: "/runtime-config",
+      desc: "Set resource limits and discover services",
+    },
+    {
+      num: 2,
+      title: "Step 2: Test Scenarios",
+      path: "/scenarios",
+      desc: "Define API request steps",
+    },
+    {
+      num: 3,
+      title: "Step 3: Run & Trace",
+      path: "/sessions",
+      desc: "Monitor execution and sequence diagrams",
+    },
   ];
   return (
     <div data-tour="runtime-stepper" className="rounded-xl border bg-card p-4 shadow-sm mb-5">
@@ -27,7 +42,9 @@ export function RuntimeStepperBanner({
           const isDone = s.num < currentStep;
           const isLocked =
             (s.num === 2 && currentStep === 1 && !canProceedToStep2) ||
-            (s.num === 3 && ((currentStep === 1 && !canProceedToStep2) || (currentStep <= 2 && !canProceedToStep3)));
+            (s.num === 3 &&
+              ((currentStep === 1 && !canProceedToStep2) ||
+                (currentStep <= 2 && !canProceedToStep3)));
           const inner = (
             <>
               <div
@@ -35,8 +52,8 @@ export function RuntimeStepperBanner({
                   isActive
                     ? "bg-primary text-primary-foreground"
                     : isDone
-                    ? "bg-emerald-500 text-white"
-                    : "bg-muted text-muted-foreground"
+                      ? "bg-emerald-500 text-white"
+                      : "bg-muted text-muted-foreground"
                 }`}
               >
                 {isDone ? "✓" : s.num}
@@ -81,8 +98,8 @@ export function RuntimeStepperBanner({
                 isActive
                   ? "border-primary bg-primary/10 text-primary shadow-sm"
                   : isDone
-                  ? "border-emerald-500/40 bg-emerald-500/5 text-foreground hover:bg-muted/50"
-                  : "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40"
+                    ? "border-emerald-500/40 bg-emerald-500/5 text-foreground hover:bg-muted/50"
+                    : "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40"
               }`}
             >
               {inner}
@@ -93,7 +110,6 @@ export function RuntimeStepperBanner({
     </div>
   );
 }
-
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Loader2 } from "lucide-react";
@@ -112,7 +128,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useApi, useApiMutation, useApiQuery, usePermission, useSelection } from "@/hooks/use-api";
 import { RequestState, ErrorState, EmptyState } from "@/components/shared/request-state";
-import { ConfirmDialog, FormField, SelectField } from "@/components/shared/forms";
+import { ConfirmDialog, FormField, Pagination, SelectField } from "@/components/shared/forms";
 import { DetailPanel, StatusBadge } from "@/components/shared/data";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -181,7 +197,10 @@ const secretDrafts = new Map<string, Record<string, string>>();
 export function readStep1Target(projectId: string): Step1Draft {
   const secretValues = secretDrafts.get(projectId);
   try {
-    const raw = typeof window !== "undefined" ? window.sessionStorage.getItem(`mavis:runtime-target:${projectId}`) : null;
+    const raw =
+      typeof window !== "undefined"
+        ? window.sessionStorage.getItem(`mavis:runtime-target:${projectId}`)
+        : null;
     const parsed = raw ? (JSON.parse(raw) as Step1Draft) : {};
     const draft = parsed && typeof parsed === "object" ? { ...parsed } : {};
     delete draft.secretValues;
@@ -275,7 +294,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     const stored = readStep1Target(projectId);
     const allModels = models.data ?? [];
     const candidateModels = staticModels.length ? staticModels : allModels;
-    const preferredModel = resolveRuntimeTargetModel(allModels, stored.modelId, config.data?.modelId);
+    const preferredModel = resolveRuntimeTargetModel(
+      allModels,
+      stored.modelId,
+      config.data?.modelId,
+    );
     if (preferredModel) {
       const activeModel =
         (modelId ? candidateModels.find((m) => m.id === modelId) : undefined) ?? preferredModel;
@@ -287,12 +310,23 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     }
     if (!snapshotId && snapshots.data?.length) {
       const preferredSnapId =
-        (stored.snapshotId && snapshots.data.some((s) => s.id === stored.snapshotId) ? stored.snapshotId : "") ||
+        (stored.snapshotId && snapshots.data.some((s) => s.id === stored.snapshotId)
+          ? stored.snapshotId
+          : "") ||
         config.data?.snapshotId ||
         snapshots.data[0]?.id;
       if (preferredSnapId) setSnapshotId(preferredSnapId);
     }
-  }, [projectId, snapshots.data, config.data?.snapshotId, config.data?.modelId, models.data, staticModels.length, snapshotId, modelId]);
+  }, [
+    projectId,
+    snapshots.data,
+    config.data?.snapshotId,
+    config.data?.modelId,
+    models.data,
+    staticModels.length,
+    snapshotId,
+    modelId,
+  ]);
 
   useEffect(() => {
     const stored = readStep1Target(projectId);
@@ -306,7 +340,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
       setSecretValues((prev) => ({ ...stored.secretValues, ...prev }));
     }
     if (stored.dismissedSecretKeys && stored.dismissedSecretKeys.length > 0) {
-      setDismissedSecretKeys((prev) => Array.from(new Set([...prev, ...stored.dismissedSecretKeys!])));
+      setDismissedSecretKeys((prev) =>
+        Array.from(new Set([...prev, ...stored.dismissedSecretKeys!])),
+      );
     }
     if (stored.serviceRoles && Object.keys(stored.serviceRoles).length > 0) {
       setServiceRoles((prev) => ({ ...sanitizeServiceRoles(stored.serviceRoles), ...prev }));
@@ -336,15 +372,26 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         dismissedSecretKeys,
       });
     }
-  }, [projectId, modelId, snapshotId, profileId, serviceMappings, serviceRoles, serviceImageOverrides, envVars, secretValues, dismissedSecretKeys]);
+  }, [
+    projectId,
+    modelId,
+    snapshotId,
+    profileId,
+    serviceMappings,
+    serviceRoles,
+    serviceImageOverrides,
+    envVars,
+    secretValues,
+    dismissedSecretKeys,
+  ]);
 
   const savedProfile = (config.data?.profile ?? {}) as Record<string, unknown>;
   const hasCheckedPreflight =
     Boolean(preflight.data) ||
     Boolean(
       snapshotId &&
-        readStep1Target(projectId).checkedSnapshotId === snapshotId &&
-        config.data?.snapshotId === snapshotId,
+      readStep1Target(projectId).checkedSnapshotId === snapshotId &&
+      config.data?.snapshotId === snapshotId,
     );
   const rawProfile = hasCheckedPreflight ? savedProfile : ({} as Record<string, unknown>);
   const configuredSecretKeys = Array.isArray(rawProfile["configuredSecretKeys"])
@@ -408,10 +455,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const stringMap = (value: unknown): Record<string, string> =>
     typeof value === "object" && value !== null ? (value as Record<string, string>) : {};
   const runnerIssues = preflight.data?.runnerIssues ?? stringList(rawProfile["runnerIssues"]);
-  const infrastructureServices = preflight.data?.infrastructureServices ?? stringList(rawProfile["infrastructureServices"]);
-  const serviceHealthPaths = preflight.data?.serviceHealthPaths ?? stringMap(rawProfile["serviceHealthPaths"]);
-  const serviceHealthConfidence = preflight.data?.serviceHealthConfidence ?? stringMap(rawProfile["serviceHealthConfidence"]);
-  const serviceHealthReasons = preflight.data?.serviceHealthReasons ?? stringMap(rawProfile["serviceHealthReasons"]);
+  const infrastructureServices =
+    preflight.data?.infrastructureServices ?? stringList(rawProfile["infrastructureServices"]);
+  const serviceHealthPaths =
+    preflight.data?.serviceHealthPaths ?? stringMap(rawProfile["serviceHealthPaths"]);
+  const serviceHealthConfidence =
+    preflight.data?.serviceHealthConfidence ?? stringMap(rawProfile["serviceHealthConfidence"]);
+  const serviceHealthReasons =
+    preflight.data?.serviceHealthReasons ?? stringMap(rawProfile["serviceHealthReasons"]);
   const sandboxComposeYaml =
     preflight.data?.sandboxComposeYaml ??
     (typeof rawProfile["sandboxComposeYaml"] === "string" ? rawProfile["sandboxComposeYaml"] : "");
@@ -420,34 +471,53 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const unresolvableRunnerIssues =
     preflight.data?.unresolvableRunnerIssues ?? stringList(rawProfile["unresolvableRunnerIssues"]);
   const recommendedServiceMappings =
-    preflight.data?.recommendedServiceMappings ?? stringMap(rawProfile["recommendedServiceMappings"]);
+    preflight.data?.recommendedServiceMappings ??
+    stringMap(rawProfile["recommendedServiceMappings"]);
   const modelServiceNames =
     preflight.data?.modelServiceNames ?? stringMap(rawProfile["modelServiceNames"]);
   const localImageBuildAvailable =
     preflight.data?.localImageBuildAvailable ?? Boolean(rawProfile["localImageBuildAvailable"]);
 
   useEffect(() => {
-    if (rawProfile && typeof rawProfile["serviceMappings"] === "object" && rawProfile["serviceMappings"] !== null) {
+    if (
+      rawProfile &&
+      typeof rawProfile["serviceMappings"] === "object" &&
+      rawProfile["serviceMappings"] !== null
+    ) {
       setServiceMappings((prev) => ({
         ...(rawProfile["serviceMappings"] as Record<string, string>),
         ...prev,
       }));
     }
-    if (rawProfile && typeof rawProfile["serviceRoles"] === "object" && rawProfile["serviceRoles"] !== null) {
+    if (
+      rawProfile &&
+      typeof rawProfile["serviceRoles"] === "object" &&
+      rawProfile["serviceRoles"] !== null
+    ) {
       setServiceRoles((prev) => ({
         ...sanitizeServiceRoles(rawProfile["serviceRoles"] as Record<string, "APP" | "INFRA">),
         ...prev,
       }));
     }
-    if (rawProfile && typeof rawProfile["serviceImageOverrides"] === "object" && rawProfile["serviceImageOverrides"] !== null) {
+    if (
+      rawProfile &&
+      typeof rawProfile["serviceImageOverrides"] === "object" &&
+      rawProfile["serviceImageOverrides"] !== null
+    ) {
       setServiceImageOverrides((prev) => ({
         ...(rawProfile["serviceImageOverrides"] as Record<string, string>),
         ...prev,
       }));
     }
-    if (rawProfile && typeof rawProfile["environmentVariables"] === "object" && rawProfile["environmentVariables"] !== null) {
+    if (
+      rawProfile &&
+      typeof rawProfile["environmentVariables"] === "object" &&
+      rawProfile["environmentVariables"] !== null
+    ) {
       const savedEnv: Record<string, string> = {};
-      for (const [k, v] of Object.entries(rawProfile["environmentVariables"] as Record<string, unknown>)) {
+      for (const [k, v] of Object.entries(
+        rawProfile["environmentVariables"] as Record<string, unknown>,
+      )) {
         savedEnv[k] = String(v ?? "");
       }
       setEnvVars((prev) => ({ ...savedEnv, ...prev }));
@@ -480,7 +550,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         return next;
       });
     }
-  }, [activeServices.join(","), JSON.stringify(recommendedServiceMappings), JSON.stringify(modelServiceNames)]);
+  }, [
+    activeServices.join(","),
+    JSON.stringify(recommendedServiceMappings),
+    JSON.stringify(modelServiceNames),
+  ]);
 
   useEffect(() => {
     const discovered = preflight.data?.serviceImageOverrides;
@@ -534,7 +608,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     new Set([
       ...autoDetectedSecretKeys,
       ...configuredSecretKeys,
-      ...Object.keys(secretValues).filter((k) => !(k === "DB_CONNECTION_STRING" && hasSpecificDbVars)),
+      ...Object.keys(secretValues).filter(
+        (k) => !(k === "DB_CONNECTION_STRING" && hasSpecificDbVars),
+      ),
     ]),
   ).filter((k) => !dismissedSecretKeys.includes(k));
 
@@ -563,12 +639,18 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   const renderedSecretKeys = showSecretOverrides ? allSecretKeys : externalSecretKeys;
 
   const isInfraRole = (svc: string) =>
-    isKnownInfraName(svc) ? true : serviceRoles[svc] ? serviceRoles[svc] === "INFRA" : infrastructureServices.includes(svc);
+    isKnownInfraName(svc)
+      ? true
+      : serviceRoles[svc]
+        ? serviceRoles[svc] === "INFRA"
+        : infrastructureServices.includes(svc);
   const appServicesCount = activeServices.filter((s) => !isInfraRole(s)).length;
   const infraServicesCount = activeServices.filter((s) => isInfraRole(s)).length;
 
   const rawUnresolved =
-    sandboxComposeChanges.length > 0 || Boolean(sandboxComposeYaml) ? unresolvableRunnerIssues : runnerIssues;
+    sandboxComposeChanges.length > 0 || Boolean(sandboxComposeYaml)
+      ? unresolvableRunnerIssues
+      : runnerIssues;
   const effectiveUnresolvedIssues = rawUnresolved.filter((issue) => {
     const m = /^Service '([^']+)' (?:uses build:|image |has no image)/.exec(issue);
     if (!m) return true;
@@ -653,7 +735,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
   };
 
   useEffect(() => {
-    if (!projectId || !snapshotId || !preflight.data || preflight.isPending || isAutoBuilding || buildImages.isPending) {
+    if (
+      !projectId ||
+      !snapshotId ||
+      !preflight.data ||
+      preflight.isPending ||
+      isAutoBuilding ||
+      buildImages.isPending
+    ) {
       return;
     }
     if (!localImageBuildAvailable || unpinnedServices.length === 0) return;
@@ -661,7 +750,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     if (autoBuildTriggeredRef.current === key) return;
     autoBuildTriggeredRef.current = key;
     void handleBuildLocalImages(unpinnedServices);
-  }, [projectId, snapshotId, preflight.data, preflight.isPending, localImageBuildAvailable, unpinnedServices.join(",")]);
+  }, [
+    projectId,
+    snapshotId,
+    preflight.data,
+    preflight.isPending,
+    localImageBuildAvailable,
+    unpinnedServices.join(","),
+  ]);
 
   const proceedToStep2 = async (bypassMissingKeyWarning = false) => {
     if (!bypassMissingKeyWarning && missingExternalApiKeys.length > 0 && !showMissingKeyPrompt) {
@@ -682,7 +778,8 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     const activeModel =
       candidateModels.find((m) => m.id === (modelId || defaultModelId)) ?? candidateModels[0];
     const effectiveModelId = activeModel?.id ?? "";
-    const effectiveSnapshotId = activeModel?.snapshotId || snapshotId || snapshots.data?.[0]?.id || "";
+    const effectiveSnapshotId =
+      activeModel?.snapshotId || snapshotId || snapshots.data?.[0]?.id || "";
     const cleanRoles = sanitizeServiceRoles({
       ...Object.fromEntries(activeServices.map((s) => [s, isInfraRole(s) ? "INFRA" : "APP"])),
       ...serviceRoles,
@@ -703,7 +800,10 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     if (effectiveModelId && effectiveSnapshotId) {
       try {
         setStep1StatusMsg("");
-        const currentRev = Math.max(config.data?.revision ?? 0, readStep1Target(projectId).savedRevision ?? 0);
+        const currentRev = Math.max(
+          config.data?.revision ?? 0,
+          readStep1Target(projectId).savedRevision ?? 0,
+        );
         const payload = {
           projectId,
           profileId,
@@ -724,7 +824,10 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         } catch (firstErr) {
           const refreshed = await config.refetch();
           if (refreshed.data?.revision !== undefined && refreshed.data.revision !== currentRev) {
-            savedCfg = await save.mutateAsync({ ...payload, expectedRevision: refreshed.data.revision });
+            savedCfg = await save.mutateAsync({
+              ...payload,
+              expectedRevision: refreshed.data.revision,
+            });
           } else {
             throw firstErr;
           }
@@ -740,7 +843,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
     router.push(`/scenarios?project=${projectId}`);
   };
 
-  const isPreflightSecure = preflight.data ? preflight.data.compatible : (config.data?.supported ?? true);
+  const isPreflightSecure = preflight.data
+    ? preflight.data.compatible
+    : (config.data?.supported ?? true);
   const hasInspectedStep1 = hasCheckedPreflight;
   const isStep1Ready =
     hasInspectedStep1 &&
@@ -772,18 +877,28 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         currentStep={1}
         projectId={projectId}
         canProceedToStep2={isStep1Ready && !save.isPending}
-        canProceedToStep3={isStep1Ready && !save.isPending && Boolean(config.data?.revision || readStep1Target(projectId).savedRevision)}
+        canProceedToStep3={
+          isStep1Ready &&
+          !save.isPending &&
+          Boolean(config.data?.revision || readStep1Target(projectId).savedRevision)
+        }
         onStep2Click={() => void proceedToStep2()}
         blockedReason={step1BlockedReason}
       />
       {showMissingKeyPrompt && missingExternalApiKeys.length > 0 && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-foreground">
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-foreground"
+        >
           <div className="space-y-1">
             <p className="font-semibold text-amber-300">
               External 3rd-party API key not entered ({missingExternalApiKeys.join(", ")})
             </p>
             <p className="text-muted-foreground">
-              Sandbox services will boot normally using an internal placeholder key, and all internal microservice flows (Auth, Catalog, Cart, Order, Checkout, Kafka) will run end-to-end. Only external 3rd-party routes (e.g. <code className="font-mono">/ai/*</code>) require a live key.
+              Sandbox services will boot normally using an internal placeholder key, and all
+              internal microservice flows (Auth, Catalog, Cart, Order, Checkout, Kafka) will run
+              end-to-end. Only external 3rd-party routes (e.g.{" "}
+              <code className="font-mono">/ai/*</code>) require a live key.
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -812,9 +927,15 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
         </div>
       )}
       {step1StatusMsg && !(buildImages.isPending || isAutoBuilding) && (
-        <div role="status" className="flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs text-foreground">
+        <div
+          role="status"
+          className="flex items-center gap-2 rounded-lg border border-sky-500/30 bg-sky-500/5 px-3 py-2 text-xs text-foreground"
+        >
           {preflight.isPending && (
-            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-400" aria-hidden="true" />
+            <Loader2
+              className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-400"
+              aria-hidden="true"
+            />
           )}
           <span>{step1StatusMsg}</span>
         </div>
@@ -887,8 +1008,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                     preflight.mutate({ projectId, snapshotId });
                   }}
                 >
-                  {preflight.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
-                  {preflight.isPending ? "Checking..." : hasCheckedPreflight ? "↻ Re-check" : "Check"}
+                  {preflight.isPending && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  )}
+                  {preflight.isPending
+                    ? "Checking..."
+                    : hasCheckedPreflight
+                      ? "↻ Re-check"
+                      : "Check"}
                 </Button>
                 <Button
                   type="button"
@@ -899,25 +1026,36 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                   title={!isStep1Ready ? step1BlockedReason : undefined}
                   onClick={() => void proceedToStep2()}
                 >
-                  {save.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+                  {save.isPending && (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  )}
                   {save.isPending ? "Saving..." : "Continue to Step 2 →"}
                 </Button>
               </div>
             </div>
 
-            {!isStep1Ready && step1BlockedReason && !(buildImages.isPending || isAutoBuilding) && (preflight.isPending || !hasCheckedPreflight) && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                {preflight.isPending && (
-                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" aria-hidden="true" />
-                )}
-                <span>{step1BlockedReason}</span>
-              </div>
-            )}
+            {!isStep1Ready &&
+              step1BlockedReason &&
+              !(buildImages.isPending || isAutoBuilding) &&
+              (preflight.isPending || !hasCheckedPreflight) && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {preflight.isPending && (
+                    <Loader2
+                      className="h-3.5 w-3.5 shrink-0 animate-spin text-primary"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <span>{step1BlockedReason}</span>
+                </div>
+              )}
 
             {preflight.isError && <ErrorState error={preflight.error} />}
 
             {hasCheckedPreflight && (
-              <div data-tour="runtime-detected-services" className="rounded-lg border p-4 space-y-4 bg-muted/30">
+              <div
+                data-tour="runtime-detected-services"
+                className="rounded-lg border p-4 space-y-4 bg-muted/30"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex flex-wrap items-center gap-2.5">
                     <StatusBadge
@@ -932,16 +1070,42 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                                 ? "Ready (Auto-Configured)"
                                 : "Ready"
                       }
-                      variant={!isPreflightSecure ? "destructive" : effectiveUnresolvedIssues.length ? "warning" : "success"}
+                      variant={
+                        !isPreflightSecure
+                          ? "destructive"
+                          : effectiveUnresolvedIssues.length
+                            ? "warning"
+                            : "success"
+                      }
                     />
                     <span className="text-xs text-muted-foreground">
-                      <strong className="text-foreground">{activeServices.length}</strong> services ({appServicesCount} app, {infraServicesCount} infra)
+                      <strong className="text-foreground">{activeServices.length}</strong> services
+                      ({appServicesCount} app, {infraServicesCount} infra)
                       {" · "}
-                      <strong className="text-foreground">{new Set(databaseChecks.filter((d) => d.status !== "DETECTED_CONTAINER" && !["redis", "kafka", "rabbitmq", "activemq", "nats"].includes((d.dbType ?? "").toLowerCase())).map((d) => `${d.service}:${d.dbType}`)).size || databaseChecks.length}</strong> DBs
+                      <strong className="text-foreground">
+                        {new Set(
+                          databaseChecks
+                            .filter(
+                              (d) =>
+                                d.status !== "DETECTED_CONTAINER" &&
+                                !["redis", "kafka", "rabbitmq", "activemq", "nats"].includes(
+                                  (d.dbType ?? "").toLowerCase(),
+                                ),
+                            )
+                            .map((d) => `${d.service}:${d.dbType}`),
+                        ).size || databaseChecks.length}
+                      </strong>{" "}
+                      DBs
                       {" · "}
-                      <strong className="text-foreground">{detectedEndpoints.filter((ep) => !(ep.source ?? "").toLowerCase().includes("gateway route")).length || detectedEndpoints.length}</strong> endpoints
+                      <strong className="text-foreground">
+                        {detectedEndpoints.filter(
+                          (ep) => !(ep.source ?? "").toLowerCase().includes("gateway route"),
+                        ).length || detectedEndpoints.length}
+                      </strong>{" "}
+                      endpoints
                       {" · "}
-                      <strong className="text-foreground">{Object.keys(envVars).length}</strong> env vars
+                      <strong className="text-foreground">{Object.keys(envVars).length}</strong> env
+                      vars
                     </span>
                   </div>
 
@@ -973,103 +1137,133 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                 </div>
 
                 {/* Actionable blockers: only shown automatically when user/system action is needed */}
-                {effectiveUnresolvedIssues.length > 0 && (() => {
-                  const nonImageIssues = effectiveUnresolvedIssues.filter(
-                    (issue) => !/^Service '([^']+)' (?:uses build:|image |has no image)/.test(issue),
-                  );
-                  return (
-                    <div role="alert" className="rounded border bg-background/60 p-3 text-xs space-y-2.5">
-                      {nonImageIssues.length > 0 && (
-                        <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">
-                          {nonImageIssues.map((issue, idx) => (
-                            <li key={idx}>{issue}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {servicesNeedingImage.length > 0 && (
-                        buildImages.isPending || isAutoBuilding ? (
-                          <div className="space-y-2.5">
-                            <div className="flex items-center gap-2 text-xs text-foreground">
-                              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-400" aria-hidden="true" />
-                              <span>
-                                {step1StatusMsg ||
-                                  `Building sandbox image (${servicesNeedingImage.length - unpinnedServices.length + 1}/${servicesNeedingImage.length})...`}
-                              </span>
-                            </div>
-                            <div className="grid gap-2 sm:grid-cols-3">
-                              {servicesNeedingImage.map((svc) => {
-                                const isBuilt = /^(.+@)?sha256:[0-9a-fA-F]{64}$/.test(serviceImageOverrides[svc]?.trim() ?? "");
-                                const isCurrent = !isBuilt && step1StatusMsg.includes(svc);
-                                return (
-                                  <div
-                                    key={svc}
-                                    className="flex items-center justify-between gap-2 rounded border bg-background/80 px-2.5 py-1.5 font-mono text-xs"
-                                  >
-                                    <span className="truncate text-foreground" title={svc}>{svc}</span>
-                                    {isBuilt ? (
-                                      <span className="shrink-0 text-[11px] font-sans font-medium text-emerald-500">✓ Built</span>
-                                    ) : isCurrent ? (
-                                      <span className="shrink-0 text-[11px] font-sans font-medium text-sky-400">
-                                        Building...
+                {effectiveUnresolvedIssues.length > 0 &&
+                  (() => {
+                    const nonImageIssues = effectiveUnresolvedIssues.filter(
+                      (issue) =>
+                        !/^Service '([^']+)' (?:uses build:|image |has no image)/.test(issue),
+                    );
+                    return (
+                      <div
+                        role="alert"
+                        className="rounded border bg-background/60 p-3 text-xs space-y-2.5"
+                      >
+                        {nonImageIssues.length > 0 && (
+                          <ul className="list-disc pl-4 space-y-0.5 text-muted-foreground">
+                            {nonImageIssues.map((issue, idx) => (
+                              <li key={idx}>{issue}</li>
+                            ))}
+                          </ul>
+                        )}
+                        {servicesNeedingImage.length > 0 &&
+                          (buildImages.isPending || isAutoBuilding ? (
+                            <div className="space-y-2.5">
+                              <div className="flex items-center gap-2 text-xs text-foreground">
+                                <Loader2
+                                  className="h-3.5 w-3.5 shrink-0 animate-spin text-sky-400"
+                                  aria-hidden="true"
+                                />
+                                <span>
+                                  {step1StatusMsg ||
+                                    `Building sandbox image (${servicesNeedingImage.length - unpinnedServices.length + 1}/${servicesNeedingImage.length})...`}
+                                </span>
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-3">
+                                {servicesNeedingImage.map((svc) => {
+                                  const isBuilt = /^(.+@)?sha256:[0-9a-fA-F]{64}$/.test(
+                                    serviceImageOverrides[svc]?.trim() ?? "",
+                                  );
+                                  const isCurrent = !isBuilt && step1StatusMsg.includes(svc);
+                                  return (
+                                    <div
+                                      key={svc}
+                                      className="flex items-center justify-between gap-2 rounded border bg-background/80 px-2.5 py-1.5 font-mono text-xs"
+                                    >
+                                      <span className="truncate text-foreground" title={svc}>
+                                        {svc}
                                       </span>
-                                    ) : (
-                                      <span className="shrink-0 text-[11px] font-sans text-muted-foreground">Queued</span>
-                                    )}
+                                      {isBuilt ? (
+                                        <span className="shrink-0 text-[11px] font-sans font-medium text-emerald-500">
+                                          ✓ Built
+                                        </span>
+                                      ) : isCurrent ? (
+                                        <span className="shrink-0 text-[11px] font-sans font-medium text-sky-400">
+                                          Building...
+                                        </span>
+                                      ) : (
+                                        <span className="shrink-0 text-[11px] font-sans text-muted-foreground">
+                                          Queued
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-muted-foreground">
+                                  <strong className="text-foreground">
+                                    Image digests required ({unpinnedServices.length}):
+                                  </strong>{" "}
+                                  Click{" "}
+                                  <strong className="text-foreground">Auto-build images</strong> or
+                                  paste a <code className="font-mono">name@sha256:...</code> digest.
+                                </span>
+                                {localImageBuildAvailable && (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="default"
+                                    className="h-7 text-xs inline-flex items-center gap-1.5"
+                                    onClick={() => void handleBuildLocalImages()}
+                                  >
+                                    Auto-build images
+                                  </Button>
+                                )}
+                              </div>
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                {servicesNeedingImage.map((svc) => (
+                                  <div key={svc} className="flex items-center gap-2">
+                                    <span
+                                      className="w-32 font-mono text-[11px] truncate text-foreground"
+                                      title={svc}
+                                    >
+                                      {svc}
+                                    </span>
+                                    <Input
+                                      className="flex-1 font-mono text-xs h-8"
+                                      placeholder={`ghcr.io/org/${svc}@sha256:...`}
+                                      value={serviceImageOverrides[svc] ?? ""}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        setServiceImageOverrides((prev) => ({
+                                          ...prev,
+                                          [svc]: val,
+                                        }));
+                                      }}
+                                    />
                                   </div>
-                                );
-                              })}
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        ) : (
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <span className="text-muted-foreground">
-                                <strong className="text-foreground">Image digests required ({unpinnedServices.length}):</strong>{" "}
-                                Click <strong className="text-foreground">Auto-build images</strong> or paste a <code className="font-mono">name@sha256:...</code> digest.
-                              </span>
-                              {localImageBuildAvailable && (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="default"
-                                  className="h-7 text-xs inline-flex items-center gap-1.5"
-                                  onClick={() => void handleBuildLocalImages()}
-                                >
-                                  Auto-build images
-                                </Button>
-                              )}
-                            </div>
-                            <div className="grid gap-2 sm:grid-cols-2">
-                              {servicesNeedingImage.map((svc) => (
-                                <div key={svc} className="flex items-center gap-2">
-                                  <span className="w-32 font-mono text-[11px] truncate text-foreground" title={svc}>
-                                    {svc}
-                                  </span>
-                                  <Input
-                                    className="flex-1 font-mono text-xs h-8"
-                                    placeholder={`ghcr.io/org/${svc}@sha256:...`}
-                                    value={serviceImageOverrides[svc] ?? ""}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setServiceImageOverrides((prev) => ({ ...prev, [svc]: val }));
-                                    }}
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )
-                      )}
-                    </div>
-                  );
-                })()}
+                          ))}
+                      </div>
+                    );
+                  })()}
 
-                {(preflight.data?.securityWarnings?.length || config.data?.prerequisites?.length) ? (
+                {preflight.data?.securityWarnings?.length || config.data?.prerequisites?.length ? (
                   <div className="space-y-1">
-                    <strong className="text-sm text-warning">Security Warnings / Prerequisites:</strong>
+                    <strong className="text-sm text-warning">
+                      Security Warnings / Prerequisites:
+                    </strong>
                     <ul className="list-disc pl-5 text-xs text-warning space-y-0.5">
                       {Array.from(
-                        new Set([...(preflight.data?.securityWarnings ?? []), ...(config.data?.prerequisites ?? [])]),
+                        new Set([
+                          ...(preflight.data?.securityWarnings ?? []),
+                          ...(config.data?.prerequisites ?? []),
+                        ]),
                       ).map((w, i) => (
                         <li key={i}>{w}</li>
                       ))}
@@ -1086,7 +1280,8 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-muted-foreground">
                             <strong className="text-foreground">Sandbox Compose:</strong>{" "}
-                            {sandboxComposeChanges.length} automatic adjustment{sandboxComposeChanges.length === 1 ? "" : "s"} applied.
+                            {sandboxComposeChanges.length} automatic adjustment
+                            {sandboxComposeChanges.length === 1 ? "" : "s"} applied.
                           </span>
                           {sandboxComposeYaml && (
                             <Button
@@ -1135,11 +1330,12 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           </Button>
                         )}
                       </div>
-                      {activeServices.length > 0 && (
-                        showMappingInputs ? (
+                      {activeServices.length > 0 &&
+                        (showMappingInputs ? (
                           <div className="grid gap-3 sm:grid-cols-2 pt-1">
                             {activeServices.map((svc) => {
-                              const currentVal = serviceMappings[svc] ?? recommendedServiceMappings[svc] ?? svc;
+                              const currentVal =
+                                serviceMappings[svc] ?? recommendedServiceMappings[svc] ?? svc;
                               const modelEntries = Object.entries(modelServiceNames);
                               if (modelEntries.length > 0) {
                                 const opts = modelEntries.map(([uuid, name]) => ({
@@ -1154,7 +1350,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                                     key={svc}
                                     label={`${svc} → Model Container`}
                                     value={currentVal}
-                                    onChange={(val) => setServiceMappings((m) => ({ ...m, [svc]: val }))}
+                                    onChange={(val) =>
+                                      setServiceMappings((m) => ({ ...m, [svc]: val }))
+                                    }
                                     options={opts}
                                   />
                                 );
@@ -1193,7 +1391,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                                   <button
                                     type="button"
                                     className="ml-1 rounded border px-1 py-0.5 text-[10px] hover:bg-background text-foreground"
-                                    onClick={() => setServiceRoles((prev) => ({ ...prev, [svc]: "APP" }))}
+                                    onClick={() =>
+                                      setServiceRoles((prev) => ({ ...prev, [svc]: "APP" }))
+                                    }
                                   >
                                     → App
                                   </button>
@@ -1205,12 +1405,16 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                                 >
                                   <span className="font-medium text-foreground">{svc}</span>
                                   <span className="text-muted-foreground">
-                                    ({stack}{servicePorts[svc] ? `:${servicePorts[svc]}` : ""}) → {resolveMappingLabel(svc)}
+                                    ({stack}
+                                    {servicePorts[svc] ? `:${servicePorts[svc]}` : ""}) →{" "}
+                                    {resolveMappingLabel(svc)}
                                   </span>
                                   <button
                                     type="button"
                                     className="ml-1 rounded border px-1 py-0.5 text-[10px] hover:bg-muted text-muted-foreground"
-                                    onClick={() => setServiceRoles((prev) => ({ ...prev, [svc]: "INFRA" }))}
+                                    onClick={() =>
+                                      setServiceRoles((prev) => ({ ...prev, [svc]: "INFRA" }))
+                                    }
                                   >
                                     → Infra
                                   </button>
@@ -1218,8 +1422,7 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                               );
                             })}
                           </div>
-                        )
-                      )}
+                        ))}
                     </div>
 
                     {/* Secrets & Environment Variables */}
@@ -1227,7 +1430,11 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between">
                           <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                            Secrets ({autoSecretKeys.length} Auto{externalSecretKeys.length > 0 ? ` · ${externalSecretKeys.length} External` : ""})
+                            Secrets ({autoSecretKeys.length} Auto
+                            {externalSecretKeys.length > 0
+                              ? ` · ${externalSecretKeys.length} External`
+                              : ""}
+                            )
                           </h4>
                           <Button
                             type="button"
@@ -1243,15 +1450,29 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           <div className="space-y-2 pt-1">
                             {renderedSecretKeys.map((sKey) => (
                               <div key={sKey} className="flex items-center gap-2">
-                                <span className={`w-36 font-mono text-[11px] truncate inline-flex items-center gap-1.5 ${missingExternalApiKeys.includes(sKey) ? "text-destructive font-semibold" : ""}`} title={sKey}>
-                                  {missingExternalApiKeys.includes(sKey) && <span className="h-1.5 w-1.5 rounded-full bg-destructive shrink-0" aria-hidden="true" />}
+                                <span
+                                  className={`w-36 font-mono text-[11px] truncate inline-flex items-center gap-1.5 ${missingExternalApiKeys.includes(sKey) ? "text-destructive font-semibold" : ""}`}
+                                  title={sKey}
+                                >
+                                  {missingExternalApiKeys.includes(sKey) && (
+                                    <span
+                                      className="h-1.5 w-1.5 rounded-full bg-destructive shrink-0"
+                                      aria-hidden="true"
+                                    />
+                                  )}
                                   <span className="truncate">{sKey}</span>
                                 </span>
                                 <Input
                                   type="password"
                                   autoComplete="new-password"
                                   className="flex-1 font-mono text-xs h-7"
-                                  placeholder={configuredSecretKeys.includes(sKey) ? "•••••••• (Saved)" : missingExternalApiKeys.includes(sKey) ? "Missing external API key (required for live calls)" : "Override value"}
+                                  placeholder={
+                                    configuredSecretKeys.includes(sKey)
+                                      ? "•••••••• (Saved)"
+                                      : missingExternalApiKeys.includes(sKey)
+                                        ? "Missing external API key (required for live calls)"
+                                        : "Override value"
+                                  }
                                   aria-invalid={missingExternalApiKeys.includes(sKey) || undefined}
                                   value={secretValues[sKey] ?? ""}
                                   onChange={(e) => {
@@ -1284,9 +1505,14 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                                 className="h-7 text-xs"
                                 disabled={!newSecretKey.trim()}
                                 onClick={() => {
-                                  const k = newSecretKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
+                                  const k = newSecretKey
+                                    .trim()
+                                    .replace(/[^A-Z0-9_]/gi, "_")
+                                    .toUpperCase();
                                   if (!k) return;
-                                  setDismissedSecretKeys((prev) => prev.filter((item) => item !== k));
+                                  setDismissedSecretKeys((prev) =>
+                                    prev.filter((item) => item !== k),
+                                  );
                                   setSecretValues((prev) => ({ ...prev, [k]: newSecretVal }));
                                   setNewSecretKey("");
                                   setNewSecretVal("");
@@ -1318,7 +1544,9 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                           <div className="space-y-1.5 h-56 min-h-32 max-h-[70vh] resize-y overflow-y-auto pr-1 pt-1">
                             {Object.entries(envVars).map(([k, v]) => (
                               <div key={k} className="flex items-center gap-1.5">
-                                <span className="w-40 font-mono text-[11px] truncate" title={k}>{k}</span>
+                                <span className="w-40 font-mono text-[11px] truncate" title={k}>
+                                  {k}
+                                </span>
                                 <Input
                                   className="flex-1 font-mono text-xs h-7"
                                   value={v}
@@ -1364,7 +1592,10 @@ function RuntimeConfigurationView({ projectId }: { projectId: string }) {
                                 className="h-7 text-xs"
                                 disabled={!newEnvKey.trim()}
                                 onClick={() => {
-                                  const k = newEnvKey.trim().replace(/[^A-Z0-9_]/gi, "_").toUpperCase();
+                                  const k = newEnvKey
+                                    .trim()
+                                    .replace(/[^A-Z0-9_]/gi, "_")
+                                    .toUpperCase();
                                   if (!k) return;
                                   setEnvVars((prev) => ({ ...prev, [k]: newEnvVal }));
                                   setNewEnvKey("");
@@ -1437,8 +1668,10 @@ export function RuntimeScenarios() {
   return <RuntimeScenariosView key={projectId} projectId={projectId} />;
 }
 
-
-function matchesEndpointPathTemplate(templatePath: string | undefined, concretePath: string): boolean {
+function matchesEndpointPathTemplate(
+  templatePath: string | undefined,
+  concretePath: string,
+): boolean {
   if (!templatePath) return false;
   if (templatePath === concretePath) return true;
   if (!templatePath.includes("{")) return false;
@@ -1446,7 +1679,11 @@ function matchesEndpointPathTemplate(templatePath: string | undefined, concreteP
     "^" +
     templatePath
       .split(/(\{[^}/]+\})/g)
-      .map((seg) => (seg.startsWith("{") && seg.endsWith("}") ? "[^/]+" : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+      .map((seg) =>
+        seg.startsWith("{") && seg.endsWith("}")
+          ? "[^/]+"
+          : seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      )
       .join("") +
     "$";
   return new RegExp(pattern).test(concretePath);
@@ -1495,7 +1732,12 @@ function inferStepSampleBody(
   if (lower.includes("address")) {
     return '{"recipientName":"Nguyen Van A","receiverName":"Nguyen Van A","recipientPhone":"0901234567","phone":"0901234567","provinceCode":"79","provinceName":"TP.HCM","province":"TP.HCM","districtName":"Quan 1","district":"Quan 1","wardName":"Ben Nghe","ward":"Ben Nghe","streetAddress":"123 Le Loi","isDefault":true}';
   }
-  if (lower.includes("product") || lower.includes("catalog") || lower.includes("inventory") || lower.includes("item")) {
+  if (
+    lower.includes("product") ||
+    lower.includes("catalog") ||
+    lower.includes("inventory") ||
+    lower.includes("item")
+  ) {
     return '{"code":"SKU-MOUSE-02","name":"Wireless Mouse","price":49.00,"stock":20,"quantity":1,"categoryId":1}';
   }
   if (lower.includes("user") || lower.includes("account") || lower.includes("customer")) {
@@ -1532,13 +1774,18 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const submitting = useRef(false);
   const autoGenTriggered = useRef<string>("");
   const restoredDraftRef = useRef(false);
-  const persistedDraft = useRef<{ fingerprint: string; scenario: { id: string; revision: number } } | null>(null);
+  const persistedDraft = useRef<{
+    fingerprint: string;
+    scenario: { id: string; revision: number };
+  } | null>(null);
 
   const [snapshotId, setSnapshotId] = useState("");
   const [modelId, setModelId] = useState("");
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>("");
   const modelDetail = useApiQuery("model", { modelId }, { enabled: Boolean(modelId) });
-  const realServices = (modelDetail.data?.elements ?? []).filter((e) => e.elementType === "SERVICE_CONTAINER");
+  const realServices = (modelDetail.data?.elements ?? []).filter(
+    (e) => e.elementType === "SERVICE_CONTAINER",
+  );
   const detectedServiceNames = realServices.map((s) => s.name);
 
   const [generatedRunnableServices, setGeneratedRunnableServices] = useState<string[]>([]);
@@ -1563,12 +1810,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     for (const [svc, role] of Object.entries(roleMap)) {
       if (role?.toUpperCase() === "INFRA") infra.add(svc);
     }
-    const composeList = Array.isArray(rawProf["composeServices"]) && rawProf["composeServices"].length > 0
-      ? (rawProf["composeServices"] as unknown[]).map(String)
-      : Array.isArray(rawProf["detectedServices"])
-        ? (rawProf["detectedServices"] as unknown[]).map(String)
-        : [];
-    const filteredCompose = composeList.filter((s) => Boolean(s) && !infra.has(s) && !isKnownInfraName(s));
+    const composeList =
+      Array.isArray(rawProf["composeServices"]) && rawProf["composeServices"].length > 0
+        ? (rawProf["composeServices"] as unknown[]).map(String)
+        : Array.isArray(rawProf["detectedServices"])
+          ? (rawProf["detectedServices"] as unknown[]).map(String)
+          : [];
+    const filteredCompose = composeList.filter(
+      (s) => Boolean(s) && !infra.has(s) && !isKnownInfraName(s),
+    );
     if (filteredCompose.length > 0) return filteredCompose;
     if (rawProf["applications"] && typeof rawProf["applications"] === "object") {
       const appKeys = Object.keys(rawProf["applications"] as Record<string, unknown>).filter(
@@ -1586,15 +1836,25 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     detectedServiceNames[0] ??
     "gateway";
 
-  const [scenarioName, setScenarioName] = useState("Auto-generated Architecture Verification Scenario");
+  const [scenarioName, setScenarioName] = useState(
+    "Auto-generated Architecture Verification Scenario",
+  );
   const [flowPreset, setFlowPreset] = useState("");
   const [aiGoal, setAiGoal] = useState("");
   const [aiSummary, setAiSummary] = useState("");
-  const [generatorMode, setGeneratorMode] = useState<"AI_ASSISTED" | "SYSTEM_STATIC" | "LOCAL_STATIC">("LOCAL_STATIC");
+  const [generatorMode, setGeneratorMode] = useState<
+    "AI_ASSISTED" | "SYSTEM_STATIC" | "LOCAL_STATIC"
+  >("LOCAL_STATIC");
   const [aiModelName, setAiModelName] = useState("");
   const [inheritedEnvKeys, setInheritedEnvKeys] = useState<string[]>([]);
 
   const [steps, setDraftSteps] = useState<RuntimeDraftStep[]>([]);
+  const [httpStepsPage, setHttpStepsPage] = useState(1);
+  const httpStepsPageCount = Math.max(1, Math.ceil(steps.length / 5));
+  const currentHttpStepsPage = Math.min(httpStepsPage, httpStepsPageCount);
+  useEffect(() => {
+    if (httpStepsPage > httpStepsPageCount) setHttpStepsPage(httpStepsPageCount);
+  }, [httpStepsPage, httpStepsPageCount]);
   const edited = useRef(false);
   const setSteps: typeof setDraftSteps = (value) => {
     edited.current = true;
@@ -1613,12 +1873,28 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
   const [openPayloads, setOpenPayloads] = useState<Record<number, boolean>>({});
 
   const discoveredEndpoints = useMemo(() => {
-    const raw = (config.data?.profile as { detectedEndpoints?: Array<{ service?: string; method?: string; path?: string; source?: string; expectedStatus?: number; sampleJsonBody?: string; requiresAuth?: boolean }> } | undefined)?.detectedEndpoints;
+    const raw = (
+      config.data?.profile as
+        | {
+            detectedEndpoints?: Array<{
+              service?: string;
+              method?: string;
+              path?: string;
+              source?: string;
+              expectedStatus?: number;
+              sampleJsonBody?: string;
+              requiresAuth?: boolean;
+            }>;
+          }
+        | undefined
+    )?.detectedEndpoints;
     return Array.isArray(raw) ? raw : [];
   }, [config.data?.profile]);
 
   const flowPresetOptions = useMemo(() => {
-    const domainServices = runnableServices.filter((s) => !/discovery|eureka|consul|config-server/i.test(s));
+    const domainServices = runnableServices.filter(
+      (s) => !/discovery|eureka|consul|config-server/i.test(s),
+    );
     const options: Array<{ value: string; label: string; defaultTitle: string }> = [
       {
         value: "",
@@ -1662,7 +1938,13 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         seenClusterIds.add(meta.id);
       }
     }
-    for (const key of ["AUTH_IDENTITY", "CATALOG_INVENTORY", "ORDER_CART", "PAYMENT_BILLING", "NOTIFICATION"]) {
+    for (const key of [
+      "AUTH_IDENTITY",
+      "CATALOG_INVENTORY",
+      "ORDER_CART",
+      "PAYMENT_BILLING",
+      "NOTIFICATION",
+    ]) {
       if (seenClusterIds.has(key) && clusterGoals[key]) {
         options.push({
           value: clusterGoals[key]!.goal,
@@ -1688,12 +1970,14 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     }
     options.push(
       {
-        value: "Focus on read-only smoke verification: test GET and readiness endpoints across all services",
+        value:
+          "Focus on read-only smoke verification: test GET and readiness endpoints across all services",
         label: "Read-Only Smoke & Health Flow (GET only)",
         defaultTitle: "Read-Only Smoke & Health Verification Scenario",
       },
       {
-        value: "Focus on compensating transactions, status updates, and cancellation/edge-case flows",
+        value:
+          "Focus on compensating transactions, status updates, and cancellation/edge-case flows",
         label: "Edge-Case, Status & Compensation Flow",
         defaultTitle: "Admin & Compensating Workflow Scenario",
       },
@@ -1727,7 +2011,10 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       .filter((s): s is string => Boolean(s));
     const localBuildAvailable = Boolean(rawProf["localImageBuildAvailable"]);
     const prerequisites = (config.data?.prerequisites ?? []).filter(
-      (w) => w.includes("MAVIS_RUNNER_COLLECTOR_IMAGE") || w.includes("MAVIS_RUNTIME_ENVIRONMENT_KEY") || w.includes("Execution profile is disabled"),
+      (w) =>
+        w.includes("MAVIS_RUNNER_COLLECTOR_IMAGE") ||
+        w.includes("MAVIS_RUNTIME_ENVIRONMENT_KEY") ||
+        w.includes("Execution profile is disabled"),
     );
     return { remainingIssues, missingBuildServices, localBuildAvailable, prerequisites };
   }, [config.data?.profile, config.data?.prerequisites, projectId]);
@@ -1736,11 +2023,20 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     if (restoredDraftRef.current) return;
     const stored = readStep1Target(projectId);
     const matchesCurrentSnapshot =
-      !stored.plannedSnapshotId || !stored.snapshotId || stored.plannedSnapshotId === stored.snapshotId;
+      !stored.plannedSnapshotId ||
+      !stored.snapshotId ||
+      stored.plannedSnapshotId === stored.snapshotId;
     const isStaleNaiveFallback =
       stored.plannedSteps?.length &&
-      stored.plannedSteps.every((st) => st.rationale?.startsWith("Automatically extracted from Step 1"));
-    if (matchesCurrentSnapshot && stored.plannedSteps && stored.plannedSteps.length > 0 && !isStaleNaiveFallback) {
+      stored.plannedSteps.every((st) =>
+        st.rationale?.startsWith("Automatically extracted from Step 1"),
+      );
+    if (
+      matchesCurrentSnapshot &&
+      stored.plannedSteps &&
+      stored.plannedSteps.length > 0 &&
+      !isStaleNaiveFallback
+    ) {
       restoredDraftRef.current = true;
       edited.current = Boolean(stored.plannedUserEdited);
       setDraftSteps(stored.plannedSteps);
@@ -1756,7 +2052,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       const referencedKeys = new Set<string>();
       for (const st of steps) {
         if (st.bodyReference) referencedKeys.add(st.bodyReference);
-        if (st.environmentVariables) Object.values(st.environmentVariables).forEach((k) => referencedKeys.add(k));
+        if (st.environmentVariables)
+          Object.values(st.environmentVariables).forEach((k) => referencedKeys.add(k));
         if (st.envHeaders) st.envHeaders.forEach((h) => referencedKeys.add(h.reference));
       }
       const plannedInputs = Object.fromEntries(
@@ -1781,8 +2078,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     const stored = readStep1Target(projectId);
-    if (selectableModels.length > 0 && (!modelId || !selectableModels.some((m) => m.id === modelId))) {
-      const preferred = resolveRuntimeTargetModel(models.data ?? [], stored.modelId, config.data?.modelId);
+    if (
+      selectableModels.length > 0 &&
+      (!modelId || !selectableModels.some((m) => m.id === modelId))
+    ) {
+      const preferred = resolveRuntimeTargetModel(
+        models.data ?? [],
+        stored.modelId,
+        config.data?.modelId,
+      );
       if (preferred) {
         setModelId(preferred.id);
         if (preferred.snapshotId) {
@@ -1798,7 +2102,16 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         setSnapshotId(config.data.snapshotId);
       }
     }
-  }, [projectId, config.data?.modelId, config.data?.snapshotId, models.data, selectableModels, snapshots.data, modelId, snapshotId]);
+  }, [
+    projectId,
+    config.data?.modelId,
+    config.data?.snapshotId,
+    models.data,
+    selectableModels,
+    snapshots.data,
+    modelId,
+    snapshotId,
+  ]);
 
   useEffect(() => {
     if (!snapshotId && snapshots.data?.length) {
@@ -1889,10 +2202,13 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                   }
                 }
                 resolvedPath = resolvedPath
-                  .replace(/\{\{(V\d+)\}\}/g, (full, vName: string) => (extractedVars.has(vName) ? full : "1"))
+                  .replace(/\{\{(V\d+)\}\}/g, (full, vName: string) =>
+                    extractedVars.has(vName) ? full : "1",
+                  )
                   .replace(/(?<!\{)\{([^{}/]+)\}(?!\})/g, (_, p: string) => {
                     const lower = p.toLowerCase();
-                    if (lower.includes("uuid") || lower.includes("guid")) return "00000000-0000-0000-0000-000000000001";
+                    if (lower.includes("uuid") || lower.includes("guid"))
+                      return "00000000-0000-0000-0000-000000000001";
                     return lower.includes("code") || lower.includes("sku") ? "SKU-LAPTOP-01" : "1";
                   });
                 const method = st.method.toUpperCase();
@@ -1901,7 +2217,12 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 if (["POST", "PUT", "PATCH"].includes(method)) {
                   bodyRef = bodyRef || `${serviceKey}_BODY_${idx + 1}`;
                   if (!sampleMap[bodyRef]) {
-                    extraInputs[bodyRef] = inferStepSampleBody(resolvedPath, st.service, method, discoveredEndpoints);
+                    extraInputs[bodyRef] = inferStepSampleBody(
+                      resolvedPath,
+                      st.service,
+                      method,
+                      discoveredEndpoints,
+                    );
                   }
                 } else {
                   bodyRef = undefined;
@@ -1933,12 +2254,21 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     const urlRepair =
-      typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("repairSession") ?? undefined : undefined;
+      typeof window !== "undefined"
+        ? (new URLSearchParams(window.location.search).get("repairSession") ?? undefined)
+        : undefined;
     const key = `${projectId}:${snapshotId}:${modelId}:${urlRepair ?? ""}`;
-    if (snapshotId && modelId && autoGenTriggered.current !== key && (!edited.current || Boolean(urlRepair))) {
+    if (
+      snapshotId &&
+      modelId &&
+      autoGenTriggered.current !== key &&
+      (!edited.current || Boolean(urlRepair))
+    ) {
       autoGenTriggered.current = key;
       triggerSystemAiGeneration(
-        urlRepair ? "Self-heal previous run failures and expand trace coverage to unverified services" : undefined,
+        urlRepair
+          ? "Self-heal previous run failures and expand trace coverage to unverified services"
+          : undefined,
         urlRepair,
       );
     }
@@ -1950,17 +2280,26 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         const sampleEnv: Record<string, string> = {};
         setDraftSteps(
           automatic.steps.map((st, idx) => {
-            const cleanSvc = runnableServices.includes(st.service) ? st.service : (runnableServices[0] || st.service);
+            const cleanSvc = runnableServices.includes(st.service)
+              ? st.service
+              : runnableServices[0] || st.service;
             const serviceKey = toServiceEnvPrefix(cleanSvc);
             const resolvedPath = st.path
               .replace(/\{\{V\d+\}\}/g, "1")
               .replace(/\{([^}/]+)\}/g, (_, p: string) =>
-                p.toLowerCase().includes("code") || p.toLowerCase().includes("sku") ? "SKU-LAPTOP-01" : "1",
+                p.toLowerCase().includes("code") || p.toLowerCase().includes("sku")
+                  ? "SKU-LAPTOP-01"
+                  : "1",
               );
             let bodyRef = st.bodyReference;
             if (["POST", "PUT", "PATCH"].includes(st.method)) {
               bodyRef = bodyRef || `${serviceKey}_BODY_${idx + 1}`;
-              sampleEnv[bodyRef] = inferStepSampleBody(resolvedPath, cleanSvc, st.method, discoveredEndpoints);
+              sampleEnv[bodyRef] = inferStepSampleBody(
+                resolvedPath,
+                cleanSvc,
+                st.method,
+                discoveredEndpoints,
+              );
             }
             const { environmentVariables: _droppedVars, ...restStep } = st;
             return {
@@ -1980,19 +2319,36 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       if (discoveredEndpoints.length > 0) {
         const sampleEnv: Record<string, string> = {};
         const isAuxPath = (p: string) =>
-          /\/ai\/|\/chat$|\/generate-|\/suggest-|\/inactive$|\/invoice-pdf$|\/forgot-password$|\/reset-password$|\/logout$|\/verify-email$|\/google$|\/oauth|\/refresh$/i.test(p);
+          /\/ai\/|\/chat$|\/generate-|\/suggest-|\/inactive$|\/invoice-pdf$|\/forgot-password$|\/reset-password$|\/logout$|\/verify-email$|\/google$|\/oauth|\/refresh$/i.test(
+            p,
+          );
         const nonHealth = discoveredEndpoints.filter(
-          (ep) => !["/health", "/actuator/health", "/ready", "/readyz"].includes((ep.path || "").toLowerCase()),
+          (ep) =>
+            !["/health", "/actuator/health", "/ready", "/readyz"].includes(
+              (ep.path || "").toLowerCase(),
+            ),
         );
-        const corePool = nonHealth.filter((ep) => !isAuxPath(ep.path || "") && (ep.method || "GET").toUpperCase() !== "DELETE");
-        const pool = corePool.length > 0 ? corePool : nonHealth.length > 0 ? nonHealth : discoveredEndpoints;
+        const corePool = nonHealth.filter(
+          (ep) => !isAuxPath(ep.path || "") && (ep.method || "GET").toUpperCase() !== "DELETE",
+        );
+        const pool =
+          corePool.length > 0 ? corePool : nonHealth.length > 0 ? nonHealth : discoveredEndpoints;
 
         const endpointPhase = (ep: { method?: string; path?: string }) => {
           const verb = (ep.method || "GET").toUpperCase();
           const low = (ep.path || "").toLowerCase();
           if (isAuxPath(low)) return 5;
-          if (verb === "POST" && (/\/auth\//.test(low) || /\/(login|signin|register|signup|token)$/.test(low))) return 0;
-          if (verb === "POST" && !low.includes("{") && !/\/(checkout|cancel|pay|charge|confirm|submit)$/.test(low)) return 1;
+          if (
+            verb === "POST" &&
+            (/\/auth\//.test(low) || /\/(login|signin|register|signup|token)$/.test(low))
+          )
+            return 0;
+          if (
+            verb === "POST" &&
+            !low.includes("{") &&
+            !/\/(checkout|cancel|pay|charge|confirm|submit)$/.test(low)
+          )
+            return 1;
           if (verb === "POST") return 2;
           if (verb === "GET") return low.includes("{") ? 4 : 3;
           return 4;
@@ -2001,7 +2357,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           const low = svc.toLowerCase();
           if (low.includes("gateway") || low.includes("bff") || low.startsWith("edge")) return 0;
           if (low.includes("identity") || low.includes("auth") || low.includes("user")) return 1;
-          if (low.includes("catalog") || low.includes("product") || low.includes("inventory")) return 2;
+          if (low.includes("catalog") || low.includes("product") || low.includes("inventory"))
+            return 2;
           return 3;
         };
 
@@ -2060,14 +2417,16 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           const rawPath = ep.path || "/health";
           const rewrittenPath = rawPath.replace(/\{([^}/]+)\}/g, (_, param: string) => {
             const lower = param.toLowerCase();
-            if (lower.includes("uuid") || lower.includes("guid")) return "00000000-0000-0000-0000-000000000001";
+            if (lower.includes("uuid") || lower.includes("guid"))
+              return "00000000-0000-0000-0000-000000000001";
             return lower.includes("code") || lower.includes("sku") ? "SKU-LAPTOP-01" : "1";
           });
           let bodyRef: string | undefined;
           if (["POST", "PUT", "PATCH"].includes(method)) {
             bodyRef = `${serviceKey}_BODY_${idx + 1}`;
             sampleEnv[bodyRef] =
-              ep.sampleJsonBody || inferStepSampleBody(rewrittenPath, cleanSvc, method, discoveredEndpoints);
+              ep.sampleJsonBody ||
+              inferStepSampleBody(rewrittenPath, cleanSvc, method, discoveredEndpoints);
           }
           let envHeaders: Array<{ name: string; reference: string }> | undefined;
           if (ep.requiresAuth && endpointPhase(ep) !== 0) {
@@ -2110,7 +2469,11 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           }
         }
       }
-      if (st.bodyReference && ["POST", "PUT", "PATCH"].includes(st.method) && !map.has(st.bodyReference)) {
+      if (
+        st.bodyReference &&
+        ["POST", "PUT", "PATCH"].includes(st.method) &&
+        !map.has(st.bodyReference)
+      ) {
         map.set(st.bodyReference, {
           name: st.bodyReference,
           label: `Step ${idx + 1} (${st.method} ${st.path}): JSON request body`,
@@ -2140,7 +2503,12 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     triggerSystemAiGeneration();
   };
 
-  const loadSavedScenario = (savedItem: { id: string; name: string; steps: string[]; revision: number }) => {
+  const loadSavedScenario = (savedItem: {
+    id: string;
+    name: string;
+    steps: string[];
+    revision: number;
+  }) => {
     const parsedSteps: RuntimeDraftStep[] = [];
     const newEnv: Record<string, string> = {};
     savedItem.steps.forEach((rawStr, idx) => {
@@ -2192,7 +2560,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           status: String(obj["expectedStatus"] ?? 200),
           rationale: savedRationale,
           source: journeyPhase ? "AI + Static Analysis" : "Saved scenario",
-          allowClientError: typeof obj["allowClientError"] === "boolean" ? obj["allowClientError"] : true,
+          allowClientError:
+            typeof obj["allowClientError"] === "boolean" ? obj["allowClientError"] : true,
           ...(journeyPhase ? { journeyPhase } : {}),
           ...(envVars ? { environmentVariables: envVars } : {}),
           ...(envHeaders?.length ? { envHeaders } : {}),
@@ -2273,9 +2642,13 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       arr.map((item, idx) => {
         if (idx !== index) return item;
         const hasEnvAuth = item.envHeaders?.some((h) => h.name.toLowerCase() === "authorization");
-        const hasInlineAuth = item.headers && Object.keys(item.headers).some((k) => k.toLowerCase() === "authorization");
+        const hasInlineAuth =
+          item.headers &&
+          Object.keys(item.headers).some((k) => k.toLowerCase() === "authorization");
         if (hasEnvAuth || hasInlineAuth) {
-          const remainingEnv = (item.envHeaders ?? []).filter((h) => h.name.toLowerCase() !== "authorization");
+          const remainingEnv = (item.envHeaders ?? []).filter(
+            (h) => h.name.toLowerCase() !== "authorization",
+          );
           const remainingHeaders = Object.fromEntries(
             Object.entries(item.headers ?? {}).filter(([k]) => k.toLowerCase() !== "authorization"),
           );
@@ -2297,7 +2670,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
     );
     if (createdRef) {
       const refKey = createdRef;
-      setEnvironment((prev) => (prev[refKey] ? prev : { ...prev, [refKey]: "Bearer sandbox-verification-token" }));
+      setEnvironment((prev) =>
+        prev[refKey] ? prev : { ...prev, [refKey]: "Bearer sandbox-verification-token" },
+      );
     }
   };
 
@@ -2314,7 +2689,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       const res = await buildImages.mutateAsync({
         projectId,
         snapshotId: effectiveSnapshotId,
-        services: step1Readiness.missingBuildServices.length ? step1Readiness.missingBuildServices : undefined,
+        services: step1Readiness.missingBuildServices.length
+          ? step1Readiness.missingBuildServices
+          : undefined,
       });
       if (Object.keys(res.builtImages).length > 0) {
         const stored = readStep1Target(projectId);
@@ -2326,10 +2703,14 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       if (res.errors.length > 0) {
         setRunMessage(`Image build completed with warnings: ${res.errors.join("; ")}`);
       } else {
-        setRunMessage(`✓ Built & pinned ${Object.keys(res.builtImages).length} sandbox image(s). Ready to run!`);
+        setRunMessage(
+          `✓ Built & pinned ${Object.keys(res.builtImages).length} sandbox image(s). Ready to run!`,
+        );
       }
     } catch (err) {
-      setRunMessage(`Local image build failed: ${err instanceof Error ? err.message : String(err)}`);
+      setRunMessage(
+        `Local image build failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   };
 
@@ -2354,7 +2735,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           Number(step.status) > 599,
       )
     ) {
-      setRunMessage("Complete request services, relative paths (starting with '/', no '\\'), and 3-digit status codes.");
+      setRunMessage(
+        "Complete request services, relative paths (starting with '/', no '\\'), and 3-digit status codes.",
+      );
       return;
     }
     let currentConfig = config.data;
@@ -2362,7 +2745,10 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       const initialLoad = await config.refetch();
       currentConfig = initialLoad.data;
     }
-    let activeConfigRevision = Math.max(currentConfig?.revision ?? 0, readStep1Target(projectId).savedRevision ?? 0);
+    let activeConfigRevision = Math.max(
+      currentConfig?.revision ?? 0,
+      readStep1Target(projectId).savedRevision ?? 0,
+    );
     if (approveAndDispatch) {
       try {
         let autoBuiltOverrides: Record<string, string> = {};
@@ -2379,7 +2765,10 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           if (Object.keys(autoBuiltOverrides).length > 0) {
             const curStored = readStep1Target(projectId);
             writeStep1Target(projectId, {
-              serviceImageOverrides: { ...(curStored.serviceImageOverrides ?? {}), ...autoBuiltOverrides },
+              serviceImageOverrides: {
+                ...(curStored.serviceImageOverrides ?? {}),
+                ...autoBuiltOverrides,
+              },
             });
             const refreshed = await config.refetch();
             if (refreshed.data?.revision !== undefined) {
@@ -2427,7 +2816,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
           ...(stored.serviceRoles ?? {}),
         });
         const mergedImageOverrides = {
-          ...(rawProf["serviceImageOverrides"] && typeof rawProf["serviceImageOverrides"] === "object"
+          ...(rawProf["serviceImageOverrides"] &&
+          typeof rawProf["serviceImageOverrides"] === "object"
             ? (rawProf["serviceImageOverrides"] as Record<string, string>)
             : {}),
           ...(stored.serviceImageOverrides ?? {}),
@@ -2447,7 +2837,11 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             secretReferences: mergedSecretRefs,
           },
         };
-        if (hasLocalStep1Edits || activeConfigRevision === 0 || !(currentConfig ?? config.data)?.ready) {
+        if (
+          hasLocalStep1Edits ||
+          activeConfigRevision === 0 ||
+          !(currentConfig ?? config.data)?.ready
+        ) {
           let pinned: { revision: number };
           try {
             pinned = await autoSaveConfig.mutateAsync({
@@ -2456,7 +2850,10 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
             });
           } catch (firstPinErr) {
             const refreshed = await config.refetch();
-            if (refreshed.data?.revision !== undefined && refreshed.data.revision !== activeConfigRevision) {
+            if (
+              refreshed.data?.revision !== undefined &&
+              refreshed.data.revision !== activeConfigRevision
+            ) {
               pinned = await autoSaveConfig.mutateAsync({
                 ...configPayload,
                 expectedRevision: refreshed.data.revision,
@@ -2476,14 +2873,17 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       }
     }
     const required = activeInputs;
-    const defaultJsonPayload = '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","quantity":1}';
+    const defaultJsonPayload =
+      '{"customerEmail":"alice@mavis.io","productCode":"SKU-LAPTOP-01","quantity":1}';
     if (
       required.some((input) => {
         if (input.kind !== "json") return false;
         return !isValidJsonPayloadString(environment[input.name] || defaultJsonPayload);
       })
     ) {
-      setRunMessage("A JSON request body is not valid JSON. Fix or click Format on the highlighted payload.");
+      setRunMessage(
+        "A JSON request body is not valid JSON. Fix or click Format on the highlighted payload.",
+      );
       return;
     }
     const protectedValues = Object.fromEntries(
@@ -2501,7 +2901,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       setRunMessage("Runtime inputs exceed the supported size.");
       return;
     }
-    const normalizedName = scenarioName.trim() || "Auto-generated Architecture Verification Scenario";
+    const normalizedName =
+      scenarioName.trim() || "Auto-generated Architecture Verification Scenario";
     const serializedSteps = steps.map((step, index) => {
       const isWrite = ["POST", "PUT", "PATCH"].includes(step.method);
       const serviceKey = toServiceEnvPrefix(step.service);
@@ -2512,10 +2913,15 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
         : undefined;
       if (bodyRef && !protectedValues[bodyRef]) {
         protectedValues[bodyRef] =
-          environment[bodyRef]?.trim() || inferStepSampleBody(step.path, step.service, step.method, discoveredEndpoints);
+          environment[bodyRef]?.trim() ||
+          inferStepSampleBody(step.path, step.service, step.method, discoveredEndpoints);
       }
       const normalizedPath = step.path.replace(/(?<!\{)\{([^{}/]+)\}(?!\})/g, (_, p: string) =>
-        /uuid|guid/i.test(p) ? "00000000-0000-0000-0000-000000000001" : /code|sku/i.test(p) ? "SKU-LAPTOP-01" : "1",
+        /uuid|guid/i.test(p)
+          ? "00000000-0000-0000-0000-000000000001"
+          : /code|sku/i.test(p)
+            ? "SKU-LAPTOP-01"
+            : "1",
       );
       return JSON.stringify({
         id: `step-${index + 1}`,
@@ -2549,7 +2955,9 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       } else {
         const existingScenario =
           (scenarios.data ?? []).find((sc) => sc.id === selectedScenarioId) ??
-          (scenarios.data ?? []).find((sc) => sc.name.trim().toLowerCase() === normalizedName.toLowerCase());
+          (scenarios.data ?? []).find(
+            (sc) => sc.name.trim().toLowerCase() === normalizedName.toLowerCase(),
+          );
         if (existingScenario && existingScenario.revision > 0) {
           try {
             saved = await updateDraft.mutateAsync({
@@ -2574,7 +2982,8 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       }
       setRunMessage("Approving the confirmed scenario and dispatching execution...");
       const isEnrichedChoice =
-        "origin" in chosenModel && (chosenModel as { origin?: string | null }).origin === "RUNTIME_ENRICHED";
+        "origin" in chosenModel &&
+        (chosenModel as { origin?: string | null }).origin === "RUNTIME_ENRICHED";
       const session = await start.mutateAsync({
         projectId,
         snapshotId: effectiveSnapshotId,
@@ -2618,19 +3027,20 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               Sandbox Readiness Check (from Step 1)
             </span>
             <div className="flex items-center gap-2">
-              {step1Readiness.missingBuildServices.length > 0 && step1Readiness.localBuildAvailable && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs border-amber-500/40"
-                  disabled={buildImages.isPending}
-                  onClick={handleBuildMissingImagesInStep2}
-                >
-                  {buildImages.isPending
-                    ? "Building images..."
-                    : `Build ${step1Readiness.missingBuildServices.length} Missing Image(s)`}
-                </Button>
-              )}
+              {step1Readiness.missingBuildServices.length > 0 &&
+                step1Readiness.localBuildAvailable && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs border-amber-500/40"
+                    disabled={buildImages.isPending}
+                    onClick={handleBuildMissingImagesInStep2}
+                  >
+                    {buildImages.isPending
+                      ? "Building images..."
+                      : `Build ${step1Readiness.missingBuildServices.length} Missing Image(s)`}
+                  </Button>
+                )}
               <Link
                 href={`/runtime-config?project=${projectId}`}
                 className="text-amber-300 hover:underline font-medium"
@@ -2658,10 +3068,12 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
       <DetailPanel title="HTTP Test Scenario Builder">
         <div className="space-y-4">
           {(() => {
-            const activeModel = selectableModels.find((m) => m.id === modelId) ?? selectableModels[0];
+            const activeModel =
+              selectableModels.find((m) => m.id === modelId) ?? selectableModels[0];
             const activeSnap =
-              (snapshots.data ?? []).find((s) => s.id === (activeModel?.snapshotId || snapshotId)) ??
-              snapshots.data?.[0];
+              (snapshots.data ?? []).find(
+                (s) => s.id === (activeModel?.snapshotId || snapshotId),
+              ) ?? snapshots.data?.[0];
             const cleanSnapName = activeSnap?.name
               .replace(/^GITHUB_COMMIT\s*[·\-:]\s*/i, "")
               .replace(/\s*·\s*/g, " - ");
@@ -2673,7 +3085,7 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-mono font-semibold text-foreground">{revLabel}</span>
                   {runnableServices.length > 0 && (
-                    <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono text-[11px]">
+                    <span className="rounded bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-700 dark:text-emerald-400">
                       {runnableServices.length} runnable apps
                     </span>
                   )}
@@ -2705,10 +3117,22 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                     size="sm"
                     data-tour="scenario-confirm-run"
                     className="h-8 text-xs"
-                    disabled={!modelId || !steps.length || generateAiDraft.isPending || buildImages.isPending || autoSaveConfig.isPending || saveDraft.isPending || updateDraft.isPending || start.isPending}
+                    disabled={
+                      !modelId ||
+                      !steps.length ||
+                      generateAiDraft.isPending ||
+                      buildImages.isPending ||
+                      autoSaveConfig.isPending ||
+                      saveDraft.isPending ||
+                      updateDraft.isPending ||
+                      start.isPending
+                    }
                     onClick={() => handleCreateAndRun(true)}
                   >
-                    {(generateAiDraft.isPending || buildImages.isPending || autoSaveConfig.isPending || start.isPending) && (
+                    {(generateAiDraft.isPending ||
+                      buildImages.isPending ||
+                      autoSaveConfig.isPending ||
+                      start.isPending) && (
                       <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                     )}
                     {generateAiDraft.isPending
@@ -2783,12 +3207,17 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                       onClick={() => {
                         setSelectedScenarioId("");
                         edited.current = false;
-                        triggerSystemAiGeneration(flowPreset === "__CUSTOM__" ? aiGoal : flowPreset);
+                        triggerSystemAiGeneration(
+                          flowPreset === "__CUSTOM__" ? aiGoal : flowPreset,
+                        );
                       }}
                     >
                       {generateAiDraft.isPending ? (
                         <>
-                          <Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />
+                          <Loader2
+                            className="size-4 animate-spin text-primary"
+                            aria-hidden="true"
+                          />
                           <span>Generating...</span>
                         </>
                       ) : (
@@ -2797,7 +3226,10 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
                     </Button>
                   </div>
                   {generateAiDraft.isPending && (
-                    <div role="status" className="flex items-center gap-2 text-xs font-medium text-primary animate-pulse pt-0.5">
+                    <div
+                      role="status"
+                      className="flex items-center gap-2 text-xs font-medium text-primary animate-pulse pt-0.5"
+                    >
                       <Loader2 className="size-3.5 animate-spin shrink-0" aria-hidden="true" />
                       <span>Synthesizing end-to-end test flow & variable bindings...</span>
                     </div>
@@ -2822,235 +3254,265 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               )}
             </FormField>
 
-          {aiSummary && (() => {
-            const sentences = aiSummary
-              .split(/(?<=\.)\s+(?=[A-Z])/)
-              .map((s) => s.trim())
-              .filter(Boolean);
-            const primaryFlow = sentences[0] ?? aiSummary;
-            const coverageNote = sentences.slice(1).join(" ");
-            const colonIdx = primaryFlow.indexOf(":");
-            const thatMatch = /^(?:end-to-end\s+)?(?:top-down\s+)?business\s+journey\s+(?:that|which)\s+/i.exec(primaryFlow);
-            const flowLead =
-              colonIdx > 0 && colonIdx < 48
-                ? primaryFlow.slice(0, colonIdx).trim()
-                : "Scenario Flow Summary";
-            const flowBody =
-              colonIdx > 0 && colonIdx < 48
-                ? primaryFlow.slice(colonIdx + 1).trim()
-                : thatMatch
-                  ? primaryFlow.slice(thatMatch[0].length).trim()
-                  : primaryFlow;
-            const flowStages = flowBody
-              .split(
-                /\s*(?:;|,\s*(?=(?:then\s+)?(?:registers?|logins?|seeds?|creates?|reads?|adds?|previews?|applies|apply|performs?|checkouts?|verifies|verify|calls?|invokes?|checks?|updates?|cancels?|places?|fetches?|validates?)\b))\s*/i,
-              )
-              .map((part) => part.replace(/^then\s+/i, "").replace(/\.$/, "").trim())
-              .filter(Boolean);
-            return (
-              <div className="rounded-lg border border-primary/25 bg-primary/5 px-3.5 py-2.5 space-y-1.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-primary">
-                    {scenarioName || flowLead}
-                  </span>
-                  <span className="text-[11px] font-mono text-muted-foreground">
-                    {steps.length} steps · {runnableServices.length || 1} services
-                  </span>
-                </div>
-                {flowStages.length > 2 ? (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-xs">
-                    {flowStages.map((stage, sIdx) => (
-                      <span key={sIdx} className="inline-flex items-center gap-1.5">
-                        {sIdx > 0 && <span className="text-primary/70 font-mono">→</span>}
-                        <span className="rounded-md border border-border/80 bg-background/90 px-2 py-0.5 text-foreground font-medium">
-                          <span className="text-primary font-mono mr-1">{sIdx + 1}.</span>
-                          {stage}
-                        </span>
+            {aiSummary &&
+              (() => {
+                const sentences = aiSummary
+                  .split(/(?<=\.)\s+(?=[A-Z])/)
+                  .map((s) => s.trim())
+                  .filter(Boolean);
+                const primaryFlow = sentences[0] ?? aiSummary;
+                const coverageNote = sentences.slice(1).join(" ");
+                const colonIdx = primaryFlow.indexOf(":");
+                const thatMatch =
+                  /^(?:end-to-end\s+)?(?:top-down\s+)?business\s+journey\s+(?:that|which)\s+/i.exec(
+                    primaryFlow,
+                  );
+                const flowLead =
+                  colonIdx > 0 && colonIdx < 48
+                    ? primaryFlow.slice(0, colonIdx).trim()
+                    : "Scenario Flow Summary";
+                const flowBody =
+                  colonIdx > 0 && colonIdx < 48
+                    ? primaryFlow.slice(colonIdx + 1).trim()
+                    : thatMatch
+                      ? primaryFlow.slice(thatMatch[0].length).trim()
+                      : primaryFlow;
+                const flowStages = flowBody
+                  .split(
+                    /\s*(?:;|,\s*(?=(?:then\s+)?(?:registers?|logins?|seeds?|creates?|reads?|adds?|previews?|applies|apply|performs?|checkouts?|verifies|verify|calls?|invokes?|checks?|updates?|cancels?|places?|fetches?|validates?)\b))\s*/i,
+                  )
+                  .map((part) =>
+                    part
+                      .replace(/^then\s+/i, "")
+                      .replace(/\.$/, "")
+                      .trim(),
+                  )
+                  .filter(Boolean);
+                return (
+                  <div className="rounded-lg border border-primary/25 bg-primary/5 px-3.5 py-2.5 space-y-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-primary">
+                        {scenarioName || flowLead}
                       </span>
-                    ))}
+                      <span className="text-[11px] font-mono text-muted-foreground">
+                        {steps.length} steps · {runnableServices.length || 1} services
+                      </span>
+                    </div>
+                    {flowStages.length > 2 ? (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-xs">
+                        {flowStages.map((stage, sIdx) => (
+                          <span key={sIdx} className="inline-flex items-center gap-1.5">
+                            {sIdx > 0 && <span className="text-primary/70 font-mono">→</span>}
+                            <span className="rounded-md border border-border/80 bg-background/90 px-2 py-0.5 text-foreground font-medium">
+                              <span className="text-primary font-mono mr-1">{sIdx + 1}.</span>
+                              {stage}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-[13px] font-medium text-foreground leading-relaxed">
+                        {flowBody}
+                      </p>
+                    )}
+                    {coverageNote && (
+                      <p className="text-xs text-muted-foreground leading-relaxed pt-0.5">
+                        {coverageNote}
+                      </p>
+                    )}
                   </div>
-                ) : (
-                  <p className="text-[13px] font-medium text-foreground leading-relaxed">{flowBody}</p>
-                )}
-                {coverageNote && (
-                  <p className="text-xs text-muted-foreground leading-relaxed pt-0.5">{coverageNote}</p>
-                )}
-              </div>
-            );
-          })()}
+                );
+              })()}
           </div>
 
-          {steps.length > 0 && (() => {
-            const uniqueEntryServices = Array.from(new Set(steps.map((s) => s.service)));
-            const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
-            const stored = readStep1Target(projectId);
-            const mappings: Record<string, string> = {
-              ...(rawProf["recommendedServiceMappings"] && typeof rawProf["recommendedServiceMappings"] === "object"
-                ? (rawProf["recommendedServiceMappings"] as Record<string, string>)
-                : {}),
-              ...(rawProf["serviceMappings"] && typeof rawProf["serviceMappings"] === "object"
-                ? (rawProf["serviceMappings"] as Record<string, string>)
-                : {}),
-              ...(stored.serviceMappings ?? {}),
-            };
-            const composeByElementId = new Map<string, string>();
-            for (const el of modelDetail.data?.elements ?? []) {
-              composeByElementId.set(el.id, el.name);
-            }
-            for (const [composeSvc, elId] of Object.entries(mappings)) {
-              if (elId) composeByElementId.set(elId, composeSvc);
-            }
-            const knownRunnableOrModel = new Set([...runnableServices, ...detectedServiceNames]);
-            const downstreamServices = Array.from(
-              new Set(
-                (modelDetail.data?.edges ?? [])
-                  .filter((e) => uniqueEntryServices.includes(composeByElementId.get(e.from) ?? ""))
-                  .map((e) => composeByElementId.get(e.to))
-                  .filter(
-                    (n): n is string =>
-                      Boolean(n) && knownRunnableOrModel.has(n!) && !uniqueEntryServices.includes(n!),
-                  ),
-              ),
-            );
+          {steps.length > 0 &&
+            (() => {
+              const uniqueEntryServices = Array.from(new Set(steps.map((s) => s.service)));
+              const rawProf = (config.data?.profile ?? {}) as Record<string, unknown>;
+              const stored = readStep1Target(projectId);
+              const mappings: Record<string, string> = {
+                ...(rawProf["recommendedServiceMappings"] &&
+                typeof rawProf["recommendedServiceMappings"] === "object"
+                  ? (rawProf["recommendedServiceMappings"] as Record<string, string>)
+                  : {}),
+                ...(rawProf["serviceMappings"] && typeof rawProf["serviceMappings"] === "object"
+                  ? (rawProf["serviceMappings"] as Record<string, string>)
+                  : {}),
+                ...(stored.serviceMappings ?? {}),
+              };
+              const composeByElementId = new Map<string, string>();
+              for (const el of modelDetail.data?.elements ?? []) {
+                composeByElementId.set(el.id, el.name);
+              }
+              for (const [composeSvc, elId] of Object.entries(mappings)) {
+                if (elId) composeByElementId.set(elId, composeSvc);
+              }
+              const knownRunnableOrModel = new Set([...runnableServices, ...detectedServiceNames]);
+              const downstreamServices = Array.from(
+                new Set(
+                  (modelDetail.data?.edges ?? [])
+                    .filter((e) =>
+                      uniqueEntryServices.includes(composeByElementId.get(e.from) ?? ""),
+                    )
+                    .map((e) => composeByElementId.get(e.to))
+                    .filter(
+                      (n): n is string =>
+                        Boolean(n) &&
+                        knownRunnableOrModel.has(n!) &&
+                        !uniqueEntryServices.includes(n!),
+                    ),
+                ),
+              );
 
-            // Group current scenario steps into visual API Feature Clusters
-            const clusterMap = new Map<
-              string,
-              {
-                meta: ApiFeatureClusterMeta;
-                stepIndices: number[];
-                routes: string[];
-                extractedVars: string[];
-              }
-            >();
-            steps.forEach((st, idx) => {
-              const meta = classifyApiFeatureCluster(st.path, st.service, st.service, st.journeyPhase);
-              let entry = clusterMap.get(meta.id);
-              if (!entry) {
-                entry = { meta, stepIndices: [], routes: [], extractedVars: [] };
-                clusterMap.set(meta.id, entry);
-              }
-              entry.stepIndices.push(idx + 1);
-              entry.routes.push(`${st.method.toUpperCase()} ${st.path}`);
-              if (st.extract) {
-                for (const varName of Object.keys(st.extract)) {
-                  if (!entry.extractedVars.includes(varName)) entry.extractedVars.push(varName);
+              // Group current scenario steps into visual API Feature Clusters
+              const clusterMap = new Map<
+                string,
+                {
+                  meta: ApiFeatureClusterMeta;
+                  stepIndices: number[];
+                  routes: string[];
+                  extractedVars: string[];
                 }
-              }
-            });
-            const stepClusters = Array.from(clusterMap.values()).sort(
-              (a, b) => (a.stepIndices[0] ?? 0) - (b.stepIndices[0] ?? 0) || a.meta.order - b.meta.order,
-            );
+              >();
+              steps.forEach((st, idx) => {
+                const meta = classifyApiFeatureCluster(
+                  st.path,
+                  st.service,
+                  st.service,
+                  st.journeyPhase,
+                );
+                let entry = clusterMap.get(meta.id);
+                if (!entry) {
+                  entry = { meta, stepIndices: [], routes: [], extractedVars: [] };
+                  clusterMap.set(meta.id, entry);
+                }
+                entry.stepIndices.push(idx + 1);
+                entry.routes.push(`${st.method.toUpperCase()} ${st.path}`);
+                if (st.extract) {
+                  for (const varName of Object.keys(st.extract)) {
+                    if (!entry.extractedVars.includes(varName)) entry.extractedVars.push(varName);
+                  }
+                }
+              });
+              const stepClusters = Array.from(clusterMap.values()).sort(
+                (a, b) =>
+                  (a.stepIndices[0] ?? 0) - (b.stepIndices[0] ?? 0) || a.meta.order - b.meta.order,
+              );
 
-            return (
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
-                  <span className="text-muted-foreground font-medium mr-1">Service Chain:</span>
-                  <span className="rounded border bg-background px-2 py-0.5 font-mono font-medium text-foreground">
-                    MAVIS Runner
-                  </span>
-                  <span className="text-muted-foreground font-mono">→</span>
-                  {uniqueEntryServices.map((entrySvc) => (
-                    <span
-                      key={entrySvc}
-                      className="rounded border bg-background px-2 py-0.5 font-mono font-medium text-foreground"
-                    >
-                      {entrySvc}
+              return (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-1.5 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+                    <span className="text-muted-foreground font-medium mr-1">Service Chain:</span>
+                    <span className="rounded border bg-background px-2 py-0.5 font-mono font-medium text-foreground">
+                      MAVIS Runner
                     </span>
-                  ))}
-                  {downstreamServices.length > 0 && (
-                    <>
-                      <span className="text-muted-foreground font-mono">→</span>
-                      {downstreamServices.map((ds) => (
-                        <span
-                          key={ds}
-                          className="rounded border bg-muted/40 px-2 py-0.5 font-mono text-muted-foreground"
-                        >
-                          {ds}
-                        </span>
-                      ))}
-                    </>
-                  )}
-                </div>
-
-                {/* Visual API Feature Clusters Pipeline */}
-                <div data-tour="scenario-flow-clusters" className="rounded-lg border bg-muted/20 p-3 space-y-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-xs font-semibold text-foreground">
-                      Flow Groups ({stepClusters.length} groups · {steps.length} steps)
-                    </p>
+                    <span className="text-muted-foreground font-mono">→</span>
+                    {uniqueEntryServices.map((entrySvc) => (
+                      <span
+                        key={entrySvc}
+                        className="rounded border bg-background px-2 py-0.5 font-mono font-medium text-foreground"
+                      >
+                        {entrySvc}
+                      </span>
+                    ))}
+                    {downstreamServices.length > 0 && (
+                      <>
+                        <span className="text-muted-foreground font-mono">→</span>
+                        {downstreamServices.map((ds) => (
+                          <span
+                            key={ds}
+                            className="rounded border bg-muted/40 px-2 py-0.5 font-mono text-muted-foreground"
+                          >
+                            {ds}
+                          </span>
+                        ))}
+                      </>
+                    )}
                   </div>
 
-                  <div className="flex flex-wrap items-stretch gap-2">
-                    {stepClusters.map((c, idx) => (
-                      <div key={c.meta.id} className="flex items-center gap-2">
-                        {idx > 0 && (
-                          <span className="text-muted-foreground font-mono text-sm select-none">→</span>
-                        )}
-                        <div className="rounded-md border bg-background/80 p-2.5 min-w-[220px] max-w-[360px] space-y-1.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <span
-                              className="text-xs font-semibold text-foreground truncate"
-                              title={c.meta.shortTitle}
-                            >
-                              {idx + 1}. {c.meta.shortTitle}
+                  {/* Visual API Feature Clusters Pipeline */}
+                  <div
+                    data-tour="scenario-flow-clusters"
+                    className="rounded-lg border bg-muted/20 p-3 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-foreground">
+                        Flow Groups ({stepClusters.length} groups · {steps.length} steps)
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-stretch gap-2">
+                      {stepClusters.map((c, idx) => (
+                        <div key={c.meta.id} className="flex items-center gap-2">
+                          {idx > 0 && (
+                            <span className="text-muted-foreground font-mono text-sm select-none">
+                              →
                             </span>
-                            <div className="flex items-center gap-1 shrink-0">
+                          )}
+                          <div className="rounded-md border bg-background/80 p-2.5 min-w-[220px] max-w-[360px] space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
                               <span
-                                className="rounded border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-                                title={c.stepIndices.map((n) => `#${n}`).join(", ")}
+                                className="text-xs font-semibold text-foreground truncate"
+                                title={c.meta.shortTitle}
                               >
-                                {c.stepIndices.length <= 2
-                                  ? c.stepIndices.map((n) => `#${n}`).join(", ")
-                                  : `#${c.stepIndices[0]}–#${c.stepIndices[c.stepIndices.length - 1]} (${c.stepIndices.length})`}
+                                {idx + 1}. {c.meta.shortTitle}
                               </span>
-                              <button
-                                type="button"
-                                title={`Remove ${c.meta.shortTitle} (${c.stepIndices.length} step${c.stepIndices.length > 1 ? "s" : ""})`}
-                                onClick={() => {
-                                  edited.current = true;
-                                  const removeSet = new Set(c.stepIndices);
-                                  setSteps((prev) => prev.filter((_, sIdx) => !removeSet.has(sIdx + 1)));
-                                }}
-                                className="inline-flex h-5 w-5 items-center justify-center rounded text-xs text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-                              >
-                                ×
-                              </button>
-                            </div>
-                          </div>
-                          <div className="space-y-0.5 font-mono text-[10px] text-muted-foreground">
-                            {c.routes.map((r, rIdx) => (
-                              <div key={rIdx} className="truncate">
-                                • {r}
-                              </div>
-                            ))}
-                          </div>
-                          {c.extractedVars.length > 0 && (
-                            <div className="flex flex-wrap gap-1 pt-0.5">
-                              {c.extractedVars.map((v) => (
+                              <div className="flex items-center gap-1 shrink-0">
                                 <span
-                                  key={v}
-                                  className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground"
+                                  className="rounded border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                                  title={c.stepIndices.map((n) => `#${n}`).join(", ")}
                                 >
-                                  {`{{${v}}}`}
+                                  {c.stepIndices.length <= 2
+                                    ? c.stepIndices.map((n) => `#${n}`).join(", ")
+                                    : `#${c.stepIndices[0]}–#${c.stepIndices[c.stepIndices.length - 1]} (${c.stepIndices.length})`}
                                 </span>
+                                <button
+                                  type="button"
+                                  title={`Remove ${c.meta.shortTitle} (${c.stepIndices.length} step${c.stepIndices.length > 1 ? "s" : ""})`}
+                                  onClick={() => {
+                                    edited.current = true;
+                                    const removeSet = new Set(c.stepIndices);
+                                    setSteps((prev) =>
+                                      prev.filter((_, sIdx) => !removeSet.has(sIdx + 1)),
+                                    );
+                                  }}
+                                  className="inline-flex h-5 w-5 items-center justify-center rounded text-xs text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </div>
+                            <div className="space-y-0.5 font-mono text-[10px] text-muted-foreground">
+                              {c.routes.map((r, rIdx) => (
+                                <div key={rIdx} className="truncate">
+                                  • {r}
+                                </div>
                               ))}
                             </div>
-                          )}
+                            {c.extractedVars.length > 0 && (
+                              <div className="flex flex-wrap gap-1 pt-0.5">
+                                {c.extractedVars.map((v) => (
+                                  <span
+                                    key={v}
+                                    className="rounded border bg-muted/40 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground"
+                                  >
+                                    {`{{${v}}}`}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })()}
+              );
+            })()}
 
           <div data-tour="scenario-http-steps" className="space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-semibold">
-                HTTP Steps ({steps.length})
-              </h4>
+              <h4 className="text-sm font-semibold">HTTP Steps ({steps.length})</h4>
               <div className="flex gap-2">
                 <Button
                   size="sm"
@@ -3073,266 +3535,320 @@ function RuntimeScenariosView({ projectId }: { projectId: string }) {
               </div>
             ) : (
               <div className="space-y-2.5">
-                {steps.map((st, i) => {
-                  const isWrite = ["POST", "PUT", "PATCH"].includes(st.method);
-                  const serviceKey = (st.service || "SVC").replace(/[^A-Za-z0-9]/g, "_").toUpperCase().slice(0, 32) || "SVC";
-                  const effectiveBodyRef = isWrite ? st.bodyReference || `${serviceKey}_BODY_${i + 1}` : undefined;
-                  const payloadText = effectiveBodyRef
-                    ? environment[effectiveBodyRef] ??
-                      inferStepSampleBody(st.path, st.service, st.method, discoveredEndpoints)
-                    : "";
-                  const payloadValid = !isWrite || isValidJsonPayloadString(payloadText);
-                  const envAuthHeader = st.envHeaders?.find((h) => h.name.toLowerCase() === "authorization");
-                  const inlineAuthHeader = st.headers
-                    ? Object.entries(st.headers).find(([k]) => k.toLowerCase() === "authorization")?.[1]
-                    : undefined;
-                  const authHeader = envAuthHeader || inlineAuthHeader;
+                {steps
+                  .slice((currentHttpStepsPage - 1) * 5, currentHttpStepsPage * 5)
+                  .map((st, pageIndex) => {
+                    const i = (currentHttpStepsPage - 1) * 5 + pageIndex;
+                    const isWrite = ["POST", "PUT", "PATCH"].includes(st.method);
+                    const serviceKey =
+                      (st.service || "SVC")
+                        .replace(/[^A-Za-z0-9]/g, "_")
+                        .toUpperCase()
+                        .slice(0, 32) || "SVC";
+                    const effectiveBodyRef = isWrite
+                      ? st.bodyReference || `${serviceKey}_BODY_${i + 1}`
+                      : undefined;
+                    const payloadText = effectiveBodyRef
+                      ? (environment[effectiveBodyRef] ??
+                        inferStepSampleBody(st.path, st.service, st.method, discoveredEndpoints))
+                      : "";
+                    const payloadValid = !isWrite || isValidJsonPayloadString(payloadText);
+                    const envAuthHeader = st.envHeaders?.find(
+                      (h) => h.name.toLowerCase() === "authorization",
+                    );
+                    const inlineAuthHeader = st.headers
+                      ? Object.entries(st.headers).find(
+                          ([k]) => k.toLowerCase() === "authorization",
+                        )?.[1]
+                      : undefined;
+                    const authHeader = envAuthHeader || inlineAuthHeader;
 
-                  return (
-                    <div key={i} className="rounded-lg border p-3 bg-muted/20 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="px-2 py-0.5 rounded bg-muted text-xs font-mono font-semibold">
-                          #{i + 1}
-                        </span>
-                        {(() => {
-                          const clusterMeta = classifyApiFeatureCluster(st.path, st.service, st.service, st.journeyPhase);
-                          return (
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${clusterMeta.badgeClass}`}
-                            >
-                              {clusterMeta.icon} {clusterMeta.shortTitle}
-                            </span>
-                          );
-                        })()}
-                        <div className="flex items-center">
-                          <button
-                            type="button"
-                            title="Move step up"
-                            disabled={i === 0}
-                            onClick={() => moveStep(i, -1)}
-                            className="px-1.5 h-7 text-xs rounded-l border bg-background hover:bg-muted disabled:opacity-30"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            title="Move step down"
-                            disabled={i === steps.length - 1}
-                            onClick={() => moveStep(i, 1)}
-                            className="px-1.5 h-7 text-xs rounded-r border-y border-r bg-background hover:bg-muted disabled:opacity-30"
-                          >
-                            ↓
-                          </button>
-                        </div>
-                        <select
-                          className={`h-8 rounded px-2 text-xs font-mono font-semibold ${httpMethodBadgeClass(st.method)}`}
-                          value={st.method}
-                          onChange={(e) => updateStepMethod(i, e.target.value)}
-                        >
-                          <option value="GET">GET</option>
-                          <option value="POST">POST</option>
-                          <option value="PUT">PUT</option>
-                          <option value="PATCH">PATCH</option>
-                          <option value="DELETE">DELETE</option>
-                        </select>
-                        <span
-                          className="inline-flex h-8 items-center rounded border bg-muted/40 px-2.5 font-mono text-xs text-muted-foreground shrink-0"
-                          title="Target service automatically selected by AI + Static Analysis"
-                        >
-                          {st.service || defaultSvc}
-                        </span>
-                        <Input
-                          className="flex-1 min-w-48 font-mono text-xs h-8"
-                          placeholder="/api/path"
-                          value={st.path}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            const matchedSvc =
-                              !/gateway|bff|edge|proxy/i.test(defaultSvc) &&
-                              discoveredEndpoints.find((ep) => ep.path === val && ep.service)?.service;
-                            setSteps((arr) =>
-                              arr.map((item, idx) =>
-                                idx === i
-                                  ? { ...item, path: val, ...(matchedSvc ? { service: matchedSvc } : {}) }
-                                  : item,
-                              ),
+                    return (
+                      <div key={i} className="rounded-lg border p-3 bg-muted/20 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2 py-0.5 rounded bg-muted text-xs font-mono font-semibold">
+                            #{i + 1}
+                          </span>
+                          {(() => {
+                            const clusterMeta = classifyApiFeatureCluster(
+                              st.path,
+                              st.service,
+                              st.service,
+                              st.journeyPhase,
                             );
-                          }}
-                        />
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-muted-foreground">→</span>
+                            return (
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-semibold border ${clusterMeta.badgeClass}`}
+                              >
+                                {clusterMeta.icon} {clusterMeta.shortTitle}
+                              </span>
+                            );
+                          })()}
+                          <div className="flex items-center">
+                            <button
+                              type="button"
+                              title="Move step up"
+                              disabled={i === 0}
+                              onClick={() => moveStep(i, -1)}
+                              className="px-1.5 h-7 text-xs rounded-l border bg-background hover:bg-muted disabled:opacity-30"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              title="Move step down"
+                              disabled={i === steps.length - 1}
+                              onClick={() => moveStep(i, 1)}
+                              className="px-1.5 h-7 text-xs rounded-r border-y border-r bg-background hover:bg-muted disabled:opacity-30"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                          <select
+                            className={`h-8 rounded px-2 text-xs font-mono font-semibold ${httpMethodBadgeClass(st.method)}`}
+                            value={st.method}
+                            onChange={(e) => updateStepMethod(i, e.target.value)}
+                          >
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                            <option value="PUT">PUT</option>
+                            <option value="PATCH">PATCH</option>
+                            <option value="DELETE">DELETE</option>
+                          </select>
+                          <span
+                            className="inline-flex h-8 items-center rounded border bg-muted/40 px-2.5 font-mono text-xs text-muted-foreground shrink-0"
+                            title="Target service automatically selected by AI + Static Analysis"
+                          >
+                            {st.service || defaultSvc}
+                          </span>
                           <Input
-                            className="w-16 font-mono text-xs h-8 text-center"
-                            placeholder="200"
-                            title="Expected HTTP Status"
-                            value={st.status}
+                            className="flex-1 min-w-48 font-mono text-xs h-8"
+                            placeholder="/api/path"
+                            value={st.path}
                             onChange={(e) => {
                               const val = e.target.value;
+                              const matchedSvc =
+                                !/gateway|bff|edge|proxy/i.test(defaultSvc) &&
+                                discoveredEndpoints.find((ep) => ep.path === val && ep.service)
+                                  ?.service;
                               setSteps((arr) =>
-                                arr.map((item, idx) => (idx === i ? { ...item, status: val } : item)),
+                                arr.map((item, idx) =>
+                                  idx === i
+                                    ? {
+                                        ...item,
+                                        path: val,
+                                        ...(matchedSvc ? { service: matchedSvc } : {}),
+                                      }
+                                    : item,
+                                ),
                               );
                             }}
                           />
-                          <button
-                            type="button"
-                            title={
-                              st.allowClientError !== false
-                                ? "Trace Mode (2xx–4xx pass & continue capturing spans; only 5xx/timeout fails). Click to require Strict exact status."
-                                : "Strict Mode (must equal exact expected status code). Click to switch to resilient 2xx–4xx Trace Mode."
-                            }
-                            onClick={() =>
-                              setSteps((arr) =>
-                                arr.map((item, idx) =>
-                                  idx === i ? { ...item, allowClientError: item.allowClientError === false } : item,
-                                ),
-                              )
-                            }
-                            className={`h-8 px-2 rounded border text-[11px] font-mono font-medium transition ${
-                              st.allowClientError !== false
-                                ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-400"
-                                : "border-amber-500/40 bg-amber-500/15 text-amber-300"
-                            }`}
-                          >
-                            {st.allowClientError !== false ? "2xx–4xx" : "Strict"}
-                          </button>
-                        </div>
-                        {isWrite && effectiveBodyRef && (
-                          <button
-                            type="button"
-                            title="Toggle JSON Request Payload editor"
-                            onClick={() => {
-                              const nextOpen = !openPayloads[i];
-                              setOpenPayloads((prev) => ({ ...prev, [i]: nextOpen }));
-                              if (nextOpen && payloadValid && !payloadText.includes("\n")) {
-                                try {
-                                  const pretty = JSON.stringify(JSON.parse(payloadText), null, 2);
-                                  setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: pretty }));
-                                } catch {
-                                  // no-op
-                                }
-                              }
-                            }}
-                            className={`h-8 px-2.5 rounded border text-[11px] font-mono transition ${
-                              !payloadValid
-                                ? "border-rose-500/50 bg-rose-500/15 text-rose-400"
-                                : openPayloads[i]
-                                  ? "border-primary/50 bg-primary/15 text-primary"
-                                  : "border-border bg-background text-muted-foreground hover:text-foreground"
-                            }`}
-                          >
-                            Payload {openPayloads[i] ? "▾" : "▸"}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          title="Toggle encrypted Authorization header for this step"
-                          onClick={() => toggleStepAuthHeader(i)}
-                          className={`h-8 px-2 rounded border text-[11px] font-mono transition ${
-                            authHeader
-                              ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
-                              : "border-border bg-background text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          Auth
-                        </button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-destructive px-2 h-8"
-                          onClick={() => removeStep(i)}
-                        >
-                          ✕
-                        </Button>
-                      </div>
-                      {(st.rationale || st.extract) && (
-                        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pl-1">
-                          {st.extract &&
-                            Object.entries(st.extract).map(([varKey, ptr]) => (
-                              <span
-                                key={varKey}
-                                className="px-1.5 py-0.5 rounded bg-muted text-foreground border font-mono text-[10px]"
-                              >
-                                {varKey} ← {ptr}
-                              </span>
-                            ))}
-                          {st.rationale && <span>{st.rationale}</span>}
-                        </div>
-                      )}
-                      {isWrite && effectiveBodyRef && openPayloads[i] && (
-                        <div className="rounded-md border bg-background/80 p-2.5 space-y-2 mt-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-mono text-muted-foreground">
-                              Request Body (application/json)
-                            </span>
-                            <div className="flex items-center gap-1.5">
-                              <span
-                                className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                                  payloadValid
-                                    ? "bg-emerald-500/10 text-emerald-400"
-                                    : "bg-rose-500/15 text-rose-400 font-semibold"
-                                }`}
-                              >
-                                {payloadValid ? "✓ Valid JSON" : "⚠ Invalid JSON"}
-                              </span>
-                              {payloadValid && (
-                                <>
-                                  <button
-                                    type="button"
-                                    className="text-[10px] font-mono px-2 py-0.5 rounded border bg-background hover:bg-muted"
-                                    onClick={() => {
-                                      try {
-                                        const pretty = JSON.stringify(JSON.parse(payloadText), null, 2);
-                                        setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: pretty }));
-                                      } catch {
-                                        // no-op
-                                      }
-                                    }}
-                                  >
-                                    Format
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="text-[10px] font-mono px-2 py-0.5 rounded border bg-background hover:bg-muted"
-                                    onClick={() => {
-                                      try {
-                                        const normalized = JSON.stringify(JSON.parse(payloadText));
-                                        setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: normalized }));
-                                      } catch {
-                                        // no-op
-                                      }
-                                    }}
-                                  >
-                                    Compact
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          <textarea
-                            rows={Math.min(10, Math.max(4, payloadText.split("\n").length))}
-                            className={`w-full rounded border bg-background p-2 font-mono text-xs leading-relaxed focus:outline-none focus:ring-1 ${
-                              payloadValid
-                                ? "border-border focus:ring-primary"
-                                : "border-rose-500 focus:ring-rose-500"
-                            }`}
-                            value={payloadText}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (!st.bodyReference) {
+                          <div className="flex items-center gap-1">
+                            <span className="text-xs text-muted-foreground">→</span>
+                            <Input
+                              className="w-16 font-mono text-xs h-8 text-center"
+                              placeholder="200"
+                              title="Expected HTTP Status"
+                              value={st.status}
+                              onChange={(e) => {
+                                const val = e.target.value;
                                 setSteps((arr) =>
                                   arr.map((item, idx) =>
-                                    idx === i ? { ...item, bodyReference: effectiveBodyRef } : item,
+                                    idx === i ? { ...item, status: val } : item,
                                   ),
                                 );
+                              }}
+                            />
+                            <button
+                              type="button"
+                              title={
+                                st.allowClientError !== false
+                                  ? "Trace Mode (2xx–4xx pass & continue capturing spans; only 5xx/timeout fails). Click to require Strict exact status."
+                                  : "Strict Mode (must equal exact expected status code). Click to switch to resilient 2xx–4xx Trace Mode."
                               }
-                              setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: val }));
-                            }}
-                          />
+                              onClick={() =>
+                                setSteps((arr) =>
+                                  arr.map((item, idx) =>
+                                    idx === i
+                                      ? {
+                                          ...item,
+                                          allowClientError: item.allowClientError === false,
+                                        }
+                                      : item,
+                                  ),
+                                )
+                              }
+                              className={`h-8 px-2 rounded border text-[11px] font-mono font-medium transition ${
+                                st.allowClientError !== false
+                                  ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                  : "border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                              }`}
+                            >
+                              {st.allowClientError !== false ? "2xx–4xx" : "Strict"}
+                            </button>
+                          </div>
+                          {isWrite && effectiveBodyRef && (
+                            <button
+                              type="button"
+                              title="Toggle JSON Request Payload editor"
+                              onClick={() => {
+                                const nextOpen = !openPayloads[i];
+                                setOpenPayloads((prev) => ({ ...prev, [i]: nextOpen }));
+                                if (nextOpen && payloadValid && !payloadText.includes("\n")) {
+                                  try {
+                                    const pretty = JSON.stringify(JSON.parse(payloadText), null, 2);
+                                    setEnvironment((prev) => ({
+                                      ...prev,
+                                      [effectiveBodyRef]: pretty,
+                                    }));
+                                  } catch {
+                                    // no-op
+                                  }
+                                }
+                              }}
+                              className={`h-8 px-2.5 rounded border text-[11px] font-mono transition ${
+                                !payloadValid
+                                  ? "border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-400"
+                                  : openPayloads[i]
+                                    ? "border-primary/50 bg-primary/15 text-primary"
+                                    : "border-border bg-background text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              Payload {openPayloads[i] ? "▾" : "▸"}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            title="Toggle encrypted Authorization header for this step"
+                            onClick={() => toggleStepAuthHeader(i)}
+                            className={`h-8 px-2 rounded border text-[11px] font-mono transition ${
+                              authHeader
+                                ? "border-sky-500/40 bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                                : "border-border bg-background text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            Auth
+                          </button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive px-2 h-8"
+                            onClick={() => removeStep(i)}
+                          >
+                            ✕
+                          </Button>
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
+                        {(st.rationale || st.extract) && (
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground pl-1">
+                            {st.extract &&
+                              Object.entries(st.extract).map(([varKey, ptr]) => (
+                                <span
+                                  key={varKey}
+                                  className="px-1.5 py-0.5 rounded bg-muted text-foreground border font-mono text-[10px]"
+                                >
+                                  {varKey} ← {ptr}
+                                </span>
+                              ))}
+                            {st.rationale && <span>{st.rationale}</span>}
+                          </div>
+                        )}
+                        {isWrite && effectiveBodyRef && openPayloads[i] && (
+                          <div className="rounded-md border bg-background/80 p-2.5 space-y-2 mt-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-mono text-muted-foreground">
+                                Request Body (application/json)
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                                    payloadValid
+                                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                      : "bg-rose-500/15 text-rose-700 font-semibold dark:text-rose-400"
+                                  }`}
+                                >
+                                  {payloadValid ? "✓ Valid JSON" : "⚠ Invalid JSON"}
+                                </span>
+                                {payloadValid && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="text-[10px] font-mono px-2 py-0.5 rounded border bg-background hover:bg-muted"
+                                      onClick={() => {
+                                        try {
+                                          const pretty = JSON.stringify(
+                                            JSON.parse(payloadText),
+                                            null,
+                                            2,
+                                          );
+                                          setEnvironment((prev) => ({
+                                            ...prev,
+                                            [effectiveBodyRef]: pretty,
+                                          }));
+                                        } catch {
+                                          // no-op
+                                        }
+                                      }}
+                                    >
+                                      Format
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="text-[10px] font-mono px-2 py-0.5 rounded border bg-background hover:bg-muted"
+                                      onClick={() => {
+                                        try {
+                                          const normalized = JSON.stringify(
+                                            JSON.parse(payloadText),
+                                          );
+                                          setEnvironment((prev) => ({
+                                            ...prev,
+                                            [effectiveBodyRef]: normalized,
+                                          }));
+                                        } catch {
+                                          // no-op
+                                        }
+                                      }}
+                                    >
+                                      Compact
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <textarea
+                              rows={Math.min(10, Math.max(4, payloadText.split("\n").length))}
+                              className={`w-full rounded border bg-background p-2 font-mono text-xs leading-relaxed focus:outline-none focus:ring-1 ${
+                                payloadValid
+                                  ? "border-border focus:ring-primary"
+                                  : "border-rose-500 focus:ring-rose-500"
+                              }`}
+                              value={payloadText}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (!st.bodyReference) {
+                                  setSteps((arr) =>
+                                    arr.map((item, idx) =>
+                                      idx === i
+                                        ? { ...item, bodyReference: effectiveBodyRef }
+                                        : item,
+                                    ),
+                                  );
+                                }
+                                setEnvironment((prev) => ({ ...prev, [effectiveBodyRef]: val }));
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                {steps.length > 5 && (
+                  <Pagination
+                    page={currentHttpStepsPage}
+                    pageCount={httpStepsPageCount}
+                    onPageChange={setHttpStepsPage}
+                  />
+                )}
               </div>
             )}
           </div>

@@ -213,12 +213,6 @@ export const studentWorkspaceNavigation: readonly NavigationGroup[] = [
         href: "/workspace-overview",
       },
       {
-        id: "assignments",
-        label: "Assignments & Submit",
-        icon: BookOpen,
-        href: "/assignments",
-      },
-      {
         id: "members",
         label: "Class Members",
         icon: Users,

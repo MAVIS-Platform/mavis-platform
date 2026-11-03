@@ -204,23 +204,12 @@ export const SCREEN_TOUR_CATALOG = {
       vi: "Tổng quan Dự án — Hướng dẫn đơn giản",
     },
     subtitle: {
-      en: "Think of this screen as your project's Mission Control: it shows the 5-step journey from raw source code to live runtime verification.",
-      vi: "Hãy xem màn hình này như Trạm điều khiển trung tâm của dự án: hiển thị lộ trình 5 bước từ lúc nhập code đến khi chạy thử thực tế.",
+      en: "Review the project's current architecture health, saved revisions, and source history.",
+      vi: "Xem tình trạng kiến trúc hiện tại, các phiên bản đã lưu và lịch sử mã nguồn của dự án.",
     },
     cards: [
       {
         badge: "1",
-        title: {
-          en: "The 5-Step Journey",
-          vi: "Hành trình 5 bước chuẩn",
-        },
-        description: {
-          en: "1. Source Snapshots → 2. Static Analysis → 3. Graph & 3E → 4. Architecture Diagrams → 5. Runtime Verification.",
-          vi: "1. Bản chụp mã nguồn → 2. Phân tích tĩnh → 3. Bản đồ & Bằng chứng 3E → 4. Sơ đồ kiến trúc → 5. Chạy thử Runtime.",
-        },
-      },
-      {
-        badge: "2",
         title: {
           en: "Quick Health Check",
           vi: "Kiểm tra sức khỏe dự án",
@@ -230,26 +219,25 @@ export const SCREEN_TOUR_CATALOG = {
           vi: "Xem nhanh số bộ phận (services) và đường kết nối đã tìm thấy, đồng thời mở nhanh phiên bản kiến trúc mới nhất.",
         },
       },
-    ],
-    steps: [
       {
-        id: "po-workflow-bar",
-        selectors: ['[data-tour="project-workflow-bar"]', "main .grid"],
+        badge: "2",
         title: {
-          en: "1. The 5-Step Architecture Workflow Bar",
-          vi: "1. Thanh lộ trình 5 bước khám phá kiến trúc",
+          en: "Source & Revision History",
+          vi: "Lịch sử Mã nguồn & Phiên bản",
         },
         description: {
-          en: "Follow these 5 cards from left to right: import code (Step 1), check revisions (Step 2), view the interactive map (Step 3), export diagrams (Step 4), and run live tests (Step 5).",
-          vi: "Đi theo 5 ô từ trái sang phải: Nhập code (Bước 1) → Xem phiên bản phân tích (Bước 2) → Mở bản đồ mạng lưới (Bước 3) → Xuất sơ đồ báo cáo (Bước 4) → Chạy thử thực tế (Bước 5).",
+          en: "Review imported source snapshots and the architecture revisions generated from each analysis.",
+          vi: "Xem các bản chụp mã nguồn đã nhập và những phiên bản kiến trúc được tạo từ mỗi lần phân tích.",
         },
       },
+    ],
+    steps: [
       {
         id: "po-summary-cards",
         selectors: ['[data-tour="project-summary-cards"]', "main article"],
         title: {
-          en: "2. Discovered Services & Connections",
-          vi: "2. Thống kê Dịch vụ & Đường kết nối",
+          en: "1. Discovered Services & Connections",
+          vi: "1. Thống kê Dịch vụ & Đường kết nối",
         },
         description: {
           en: "Shows the total number of microservices, connections between them, and whether the project can be started in the Runtime Sandbox.",
@@ -260,8 +248,8 @@ export const SCREEN_TOUR_CATALOG = {
         id: "po-revisions",
         selectors: ['[data-tour="project-revisions"]', "main section"],
         title: {
-          en: "3. Model Revisions & History",
-          vi: "3. Danh sách các Phiên bản Kiến trúc (Revisions)",
+          en: "2. Model Revisions & History",
+          vi: "2. Danh sách các Phiên bản Kiến trúc (Revisions)",
         },
         description: {
           en: "Every time you scan code or complete a Runtime test, MAVIS saves a numbered Revision here so you can inspect or compare them anytime.",
@@ -272,8 +260,8 @@ export const SCREEN_TOUR_CATALOG = {
         id: "po-sidebar",
         selectors: ['aside[aria-label="Application sidebar"]', "nav"],
         title: {
-          en: "4. Project Workspace Sidebar",
-          vi: "4. Menu điều hướng Dự án bên trái",
+          en: "3. Project Workspace Sidebar",
+          vi: "3. Menu điều hướng Dự án bên trái",
         },
         description: {
           en: "Use the left menu to switch between Architecture (Graph, Diagrams, Editor), Analysis (Snapshots, Compare, Impact), Runtime (Steps 1–3), and AI Explanations.",
@@ -1970,7 +1958,11 @@ export const SCREEN_TOUR_CATALOG = {
     steps: [
       {
         id: "prof-summary",
-        selectors: ['section[aria-label*="Profile"]', 'section[aria-label*="Hồ sơ"]', "main section"],
+        selectors: [
+          'section[aria-label*="Profile"]',
+          'section[aria-label*="Hồ sơ"]',
+          "main section",
+        ],
         title: {
           en: "1. Account Summary & Statistics",
           vi: "1. Tóm tắt Tài khoản & Số liệu thống kê",
@@ -2073,7 +2065,7 @@ export const SCREEN_TOUR_CATALOG = {
 const CATALOG_MAP: Record<string, ScreenTourDefinition> = SCREEN_TOUR_CATALOG;
 
 const TITLE_TO_SCREEN_ID: Record<string, string> = {
-  "overview": "overview",
+  overview: "overview",
   "my projects": "overview",
   "import project source": "import",
   "project overview": "project-overview",
@@ -2093,7 +2085,7 @@ const TITLE_TO_SCREEN_ID: Record<string, string> = {
   "class overview": "workspace-overview",
   "workspace members": "members",
   "class members": "members",
-  "assignments": "assignments",
+  assignments: "assignments",
   "assignments & submit": "assignments",
   "reference source versions": "references",
   "my submissions": "submissions",
@@ -2109,7 +2101,7 @@ const TITLE_TO_SCREEN_ID: Record<string, string> = {
   "runtime summary": "runtime-summary",
   "runtime execution profiles": "profiles",
   "my profile": "profile",
-  "notifications": "notifications",
+  notifications: "notifications",
 };
 
 export function resolveScreenTour(screenIdOrTitle?: string | null): ScreenTourDefinition | null {

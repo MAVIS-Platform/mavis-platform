@@ -41,11 +41,7 @@ export function ProjectOverview() {
   const query = useApiQuery("project", { projectId }, { enabled: Boolean(projectId) });
   const snapshots = useApiQuery("snapshots", { projectId }, { enabled: Boolean(projectId) });
   const jobs = useApiQuery("analysisJobs", { projectId }, { enabled: Boolean(projectId) });
-  const workspaces = useApiQuery(
-    "workspaces",
-    {},
-    { enabled: Boolean(query.data?.workspaceId) },
-  );
+  const workspaces = useApiQuery("workspaces", {}, { enabled: Boolean(query.data?.workspaceId) });
   const currentWorkspace = workspaces.data?.find((w) => w.id === query.data?.workspaceId);
   const { models, model } = useModel();
 
@@ -61,16 +57,17 @@ export function ProjectOverview() {
 
   const snapshotById = new Map(snapshotList.map((s) => [s.id, s]));
   const latestNonCancelledJob = jobList.find((j) => j.status !== "cancelled");
-  const effectiveStatus: typeof query.data extends undefined ? never : NonNullable<typeof query.data>["status"] =
-    jobList.some(analysisInProgress)
-      ? "processing"
-      : latestNonCancelledJob?.status === "completed" || models.length > 0
-        ? "ready"
-        : latestNonCancelledJob?.status === "failed" || latestNonCancelledJob?.status === "timed-out"
-          ? "failed"
-          : jobs.isSuccess
-            ? "unknown"
-            : (query.data?.status ?? "unknown");
+  const effectiveStatus: typeof query.data extends undefined
+    ? never
+    : NonNullable<typeof query.data>["status"] = jobList.some(analysisInProgress)
+    ? "processing"
+    : latestNonCancelledJob?.status === "completed" || models.length > 0
+      ? "ready"
+      : latestNonCancelledJob?.status === "failed" || latestNonCancelledJob?.status === "timed-out"
+        ? "failed"
+        : jobs.isSuccess
+          ? "unknown"
+          : (query.data?.status ?? "unknown");
 
   return (
     <RequestState query={query}>
@@ -99,49 +96,6 @@ export function ProjectOverview() {
             </div>
           )}
 
-          {/* 5-Step Architecture Workflow Bar */}
-          <div data-tour="project-workflow-bar" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <Link
-              href={`/snapshots?project=${projectId}`}
-              className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
-            >
-              <span className="text-xs font-semibold text-foreground">1. Source Snapshots</span>
-              <span className="mt-1 text-xs text-muted-foreground">
-                {snapshotList.length} imported →
-              </span>
-            </Link>
-            <Link
-              href={`/snapshots?project=${projectId}`}
-              className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
-            >
-              <span className="text-xs font-semibold text-foreground">2. Static Analysis</span>
-              <span className="mt-1 text-xs text-muted-foreground">
-                {models.length} revision(s) →
-              </span>
-            </Link>
-            <Link
-              href={`/architecture?project=${projectId}${model ? `&model=${model.id}` : ""}`}
-              className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
-            >
-              <span className="text-xs font-semibold text-foreground">3. Graph &amp; 3E</span>
-              <span className="mt-1 text-xs text-muted-foreground">Explore network →</span>
-            </Link>
-            <Link
-              href={`/diagrams?project=${projectId}${model ? `&model=${model.id}` : ""}`}
-              className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
-            >
-              <span className="text-xs font-semibold text-foreground">4. C4 &amp; UML Diagrams</span>
-              <span className="mt-1 text-xs text-muted-foreground">Save views →</span>
-            </Link>
-            <Link
-              href={`/impact?project=${projectId}${model ? `&model=${model.id}` : ""}`}
-              className="flex flex-col justify-between rounded-lg border bg-card p-3 shadow-xs transition-colors hover:border-primary/40 hover:bg-muted/40"
-            >
-              <span className="text-xs font-semibold text-foreground">5. Impact &amp; Runtime</span>
-              <span className="mt-1 text-xs text-muted-foreground">Verify changes →</span>
-            </Link>
-          </div>
-
           <DetailPanel
             title={query.data.name}
             actions={
@@ -169,7 +123,10 @@ export function ProjectOverview() {
               )}
             </div>
 
-            <div data-tour="project-summary-cards" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div
+              data-tour="project-summary-cards"
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+            >
               <SummaryCard label="Services" value={derivedServices ?? "0"} />
               <SummaryCard label="Connections" value={totalEdges ?? "0"} />
               <SummaryCard label="Architecture revisions" value={models.length} />
@@ -529,7 +486,9 @@ export function SourceSnapshots() {
                   const pct =
                     analyzingSnapshotId === s.id && progressPct !== null && progressPct > 0
                       ? progressPct
-                      : latestJob && typeof latestJob.progress === "number" && latestJob.progress > 0
+                      : latestJob &&
+                          typeof latestJob.progress === "number" &&
+                          latestJob.progress > 0
                         ? Math.min(99, latestJob.progress)
                         : null;
                   return (
@@ -545,9 +504,7 @@ export function SourceSnapshots() {
                           </span>
                           <span>Analyzing…</span>
                         </span>
-                        {pct !== null && (
-                          <span className="font-mono font-semibold">{pct}%</span>
-                        )}
+                        {pct !== null && <span className="font-mono font-semibold">{pct}%</span>}
                       </div>
                       <div className="h-1.5 w-full overflow-hidden rounded-full bg-primary/15">
                         {pct !== null ? (
