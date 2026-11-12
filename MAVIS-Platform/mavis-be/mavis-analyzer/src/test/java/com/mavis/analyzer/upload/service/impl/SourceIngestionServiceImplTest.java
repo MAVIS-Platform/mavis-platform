@@ -71,6 +71,8 @@ class SourceIngestionServiceImplTest {
 
     @Mock private com.mavis.common.config.PlatformRuntimeSettings settings;
 
+    @Mock private com.mavis.common.security.AccessPolicyService accessPolicy;
+
     @InjectMocks
     private SourceIngestionServiceImpl sourceIngestionService;
 
@@ -110,6 +112,24 @@ class SourceIngestionServiceImplTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void guidedTemplateUploadRequiresCurrentLecturerPermission() {
+        UUID workspaceId = UUID.randomUUID();
+        sampleProject.setWorkspace(com.mavis.common.entity.Workspace.builder()
+                .id(workspaceId).courseMode(true).build());
+        sampleProject.setProjectType("TEACHER_REFERENCE");
+        sampleProject.setIsReferenceTemplate(true);
+        when(projectRepository.findLockedById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
+        org.mockito.Mockito.doThrow(new BusinessException(ErrorCode.FORBIDDEN))
+                .when(accessPolicy).requireWorkspaceLecturer(workspaceId);
+        MockMultipartFile file = new MockMultipartFile("file", "project.zip", "application/zip", new byte[]{1});
+
+        assertThatThrownBy(() -> sourceIngestionService.ingestZipUpload(sampleProject.getId(), file))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.FORBIDDEN);
+        org.mockito.Mockito.verifyNoInteractions(storageService, sourceSnapshotRepository);
     }
 
     @Test
