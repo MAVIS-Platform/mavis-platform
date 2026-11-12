@@ -11,6 +11,7 @@ import com.mavis.common.repository.WorkspaceMemberRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.security.AuthorizationRequestCache;
+import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.common.utils.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,6 +30,7 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final CourseLabPolicy courseLabs;
 
     @Override
     public User requireCurrentActiveUser() {
@@ -98,7 +100,7 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
             }
         }
 
-        // 3. Kiểm tra thành viên có memberRole == LECTURER
+        // A workspace role does not restore lecturer privileges after a global role change.
         Optional<WorkspaceMember> memberOpt = membership(workspaceId, user.getId());
         if (user.getRole() != null && "LECTURER".equalsIgnoreCase(user.getRole().getCode())
                 && memberOpt.isPresent() && "LECTURER".equalsIgnoreCase(memberOpt.get().getMemberRole())) {
@@ -128,6 +130,10 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
             return true;
         }
 
+        if (!canAccessCourseProject(project, user)) {
+            return false;
+        }
+
         // 2. Chủ sở hữu đồ án
         if (project.getOwner() != null && project.getOwner().getId().equals(user.getId())) {
             return true;
@@ -139,7 +145,8 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
 
             Optional<WorkspaceMember> memberOpt = membership(workspaceId, user.getId());
             if (memberOpt.isPresent()) {
-                if ("LECTURER".equalsIgnoreCase(memberOpt.get().getMemberRole())) {
+                if (user.getRole() != null && "LECTURER".equalsIgnoreCase(user.getRole().getCode())
+                        && "LECTURER".equalsIgnoreCase(memberOpt.get().getMemberRole())) {
                     return true;
                 }
 
@@ -165,6 +172,22 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
         return false;
     }
 
+    private boolean canAccessCourseProject(Project project, User user) {
+        if (project.getWorkspace() == null || !project.getWorkspace().isCourseMode()
+                || !CourseLabPolicy.isStudent(user)) {
+            return true;
+        }
+        var lab = project.getAssignment();
+        if (lab == null || !project.getWorkspace().getId().equals(lab.getWorkspace().getId())
+                || lab.getReferenceModel() == null || lab.getReferenceModel().getSourceSnapshot() == null
+                || !"STUDENT_WORKING".equals(project.getProjectType())
+                || Boolean.TRUE.equals(project.getIsReferenceTemplate())) {
+            return false;
+        }
+        return lab.getReferenceModel().getSourceSnapshot().getId().equals(project.getReferenceSnapshotId())
+                && courseLabs.canOpen(lab, user);
+    }
+
     private Optional<Workspace> workspace(UUID workspaceId) {
         return AuthorizationRequestCache.workspace(workspaceId, () -> workspaceRepository.findById(workspaceId));
     }
@@ -186,6 +209,10 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
         // 1. SYSTEM_ADMIN có toàn quyền sửa/xóa
         if (user.getRole() != null && "SYSTEM_ADMIN".equalsIgnoreCase(user.getRole().getCode())) {
             return;
+        }
+
+        if (!canAccessCourseProject(project, user)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "This course project is locked");
         }
 
         // 2. Chỉ duy nhất chủ sở hữu mới có quyền ghi

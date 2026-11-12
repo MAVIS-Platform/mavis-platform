@@ -263,7 +263,7 @@ class AssignmentServiceImplTest {
                 .requiredDiagramTypes(List.of("DEPENDENCY_GRAPH"))
                 .build();
 
-        when(assignmentRepository.findWithDetailsById(aId)).thenReturn(Optional.of(a));
+        when(assignmentRepository.findLockedById(aId)).thenReturn(Optional.of(a));
         when(assignmentRepository.save(any(Assignment.class))).thenAnswer(inv -> inv.getArgument(0));
         when(submissionSnapshotRepository.countByAssignmentId(aId)).thenReturn(2L);
 
@@ -285,7 +285,7 @@ class AssignmentServiceImplTest {
                 .createdBy(currentUser)
                 .build();
 
-        when(assignmentRepository.findWithDetailsById(aId)).thenReturn(Optional.of(a));
+        when(assignmentRepository.findLockedById(aId)).thenReturn(Optional.of(a));
         when(submissionSnapshotRepository.existsByAssignmentId(aId)).thenReturn(false);
 
         assignmentService.deleteAssignment(aId);
@@ -303,7 +303,7 @@ class AssignmentServiceImplTest {
                 .createdBy(currentUser)
                 .build();
 
-        when(assignmentRepository.findWithDetailsById(aId)).thenReturn(Optional.of(a));
+        when(assignmentRepository.findLockedById(aId)).thenReturn(Optional.of(a));
         when(submissionSnapshotRepository.existsByAssignmentId(aId)).thenReturn(true);
 
         assertThatThrownBy(() -> assignmentService.deleteAssignment(aId))
@@ -339,7 +339,7 @@ class AssignmentServiceImplTest {
                 .workspace(Workspace.builder().id(UUID.randomUUID()).build()).isReferenceTemplate(true).build();
         var model = com.mavis.common.entity.ModelVersion.builder().id(UUID.randomUUID()).project(project)
                 .sourceSnapshot(com.mavis.common.entity.SourceSnapshot.builder().project(project).build()).build();
-        when(assignmentRepository.findWithDetailsById(assignment.getId())).thenReturn(Optional.of(assignment));
+        when(assignmentRepository.findLockedById(assignment.getId())).thenReturn(Optional.of(assignment));
         when(modelVersionRepository.findById(model.getId())).thenReturn(Optional.of(model));
         assertThatThrownBy(() -> assignmentService.updateAssignment(assignment.getId(), AssignmentUpdateRequest.builder()
                 .title("Task").referenceModelId(model.getId()).build())).isInstanceOf(BusinessException.class);
@@ -350,7 +350,7 @@ class AssignmentServiceImplTest {
     @Test void clearingReferenceIsExplicitAndOldClientsPreserveThePinnedVersion() {
         var model = com.mavis.common.entity.ModelVersion.builder().id(UUID.randomUUID()).build();
         var assignment = Assignment.builder().id(UUID.randomUUID()).workspace(workspace).title("Task").referenceModel(model).build();
-        when(assignmentRepository.findWithDetailsById(assignment.getId())).thenReturn(Optional.of(assignment));
+        when(assignmentRepository.findLockedById(assignment.getId())).thenReturn(Optional.of(assignment));
         when(assignmentRepository.save(any(Assignment.class))).thenAnswer(call -> call.getArgument(0));
         assignmentService.updateAssignment(assignment.getId(), AssignmentUpdateRequest.builder().title("Task").clearReferenceSource(true).build());
         assertThat(assignment.getReferenceModel()).isNull();
