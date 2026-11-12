@@ -13,6 +13,7 @@ import com.mavis.common.repository.SubmissionSnapshotRepository;
 import com.mavis.common.repository.UserRepository;
 import com.mavis.common.repository.WorkspaceMemberRepository;
 import com.mavis.common.repository.WorkspaceRepository;
+import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.common.utils.SecurityUtils;
 import com.mavis.platform.assignment.dto.AssignmentCreateRequest;
 import com.mavis.platform.assignment.dto.AssignmentResponseDTO;
@@ -36,6 +37,7 @@ public class AssignmentServiceImpl implements AssignmentService {
     private String uploadDir;
 
     private final AssignmentRepository assignmentRepository;
+    private final CourseLabPolicy courseLabs;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final SubmissionSnapshotRepository submissionSnapshotRepository;
@@ -107,6 +109,18 @@ public class AssignmentServiceImpl implements AssignmentService {
             return Collections.emptyList();
         }
 
+        if (assignments.getFirst().getWorkspace().isCourseMode()) {
+            User actor = accessPolicyService.requireCurrentActiveUser();
+            if (CourseLabPolicy.isStudent(actor)) {
+                assignments = assignments.stream()
+                        .filter(assignment -> courseLabs.canOpen(assignment, actor))
+                        .sorted(Comparator.comparing(Assignment::getLabOrder))
+                        .toList();
+            }
+        }
+        if (assignments.isEmpty()) {
+            return List.of();
+        }
         List<UUID> assignmentIds = assignments.stream().map(Assignment::getId).toList();
         Map<UUID, Long> submissionCountMap = new HashMap<>();
         List<Object[]> counts = submissionSnapshotRepository.countSubmissionsByAssignmentIds(assignmentIds);
@@ -128,6 +142,7 @@ public class AssignmentServiceImpl implements AssignmentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy đề bài tập"));
 
         accessPolicyService.requireWorkspaceMember(assignment.getWorkspace().getId());
+        requireCourseLabAccess(assignment);
         long submissionCount = submissionSnapshotRepository.countByAssignmentId(assignmentId);
         return toDTO(assignment, submissionCount);
     }
@@ -135,7 +150,7 @@ public class AssignmentServiceImpl implements AssignmentService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public AssignmentResponseDTO updateAssignment(UUID assignmentId, AssignmentUpdateRequest request) {
-        Assignment assignment = assignmentRepository.findWithDetailsById(assignmentId)
+        Assignment assignment = assignmentRepository.findLockedById(assignmentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy đề bài tập"));
 
         accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
@@ -165,7 +180,14 @@ public class AssignmentServiceImpl implements AssignmentService {
         }
 
         assignment.setUpdatedAt(OffsetDateTime.now());
-        setReference(assignment, request.getReferenceModelId(), request.getClearReferenceSource());
+        if (assignment.getLabOrder() != null && (Boolean.TRUE.equals(request.getClearReferenceSource())
+                || (request.getReferenceModelId() != null
+                    && !request.getReferenceModelId().equals(assignment.getReferenceModel().getId())))) {
+            throw new BusinessException(ErrorCode.CONFLICT, "A published Lab keeps its pinned source");
+        }
+        if (assignment.getLabOrder() == null) {
+            setReference(assignment, request.getReferenceModelId(), request.getClearReferenceSource());
+        }
         assignment = assignmentRepository.save(assignment);
         log.info("Assignment updated: id={}", assignmentId);
 
@@ -176,11 +198,14 @@ public class AssignmentServiceImpl implements AssignmentService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void deleteAssignment(UUID assignmentId) {
-        Assignment assignment = assignmentRepository.findWithDetailsById(assignmentId)
+        Assignment assignment = assignmentRepository.findLockedById(assignmentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy đề bài tập"));
 
         accessPolicyService.requireWorkspaceLecturer(assignment.getWorkspace().getId());
 
+        if (assignment.getLabOrder() != null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "Published Labs are part of the course roadmap");
+        }
         if (submissionSnapshotRepository.existsByAssignmentId(assignmentId)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Không thể xóa đề bài tập đã có sinh viên nộp bài (BR-14)");
         }
@@ -195,15 +220,29 @@ public class AssignmentServiceImpl implements AssignmentService {
         var assignment = assignmentRepository.findWithDetailsById(assignmentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Assignment not found"));
         accessPolicyService.requireWorkspaceMember(assignment.getWorkspace().getId());
+        requireCourseLabAccess(assignment);
         if (assignment.getReferenceModel() == null) throw new BusinessException(ErrorCode.NOT_FOUND, "No reference source attached");
         var snapshot = assignment.getReferenceModel().getSourceSnapshot();
         try {
             var root = java.nio.file.Path.of(uploadDir).toRealPath();
             var path = java.nio.file.Path.of(snapshot.getStoragePath()).toRealPath();
             if (!path.startsWith(root) || !java.nio.file.Files.isRegularFile(path)) throw new java.io.IOException();
+            if (assignment.getLabOrder() != null && !snapshot.getArtifactHash()
+                    .equalsIgnoreCase(com.mavis.common.utils.HashUtils.sha256Hex(path))) {
+                throw new BusinessException(ErrorCode.CONFLICT, "The published source archive no longer matches its digest");
+            }
             return new org.springframework.core.io.FileSystemResource(path);
         } catch (java.io.IOException | IllegalArgumentException | NullPointerException error) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "Reference archive is unavailable");
+        }
+    }
+
+    private void requireCourseLabAccess(Assignment assignment) {
+        if (assignment.getWorkspace().isCourseMode()) {
+            User actor = accessPolicyService.requireCurrentActiveUser();
+            if (CourseLabPolicy.isStudent(actor)) {
+                courseLabs.requireOpen(assignment, actor);
+            }
         }
     }
 

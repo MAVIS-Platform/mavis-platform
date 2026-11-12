@@ -51,7 +51,7 @@ class WorkerPublicationIntegrationTest {
             factory.setJpaPropertyMap(Map.of("hibernate.hbm2ddl.auto","none"));return factory;
         }
         @Bean PlatformTransactionManager transactionManager(jakarta.persistence.EntityManagerFactory factory){return new JpaTransactionManager(factory);}
-        @Bean com.mavis.common.security.AccessPolicyService accessPolicy(UserRepository u,WorkspaceRepository w,WorkspaceMemberRepository m){return new com.mavis.common.security.impl.AccessPolicyServiceImpl(u,w,m);}
+        @Bean com.mavis.common.security.AccessPolicyService accessPolicy(UserRepository u,WorkspaceRepository w,WorkspaceMemberRepository m,org.springframework.jdbc.core.JdbcTemplate jdbc){return new com.mavis.common.security.impl.AccessPolicyServiceImpl(u,w,m,new com.mavis.common.security.CourseLabPolicy(jdbc));}
         @Bean ObjectMapper objectMapper(){return new ObjectMapper();}
         @Bean GraphBuilderService graph(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v){return new GraphBuilderServiceImpl(e,r,v);}
         @Bean WorkerCanonicalImporter importer(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v,ObjectMapper json){return new WorkerCanonicalImporter(e,r,v,json);}

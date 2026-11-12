@@ -204,6 +204,7 @@ class ProjectServiceImplTest {
         UUID refSnapshotId = UUID.randomUUID();
         SourceSnapshot refSnapshot = SourceSnapshot.builder()
                 .id(refSnapshotId)
+                .project(Project.builder().id(UUID.randomUUID()).workspace(workspace).build())
                 .sourceType("ZIP_UPLOAD")
                 .branchName("main")
                 .commitSha("abc1234")
@@ -409,6 +410,7 @@ class ProjectServiceImplTest {
         Project p1 = Project.builder()
                 .id(UUID.randomUUID())
                 .name("Reference Project")
+                .workspace(workspace)
                 .build();
 
         SourceSnapshot snapshot = SourceSnapshot.builder()
