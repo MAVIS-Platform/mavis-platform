@@ -436,7 +436,12 @@ export function LabWorkspace() {
 
           <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <main className="min-w-0 space-y-5">
-              <StepContent step={activeStep} workspaceId={workspaceId} labId={lab.id} />
+              <StepContent
+                step={activeStep}
+                workspaceId={workspaceId}
+                labId={lab.id}
+                referenceSnapshotId={lab.referenceSource?.snapshotId ?? null}
+              />
             </main>
             <aside className="space-y-5">
               <DetailPanel
@@ -558,12 +563,29 @@ function StepContent({
   step,
   workspaceId,
   labId,
+  referenceSnapshotId,
 }: {
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
   labId: string;
+  referenceSnapshotId: string | null;
 }) {
   const { t } = useLocale();
+  const client = useApi();
+  const projects = useApiQuery("projects", {}, { enabled: step <= 2 && Boolean(referenceSnapshotId) });
+  const project = referenceSnapshotId ? projects.data?.find((item) =>
+    item.workspaceId === workspaceId && item.assignmentId === labId &&
+    item.projectType === "STUDENT_WORKING" && item.referenceSnapshotId === referenceSnapshotId,
+  ) : undefined;
+  const models = useApiQuery("modelVersions", { projectId: project?.id ?? "" }, {
+    enabled: step <= 2 && client.mode === "backend" && Boolean(project),
+  });
+  const model = models.data?.filter((item) => item.origin === "GENERATED")
+    .sort((left, right) => right.revision - left.revision)[0];
+  const modelQuery = project && model ? new URLSearchParams({ project: project.id, model: model.id }).toString() : null;
+  const sourceLink = project
+    ? `/snapshots?${new URLSearchParams({ project: project.id })}`
+    : `/assignments?${new URLSearchParams({ workspace: workspaceId, assignment: labId })}`;
   const current = learningSteps.find((item) => item.id === step)!;
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
@@ -594,8 +616,8 @@ function StepContent({
               graph.
             </p>
             <Button asChild>
-              <Link href="/architecture">
-                {t("Open Static View", "Mở kiến trúc tĩnh")} <ArrowRight />
+              <Link href={modelQuery ? `/architecture?${modelQuery}` : sourceLink}>
+                {modelQuery ? t("Open Static View", "Mở kiến trúc tĩnh") : t("Open Lab source", "Mở nguồn của Lab")} <ArrowRight />
               </Link>
             </Button>
           </DetailPanel>
@@ -604,9 +626,9 @@ function StepContent({
               Select a node or relationship to review file-line evidence, 3E findings and grounded
               explanations.
             </p>
-            <Button asChild variant="outline">
-              <Link href="/explain">{t("Open evidence review", "Mở đánh giá bằng chứng")}</Link>
-            </Button>
+            {modelQuery && <Button asChild variant="outline">
+              <Link href={`/explain?${modelQuery}`}>{t("Open evidence review", "Mở đánh giá bằng chứng")}</Link>
+            </Button>}
           </DetailPanel>
         </div>
       )}
@@ -625,7 +647,9 @@ function StepContent({
               </p>
             </div>
             <Button asChild variant="outline">
-              <Link href="/impact">{t("Inspect static impact", "Xem tác động tĩnh")}</Link>
+              <Link href={modelQuery ? `/impact?${modelQuery}` : sourceLink}>
+                {modelQuery ? t("Inspect static impact", "Xem tác động tĩnh") : t("Open Lab source", "Mở nguồn của Lab")}
+              </Link>
             </Button>
           </DetailPanel>
           <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
