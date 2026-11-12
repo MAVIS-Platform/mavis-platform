@@ -1,8 +1,10 @@
 package com.mavis.common.repository;
 
 import com.mavis.common.entity.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -17,6 +19,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     @EntityGraph(attributePaths = {"role"})
     Optional<User> findByEmail(String email);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<User> findForUpdateByEmail(String email);
 
     boolean existsByEmail(String email);
 

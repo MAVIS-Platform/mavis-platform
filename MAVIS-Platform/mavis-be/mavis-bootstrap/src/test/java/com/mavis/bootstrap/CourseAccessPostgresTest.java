@@ -100,6 +100,15 @@ class CourseAccessPostgresTest {
             when(access.requireCurrentActiveUser()).thenReturn(teacher);
             var expiring = tx.execute(status -> courses.issue(workspaceId, 1));
             when(access.requireCurrentActiveUser()).thenReturn(student);
+            tx.executeWithoutResult(status -> {
+                jdbc.update("UPDATE course_passkeys SET expires_at = now() + interval '1 microsecond'");
+                assertTrue(jdbc.queryForObject("""
+                        SELECT now() < expires_at AND expires_at < statement_timestamp()
+                        FROM course_passkeys WHERE workspace_id = ?
+                        """, Boolean.class, workspaceId));
+                assertEquals(ErrorCode.BAD_REQUEST, assertThrows(BusinessException.class,
+                        () -> courses.redeem(expiring.code(), UUID.randomUUID())).getErrorCode());
+            });
             jdbc.update("UPDATE course_passkeys SET expires_at = now() - interval '1 minute'");
             assertEquals(ErrorCode.BAD_REQUEST, assertThrows(BusinessException.class,
                     () -> tx.execute(status -> courses.redeem(expiring.code(), UUID.randomUUID()))).getErrorCode());

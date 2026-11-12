@@ -20,7 +20,7 @@ class AuthVerificationTest {
     final UserOtpRepository otps=mock(UserOtpRepository.class);
     final AuthServiceImpl service=new AuthServiceImpl(users,mock(RoleRepository.class),otps,mock(PasswordEncoder.class),mock(JwtUtil.class),mock(EmailService.class));
     final User user=User.builder().email("fixture@example.invalid").status("PENDING_VERIFICATION").build();
-    VerifyEmailRequest request(){var r=new VerifyEmailRequest();r.setEmail(user.getEmail());r.setOtpCode("123456");when(users.findByEmail(user.getEmail())).thenReturn(Optional.of(user));return r;}
+    VerifyEmailRequest request(){var r=new VerifyEmailRequest();r.setEmail(user.getEmail());r.setOtpCode("123456");when(users.findForUpdateByEmail(user.getEmail())).thenReturn(Optional.of(user));return r;}
     UserOtp otp(String purpose,OffsetDateTime expiry){var o=UserOtp.builder().user(user).otpCode("123456").purpose(purpose).expiryTime(expiry).isUsed(false).build();when(otps.findFirstByUserAndOtpCodeAndPurposeOrderByCreatedAtDesc(user,"123456",purpose)).thenReturn(Optional.of(o));return o;}
     @ParameterizedTest @ValueSource(strings={"LOCKED","INACTIVE","ACTIVE"})
     void verificationCannotReactivateBlockedOrVerifiedAccounts(String status){var r=request();user.setStatus(status);assertThrows(BusinessException.class,()->service.verifyEmail(r));assertEquals(status,user.getStatus());if(!"ACTIVE".equals(status))verifyNoInteractions(otps);verify(users,never()).save(any());}
