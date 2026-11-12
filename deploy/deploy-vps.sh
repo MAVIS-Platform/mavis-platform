@@ -76,6 +76,14 @@ healthy() {
 }
 compose "$prefix" "$tag" "$incoming/compose.production.yml" config --quiet
 compose "$prefix" "$tag" "$incoming/compose.production.yml" pull
+migration="$incoming/V26__Course_Lab_Access.sql"
+schema_tool="$incoming/apply-course-schema.py"
+if [ -e "$migration" ] || [ -e "$schema_tool" ]; then
+  test -f "$migration" && test -f "$schema_tool" || { echo "Incomplete WF-01 schema package"; exit 1; }
+  install -d -m 700 /opt/mavis/db-backups
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$migration" /opt/mavis/db-backups/wf01-before-v26.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans

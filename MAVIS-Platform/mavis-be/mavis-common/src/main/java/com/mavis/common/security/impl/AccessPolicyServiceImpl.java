@@ -100,7 +100,8 @@ public class AccessPolicyServiceImpl implements AccessPolicyService {
 
         // 3. Kiểm tra thành viên có memberRole == LECTURER
         Optional<WorkspaceMember> memberOpt = membership(workspaceId, user.getId());
-        if (memberOpt.isPresent() && "LECTURER".equalsIgnoreCase(memberOpt.get().getMemberRole())) {
+        if (user.getRole() != null && "LECTURER".equalsIgnoreCase(user.getRole().getCode())
+                && memberOpt.isPresent() && "LECTURER".equalsIgnoreCase(memberOpt.get().getMemberRole())) {
             return;
         }
 

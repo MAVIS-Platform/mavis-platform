@@ -105,7 +105,12 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
       return response;
     }
     if (operation === "signOut") {
-      const response = NextResponse.json({ ok: true });
+      if (token)
+        await javaRequest("auth/logout", token, { method: "POST", signal: request.signal });
+      const response = NextResponse.json(
+        { ok: true },
+        { headers: { "Cache-Control": "no-store" } },
+      );
       response.cookies.delete(cookieName);
       return response;
     }
