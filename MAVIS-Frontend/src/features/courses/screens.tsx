@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { CourseQuiz } from "./course-quiz";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -437,6 +438,7 @@ export function LabWorkspace() {
           <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <main className="min-w-0 space-y-5">
               <StepContent
+                canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
                 step={activeStep}
                 workspaceId={workspaceId}
                 labId={lab.id}
@@ -564,11 +566,13 @@ function StepContent({
   workspaceId,
   labId,
   referenceSnapshotId,
+  canAttemptQuiz,
 }: {
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
   labId: string;
   referenceSnapshotId: string | null;
+  canAttemptQuiz: boolean;
 }) {
   const { t } = useLocale();
   const client = useApi();
@@ -652,16 +656,14 @@ function StepContent({
               </Link>
             </Button>
           </DetailPanel>
-          <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
+          {canAttemptQuiz ? <CourseQuiz workspaceId={workspaceId} labId={labId} /> : <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
             <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
               <CircleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
               <p className="text-sm leading-6 text-muted-foreground">
-                Quiz attempt state is awaiting the versioned Quiz API. Runtime remains locked until
-                the server returns PASSED.
+                {t("Quiz attempts are available to enrolled students in published guided Labs.", "Sinh viên đã ghi danh có thể làm Quiz trong Lab tuần tự đã công bố.")}
               </p>
             </div>
-            <Button disabled>{t("Start quiz", "Bắt đầu quiz")}</Button>
-          </DetailPanel>
+          </DetailPanel>}
         </div>
       )}
 

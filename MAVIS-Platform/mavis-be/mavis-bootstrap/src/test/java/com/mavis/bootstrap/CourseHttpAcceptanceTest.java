@@ -188,6 +188,7 @@ class CourseHttpAcceptanceTest {
         assertEquals(List.of("UNLOCKED", "LOCKED"), List.of(
                 state.path("labs").get(0).path("state").asText(),
                 state.path("labs").get(1).path("state").asText()));
+        checkVersionedQuiz(workspace, lab1, lab2, lecturer, student, foreignStudent);
         send("GET", "assignments/" + lab2, student, null, 403);
         send("GET", "assignments/" + lab2 + "/reference-source", student, null, 403);
         send("GET", "assignments/" + lab1 + "/reference-source", foreignStudent, null, 403);
@@ -202,6 +203,36 @@ class CourseHttpAcceptanceTest {
     private String login(String user) throws Exception {
         return data(send("POST", "auth/login", null,
                 Map.of("email", user + "@example.invalid", "password", PASSWORD), 200)).path("token").asText();
+    }
+
+    private void checkVersionedQuiz(String workspace, UUID lab1, UUID lab2,
+                                    String lecturer, String student, String foreignStudent) throws Exception {
+        String quiz = workspace + "/course-labs/" + lab1 + "/quiz";
+        String lockedQuiz = workspace + "/course-labs/" + lab2 + "/quiz";
+        var definition = Map.of("lesson", "Architecture and service boundaries", "questions", List.of(
+                Map.of("prompt", "Which layer owns this boundary?", "options", List.of("API", "Database"), "correctOption", 0),
+                Map.of("prompt", "Which service is upstream?", "options", List.of("Inventory", "Orders"), "correctOption", 1)));
+        send("GET", quiz, student, null, 404);
+        send("POST", quiz, student, definition, 403);
+        send("GET", quiz, foreignStudent, null, 403);
+        send("GET", lockedQuiz, student, null, 403);
+        assertEquals(1, data(send("POST", quiz, lecturer, definition, 200)).path("version").asInt());
+        JsonNode publicQuiz = data(send("GET", quiz, student, null, 200));
+        assertEquals(70, publicQuiz.path("passPercent").asInt());
+        assertFalse(publicQuiz.path("questions").get(0).has("correctOption"));
+        var failed = Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 0));
+        var passed = Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 1));
+        assertEquals("NEEDS_RETRY", data(send("POST", quiz + "/attempts", student, failed, 200)).path("status").asText());
+        JsonNode first = data(send("POST", quiz + "/attempts", student, passed, 200));
+        assertEquals("PASSED", first.path("status").asText());
+        assertEquals(first, data(send("POST", quiz + "/attempts", student, passed, 200)));
+        send("POST", quiz + "/attempts", student,
+                Map.of("attemptId", passed.get("attemptId"), "version", 1, "answers", List.of(1, 1)), 409);
+        assertTrue(data(send("GET", quiz, student, null, 200)).path("passed").asBoolean());
+        assertEquals(2, data(send("POST", quiz, lecturer, definition, 200)).path("version").asInt());
+        send("POST", quiz + "/attempts", student,
+                Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 1)), 409);
+        assertFalse(data(send("GET", quiz, student, null, 200)).path("passed").asBoolean());
     }
 
     private HttpResponse<byte[]> send(String method, String path, String token, Map<String, ?> body,
