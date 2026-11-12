@@ -14,12 +14,13 @@ import { Button } from "@/components/ui/button";
 import { ImportFlow } from "@/components/mainflow/import-flow";
 import { contextHref } from "@/lib/mainflow-api";
 import { useIsMutating } from "@tanstack/react-query";
-import { useApiQuery, useSelection } from "@/hooks/use-api";
+import { useApi, useApiQuery, useSelection } from "@/hooks/use-api";
 import { SelectField } from "@/components/shared/forms";
 import { RequestState } from "@/components/shared/request-state";
 import { StatusBadge } from "@/components/shared/data";
 import type { Project } from "@/types/domain";
 import { GuidedTarget } from "@/components/shared/guided-target";
+import { useCourseRoadmap } from "@/features/workspaces/course-access";
 import { useLocale } from "@/lib/i18n/locale-context";
 export function ProjectStatusBadge({ status }: { status: Project["status"] }) {
   return (
@@ -66,15 +67,22 @@ export function ProjectSelector({
   workspaceId,
   assignmentId,
   selectedProject,
-}: { workspaceId?: string; assignmentId?: string; selectedProject?: Project | undefined } = {}) {
+  requireAssignment = false,
+}: {
+  workspaceId?: string;
+  assignmentId?: string;
+  selectedProject?: Project | undefined;
+  requireAssignment?: boolean;
+} = {}) {
   const busy = useIsMutating() > 0;
   const query = useApiQuery("projects", {});
   const selection = useSelection();
   const projects = query.data ?? [];
-  const options = selectedProject?.id === selection.projectId &&
+  const options =
+    selectedProject?.id === selection.projectId &&
     !projects.some((project) => project.id === selectedProject.id)
-    ? [selectedProject, ...projects]
-    : projects;
+      ? [selectedProject, ...projects]
+      : projects;
   return (
     <RequestState query={query} empty={!options.length}>
       <div data-tour="project-selector">
@@ -89,7 +97,7 @@ export function ProjectSelector({
                 (p) =>
                   !workspaceId ||
                   (p.workspaceId === workspaceId &&
-                    (!p.assignmentId || p.assignmentId === assignmentId)),
+                    (p.assignmentId === assignmentId || (!requireAssignment && !p.assignmentId))),
               )
               .map((p) => ({ value: p.id, label: p.name })),
           ]}
@@ -108,6 +116,24 @@ export function CreateProjectAction(props: ImportTourProps = {}) {
 }
 export function ImportSnapshotAction() {
   const { projectId } = useSelection();
+  const client = useApi();
+  const project = useApiQuery(
+    "project",
+    { projectId },
+    { enabled: client.mode === "backend" && !!projectId },
+  );
+  const workspaceId = project.data?.workspaceId ?? "";
+  const roadmap = useCourseRoadmap(workspaceId);
+  if (
+    client.mode === "backend" &&
+    projectId &&
+    (!project.data ||
+      (workspaceId &&
+        (!roadmap.isSuccess ||
+          (roadmap.data.guided && project.data.projectType !== "TEACHER_REFERENCE"))))
+  ) {
+    return null;
+  }
   return <ProjectImportDialog projectId={projectId} />;
 }
 function ProjectImportDialog({
@@ -164,7 +190,9 @@ function ProjectImportDialog({
             size={create ? "default" : "sm"}
             disabled={!create && !projectId}
           >
-            {create ? t("Import project source", "Nhập mã nguồn dự án") : t("Import new snapshot", "Nhập bản chụp mới")}
+            {create
+              ? t("Import project source", "Nhập mã nguồn dự án")
+              : t("Import new snapshot", "Nhập bản chụp mới")}
           </Button>
         </DialogTrigger>
       </GuidedTarget>

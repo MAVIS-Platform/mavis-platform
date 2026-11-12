@@ -535,14 +535,15 @@ test("workspaces with embedded members and feedback mutations skip redundant rou
  const submission={id:job,assignmentId:node,projectId:project,submittedById:node,submittedAt:"2026-10-26T00:00:00Z",sourceSnapshotId:snapshot,modelVersionId:model,diagramVersionId:node,runtimeSessionId:node};
  t.mock.method(globalThis,"fetch",async(url,options={})=>{
   const path=new URL(url).pathname.replace("/api/v1/","");paths.push(`${options.method??"GET"} ${path}`);
-  if(path==="workspaces")return Response.json({code:200,data:[{id:job,code:"SE1",name:"Embedded class",status:"ACTIVE",myRoleInWorkspace:"LECTURER",members:[{userId:node,fullName:"Lecturer",memberRole:"LECTURER"}]}]});
+  if(path==="workspaces")return Response.json({code:200,data:[{id:job,code:null,name:"Embedded class",status:"ACTIVE",myRoleInWorkspace:"LECTURER",members:[{userId:node,fullName:"Lecturer",memberRole:"LECTURER"}]}]});
   if(path===`submissions/${job}`)return Response.json({code:200,data:submission});
   if(path===`submissions/${job}/feedbacks`)return Response.json({code:200,data:options.method==="POST"?{id:node}:[{id:node,commentText:"Fast",createdAt:"2026-10-26T00:00:00Z",lecturerId:node}]});
   if(path===`analyzer/models/${model}`)return Response.json({code:200,data:metadata});
   if(path===`analyzer/snapshots/${snapshot}`)return Response.json({code:200,data:{id:snapshot,projectId:project}});
   throw Error("Unexpected request "+path);
  });
- const ws=await executeJava("workspaces",{},"jwt",new AbortController().signal);
+ const ws=validateResponse("workspaces",{},await executeJava("workspaces",{},"jwt",new AbortController().signal));
+ assert.equal(ws[0].code,"");
  assert.equal(ws[0].members[0].id,node);
  assert.ok(!paths.some(p=>p.endsWith("/members")));
  paths.length=0;
@@ -773,6 +774,16 @@ test("intentional logout revokes the bearer before clearing the cookie, and rema
  const failed=await route.POST(request(),context);
  assert.equal(failed.status,503);
  assert.equal(failed.headers.get("set-cookie"),null);
+});
+
+test("course BFF paths allow WF-01 actions without opening general workspace or grading routes",()=>{
+ const {allowedBackendPath}=require("../src/lib/api/backend-path.ts");
+ const workspace="0568ee6d-e47e-45ec-8552-30b255843f2a";
+ const lab="8bb71d2a-fbc0-48a2-bc76-aebd65f9db2f";
+ for (const path of [`workspaces/${workspace}/course-roadmap`,`workspaces/${workspace}/course-labs/${lab}/publish`,`workspaces/${workspace}/course-passkey`,`workspaces/${workspace}/course-passkey/revoke`,"course-enrollments/redeem"])
+  assert.equal(allowedBackendPath(path),true,path);
+ for (const path of [`workspaces/${workspace}/members`,`workspaces/${workspace}/course-labs/${lab}/grade`,"course-enrollments/other"])
+  assert.equal(allowedBackendPath(path),false,path);
 });
 
 test("session checks distinguish expired credentials from restrictions and outages",async t=>{
