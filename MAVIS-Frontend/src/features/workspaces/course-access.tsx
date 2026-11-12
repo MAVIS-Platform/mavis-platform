@@ -56,7 +56,7 @@ export function useCourseRoadmap(workspaceId: string) {
   });
 }
 
-export function CourseEnrollment() {
+export function CourseEnrollment({ destination = "workspaces" }: { destination?: "workspaces" | "roadmap" }) {
   const t = useCourseText();
   const client = useApi();
   const router = useRouter();
@@ -74,7 +74,7 @@ export function CourseEnrollment() {
       setCode("");
       setRequestId(undefined);
       void cache.invalidateQueries({ queryKey: ["api", "workspaces"] });
-      router.push(`/workspaces?workspace=${encodeURIComponent(workspaceId)}`);
+      router.push(`/${destination}?workspace=${encodeURIComponent(workspaceId)}`);
     },
   });
   if (client.mode !== "backend") return null;

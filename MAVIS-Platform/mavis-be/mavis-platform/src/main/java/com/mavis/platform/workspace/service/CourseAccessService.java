@@ -135,7 +135,7 @@ public class CourseAccessService {
         }
         boolean valid = Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS (SELECT 1 FROM course_passkeys WHERE workspace_id = ? AND digest = ?
-                AND revoked_at IS NULL AND expires_at > now())
+                AND revoked_at IS NULL AND expires_at > statement_timestamp())
                 """, Boolean.class, workspaceId, keyDigest));
         if (!valid || !workspace.isCourseMode() || !"ACTIVE".equals(workspace.getStatus())) {
             throw invalidKey();

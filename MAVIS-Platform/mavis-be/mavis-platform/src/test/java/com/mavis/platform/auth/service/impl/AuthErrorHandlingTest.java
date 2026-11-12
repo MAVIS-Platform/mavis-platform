@@ -58,6 +58,7 @@ class AuthErrorHandlingTest {
     }
     @Test void otpErrorsAreScopedAndUsedCodesCannotMutateAccounts() {
         existing(); user.setStatus("PENDING_VERIFICATION");
+        when(users.findForUpdateByEmail(user.getEmail())).thenReturn(Optional.of(user));
         var verify = new VerifyEmailRequest(); verify.setEmail(user.getEmail()); verify.setOtpCode("123456");
         var reset = new ResetPasswordRequest(); reset.setEmail(user.getEmail()); reset.setOtpCode("123456"); reset.setNewPassword("candidate");
         for (String purpose : List.of("EMAIL_VERIFICATION", "PASSWORD_RESET")) {

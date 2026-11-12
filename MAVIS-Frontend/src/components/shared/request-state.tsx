@@ -30,8 +30,8 @@ export function EmptyState({
   const { t } = useLocale();
   return (
     <div className="rounded-xl border bg-card p-8 text-center">
-      <h2 className="text-sm font-semibold">{t(title, "Chưa có kết quả nào")}</h2>
-      <p className="my-3 text-sm text-muted-foreground">{t(description, "Chọn một nguồn hoặc điều chỉnh bộ lọc của bạn.")}</p>
+      <h2 className="text-sm font-semibold">{t(title)}</h2>
+      <p className="my-3 text-sm text-muted-foreground">{t(description)}</p>
       {action}
     </div>
   );
