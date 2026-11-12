@@ -98,7 +98,7 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void verifyEmail(VerifyEmailRequest request) {
-        User user = userRepository.findByEmail(request.getEmail())
+        User user = userRepository.findForUpdateByEmail(request.getEmail())
                 .orElseThrow(() -> new AuthException(AuthErrorCode.AUTH_CODE_INVALID));
 
         if (!"PENDING_VERIFICATION".equals(user.getStatus()) && !"ACTIVE".equals(user.getStatus()))

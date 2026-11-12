@@ -1,33 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Activity,
   ArrowRight,
   BookOpen,
   Check,
-  ChevronRight,
+
   CircleAlert,
   Clock3,
   Code2,
-  KeyRound,
-  LockKeyhole,
+
   Network,
   Play,
   ShieldCheck,
 } from "lucide-react";
 import { useApi, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
-import { RequestState } from "@/components/shared/request-state";
+import { ErrorState, LoadingState, RequestState } from "@/components/shared/request-state";
+import {
+  CourseEnrollment,
+  CourseRoadmap as CourseLabRoadmap,
+  useCourseRoadmap,
+} from "@/features/workspaces/course-access";
 import { DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
-
-const MOCK_PASSKEY = "MAVIS-LAB-01";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -89,56 +91,10 @@ function workspaceHref(workspaceId: string, extra = "") {
 
 export function Courses() {
   const { t } = useLocale();
-  const api = useApi();
   const session = useSession();
   const selection = useSelection();
   const query = useApiQuery("workspaces", {});
-  const [passkey, setPasskey] = useState("");
-  const [message, setMessage] = useState<
-    { kind: "success" | "error" | "info"; text: string } | undefined
-  >();
   const isStudent = session.data?.user?.role === "student";
-
-  function redeemPasskey() {
-    const value = passkey.trim().toUpperCase();
-    if (!value) {
-      setMessage({
-        kind: "error",
-        text: t(
-          "Enter the enrollment key issued by your lecturer.",
-          "Hãy nhập mã tham gia do giảng viên cung cấp.",
-        ),
-      });
-      return;
-    }
-    if (api.mode !== "mock") {
-      setMessage({
-        kind: "info",
-        text: t(
-          "The Course Enrollment API is not available in the current backend contract yet. No enrollment was created.",
-          "Backend hiện chưa có API tham gia khóa học. Không có lượt tham gia nào được tạo.",
-        ),
-      });
-      return;
-    }
-    if (value !== MOCK_PASSKEY) {
-      setMessage({
-        kind: "error",
-        text: t(
-          `Invalid sample key. Use ${MOCK_PASSKEY} in mock preview mode.`,
-          `Mã mẫu không hợp lệ. Hãy dùng ${MOCK_PASSKEY} trong chế độ xem thử.`,
-        ),
-      });
-      return;
-    }
-    setMessage({
-      kind: "success",
-      text: t(
-        "Sample enrollment accepted. Lab 01 is available in the course roadmap.",
-        "Đã chấp nhận lượt tham gia mẫu. Lab 01 hiện có trong lộ trình khóa học.",
-      ),
-    });
-  }
 
   return (
     <div className="space-y-6">
@@ -156,43 +112,10 @@ export function Courses() {
               )}
             </p>
           </div>
-          {isStudent && (
-            <div className="w-full max-w-md rounded-xl border bg-muted/30 p-4">
-              <label htmlFor="course-passkey" className="text-sm font-semibold">
-                {t("Join a course with Passkey", "Tham gia khóa học bằng Passkey")}
-              </label>
-              <div className="mt-2 flex gap-2">
-                <Input
-                  id="course-passkey"
-                  value={passkey}
-                  onChange={(event) => setPasskey(event.target.value)}
-                  placeholder={t("Enter enrollment key", "Nhập mã tham gia")}
-                  autoComplete="off"
-                />
-                <Button type="button" onClick={redeemPasskey}>
-                  <KeyRound aria-hidden="true" />
-                  {t("Join", "Tham gia")}
-                </Button>
-              </div>
-              {message && (
-                <p
-                  role={message.kind === "error" ? "alert" : "status"}
-                  className={cn(
-                    "mt-3 text-xs leading-5",
-                    message.kind === "error"
-                      ? "text-destructive"
-                      : message.kind === "success"
-                        ? "text-success"
-                        : "text-muted-foreground",
-                  )}
-                >
-                  {message.text}
-                </p>
-              )}
-            </div>
-          )}
         </div>
       </div>
+
+      {isStudent && <CourseEnrollment destination="roadmap" />}
 
       <RequestState
         query={query}
@@ -206,36 +129,32 @@ export function Courses() {
           {query.data?.map((workspace) => {
             const memberCount = workspace.members.length;
             const isLecturer =
-              workspace.myRole === "LECTURER" || session.data?.user?.role === "lecturer";
+              workspace.myRole === "LECTURER" || session.data?.user?.role === "admin";
             return (
               <article key={workspace.id} className="rounded-2xl border bg-card p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary">{workspace.code || "Course class"}</Badge>
+                      <Badge variant="secondary">{workspace.code || t("Course class", "Lớp học")}</Badge>
                       <StatusBadge status={workspace.status || "ACTIVE"} />
                     </div>
                     <h2 className="mt-3 text-lg font-semibold">{workspace.name}</h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      {workspace.description || "Curated microservices architecture learning path"}
+                      {workspace.description || t("Microservices architecture learning", "Học kiến trúc microservices")}
                     </p>
                   </div>
                   <BookOpen className="size-6 text-primary" aria-hidden="true" />
                 </div>
-                <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
+                <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <p className="text-xs text-muted-foreground">Role</p>
+                    <p className="text-xs text-muted-foreground">{t("Role", "Vai trò")}</p>
                     <p className="mt-1 font-medium">
-                      {workspace.myRole || session.data?.user?.role || "Member"}
+                      {workspace.myRole || session.data?.user?.role || t("Member", "Thành viên")}
                     </p>
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground">Members</p>
+                    <p className="text-xs text-muted-foreground">{t("Members", "Thành viên")}</p>
                     <p className="mt-1 font-medium">{memberCount}</p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Learning mode</p>
-                    <p className="mt-1 font-medium">Sequential Labs</p>
                   </div>
                 </div>
                 <div className="mt-5 flex flex-wrap gap-2">
@@ -275,13 +194,8 @@ export function CourseRoadmap() {
   const session = useSession();
   const workspaceId = params.get("workspace") || selection.workspaceId;
   const workspaces = useApiQuery("workspaces", {});
-  const assignments = useApiQuery(
-    "assignments",
-    { workspaceId },
-    { enabled: Boolean(workspaceId) },
-  );
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
-  const isLecturer = workspace?.myRole === "LECTURER" || session.data?.user?.role === "lecturer";
+  const canManage = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -316,7 +230,7 @@ export function CourseRoadmap() {
             </div>
           </div>
 
-          {isLecturer && (
+          {canManage && (
             <section className="rounded-2xl border bg-card p-5" aria-labelledby="course-controls">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
@@ -351,81 +265,18 @@ export function CourseRoadmap() {
             </section>
           )}
 
-          <RequestState
-            query={assignments}
-            empty={!assignments.data?.length}
-            emptyMessage={t(
-              "No Labs have been published in this course yet.",
-              "Khóa học này chưa công bố Lab nào.",
-            )}
-          >
-            <div className="space-y-4">
-              {assignments.data?.map((lab, index) => {
-                const available = isLecturer || index === 0;
-                const state = isLecturer ? "PUBLISHED" : available ? "UNLOCKED" : "LOCKED";
-                return (
-                  <article
-                    key={lab.id}
-                    className={cn(
-                      "grid gap-4 rounded-2xl border bg-card p-5 lg:grid-cols-[5rem_minmax(0,1fr)_auto] lg:items-center",
-                      !available && "bg-muted/20",
-                    )}
-                  >
-                    <div className="flex size-16 items-center justify-center rounded-2xl border bg-background font-mono text-xl font-semibold">
-                      {String(index + 1).padStart(2, "0")}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="font-semibold">{lab.title}</h2>
-                        <StatusBadge status={state} />
-                        {lab.referenceSource && (
-                          <Badge variant="secondary">Curated source pinned</Badge>
-                        )}
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-sm text-muted-foreground">
-                        {lab.instructions ||
-                          "Complete the four-stage architecture learning workflow."}
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
-                        <span>Revision {lab.referenceSource?.revision ?? "pending"}</span>
-                        <span>Due {lab.dueAt || "No deadline"}</span>
-                        <span>
-                          {lab.referenceSource?.projectName || "Reference project pending"}
-                        </span>
-                      </div>
-                      {!available && (
-                        <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                          <LockKeyhole className="size-3.5" aria-hidden="true" />
-                          {t(
-                            "Complete and pass the previous Lab to unlock this Lab.",
-                            "Hoàn thành và đạt Lab trước để mở Lab này.",
-                          )}
-                        </p>
-                      )}
-                    </div>
-                    <Button
-                      asChild={available}
-                      disabled={!available}
-                      variant={available ? "default" : "outline"}
-                    >
-                      {available ? (
-                        <Link
-                          href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.id)}&step=1`}
-                        >
-                          {isLecturer
-                            ? t("Preview Lab", "Xem trước Lab")
-                            : t("Start Lab", "Bắt đầu Lab")}
-                          <ChevronRight aria-hidden="true" />
-                        </Link>
-                      ) : (
-                        <span>{t("Locked", "Đang khóa")}</span>
-                      )}
-                    </Button>
-                  </article>
-                );
-              })}
-            </div>
-          </RequestState>
+          <CourseLabRoadmap
+            workspaceId={workspaceId}
+            canManage={canManage}
+            active={workspace.status !== "ARCHIVED"}
+          />
+          {!canManage && (
+            <Button asChild variant="outline">
+              <Link href={`/assignments?workspace=${encodeURIComponent(workspaceId)}`}>
+                {t("View class assignments", "Xem bài tập của lớp")}
+              </Link>
+            </Button>
+          )}
         </div>
       )}
     </RequestState>
@@ -448,8 +299,10 @@ export function LabWorkspace() {
     { enabled: Boolean(workspaceId) },
   );
   const workspace = workspaces.data?.find((item) => item.id === workspaceId);
-  const lab = assignments.data?.find((item) => item.id === assignmentId) ?? assignments.data?.[0];
-  const isLecturer = workspace?.myRole === "LECTURER" || session.data?.user?.role === "lecturer";
+  const client = useApi();
+  const roadmap = useCourseRoadmap(workspaceId);
+  const isLecturer = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
+  const lab = assignments.data?.find((item) => item.id === assignmentId);
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -474,6 +327,25 @@ export function LabWorkspace() {
         {t("Select a course first.", "Hãy chọn khóa học trước.")}
       </p>
     );
+
+  if (client.mode === "backend") {
+    if (roadmap.isError) return <ErrorState error={roadmap.error} onRetry={() => void roadmap.refetch()} />;
+    if (!roadmap.data) return <LoadingState />;
+    if (roadmap.data.guided && !roadmap.data.labs.some(
+      (item) => item.assignmentId === assignmentId && item.state !== "LOCKED",
+    )) {
+      return (
+        <div className="space-y-3">
+          <p role="status">{t("This Lab is unavailable. Check your roadmap.", "Lab này chưa khả dụng. Hãy xem lộ trình.")}</p>
+          <Button asChild variant="outline">
+            <Link href={`/roadmap${workspaceHref(workspaceId)}`}>
+              {t("Course roadmap", "Lộ trình khóa học")}
+            </Link>
+          </Button>
+        </div>
+      );
+    }
+  }
 
   return (
     <RequestState

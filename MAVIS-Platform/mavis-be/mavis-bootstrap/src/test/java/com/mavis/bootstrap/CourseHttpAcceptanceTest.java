@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -57,11 +58,68 @@ class CourseHttpAcceptanceTest {
                     api = "http://127.0.0.1:" + ((WebServerApplicationContext) app).getWebServer().getPort() + "/api/v1/";
                     var db = app.getBean(JdbcTemplate.class);
                     var encoder = app.getBean(PasswordEncoder.class);
-                    checkCourseAndPermissions(db, encoder.encode(PASSWORD));
+                    String hash = encoder.encode(PASSWORD);
+                    checkCourseAndPermissions(db, hash);
+                    checkOtpLifecycle(db, hash);
                 }
             } finally {
                 admin.execute("DROP DATABASE " + name + " WITH (FORCE)");
             }
+        }
+    }
+
+    private void checkOtpLifecycle(JdbcTemplate db, String passwordHash) throws Exception {
+        UUID user = account(db, "verify-learner", "STUDENT", passwordHash);
+        String email = "verify-learner@example.invalid";
+        db.update("UPDATE users SET status='PENDING_VERIFICATION' WHERE id=?", user);
+        db.update("""
+                INSERT INTO user_otps(user_id, otp_code, purpose, expiry_time) VALUES
+                    (?, '123456', 'EMAIL_VERIFICATION', now() + interval '5 minutes'),
+                    (?, '246810', 'EMAIL_VERIFICATION', now() + interval '5 minutes'),
+                    (?, '654321', 'EMAIL_VERIFICATION', now() - interval '1 minute'),
+                    (?, '789123', 'PASSWORD_RESET', now() + interval '5 minutes')
+                """, user, user, user, user);
+        send("POST", "auth/login", null, Map.of("email", email, "password", PASSWORD), 403);
+        send("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "654321"), 400);
+        send("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "789123"), 400);
+        var verification = Map.of("email", email, "otpCode", "123456");
+        assertOneOtpAccepted(db, user, request("POST", "auth/verify-email", null, verification),
+                request("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "246810")));
+        send("POST", "auth/verify-email", null, verification, 400);
+        assertFalse(login("verify-learner").isBlank());
+
+        String newPassword = "Changed-isolated-WF01-password!";
+        var reset = request("POST", "auth/reset-password", null,
+                Map.of("email", email, "otpCode", "789123", "newPassword", newPassword));
+        assertOneOtpAccepted(db, user, reset, reset);
+        send("POST", "auth/login", null, Map.of("email", email, "password", PASSWORD), 401);
+        send("POST", "auth/login", null, Map.of("email", email, "password", newPassword), 200);
+    }
+
+    private void assertOneOtpAccepted(JdbcTemplate db, UUID user, HttpRequest firstRequest,
+                                      HttpRequest secondRequest) throws Exception {
+        try (var connection = db.getDataSource().getConnection();
+             var lock = connection.prepareStatement("SELECT id FROM users WHERE id = ? FOR UPDATE")) {
+            connection.setAutoCommit(false);
+            lock.setObject(1, user);
+            try (var locked = lock.executeQuery()) {
+                assertTrue(locked.next());
+            }
+            var first = http.sendAsync(firstRequest, HttpResponse.BodyHandlers.discarding());
+            var second = http.sendAsync(secondRequest, HttpResponse.BodyHandlers.discarding());
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            int waiting;
+            do {
+                waiting = db.queryForObject("""
+                        SELECT count(*) FROM pg_stat_activity
+                        WHERE datname = current_database() AND wait_event_type = 'Lock'
+                        """, Integer.class);
+                if (waiting < 2) Thread.sleep(25);
+            } while (waiting < 2 && System.nanoTime() < deadline);
+            connection.commit();
+            assertEquals(2, waiting, "Both requests must be in flight before releasing the test lock");
+            assertEquals(List.of(200, 400), List.of(first.get(15, TimeUnit.SECONDS).statusCode(),
+                    second.get(15, TimeUnit.SECONDS).statusCode()).stream().sorted().toList());
         }
     }
 
@@ -148,6 +206,12 @@ class CourseHttpAcceptanceTest {
 
     private HttpResponse<byte[]> send(String method, String path, String token, Map<String, ?> body,
                                       int expectedStatus) throws IOException, InterruptedException {
+        var response = http.send(request(method, path, token, body), HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(expectedStatus, response.statusCode(), () -> method + " " + path);
+        return response;
+    }
+
+    private HttpRequest request(String method, String path, String token, Map<String, ?> body) throws IOException {
         var request = HttpRequest.newBuilder(URI.create(api + path)).timeout(Duration.ofSeconds(10));
         if (token != null) request.header("Authorization", "Bearer " + token);
         var data = HttpRequest.BodyPublishers.noBody();
@@ -155,9 +219,7 @@ class CourseHttpAcceptanceTest {
             request.header("Content-Type", "application/json");
             data = HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(body));
         }
-        var response = http.send(request.method(method, data).build(), HttpResponse.BodyHandlers.ofByteArray());
-        assertEquals(expectedStatus, response.statusCode(), () -> method + " " + path);
-        return response;
+        return request.method(method, data).build();
     }
 
     private JsonNode data(HttpResponse<byte[]> response) throws IOException {

@@ -797,6 +797,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "No reference source": "Chưa có mã nguồn tham chiếu",
   "No relationships match these connection filters.": "Không có mối quan hệ nào khớp bộ lọc kết nối này.",
   "No results yet": "Chưa có kết quả nào",
+  "Choose a source or adjust your filters.": "Chọn một nguồn hoặc điều chỉnh bộ lọc của bạn.",
   "No revisions yet": "Chưa có phiên bản mô hình",
   "No runtime trace attached": "Không đính kèm phiên chạy Runtime",
   "No saved diagram documents for this model yet.": "Chưa có tài liệu sơ đồ nào được lưu cho mô hình này.",
@@ -1400,6 +1401,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Workspaces joined": "Lớp học đã tham gia",
   You: "Bạn",
   "You are inspecting historical": "Bạn đang xem Bản sửa đổi lịch sử",
+  "You are not enrolled in a class yet. Ask your lecturer for a Passkey.":
+    "Bạn chưa ghi danh vào lớp nào. Hãy xin Passkey từ giảng viên.",
   "You have no teaching workspaces yet. Create a class above, then add students by their registered email.":
     "Bạn chưa có lớp học (Workspace) giảng dạy nào. Hãy tạo lớp học ở phía trên, sau đó thêm sinh viên bằng email đã đăng ký.",
   "You have not been added to a class yet. Ask your lecturer to add your registered account email. Students can view assignments and submit work after joining a class.":
