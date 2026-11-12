@@ -56,7 +56,11 @@ export function useCourseRoadmap(workspaceId: string) {
   });
 }
 
-export function CourseEnrollment({ destination = "workspaces" }: { destination?: "workspaces" | "roadmap" }) {
+export function CourseEnrollment({
+  destination = "workspaces",
+}: {
+  destination?: "workspaces" | "roadmap";
+}) {
   const t = useCourseText();
   const client = useApi();
   const router = useRouter();
@@ -159,11 +163,34 @@ export function CourseRoadmap({
     IN_PROGRESS: t("In progress", "Đang học"),
     COMPLETED: t("Completed", "Đã hoàn thành"),
   };
+  const passed = roadmap.data.labs.filter((lab) => lab.state === "PASSED").length;
+  const total = roadmap.data.labs.length;
+  const progress = total ? Math.round((passed / total) * 100) : 0;
   return (
     <DetailPanel title={t("Lab roadmap", "Lộ trình Lab")}>
       {roadmap.data.enrollmentStatus && (
         <p className="text-sm font-medium">{statusLabels[roadmap.data.enrollmentStatus]}</p>
       )}
+      <div className="space-y-2" aria-label={t("Course progress", "Tiến độ khóa học")}>
+        <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+          <span>{t("Course progress", "Tiến độ khóa học")}</span>
+          <span>
+            {passed}/{total} {t("Labs passed", "Lab đã đạt")}
+          </span>
+        </div>
+        <div
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress}
+          className="h-2 overflow-hidden rounded-full bg-muted"
+        >
+          <div
+            className="h-full rounded-full bg-primary transition-[width]"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
       <ol className="space-y-2">
         {roadmap.data.labs.map((lab) => (
           <li
@@ -187,7 +214,7 @@ export function CourseRoadmap({
             {active && lab.state !== "LOCKED" && (
               <Button variant="outline" size="sm" asChild>
                 <Link
-                  href={`/assignments?workspace=${encodeURIComponent(workspaceId)}#assignment-${lab.assignmentId}`}
+                  href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(lab.assignmentId)}&step=1`}
                 >
                   {t("Open lab", "Mở Lab")}
                 </Link>

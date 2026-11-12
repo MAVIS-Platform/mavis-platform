@@ -20,7 +20,13 @@ test("course learning routes are registered in the shared authenticated shell", 
 test("student navigation follows Course to Roadmap to Lab and submissions", () => {
   const navigation = read("src/lib/navigation.ts");
 
-  for (const label of ["My Courses", "Join Course", "Course Roadmap", "Lab Workspace", "My Submissions"])
+  for (const label of [
+    "My Courses",
+    "Join Course",
+    "Course Roadmap",
+    "Lab Workspace",
+    "My Submissions",
+  ])
     assert.ok(navigation.includes(label), label);
   assert.match(navigation, /href:\s*"\/roadmap"/);
   assert.match(navigation, /href:\s*"\/lab"/);
@@ -34,6 +40,7 @@ test("Lab UI keeps unavailable progress gates honest and deep-links real assignm
   assert.ok(access.includes('"course-enrollments/redeem"'));
   assert.ok(access.includes("course-roadmap"));
   assert.ok(access.includes('state: "LOCKED" | "UNLOCKED" | "PASSED"'));
+  assert.match(access, /\/lab\?workspace=.*&assignment=.*&step=1/s);
   assert.ok(course.includes("Final completion state must come from the readiness API"));
   assert.ok(course.includes("Quiz attempt state is awaiting the versioned Quiz API"));
   assert.match(course, /\/assignments\?workspace=.*&assignment=/s);
