@@ -5,7 +5,8 @@ import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
 import { AssignmentSourceDetails } from "./source-picker";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useApi,useApiQuery, useApiMutation, usePermission, useSelection } from "@/hooks/use-api";
+import { useApi, useApiQuery, useApiMutation, usePermission, useSelection } from "@/hooks/use-api";
+import { useLocale } from "@/lib/i18n/locale-context";
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { DetailPanel } from "@/components/shared/data";
@@ -26,6 +27,7 @@ function formatDeadline(value: string | undefined): string {
 }
 
 export function Assignments() {
+  const { t } = useLocale();
   const { workspaceId } = useSelection();
   const params = useSearchParams();
   const requestedAssignmentId = params?.get("assignment") || "";
@@ -75,7 +77,7 @@ export function Assignments() {
       )}
       {roadmap.isError && (
         <Button variant="outline" onClick={() => void roadmap.refetch()}>
-          Retry loading lab roadmap
+          {t("Retry loading lab roadmap", "Tải lại lộ trình Lab")}
         </Button>
       )}
       <RequestState
@@ -89,6 +91,7 @@ export function Assignments() {
       >
         <div className="space-y-4">
           {assignments.map((assignment) => {
+            const published = roadmap.data?.labs.find((lab) => lab.assignmentId === assignment.id);
             const overdue = isDeadlinePassed(assignment.dueAt);
             return (
               <div
