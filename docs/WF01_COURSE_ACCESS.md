@@ -36,7 +36,7 @@ Roadmap trả `ENROLLED`, `IN_PROGRESS` hoặc `COMPLETED` cho sinh viên đã g
 
 ## Nối kết quả WF-04 và thông báo
 
-WF-04 gọi `CourseProgressionService.recordFinalizedResult(submissionId, reviewRevision, passed)` trong luồng server-side khi đã xác minh các Snapshot bắt buộc và lưu kết quả cuối. Nếu chấm và ghi tiến độ trong cùng transaction JPA, flush bản review trước khi gọi vì tiến độ đọc bằng JDBC. Kết quả không đạt giữ Lab sau khóa. API chấm điểm tổng 0–100 hiện tại có nghiệp vụ riêng.
+WF-04 gọi `CourseProgressionService.recordFinalizedResult(submissionId, reviewRevision, passed)` trong luồng server-side khi đã xác minh các Snapshot bắt buộc và lưu kết quả cuối. Khi kết nối producer WF-04, lưu và flush bản review rồi gọi dịch vụ trong cùng transaction JPA để bản ghi điểm, tiến độ và thông báo cùng commit hoặc rollback. Tiến độ đọc review bằng JDBC. Kết quả không đạt giữ Lab sau khóa. API chấm điểm tổng 0–100 hiện tại có nghiệp vụ riêng.
 
 Progression kiểm tra bài nộp mới nhất, bản review `GRADED` đúng revision, nhận xét có nội dung, sinh viên thuộc lớp và đã qua các Lab trước. Khi đạt, kết quả và thông báo mở Lab kế tiếp được lưu trong cùng giao dịch. Cơ chế gửi lặp dựa trên revision và khóa sự kiện `course-lab-unlocked:{assignmentId}`.
 

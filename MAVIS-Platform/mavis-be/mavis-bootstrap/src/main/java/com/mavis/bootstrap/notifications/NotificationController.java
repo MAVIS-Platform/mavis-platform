@@ -70,7 +70,9 @@ public class NotificationController {
     }
     @ExceptionHandler(ResponseStatusException.class)
     ResponseEntity<?> status(ResponseStatusException error){return ResponseEntity.status(error.getStatusCode()).body(Map.of("code",error.getStatusCode().value(),"message","Notification request unavailable"));}
-    @ExceptionHandler({jakarta.validation.ConstraintViolationException.class,org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class})
+    @ExceptionHandler({jakarta.validation.ConstraintViolationException.class,org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MethodArgumentNotValidException.class,
+            org.springframework.http.converter.HttpMessageNotReadableException.class})
     ResponseEntity<?> invalid(){return ResponseEntity.badRequest().body(Map.of("code",400,"message","Invalid notification request"));}
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<?> unavailable(){return ResponseEntity.status(503).body(Map.of("code",503,"message","Notification storage unavailable"));}
