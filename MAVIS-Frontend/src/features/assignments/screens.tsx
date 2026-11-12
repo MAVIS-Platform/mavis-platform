@@ -3,7 +3,8 @@ import { isDeadlinePassed } from "@/features/submissions/submission-readiness";
 import { Badge } from "@/components/ui/badge";
 import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
 import { AssignmentSourceDetails } from "./source-picker";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useApiQuery, useApiMutation, usePermission, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
@@ -25,12 +26,30 @@ function formatDeadline(value: string | undefined): string {
 
 export function Assignments() {
   const { workspaceId } = useSelection();
+  const params = useSearchParams();
+  const requestedAssignmentId = params?.get("assignment") || "";
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const canSubmit = usePermission("submission:create");
   const canManage = usePermission("workspace:manage");
   const remove = useApiMutation("deleteAssignment");
+  const assignments = useMemo(() => {
+    const rows = [...(query.data ?? [])];
+    if (!requestedAssignmentId) return rows;
+    return rows.sort((left, right) =>
+      left.id === requestedAssignmentId ? -1 : right.id === requestedAssignmentId ? 1 : 0,
+    );
+  }, [query.data, requestedAssignmentId]);
+
+  useEffect(() => {
+    if (!requestedAssignmentId || !query.data?.some((item) => item.id === requestedAssignmentId))
+      return;
+    document
+      .getElementById(`assignment-${requestedAssignmentId}`)
+      ?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [query.data, requestedAssignmentId]);
+
   return workspaceId ? (
     <div className="space-y-5">
       {canManage && (
@@ -61,10 +80,18 @@ export function Assignments() {
         }
       >
         <div className="space-y-4">
-          {query.data?.map((assignment) => {
+          {assignments.map((assignment) => {
             const overdue = isDeadlinePassed(assignment.dueAt);
             return (
-              <div key={assignment.id} id={`assignment-${assignment.id}`} className="scroll-mt-20">
+              <div
+                key={assignment.id}
+                id={`assignment-${assignment.id}`}
+                className={
+                  assignment.id === requestedAssignmentId
+                    ? "scroll-mt-20 rounded-2xl ring-2 ring-primary/40 ring-offset-4 ring-offset-background"
+                    : "scroll-mt-20"
+                }
+              >
                 <DetailPanel
                   title={assignment.title}
                   actions={

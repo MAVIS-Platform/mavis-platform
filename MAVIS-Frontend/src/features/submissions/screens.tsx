@@ -8,6 +8,7 @@ import { SelectField, SearchInput, Pagination } from "@/components/shared/forms"
 import { WorkspaceSelector } from "@/features/workspaces/components";
 import { EmptyState, RequestState } from "@/components/shared/request-state";
 import { DataTable, StatusLabel } from "@/components/shared/data";
+import { Badge } from "@/components/ui/badge";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { TraceViewer, RuntimeSessionTimeline } from "@/features/runtime/components";
 import { SubmissionVersionHeader, FeedbackPanel } from "./components";
@@ -17,14 +18,23 @@ export function Submissions() {
   return canReview ? <TeachingSubmissions /> : <MySubmissions />;
 }
 function MySubmissions() {
+  const params = useSearchParams();
+  const assignmentId = params?.get("assignment") || "";
   const query = useApiQuery("submissions", {});
+  const rows = assignmentId
+    ? (query.data ?? []).filter((submission) => submission.assignmentId === assignmentId)
+    : (query.data ?? []);
   return (
     <RequestState
       query={query}
-      empty={!query.data?.length}
-      emptyMessage="No submitted work yet. Open an assignment in your workspace to submit a model version."
+      empty={!rows.length}
+      emptyMessage={
+        assignmentId
+          ? "No snapshot has been submitted for this Lab yet. Open the assignment to prepare your first submission."
+          : "No submitted work yet. Open an assignment in your workspace to submit a model version."
+      }
     >
-      <SubmissionList rows={query.data ?? []} />
+      <SubmissionList rows={rows} />
     </RequestState>
   );
 }
@@ -142,7 +152,8 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
           {
             key: "date",
             label: "Submitted",
-            render: (s) => (s.submittedAt ? new Date(s.submittedAt).toLocaleString() : "Not submitted"),
+            render: (s) =>
+              s.submittedAt ? new Date(s.submittedAt).toLocaleString() : "Not submitted",
           },
         ]}
       />
@@ -160,6 +171,11 @@ function SubmissionResult({ submissionId }: { submissionId: string }) {
         <>
           <StatusLabel status={query.data.status} />
           {query.data.score !== null ? ` · ${query.data.score}/100` : ""}
+          {query.data.score !== null && query.data.status !== "DRAFT" && (
+            <Badge className="ml-2" variant={query.data.score > 50 ? "success" : "warning"}>
+              {query.data.score > 50 ? "Pass" : "Needs revision"}
+            </Badge>
+          )}
         </>
       ) : (
         "Loading…"
