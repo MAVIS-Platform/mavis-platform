@@ -22,7 +22,8 @@ echo 'INITIAL_ENV=preserved' > /opt/mavis/.env.production
 echo 'name: mavis' > /opt/mavis/deploy/compose.production.yml
 tag1=$(printf 'a%.0s' {1..40})
 tag2=$(printf 'b%.0s' {1..40})
-for tag in "$tag1" "$tag2"; do
+tag3=$(printf 'c%.0s' {1..40})
+for tag in "$tag1" "$tag2" "$tag3"; do
   mkdir -p "/opt/mavis/incoming-$tag"
   echo 'name: mavis' > "/opt/mavis/incoming-$tag/compose.production.yml"
 done
@@ -37,5 +38,15 @@ if printf 'test-token\n' | bash /source/deploy-vps.sh "$tag2" ghcr.io/mavis-plat
 fi
 test "$(cat /tmp/current-tag)" = "$tag1"
 grep -q "IMAGE_TAG=$tag1" /opt/mavis/.release.env
+printf 'raise SystemExit(1)\n' > "/opt/mavis/incoming-$tag3/apply-course-schema.py"
+touch "/opt/mavis/incoming-$tag3/V26__Course_Lab_Access.sql"
+if printf 'test-token\n' | bash /source/deploy-vps.sh "$tag3" ghcr.io/mavis-platform/mavis-platform test-user; then
+  echo 'Expected failed schema preparation'; exit 1
+fi
+test "$(cat /tmp/current-tag)" = "$tag1"
+grep -q "IMAGE_TAG=$tag1" /opt/mavis/.release.env
+if grep "^.* $tag3 " /tmp/compose-calls | grep -q ' up '; then
+  echo 'Stack replaced despite schema preparation failure'; exit 1
+fi
 test -z "$(find /opt/mavis -maxdepth 1 -name '.registry.*' -print)"
-echo 'PASS: success, failed-health rollback, env preservation, secret-directory cleanup.'
+echo 'PASS: success, failed-health rollback, schema failure preserves running stack, env preservation, secret-directory cleanup.'

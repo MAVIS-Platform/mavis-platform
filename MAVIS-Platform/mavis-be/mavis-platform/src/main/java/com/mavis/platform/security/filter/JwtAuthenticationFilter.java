@@ -1,6 +1,7 @@
 package com.mavis.platform.security.filter;
 
 import com.mavis.platform.security.jwt.JwtUtil;
+import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,34 +32,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         final String authHeader = request.getHeader("Authorization");
-        final String jwt;
-        final String userEmail;
 
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        jwt = authHeader.substring(7);
-        
-        try {
-            if (jwtUtil.validateToken(jwt)) {
-                userEmail = jwtUtil.extractEmail(jwt);
-                String role = jwtUtil.extractRole(jwt);
-                String userId = jwtUtil.extractUserId(jwt);
-
-                if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                    UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
-                            userId, // Lưu trữ userId làm principal để dễ dàng lấy ra sau này
-                            null,
-                            Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role))
-                    );
+        if (authHeader != null && authHeader.startsWith("Bearer ")
+                && SecurityContextHolder.getContext().getAuthentication() == null) {
+            Claims claims = jwtUtil.activeClaims(authHeader.substring(7));
+            if (claims != null && claims.getSubject() != null) {
+                String role = claims.get("role", String.class);
+                String userId = claims.get("userId", String.class);
+                if (role != null && userId != null) {
+                    var authToken = new UsernamePasswordAuthenticationToken(
+                            userId, null, Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + role)));
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
                 }
             }
-        } catch (Exception e) {
-            // Token không hợp lệ, để filter chain tiếp tục chạy, SecurityContextHolder không có auth -> Spring Security sẽ trả về 401
         }
 
         filterChain.doFilter(request, response);
