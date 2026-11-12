@@ -19,6 +19,7 @@ import com.mavis.platform.assignment.dto.AssignmentCreateRequest;
 import com.mavis.platform.assignment.dto.AssignmentResponseDTO;
 import com.mavis.platform.assignment.dto.AssignmentUpdateRequest;
 import com.mavis.platform.assignment.service.AssignmentService;
+import com.mavis.platform.assignment.service.LabReferenceArchive;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,11 +34,9 @@ import java.util.*;
 @Transactional(rollbackFor = Exception.class)
 public class AssignmentServiceImpl implements AssignmentService {
 
-    @org.springframework.beans.factory.annotation.Value("${mavis.storage.upload-dir:C:/mavis/uploads/}")
-    private String uploadDir;
-
     private final AssignmentRepository assignmentRepository;
     private final CourseLabPolicy courseLabs;
+    private final LabReferenceArchive referenceArchive;
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final SubmissionSnapshotRepository submissionSnapshotRepository;
@@ -222,19 +221,8 @@ public class AssignmentServiceImpl implements AssignmentService {
         accessPolicyService.requireWorkspaceMember(assignment.getWorkspace().getId());
         requireCourseLabAccess(assignment);
         if (assignment.getReferenceModel() == null) throw new BusinessException(ErrorCode.NOT_FOUND, "No reference source attached");
-        var snapshot = assignment.getReferenceModel().getSourceSnapshot();
-        try {
-            var root = java.nio.file.Path.of(uploadDir).toRealPath();
-            var path = java.nio.file.Path.of(snapshot.getStoragePath()).toRealPath();
-            if (!path.startsWith(root) || !java.nio.file.Files.isRegularFile(path)) throw new java.io.IOException();
-            if (assignment.getLabOrder() != null && !snapshot.getArtifactHash()
-                    .equalsIgnoreCase(com.mavis.common.utils.HashUtils.sha256Hex(path))) {
-                throw new BusinessException(ErrorCode.CONFLICT, "The published source archive no longer matches its digest");
-            }
-            return new org.springframework.core.io.FileSystemResource(path);
-        } catch (java.io.IOException | IllegalArgumentException | NullPointerException error) {
-            throw new BusinessException(ErrorCode.NOT_FOUND, "Reference archive is unavailable");
-        }
+        return referenceArchive.resolve(assignment.getReferenceModel().getSourceSnapshot(),
+                assignment.getLabOrder() != null);
     }
 
     private void requireCourseLabAccess(Assignment assignment) {

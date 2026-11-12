@@ -12,6 +12,7 @@ import com.mavis.common.repository.AssignmentRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.security.CourseLabPolicy;
+import com.mavis.platform.assignment.service.LabReferenceArchive;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -32,8 +33,9 @@ class CourseAccessServiceTest {
     private final WorkspaceRepository workspaces = mock(WorkspaceRepository.class);
     private final AssignmentRepository assignments = mock(AssignmentRepository.class);
     private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
+    private final LabReferenceArchive referenceArchive = mock(LabReferenceArchive.class);
     private final CourseAccessService courses = new CourseAccessService(
-            access, workspaces, assignments, mock(CourseLabPolicy.class), jdbc);
+            access, workspaces, assignments, mock(CourseLabPolicy.class), jdbc, referenceArchive);
 
     @Test
     void publishesPinnedAssignmentOnceAndEnablesGuidedCourse() {
@@ -43,7 +45,8 @@ class CourseAccessServiceTest {
         when(assignments.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
         when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
                 .thenReturn(List.of());
-        var project = Project.builder().workspace(workspace).status("ACTIVE").build();
+        var project = Project.builder().workspace(workspace).status("ACTIVE")
+                .projectType("TEACHER_REFERENCE").isReferenceTemplate(true).build();
         var source = SourceSnapshot.builder().project(project).isPublished(true)
                 .sourceType("GITHUB_COMMIT").commitSha("1".repeat(40))
                 .artifactHash("a".repeat(64)).storagePath("reference.zip").build();
@@ -54,6 +57,7 @@ class CourseAccessServiceTest {
         assertTrue(workspace.isCourseMode());
         assertEquals(1, published.position());
         assertEquals(published, courses.publish(workspaceId, assignmentId));
+        verify(referenceArchive).resolve(source, true);
         verify(jdbc).update("INSERT INTO audit_logs(actor_id, action, target_type, target_id) VALUES (?, ?, ?, ?)",
                 teacherId, "COURSE_LAB_PUBLISHED", "ASSIGNMENT", assignmentId);
     }
