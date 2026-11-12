@@ -13,6 +13,7 @@ import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.JobRepository;
 import com.mavis.common.repository.ProjectRepository;
 import com.mavis.common.repository.SourceSnapshotRepository;
+import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.utils.HashUtils;
 import com.mavis.common.utils.GitHubRepositoryUrls;
 import com.mavis.common.utils.SecurityUtils;
@@ -44,6 +45,7 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
     private final ProjectRepository projectRepository;
     private final SourceSnapshotRepository sourceSnapshotRepository;
     private final JobRepository jobRepository;
+    private final AccessPolicyService accessPolicy;
 
     private HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(10))
@@ -52,6 +54,18 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
 
     public void setHttpClient(HttpClient httpClient) {
         this.httpClient = httpClient;
+    }
+
+    private void requireCourseReferenceEditor(Project project) {
+        var workspace = project.getWorkspace();
+        if (workspace == null || !workspace.isCourseMode()) {
+            return;
+        }
+        if (!"TEACHER_REFERENCE".equals(project.getProjectType())
+                || !Boolean.TRUE.equals(project.getIsReferenceTemplate())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "This Lab uses its published reference source");
+        }
+        accessPolicy.requireWorkspaceLecturer(workspace.getId());
     }
 
     @Override
@@ -70,13 +84,10 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
 
         if ("DELETED".equalsIgnoreCase(project.getStatus())) throw new BusinessException(ErrorCode.NOT_FOUND,"Project not found");
-        if (project.getWorkspace() != null && project.getWorkspace().isCourseMode()
-                && !"TEACHER_REFERENCE".equals(project.getProjectType())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "This Lab uses its published reference source");
-        }
         if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền tải lên cho dự án này");
         }
+        requireCourseReferenceEditor(project);
 
         if (project.getRepositoryUrl() != null && !project.getRepositoryUrl().isBlank()) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "This project is linked to GitHub. Import a branch or commit from its repository instead of uploading a ZIP.");
@@ -117,13 +128,10 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + request.getProjectId()));
 
         if ("DELETED".equalsIgnoreCase(project.getStatus())) throw new BusinessException(ErrorCode.NOT_FOUND,"Project not found");
-        if (project.getWorkspace() != null && project.getWorkspace().isCourseMode()
-                && !"TEACHER_REFERENCE".equals(project.getProjectType())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "This Lab uses its published reference source");
-        }
         if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền nạp mã nguồn cho dự án này");
         }
+        requireCourseReferenceEditor(project);
 
         String cleanRepoUrl = GitHubRepositoryUrls.requireSame(project.getRepositoryUrl(), request.getRepositoryUrl());
 

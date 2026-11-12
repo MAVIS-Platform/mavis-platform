@@ -14,6 +14,7 @@ import com.mavis.common.repository.UserRepository;
 import com.mavis.common.repository.WorkspaceMemberRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.utils.SecurityUtils;
+import com.mavis.platform.assignment.service.LabReferenceArchive;
 import com.mavis.platform.project.dto.ProjectCreateRequest;
 import com.mavis.platform.project.dto.ProjectResponseDTO;
 import com.mavis.platform.project.dto.ProjectUpdateRequest;
@@ -36,6 +37,7 @@ import java.util.stream.Collectors;
 public class ProjectServiceImpl implements ProjectService {
 
     private final ProjectRepository projectRepository;
+    private final LabReferenceArchive referenceArchive;
     private final com.mavis.common.security.CourseLabPolicy courseLabs;
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
@@ -115,7 +117,9 @@ public class ProjectServiceImpl implements ProjectService {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
                         "Bản chụp mã nguồn mẫu chưa được Giảng viên công bố (BR-11)");
             }
-            if (!guidedStudent) {
+            if (guidedStudent) {
+                referenceArchive.resolve(refSnapshot, true);
+            } else {
                 accessPolicyService.requireProjectReadAccess(refSnapshot.getProject());
                 if (workspace != null && (refSnapshot.getProject().getWorkspace() == null
                         || !workspace.getId().equals(refSnapshot.getProject().getWorkspace().getId()))) {

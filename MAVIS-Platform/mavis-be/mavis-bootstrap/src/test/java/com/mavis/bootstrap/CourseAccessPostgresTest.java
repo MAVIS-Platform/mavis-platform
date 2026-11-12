@@ -10,6 +10,7 @@ import com.mavis.common.repository.AssignmentRepository;
 import com.mavis.common.repository.WorkspaceRepository;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.security.CourseLabPolicy;
+import com.mavis.platform.assignment.service.LabReferenceArchive;
 import com.mavis.platform.workspace.service.CourseAccessService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -52,7 +53,8 @@ class CourseAccessPostgresTest {
                 return Optional.of(workspace);
             });
             var policy = new CourseLabPolicy(jdbc);
-            var courses = new CourseAccessService(access, workspaces, assignments, policy, jdbc);
+            var courses = new CourseAccessService(access, workspaces, assignments, policy, jdbc,
+                    mock(LabReferenceArchive.class));
             var first = lab(jdbc, workspace, teacherId, 1);
             var second = lab(jdbc, workspace, teacherId, 2);
             when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
