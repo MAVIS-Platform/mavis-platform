@@ -7,7 +7,16 @@ import { FormField } from "@/components/shared/forms";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import type { Response } from "@/lib/api/contracts";
+
+const PASSING_SCORE = 50;
+
+function reviewOutcome(score: number | null) {
+  if (score === null) return null;
+  return score > PASSING_SCORE ? "PASS" : "NEEDS REVISION";
+}
+
 export function GradingPanel({ submissionId }: { submissionId: string }) {
   const canReview = usePermission("submission:review");
   const query = useApiQuery(
@@ -33,6 +42,11 @@ export function GradingPanel({ submissionId }: { submissionId: string }) {
               />
               {query.data.score !== null && (
                 <span className="text-xl font-semibold">{query.data.score} / 100</span>
+              )}
+              {reviewOutcome(query.data.score) && (
+                <Badge variant={query.data.score! > PASSING_SCORE ? "success" : "warning"}>
+                  {reviewOutcome(query.data.score)}
+                </Badge>
               )}
             </div>
             {query.data.status === "PENDING" && (
@@ -77,8 +91,11 @@ function GradeForm({ review }: { review: Response<"submissionReview"> }) {
     valid =
       value === null ||
       (Number.isFinite(value) && value >= 0 && value <= 100 && /^\d+(\.\d{1,2})?$/.test(score));
+  const outcome = reviewOutcome(value);
   function submit(status: "DRAFT" | "RETURNED" | "GRADED") {
-    if (!valid) return;
+    if (!valid || (status !== "DRAFT" && !summary.trim())) return;
+    if (status === "GRADED" && (value === null || value <= PASSING_SCORE)) return;
+    if (status === "RETURNED" && value !== null && value > PASSING_SCORE) return;
     if (
       status !== "DRAFT" &&
       !window.confirm(
@@ -100,7 +117,8 @@ function GradeForm({ review }: { review: Response<"submissionReview"> }) {
     <div className="space-y-3 border-t pt-4">
       <p className="text-xs text-muted-foreground">
         The lecturer grade is separate from automated architecture compliance. Draft reviews are
-        private; inline comments below are immediately visible to the student.
+        private; inline comments below are immediately visible to the student. The current backend
+        stores one overall score out of 100: above 50 passes, while 50 or below needs revision.
       </p>
       <FormField label="Lecturer score (out of 100)">
         {(props) => (
@@ -131,6 +149,17 @@ function GradeForm({ review }: { review: Response<"submissionReview"> }) {
           Enter a score between 0 and 100 with at most two decimal places.
         </p>
       )}
+      {valid && outcome && (
+        <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">Calculated outcome</span>
+          <Badge variant={value! > PASSING_SCORE ? "success" : "warning"}>{outcome}</Badge>
+        </div>
+      )}
+      {!summary.trim() && value !== null && (
+        <p role="status" className="text-sm text-muted-foreground">
+          Add an overall review before publishing or returning this snapshot.
+        </p>
+      )}
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
@@ -141,13 +170,17 @@ function GradeForm({ review }: { review: Response<"submissionReview"> }) {
         </Button>
         <Button
           variant="outline"
-          disabled={save.isPending || !valid || !summary.trim()}
+          disabled={
+            save.isPending || !valid || !summary.trim() || (value !== null && value > PASSING_SCORE)
+          }
           onClick={() => submit("RETURNED")}
         >
           Return for changes
         </Button>
         <Button
-          disabled={save.isPending || !valid || value === null}
+          disabled={
+            save.isPending || !valid || value === null || value <= PASSING_SCORE || !summary.trim()
+          }
           onClick={() => submit("GRADED")}
         >
           Publish grade

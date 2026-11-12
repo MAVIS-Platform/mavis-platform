@@ -566,7 +566,7 @@ test("project sidebar renders active group controls and removes only the obsolet
  const html=renderToStaticMarkup(React.createElement(ThemeProvider,null,React.createElement(AppShell,{role:"student",scope:"project",activeId:"graph",onPreviewNavigate(){}},"Project content")));
  assert.ok(html.includes('aria-expanded="true"'));assert.ok(html.includes("Architecture Graph Explorer"));assert.ok(html.includes("Project Overview"));assert.ok(html.includes("Project content"));
  for(const obsolete of ["Design foundation","Stage 1","Source analysis. Runtime evidence.","Explanations with context."])assert.ok(!html.includes(obsolete),obsolete);
- assert.ok(html.includes("MAVIS home"));assert.ok(html.includes("My Workspaces"));assert.ok(html.includes("My Submissions"));
+ assert.ok(html.includes("MAVIS home"));assert.ok(html.includes("My Courses"));assert.ok(html.includes("Join Course"));assert.ok(html.includes("My Submissions"));
 });
 
 test("inspector sections expose accessible controls and preserve hidden content",()=>{
