@@ -19,6 +19,7 @@ import {
 import { WorkspaceSelector } from "@/features/workspaces/components";
 import { Assignments } from "@/features/assignments/screens";
 import { Submissions } from "@/features/submissions/screens";
+import { CourseRoadmap, Courses, LabWorkspace } from "@/features/courses/screens";
 import type { ComponentType } from "react";
 const screens: Record<
   string,
@@ -107,6 +108,17 @@ const screens: Record<
     title: "My Submissions / Assignment Submissions",
     scope: "global",
     component: Submissions,
+  },
+  courses: { title: "My Courses", scope: "global", component: Courses },
+  roadmap: {
+    title: "Course Roadmap",
+    scope: "workspace",
+    component: CourseRoadmap,
+  },
+  lab: {
+    title: "Lab Workspace",
+    scope: "workspace",
+    component: LabWorkspace,
   },
 };
 export default async function FeaturePage({ params }: { params: Promise<{ screen: string }> }) {

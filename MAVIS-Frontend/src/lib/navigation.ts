@@ -22,6 +22,9 @@ import {
   Sparkles,
   Users,
   Workflow,
+  GraduationCap,
+  KeyRound,
+  Map,
   type LucideIcon,
 } from "lucide-react";
 
@@ -52,13 +55,15 @@ export const roleLabels: Record<AppRole, string> = {
 export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
   student: [
     {
-      label: "Personal",
-      items: [{ id: "projects", label: "My Projects", icon: FolderGit2, href: "/" }],
+      label: "Learning",
+      items: [
+        { id: "courses", label: "My Courses", icon: GraduationCap, href: "/" },
+        { id: "join-course", label: "Join Course", icon: KeyRound, href: "/#course-passkey" },
+      ],
     },
     {
-      label: "Education",
+      label: "Progress",
       items: [
-        { id: "workspaces", label: "My Workspaces", icon: Users, href: "/workspaces" },
         { id: "submissions", label: "My Submissions", icon: ClipboardCheck, href: "/submissions" },
       ],
     },
@@ -204,19 +209,19 @@ export const lecturerWorkspaceNavigation: readonly NavigationGroup[] = [
 
 export const studentWorkspaceNavigation: readonly NavigationGroup[] = [
   {
-    label: "Class Workspace",
+    label: "Course",
     items: [
       {
-        id: "workspace-overview",
-        label: "Class Overview",
-        icon: LayoutGrid,
-        href: "/workspace-overview",
+        id: "roadmap",
+        label: "Course Roadmap",
+        icon: Map,
+        href: "/roadmap",
       },
       {
-        id: "members",
-        label: "Class Members",
-        icon: Users,
-        href: "/members",
+        id: "lab",
+        label: "Lab Workspace",
+        icon: BookOpen,
+        href: "/lab",
       },
       {
         id: "submissions",
@@ -282,10 +287,19 @@ export function existingRouteContext(pathname: string) {
   if (pathname === "/workspaces") {
     return { scope: "global" as const, title: "My Workspaces", activeId: "workspaces" };
   }
+  if (pathname === "/courses" || pathname === "/") {
+    return { scope: "global" as const, title: "My Courses", activeId: "courses" };
+  }
+  if (pathname === "/roadmap") {
+    return { scope: "workspace" as const, title: "Course Roadmap", activeId: "roadmap" };
+  }
+  if (pathname === "/lab") {
+    return { scope: "workspace" as const, title: "Lab Workspace", activeId: "lab" };
+  }
   if (pathname === "/submissions") {
     return { scope: "global" as const, title: "My Submissions", activeId: "submissions" };
   }
-  return { scope: "global" as const, title: "My Projects", activeId: "projects" };
+  return { scope: "global" as const, title: "My Courses", activeId: "courses" };
 }
 
 // Shared visual vocabulary; no inferred claim becomes runtime evidence or AI.
