@@ -7,6 +7,7 @@ import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { SearchInput, SelectField } from "@/components/shared/forms";
 import { DataTable, DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
 import { CreateWorkspace, WorkspaceControls } from "./manage";
+import { CourseEnrollment, CourseRoadmap } from "./course-access";
 import { ReferenceManagement } from "./reference-manage";
 export function Workspaces() {
   const query = useApiQuery("workspaces", {});
@@ -18,13 +19,14 @@ export function Workspaces() {
   return (
     <>
       <CreateWorkspace />
+      {session.data?.user?.role === "student" && <CourseEnrollment />}
       <RequestState
         query={query}
         empty={!query.data?.length}
         emptyMessage={
           canCreate
             ? "You have no teaching workspaces yet. Create a class above, then add students by their registered email."
-            : "You have not been added to a class yet. Ask your lecturer to add your registered account email. Students can view assignments and submit work after joining a class."
+            : "You are not enrolled in a class yet. Ask your lecturer for a Passkey."
         }
       >
         {!canCreate && (
@@ -83,6 +85,12 @@ export function WorkspaceOverview() {
               </div>
             )}
           </div>
+          <CourseRoadmap
+            key={workspace.id}
+            workspaceId={workspace.id}
+            canManage={canManage}
+            active={workspace.status !== "ARCHIVED"}
+          />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <SummaryCard
               label="Class code"
