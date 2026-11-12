@@ -54,7 +54,7 @@ jobs:
           cache: maven
       - name: Backend regression tests
         working-directory: MAVIS-Platform/mavis-be
-        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=GitHubRepositoryUrlsTest,SourceIngestionServiceImplTest,ProjectServiceImplTest,ProjectResourceDeletionServiceTest,JavaSourceParserTest,GraphBuilderServiceTest,FeignCommunicationResolverTest,CrossLanguageServiceLinkerTest,SecurityConfigTest,JobServiceImplTest,AnalysisRequestServiceTest,RuntimeRecoveryControllerTest,RuntimeRunnerDispatcherTest,RuntimeSessionEnvironmentServiceTest,UmlClassifierVisitorTest,RuntimeSessionServiceImplTest,RunnerReceiptIngestServiceImplTest,RunnerServiceAuthGuardTest,CanonicalReceiptDigestUtilsTest,ContextReviewServiceTest,ModelVersionServiceImplTest,OtelTraceCorrelationServiceImplTest,MigrationUpgradeTest,SessionLogoutPostgresTest,CourseAccessPostgresTest,CourseAccessServiceTest,LabReferenceArchiveTest,AssignmentServiceImplTest,WorkspaceServiceImplTest,SubmissionServiceImplTest,AccessPolicyServiceImplTest,AuthVerificationTest,AuthErrorHandlingTest,ResourceDeletionPostgresTest,ResourceActivityControllerTest,AdminHealthControllerTest,AiUsageControllerTest,GeminiMonitoringClientTest,NotificationControllerTest,NotificationReadPostgresTest -Dsurefire.failIfNoSpecifiedTests=false test
+        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=GitHubRepositoryUrlsTest,SourceIngestionServiceImplTest,ProjectServiceImplTest,ProjectResourceDeletionServiceTest,JavaSourceParserTest,GraphBuilderServiceTest,FeignCommunicationResolverTest,CrossLanguageServiceLinkerTest,SecurityConfigTest,JobServiceImplTest,AnalysisRequestServiceTest,RuntimeRecoveryControllerTest,RuntimeRunnerDispatcherTest,RuntimeSessionEnvironmentServiceTest,UmlClassifierVisitorTest,RuntimeSessionServiceImplTest,RunnerReceiptIngestServiceImplTest,RunnerServiceAuthGuardTest,CanonicalReceiptDigestUtilsTest,ContextReviewServiceTest,ModelVersionServiceImplTest,OtelTraceCorrelationServiceImplTest,MigrationUpgradeTest,SessionLogoutPostgresTest,CourseAccessPostgresTest,CourseAccessServiceTest,LabReferenceArchiveTest,CourseHttpAcceptanceTest,AssignmentServiceImplTest,WorkspaceServiceImplTest,SubmissionServiceImplTest,AccessPolicyServiceImplTest,AuthVerificationTest,AuthErrorHandlingTest,ResourceDeletionPostgresTest,ResourceActivityControllerTest,AdminHealthControllerTest,AiUsageControllerTest,GeminiMonitoringClientTest,NotificationControllerTest,NotificationReadPostgresTest -Dsurefire.failIfNoSpecifiedTests=false test
       - name: Transactional notification delivery tests
         run: >-
           docker run --rm --network host -v "$PWD:/source:ro" -w /source
@@ -74,6 +74,7 @@ jobs:
         working-directory: MAVIS-Frontend
         run: |
           npm ci --no-audit --no-fund
+          node --check ../scripts/measure-wf01-roadmap.mjs
           npm run typecheck
           npm test
 
