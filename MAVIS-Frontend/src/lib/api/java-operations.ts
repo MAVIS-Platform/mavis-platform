@@ -177,7 +177,7 @@ export async function executeJava(
       .object({
         id: z.string().uuid(),
         name: z.string(),
-        code: z.string(),
+        code: z.string().nullish(),
         status: z.string(),
         myRoleInWorkspace: z.string().nullish(),
         createdById: z.string().uuid().optional(),
@@ -189,6 +189,7 @@ export async function executeJava(
       embedded ?? z.array(memberSchema).parse(await get(`workspaces/${w.id}/members`));
     return {
       ...w,
+      code: w.code ?? "",
       myRole: w.myRoleInWorkspace ?? null,
       description: w.description ?? "",
       members: members.map((m) => ({

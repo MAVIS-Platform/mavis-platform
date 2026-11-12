@@ -26,10 +26,12 @@ export function SubmissionComposer({
   assignmentId,
   workspaceId,
   requirements,
+  guided = false,
 }: {
   assignmentId: string;
   workspaceId: string;
   requirements?: Assignment;
+  guided?: boolean;
 }) {
   const selection = useSelection();
   const state = useModel();
@@ -41,10 +43,12 @@ export function SubmissionComposer({
   const selectedProject = projects.data?.find((p) => p.id === state.projectId);
   const compatibleProject =
     selectedProject?.workspaceId === workspaceId &&
-    (!selectedProject.assignmentId || selectedProject.assignmentId === assignmentId);
+    (selectedProject.assignmentId === assignmentId || (!guided && !selectedProject.assignmentId));
 
   const classProjects = (projects.data ?? []).filter(
-    (p) => p.workspaceId === workspaceId && (!p.assignmentId || p.assignmentId === assignmentId),
+    (p) =>
+      p.workspaceId === workspaceId &&
+      (p.assignmentId === assignmentId || (!guided && !p.assignmentId)),
   );
   const personalProjectsCount = (projects.data ?? []).filter((p) => !p.workspaceId).length;
 
@@ -114,8 +118,9 @@ export function SubmissionComposer({
   return (
     <DetailPanel title="Prepare coursework submission">
       <p className="text-sm text-muted-foreground">
-        Use a project created for this class. Import and analyze its source, then submit a frozen
-        model version here.
+        {guided
+          ? "Create your lab project from the assigned source, then analyze its snapshot."
+          : "Use a project created for this class. Import and analyze its source, then submit a frozen model version here."}
       </p>
       {overdue && (
         <p role="alert" className="rounded-lg border p-3 text-sm text-destructive">
@@ -131,7 +136,7 @@ export function SubmissionComposer({
               name: projectName.trim(),
               workspaceId,
               assignmentId,
-              ...(useReferenceSnapshot && requirements?.referenceSource?.snapshotId
+              ...(!guided && useReferenceSnapshot && requirements?.referenceSource?.snapshotId
                 ? { referenceSnapshotId: requirements.referenceSource.snapshotId }
                 : {}),
             },
@@ -160,7 +165,7 @@ export function SubmissionComposer({
             {create.isPending ? "Creating project…" : "Create coursework project"}
           </Button>
         </div>
-        {requirements?.referenceSource?.snapshotId && (
+        {!guided && requirements?.referenceSource?.snapshotId && (
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -186,17 +191,23 @@ export function SubmissionComposer({
                 Analyze Snapshot
               </Link>
             </Button>
-            <Button asChild size="sm" variant="outline">
-              <Link
-                href={`/import?project=${encodeURIComponent(create.data.id)}&workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}`}
-              >
-                Import source and run analysis
-              </Link>
-            </Button>
+            {!guided && (
+              <Button asChild size="sm" variant="outline">
+                <Link
+                  href={`/import?project=${encodeURIComponent(create.data.id)}&workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}`}
+                >
+                  Import source and run analysis
+                </Link>
+              </Button>
+            )}
           </div>
         </div>
       )}
-      <ProjectSelector workspaceId={workspaceId} assignmentId={assignmentId} />
+      <ProjectSelector
+        workspaceId={workspaceId}
+        assignmentId={assignmentId}
+        requireAssignment={guided}
+      />
       {classProjects.length === 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-foreground">
           You don&apos;t have a project in this class workspace yet. Enter a name above and click{" "}
@@ -227,17 +238,20 @@ export function SubmissionComposer({
             <div className="space-y-3 rounded-lg border border-dashed p-6 text-center">
               <p className="text-sm font-medium">No architecture model revisions found</p>
               <p className="text-xs text-muted-foreground">
-                To submit this assignment, you must import source code and run static analysis to
-                produce an architecture model revision.
+                {guided
+                  ? "Run static analysis on the assigned snapshot to produce an architecture model revision."
+                  : "Import source code and run static analysis to produce an architecture model revision."}
               </p>
               <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-                <Button asChild size="sm">
-                  <Link
-                    href={`/snapshots?project=${encodeURIComponent(state.projectId)}&import=1`}
-                  >
-                    Import Source &amp; Analyze
-                  </Link>
-                </Button>
+                {!guided && (
+                  <Button asChild size="sm">
+                    <Link
+                      href={`/snapshots?project=${encodeURIComponent(state.projectId)}&import=1`}
+                    >
+                      Import Source &amp; Analyze
+                    </Link>
+                  </Button>
+                )}
                 <Button asChild size="sm" variant="outline">
                   <Link href={`/snapshots?project=${encodeURIComponent(state.projectId)}`}>
                     Go to Source Snapshots
@@ -405,8 +419,8 @@ export function SubmissionComposer({
                           <span>All required diagram types selected</span>
                         ) : (
                           <span>
-                            Missing {missing.map(diagramTypeLabel).join(", ") || "diagram selection"}{" "}
-                            —{" "}
+                            Missing{" "}
+                            {missing.map(diagramTypeLabel).join(", ") || "diagram selection"} —{" "}
                             <Link
                               className="text-primary underline"
                               href={`/diagrams?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}

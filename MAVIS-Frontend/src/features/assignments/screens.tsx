@@ -4,12 +4,13 @@ import { Badge } from "@/components/ui/badge";
 import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
 import { AssignmentSourceDetails } from "./source-picker";
 import { useState } from "react";
-import { useApiQuery, useApiMutation, usePermission, useSelection } from "@/hooks/use-api";
+import { useApi, useApiQuery, useApiMutation, usePermission, useSelection } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { DetailPanel } from "@/components/shared/data";
 import { SubmissionComposer } from "@/features/submissions/composer";
 import { CreateAssignment } from "./create";
+import { PublishCourseLab, useCourseRoadmap } from "@/features/workspaces/course-access";
 import { AssignmentInstructions } from "./assignment-instructions";
 import Link from "next/link";
 
@@ -26,6 +27,8 @@ function formatDeadline(value: string | undefined): string {
 export function Assignments() {
   const { workspaceId } = useSelection();
   const query = useApiQuery("assignments", { workspaceId }, { enabled: Boolean(workspaceId) });
+  const client = useApi();
+  const roadmap = useCourseRoadmap(workspaceId);
   const [showCreate, setShowCreate] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const canSubmit = usePermission("submission:create");
@@ -51,6 +54,11 @@ export function Assignments() {
           onSuccess={() => setShowCreate(false)}
         />
       )}
+      {roadmap.isError && (
+        <Button variant="outline" onClick={() => void roadmap.refetch()}>
+          Retry loading lab roadmap
+        </Button>
+      )}
       <RequestState
         query={query}
         empty={!query.data?.length}
@@ -62,6 +70,7 @@ export function Assignments() {
       >
         <div className="space-y-4">
           {query.data?.map((assignment) => {
+            const published = roadmap.data?.labs.find((lab) => lab.assignmentId === assignment.id);
             const overdue = isDeadlinePassed(assignment.dueAt);
             return (
               <div key={assignment.id} id={`assignment-${assignment.id}`} className="scroll-mt-20">
@@ -100,6 +109,15 @@ export function Assignments() {
                     source={assignment.referenceSource}
                     assignmentId={assignment.id}
                   />
+                  {canManage &&
+                    client.mode === "backend" &&
+                    (published || assignment.referenceSource) && (
+                      <PublishCourseLab
+                        workspaceId={workspaceId}
+                        assignmentId={assignment.id}
+                        position={published?.position}
+                      />
+                    )}
                   {canManage && (
                     <div className="flex flex-wrap items-center gap-3">
                       <Link
@@ -125,7 +143,7 @@ export function Assignments() {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={remove.isPending}
+                        disabled={remove.isPending || Boolean(published)}
                         onClick={() => {
                           if (
                             window.confirm(
@@ -154,11 +172,12 @@ export function Assignments() {
                       "Any saved diagram"}{" "}
                     · Runtime trace: {assignment.requireRuntimeTrace ? "Required" : "Optional"}
                   </p>
-                  {canSubmit && (
+                  {canSubmit && (client.mode !== "backend" || roadmap.isSuccess) && (
                     <SubmissionComposer
                       key={assignment.id}
                       assignmentId={assignment.id}
                       requirements={assignment}
+                      guided={roadmap.data?.guided ?? false}
                       workspaceId={workspaceId}
                     />
                   )}
