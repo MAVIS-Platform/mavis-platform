@@ -45,6 +45,8 @@ jobs:
       - uses: actions/checkout@v6
       - name: Deployment and rollback tests
         run: docker run --rm -v "$PWD/deploy:/source:ro" python:3.12-slim bash /source/tests/deploy-vps.test.sh
+      - name: WF-01 schema preparation tests
+        run: python3 -B deploy/tests/test_course_schema.py
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -52,7 +54,7 @@ jobs:
           cache: maven
       - name: Backend regression tests
         working-directory: MAVIS-Platform/mavis-be
-        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=GitHubRepositoryUrlsTest,SourceIngestionServiceImplTest,ProjectServiceImplTest,ProjectResourceDeletionServiceTest,JavaSourceParserTest,GraphBuilderServiceTest,FeignCommunicationResolverTest,CrossLanguageServiceLinkerTest,SecurityConfigTest,JobServiceImplTest,AnalysisRequestServiceTest,RuntimeRecoveryControllerTest,RuntimeRunnerDispatcherTest,RuntimeSessionEnvironmentServiceTest,UmlClassifierVisitorTest,RuntimeSessionServiceImplTest,RunnerReceiptIngestServiceImplTest,RunnerServiceAuthGuardTest,CanonicalReceiptDigestUtilsTest,ContextReviewServiceTest,ModelVersionServiceImplTest,OtelTraceCorrelationServiceImplTest,MigrationUpgradeTest,ResourceDeletionPostgresTest,ResourceActivityControllerTest,AdminHealthControllerTest,AiUsageControllerTest,GeminiMonitoringClientTest,NotificationControllerTest,NotificationReadPostgresTest -Dsurefire.failIfNoSpecifiedTests=false test
+        run: bash mvnw -B -ntp -pl mavis-bootstrap -am -Dtest=GitHubRepositoryUrlsTest,SourceIngestionServiceImplTest,ProjectServiceImplTest,ProjectResourceDeletionServiceTest,JavaSourceParserTest,GraphBuilderServiceTest,FeignCommunicationResolverTest,CrossLanguageServiceLinkerTest,SecurityConfigTest,JobServiceImplTest,AnalysisRequestServiceTest,RuntimeRecoveryControllerTest,RuntimeRunnerDispatcherTest,RuntimeSessionEnvironmentServiceTest,UmlClassifierVisitorTest,RuntimeSessionServiceImplTest,RunnerReceiptIngestServiceImplTest,RunnerServiceAuthGuardTest,CanonicalReceiptDigestUtilsTest,ContextReviewServiceTest,ModelVersionServiceImplTest,OtelTraceCorrelationServiceImplTest,MigrationUpgradeTest,SessionLogoutPostgresTest,AccessPolicyServiceImplTest,AuthVerificationTest,AuthErrorHandlingTest,ResourceDeletionPostgresTest,ResourceActivityControllerTest,AdminHealthControllerTest,AiUsageControllerTest,GeminiMonitoringClientTest,NotificationControllerTest,NotificationReadPostgresTest -Dsurefire.failIfNoSpecifiedTests=false test
       - name: Transactional notification delivery tests
         run: >-
           docker run --rm --network host -v "$PWD:/source:ro" -w /source
@@ -72,6 +74,7 @@ jobs:
         working-directory: MAVIS-Frontend
         run: |
           npm ci --no-audit --no-fund
+          npm run typecheck
           npm test
 
       - name: Production route render smoke test
@@ -180,6 +183,7 @@ jobs:
           incoming="/opt/mavis/incoming-$COMMIT"
           ssh_opts=(-i ~/.ssh/mavis_deploy -o BatchMode=yes -o StrictHostKeyChecking=yes)
           ssh "${ssh_opts[@]}" "$target" "docker container prune -f >/dev/null 2>&1 || true; docker builder prune -af >/dev/null 2>&1 || true; docker image prune -f >/dev/null 2>&1 || true; mkdir -p '$incoming'"
-          scp "${ssh_opts[@]}" deploy/compose.production.yml deploy/deploy-vps.sh "$target:$incoming/"
+          scp "${ssh_opts[@]}" deploy/compose.production.yml deploy/deploy-vps.sh deploy/apply-course-schema.py \
+            MAVIS-Platform/mavis-be/mavis-bootstrap/src/main/resources/db/migration/V26__Course_Lab_Access.sql "$target:$incoming/"
           prefix="ghcr.io/${REPOSITORY,,}"
           printf '%s\n' "$GH_TOKEN" | ssh "${ssh_opts[@]}" "$target" "bash '$incoming/deploy-vps.sh' '$COMMIT' '$prefix' '$GH_USER'"

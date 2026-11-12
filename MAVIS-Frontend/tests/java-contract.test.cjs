@@ -753,10 +753,26 @@ test("public auth contract rejects incomplete and nonnumeric OTPs for both purpo
  for(const op of ["verifyEmail","resetPassword"]) assert.equal(contracts[op].input.safeParse({email:"fixture@example.org",otpCode:"012345",newPassword:"valid-password"}).success,true);
 });
 
-test("intentional logout deletes the cookie without redirecting or storing a return destination",async t=>{
- environment(t);let calls=0;t.mock.method(globalThis,"fetch",async()=>{calls++;throw Error("Logout must be local");});
- const response=await route.POST(new NextRequest("http://127.0.0.1:3000/api/mavis/signOut",{method:"POST",headers:{host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000",cookie:"mavis_session=fixture","content-type":"application/json"},body:"{}"}),{params:Promise.resolve({operation:"signOut"})});
- assert.equal(response.status,200);assert.deepEqual(await response.json(),{ok:true});assert.match(response.headers.get("set-cookie"),/mavis_session=;/);assert.equal(response.headers.get("location"),null);assert.equal(calls,0);
+test("intentional logout revokes the bearer before clearing the cookie, and remains retryable", async t => {
+ environment(t);
+ const request=()=>new NextRequest("http://127.0.0.1:3000/api/mavis/signOut",{method:"POST",headers:{host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000",cookie:"mavis_session=fixture","content-type":"application/json"},body:"{}"});
+ const context={params:Promise.resolve({operation:"signOut"})};
+ const upstream=t.mock.method(globalThis,"fetch",async(url,options)=>{
+  assert.match(String(url),/\/api\/v1\/auth\/logout$/);
+  assert.equal(options.method,"POST");
+  assert.equal(options.headers.get("authorization"),"Bearer fixture");
+  return Response.json({code:200,data:null});
+ });
+ const response=await route.POST(request(),context);
+ assert.equal(response.status,200);
+ assert.deepEqual(await response.json(),{ok:true});
+ assert.match(response.headers.get("set-cookie"),/mavis_session=;/);
+ assert.equal(response.headers.get("location"),null);
+ assert.equal(upstream.mock.callCount(),1);
+ upstream.mock.mockImplementation(async()=>Response.json({code:503},{status:503}));
+ const failed=await route.POST(request(),context);
+ assert.equal(failed.status,503);
+ assert.equal(failed.headers.get("set-cookie"),null);
 });
 
 test("session checks distinguish expired credentials from restrictions and outages",async t=>{
