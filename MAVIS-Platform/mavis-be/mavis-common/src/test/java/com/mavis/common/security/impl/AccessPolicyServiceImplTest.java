@@ -159,13 +159,13 @@ class AccessPolicyServiceImplTest {
         Workspace workspace = Workspace.builder().id(workspaceId).createdBy(creator).build();
         when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.of(workspace));
 
-        WorkspaceMember studentMember = WorkspaceMember.builder()
+        WorkspaceMember staleLecturerMembership = WorkspaceMember.builder()
                 .workspace(workspace)
                 .user(currentUser)
-                .memberRole("STUDENT")
+                .memberRole("LECTURER")
                 .build();
         when(workspaceMemberRepository.findByWorkspaceIdAndUserId(workspaceId, currentUserId))
-                .thenReturn(Optional.of(studentMember));
+                .thenReturn(Optional.of(staleLecturerMembership));
 
         assertThatThrownBy(() -> accessPolicyService.requireWorkspaceLecturer(workspaceId))
                 .isInstanceOf(BusinessException.class)
@@ -329,6 +329,7 @@ class AccessPolicyServiceImplTest {
     @Test
     void membershipCacheIncludesMissesAndEvictionRestoresFreshPermissionChecks() {
         newRequest();
+        currentUser.setRole(lecturerRole);
         UUID workspaceId = UUID.randomUUID();
         var workspace = Workspace.builder().id(workspaceId).build();
         when(userRepository.findWithRoleById(currentUserId)).thenReturn(Optional.of(currentUser));

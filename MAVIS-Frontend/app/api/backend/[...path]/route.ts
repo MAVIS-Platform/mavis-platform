@@ -1,3 +1,4 @@
+import { javaRequest } from "@/lib/api/java-client";
 import { currentSession } from "@/lib/api/java-operations";
 import { NextRequest, NextResponse } from "next/server";
 import { githubImportRequest } from "@/lib/mainflow-api";
@@ -15,9 +16,19 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
   )
     return NextResponse.json({ message: "Cross-origin request denied" }, { status: 403 });
   if (path === "logout" && request.method === "POST") {
-    const response = NextResponse.json({ data: null });
-    response.cookies.delete(cookieName);
-    return response;
+    try {
+      const token = jar.get(cookieName)?.value;
+      if (token)
+        await javaRequest("auth/logout", token, { method: "POST", signal: request.signal });
+      const response = NextResponse.json(
+        { data: null },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+      response.cookies.delete(cookieName);
+      return response;
+    } catch {
+      return NextResponse.json({ message: "Sign out unavailable. Please retry." }, { status: 503 });
+    }
   }
   if (path === "session" && request.method === "GET") {
     try {

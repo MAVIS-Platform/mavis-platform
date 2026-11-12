@@ -44,7 +44,7 @@ Flyway V22 cung cấp `user_notifications`, khóa duy nhất `(recipient_id, eve
 
 ## Điều kiện phát hành
 
-Cloud profile mặc định tắt Flyway lúc khởi động. Trước khi merge vào nhánh tự deploy, nhóm vận hành cần xác nhận số migration với các nhánh đang phát triển, áp dụng V26 trên bản sao staging, kiểm schema và xác thực, rồi chuẩn bị bản sao lưu và áp dụng trên môi trường đích theo quy trình hiện hành. Backend mới cần bảng `revoked_access_tokens` để xác thực JWT. Khi phải quay về image trước, giữ các cột và bảng bổ sung của V26. [Quy trình migration và rollback](../deploy/CI-CD.md)
+Cloud profile mặc định tắt Flyway lúc khởi động. Pipeline kiểm tra V26 trước khi thay container. Nếu schema chưa có, bước phát hành sao lưu PostgreSQL, kiểm bản sao rồi áp dụng riêng V26 trong một giao dịch. Schema dở dang hoặc lỗi sao lưu sẽ dừng việc thay container. Backend mới cần bảng `revoked_access_tokens` để xác thực JWT. Khi phải quay về image trước, giữ các cột và bảng bổ sung của V26. [Quy trình migration và rollback](../deploy/CI-CD.md)
 
 ## Kiểm chứng
 

@@ -24,3 +24,9 @@ ALTER TABLE runtime_sessions ADD COLUMN IF NOT EXISTS environment_ciphertext TEX
 ```
 
 Verify the column exists and the candidate backend starts before replacing the live stack. This nullable column is compatible with the previous backend; retain it when rolling application images back. Do not enable every historical Flyway migration on an existing production database just to apply this change. If Flyway is enabled later, reconcile its history with manually applied migrations first.
+
+## WF-01 schema prerequisite
+
+Deployment prepares V26 after pulling the candidate images and before replacing the current stack. The deploy host reads the same database connection as the backend from Compose, requires TLS, and checks for the WF-01 tables and columns. When the schema is absent, it takes a custom PostgreSQL backup, verifies its catalog, and applies only the checked-in V26 SQL in a transaction with short lock and statement timeouts. Existing installations with the complete schema skip this step. A partial schema, unsupported connection configuration or backup failure blocks replacement. The previous app remains available.
+
+The restricted backup is stored on the deploy host at `/opt/mavis/db-backups/wf01-before-v26.dump`. Confirm the host has space for a compressed database backup before the first WF-01 release. The backup and additive schema stay in place on image rollback. Reconcile V26 in Flyway history if production later enables automatic Flyway migrations.
