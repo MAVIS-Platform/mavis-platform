@@ -12,6 +12,7 @@ import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.platform.assignment.service.LabReferenceArchive;
 import com.mavis.platform.workspace.service.CourseAccessService;
+import com.mavis.platform.workspace.service.CourseProgressionService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -34,7 +35,7 @@ import static org.mockito.Mockito.*;
         matches = "jdbc:postgresql://127\\.0\\.0\\.1:15438/[a-zA-Z0-9_]+")
 class CourseAccessPostgresTest {
     @Test
-    void passkeyLifecycleEnrollsOnceAndUnlocksOnlyTheFirstLab() throws Exception {
+    void passkeyLifecycleAndVerifiedResultsKeepProgressScopedToTheStudent() throws Exception {
         withDatabase((jdbc, tx) -> {
             UUID teacherId = user(jdbc, "LECTURER", "teacher@example.invalid");
             UUID studentId = user(jdbc, "STUDENT", "student@example.invalid");
@@ -55,6 +56,7 @@ class CourseAccessPostgresTest {
             var policy = new CourseLabPolicy(jdbc);
             var courses = new CourseAccessService(access, workspaces, assignments, policy, jdbc,
                     mock(LabReferenceArchive.class));
+            var progression = new CourseProgressionService(jdbc, workspaces);
             var first = lab(jdbc, workspace, teacherId, 1);
             var second = lab(jdbc, workspace, teacherId, 2);
             when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
@@ -106,6 +108,57 @@ class CourseAccessPostgresTest {
             workspace.setStatus("ARCHIVED");
             assertFalse(policy.canOpen(second, student));
             assertEquals("COURSE_ARCHIVED", courses.roadmap(workspaceId).labs().getLast().reason());
+            workspace.setStatus("ACTIVE");
+            UUID otherStudentId = user(jdbc, "STUDENT", "other-student@example.invalid");
+            var otherStudent = User.builder().id(otherStudentId)
+                    .role(Role.builder().code("STUDENT").build()).build();
+            jdbc.update("""
+                    INSERT INTO workspace_members(workspace_id, user_id, member_role) VALUES (?, ?, 'STUDENT')
+                    """, workspaceId, otherStudentId);
+            UUID lockedSubmission = submission(jdbc, second, otherStudentId);
+            jdbc.update("""
+                    INSERT INTO submission_reviews(submission_id, lecturer_id, status, score, summary)
+                    VALUES (?, ?, 'GRADED', 100, 'Fixture review for a locked Lab')
+                    """, lockedSubmission, teacherId);
+            assertEquals(ErrorCode.CONFLICT, assertThrows(BusinessException.class,
+                    () -> tx.executeWithoutResult(status -> progression.recordFinalizedResult(lockedSubmission, 1, true)))
+                    .getErrorCode());
+
+            UUID submission = submission(jdbc, first, studentId);
+            jdbc.update("""
+                    INSERT INTO submission_reviews(submission_id, lecturer_id, status, summary)
+                    VALUES (?, ?, 'DRAFT', 'Pending checks')
+                    """, submission, teacherId);
+            assertEquals(ErrorCode.CONFLICT, assertThrows(BusinessException.class,
+                    () -> tx.executeWithoutResult(status -> progression.recordFinalizedResult(submission, 1, true)))
+                    .getErrorCode());
+            jdbc.update("UPDATE submission_reviews SET status = 'GRADED', score = 60 WHERE submission_id = ?", submission);
+            tx.executeWithoutResult(status -> progression.recordFinalizedResult(submission, 1, false));
+            assertFalse(policy.canOpen(second, student));
+            assertEquals("IN_PROGRESS", courses.roadmap(workspaceId).enrollmentStatus());
+            jdbc.update("UPDATE submission_reviews SET revision = 2, score = 90 WHERE submission_id = ?", submission);
+            tx.executeWithoutResult(status -> progression.recordFinalizedResult(submission, 2, true));
+            tx.executeWithoutResult(status -> progression.recordFinalizedResult(submission, 2, true));
+            assertTrue(policy.canOpen(second, student));
+            assertFalse(policy.canOpen(second, otherStudent));
+            assertEquals(List.of("PASSED", "UNLOCKED"), states(courses.roadmap(workspaceId)));
+            assertEquals(1, jdbc.queryForObject("""
+                    SELECT count(*) FROM user_notifications WHERE recipient_id = ? AND event_key = ?
+                    """, Integer.class, studentId, "course-lab-unlocked:" + second.getId()));
+            assertEquals(ErrorCode.CONFLICT, assertThrows(BusinessException.class,
+                    () -> tx.executeWithoutResult(status -> progression.recordFinalizedResult(submission, 1, false)))
+                    .getErrorCode());
+            assertEquals(0, jdbc.queryForObject("""
+                    SELECT count(*) FROM user_notifications WHERE recipient_id = ? AND event_key = ?
+                    """, Integer.class, otherStudentId, "course-lab-unlocked:" + second.getId()));
+            UUID finalSubmission = submission(jdbc, second, studentId);
+            jdbc.update("""
+                    INSERT INTO submission_reviews(submission_id, lecturer_id, status, score, summary)
+                    VALUES (?, ?, 'GRADED', 95, 'Final Lab passed')
+                    """, finalSubmission, teacherId);
+            tx.executeWithoutResult(status -> progression.recordFinalizedResult(finalSubmission, 1, true));
+            assertEquals("COMPLETED", courses.roadmap(workspaceId).enrollmentStatus());
+            assertEquals(List.of("PASSED", "PASSED"), states(courses.roadmap(workspaceId)));
         });
     }
 
@@ -119,6 +172,26 @@ class CourseAccessPostgresTest {
                 INSERT INTO assignments(workspace_id, created_by, title, lab_order) VALUES (?, ?, ?, ?) RETURNING id
                 """, workspace.getId(), lecturer, title, position);
         return Assignment.builder().id(id).workspace(workspace).title(title).labOrder(position).build();
+    }
+
+    private static UUID submission(JdbcTemplate jdbc, Assignment lab, UUID student) {
+        UUID project = id(jdbc, """
+                INSERT INTO projects(workspace_id, assignment_id, owner_id, name) VALUES (?, ?, ?, 'Coursework') RETURNING id
+                """, lab.getWorkspace().getId(), lab.getId(), student);
+        UUID source = id(jdbc, """
+                INSERT INTO source_snapshots(project_id, source_type, artifact_hash) VALUES (?, 'ZIP_UPLOAD', ?) RETURNING id
+                """, project, "a".repeat(64));
+        UUID model = id(jdbc, """
+                INSERT INTO model_versions(project_id, source_snapshot_id) VALUES (?, ?) RETURNING id
+                """, project, source);
+        UUID diagram = id(jdbc, """
+                INSERT INTO diagram_versions(model_version_id, notation, layout_json)
+                VALUES (?, 'DEPENDENCY_GRAPH', '{}'::jsonb) RETURNING id
+                """, model);
+        return id(jdbc, """
+                INSERT INTO submission_snapshots(assignment_id, project_id, submitted_by, source_snapshot_id,
+                    model_version_id, diagram_version_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id
+                """, lab.getId(), project, student, source, model, diagram);
     }
 
     private static UUID user(JdbcTemplate jdbc, String role, String email) {
