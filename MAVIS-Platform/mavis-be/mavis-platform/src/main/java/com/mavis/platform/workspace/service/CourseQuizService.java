@@ -38,19 +38,40 @@ public class CourseQuizService {
     private record Attempt(int version, String answers, int correct, boolean passed) {}
 
     public Quiz publish(UUID workspaceId, UUID assignmentId, Publish request) {
+        return publish(workspaceId, assignmentId, request, false);
+    }
+
+    public Quiz publishCurriculum(UUID workspaceId, UUID assignmentId, Publish request) {
+        return publish(workspaceId, assignmentId, request, true);
+    }
+
+    private Quiz publish(UUID workspaceId, UUID assignmentId, Publish request, boolean reuseMatchingVersion) {
         access.requireWorkspaceLecturer(workspaceId);
         var lab = lab(workspaceId, assignmentId, true);
         int threshold = request.passPercent() == null ? 70 : request.passPercent();
         validateDefinition(request, threshold);
+        String lesson = request.lesson().trim();
+        String questions = encode(request.questions());
+        if (reuseMatchingVersion) {
+            var published = jdbc.queryForList("""
+                    SELECT version FROM course_quizzes
+                    WHERE assignment_id = ? AND reference_model_id = ? AND lesson = ? AND pass_percent = ?
+                      AND questions = CAST(? AS jsonb)
+                      AND version = (SELECT max(version) FROM course_quizzes WHERE assignment_id = ?)
+                    """, Integer.class, assignmentId, lab.getReferenceModel().getId(), lesson, threshold,
+                    questions, assignmentId);
+            if (!published.isEmpty()) {
+                return view(new Definition(published.getFirst(), lesson, threshold, request.questions()), false);
+            }
+        }
         int next = jdbc.queryForObject("""
                 SELECT coalesce(max(version), 0) + 1 FROM course_quizzes WHERE assignment_id = ?
                 """, Integer.class, assignmentId);
         jdbc.update("""
                 INSERT INTO course_quizzes(assignment_id, version, reference_model_id, lesson, pass_percent, questions)
                 VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb))
-                """, assignmentId, next, lab.getReferenceModel().getId(), request.lesson().trim(),
-                threshold, encode(request.questions()));
-        return view(new Definition(next, request.lesson().trim(), threshold, request.questions()), false);
+                """, assignmentId, next, lab.getReferenceModel().getId(), lesson, threshold, questions);
+        return view(new Definition(next, lesson, threshold, request.questions()), false);
     }
 
     @Transactional(readOnly = true)

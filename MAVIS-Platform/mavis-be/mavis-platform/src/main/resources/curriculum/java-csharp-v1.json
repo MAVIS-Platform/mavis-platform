@@ -1,0 +1,869 @@
+[
+  {
+    "id": "java-01",
+    "track": "Java",
+    "title": "Từ monolith đến microservices và C4",
+    "minutes": 45,
+    "objective": "Phân biệt ranh giới nghiệp vụ, ranh giới triển khai và các mức C1–C3.",
+    "lesson": "Monolith thường đóng gói nhiều năng lực nghiệp vụ trong một đơn vị triển khai. Tách service đem lại khả năng phát hành riêng nhưng tạo thêm chi phí giao tiếp, dữ liệu và vận hành. C1 đặt hệ thống trong ngữ cảnh người dùng và hệ thống ngoài. C2 phóng to các ứng dụng và kho dữ liệu chạy được. C3 phóng to thành phần bên trong một container. Không mặc định một lớp Java là một microservice.",
+    "exercise": "Trong MAVIS, mở nguồn mẫu do giảng viên gán. Chọn một người dùng, một hệ thống ngoài, một container và một component. Ghi mỗi phần tử vào đúng mức, kèm đường dẫn mã hoặc cấu hình. Đánh dấu giả thuyết cần kiểm chứng khi chạy.",
+    "sources": [
+      {
+        "publisher": "Dev.java",
+        "title": "Java Learning",
+        "url": "https://dev.java/learn/"
+      },
+      {
+        "publisher": "C4 model",
+        "title": "C4 diagrams",
+        "url": "https://c4model.com/diagrams"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices Architecture",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "C1 chủ yếu cho biết gì?",
+        "options": [
+          "Người dùng, hệ thống và quan hệ bên ngoài",
+          "Danh sách phương thức Java",
+          "Từng dòng Compose"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Hai module cùng phát hành bằng một ứng dụng chứng minh điều gì?",
+        "options": [
+          "Mỗi module có một database",
+          "Chúng là hai service triển khai độc lập",
+          "Chỉ có ranh giới module, cần thêm bằng chứng triển khai"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "C3 phóng to phạm vi nào?",
+        "options": [
+          "Toàn bộ cụm triển khai",
+          "Các thành phần bên trong một container",
+          "Một tổ chức"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Muốn xác nhận một service thực sự nhận traffic, cần gì thêm?",
+        "options": [
+          "Trace hoặc bằng chứng runtime",
+          "Chỉ tên project",
+          "Số lượng package"
+        ],
+        "correctOption": 0
+      }
+    ]
+  },
+  {
+    "id": "java-02",
+    "track": "Java",
+    "title": "Ranh giới dịch vụ và quyền sở hữu dữ liệu",
+    "minutes": 45,
+    "objective": "Nhận diện dấu hiệu shared database và phân biệt chia sẻ hạ tầng với chia sẻ quyền ghi.",
+    "lesson": "Database-per-service là nguyên tắc sở hữu dữ liệu. Hai service có thể cùng dùng một máy chủ PostgreSQL nếu quyền và schema được cô lập. Nguy cơ tăng khi chúng sửa cùng bảng hoặc cùng phụ thuộc một migration. Kết luận cần đối chiếu tên DB/schema, cấu hình runtime và repository thay vì chỉ so tên engine.",
+    "exercise": "Tìm cấu hình datasource và một repository ở hai service. Vẽ bảng service → schema → bảng → quyền đọc/ghi. Gắn trạng thái đã xác minh hoặc chưa đủ bằng chứng cho từng kết nối.",
+    "sources": [
+      {
+        "publisher": "Spring",
+        "title": "Accessing Data with JPA",
+        "url": "https://spring.io/guides/gs/accessing-data-jpa/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices Architecture",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "Manning",
+        "title": "Microservices Patterns",
+        "url": "https://www.manning.com/books/microservices-patterns"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Dấu hiệu mạnh nhất của shared DB là gì?",
+        "options": [
+          "Hai service có hai tài khoản tách biệt",
+          "Hai service đều dùng PostgreSQL",
+          "Hai service ghi cùng một bảng"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Tách schema có ý nghĩa khi nào?",
+        "options": [
+          "Chỉ cần đổi tên project",
+          "Quyền truy cập và ownership được thực thi",
+          "Hai schema có tên gần nhau"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Khi thiếu thông tin quyền ghi, nên báo gì?",
+        "options": [
+          "Chưa đủ bằng chứng",
+          "Chắc chắn vi phạm",
+          "Chắc chắn an toàn"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Ranh giới dữ liệu nên gắn với gì?",
+        "options": [
+          "Thứ tự tên bảng",
+          "Màu node",
+          "Năng lực nghiệp vụ và service sở hữu"
+        ],
+        "correctOption": 2
+      }
+    ]
+  },
+  {
+    "id": "java-03",
+    "track": "Java",
+    "title": "C3 và cấu trúc nội bộ Spring Boot",
+    "minutes": 45,
+    "objective": "Lần theo controller, service và repository để giải thích phụ thuộc nội bộ.",
+    "lesson": "Controller nhận và chuyển đổi yêu cầu HTTP. Lớp ứng dụng điều phối nghiệp vụ. Repository đại diện đường đi tới lưu trữ. Ranh giới thực tế phụ thuộc code, không chỉ theo hậu tố tên. Constructor injection giúp thấy phụ thuộc trực tiếp. Unit test kiểm logic riêng, còn web test kiểm binding, status và serialization.",
+    "exercise": "Chọn một endpoint trong Lab. Lần từ mapping tới service và repository, ghi bằng chứng cho ba điểm. Chỉ ra một cạnh đáng rà soát và đề xuất test phát hiện thay đổi sai.",
+    "sources": [
+      {
+        "publisher": "Dev.java",
+        "title": "Java Learning",
+        "url": "https://dev.java/learn/"
+      },
+      {
+        "publisher": "Spring",
+        "title": "Building a RESTful Web Service",
+        "url": "https://spring.io/guides/gs/rest-service/"
+      },
+      {
+        "publisher": "Spring",
+        "title": "Testing the Web Layer",
+        "url": "https://spring.io/guides/gs/testing-web/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Nơi đọc đầu tiên để xác định URL HTTP là gì?",
+        "options": [
+          "Tên lớp DTO",
+          "Controller mapping",
+          "Tên cơ sở dữ liệu"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Constructor injection giúp ích gì khi đọc C3?",
+        "options": [
+          "Nhìn thấy phụ thuộc được khai báo",
+          "Ẩn các phụ thuộc",
+          "Đảm bảo hết lỗi kiến trúc"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Test nào phù hợp để kiểm HTTP status và JSON?",
+        "options": [
+          "Chỉ đếm package",
+          "Chỉ đọc dependency Maven",
+          "Test web layer"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Tên lớp có hậu tố Service đủ để kết luận vai trò không?",
+        "options": [
+          "Luôn đủ",
+          "Cần đối chiếu nơi gọi và hành vi",
+          "Chỉ đủ khi có hai method"
+        ],
+        "correctOption": 1
+      }
+    ]
+  },
+  {
+    "id": "java-04",
+    "track": "Java",
+    "title": "REST, OpenFeign và Reverse BFS",
+    "minutes": 50,
+    "objective": "Tìm client và endpoint tương ứng, rồi tính ảnh hưởng theo hướng ngược phụ thuộc.",
+    "lesson": "Cạnh A → B biểu diễn A phụ thuộc B. Khi B đổi contract, lần ngược cạnh đến A và những bên gọi A. Reverse BFS cần tập visited để dừng trên đồ thị có chu kỳ. Interface OpenFeign giúp tìm client, nhưng cần đối chiếu call site và đường dẫn đích. Hướng ảnh hưởng tĩnh là khả năng tác động, trace mới cho biết luồng đã được quan sát.",
+    "exercise": "Chọn một endpoint. Đối chiếu HTTP method, path, caller và provider. Tạo một danh sách tác động trực tiếp và gián tiếp. Nếu graph có chu kỳ, ghi mỗi service một lần.",
+    "sources": [
+      {
+        "publisher": "Spring",
+        "title": "Building a RESTful Web Service",
+        "url": "https://spring.io/guides/gs/rest-service/"
+      },
+      {
+        "publisher": "Spring",
+        "title": "Spring Cloud OpenFeign",
+        "url": "https://docs.spring.io/spring-cloud-openfeign/docs/current/reference/html/spring-cloud-openfeign.html"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices Architecture",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "A → B và B đổi API. Reverse BFS đi từ đâu?",
+        "options": [
+          "Từ A xuôi đến B",
+          "Từ B ngược đến A",
+          "Từ service không liên quan"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Tập visited giải quyết vấn đề gì?",
+        "options": [
+          "Vòng lặp và đếm trùng",
+          "Quyền đọc database",
+          "Lỗi cổng mạng"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "OpenFeign interface tồn tại chứng minh điều gì?",
+        "options": [
+          "Endpoint đã thành công",
+          "Đã có traffic production",
+          "Có khai báo client, cần tìm điểm gọi"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Bằng chứng tốt để xác nhận contract là gì?",
+        "options": [
+          "Chỉ tên service",
+          "Method và path của caller/provider khớp nhau",
+          "Chỉ màu cạnh"
+        ],
+        "correctOption": 1
+      }
+    ]
+  },
+  {
+    "id": "java-05",
+    "track": "Java",
+    "title": "Service discovery và nhiều instance",
+    "minutes": 40,
+    "objective": "Phân biệt định danh service, registry và cân bằng tải theo instance.",
+    "lesson": "Registry giữ thông tin instance đăng ký. Client hoặc gateway cần cơ chế chọn instance, registry không tự chia tải thay mọi client. Eureka và DNS của Compose có ngữ nghĩa khác nhau. Readiness, cập nhật danh sách và cấu hình client ảnh hưởng kết quả khi scale.",
+    "exercise": "Trong nguồn Lab có discovery, tìm tên ứng dụng, địa chỉ registry và cơ chế lookup. So sánh danh sách instance trước/sau scale chỉ trên sandbox khi Lab hỗ trợ.",
+    "sources": [
+      {
+        "publisher": "Spring",
+        "title": "Spring Cloud",
+        "url": "https://spring.io/projects/spring-cloud/"
+      },
+      {
+        "publisher": "Docker Docs",
+        "title": "How Compose works",
+        "url": "https://docs.docker.com/compose/intro/compose-application-model/"
+      },
+      {
+        "publisher": "Docker Docs",
+        "title": "Compose scale",
+        "url": "https://docs.docker.com/reference/cli/docker/compose/scale/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Registry lưu thông tin gì?",
+        "options": [
+          "Thông tin instance đăng ký",
+          "Mọi giao dịch nghiệp vụ",
+          "Tất cả exception"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Đăng ký instance có bảo đảm chia đều tải không?",
+        "options": [
+          "Chỉ cần đổi database",
+          "Luôn có",
+          "Còn phụ thuộc client/gateway và trạng thái instance"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Compose service name có thể dùng cho việc gì?",
+        "options": [
+          "Thay JWT",
+          "Tra service trong mạng Compose",
+          "Chấm Quiz"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Cần đo gì sau scale?",
+        "options": [
+          "Instance thực nhận request và tỷ lệ lỗi",
+          "Tên image",
+          "Chỉ số file YAML"
+        ],
+        "correctOption": 0
+      }
+    ]
+  },
+  {
+    "id": "java-06",
+    "track": "Java",
+    "title": "API Gateway và quy tắc định tuyến",
+    "minutes": 40,
+    "objective": "Đọc predicate, filter và URI đích trong cấu hình gateway.",
+    "lesson": "Gateway chuyển tiếp yêu cầu dựa trên predicate. Filter có thể biến đổi header hoặc path. Một URL nhìn từ client có thể khác URL downstream. Tập trung ingress giúp quan sát nhưng downstream vẫn cần thực thi phân quyền phù hợp. Cấu hình route là bằng chứng thiết kế, không tự chứng minh mọi request đã đi qua.",
+    "exercise": "Chọn một route và viết một cặp request match/không match. Ghi path trước/sau rewrite và đích. Đối chiếu với endpoint backend hoặc trace nếu có.",
+    "sources": [
+      {
+        "publisher": "Spring",
+        "title": "Spring Cloud Gateway",
+        "url": "https://spring.io/projects/spring-cloud-gateway/"
+      },
+      {
+        "publisher": "Spring",
+        "title": "Spring Cloud",
+        "url": "https://spring.io/projects/spring-cloud/"
+      },
+      {
+        "publisher": "Spring",
+        "title": "Building a RESTful Web Service",
+        "url": "https://spring.io/guides/gs/rest-service/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Predicate có chức năng gì?",
+        "options": [
+          "Chọn schema DB",
+          "Ghi điểm",
+          "Quyết định route có khớp request"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Path bị rewrite thì đối chiếu endpoint nào?",
+        "options": [
+          "Chỉ URL gốc",
+          "Path sau rewrite ở downstream",
+          "Đường dẫn tệp nguồn"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Gateway thực thi auth có thay kiểm quyền tài nguyên ở service không?",
+        "options": [
+          "Service vẫn cần quyền phù hợp",
+          "Chỉ cần tên user",
+          "Có với mọi hệ thống"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Route config cho biết gì?",
+        "options": [
+          "Tất cả response là 200",
+          "Mọi request đã đi qua",
+          "Thiết kế định tuyến"
+        ],
+        "correctOption": 2
+      }
+    ]
+  },
+  {
+    "id": "java-07",
+    "track": "Java",
+    "title": "Circuit breaker và fallback",
+    "minutes": 45,
+    "objective": "Giải thích trạng thái breaker và cách kiểm thử sự cố phụ thuộc.",
+    "lesson": "Circuit breaker quan sát lỗi/chậm theo chính sách và có thể từ chối gọi sớm khi open. Half-open cho phép một số yêu cầu thăm dò. Fallback cần diễn đạt mức suy giảm đúng nghiệp vụ. Không trả thành công giả cho giao dịch chưa thực hiện. Điểm mở breaker phụ thuộc cấu hình và tín hiệu quan sát.",
+    "exercise": "Tìm nơi bọc lời gọi downstream bằng breaker. Liệt kê tín hiệu khiến breaker mở, giá trị fallback và kỳ vọng trước/sau khi dừng phụ thuộc trong sandbox.",
+    "sources": [
+      {
+        "publisher": "Spring",
+        "title": "Spring Cloud Circuit Breaker",
+        "url": "https://spring.io/projects/spring-cloud-circuitbreaker/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Build resilient HTTP apps",
+        "url": "https://learn.microsoft.com/en-us/dotnet/core/resilience/http-resilience"
+      },
+      {
+        "publisher": "OpenTelemetry",
+        "title": "Signals",
+        "url": "https://opentelemetry.io/docs/concepts/signals/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Khi breaker open thường xảy ra gì?",
+        "options": [
+          "Gọi downstream nhiều hơn",
+          "Tự tăng replica",
+          "Từ chối hoặc fallback sớm theo policy"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Half-open dùng để làm gì?",
+        "options": [
+          "Đổi khóa JWT",
+          "Thăm dò khả năng phục hồi",
+          "Gộp database"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Fallback phù hợp cần bảo toàn gì?",
+        "options": [
+          "Ngữ nghĩa thật của giao dịch",
+          "Chỉ HTTP 200",
+          "Luôn trả dữ liệu cũ"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Muốn chứng minh breaker đã open, đọc gì?",
+        "options": [
+          "Chỉ annotation",
+          "Tên service",
+          "Metric/event hoặc kết quả runtime"
+        ],
+        "correctOption": 2
+      }
+    ]
+  },
+  {
+    "id": "java-08",
+    "track": "Java",
+    "title": "Timeout, retry và bulkhead",
+    "minutes": 45,
+    "objective": "Thiết kế giới hạn thời gian và tránh khuếch đại tải khi downstream chậm.",
+    "lesson": "Timeout đặt giới hạn chờ theo budget đầu cuối. Retry có thể phục hồi lỗi tạm thời nhưng làm tăng lưu lượng; thao tác ghi cần đánh giá idempotency. Backoff và jitter giúp tránh đợt retry đồng loạt. Bulkhead cô lập tài nguyên để lỗi một phụ thuộc không chiếm toàn bộ capacity.",
+    "exercise": "Lập bảng timeout, số lần retry và tổng thời gian tối đa của một lời gọi. Nêu lý do được hoặc không được retry lệnh ghi. So sánh p95 và tỷ lệ lỗi trong sandbox nếu có phép thử.",
+    "sources": [
+      {
+        "publisher": "Spring",
+        "title": "Spring Cloud Circuit Breaker",
+        "url": "https://spring.io/projects/spring-cloud-circuitbreaker/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Build resilient HTTP apps",
+        "url": "https://learn.microsoft.com/en-us/dotnet/core/resilience/http-resilience"
+      },
+      {
+        "publisher": "OpenTelemetry",
+        "title": "Signals",
+        "url": "https://opentelemetry.io/docs/concepts/signals/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Retry một lệnh ghi cần xem gì trước?",
+        "options": [
+          "Màu màn hình",
+          "Idempotency và tác dụng phụ",
+          "Số lượng class"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Jitter giúp giảm gì?",
+        "options": [
+          "Retry đồng loạt",
+          "Số lượng route",
+          "Toàn bộ network latency"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Bulkhead dùng để làm gì?",
+        "options": [
+          "Tăng số lần retry",
+          "Gộp thread pool",
+          "Cô lập tài nguyên"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Budget nên xét phần nào?",
+        "options": [
+          "Chỉ timeout một lần",
+          "Tổng thời gian đầu cuối và các lần thử",
+          "Chỉ thời gian DNS"
+        ],
+        "correctOption": 1
+      }
+    ]
+  },
+  {
+    "id": "java-09",
+    "track": "Java",
+    "title": "Messaging và xử lý trùng sự kiện",
+    "minutes": 50,
+    "objective": "Đọc producer, consumer và luồng xử lý dữ liệu bất đồng bộ.",
+    "lesson": "Publisher phát sự kiện và consumer xử lý sau. Tùy broker và chế độ xác nhận, thông điệp có thể được giao lại. Consumer cần dedup hoặc tác vụ idempotent. Một sự kiện được publish chưa có nghĩa toàn bộ hệ thống đã nhất quán. Cần quan sát độ trễ hàng đợi và lỗi consumer.",
+    "exercise": "Xác định một publisher, topic/queue và consumer trong Lab. Mô tả xử lý khi cùng event ID đến hai lần. Phân biệt cạnh messaging với cạnh HTTP trên graph.",
+    "sources": [
+      {
+        "publisher": "Spring",
+        "title": "Spring Cloud Stream",
+        "url": "https://spring.io/projects/spring-cloud-stream/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Asynchronous message-based communication",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/architect-microservice-container-applications/asynchronous-message-based-communication"
+      },
+      {
+        "publisher": "OpenTelemetry",
+        "title": "Signals",
+        "url": "https://opentelemetry.io/docs/concepts/signals/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Event giao lại có thể tạo ra điều gì nếu thiếu idempotency?",
+        "options": [
+          "Tác dụng phụ trùng",
+          "Auto rollback cả hệ thống",
+          "Không thể có lỗi"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Publish thành công chứng minh gì?",
+        "options": [
+          "Mọi consumer đã xử lý",
+          "HTTP luôn nhanh hơn",
+          "Chỉ chứng minh bước publish theo contract"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Một khóa dedup phù hợp là gì?",
+        "options": [
+          "Mã màu broker",
+          "ID sự kiện ổn định",
+          "Tên theme"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Để tìm nơi xử lý sự kiện, cần xem gì?",
+        "options": [
+          "Consumer binding và handler",
+          "Phiên bản trình duyệt",
+          "Chỉ tên Docker image"
+        ],
+        "correctOption": 0
+      }
+    ]
+  },
+  {
+    "id": "java-10",
+    "track": "Java",
+    "title": "Saga và hành động bù trừ",
+    "minutes": 50,
+    "objective": "Giải thích trình tự local transaction và trạng thái lỗi của Saga.",
+    "lesson": "Saga chia một quy trình thành nhiều local transaction. Khi bước sau thất bại, compensation là hành động nghiệp vụ bù cho bước đã hoàn tất, ví dụ hoàn giữ chỗ. Nó có thể cần retry và theo dõi riêng. Orchestration dùng bộ điều phối; choreography phản ứng với sự kiện. Cần correlation ID và trạng thái để truy vết.",
+    "exercise": "Vẽ bảng Order → Payment → Inventory. Với lỗi tại Inventory, liệt kê trạng thái từng bước và hành động bù. Giải thích xử lý khi nhận lại thông điệp bù.",
+    "sources": [
+      {
+        "publisher": "Manning",
+        "title": "Microservices Patterns",
+        "url": "https://www.manning.com/books/microservices-patterns"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Asynchronous message-based communication",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/architect-microservice-container-applications/asynchronous-message-based-communication"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices Architecture",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Compensation trong Saga là gì?",
+        "options": [
+          "Hành động nghiệp vụ bù cho bước đã thực hiện",
+          "Rollback một transaction DB toàn cục",
+          "Xóa log"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Orchestration khác choreography ở đâu?",
+        "options": [
+          "Chỉ có HTTP",
+          "Dùng hai database",
+          "Có bộ điều phối trình tự rõ"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Cần gì để truy dấu một Saga?",
+        "options": [
+          "Tên repository",
+          "Correlation ID và trạng thái bước",
+          "Số replica"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Nếu compensation thất bại thì sao?",
+        "options": [
+          "Theo dõi và xử lý retry theo policy",
+          "Luôn xem là đã bù",
+          "Bỏ toàn bộ bằng chứng"
+        ],
+        "correctOption": 0
+      }
+    ]
+  },
+  {
+    "id": "java-11",
+    "track": "Java",
+    "title": "Cấu hình tập trung và xác thực dịch vụ",
+    "minutes": 45,
+    "objective": "Tách cấu hình theo môi trường, secret và kiểm quyền tài nguyên.",
+    "lesson": "Config server giúp phân phối cấu hình có phiên bản. Secret cần dùng cơ chế quản lý phù hợp và không đưa vào Git hay ảnh minh chứng. JWT cần được xác minh chữ ký, issuer, audience và thời hạn. Xác thực danh tính và phân quyền hành động là hai bước khác nhau. Khi phân tích tĩnh, ghi đường dẫn config và tên biến đã che giá trị.",
+    "exercise": "Tìm một giá trị config thường và một tham chiếu secret. Ghi bằng chứng đã che giá trị. Thiết kế ca token hết hạn và tài khoản hợp lệ nhưng thiếu quyền.",
+    "sources": [
+      {
+        "publisher": "Spring",
+        "title": "Spring Cloud Config",
+        "url": "https://spring.io/projects/spring-cloud-config/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices Architecture",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "O’Reilly",
+        "title": "Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Giá trị secret nên xuất hiện ở đâu?",
+        "options": [
+          "Trong lịch sử Git",
+          "Ảnh minh chứng",
+          "Kênh quản lý secret phù hợp"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "JWT hợp lệ có nghĩa gì?",
+        "options": [
+          "Không cần issuer",
+          "Danh tính đã xác minh, vẫn cần kiểm quyền",
+          "Mọi action đều được phép"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Bằng chứng config nên ghi thế nào?",
+        "options": [
+          "Đường dẫn và tên biến đã che giá trị",
+          "Sao chép toàn bộ secret",
+          "Chỉ ghi tên máy"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Token hết hạn cần được xử lý thế nào?",
+        "options": [
+          "Đổi database",
+          "Chấp nhận trong mọi trường hợp",
+          "Từ chối theo chính sách xác thực"
+        ],
+        "correctOption": 2
+      }
+    ]
+  },
+  {
+    "id": "java-12",
+    "track": "Java",
+    "title": "OpenTelemetry và đánh giá trước sau",
+    "minutes": 55,
+    "objective": "Đối chiếu mô hình tĩnh với trace, metric và log trong một thử nghiệm có kiểm soát.",
+    "lesson": "Trace nối các span của một yêu cầu. Metrics ghi xu hướng theo thời gian và log ghi sự kiện chi tiết. Một trace đơn lẻ không đủ kết luận p95. Khi thử stop hoặc scale, giữ workload và khoảng đo tương đương, ghi số mẫu và tỷ lệ lỗi. Static graph và runtime evidence phục vụ hai câu hỏi khác nhau.",
+    "exercise": "Dùng Lab đã được phép chạy. Chọn một thay đổi, lưu baseline và sau thay đổi. Ghi phiên bản nguồn, khoảng thời gian, trace ID, số mẫu và giới hạn kết luận. Nếu không có runtime, lập kế hoạch đo và ghi chưa quan sát.",
+    "sources": [
+      {
+        "publisher": "OpenTelemetry",
+        "title": "Signals",
+        "url": "https://opentelemetry.io/docs/concepts/signals/"
+      },
+      {
+        "publisher": "OpenTelemetry",
+        "title": "Java instrumentation",
+        "url": "https://opentelemetry.io/docs/languages/java/"
+      },
+      {
+        "publisher": "Docker Docs",
+        "title": "How Compose works",
+        "url": "https://docs.docker.com/compose/intro/compose-application-model/"
+      },
+      {
+        "publisher": "Docker Docs",
+        "title": "Compose scale",
+        "url": "https://docs.docker.com/reference/cli/docker/compose/scale/"
+      },
+      {
+        "publisher": "O’Reilly",
+        "title": "Production-Ready Microservices",
+        "url": "https://www.oreilly.com/library/view/production-ready-microservices/9781491965962/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Trace được cấu thành từ gì?",
+        "options": [
+          "Danh sách role",
+          "Các span liên quan",
+          "Danh sách PDF"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Để so p95 trước/sau cần gì?",
+        "options": [
+          "Tải tương đương và đủ mẫu",
+          "Hai request bất kỳ",
+          "Chỉ màu graph"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Không thấy span có nghĩa gì?",
+        "options": [
+          "Tất cả route bị lỗi",
+          "Service chắc chắn không tồn tại",
+          "Chưa đủ bằng chứng để kết luận"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Mô hình tĩnh thể hiện gì?",
+        "options": [
+          "Số lượng người dùng thật",
+          "Khả năng và cấu trúc suy ra từ nguồn",
+          "Mọi đường đi đã quan sát"
+        ],
+        "correctOption": 1
+      }
+    ]
+  },
+  {
+    "id": "csharp-13",
+    "track": "C#",
+    "title": "Microservices với C# và ASP.NET Core",
+    "minutes": 70,
+    "objective": "Đọc một repo ASP.NET Core bằng Roslyn và so sánh kiến trúc với Lab Java tương đương.",
+    "lesson": "Chuẩn bị C# với kiểu dữ liệu, interface, LINQ và async/await. Trong ASP.NET Core, lần từ Program.cs đến cấu hình dependency injection, middleware và endpoint mapping. Controllers dùng attribute routing; Minimal APIs thường khai báo route ngay trong bootstrap. Typed HttpClient biểu diễn một phụ thuộc HTTP. EF Core DbContext quản lý đơn vị thao tác dữ liệu và thường có lifetime theo request. Khi kiểm thử, dùng host test và nguồn dữ liệu phù hợp để kiểm status, JSON và quyền. Với tracing, đối chiếu span HTTP/database với cạnh tĩnh. Kiểm phiên bản SDK từ global.json và TargetFramework của repo mẫu trước khi chạy.",
+    "exercise": "Mở repo C# được gán. Tìm một route, DI registration, HttpClient hoặc DbContext. Đối chiếu C2/C3 trong MAVIS với file/dòng, thêm một ca HTTP hợp lệ và một ca lỗi. Lập bảng Java ↔ C# cho controller, DI và data access. Nếu có Runtime, đối chiếu trace với source, ghi rõ SDK, phiên bản và bằng chứng.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "C# language documentation",
+        "url": "https://learn.microsoft.com/en-us/dotnet/csharp/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "ASP.NET Core fundamentals",
+        "url": "https://learn.microsoft.com/en-us/training/paths/aspnet-core-fundamentals/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Entity Framework Core",
+        "url": "https://learn.microsoft.com/en-us/ef/core/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "ASP.NET Core integration testing",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests"
+      },
+      {
+        "publisher": "Microsoft",
+        "title": ".NET support policy",
+        "url": "https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": ".NET Microservices Architecture",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/"
+      },
+      {
+        "publisher": "OpenTelemetry",
+        "title": ".NET instrumentation",
+        "url": "https://opentelemetry.io/docs/languages/dotnet/"
+      },
+      {
+        "publisher": "Docker Docs",
+        "title": "How Compose works",
+        "url": "https://docs.docker.com/compose/intro/compose-application-model/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Trong Minimal API thường tìm route ở đâu?",
+        "options": [
+          "Chỉ trong .csproj",
+          "Program.cs hoặc extension đăng ký route",
+          "Chỉ trong Dockerfile"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Constructor injection cho biết gì?",
+        "options": [
+          "Các phụ thuộc được khai báo để container resolve",
+          "Tất cả request đã qua middleware",
+          "Mọi phụ thuộc chạy được"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "DbContext mặc định đăng ký theo request phù hợp với lifetime nào?",
+        "options": [
+          "Singleton",
+          "Static",
+          "Scoped"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Muốn so sánh đồ thị tĩnh C# với luồng đã chạy, cần gì?",
+        "options": [
+          "Chỉ namespace",
+          "Trace/span gắn với đúng snapshot và phiên chạy",
+          "Chỉ TargetFramework"
+        ],
+        "correctOption": 1
+      }
+    ]
+  }
+]
