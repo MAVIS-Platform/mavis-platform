@@ -2,6 +2,7 @@ package com.mavis.analyzer.diagram.service.impl;
 import com.mavis.common.entity.*;
 import com.mavis.common.repository.*;
 import com.mavis.common.security.AccessPolicyService;
+import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.common.exception.*;
 import jakarta.persistence.*;
 import lombok.RequiredArgsConstructor;
@@ -122,6 +123,11 @@ public class ArchitectureDocumentService {
         validateKey(viewKey);validateXml(request.xml());
         if(request.expectedRevision()<0)throw invalid();
         ModelVersion model=model(modelId);access.requireProjectWriteAccess(model.getProject());
+        var workspace = model.getProject().getWorkspace();
+        if (workspace != null && workspace.isCourseMode()
+                && CourseLabPolicy.isStudent(access.requireCurrentActiveUser())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Guided Lab reference diagrams are read-only");
+        }
         // Lock the parent to serialize both initial creation and later compare-and-set updates.
         entityManager.lock(model,LockModeType.PESSIMISTIC_WRITE);
         long currentRevision=documents.findTopByModelVersionIdAndViewKeyOrderByRevisionDesc(modelId,viewKey).map(ArchitectureDocument::getRevision).orElse(0L);
