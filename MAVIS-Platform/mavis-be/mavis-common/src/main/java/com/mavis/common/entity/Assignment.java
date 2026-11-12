@@ -57,6 +57,9 @@ public class Assignment {
     @JoinColumn(name = "reference_model_id")
     private ModelVersion referenceModel;
 
+    @Column(name = "lab_order")
+    private Integer labOrder;
+
     @Column(name = "due_at")
     private OffsetDateTime dueAt;
 

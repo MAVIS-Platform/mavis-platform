@@ -24,6 +24,7 @@ public class SubmissionServiceImpl implements SubmissionService {
 
     private final SubmissionSnapshotRepository submissionSnapshotRepository;
     private final AssignmentRepository assignmentRepository;
+    private final com.mavis.common.security.CourseLabPolicy courseLabs;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final ModelVersionRepository modelVersionRepository;
@@ -60,6 +61,11 @@ public class SubmissionServiceImpl implements SubmissionService {
         accessPolicyService.requireCurrentActiveUser();
         if (assignment.getWorkspace()!=null) accessPolicyService.requireWorkspaceMember(assignment.getWorkspace().getId());
 
+        if (assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
+                && com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {
+            courseLabs.requireOpen(assignment, submitter);
+        }
+
         // 1. Kiểm tra hạn nộp bài (BR-14)
         if (assignment.getDueAt() != null && OffsetDateTime.now().isAfter(assignment.getDueAt())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Đã quá hạn nộp bài cho đề bài này");
@@ -75,6 +81,11 @@ public class SubmissionServiceImpl implements SubmissionService {
 
         if (assignment.getWorkspace() != null && (project.getWorkspace() == null || !project.getWorkspace().getId().equals(assignment.getWorkspace().getId()))) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "Dự án không thuộc về không gian làm việc của đề bài");
+        }
+
+        if (assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
+                && (project.getAssignment() == null || !assignment.getId().equals(project.getAssignment().getId()))) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Project must belong to the submitted Lab");
         }
 
         // 3. Kiểm tra ModelVersion thuộc đúng project
