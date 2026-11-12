@@ -36,6 +36,7 @@ import java.util.stream.Collectors;
 public class ProjectServiceImpl implements ProjectService {
 
     private final ProjectRepository projectRepository;
+    private final com.mavis.common.security.CourseLabPolicy courseLabs;
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
     private final AssignmentRepository assignmentRepository;
@@ -85,18 +86,41 @@ public class ProjectServiceImpl implements ProjectService {
             }
         }
 
+        boolean guidedStudent = workspace != null && workspace.isCourseMode()
+                && com.mavis.common.security.CourseLabPolicy.isStudent(currentUser);
+        UUID referenceSnapshotId = request.getReferenceSnapshotId();
+        if (guidedStudent) {
+            if (assignment == null || !"STUDENT_WORKING".equals(projectType)
+                    || Boolean.TRUE.equals(request.getIsReferenceTemplate())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "Select an unlocked Lab to create a course project");
+            }
+            courseLabs.requireOpen(assignment, currentUser);
+            UUID pinned = assignment.getReferenceModel().getSourceSnapshot().getId();
+            if (referenceSnapshotId != null && !pinned.equals(referenceSnapshotId)) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Use the source pinned to this Lab");
+            }
+            referenceSnapshotId = pinned;
+            if (request.getRepositoryUrl() != null && !request.getRepositoryUrl().isBlank()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "The Lab supplies the project source");
+            }
+        }
         boolean isReferenceTemplate = Boolean.TRUE.equals(request.getIsReferenceTemplate())
                 || "TEACHER_REFERENCE".equalsIgnoreCase(projectType);
 
         SourceSnapshot refSnapshot = null;
-        if (request.getReferenceSnapshotId() != null) {
-            refSnapshot = sourceSnapshotRepository.findById(request.getReferenceSnapshotId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
-                            "Không tìm thấy bản chụp mã nguồn mẫu với ID: " + request.getReferenceSnapshotId()));
-
+        if (referenceSnapshotId != null) {
+            refSnapshot = sourceSnapshotRepository.findById(referenceSnapshotId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Reference source not found"));
             if (!Boolean.TRUE.equals(refSnapshot.getIsPublished())) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST,
                         "Bản chụp mã nguồn mẫu chưa được Giảng viên công bố (BR-11)");
+            }
+            if (!guidedStudent) {
+                accessPolicyService.requireProjectReadAccess(refSnapshot.getProject());
+                if (workspace != null && (refSnapshot.getProject().getWorkspace() == null
+                        || !workspace.getId().equals(refSnapshot.getProject().getWorkspace().getId()))) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN, "Choose a reference from this workspace");
+                }
             }
         }
 
@@ -116,7 +140,7 @@ public class ProjectServiceImpl implements ProjectService {
                 .owner(currentUser)
                 .projectType(projectType)
                 .isReferenceTemplate(isReferenceTemplate)
-                .referenceSnapshotId(request.getReferenceSnapshotId())
+                .referenceSnapshotId(referenceSnapshotId)
                 .status("ACTIVE")
                 .createdAt(now)
                 .updatedAt(now)
@@ -204,6 +228,8 @@ public class ProjectServiceImpl implements ProjectService {
 
         List<SourceSnapshot> snapshots = sourceSnapshotRepository.findPublishedByWorkspaceId(workspaceId);
         return snapshots.stream()
+                .filter(snapshot -> !snapshot.getProject().getWorkspace().isCourseMode()
+                        || accessPolicyService.canReadProject(snapshot.getProject()))
                 .map(this::toSnapshotDTO)
                 .collect(Collectors.toList());
     }
@@ -259,6 +285,8 @@ public class ProjectServiceImpl implements ProjectService {
         List<Project> projects = projectRepository.findByOwnerIdOrderByCreatedAtDesc(currentUserId);
         return projects.stream()
                 .filter(p -> p.getStatus() == null || !"DELETED".equalsIgnoreCase(p.getStatus()))
+                .filter(p -> p.getWorkspace() == null || !p.getWorkspace().isCourseMode()
+                        || accessPolicyService.canReadProject(p))
                 .map(this::toDTO)
                 .collect(Collectors.toList());
     }

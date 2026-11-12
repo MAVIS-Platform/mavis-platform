@@ -70,6 +70,10 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + projectId));
 
         if ("DELETED".equalsIgnoreCase(project.getStatus())) throw new BusinessException(ErrorCode.NOT_FOUND,"Project not found");
+        if (project.getWorkspace() != null && project.getWorkspace().isCourseMode()
+                && !"TEACHER_REFERENCE".equals(project.getProjectType())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "This Lab uses its published reference source");
+        }
         if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền tải lên cho dự án này");
         }
@@ -113,6 +117,10 @@ public class SourceIngestionServiceImpl implements SourceIngestionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + request.getProjectId()));
 
         if ("DELETED".equalsIgnoreCase(project.getStatus())) throw new BusinessException(ErrorCode.NOT_FOUND,"Project not found");
+        if (project.getWorkspace() != null && project.getWorkspace().isCourseMode()
+                && !"TEACHER_REFERENCE".equals(project.getProjectType())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "This Lab uses its published reference source");
+        }
         if (!project.getOwner().getId().equals(SecurityUtils.getCurrentUserId())) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "Bạn không có quyền nạp mã nguồn cho dự án này");
         }

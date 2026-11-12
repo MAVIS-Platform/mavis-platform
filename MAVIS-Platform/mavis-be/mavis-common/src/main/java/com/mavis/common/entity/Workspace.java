@@ -9,6 +9,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
+@org.hibernate.annotations.DynamicUpdate
 @Table(name = "workspaces")
 @Getter
 @Setter
@@ -37,6 +38,9 @@ public class Workspace {
     @Builder.Default
     @Column(nullable = false, length = 20)
     private String status = "ACTIVE";
+
+    @Column(name = "course_mode", nullable = false)
+    private boolean courseMode;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
