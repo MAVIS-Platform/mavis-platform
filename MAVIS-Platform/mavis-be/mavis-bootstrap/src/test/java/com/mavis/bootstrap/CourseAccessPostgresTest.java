@@ -57,6 +57,10 @@ class CourseAccessPostgresTest {
             var courses = new CourseAccessService(access, workspaces, assignments, policy, jdbc,
                     mock(LabReferenceArchive.class));
             var progression = new CourseProgressionService(jdbc, workspaces);
+            assertEquals(ErrorCode.BAD_REQUEST, assertThrows(BusinessException.class,
+                    () -> progression.recordFinalizedResult(null, 0, true)).getErrorCode());
+            assertEquals(ErrorCode.NOT_FOUND, assertThrows(BusinessException.class,
+                    () -> progression.recordFinalizedResult(UUID.randomUUID(), 1, true)).getErrorCode());
             var first = lab(jdbc, workspace, teacherId, 1);
             var second = lab(jdbc, workspace, teacherId, 2);
             when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId))
@@ -137,6 +141,13 @@ class CourseAccessPostgresTest {
             assertFalse(policy.canOpen(second, student));
             assertEquals("IN_PROGRESS", courses.roadmap(workspaceId).enrollmentStatus());
             jdbc.update("UPDATE submission_reviews SET revision = 2, score = 90 WHERE submission_id = ?", submission);
+            tx.executeWithoutResult(status -> {
+                progression.recordFinalizedResult(submission, 2, true);
+                status.setRollbackOnly();
+            });
+            assertFalse(policy.canOpen(second, student));
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM user_notifications WHERE event_key = ?",
+                    Integer.class, "course-lab-unlocked:" + second.getId()));
             tx.executeWithoutResult(status -> progression.recordFinalizedResult(submission, 2, true));
             tx.executeWithoutResult(status -> progression.recordFinalizedResult(submission, 2, true));
             assertTrue(policy.canOpen(second, student));
