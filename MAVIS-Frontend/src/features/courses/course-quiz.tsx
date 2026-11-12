@@ -16,7 +16,7 @@ type Quiz = {
 };
 type Result = { correctCount: number; totalQuestions: number; status: "PASSED" | "NEEDS_RETRY" };
 
-export function CourseQuiz({ workspaceId, labId }: { workspaceId: string; labId: string }) {
+export function CourseQuiz({ workspaceId, labId, canSubmit }: { workspaceId: string; labId: string; canSubmit: boolean }) {
   const { t } = useLocale();
   const path = `workspaces/${workspaceId}/course-labs/${labId}/quiz`;
   const quiz = useQuery({
@@ -35,12 +35,12 @@ export function CourseQuiz({ workspaceId, labId }: { workspaceId: string; labId:
           <Button variant="outline" onClick={() => void quiz.refetch()}>{t("Retry", "Thử lại")}</Button>
         </div>
       )}
-      {quiz.data && <AttemptForm key={quiz.data.version} quiz={quiz.data} path={path} reload={() => void quiz.refetch()} />}
+      {quiz.data && <AttemptForm key={`${path}:${quiz.data.version}`} quiz={quiz.data} path={path} reload={() => void quiz.refetch()} canSubmit={canSubmit} />}
     </DetailPanel>
   );
 }
 
-function AttemptForm({ quiz, path, reload }: { quiz: Quiz; path: string; reload: () => void }) {
+function AttemptForm({ quiz, path, reload, canSubmit }: { quiz: Quiz; path: string; reload: () => void; canSubmit: boolean }) {
   const { t } = useLocale();
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [attemptId, setAttemptId] = useState<string>();
@@ -53,9 +53,18 @@ function AttemptForm({ quiz, path, reload }: { quiz: Quiz; path: string; reload:
 
   return (
     <div className="space-y-4">
-      <p className="whitespace-pre-wrap text-sm">{quiz.lesson}</p>
+      <div className="whitespace-pre-wrap text-sm">
+        {quiz.lesson.split("\n").map((line, index) => (
+          <span key={index}>
+            {/^https:\/\/[^\s]+$/.test(line)
+              ? <a href={line} className="break-all text-primary underline" target="_blank" rel="noreferrer">{line}</a>
+              : line}
+            {"\n"}
+          </span>
+        ))}
+      </div>
       <p className="text-sm text-muted-foreground">{t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}%</p>
-      {quiz.passed || submit.data?.status === "PASSED" ? (
+      {!canSubmit ? <p>{t("Preview for instructors", "Bản xem trước cho giảng viên")}</p> : quiz.passed || submit.data?.status === "PASSED" ? (
         <p role="status">{t("Quiz passed", "Đã đạt Quiz")}</p>
       ) : (
         <form className="space-y-4" onSubmit={(event) => {

@@ -13,6 +13,7 @@ import { DetailPanel } from "@/components/shared/data";
 import { SubmissionComposer } from "@/features/submissions/composer";
 import { CreateAssignment } from "./create";
 import { PublishCourseLab, useCourseRoadmap } from "@/features/workspaces/course-access";
+import { CurriculumPublisher } from "@/features/courses/curriculum";
 import { AssignmentInstructions } from "./assignment-instructions";
 import Link from "next/link";
 
@@ -147,6 +148,16 @@ export function Assignments() {
                         position={published?.position}
                       />
                     )}
+                  {published && client.mode === "backend" && (
+                    canManage ? <CurriculumPublisher workspaceId={workspaceId} assignmentId={assignment.id} />
+                      : published.state !== "LOCKED" && (
+                        <Button size="sm" variant="outline" asChild>
+                          <Link href={`/lab?${new URLSearchParams({ workspace: workspaceId, assignment: assignment.id, step: "2" })}`}>
+                            {t("Study and take the Quiz", "Học lý thuyết và làm Quiz")}
+                          </Link>
+                        </Button>
+                      )
+                  )}
                   {canManage && (
                     <div className="flex flex-wrap items-center gap-3">
                       <Link

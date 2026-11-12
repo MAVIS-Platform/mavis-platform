@@ -189,6 +189,7 @@ class CourseHttpAcceptanceTest {
                 state.path("labs").get(0).path("state").asText(),
                 state.path("labs").get(1).path("state").asText()));
         checkVersionedQuiz(workspace, lab1, lab2, lecturer, student, foreignStudent);
+        checkCurriculum(workspace, lab1, lab2, lecturer, student);
         send("GET", "assignments/" + lab2, student, null, 403);
         send("GET", "assignments/" + lab2 + "/reference-source", student, null, 403);
         send("GET", "assignments/" + lab1 + "/reference-source", foreignStudent, null, 403);
@@ -203,6 +204,45 @@ class CourseHttpAcceptanceTest {
     private String login(String user) throws Exception {
         return data(send("POST", "auth/login", null,
                 Map.of("email", user + "@example.invalid", "password", PASSWORD), 200)).path("token").asText();
+    }
+
+    private void checkCurriculum(String workspace, UUID lab1, UUID lab2, String lecturer, String student)
+            throws Exception {
+        send("GET", "course-curriculum", null, null, 401);
+        JsonNode catalog = data(send("GET", "course-curriculum", student, null, 200));
+        assertEquals(13, catalog.size());
+        int javaChapters = 0;
+        int csharpChapters = 0;
+        for (JsonNode chapter : catalog) {
+            assertFalse(chapter.has("questions"));
+            assertFalse(chapter.path("sources").isEmpty());
+            if ("Java".equals(chapter.path("track").asText())) javaChapters++;
+            if ("C#".equals(chapter.path("track").asText())) csharpChapters++;
+        }
+        assertEquals(12, javaChapters);
+        assertEquals(1, csharpChapters);
+        String quiz = workspace + "/course-labs/" + lab1 + "/quiz";
+        var java = Map.of("chapterId", "java-01");
+        send("POST", quiz + "/curriculum", student, java, 403);
+        send("POST", quiz + "/curriculum", lecturer, Map.of("chapterId", "unknown"), 404);
+        int javaVersion = data(send("POST", quiz + "/curriculum", lecturer, java, 200)).path("version").asInt();
+        assertEquals(javaVersion, data(send("POST", quiz + "/curriculum", lecturer, java, 200)).path("version").asInt());
+        JsonNode javaLesson = data(send("GET", quiz, student, null, 200));
+        assertTrue(javaLesson.path("lesson").asText().contains("https://dev.java/learn/"));
+        assertEquals(4, javaLesson.path("questions").size());
+        assertFalse(javaLesson.path("questions").get(0).has("correctOption"));
+
+        String csharpQuiz = workspace + "/course-labs/" + lab2 + "/quiz";
+        var csharp = Map.of("chapterId", "csharp-13");
+        send("POST", csharpQuiz + "/curriculum", lecturer, csharp, 200);
+        send("GET", csharpQuiz, student, null, 403);
+        int csharpVersion = data(send("POST", quiz + "/curriculum", lecturer, csharp, 200)).path("version").asInt();
+        assertEquals(javaVersion + 1, csharpVersion);
+        JsonNode csharpLesson = data(send("GET", quiz, student, null, 200));
+        assertTrue(csharpLesson.path("lesson").asText().contains("https://learn.microsoft.com/en-us/dotnet/csharp/"));
+        assertEquals(4, csharpLesson.path("questions").size());
+        var attempt = Map.of("attemptId", UUID.randomUUID(), "version", csharpVersion, "answers", List.of(1, 0, 2, 1));
+        assertEquals("PASSED", data(send("POST", quiz + "/attempts", student, attempt, 200)).path("status").asText());
     }
 
     private void checkVersionedQuiz(String workspace, UUID lab1, UUID lab2,
