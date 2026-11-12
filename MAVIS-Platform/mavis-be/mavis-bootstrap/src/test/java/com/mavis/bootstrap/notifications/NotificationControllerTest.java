@@ -30,4 +30,14 @@ class NotificationControllerTest {
  @Test void unknownCategoryRejectedBeforeQuery(){assertThatThrownBy(()->controller.list(0,20,false,"SECRETS")).isInstanceOf(ResponseStatusException.class);verifyNoInteractions(jdbc);}
  @Test void externalAndProtocolRelativeLinksNeverReachClient(){for(String path:Arrays.asList("https://evil.example","//evil.example","/\\evil.example","/unknown",null))assertThat(NotificationController.safePath(path)).isEqualTo("/notifications");assertThat(NotificationController.safePath("/submissions/123")).isEqualTo("/submissions/123");}
  @Test void oversizedOrNegativePagesNeverReachDatabase(){for(int[] bounds:new int[][]{{-1,20},{0,51},{0,0},{10001,20}})assertThatThrownBy(()->controller.list(bounds[0],bounds[1],false,"")).isInstanceOf(ResponseStatusException.class);verifyNoInteractions(jdbc);}
+ @Test void readAllRejectsMissingOrInvalidCutoffWithSameErrorEnvelope() throws Exception {
+  var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new GlobalExceptionHandler()).build();
+  for(String input:List.of("{}", "{", "{\"before\":\"not-an-instant\"}")) {
+   mvc.perform(post("/api/v1/notifications/read-all").contentType("application/json").content(input))
+     .andExpect(status().isBadRequest())
+     .andExpect(jsonPath("$.code").value(400))
+     .andExpect(jsonPath("$.message").value("Invalid notification request"));
+  }
+  verifyNoInteractions(jdbc);
+ }
 }
