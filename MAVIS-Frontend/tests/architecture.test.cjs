@@ -594,12 +594,12 @@ test("inspector sections retain tab state, reset for selections and preserve evi
  let props={model,selectedId:"orders",onSelect:id=>selected.push(id),onClose(){}};
  const render=()=>{cursor=0;return nodes(SelectionThreeE(props));};
  const section=title=>render().find(n=>n.props?.title===title);
- assert.equal(section("Meaning of this service").props.open,true);assert.equal(section("Evidence overview").props.open,true);assert.equal(section("Assessment summary").props.open,true);assert.equal(section("Source snippets").props.open,false);
- section("Meaning of this service").props.onOpenChange(false);section("Source snippets").props.onOpenChange(true);
+ assert.equal(section("Meaning of this service").props.open,true);assert.equal(section("Evidence overview").props.open,true);assert.equal(section("Assessment summary").props.open,true);assert.equal(section("Source snippets").props.open,true);
+ section("Meaning of this service").props.onOpenChange(false);section("Source snippets").props.onOpenChange(false);
  render().find(n=>n.props?.value==="explain"&&n.props.onValueChange).props.onValueChange("evidence");
- assert.equal(section("Source snippets").props.open,true);assert.equal(section("Meaning of this service").props.open,false);assert.equal(section("Assessment summary").props.open,true);
+ assert.equal(section("Source snippets").props.open,false);assert.equal(section("Meaning of this service").props.open,false);assert.equal(section("Assessment summary").props.open,true);
  assert.ok(section("Findings"));assert.ok(section("RECORDED_RULE"));
- for(const [id,title] of [["db","Meaning of this data store"],["component","Meaning of this component"],["payments","Meaning of this service"],["call-1","Meaning of this relationship"]]) {props={...props,selectedId:id};assert.equal(section(title).props.open,true);assert.equal(section("Source snippets").props.open,false);}
+ for(const [id,title] of [["db","Meaning of this data store"],["component","Meaning of this component"],["payments","Meaning of this service"],["call-1","Meaning of this relationship"]]) {props={...props,selectedId:id};assert.equal(section(title).props.open,true);assert.equal(section("Source snippets").props.open,true);}
  let drilled;
  props={...props,selectedId:"aggregate",projectedEdge:{...model.edges[0],id:"aggregate",underlyingEdgeIds:["call-1","call-2"],evidenceCount:0},onDrilldown:id=>{drilled=id;}};
  assert.equal(section("Evidence details").props.open,true);

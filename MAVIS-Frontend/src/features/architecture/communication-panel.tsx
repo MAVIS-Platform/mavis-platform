@@ -1,6 +1,6 @@
 "use client";
 
-import { useContext, useMemo } from "react";
+import { useContext, useMemo, useState } from "react";
 import { useApiQuery } from "@/hooks/use-api";
 import { ApiContext } from "@/providers/app-context";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -69,6 +69,33 @@ function DockerInfraSection({ items }: { items: DockerOrInfraItem[] }) {
         <p className="pl-4 text-[11px] italic text-muted-foreground">
           No direct Docker Compose declaration is available; this connection is recorded at code or API level.
         </p>
+      )}
+    </div>
+  );
+}
+
+function CollapsibleServiceSnippet({
+  serviceName,
+  snippet,
+}: {
+  serviceName: string;
+  snippet: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="pt-1">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((prev) => !prev)}
+        className="text-left text-[11px] font-medium text-primary hover:underline"
+      >
+        {expanded ? `Hide snippet in ${serviceName}` : `Show snippet in ${serviceName}`}
+      </button>
+      {expanded && (
+        <pre className="mt-1.5 max-h-40 overflow-x-auto rounded-md border border-slate-800 bg-slate-950 p-2.5 font-mono text-[11px] leading-relaxed text-slate-100">
+          <code>{snippet}</code>
+        </pre>
       )}
     </div>
   );
@@ -154,14 +181,7 @@ function ServiceCodeSubtree({
               </div>
 
               {item.snippet ? (
-                <div className="pt-1">
-                  <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    Source evidence in {serviceName}:
-                  </div>
-                  <pre className="max-h-40 overflow-x-auto rounded-md border border-slate-800 bg-slate-950 p-2.5 font-mono text-[11px] leading-relaxed text-slate-100">
-                    <code>{item.snippet}</code>
-                  </pre>
-                </div>
+                <CollapsibleServiceSnippet serviceName={serviceName} snippet={item.snippet} />
               ) : (
                 <p className="text-[11px] italic text-muted-foreground">
                   {item.file.startsWith("(") ? "No source file or snippet is recorded for this reference." : <>Declaration location recorded: <span className="font-mono">{item.file}</span>; no source snippet is available.</>}
