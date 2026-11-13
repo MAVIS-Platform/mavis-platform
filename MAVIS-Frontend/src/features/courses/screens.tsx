@@ -629,8 +629,8 @@ function StepContent({
         <div className="grid gap-5 md:grid-cols-2">
           <DetailPanel title={t("Reference architecture", "Kiến trúc tham chiếu")}>
             <p className="text-sm leading-6 text-muted-foreground">
-              Open the pinned architecture model to inspect C1-C3 views and the service dependency
-              graph.
+              {t("Inspect the C1–C3 diagrams and dependency graph from the pinned Lab source.",
+                "Xem sơ đồ C1–C3 và đồ thị phụ thuộc từ mã nguồn đã ghim của Lab.")}
             </p>
             <Button asChild>
               <Link href={modelQuery ? `/architecture?${modelQuery}` : sourceLink}>
@@ -638,6 +638,13 @@ function StepContent({
               </Link>
             </Button>
           </DetailPanel>
+          {modelQuery && <DetailPanel title={t("C1–C3 diagrams", "Sơ đồ C1–C3")}>
+            <Button asChild variant="outline">
+              <Link href={`/diagrams?${modelQuery}&kind=CONTEXT`}>
+                {t("Open read-only diagrams", "Mở sơ đồ chỉ đọc")}
+              </Link>
+            </Button>
+          </DetailPanel>}
           <DetailPanel title={t("Evidence and AI review", "Bằng chứng và đánh giá AI")}>
             <p className="text-sm leading-6 text-muted-foreground">
               Select a node or relationship to review file-line evidence, 3E findings and grounded

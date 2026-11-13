@@ -238,6 +238,12 @@ class CourseHttpAcceptanceTest {
         }
         assertEquals(java.util.Set.of("DEPENDENCY_GRAPH/SERVICE", "C4/CONTAINER", "C4/COMPONENT"), staticTypes);
         assertNotNull(workingDiagram);
+        for (String supported : List.of("context", "container", "component", "graph")) {
+            send("GET", analyzedModel + "/documents/" + supported, student, null, 200);
+        }
+        for (String unsupported : List.of("uml-sequence", "uml-activity", "uml-state")) {
+            send("GET", analyzedModel + "/documents/" + unsupported, student, null, 400);
+        }
         checkCurriculum(workspace, lab1, lab2, lecturer, student, workingProject,
                 Map.of("assignmentId", lab1, "projectId", workingProject,
                         "modelVersionId", workingModel, "diagramVersionId", workingDiagram));

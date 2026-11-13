@@ -5,13 +5,23 @@ for(const ext of ['.ts','.tsx'])require.extensions[ext]=(module,file)=>{
  module._compile(output.replace(/require\(["']@\/([^"']+)["']\)/g,(_,name)=>'require('+JSON.stringify(path.join(root,'src',name))+')'),file);
 };
 const projections=require('../src/features/architecture/diagram-projections.ts');
-const {selectDiagram}=require('../src/features/architecture/diagram-catalog.ts');
+const {selectDiagram,resolveDiagramKind,resolveGuidedDiagramKind,guidedDiagramOptions}=require('../src/features/architecture/diagram-catalog.ts');
 const {collectConcreteThreeEEvidences,buildThreeEAiContext,buildDeterministicThreeESimplified}=require('../src/features/architecture/three-e-content.ts');
 const {normalizeThreeE,normalizeC4}=require('../src/lib/ai/evidence-grounding.ts');
 const element=(id,kind,name=id,parentId=null)=>({id,name,elementType:kind,parentId,description:'',layer:'unclassified',evidence:[],properties:parentId?{responsibility:'Exposes HTTP endpoints'}:{}});
 const edge=(id,from,to,protocol='SERVICE_HTTP_CALL',originLayer='STATIC',properties={})=>({id,from,to,protocol,originLayer,properties,evidence:[],uncertain:false});
 function fixture(){return{id:'audit-model',projectId:'audit-project',snapshotId:'source',revision:1,label:'Audit',elements:[...['employee','department','organization','gateway','config','discovery','zipkin'].map(id=>element(id,'SERVICE_CONTAINER')),...['employee','department','organization'].map(id=>element(id+'-controller','COMPONENT',id[0].toUpperCase()+id.slice(1)+'Controller',id))],edges:[edge('e1','organization','department'),edge('e2','organization','employee'),edge('e3','department','employee')]};}
 function subject(model,node=model.elements[0],relationship=null){return{activeTargetId:relationship?.id??node.id,scopeKey:'selection',subject:{node:relationship?null:node,edge:relationship,title:relationship?.id??node.name,type:relationship?.protocol??node.elementType,summary:'Declared model element',connections:model.edges.filter(e=>e.from===node.id||e.to===node.id)}};}
+
+test('guided static diagram selection supports C1–C3 and keeps behavioral UML outside the Lab catalog',()=>{
+ assert.deepEqual(guidedDiagramOptions.map(({value})=>value),['CONTEXT','CONTAINER','COMPONENT']);
+ for(const kind of ['CONTEXT','CONTAINER','COMPONENT'])assert.equal(resolveGuidedDiagramKind(kind),kind);
+ for(const kind of ['UML_SEQUENCE','UML_ACTIVITY','UML_STATE']){
+  assert.equal(resolveGuidedDiagramKind(kind),'CONTEXT');
+  assert.equal(resolveDiagramKind(kind),kind);
+ }
+ assert.equal(selectDiagram(fixture(),'CONTEXT').document.level,'CONTEXT');
+});
 
 test('C4 context does not invent people or business purpose from controllers',()=>{
  const model=fixture();const result=projections.deriveC4ContextModel(model);
