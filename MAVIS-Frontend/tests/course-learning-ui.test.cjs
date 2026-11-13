@@ -62,6 +62,26 @@ test("assignment and submission screens preserve the selected Lab context", () =
   assert.ok(submissions.includes("No snapshot has been submitted for this Lab yet"));
 });
 
+test("WF-04 submission UI exposes every evidence gate and the sealed package digest", () => {
+  const composer = read("src/features/submissions/composer.tsx");
+  const frozen = read("src/features/submissions/frozen-artifacts.tsx");
+  const contract = read("src/lib/api/java-operations.ts");
+
+  for (const gate of [
+    "Step 1 · Static C1–C3 &amp; AI:",
+    "Step 2 · C0–C3 Ground Truth:",
+    "Step 3 · OpenTelemetry Runtime View:",
+    "Step 4 · MAVIS Studio RuntimeReceipt:",
+  ])
+    assert.ok(composer.includes(gate), gate);
+  assert.match(
+    composer,
+    /guided && \(!stage1Ready \|\| !stage2Ready \|\| !stage3Ready \|\| !stage4Ready\)/,
+  );
+  assert.ok(frozen.includes("Evidence package SHA-256"));
+  assert.match(contract, /evidencePackageDigest:\s*z\.string\(\)\.regex/);
+});
+
 test("lecturer review requires comments and maps the documented pass threshold to /100", () => {
   const grading = read("src/features/submissions/grading.tsx");
 

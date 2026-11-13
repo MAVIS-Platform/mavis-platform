@@ -62,6 +62,9 @@ public class SubmissionSnapshot {
     @Column(name = "submission_notes", columnDefinition = "TEXT")
     private String submissionNotes;
 
+    @Column(name = "evidence_package_digest", nullable = false, updatable = false, length = 71)
+    private String evidencePackageDigest;
+
     @CreationTimestamp
     @Column(name = "submitted_at", nullable = false, updatable = false)
     private OffsetDateTime submittedAt;

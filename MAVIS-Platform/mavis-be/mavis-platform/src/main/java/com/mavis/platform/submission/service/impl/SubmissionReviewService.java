@@ -4,6 +4,7 @@ import com.mavis.common.entity.*;
 import com.mavis.common.repository.*;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.exception.*;
+import com.mavis.platform.workspace.service.CourseProgressionService;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.*;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ public class SubmissionReviewService {
     private final SubmissionReviewRepository reviews;
     private final AccessPolicyService access;
     private final EntityManager entityManager;
+    private final CourseProgressionService courseProgression;
     public record Save(@Min(0) long expectedRevision, @NotNull @Pattern(regexp="DRAFT|RETURNED|GRADED") String status,
                        @DecimalMin("0") @DecimalMax("100") @Digits(integer=3,fraction=2) BigDecimal score,
                        @NotNull @Size(max=10000) String summary) {}
@@ -42,13 +44,20 @@ public class SubmissionReviewService {
         if(!java.util.Set.of("DRAFT","RETURNED","GRADED").contains(request.status()) || request.expectedRevision()<0 || request.summary()==null || request.summary().length()>10000 ||
             (request.score()!=null && (request.score().signum()<0 || request.score().compareTo(new BigDecimal("100"))>0 || request.score().scale()>2)))throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid review");
         if("GRADED".equals(request.status())&&request.score()==null)throw new BusinessException(ErrorCode.BAD_REQUEST,"A published grade requires a score out of 100");
-        if("RETURNED".equals(request.status())&&request.summary().isBlank())throw new BusinessException(ErrorCode.BAD_REQUEST,"Explain the requested changes before returning work");
+        if("GRADED".equals(request.status())&&request.summary().isBlank())throw new BusinessException(ErrorCode.BAD_REQUEST,"APPROVAL_SUMMARY_REQUIRED");
+        if("RETURNED".equals(request.status())&&request.summary().isBlank())throw new BusinessException(ErrorCode.BAD_REQUEST,"REJECTION_REASON_REQUIRED");
         entityManager.lock(submission,LockModeType.PESSIMISTIC_WRITE);
         var review=reviews.findBySubmissionId(id).orElseGet(SubmissionReview::new);
         if(review.getRevision()!=request.expectedRevision())throw new BusinessException(ErrorCode.CONFLICT,"Review changed. Reload before saving");
         review.setSubmission(submission);review.setLecturer(actor);review.setRevision(review.getRevision()+1);
         review.setStatus(request.status());review.setScore(request.score());review.setSummary(request.summary().trim());review.setUpdatedAt(OffsetDateTime.now());
-        return view(reviews.save(review));
+        review=reviews.saveAndFlush(review);
+        if("GRADED".equals(review.getStatus())) {
+            // In WF-04, publishing GRADED is the lecturer's explicit approval action.
+            // The numeric score is reported separately and must not silently override that decision.
+            courseProgression.recordFinalizedResult(id,review.getRevision(),true);
+        }
+        return view(review);
     }
     private SubmissionSnapshot submission(UUID id) {
         var submission=submissions.findWithDetailsById(id).orElseThrow(()->new BusinessException(ErrorCode.NOT_FOUND));

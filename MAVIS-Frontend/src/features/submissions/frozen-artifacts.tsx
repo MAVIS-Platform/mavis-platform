@@ -93,6 +93,11 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
   if (!layout)
     return (
       <DetailPanel title="Submitted diagram">
+        {submission.evidencePackageDigest && (
+          <p className="break-all font-mono text-xs text-muted-foreground">
+            Evidence package: {submission.evidencePackageDigest}
+          </p>
+        )}
         <p className="text-sm text-muted-foreground">
           No diagram payload was returned for this submission. The pinned ID is{" "}
           {submission.diagramVersionId ?? "unavailable"}.
@@ -108,6 +113,11 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
     : [{ notation: submission.diagramNotation ?? "Diagram", layoutJson: layout }];
   return (
     <DetailPanel title="Frozen submitted diagrams">
+      {submission.evidencePackageDigest && (
+        <p className="break-all font-mono text-xs text-muted-foreground">
+          Evidence package SHA-256: {submission.evidencePackageDigest}
+        </p>
+      )}
       <p className="break-all text-xs text-muted-foreground">
         Pinned bundle/version: {submission.diagramVersionId}. Later edits do not change the contents
         below.

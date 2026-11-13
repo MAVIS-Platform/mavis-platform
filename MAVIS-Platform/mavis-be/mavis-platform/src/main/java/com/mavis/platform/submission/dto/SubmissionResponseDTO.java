@@ -35,6 +35,7 @@ public class SubmissionResponseDTO {
     private String scenarioStatus;
     private Long feedbackCount;
     private String submissionNotes;
+    private String evidencePackageDigest;
     private OffsetDateTime submittedAt;
 
     public static SubmissionResponseDTO fromEntity(SubmissionSnapshot s, Long feedbackCount) {
@@ -71,6 +72,7 @@ public class SubmissionResponseDTO {
                 .scenarioStatus(scenarioStatus)
                 .feedbackCount(feedbackCount != null ? feedbackCount : 0L)
                 .submissionNotes(s.getSubmissionNotes())
+                .evidencePackageDigest(s.getEvidencePackageDigest())
                 .submittedAt(s.getSubmittedAt())
                 .build();
     }
