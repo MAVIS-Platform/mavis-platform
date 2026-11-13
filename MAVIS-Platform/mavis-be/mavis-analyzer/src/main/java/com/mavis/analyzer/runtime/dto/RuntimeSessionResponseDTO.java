@@ -71,6 +71,7 @@ public class RuntimeSessionResponseDTO {
     private List<String> diagnostics;
     private Integer capturedSpanCount;
     private boolean studioVerified;
+    private JsonNode infrastructureActions;
     private List<ScenarioStepResultDTO> stepResults;
     private Boolean sandboxEnforcementConfirmed;
     private OffsetDateTime cancelRequestedAt;
@@ -251,6 +252,7 @@ public class RuntimeSessionResponseDTO {
                 .diagnostics(diagnostics)
                 .capturedSpanCount(capturedSpanCount)
                 .studioVerified(studioVerified)
+                .infrastructureActions(studioVerified ? receipt.path("infrastructureActions") : null)
                 .stepResults(stepResults)
                 .sandboxEnforcementConfirmed(entity.getSandboxEnforcementConfirmed())
                 .traceStatus(entity.getTraceStatus())
