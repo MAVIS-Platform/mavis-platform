@@ -99,7 +99,7 @@ class ArchitectureEvaluationServiceImplTest {
 
         List<ModelRelationship> relationships = List.of(relHttp, relDb);
 
-        Evidence evHttp = Evidence.builder().id(UUID.randomUUID()).relationship(relHttp).sourceType("CODE").locator("OrderClient.java:25").build();
+        Evidence evHttp = Evidence.builder().id(UUID.randomUUID()).relationship(relHttp).sourceType("CODE").locator("OrderClient.java:25").excerpt("client.request()").build();
         Evidence evDb = Evidence.builder().id(UUID.randomUUID()).relationship(relDb).sourceType("CONFIG").excerpt("spring.datasource.url=jdbc:mysql://mysql/test_database").locator("application.yml:10").build();
         List<Evidence> evidences = List.of(evHttp, evDb);
 
@@ -141,9 +141,9 @@ class ArchitectureEvaluationServiceImplTest {
 
         // Đính kèm bằng chứng cho tất cả để RULE-04 không bị vi phạm
         List<Evidence> evidences = List.of(
-                Evidence.builder().id(UUID.randomUUID()).relationship(relAB).sourceType("CODE").locator("A.java:1").build(),
-                Evidence.builder().id(UUID.randomUUID()).relationship(relBC).sourceType("CODE").locator("B.java:1").build(),
-                Evidence.builder().id(UUID.randomUUID()).relationship(relCA).sourceType("CODE").locator("C.java:1").build()
+                Evidence.builder().id(UUID.randomUUID()).relationship(relAB).sourceType("CODE").locator("A.java:1").excerpt("client.request()").build(),
+                Evidence.builder().id(UUID.randomUUID()).relationship(relBC).sourceType("CODE").locator("B.java:1").excerpt("client.request()").build(),
+                Evidence.builder().id(UUID.randomUUID()).relationship(relCA).sourceType("CODE").locator("C.java:1").excerpt("client.request()").build()
         );
 
         when(modelElementRepository.findByModelVersionId(modelVersionId)).thenReturn(elements);
@@ -187,8 +187,8 @@ class ArchitectureEvaluationServiceImplTest {
         List<ModelRelationship> relationships = List.of(relAtoDb, relBtoDb);
 
         List<Evidence> evidences = List.of(
-                Evidence.builder().id(UUID.randomUUID()).relationship(relAtoDb).sourceType("CONFIG").excerpt("spring.datasource.url=jdbc:mysql://mysql/test_database").locator("order:app.yml").build(),
-                Evidence.builder().id(UUID.randomUUID()).relationship(relBtoDb).sourceType("CONFIG").excerpt("spring.datasource.url=jdbc:mysql://mysql/test_database").locator("inv:app.yml").build()
+                Evidence.builder().id(UUID.randomUUID()).relationship(relAtoDb).sourceType("CONFIG").excerpt("spring.datasource.url=jdbc:mysql://mysql/test_database").locator("order/app.yml:1").build(),
+                Evidence.builder().id(UUID.randomUUID()).relationship(relBtoDb).sourceType("CONFIG").excerpt("spring.datasource.url=jdbc:mysql://mysql/test_database").locator("inv/app.yml:1").build()
         );
 
         when(modelElementRepository.findByModelVersionId(modelVersionId)).thenReturn(elements);
@@ -230,7 +230,7 @@ class ArchitectureEvaluationServiceImplTest {
         List<ModelRelationship> relationships = List.of(relAB);
 
         List<Evidence> evidences = List.of(
-                Evidence.builder().id(UUID.randomUUID()).relationship(relAB).sourceType("CODE").locator("A.java:10").build()
+                Evidence.builder().id(UUID.randomUUID()).relationship(relAB).sourceType("CODE").locator("A.java:10").excerpt("client.request()").build()
         );
 
         when(modelElementRepository.findByModelVersionId(modelVersionId)).thenReturn(elements);
@@ -270,7 +270,14 @@ class ArchitectureEvaluationServiceImplTest {
         List<ModelRelationship> relationships = List.of(relAB);
 
         // Rỗng -> Không có bằng chứng cho relAB
-        List<Evidence> emptyEvidences = Collections.emptyList();
+        List<Evidence> emptyEvidences = List.of(
+                Evidence.builder().relationship(relAB).sourceType("CONFIG_FILE")
+                        .locator("application.yml:12").excerpt("client.url=payment").build(),
+                Evidence.builder().relationship(relAB).sourceType("STATIC_CODE")
+                        .locator("PaymentController.java:8").excerpt("@GetMapping")
+                        .provenance(new ObjectMapper().createObjectNode().put("communicationRole", "SERVER_ENDPOINT")).build(),
+                Evidence.builder().relationship(relAB).sourceType("STATIC_CODE")
+                        .locator("OrderClient.java:30").build());
 
         when(modelElementRepository.findByModelVersionId(modelVersionId)).thenReturn(elements);
         when(modelRelationshipRepository.findByModelVersionId(modelVersionId)).thenReturn(relationships);
@@ -308,7 +315,7 @@ class ArchitectureEvaluationServiceImplTest {
         List<ModelRelationship> relationships = List.of(relAB);
 
         List<Evidence> evidences = List.of(
-                Evidence.builder().id(UUID.randomUUID()).relationship(relAB).sourceType("CODE").locator("M.java:1").build()
+                Evidence.builder().id(UUID.randomUUID()).relationship(relAB).sourceType("CODE").locator("M.java:1").excerpt("client.request()").build()
         );
 
         when(modelElementRepository.findByModelVersionId(modelVersionId)).thenReturn(elements);

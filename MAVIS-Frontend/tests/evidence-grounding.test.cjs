@@ -64,6 +64,46 @@ test('C4 AI cannot create actors, invent a business purpose, or annotate unsuppo
  assert.deepEqual(output,{nodeDescriptions:{supported:'Exposes employee endpoints'}});
  assert.deepEqual(normalizeC4({persons:{user:{name:'User'}}},{...context,astSkeleton:''}),{});
 });
+test('3E redacts provider payloads, checks citations and recovers from a timeout', async t => {
+ const {NextRequest}=require('next/server');
+ const {POST}=require('../app/api/ai-diagram-semantics/route.ts');
+ const model=fixture(),ctx=subject(model);
+ const context=buildThreeEAiContext(model,ctx,[{
+  id:'saved-2',kind:'source',origin:'persisted',sourceType:'STATIC_CODE',
+  location:'Employee.java:12',snippet:'String apiKey = "fake-value-only-for-test"; return employees.findAll();',complete:false
+ }],[]);
+ const previous=process.env.OPENAI_API_KEY;
+ process.env.OPENAI_API_KEY='fixture-provider-key';
+ t.after(()=>{if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;});
+ let providerCalls=0;
+ t.mock.method(globalThis,'fetch',async (url,init)=>{
+  if(String(url).endsWith('/api/v1/auth/me'))return Response.json({code:200,data:{id:'11111111-1111-4111-8111-111111111111',fullName:'Test User',role:'STUDENT'}});
+  if(!String(url).includes('/chat/completions'))return Response.json({});
+  providerCalls++;
+  const prompt=JSON.parse(JSON.parse(init.body).messages[1].content);
+  assert.equal(prompt.codeSnippets[0].id,'saved-2');
+  assert.match(prompt.codeSnippets[0].snippet,/\[REDACTED\]/);
+  assert.doesNotMatch(prompt.codeSnippets[0].snippet,/fake-value-only-for-test/);
+  if(providerCalls===1)throw new DOMException('Timed out','TimeoutError');
+  return Response.json({choices:[{message:{content:JSON.stringify({
+   explainSimple:'Delegates to the repository.',
+   exploreSimple:'Unsupported claim.',
+   evaluateSimple:'Missing citation.',
+   evidenceRefs:{explainSimple:['saved-2'],exploreSimple:['invented']}
+  })}}]});
+ });
+ const request=()=>new NextRequest('http://local/api/ai-diagram-semantics',{
+  method:'POST',headers:{host:'local',origin:'http://local',cookie:'mavis_session=valid'},
+  body:JSON.stringify({threeEContext:context})
+ });
+ const first=await (await POST(request())).json();
+ assert.equal(first.threeEEnrichment.tokenStats.provider,'ast-skeleton');
+ const second=await (await POST(request())).json();
+ assert.equal(providerCalls,2);
+ assert.equal(second.threeEEnrichment.explainSimple,'Delegates to the repository.');
+ assert.doesNotMatch(second.threeEEnrichment.exploreSimple,/Unsupported claim/);
+ assert.doesNotMatch(second.threeEEnrichment.evaluateSimple,/Missing citation/);
+});
 test('AI routes do not call an LLM without literal source evidence',async t=>{
  const {NextRequest}=require('next/server');const {POST}=require('../app/api/ai-diagram-semantics/route.ts');let calls=0;
  t.mock.method(globalThis,'fetch',async url=>{if(String(url).endsWith('/api/v1/auth/me')) return Response.json({code:200,data:{id:'11111111-1111-4111-8111-111111111111',fullName:'Test User',role:'STUDENT'}});calls++;throw Error('Unexpected LLM request');});
