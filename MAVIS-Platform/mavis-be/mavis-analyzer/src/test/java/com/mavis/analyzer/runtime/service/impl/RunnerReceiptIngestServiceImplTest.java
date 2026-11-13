@@ -207,9 +207,14 @@ class RunnerReceiptIngestServiceImplTest {
                 .sandboxEnforcementConfirmed(true);
     }
 
-    @Test
-    @DisplayName("BR-08: từ chối receipt thành công khi chưa có thao tác hạ tầng thật")
-    void rejectsSuccessfulReceiptWithoutInfrastructureAction() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    @DisplayName("BR-08: reject missing or mismatched infrastructure evidence")
+    void rejectsSuccessfulReceiptWithoutMatchingInfrastructureAction(boolean mismatched) {
+        var config = new ObjectMapper().createObjectNode();
+        config.putArray("infrastructureActions").addObject().put("action", "SCALE")
+                .put("service", "order-service").put("replicas", 4);
+        session.setScenarioConfig(config);
         RunnerCorrelatedSpanDTO span = RunnerCorrelatedSpanDTO.builder()
                 .traceId("4bf92f3577b34da6a3ce929d0e0e4736")
                 .spanId("00f067aa0ba902b7")
@@ -225,7 +230,7 @@ class RunnerReceiptIngestServiceImplTest {
                 .trace(RunnerTraceCorrelationDTO.builder().spans(List.of(span)).warnings(List.of()).build())
                 .build();
         RunnerReceiptIngestRequestDTO receipt = createValidReceiptBuilder()
-                .infrastructureActions(List.of())
+                .infrastructureActions(mismatched ? createValidReceiptBuilder().build().getInfrastructureActions() : List.of())
                 .outcome(outcome)
                 .build();
 
@@ -234,9 +239,16 @@ class RunnerReceiptIngestServiceImplTest {
                 .hasMessageContaining("INCOMPLETE_RUNTIME_SCENARIO");
     }
 
-    @Test
-    @DisplayName("CHẶNG 11: Tiếp nhận RunnerReceipt thành công và lưu receiptDigest 64-hex")
-    void testIngestRunnerReceipt_Success_SavesDigestAndEnrichesModel() {
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    @DisplayName("Publish observation and matching Studio receipts")
+    void testIngestRunnerReceipt_Success_SavesDigestAndEnrichesModel(boolean studio) {
+        if (studio) {
+            var config = new ObjectMapper().createObjectNode();
+            config.putArray("infrastructureActions").addObject().put("action", "SCALE")
+                    .put("service", "order-service").put("replicas", 2);
+            session.setScenarioConfig(config);
+        }
         RunnerCorrelatedSpanDTO spanA = RunnerCorrelatedSpanDTO.builder()
                 .traceId("4bf92f3577b34da6a3ce929d0e0e4736")
                 .spanId("00f067aa0ba902b7")
@@ -274,9 +286,8 @@ class RunnerReceiptIngestServiceImplTest {
                 .trace(trace)
                 .build();
 
-        RunnerReceiptIngestRequestDTO receipt = createValidReceiptBuilder().imageSourceCorrespondence("Verified")
-                .outcome(outcome)
-                .build();
+        var builder = createValidReceiptBuilder().imageSourceCorrespondence("Verified").outcome(outcome);
+        RunnerReceiptIngestRequestDTO receipt = (studio ? builder : builder.infrastructureActions(List.of())).build();
 
         ModelVersionResponseDTO response = runnerReceiptIngestService.ingestRunnerReceipt(sessionId, receipt);
 
@@ -285,6 +296,8 @@ class RunnerReceiptIngestServiceImplTest {
         assertThat(session.getReceiptDigest()).startsWith("sha256:");
         assertThat(session.getPublicationGateStatus()).isEqualTo("PROMOTED");
         assertThat(session.getTraceStatus()).isEqualTo("COMPLETE");
+        assertThat(com.mavis.analyzer.runtime.dto.RuntimeSessionResponseDTO.fromEntity(session).isStudioVerified())
+                .isEqualTo(studio);
     }
 
     @Test
