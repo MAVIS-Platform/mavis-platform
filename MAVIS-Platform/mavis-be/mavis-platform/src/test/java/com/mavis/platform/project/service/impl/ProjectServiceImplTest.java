@@ -68,6 +68,12 @@ class ProjectServiceImplTest {
     @Mock
     private com.mavis.common.security.AccessPolicyService accessPolicyService;
 
+    @Mock
+    private com.mavis.common.security.CourseLabPolicy courseLabs;
+
+    @Mock
+    private com.mavis.platform.assignment.service.LabReferenceArchive referenceArchive;
+
     @InjectMocks
     private ProjectServiceImpl projectService;
 
@@ -436,5 +442,89 @@ class ProjectServiceImplTest {
         var request=new com.mavis.platform.project.dto.ProjectUpdateRequest();request.setRepositoryUrl("https://github.com/example/other");
         assertThatThrownBy(()->projectService.updateProject(id,request)).isInstanceOf(BusinessException.class);
         assertThat(project.getRepositoryUrl()).isEqualTo("https://github.com/example/original");verify(projectRepository,never()).save(any());
+    }
+
+    @Test
+    @DisplayName("F02-007: Guided student cannot clone cross-class snapshot (403) or unpinned assignment snapshot (409)")
+    void guidedStudentRejectsCrossClassAndUnpinnedSnapshots() {
+        UUID studentId = UUID.randomUUID();
+        User student = User.builder().id(studentId).email("student@fpt.edu.vn")
+                .role(com.mavis.common.entity.Role.builder().code("STUDENT").name("STUDENT").build())
+                .status("ACTIVE").build();
+        UUID courseWorkspaceId = UUID.randomUUID();
+        Workspace courseWs = Workspace.builder().id(courseWorkspaceId).courseMode(true).name("SE1819").build();
+        UUID pinnedSnapshotId = UUID.randomUUID();
+        SourceSnapshot pinnedSnapshot = SourceSnapshot.builder().id(pinnedSnapshotId)
+                .project(Project.builder().id(UUID.randomUUID()).workspace(courseWs).build())
+                .isPublished(true).build();
+        com.mavis.common.entity.ModelVersion pinnedModel = com.mavis.common.entity.ModelVersion.builder()
+                .id(UUID.randomUUID()).sourceSnapshot(pinnedSnapshot).build();
+        UUID labId = UUID.randomUUID();
+        Assignment lab = Assignment.builder().id(labId).workspace(courseWs).referenceModel(pinnedModel).build();
+
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("student@fpt.edu.vn", null, Collections.emptyList()));
+        when(userRepository.findByEmail("student@fpt.edu.vn")).thenReturn(Optional.of(student));
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(student);
+        when(workspaceRepository.findById(courseWorkspaceId)).thenReturn(Optional.of(courseWs));
+        when(workspaceMemberRepository.existsByWorkspaceIdAndUserId(courseWorkspaceId, studentId)).thenReturn(true);
+        when(assignmentRepository.findById(labId)).thenReturn(Optional.of(lab));
+
+        UUID foreignWorkspaceId = UUID.randomUUID();
+        Workspace foreignWs = Workspace.builder().id(foreignWorkspaceId).courseMode(true).name("Other Class").build();
+        UUID foreignSnapshotId = UUID.randomUUID();
+        SourceSnapshot foreignSnapshot = SourceSnapshot.builder().id(foreignSnapshotId)
+                .project(Project.builder().id(UUID.randomUUID()).workspace(foreignWs).build())
+                .isPublished(true).build();
+        when(sourceSnapshotRepository.findById(foreignSnapshotId)).thenReturn(Optional.of(foreignSnapshot));
+
+        ProjectCreateRequest crossClassReq = ProjectCreateRequest.builder()
+                .name("Cross Class Attempt")
+                .workspaceId(courseWorkspaceId)
+                .assignmentId(labId)
+                .projectType("STUDENT_WORKING")
+                .referenceSnapshotId(foreignSnapshotId)
+                .build();
+        assertThatThrownBy(() -> projectService.createProject(crossClassReq))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.FORBIDDEN);
+
+        UUID otherAssignmentSnapshotId = UUID.randomUUID();
+        SourceSnapshot sameClassOtherSnapshot = SourceSnapshot.builder().id(otherAssignmentSnapshotId)
+                .project(Project.builder().id(UUID.randomUUID()).workspace(courseWs).build())
+                .isPublished(true).build();
+        when(sourceSnapshotRepository.findById(otherAssignmentSnapshotId)).thenReturn(Optional.of(sameClassOtherSnapshot));
+
+        ProjectCreateRequest wrongLabSnapshotReq = ProjectCreateRequest.builder()
+                .name("Wrong Lab Attempt")
+                .workspaceId(courseWorkspaceId)
+                .assignmentId(labId)
+                .projectType("STUDENT_WORKING")
+                .referenceSnapshotId(otherAssignmentSnapshotId)
+                .build();
+        assertThatThrownBy(() -> projectService.createProject(wrongLabSnapshotReq))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.CONFLICT);
+
+        when(sourceSnapshotRepository.findById(pinnedSnapshotId)).thenReturn(Optional.of(pinnedSnapshot));
+        ProjectCreateRequest personalEscapeReq = ProjectCreateRequest.builder()
+                .name("Personal Escape")
+                .projectType("PERSONAL")
+                .referenceSnapshotId(pinnedSnapshotId)
+                .build();
+        assertThatThrownBy(() -> projectService.createProject(personalEscapeReq))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.FORBIDDEN);
+
+        lab.setReferenceModel(null);
+        ProjectCreateRequest missingPinReq = ProjectCreateRequest.builder()
+                .name("No Pin Lab")
+                .workspaceId(courseWorkspaceId)
+                .assignmentId(labId)
+                .projectType("STUDENT_WORKING")
+                .build();
+        assertThatThrownBy(() -> projectService.createProject(missingPinReq))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.CONFLICT);
     }
 }

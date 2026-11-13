@@ -97,13 +97,24 @@ public class ProjectServiceImpl implements ProjectService {
                 throw new BusinessException(ErrorCode.FORBIDDEN, "Select an unlocked Lab to create a course project");
             }
             courseLabs.requireOpen(assignment, currentUser);
+            if (assignment.getReferenceModel() == null
+                    || assignment.getReferenceModel().getSourceSnapshot() == null) {
+                throw new BusinessException(ErrorCode.CONFLICT, "This Lab has no pinned reference source yet");
+            }
             UUID pinned = assignment.getReferenceModel().getSourceSnapshot().getId();
             if (referenceSnapshotId != null && !pinned.equals(referenceSnapshotId)) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Use the source pinned to this Lab");
+                SourceSnapshot supplied = sourceSnapshotRepository.findById(referenceSnapshotId).orElse(null);
+                if (supplied != null && supplied.getProject() != null
+                        && (supplied.getProject().getWorkspace() == null
+                            || !workspace.getId().equals(supplied.getProject().getWorkspace().getId()))) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN, "Choose a reference from this workspace");
+                }
+                throw new BusinessException(ErrorCode.CONFLICT, "Use the source pinned to this Lab");
             }
             referenceSnapshotId = pinned;
-            if (request.getRepositoryUrl() != null && !request.getRepositoryUrl().isBlank()) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "The Lab supplies the project source");
+            if ((request.getRepositoryUrl() != null && !request.getRepositoryUrl().isBlank())
+                    || (request.getDefaultBranch() != null && !request.getDefaultBranch().isBlank())) {
+                throw new BusinessException(ErrorCode.FORBIDDEN, "The Lab supplies the project source");
             }
         }
         boolean isReferenceTemplate = Boolean.TRUE.equals(request.getIsReferenceTemplate())
@@ -121,8 +132,13 @@ public class ProjectServiceImpl implements ProjectService {
                 referenceArchive.resolve(refSnapshot, true);
             } else {
                 accessPolicyService.requireProjectReadAccess(refSnapshot.getProject());
-                if (workspace != null && (refSnapshot.getProject().getWorkspace() == null
-                        || !workspace.getId().equals(refSnapshot.getProject().getWorkspace().getId()))) {
+                Workspace refWorkspace = refSnapshot.getProject() != null ? refSnapshot.getProject().getWorkspace() : null;
+                if (refWorkspace != null && refWorkspace.isCourseMode()
+                        && com.mavis.common.security.CourseLabPolicy.isStudent(currentUser)
+                        && (workspace == null || !workspace.getId().equals(refWorkspace.getId()))) {
+                    throw new BusinessException(ErrorCode.FORBIDDEN, "Select an unlocked Lab to create a course project");
+                }
+                if (workspace != null && (refWorkspace == null || !workspace.getId().equals(refWorkspace.getId()))) {
                     throw new BusinessException(ErrorCode.FORBIDDEN, "Choose a reference from this workspace");
                 }
             }
