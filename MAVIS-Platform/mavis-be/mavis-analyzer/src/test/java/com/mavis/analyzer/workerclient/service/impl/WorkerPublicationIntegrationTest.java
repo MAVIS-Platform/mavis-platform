@@ -51,6 +51,7 @@ class WorkerPublicationIntegrationTest {
             factory.setJpaPropertyMap(Map.of("hibernate.hbm2ddl.auto","none"));return factory;
         }
         @Bean PlatformTransactionManager transactionManager(jakarta.persistence.EntityManagerFactory factory){return new JpaTransactionManager(factory);}
+        @Bean JdbcTemplate jdbcTemplate(DriverManagerDataSource ds) { return new JdbcTemplate(ds); }
         @Bean com.mavis.common.security.AccessPolicyService accessPolicy(UserRepository u,WorkspaceRepository w,WorkspaceMemberRepository m,org.springframework.jdbc.core.JdbcTemplate jdbc){return new com.mavis.common.security.impl.AccessPolicyServiceImpl(u,w,m,new com.mavis.common.security.CourseLabPolicy(jdbc));}
         @Bean ObjectMapper objectMapper(){return new ObjectMapper();}
         @Bean GraphBuilderService graph(ModelElementRepository e,ModelRelationshipRepository r,EvidenceRepository v){return new GraphBuilderServiceImpl(e,r,v);}
@@ -97,6 +98,11 @@ class WorkerPublicationIntegrationTest {
         assertEquals(0,db.queryForObject("select count(*) from model_elements where model_version_id=? and language_stack='CSHARP_DOTNET' and status='VALIDATED'",Integer.class,model));
         assertEquals(2,db.queryForObject("select count(*) from model_relationships where model_version_id=? and properties->>'mappingStatus'='CONFIG_BOUND'",Integer.class,model));
         assertEquals(2,db.queryForObject("select count(*) from evidences where model_version_id=? and locator='mavis.bindings.json:1'",Integer.class,model));
+        assertEquals(2, db.queryForObject("""
+                select count(*) from evidences where model_version_id=?
+                  and provenance->>'communicationRole'='CALL_SITE' and adapter_version='dotnet-static/1.9'
+                  and excerpt like '%http.GetAsync(%'
+                """, Integer.class, model));
         assertThrows(IllegalStateException.class,()->publisher.publish(job,attempt,deadline,source.toString(),List.of(),List.of(),false,execution));
         assertEquals(1,db.queryForObject("select count(*) from model_versions where project_id=?",Integer.class,project));
 
