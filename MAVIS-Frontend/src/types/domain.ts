@@ -258,6 +258,20 @@ export const assignmentSchema = z.object({
   instructions: z.string(),
   dueAt: z.string(),
 });
+export const courseQuizEvidenceSchema = z.object({
+  status: z.literal("PASSED"),
+  attemptId: z.string(),
+  quizVersion: z.number().int().positive(),
+  correctCount: z.number().int().nonnegative(),
+  questionCount: z.number().int().positive(),
+  passPercent: z.number().int().min(1).max(100),
+  submittedAt: z.string(),
+  referenceModelId: z.string(),
+  referenceSnapshotId: z.string(),
+  artifactHash: z.string(),
+  commitSha: z.string().nullable(),
+});
+
 export const submissionSchema = z
   .object({
     assignmentTitle: z.string().optional(),
@@ -269,6 +283,7 @@ export const submissionSchema = z
     diagramLayout: z.record(z.unknown()).optional(),
     evaluationRunId: z.string().nullable().optional(),
     complianceScore: z.number().nullable().optional(),
+    courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
     id: z.string(),
     assignmentId: z.string(),
     studentId: z.string(),
