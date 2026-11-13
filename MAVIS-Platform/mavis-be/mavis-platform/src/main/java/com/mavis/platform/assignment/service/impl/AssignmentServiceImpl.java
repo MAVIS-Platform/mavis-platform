@@ -181,7 +181,8 @@ public class AssignmentServiceImpl implements AssignmentService {
         assignment.setUpdatedAt(OffsetDateTime.now());
         if (assignment.getLabOrder() != null && (Boolean.TRUE.equals(request.getClearReferenceSource())
                 || (request.getReferenceModelId() != null
-                    && !request.getReferenceModelId().equals(assignment.getReferenceModel().getId())))) {
+                    && (assignment.getReferenceModel() == null
+                        || !request.getReferenceModelId().equals(assignment.getReferenceModel().getId()))))) {
             throw new BusinessException(ErrorCode.CONFLICT, "A published Lab keeps its pinned source");
         }
         if (assignment.getLabOrder() == null) {
