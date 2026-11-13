@@ -17,6 +17,9 @@ import java.util.UUID;
 @Schema(description = "Gói xuất bài nộp bất biến (Immutable Submission Export Bundle - Ticket V11 & T15)")
 public class SubmissionExportBundleDTO {
     private com.fasterxml.jackson.databind.JsonNode courseQuizEvidence;
+    private com.fasterxml.jackson.databind.JsonNode studentSnapshots;
+    private com.fasterxml.jackson.databind.JsonNode snapshotGrades;
+    private String labOutcome;
 
     private UUID submissionId;
     private UUID projectId;

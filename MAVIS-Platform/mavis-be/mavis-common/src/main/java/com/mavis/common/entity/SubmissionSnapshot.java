@@ -59,6 +59,10 @@ public class SubmissionSnapshot {
     @Column(name = "course_quiz_evidence", updatable = false)
     private JsonNode courseQuizEvidence;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "student_snapshots", updatable = false)
+    private JsonNode studentSnapshots;
+
     @Column(name = "submission_notes", columnDefinition = "TEXT")
     private String submissionNotes;
 

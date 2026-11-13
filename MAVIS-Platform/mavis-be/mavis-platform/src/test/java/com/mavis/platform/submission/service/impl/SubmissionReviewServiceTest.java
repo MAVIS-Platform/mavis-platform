@@ -58,4 +58,56 @@ class SubmissionReviewServiceTest {
   when(access.requireCurrentActiveUser()).thenReturn(User.builder().id(UUID.randomUUID()).build());doThrow(new BusinessException(com.mavis.common.exception.ErrorCode.FORBIDDEN)).when(access).requireWorkspaceLecturer(workspace);
   assertThatThrownBy(()->service.get(id)).isInstanceOf(BusinessException.class);verifyNoInteractions(reviews);
  }
+
+ @Test
+ @DisplayName("WF-04 F11-004/005: Per-snapshot grading requires every snapshot > 5.0/10 (5.1 passes & unlocks; 5.0 fails -> NEEDS_REVISION)")
+ void perSnapshotGradingEnforcesStrictGreaterThanFiveRule() {
+  when(access.requireCurrentActiveUser()).thenReturn(teacher);
+  when(reviews.findBySubmissionId(id)).thenReturn(Optional.empty());
+  when(reviews.saveAndFlush(any())).thenAnswer(call -> call.getArgument(0));
+
+  var failingSave = new SubmissionReviewService.Save(
+          0, "GRADED", null, "Runtime trace evidence incomplete in step 4.",
+          List.of(
+                  new SubmissionReviewService.SnapshotGrade("STEP_1_STATIC", "Static Architecture", new BigDecimal("9.00"), "Accurate boundaries"),
+                  new SubmissionReviewService.SnapshotGrade("STEP_4_RUNTIME", "Runtime Studio", new BigDecimal("5.00"), "Exactly 5.0 still fails")));
+
+  var failedView = service.save(id, failingSave);
+  assertThat(failedView.labOutcome()).isEqualTo("NEEDS_REVISION");
+  assertThat(failedView.score()).isEqualByComparingTo("70.00");
+  assertThat(failedView.snapshotGrades()).hasSize(2);
+  verify(courseProgression).recordFinalizedResult(id, 1, false);
+
+  reset(courseProgression);
+  var passingSave = new SubmissionReviewService.Save(
+          0, "GRADED", null, "All stages clear > 5.0 threshold.",
+          List.of(
+                  new SubmissionReviewService.SnapshotGrade("STEP_1_STATIC", "Static Architecture", new BigDecimal("5.10"), "Pass threshold"),
+                  new SubmissionReviewService.SnapshotGrade("STEP_4_RUNTIME", "Runtime Studio", new BigDecimal("7.50"), "Trace verified")));
+
+  var passedView = service.save(id, passingSave);
+  assertThat(passedView.labOutcome()).isEqualTo("PASSED");
+  assertThat(passedView.score()).isEqualByComparingTo("63.00");
+  verify(courseProgression).recordFinalizedResult(id, 1, true);
+ }
+
+ @Test
+ @DisplayName("WF-04 F11-006: Rejects out-of-range snapshot scores or missing overall review summary")
+ void rejectsInvalidSnapshotScoresAndMissingSummary() {
+  when(access.requireCurrentActiveUser()).thenReturn(teacher);
+
+  var tooHigh = new SubmissionReviewService.Save(
+          0, "GRADED", null, "Summary present",
+          List.of(new SubmissionReviewService.SnapshotGrade("S1", "Step 1", new BigDecimal("10.50"), null)));
+  assertThatThrownBy(() -> service.save(id, tooHigh))
+          .isInstanceOf(BusinessException.class)
+          .hasMessageContaining("between 0 and 10");
+
+  var blankSummary = new SubmissionReviewService.Save(
+          0, "GRADED", null, "   ",
+          List.of(new SubmissionReviewService.SnapshotGrade("S1", "Step 1", new BigDecimal("8.00"), "Good")));
+  assertThatThrownBy(() -> service.save(id, blankSummary))
+          .isInstanceOf(BusinessException.class)
+          .hasMessageContaining("APPROVAL_SUMMARY_REQUIRED");
+ }
 }
