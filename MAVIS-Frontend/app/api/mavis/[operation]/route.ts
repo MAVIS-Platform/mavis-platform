@@ -60,7 +60,10 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
             ? await request.json()
             : JSON.parse(request.nextUrl.searchParams.get("input") ?? "{}");
     const parsed = contract.input.safeParse(raw);
-    if (!parsed.success) return fail(422);
+    if (!parsed.success)
+      return fail(
+        ["notifications", "readNotification", "readAllNotifications"].includes(operation) ? 400 : 422,
+      );
     if (operation === "importSource") {
       const upload = contracts.importSource.input.parse(parsed.data);
       if (upload.archive.size !== upload.size) return fail(422);

@@ -208,7 +208,10 @@ export async function executeJava(
         description: z.string().nullish(),
         dueAt: z.string().nullish(),
         requiredDiagramTypes: z.array(z.string()).nullish(),
+        ruleSetVersion: z.string().nullish(),
         requireRuntimeTrace: z.boolean().nullish(),
+        aiPolicy: z.union([z.record(z.unknown()), z.string()]).nullish(),
+        labOrder: z.number().int().positive().nullish(),
         referenceSource: assignmentReferenceSchema.nullish(),
       })
       .parse(raw);
