@@ -27,6 +27,7 @@ public class SubmissionExportBundleDTO {
     private String submittedByName;
     private UUID sourceSnapshotId;
     private String artifactHash;
+    private String evidencePackageDigest;
     private UUID modelVersionId;
     private Integer modelRevision;
     private UUID diagramVersionId;

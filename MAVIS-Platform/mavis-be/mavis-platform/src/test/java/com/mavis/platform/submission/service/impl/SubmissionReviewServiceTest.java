@@ -4,6 +4,7 @@ import com.mavis.common.entity.*;
 import com.mavis.common.repository.*;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.exception.BusinessException;
+import com.mavis.platform.workspace.service.CourseProgressionService;
 import jakarta.persistence.*;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,6 +21,7 @@ class SubmissionReviewServiceTest {
  @Mock SubmissionReviewRepository reviews;
  @Mock AccessPolicyService access;
  @Mock EntityManager entityManager;
+ @Mock CourseProgressionService courseProgression;
  @InjectMocks SubmissionReviewService service;
  UUID id=UUID.randomUUID(),workspace=UUID.randomUUID();
  User teacher=User.builder().id(UUID.randomUUID()).fullName("Sandbox teacher").build(),student=User.builder().id(UUID.randomUUID()).build();
@@ -33,10 +35,11 @@ class SubmissionReviewServiceTest {
   verify(access,never()).requireWorkspaceLecturer(any());
  }
  @Test void lecturerGradeIsVersionedAndDoesNotModifySubmittedArtifacts(){
-  when(access.requireCurrentActiveUser()).thenReturn(teacher);when(reviews.findBySubmissionId(id)).thenReturn(Optional.empty());when(reviews.save(any())).thenAnswer(call->call.getArgument(0));
-  var result=service.save(id,new SubmissionReviewService.Save(0,"GRADED",new BigDecimal("92.50"),"Good boundary design"));
-  assertThat(result.revision()).isEqualTo(1);assertThat(result.score()).isEqualByComparingTo("92.50");
+  when(access.requireCurrentActiveUser()).thenReturn(teacher);when(reviews.findBySubmissionId(id)).thenReturn(Optional.empty());when(reviews.saveAndFlush(any())).thenAnswer(call->call.getArgument(0));
+  var result=service.save(id,new SubmissionReviewService.Save(0,"GRADED",BigDecimal.ZERO,"Approved with remediation notes"));
+  assertThat(result.revision()).isEqualTo(1);assertThat(result.score()).isEqualByComparingTo("0");
   verify(access).requireWorkspaceLecturer(workspace);verify(entityManager).lock(submission,LockModeType.PESSIMISTIC_WRITE);verify(submissions,never()).save(any());
+  verify(courseProgression).recordFinalizedResult(id,1,true);
  }
  @Test void staleGradeCannotOverwriteNewerReview(){
   when(access.requireCurrentActiveUser()).thenReturn(teacher);var current=new SubmissionReview();current.setRevision(4);when(reviews.findBySubmissionId(id)).thenReturn(Optional.of(current));
@@ -47,7 +50,7 @@ class SubmissionReviewServiceTest {
   assertThatThrownBy(()->service.save(id,new SubmissionReviewService.Save(0,"GRADED",BigDecimal.TEN,""))).isInstanceOf(BusinessException.class);
   when(access.requireCurrentActiveUser()).thenReturn(teacher);
   assertThatThrownBy(()->service.save(id,new SubmissionReviewService.Save(0,"GRADED",null,""))).isInstanceOf(BusinessException.class);
-  assertThatThrownBy(()->service.save(id,new SubmissionReviewService.Save(0,"RETURNED",null,""))).isInstanceOf(BusinessException.class);
+  assertThatThrownBy(()->service.save(id,new SubmissionReviewService.Save(0,"RETURNED",null,""))).isInstanceOf(BusinessException.class).hasMessageContaining("REJECTION_REASON_REQUIRED");
   assertThatThrownBy(()->service.save(id,new SubmissionReviewService.Save(0,"GRADED",new BigDecimal("101"),""))).isInstanceOf(BusinessException.class);
   verifyNoInteractions(reviews,entityManager);
  }

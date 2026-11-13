@@ -283,6 +283,7 @@ export const submissionSchema = z
     diagramLayout: z.record(z.unknown()).optional(),
     evaluationRunId: z.string().nullable().optional(),
     complianceScore: z.number().nullable().optional(),
+    evidencePackageDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
     courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
     id: z.string(),
     assignmentId: z.string(),

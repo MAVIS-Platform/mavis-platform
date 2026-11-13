@@ -101,6 +101,7 @@ class SubmissionServiceImplTest {
     @Mock
     private JobRepository jobRepository;
     @Mock private SubmissionReviewRepository submissionReviewRepository;
+    @Mock private com.mavis.common.security.CourseLabPolicy courseLabs;
 
     @Mock
     private com.mavis.common.security.AccessPolicyService accessPolicyService;
@@ -126,6 +127,7 @@ class SubmissionServiceImplTest {
     private EvaluationRun evaluationRun;
     private RuntimeSession runtimeSession;
 
+    @org.mockito.Spy
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
@@ -241,8 +243,35 @@ class SubmissionServiceImplTest {
         assertThat(response.getComplianceScore()).isEqualTo(95.5);
         assertThat(response.getScenarioStatus()).isEqualTo("PASSED");
         assertThat(response.getSubmissionNotes()).isEqualTo("Bài tập hoàn thành đúng hạn");
+        assertThat(response.getEvidencePackageDigest()).matches("sha256:[a-f0-9]{64}");
 
         verify(submissionSnapshotRepository).save(any(SubmissionSnapshot.class));
+    }
+
+    @Test
+    void courseSubmissionReportsEveryMissingFourStageEvidenceItem() {
+        var workspace=Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        student.setRole(Role.builder().code("STUDENT").build());
+        assignment.setWorkspace(workspace);assignment.setLabOrder(1);assignment.setRequireRuntimeTrace(false);
+        assignment.setReferenceModel(modelVersion);project.setWorkspace(workspace);project.setAssignment(assignment);
+        snapshot.setArtifactHash(null);project.setReferenceSnapshotId(snapshot.getId());
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(assignmentRepository.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        when(courseLabs.currentQuizPass(assignment,userId)).thenReturn(Optional.of(new com.mavis.common.security.CourseLabPolicy.QuizPass(
+                UUID.randomUUID(),1,8,10,70,OffsetDateTime.now())));
+        var request=SubmissionCreateRequest.builder().assignmentId(assignmentId).projectId(projectId)
+                .modelVersionId(modelVersionId).diagramVersionId(diagramVersionId).build();
+        assertThatThrownBy(()->submissionService.submitAssignment(request)).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("INCOMPLETE_4STAGE_EVIDENCE")
+                .hasMessageContaining("STEP_1_STATIC_ANALYZED")
+                .hasMessageContaining("STEP_2_C4_GROUND_TRUTH_70")
+                .hasMessageContaining("STEP_3_RUNTIME_OTEL_VIEW")
+                .hasMessageContaining("STEP_4_SIGNED_RUNTIME_RECEIPT");
+        verify(submissionSnapshotRepository,never()).save(any());
     }
 
     @Test

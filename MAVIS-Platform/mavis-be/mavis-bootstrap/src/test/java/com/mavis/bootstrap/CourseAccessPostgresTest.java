@@ -210,8 +210,10 @@ class CourseAccessPostgresTest {
                 """, model);
         return id(jdbc, """
                 INSERT INTO submission_snapshots(assignment_id, project_id, submitted_by, source_snapshot_id,
-                    model_version_id, diagram_version_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id
-                """, lab.getId(), project, student, source, model, diagram);
+                    model_version_id, diagram_version_id, evidence_package_digest)
+                VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
+                """, lab.getId(), project, student, source, model, diagram,
+                "sha256:" + UUID.randomUUID().toString().replace("-", "").repeat(2));
     }
 
     private static UUID user(JdbcTemplate jdbc, String role, String email) {
