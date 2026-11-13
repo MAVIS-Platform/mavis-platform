@@ -922,6 +922,12 @@ export class MockAdapter implements ApiAdapter {
           ? "failed"
           : "completed"
         : "processing";
+    job.analysisState =
+      job.status === "failed"
+        ? "FAILED"
+        : job.status === "completed"
+          ? "COMPLETED_WITH_REVIEW"
+          : "RUNNING";
     job.message =
       job.status === "failed"
         ? "Sample analysis failed. Retry with the validated snapshot."

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { useModel } from "@/features/architecture/use-model";
 import {
   AnalysisStatusIndicator,
+  analysisStatusBadgeProps,
   formatAnalysisJobMessage,
 } from "@/features/source-analysis/components";
 import { ResourceDeleteAction } from "./resource-delete-action";
@@ -526,17 +527,9 @@ export function SourceSnapshots() {
                 if (!latestJob) {
                   return <StatusBadge status="not analyzed" variant="outline" />;
                 }
+                const latestBadge = analysisStatusBadgeProps(latestJob);
                 return (
-                  <StatusBadge
-                    status={latestJob.status}
-                    variant={
-                      latestJob.status === "completed"
-                        ? "success"
-                        : latestJob.status === "failed"
-                          ? "destructive"
-                          : "info"
-                    }
-                  />
+                  <StatusBadge status={latestBadge.status} variant={latestBadge.variant} />
                 );
               },
             },
@@ -659,23 +652,17 @@ export function AnalysisHistory() {
             {
               key: "status",
               label: "Status",
-              render: (job) => (
-                <div className="flex items-center gap-2">
-                  <StatusBadge
-                    status={job.status}
-                    variant={
-                      job.status === "completed"
-                        ? "success"
-                        : job.status === "failed"
-                          ? "destructive"
-                          : "info"
-                    }
-                  />
-                  <span className="font-mono text-xs text-muted-foreground">
-                    #{job.id.slice(0, 8)}
-                  </span>
-                </div>
-              ),
+              render: (job) => {
+                const jobBadge = analysisStatusBadgeProps(job);
+                return (
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={jobBadge.status} variant={jobBadge.variant} />
+                    <span className="font-mono text-xs text-muted-foreground">
+                      #{job.id.slice(0, 8)}
+                    </span>
+                  </div>
+                );
+              },
             },
             {
               key: "snapshot",
