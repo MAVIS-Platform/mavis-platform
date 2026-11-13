@@ -776,13 +776,16 @@ test("intentional logout revokes the bearer before clearing the cookie, and rema
  assert.equal(failed.headers.get("set-cookie"),null);
 });
 
-test("course BFF paths allow WF-01 actions without opening general workspace or grading routes",()=>{
+test("course BFF paths allow enrollment and Quiz without opening general workspace or grading routes",()=>{
  const {allowedBackendPath}=require("../src/lib/api/backend-path.ts");
  const workspace="0568ee6d-e47e-45ec-8552-30b255843f2a";
  const lab="8bb71d2a-fbc0-48a2-bc76-aebd65f9db2f";
- for (const path of [`workspaces/${workspace}/course-roadmap`,`workspaces/${workspace}/course-labs/${lab}/publish`,`workspaces/${workspace}/course-passkey`,`workspaces/${workspace}/course-passkey/revoke`,"course-enrollments/redeem"])
+ assert.equal(allowedBackendPath("course-curriculum"),true);
+ assert.equal(allowedBackendPath(`workspaces/${workspace}/course-labs/${lab}/quiz/curriculum`),true);
+ assert.equal(allowedBackendPath("course-curriculum/answers"),false);
+ for (const path of [`workspaces/${workspace}/course-roadmap`,`workspaces/${workspace}/course-labs/${lab}/publish`,`workspaces/${workspace}/course-labs/${lab}/quiz`,`workspaces/${workspace}/course-labs/${lab}/quiz/attempts`,`workspaces/${workspace}/course-passkey`,`workspaces/${workspace}/course-passkey/revoke`,"course-enrollments/redeem"])
   assert.equal(allowedBackendPath(path),true,path);
- for (const path of [`workspaces/${workspace}/members`,`workspaces/${workspace}/course-labs/${lab}/grade`,"course-enrollments/other"])
+ for (const path of [`workspaces/${workspace}/members`,`workspaces/${workspace}/course-labs/${lab}/grade`,`workspaces/${workspace}/course-labs/${lab}/quiz/answers`,"course-enrollments/other"])
   assert.equal(allowedBackendPath(path),false,path);
 });
 

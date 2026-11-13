@@ -83,14 +83,14 @@ class CourseHttpAcceptanceTest {
         send("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "654321"), 400);
         send("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "789123"), 400);
         var verification = Map.of("email", email, "otpCode", "123456");
-        assertOneOtpAccepted(db, user, request("POST", "auth/verify-email", null, verification),
-                request("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "246810")));
+        assertOneOtpAccepted(db, user, request("POST", "auth/verify-email", null, verification).build(),
+                request("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "246810")).build());
         send("POST", "auth/verify-email", null, verification, 400);
         assertFalse(login("verify-learner").isBlank());
 
         String newPassword = "Changed-isolated-WF01-password!";
         var reset = request("POST", "auth/reset-password", null,
-                Map.of("email", email, "otpCode", "789123", "newPassword", newPassword));
+                Map.of("email", email, "otpCode", "789123", "newPassword", newPassword)).build();
         assertOneOtpAccepted(db, user, reset, reset);
         send("POST", "auth/login", null, Map.of("email", email, "password", PASSWORD), 401);
         send("POST", "auth/login", null, Map.of("email", email, "password", newPassword), 200);
@@ -138,6 +138,17 @@ class CourseHttpAcceptanceTest {
         try (var archive = new ZipOutputStream(Files.newOutputStream(zip))) {
             archive.putNextEntry(new ZipEntry("README.md"));
             archive.write("Course fixture".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            archive.closeEntry();
+            archive.putNextEntry(new ZipEntry("src/main/java/example/OrderController.java"));
+            archive.write("""
+                    package example;
+                    import org.springframework.web.bind.annotation.GetMapping;
+                    import org.springframework.web.bind.annotation.RestController;
+                    @RestController
+                    class OrderController {
+                        @GetMapping("/orders") String orders() { return "orders"; }
+                    }
+                    """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             archive.closeEntry();
         }
         UUID reference = id(db, """
@@ -188,6 +199,72 @@ class CourseHttpAcceptanceTest {
         assertEquals(List.of("UNLOCKED", "LOCKED"), List.of(
                 state.path("labs").get(0).path("state").asText(),
                 state.path("labs").get(1).path("state").asText()));
+        checkVersionedQuiz(workspace, lab1, lab2, lecturer, student, foreignStudent);
+        UUID workingProject = id(db, """
+                INSERT INTO projects(workspace_id, owner_id, assignment_id, reference_snapshot_id, name, project_type)
+                SELECT ?, id, ?, ?, 'Quiz gate fixture', 'STUDENT_WORKING' FROM users WHERE email = ? RETURNING id
+                """, classroom, lab1, source, "learner@example.invalid");
+        UUID workingSource = id(db, """
+                INSERT INTO source_snapshots(project_id,source_type,artifact_hash,storage_path)
+                SELECT ?, source_type, artifact_hash, storage_path FROM source_snapshots WHERE id = ? RETURNING id
+                """, workingProject, source);
+        String analysis = "analyzer/snapshots/" + workingSource + "/analyze";
+        var denied = request("POST", analysis, foreignStudent, null).header("Idempotency-Key", "wf02-static").build();
+        assertEquals(403, http.send(denied, HttpResponse.BodyHandlers.discarding()).statusCode());
+        var analyze = request("POST", analysis, student, null).header("Idempotency-Key", "wf02-static").build();
+        var accepted = http.send(analyze, HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(202, accepted.statusCode());
+        String jobId = data(accepted).path("jobId").asText();
+        assertFalse(jobId.isBlank());
+        var retry = http.send(analyze, HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(202, retry.statusCode());
+        assertEquals(jobId, data(retry).path("jobId").asText());
+        JsonNode job = waitForStaticAnalysis(jobId, student);
+        assertEquals(workingSource.toString(), job.path("sourceSnapshotId").asText());
+        UUID workingModel = UUID.fromString(job.path("modelVersionId").asText());
+        String analyzedModel = "analyzer/models/" + workingModel;
+        assertEquals("3e-3", data(send("POST", analyzedModel + "/evaluate", student, null, 200))
+                .path("ruleSetVersion").asText());
+        JsonNode diagrams = data(send("GET", analyzedModel + "/diagrams", student, null, 200));
+        var staticTypes = new java.util.HashSet<String>();
+        var c4Diagrams = new java.util.ArrayList<UUID>();
+        UUID workingDiagram = null;
+        for (var diagram : diagrams) {
+            String notation = diagram.path("notation").asText();
+            String level = diagram.path("level").asText();
+            staticTypes.add(notation + "/" + level);
+            if ("C4".equals(notation)) c4Diagrams.add(UUID.fromString(diagram.path("id").asText()));
+            if ("C4".equals(notation) && "CONTAINER".equals(level)) {
+                workingDiagram = UUID.fromString(diagram.path("id").asText());
+            }
+        }
+        assertEquals(java.util.Set.of("DEPENDENCY_GRAPH/SERVICE", "C4/CONTEXT", "C4/CONTAINER", "C4/COMPONENT"), staticTypes);
+        assertNotNull(workingDiagram);
+        for (String supported : List.of("context", "container", "component", "graph")) {
+            send("GET", analyzedModel + "/documents/" + supported, student, null, 200);
+        }
+        for (String unsupported : List.of("uml-sequence", "uml-activity", "uml-state")) {
+            send("GET", analyzedModel + "/documents/" + unsupported, student, null, 400);
+        }
+        send("POST", analyzedModel + "/diagrams/deployment", student, null, 400);
+        String diagramPath = "analyzer/diagrams/" + workingDiagram;
+        send("GET", diagramPath + "/export?format=JSON", student, null, 200);
+        send("PUT", diagramPath + "/layout", student, Map.of("nodes", List.of()), 400);
+        UUID legacyDeployment = id(db, """
+                INSERT INTO diagram_versions(model_version_id,notation,level,layout_json)
+                VALUES (?,'VIEW_4_PLUS_1','DEPLOYMENT','{}') RETURNING id
+                """, workingModel);
+        assertEquals(diagrams, data(send("GET", analyzedModel + "/diagrams", student, null, 200)));
+        send("GET", "analyzer/diagrams/" + legacyDeployment, student, null, 400);
+        send("GET", "analyzer/diagrams/" + legacyDeployment + "/export?format=JSON", student, null, 400);
+        send("POST", analyzedModel + "/documents/freeze", student,
+                Map.of("diagramVersionIds", List.of(legacyDeployment)), 400);
+        db.update("UPDATE assignments SET required_diagram_types = '[\"C4_CONTEXT\",\"C4_CONTAINER\",\"C4_COMPONENT\"]'::jsonb WHERE id = ?", lab1);
+        UUID bundle = UUID.fromString(data(send("POST", analyzedModel + "/documents/freeze", student,
+                Map.of("diagramVersionIds", c4Diagrams), 200)).asText());
+        checkCurriculum(workspace, lab1, lab2, lecturer, student, workingProject,
+                Map.of("assignmentId", lab1, "projectId", workingProject,
+                        "modelVersionId", workingModel, "diagramVersionId", bundle));
         send("GET", "assignments/" + lab2, student, null, 403);
         send("GET", "assignments/" + lab2 + "/reference-source", student, null, 403);
         send("GET", "assignments/" + lab1 + "/reference-source", foreignStudent, null, 403);
@@ -204,14 +281,125 @@ class CourseHttpAcceptanceTest {
                 Map.of("email", user + "@example.invalid", "password", PASSWORD), 200)).path("token").asText();
     }
 
+    private JsonNode waitForStaticAnalysis(String jobId, String student) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        JsonNode job;
+        do {
+            job = data(send("GET", "analyzer/jobs/" + jobId, student, null, 200));
+            String state = job.path("status").asText();
+            if ("COMPLETED".equals(state)) return job;
+            assertTrue(List.of("PENDING", "RUNNING").contains(state),
+                    () -> "Static analysis failed with status " + state);
+            Thread.sleep(100);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError("Static analysis did not complete before the test deadline");
+    }
+
+    private void checkCurriculum(String workspace, UUID lab1, UUID lab2, String lecturer, String student,
+                                 UUID workingProject, Map<String, UUID> submission)
+            throws Exception {
+        send("GET", "course-curriculum", null, null, 401);
+        JsonNode catalog = data(send("GET", "course-curriculum", student, null, 200));
+        assertEquals(30, catalog.size());
+        int javaChapters = 0;
+        int csharpChapters = 0;
+        var stages = new java.util.HashSet<String>();
+        for (JsonNode chapter : catalog) {
+            assertFalse(chapter.has("questions"));
+            assertFalse(chapter.path("sources").isEmpty());
+            stages.add(chapter.path("track").asText() + "/" + chapter.path("phase").asText());
+            if ("Java".equals(chapter.path("track").asText())) javaChapters++;
+            if ("C#".equals(chapter.path("track").asText())) csharpChapters++;
+        }
+        assertEquals(18, javaChapters);
+        assertEquals(12, csharpChapters);
+        assertEquals(java.util.Set.of("Java/foundation", "Java/lab", "Java/advanced",
+                "C#/foundation", "C#/lab", "C#/advanced"), stages);
+        String quiz = workspace + "/course-labs/" + lab1 + "/quiz";
+        var java = Map.of("chapterId", "java-01");
+        send("POST", quiz + "/curriculum", student, java, 403);
+        send("POST", quiz + "/curriculum", lecturer, Map.of("chapterId", "unknown"), 404);
+        int javaVersion = data(send("POST", quiz + "/curriculum", lecturer, java, 200)).path("version").asInt();
+        assertEquals(javaVersion, data(send("POST", quiz + "/curriculum", lecturer, java, 200)).path("version").asInt());
+        JsonNode javaLesson = data(send("GET", quiz, student, null, 200));
+        assertTrue(javaLesson.path("lesson").asText().contains("https://dev.java/learn/"));
+        assertEquals(4, javaLesson.path("questions").size());
+        assertFalse(javaLesson.path("questions").get(0).has("correctOption"));
+        String runtime = "analyzer/runtime/sessions";
+        var runtimeRequest = Map.of("projectId", workingProject, "sourceSnapshotId", UUID.randomUUID());
+        send("POST", runtime, student, runtimeRequest, 403);
+        send("POST", "submissions", student, submission, 403);
+
+        String csharpQuiz = workspace + "/course-labs/" + lab2 + "/quiz";
+        var csharp = Map.of("chapterId", "csharp-03");
+        send("POST", csharpQuiz + "/curriculum", lecturer, csharp, 200);
+        send("GET", csharpQuiz, student, null, 403);
+        int csharpVersion = data(send("POST", quiz + "/curriculum", lecturer, csharp, 200)).path("version").asInt();
+        assertEquals(javaVersion + 1, csharpVersion);
+        JsonNode csharpLesson = data(send("GET", quiz, student, null, 200));
+        assertTrue(csharpLesson.path("lesson").asText().contains("https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/"));
+        assertEquals(4, csharpLesson.path("questions").size());
+        var attempt = Map.of("attemptId", UUID.randomUUID(), "version", csharpVersion, "answers", List.of(1, 0, 2, 1));
+        assertEquals("PASSED", data(send("POST", quiz + "/attempts", student, attempt, 200)).path("status").asText());
+        send("POST", runtime, student, runtimeRequest, 404);
+        JsonNode saved = data(send("POST", "submissions", student, submission, 200));
+        JsonNode frozen = saved.path("courseQuizEvidence");
+        assertEquals(attempt.get("attemptId").toString(), frozen.path("attemptId").asText());
+        assertEquals(csharpVersion, frozen.path("quizVersion").asInt());
+        assertFalse(frozen.has("answers"));
+        send("POST", quiz + "/curriculum", lecturer, java, 200);
+        send("POST", runtime, student, runtimeRequest, 403);
+        send("POST", "submissions", student, submission, 403);
+        assertEquals(frozen, data(send("GET", "submissions/" + saved.path("id").asText(), lecturer, null, 200))
+                .path("courseQuizEvidence"));
+    }
+
+    private void checkVersionedQuiz(String workspace, UUID lab1, UUID lab2,
+                                    String lecturer, String student, String foreignStudent) throws Exception {
+        String quiz = workspace + "/course-labs/" + lab1 + "/quiz";
+        String lockedQuiz = workspace + "/course-labs/" + lab2 + "/quiz";
+        var definition = Map.of("lesson", "Architecture and service boundaries", "questions", List.of(
+                Map.of("prompt", "Which layer owns this boundary?", "options", List.of("API", "Database"), "correctOption", 0),
+                Map.of("prompt", "Which service is upstream?", "options", List.of("Inventory", "Orders"), "correctOption", 1)));
+        send("GET", quiz, student, null, 404);
+        send("POST", quiz, student, definition, 403);
+        send("GET", quiz, foreignStudent, null, 403);
+        send("GET", lockedQuiz, student, null, 403);
+        assertEquals(1, data(send("POST", quiz, lecturer, definition, 200)).path("version").asInt());
+        JsonNode publicQuiz = data(send("GET", quiz, student, null, 200));
+        assertEquals(70, publicQuiz.path("passPercent").asInt());
+        assertFalse(publicQuiz.path("questions").get(0).has("correctOption"));
+        var failed = Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 0));
+        var passed = Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 1));
+        assertEquals("NEEDS_RETRY", data(send("POST", quiz + "/attempts", student, failed, 200)).path("status").asText());
+        var request = request("POST", quiz + "/attempts", student, passed).build();
+        var firstResponse = http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+        var repeatedResponse = http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+        var firstReply = firstResponse.get(15, TimeUnit.SECONDS);
+        var repeatedReply = repeatedResponse.get(15, TimeUnit.SECONDS);
+        assertEquals(200, firstReply.statusCode());
+        assertEquals(200, repeatedReply.statusCode());
+        JsonNode first = data(firstReply);
+        assertEquals("PASSED", first.path("status").asText());
+        assertEquals(first, data(repeatedReply));
+        assertEquals(first, data(send("POST", quiz + "/attempts", student, passed, 200)));
+        send("POST", quiz + "/attempts", student,
+                Map.of("attemptId", passed.get("attemptId"), "version", 1, "answers", List.of(1, 1)), 409);
+        assertTrue(data(send("GET", quiz, student, null, 200)).path("passed").asBoolean());
+        assertEquals(2, data(send("POST", quiz, lecturer, definition, 200)).path("version").asInt());
+        send("POST", quiz + "/attempts", student,
+                Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 1)), 409);
+        assertFalse(data(send("GET", quiz, student, null, 200)).path("passed").asBoolean());
+    }
+
     private HttpResponse<byte[]> send(String method, String path, String token, Map<String, ?> body,
                                       int expectedStatus) throws IOException, InterruptedException {
-        var response = http.send(request(method, path, token, body), HttpResponse.BodyHandlers.ofByteArray());
+        var response = http.send(request(method, path, token, body).build(), HttpResponse.BodyHandlers.ofByteArray());
         assertEquals(expectedStatus, response.statusCode(), () -> method + " " + path);
         return response;
     }
 
-    private HttpRequest request(String method, String path, String token, Map<String, ?> body) throws IOException {
+    private HttpRequest.Builder request(String method, String path, String token, Map<String, ?> body) throws IOException {
         var request = HttpRequest.newBuilder(URI.create(api + path)).timeout(Duration.ofSeconds(10));
         if (token != null) request.header("Authorization", "Bearer " + token);
         var data = HttpRequest.BodyPublishers.noBody();
@@ -219,7 +407,7 @@ class CourseHttpAcceptanceTest {
             request.header("Content-Type", "application/json");
             data = HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(body));
         }
-        return request.method(method, data).build();
+        return request.method(method, data);
     }
 
     private JsonNode data(HttpResponse<byte[]> response) throws IOException {

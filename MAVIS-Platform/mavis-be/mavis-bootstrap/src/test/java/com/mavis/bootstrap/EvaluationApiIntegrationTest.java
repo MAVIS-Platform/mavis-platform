@@ -241,7 +241,7 @@ class EvaluationApiIntegrationTest extends ApiIntegrationContext {
         assertThat(evalNode.get("data").get("summaryMetrics").get("violationCount").asInt()).isEqualTo(3);
         assertThat(evalNode.get("data").get("summaryMetrics").get("needsReviewCount").asInt()).isEqualTo(2);
         assertThat(evalNode.get("data").get("summaryMetrics").get("passedCount").asInt()).isEqualTo(0);
-        assertThat(evalNode.path("data").path("ruleSetVersion").asText()).isEqualTo("3e-2");
+        assertThat(evalNode.path("data").path("ruleSetVersion").asText()).isEqualTo("3e-3");
 
         System.out.println("\n================================================================================");
         System.out.println(">>> [BƯỚC 2]: GỌI API GET /api/v1/analyzer/models/" + modelVersion.getId() + "/evaluations");

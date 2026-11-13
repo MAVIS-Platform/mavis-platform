@@ -26,6 +26,7 @@ import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.*;
 import com.mavis.common.security.AccessPolicyService;
+import com.mavis.common.security.CourseLabPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,6 +74,11 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
     private final ModelVersionRepository modelVersionRepository;
     private final ModelElementRepository modelElementRepository;
     private final AccessPolicyService accessPolicyService;
+    @Autowired
+    private CourseLabPolicy courseLabPolicy;
+
+    @Autowired
+    private org.springframework.transaction.support.TransactionTemplate runtimeTransactions;
     private final RunnerServiceAuthGuard runnerServiceAuthGuard;
     private final ObjectMapper objectMapper;
     private final com.mavis.common.config.PlatformRuntimeSettings settings;
@@ -587,6 +593,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy dự án với ID: " + request.getProjectId()));
 
         accessPolicyService.requireProjectWriteAccess(project);
+        requireCourseRuntime(project);
 
         SourceSnapshot snapshot = sourceSnapshotRepository.findById(request.getSourceSnapshotId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Không tìm thấy snapshot với ID: " + request.getSourceSnapshotId()));
@@ -949,6 +956,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         }
 
         validateAdministrativeLimits(session);
+        requireCourseRuntime(session.getProject());
         // [CHẶNG 11]: Kiểm tra preflight (Hỗ trợ fallback từ SERVICE_CONTAINER của Model nếu snapshot không chứa file compose vật lý)
         PreflightCheckResponseDTO preflight = runComposePreflight(session.getSourceSnapshot().getId());
         List<String> serviceNames = preflight.getDetectedServices() != null
@@ -1682,6 +1690,18 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
         if (runtimeRunnerDispatcher == null) {
             throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "RuntimeRunnerDispatcher chưa được nạp");
         }
+        runtimeTransactions.executeWithoutResult(status -> {
+            RuntimeSession session = runtimeSessionRepository.findById(sessionId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Runtime session not found"));
+            accessPolicyService.requireProjectWriteAccess(session.getProject());
+            requireCourseRuntime(session.getProject());
+        });
         return runtimeRunnerDispatcher.dispatchSession(sessionId);
+    }
+
+    private void requireCourseRuntime(Project project) {
+        if (project.getWorkspace() != null && project.getWorkspace().isCourseMode()) {
+            courseLabPolicy.requireRuntimeReadiness(project);
+        }
     }
 }

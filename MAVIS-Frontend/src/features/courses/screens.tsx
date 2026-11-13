@@ -30,6 +30,8 @@ import { Badge } from "@/components/ui/badge";
 
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { CourseQuiz, useCourseQuiz } from "./course-quiz";
+import { CurriculumLibrary } from "./curriculum";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -91,6 +93,7 @@ function workspaceHref(workspaceId: string, extra = "") {
 
 export function Courses() {
   const { t } = useLocale();
+  const client = useApi();
   const session = useSession();
   const selection = useSelection();
   const query = useApiQuery("workspaces", {});
@@ -116,6 +119,7 @@ export function Courses() {
       </div>
 
       {isStudent && <CourseEnrollment destination="roadmap" />}
+      {client.mode === "backend" && <CurriculumLibrary />}
 
       <RequestState
         query={query}
@@ -303,6 +307,29 @@ export function LabWorkspace() {
   const roadmap = useCourseRoadmap(workspaceId);
   const isLecturer = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const lab = assignments.data?.find((item) => item.id === assignmentId);
+  const quiz = useCourseQuiz(workspaceId, assignmentId,
+    Boolean(lab && roadmap.data?.guided && session.data?.user?.role === "student"));
+  const runtimeReady = !quiz.isError && quiz.data?.passed === true;
+  const referenceSnapshotId = lab?.referenceSource?.snapshotId;
+  const projects = useApiQuery("projects", {}, { enabled: Boolean(referenceSnapshotId) });
+  const project = referenceSnapshotId ? projects.data?.find((item) =>
+    item.workspaceId === workspaceId && item.assignmentId === assignmentId &&
+    item.projectType === "STUDENT_WORKING" && item.referenceSnapshotId === referenceSnapshotId,
+  ) : undefined;
+  const projectId = project?.id ?? "";
+  const models = useApiQuery("modelVersions", { projectId }, {
+    enabled: client.mode === "backend" && Boolean(projectId),
+  });
+  const jobs = useApiQuery("analysisJobs", { projectId }, {
+    enabled: client.mode === "backend" && Boolean(projectId), poll: true,
+  });
+  const completeModelIds = new Set(jobs.data?.filter((job) =>
+    job.status === "completed" && job.analysisState !== "PARTIAL",
+  ).map((job) => job.modelId));
+  const model = models.data?.filter((item) => item.origin === "GENERATED" &&
+    (item.latest || completeModelIds.has(item.id)),
+  ).sort((left, right) => right.revision - left.revision)[0];
+  const modelQuery = project && model ? new URLSearchParams({ project: project.id, model: model.id }).toString() : null;
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -312,13 +339,13 @@ export function LabWorkspace() {
     () => [
       {
         label: t("Static architecture", "Kiến trúc tĩnh"),
-        state: lab?.referenceSource ? "READY" : "MISSING",
+        state: model ? "READY" : referenceSnapshotId ? "IN PROGRESS" : "MISSING",
       },
-      { label: t("Theory and quiz", "Lý thuyết và quiz"), state: "IN PROGRESS" },
-      { label: t("Runtime observation", "Quan sát runtime"), state: "LOCKED" },
+      { label: t("Theory and quiz", "Lý thuyết và quiz"), state: runtimeReady ? "PASSED" : "IN PROGRESS" },
+      { label: t("Runtime observation", "Quan sát runtime"), state: runtimeReady ? "READY" : "LOCKED" },
       { label: t("Studio receipt", "Biên nhận Studio"), state: "LOCKED" },
     ],
-    [lab?.referenceSource, t],
+    [model, referenceSnapshotId, runtimeReady, t],
   );
 
   if (!workspaceId)
@@ -400,7 +427,7 @@ export function LabWorkspace() {
             {learningSteps.map((step) => {
               const Icon = step.icon;
               const current = step.id === activeStep;
-              const available = step.id <= 2;
+              const available = step.id <= 2 || (step.id === 3 && runtimeReady);
               return (
                 <Link
                   key={step.id}
@@ -436,7 +463,16 @@ export function LabWorkspace() {
 
           <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <main className="min-w-0 space-y-5">
-              <StepContent step={activeStep} workspaceId={workspaceId} labId={lab.id} />
+              <StepContent
+                runtimeReady={runtimeReady}
+                showQuiz={roadmap.data?.guided === true}
+                canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
+                step={activeStep}
+                workspaceId={workspaceId}
+                labId={lab.id}
+                projectId={projectId}
+                modelQuery={modelQuery}
+              />
             </main>
             <aside className="space-y-5">
               <DetailPanel
@@ -465,7 +501,9 @@ export function LabWorkspace() {
                       >
                         {isLecturer
                           ? t("Manage Lab assignment", "Quản lý bài tập Lab")
-                          : t("Open assignment & submit", "Mở bài tập và nộp bài")}
+                          : runtimeReady
+                            ? t("Open assignment & submit", "Mở bài tập và nộp bài")
+                            : t("Open Lab assignment", "Mở bài tập Lab")}
                       </Link>
                     </Button>
                     <Button asChild variant="outline">
@@ -512,17 +550,15 @@ export function LabWorkspace() {
                         {item.label}
                       </span>
                       <Badge variant={item.state === "READY" ? "success" : "outline"}>
-                        {item.state}
+                        {item.state === "READY" ? t("Ready", "Sẵn sàng")
+                          : item.state === "PASSED" ? t("Passed", "Đã đạt")
+                          : item.state === "LOCKED" ? t("Locked", "Đang khóa")
+                          : item.state === "MISSING" ? t("Missing", "Còn thiếu")
+                          : t("In progress", "Chưa hoàn thành")}
                       </Badge>
                     </div>
                   ))}
                 </div>
-                <p className="text-xs leading-5 text-muted-foreground">
-                  {t(
-                    "Final completion state must come from the readiness API. This screen does not infer completion from navigation alone.",
-                    "Trạng thái hoàn thành cuối cùng phải do Readiness API cung cấp. Màn hình không tự suy đoán hoàn thành chỉ từ thao tác điều hướng.",
-                  )}
-                </p>
               </DetailPanel>
               <DetailPanel title={t("Pinned learning context", "Ngữ cảnh học tập đã ghim")}>
                 <dl className="space-y-3 text-xs">
@@ -558,15 +594,29 @@ function StepContent({
   step,
   workspaceId,
   labId,
+  projectId,
+  modelQuery,
+  canAttemptQuiz,
+  showQuiz,
+  runtimeReady,
 }: {
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
   labId: string;
+  projectId: string;
+  modelQuery: string | null;
+  canAttemptQuiz: boolean;
+  showQuiz: boolean;
+  runtimeReady: boolean;
 }) {
   const { t } = useLocale();
+  const sourceLink = projectId
+    ? `/snapshots?${new URLSearchParams({ project: projectId })}`
+    : `/assignments?${new URLSearchParams({ workspace: workspaceId, assignment: labId })}`;
   const current = learningSteps.find((item) => item.id === step)!;
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
+  const nextAvailable = next === 2 || (next === 3 && runtimeReady);
   return (
     <>
       <div className="rounded-2xl border bg-card p-6">
@@ -590,23 +640,31 @@ function StepContent({
         <div className="grid gap-5 md:grid-cols-2">
           <DetailPanel title={t("Reference architecture", "Kiến trúc tham chiếu")}>
             <p className="text-sm leading-6 text-muted-foreground">
-              Open the pinned architecture model to inspect C1-C3 views and the service dependency
-              graph.
+              {t("Inspect the C1–C3 diagrams and dependency graph from the pinned Lab source.",
+                "Xem sơ đồ C1–C3 và đồ thị phụ thuộc từ mã nguồn đã ghim của Lab.")}
             </p>
             <Button asChild>
-              <Link href="/architecture">
-                {t("Open Static View", "Mở kiến trúc tĩnh")} <ArrowRight />
+              <Link href={modelQuery ? `/architecture?${modelQuery}` : sourceLink}>
+                {modelQuery ? t("Open dependency graph", "Mở đồ thị phụ thuộc") :
+                  projectId ? t("Analyze Lab source", "Phân tích nguồn Lab") : t("Open Lab assignment", "Mở bài tập Lab")} <ArrowRight />
               </Link>
             </Button>
           </DetailPanel>
+          {modelQuery && <DetailPanel title={t("C1–C3 diagrams", "Sơ đồ C1–C3")}>
+            <Button asChild variant="outline">
+              <Link href={`/diagrams?${modelQuery}&kind=CONTEXT`}>
+                {t("Open read-only diagrams", "Mở sơ đồ chỉ đọc")}
+              </Link>
+            </Button>
+          </DetailPanel>}
           <DetailPanel title={t("Evidence and AI review", "Bằng chứng và đánh giá AI")}>
             <p className="text-sm leading-6 text-muted-foreground">
-              Select a node or relationship to review file-line evidence, 3E findings and grounded
-              explanations.
+              {t("Select a node or relationship to review source evidence and 3E findings.",
+                "Chọn nút hoặc mối quan hệ để xem bằng chứng mã nguồn và kết quả đánh giá 3E.")}
             </p>
-            <Button asChild variant="outline">
-              <Link href="/explain">{t("Open evidence review", "Mở đánh giá bằng chứng")}</Link>
-            </Button>
+            {modelQuery && <Button asChild variant="outline">
+              <Link href={`/explain?${modelQuery}`}>{t("Open evidence review", "Mở đánh giá bằng chứng")}</Link>
+            </Button>}
           </DetailPanel>
         </div>
       )}
@@ -616,28 +674,27 @@ function StepContent({
           <DetailPanel title={t("Chapter lesson", "Bài học lý thuyết")}>
             <div className="space-y-4 text-sm leading-6 text-muted-foreground">
               <p>
-                Study the published theory for this Lab before attempting the versioned knowledge
-                check.
+                {t("Study the published lesson before taking the Quiz.", "Đọc bài học đã công bố trước khi làm Quiz.")}
               </p>
               <p>
-                Use the Static View to connect architectural concepts to the pinned source and
-                inspect reverse dependency impact.
+                {t("Use the pinned analysis to see which services depend on the element you change.",
+                  "Dùng kết quả phân tích đã ghim để xem những service phụ thuộc vào phần tử bạn thay đổi.")}
               </p>
             </div>
             <Button asChild variant="outline">
-              <Link href="/impact">{t("Inspect static impact", "Xem tác động tĩnh")}</Link>
+              <Link href={modelQuery ? `/impact?${modelQuery}` : sourceLink}>
+                {modelQuery ? t("Inspect static impact", "Xem tác động tĩnh") : t("Open Lab source", "Mở nguồn của Lab")}
+              </Link>
             </Button>
           </DetailPanel>
-          <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
+          {showQuiz ? <CourseQuiz workspaceId={workspaceId} labId={labId} canSubmit={canAttemptQuiz} /> : <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
             <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
               <CircleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
               <p className="text-sm leading-6 text-muted-foreground">
-                Quiz attempt state is awaiting the versioned Quiz API. Runtime remains locked until
-                the server returns PASSED.
+                {t("Quiz attempts are available to enrolled students in published guided Labs.", "Sinh viên đã ghi danh có thể làm Quiz trong Lab tuần tự đã công bố.")}
               </p>
             </div>
-            <Button disabled>{t("Start quiz", "Bắt đầu quiz")}</Button>
-          </DetailPanel>
+          </DetailPanel>}
         </div>
       )}
 
@@ -651,10 +708,14 @@ function StepContent({
         >
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-            <p className="text-sm leading-6 text-muted-foreground">
-              This step is locked until the server confirms the prerequisite state for this learner,
-              class and Lab revision.
-            </p>
+            {step === 3 && runtimeReady ? (
+              <Button asChild><Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink}>
+                {projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
+              </Link></Button>
+            ) : <p className="text-sm leading-6 text-muted-foreground">
+              {step === 3 ? t("Pass the current Lab Quiz to open Runtime.", "Hãy đạt Quiz hiện tại của Lab để mở Runtime.")
+                : t("Studio requires Runtime evidence.", "Studio cần bằng chứng Runtime.")}
+            </p>}
           </div>
         </DetailPanel>
       )}
@@ -678,8 +739,8 @@ function StepContent({
             "Tiến độ được lưu bởi dịch vụ tương ứng.",
           )}
         </span>
-        <Button asChild={Boolean(next && next <= 2)} disabled={!next || next > 2}>
-          {next && next <= 2 ? (
+        <Button asChild={nextAvailable} disabled={!nextAvailable}>
+          {nextAvailable ? (
             <Link
               href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${next}`}
             >

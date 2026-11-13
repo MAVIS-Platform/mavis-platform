@@ -1,5 +1,7 @@
 package com.mavis.platform.submission.service.impl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.mavis.common.entity.*;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
@@ -36,6 +38,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     private final JobRepository jobRepository;
     private final SubmissionReviewRepository submissionReviewRepository;
     private final com.mavis.common.security.AccessPolicyService accessPolicyService;
+    private final ObjectMapper json;
 
     @Override
     @Transactional(readOnly = true)
@@ -99,6 +102,27 @@ public class SubmissionServiceImpl implements SubmissionService {
         SourceSnapshot sourceSnapshot = modelVersion.getSourceSnapshot();
         if (sourceSnapshot == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "ModelVersion không gắn với SourceSnapshot bất biến hợp lệ");
+        }
+        JsonNode courseQuizEvidence = null;
+        if (assignment.getWorkspace() != null && assignment.getWorkspace().isCourseMode()
+                && com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {
+            var lockedLab = assignmentRepository.findLockedById(assignment.getId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Lab not found"));
+            var pass = courseLabs.currentQuizPass(lockedLab, currentUserId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.FORBIDDEN, "Pass the current Lab Quiz before submitting"));
+            var referenceModel = lockedLab.getReferenceModel();
+            var referenceSnapshot = referenceModel.getSourceSnapshot();
+            if (referenceSnapshot == null || !referenceSnapshot.getId().equals(project.getReferenceSnapshotId())
+                    || !Objects.equals(referenceSnapshot.getArtifactHash(), sourceSnapshot.getArtifactHash())) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Submission source does not match the current Lab reference");
+            }
+            courseQuizEvidence = json.createObjectNode().put("status", "PASSED")
+                    .put("attemptId", pass.attemptId().toString()).put("quizVersion", pass.quizVersion())
+                    .put("correctCount", pass.correctCount()).put("questionCount", pass.questionCount())
+                    .put("passPercent", pass.passPercent()).put("submittedAt", pass.submittedAt().toString())
+                    .put("referenceModelId", referenceModel.getId().toString())
+                    .put("referenceSnapshotId", referenceSnapshot.getId().toString())
+                    .put("artifactHash", referenceSnapshot.getArtifactHash()).put("commitSha", referenceSnapshot.getCommitSha());
         }
 
         // 5. Kiểm tra tính toàn vẹn của ModelVersion (không cho phép nộp bản nháp PARTIAL chưa được xác nhận)
@@ -181,6 +205,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .diagramVersion(diagramVersion)
                 .evaluationRun(evaluationRun)
                 .runtimeSession(runtimeSession)
+                .courseQuizEvidence(courseQuizEvidence)
                 .submissionNotes(request.getSubmissionNotes())
                 .build();
 
@@ -294,6 +319,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .reviewerName(releasedReview.map(r -> r.getLecturer().getFullName()).orElse(null))
                 .reviewedAt(releasedReview.map(SubmissionReview::getUpdatedAt).orElse(null))
                 .runtimeSessionId(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getId() : null)
+                .courseQuizEvidence(submission.getCourseQuizEvidence())
                 .scenarioStatus(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getScenarioStatus() : null)
                 .lecturerFeedbacks(feedbacks)
                 .markdownSummaryReport(markdownReport)

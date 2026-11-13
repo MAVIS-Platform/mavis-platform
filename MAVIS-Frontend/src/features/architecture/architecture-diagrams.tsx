@@ -5,12 +5,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 import { SelectField } from "@/components/shared/forms";
-import { DrawioEditor } from "./drawio-editor";
+import { DrawioEditor, MxGraphNativeSvgPreview } from "./drawio-editor";
 import { ScenarioDiagram } from "./scenario-diagram";
 import { UmlDiagramWorkspace } from "./uml-diagram-workspace";
 import { SearchableThreeESelect } from "./three-e-searchable-select";
 import type { UmlDiagramKind } from "./uml-diagrams";
-import { diagramKinds, resolveDiagramKind, selectDiagram, type DiagramKind } from "./diagram-catalog";
+import { diagramKinds, guidedDiagramOptions, resolveDiagramKind, resolveGuidedDiagramKind, selectDiagram, type DiagramKind } from "./diagram-catalog";
 import {
   applyC4AiEnrichmentToDocument,
   buildC4CompactContext,
@@ -54,6 +54,7 @@ export function ArchitectureDiagrams({
   onSelect,
   onSelectSequence,
   systemName,
+  guidedStatic = false,
 }: {
   model: ArchitecturalModel;
   selectedId: string | null;
@@ -61,11 +62,13 @@ export function ArchitectureDiagrams({
   onSelectSequence?:
     ((id: string | null, seqCtx: SequenceSelectionContext | null) => void) | undefined;
   systemName?: string | undefined;
+  guidedStatic?: boolean;
 }) {
-  const { locale } = useLocale();
+  const { locale, t } = useLocale();
   const searchParams = useSearchParams();
   const requestedKindParam = searchParams.get("kind");
-  const initialKind = resolveDiagramKind(requestedKindParam);
+  const resolveKind = guidedStatic ? resolveGuidedDiagramKind : resolveDiagramKind;
+  const initialKind = resolveKind(requestedKindParam);
   const [kind, setKind] = useState<DiagramKind>(initialKind),
     [service, setService] = useState(""),
     [theme, setTheme] = useState<DrawioTheme>("clean"),
@@ -96,8 +99,8 @@ export function ArchitectureDiagrams({
     "UML_STATE",
   ].includes(kind);
   useEffect(() => {
-    setKind(resolveDiagramKind(requestedKindParam));
-  }, [requestedKindParam]);
+    setKind(resolveKind(requestedKindParam));
+  }, [requestedKindParam, resolveKind]);
 
   const isC4EnrichableKind =
     kind === "CONTAINER" || kind === "COMPONENT";
@@ -201,6 +204,7 @@ export function ArchitectureDiagrams({
     {
       enabled:
         api.mode === "backend" &&
+        !guidedStatic &&
         !!document &&
         !isUmlWorkspaceKind &&
         kind !== "SCENARIOS" &&
@@ -252,10 +256,10 @@ export function ArchitectureDiagrams({
       <div data-tour="diagram-type-bar" className="flex flex-wrap items-end gap-3 rounded-xl border bg-card p-3">
         <div className="w-full sm:w-64">
           <SelectField
-            label="Diagram type"
+            label={t("Diagram type", "Loại sơ đồ")}
             value={kind}
             onChange={(value) => change(value as DiagramKind)}
-            options={diagramOptions}
+            options={guidedStatic ? guidedDiagramOptions : diagramOptions}
           />
         </div>
         {showServiceSelect && (
@@ -293,7 +297,10 @@ export function ArchitectureDiagrams({
           role="status"
           className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground"
         >
-          {selection.notice}
+          {guidedStatic && kind === "CONTEXT"
+            ? t("This view shows the system boundary and external relationships established by this revision.",
+                "Sơ đồ hiển thị ranh giới hệ thống và các liên kết bên ngoài đã xác định trong phiên bản này.")
+            : selection.notice}
         </p>
       )}
       <div data-tour="diagram-canvas">
@@ -383,7 +390,7 @@ export function ArchitectureDiagrams({
             </div>
           )}
 
-          <DrawioEditor
+          {guidedStatic ? <MxGraphNativeSvgPreview xml={xml} /> : <DrawioEditor
             key={`${model.id}:${key}`}
             modelId={model.id}
             diagramId={key}
@@ -413,7 +420,7 @@ export function ArchitectureDiagrams({
                 result,
               );
             }}
-          />
+          />}
         </div>
       )}
       </div>

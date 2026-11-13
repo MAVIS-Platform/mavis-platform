@@ -84,8 +84,10 @@ public class WorkerModelPublisher {
             var saved=graph.buildAndSaveElements(version,services,source);
             graph.buildRelationshipsAndEvidences(job.getSourceSnapshot(),version,saved,javaFindings);
         }
-        if(complete)importer.importResult(version,outcome.result());
-        var mapping=linker.link(version,source,complete?outcome.result():null,javaFindings);
+        var callSites = complete ? WorkerCallSiteEvidence.extract(java.nio.file.Path.of(source).toAbsolutePath().normalize(), outcome.result())
+                : java.util.Map.<String, String>of();
+        if(complete)importer.importResult(version,outcome.result(),callSites);
+        var mapping=linker.link(version,source,complete?outcome.result():null,javaFindings,callSites);
         manifest.set("serviceMapping",json.valueToTree(mapping));
         diagrams.generateDefaultDiagramsForModel(version,elements.findByModelVersionId(version.getId()),relationships.findByModelVersionId(version.getId()));
         // Missing C# in mixed input may retain a partial draft, never replace the latest complete model.

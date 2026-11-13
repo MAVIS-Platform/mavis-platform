@@ -40,7 +40,7 @@ function validXml(xml: string) {
  * Built-in Native SVG Renderer for <mxGraphModel> XML so the user can always view
  * the diagram immediately even if both Docker Draw.io (port 8090) and external network are unavailable.
  */
-function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
+export function MxGraphNativeSvgPreview({ xml }: { xml: string }) {
   const parsed = useMemo(() => {
     if (!xml) return null;
     try {
