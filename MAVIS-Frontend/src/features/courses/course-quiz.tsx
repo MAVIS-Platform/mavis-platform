@@ -42,7 +42,7 @@ export function CourseQuiz({ workspaceId, labId, canSubmit }: { workspaceId: str
           <Button variant="outline" onClick={() => void quiz.refetch()}>{t("Retry", "Thử lại")}</Button>
         </div>
       )}
-      {quiz.data && <AttemptForm key={`${path}:${quiz.data.version}`} quiz={quiz.data} path={path}
+      {!quiz.isError && quiz.data && <AttemptForm key={`${path}:${quiz.data.version}`} quiz={quiz.data} path={path}
         reload={() => void quiz.refetch()} canSubmit={canSubmit}
         refreshReadiness={() => void cache.invalidateQueries({ queryKey: ["api", "course-quiz", workspaceId, labId] })} />}
     </DetailPanel>
@@ -76,8 +76,13 @@ function AttemptForm({ quiz, path, reload, canSubmit, refreshReadiness }: {
         ))}
       </div>
       <p className="text-sm text-muted-foreground">{t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}%</p>
-      {!canSubmit ? <p>{t("Preview for instructors", "Bản xem trước cho giảng viên")}</p> : quiz.passed || submit.data?.status === "PASSED" ? (
+      {!canSubmit ? <p>{t("Preview for instructors", "Bản xem trước cho giảng viên")}</p> : quiz.passed ? (
         <p role="status">{t("Quiz passed", "Đã đạt Quiz")}</p>
+      ) : submit.data?.status === "PASSED" ? (
+        <div className="space-y-2">
+          <p role="status">{t("Verifying your result…", "Đang xác nhận kết quả…")}</p>
+          <Button variant="outline" onClick={reload}>{t("Refresh result", "Tải lại kết quả")}</Button>
+        </div>
       ) : (
         <form className="space-y-4" onSubmit={(event) => {
           event.preventDefault();
@@ -117,7 +122,10 @@ function AttemptForm({ quiz, path, reload, canSubmit, refreshReadiness }: {
           {submit.isError && (
             <div role="alert">
               {submit.error instanceof ApiError && submit.error.status === 409
-                ? <Button type="button" variant="outline" onClick={reload}>{t("Reload Quiz", "Tải lại Quiz")}</Button>
+                ? <div className="space-y-2">
+                    <p>{t("The Quiz changed. Reload to get the current version.", "Quiz đã thay đổi. Hãy tải lại phiên bản hiện tại.")}</p>
+                    <Button type="button" variant="outline" onClick={reload}>{t("Reload Quiz", "Tải lại Quiz")}</Button>
+                  </div>
                 : <p>{t("Could not submit. Try again.", "Chưa nộp được. Vui lòng thử lại.")}</p>}
             </div>
           )}
