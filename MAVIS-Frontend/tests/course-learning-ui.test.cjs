@@ -254,3 +254,67 @@ test("Studio in the guided Lab requires observed traces on the current model", (
   assert.match(course, /const studioReady = runtimeReady && Boolean\(observedRuntime\)/);
   assert.match(course, /\(step\.id === 4 && studioReady\)/);
 });
+
+test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-15 EN/VI runtime/studio translations", async () => {
+  const composer = read("src/features/submissions/composer.tsx");
+  const grading = read("src/features/submissions/grading.tsx");
+  const frozen = read("src/features/submissions/frozen-artifacts.tsx");
+  const runtimeScreens = read("src/features/runtime/screens.tsx");
+  const dict = read("src/lib/i18n/locale-context.tsx");
+
+  assert.ok(composer.includes("Captured Snapshots & Written Theoretical Explanations"));
+  assert.ok(composer.includes("Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning"));
+  assert.ok(composer.includes("Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis"));
+  assert.ok(composer.includes("(guided && !hasWrittenExplanation)"));
+
+  assert.ok(grading.includes("const SNAPSHOT_PASS_EXCLUSIVE = 5.0"));
+  assert.ok(grading.includes("Per-snapshot grading results (> 5.0 / 10 required)"));
+  assert.ok(frozen.includes("Submitted Snapshots &amp; Theoretical Explanations"));
+  assert.ok(runtimeScreens.includes('t("Step 2: Test Scenarios")'));
+
+  for (const key of [
+    "Studio results (Before vs. After)",
+    "Step 2: Test Scenarios",
+    "Step 3: Run & Trace",
+    "Captured Snapshots & Written Theoretical Explanations",
+    "Every required snapshot must score > 5.0 / 10 (5.1 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
+  ]) {
+    assert.ok(dict.includes(key), `Missing Vietnamese dictionary entry for: ${key}`);
+  }
+
+  const { MockAdapter } = require("../src/lib/api/mock-adapter.ts");
+  const adapter = new MockAdapter("normal", 0);
+  await adapter.execute("mockLogin", { role: "student" });
+  const subs = await adapter.execute("submissions", {});
+  const targetSub = subs[0];
+  assert.ok(targetSub, "Expected mock student submission");
+
+  await adapter.execute("mockLogin", { role: "lecturer" });
+  const failReview = await adapter.execute("gradeSubmission", {
+    submissionId: targetSub.id,
+    expectedRevision: 0,
+    status: "GRADED",
+    score: null,
+    summary: "One snapshot at exact 5.0 threshold.",
+    snapshotGrades: [
+      { snapshotId: "STEP_1_STATIC", title: "Static C1-C3", score: 8.5, comment: "Solid" },
+      { snapshotId: "STEP_4_RUNTIME", title: "Runtime Studio", score: 5.0, comment: "Missing trace link" },
+    ],
+  });
+  assert.equal(failReview.labOutcome, "NEEDS_REVISION");
+  assert.equal(failReview.score, 67.5);
+
+  const passReview = await adapter.execute("gradeSubmission", {
+    submissionId: targetSub.id,
+    expectedRevision: 1,
+    status: "GRADED",
+    score: null,
+    summary: "Both snapshots exceed > 5.0/10.",
+    snapshotGrades: [
+      { snapshotId: "STEP_1_STATIC", title: "Static C1-C3", score: 5.1, comment: "Pass" },
+      { snapshotId: "STEP_4_RUNTIME", title: "Runtime Studio", score: 6.9, comment: "Verified" },
+    ],
+  });
+  assert.equal(passReview.labOutcome, "PASSED");
+  assert.equal(passReview.score, 60);
+});

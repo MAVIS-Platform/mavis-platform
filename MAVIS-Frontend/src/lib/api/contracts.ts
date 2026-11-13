@@ -278,6 +278,8 @@ export const contracts = {
       lecturerId: z.string().nullable(),
       lecturerName: z.string().nullable(),
       updatedAt: z.string().nullable(),
+      snapshotGrades: z.array(d.snapshotGradeSchema).optional(),
+      labOutcome: z.enum(["PENDING", "PASSED", "NEEDS_REVISION"]).optional(),
     }),
   ),
   gradeSubmission: contract(
@@ -287,6 +289,7 @@ export const contracts = {
       status: z.enum(["DRAFT", "RETURNED", "GRADED"]),
       score: z.number().min(0).max(100).nullable(),
       summary: z.string().max(10000),
+      snapshotGrades: z.array(d.snapshotGradeSchema).optional(),
     }),
     z.object({
       submissionId: id,
@@ -297,6 +300,8 @@ export const contracts = {
       lecturerId: z.string().nullable(),
       lecturerName: z.string().nullable(),
       updatedAt: z.string().nullable(),
+      snapshotGrades: z.array(d.snapshotGradeSchema).optional(),
+      labOutcome: z.enum(["PENDING", "PASSED", "NEEDS_REVISION"]).optional(),
     }),
     true,
   ),
@@ -700,6 +705,7 @@ export const contracts = {
       evaluationRunId: id.nullable().optional(),
       runtimeSessionId: id.nullable(),
       submissionNotes: z.string().max(5000).optional(),
+      studentSnapshots: z.array(d.studentSnapshotSchema).optional(),
     }),
     d.submissionSchema,
     true,
