@@ -49,7 +49,7 @@ export function literalSourceContext(context: ThreeEAiPromptContext): ThreeEAiPr
       (item) =>
         !/preview|model_metadata/i.test(item.sourceType) &&
         !item.id.startsWith("ast-") &&
-        /.+:[1-9]\d*$/.test(item.locator) &&
+        /.+:[1-9]\d*(?::[1-9]\d*-[1-9]\d*:(?:[1-9]\d*|\*))?$/.test(item.locator) &&
         !!item.snippet.trim(),
     ).map(({ id, locator, sourceType, snippet }) => ({
       id: redactEvidenceText(id),

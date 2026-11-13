@@ -21,7 +21,7 @@ public class WorkerCanonicalImporter {
     private final ObjectMapper json;
 
     @Transactional(propagation = Propagation.MANDATORY)
-    public void importResult(ModelVersion version, WorkerContract.Result result) {
+    public void importResult(ModelVersion version, WorkerContract.Result result, Map<String, String> callSites) {
         var byId=new LinkedHashMap<String,ModelElement>();
         for(var element:result.canonical().elements()) {
             ObjectNode properties=json.valueToTree(element.properties()==null?Map.of():element.properties());
@@ -105,14 +105,20 @@ public class WorkerCanonicalImporter {
         relationships.saveAll(relById.values());relationships.flush();
         var evById=new HashMap<String,WorkerContract.Evidence>();result.canonical().evidence().forEach(e->evById.put(e.id(),e));
         var batch=new ArrayList<Evidence>();
-        for(var element:result.canonical().elements()) for(String id:element.evidenceIds()) batch.add(entity(evById.get(id),version,byId.get(element.id()),null));
-        for(var relation:result.canonical().relationships()) for(String id:relation.evidenceIds()) batch.add(entity(evById.get(id),version,null,relById.get(relation.id())));
+        for(var element:result.canonical().elements()) for(String id:element.evidenceIds()) batch.add(entity(evById.get(id),version,byId.get(element.id()),null,null));
+        for(var relation:result.canonical().relationships()) for(String id:relation.evidenceIds()) {
+            String excerpt = "SERVICE_HTTP_CALL".equals(relation.type()) ? callSites.get(id) : null;
+            batch.add(entity(evById.get(id),version,null,relById.get(relation.id()),excerpt));
+        }
         // One DB row per target association; shared source evidence ID/hash stays in provenance.
         evidence.saveAll(batch);evidence.flush();
     }
-    private Evidence entity(WorkerContract.Evidence source,ModelVersion version,ModelElement element,ModelRelationship relationship) {
+    private Evidence entity(WorkerContract.Evidence source,ModelVersion version,ModelElement element,ModelRelationship relationship,String excerpt) {
         if(source==null)throw new IllegalArgumentException("Orphan Worker evidence");
+        ObjectNode provenance = json.valueToTree(source);
+        if (excerpt != null) provenance.put("communicationRole", "CALL_SITE");
         return Evidence.builder().modelVersion(version).sourceSnapshot(version.getSourceSnapshot()).element(element).relationship(relationship)
-                .locator(source.locator()).adapterVersion(source.adapterVersion()).sourceType("CONFIG".equals(source.origin())?"CONFIG_FILE":"STATIC_CODE").provenance(json.valueToTree(source)).build();
+                .locator(source.locator()).adapterVersion(source.adapterVersion()).sourceType("CONFIG".equals(source.origin())?"CONFIG_FILE":"STATIC_CODE")
+                .excerpt(excerpt).provenance(provenance).build();
     }
 }

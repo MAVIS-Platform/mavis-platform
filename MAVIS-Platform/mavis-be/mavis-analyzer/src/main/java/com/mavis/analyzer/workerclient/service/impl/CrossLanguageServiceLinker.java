@@ -20,7 +20,8 @@ public class CrossLanguageServiceLinker {
     public record Report(int linked,int unresolved,int ambiguous,String bindingHash) {}
 
     @Transactional(propagation=Propagation.MANDATORY)
-    public Report link(ModelVersion version,String source,WorkerContract.Result worker,List<CodeEvidenceDTO> javaFindings)throws java.io.IOException {
+    public Report link(ModelVersion version,String source,WorkerContract.Result worker,List<CodeEvidenceDTO> javaFindings,
+                       Map<String, String> callSites)throws java.io.IOException {
         var bindings=ServiceBindingIndex.load(Path.of(source));
         var all=elements.findByModelVersionId(version.getId());
         var services=new HashMap<String,List<ModelElement>>();
@@ -60,7 +61,15 @@ public class CrossLanguageServiceLinker {
             saved.add(relation);linked++;
             evs.add(Evidence.builder().modelVersion(version).sourceSnapshot(version.getSourceSnapshot()).relationship(relation).locator("mavis.bindings.json:1").sourceType("CONFIG_FILE").adapterVersion("service-bindings/1")
                     .provenance(json.createObjectNode().put("fileHash",bindings.hash()).put("sourceReference",p.id)).build());
-            for(var e:p.workerEvidence)evs.add(Evidence.builder().modelVersion(version).sourceSnapshot(version.getSourceSnapshot()).relationship(relation).locator(e.locator()).adapterVersion(e.adapterVersion()).sourceType(e.origin().equals("CONFIG")?"CONFIG_FILE":"STATIC_CODE").provenance(json.valueToTree(e)).build());
+            for(var e:p.workerEvidence) {
+                var excerpt = callSites.get(e.id());
+                com.fasterxml.jackson.databind.node.ObjectNode provenance = json.valueToTree(e);
+                if (excerpt != null) provenance.put("communicationRole", "CALL_SITE");
+                evs.add(Evidence.builder().modelVersion(version).sourceSnapshot(version.getSourceSnapshot())
+                        .relationship(relation).locator(e.locator()).adapterVersion(e.adapterVersion())
+                        .sourceType(e.origin().equals("CONFIG") ? "CONFIG_FILE" : "STATIC_CODE")
+                        .excerpt(excerpt).provenance(provenance).build());
+            }
             for(var e:p.javaEvidence)evs.add(Evidence.builder().modelVersion(version).sourceSnapshot(version.getSourceSnapshot()).relationship(relation).locator(root.relativize(Path.of(e.getFilePath()).toAbsolutePath().normalize()).toString().replace('\\','/')+":"+e.getLineNumber()).adapterVersion("JAVAPARSER_3.25").sourceType("STATIC_CODE").build());
         }
         elements.saveAll(ownedModules);relationships.saveAll(saved);if(!saved.isEmpty())relationships.flush();evidence.saveAll(evs);return new Report(linked,unresolved,ambiguous,bindings.hash());
