@@ -1448,7 +1448,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     const apps = rawProfile["applications"];
     return apps && typeof apps === "object" && !Array.isArray(apps) ? Object.keys(apps) : [];
   }, [rawProfile]);
-  const selectedStudioService = studioService || runtimeApplicationServices[0] || "";
+  const selectedStudioService = runtimeApplicationServices.includes(studioService)
+    ? studioService : runtimeApplicationServices[0] || "";
+  const studioBusy = quickRunRunning || active.has(upperExecStatus);
   const detectedEndpoints = useMemo(
     () =>
       Array.isArray(rawProfile["detectedEndpoints"])
@@ -2167,33 +2169,45 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               )}
             </div>
             <div className="flex flex-wrap items-end gap-2 shrink-0">
-              <SelectField
-                label="MAVIS Studio action"
-                value={studioAction}
-                onChange={(value) => setStudioAction(value as "OBSERVE" | "STOP" | "START" | "SCALE")}
-                options={[
-                  { value: "OBSERVE", label: "Observe only" },
-                  { value: "SCALE", label: "Scale replicas" },
-                  { value: "STOP", label: "Stop service" },
-                  { value: "START", label: "Start service" },
-                ]}
-              />
+              <fieldset disabled={studioBusy} className="flex flex-wrap gap-1">
+                <legend className="mb-1 text-xs font-medium">{t("MAVIS Studio action")}</legend>
+                {([
+                  ["OBSERVE", "Observe only"],
+                  ["STOP", "Stop service"],
+                  ["START", "Start service"],
+                  ["SCALE", "Scale replicas"],
+                ] as const).map(([value, label]) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={studioAction === value ? "default" : "outline"}
+                    aria-pressed={studioAction === value}
+                    onClick={() => setStudioAction(value)}
+                  >
+                    {t(label)}
+                  </Button>
+                ))}
+              </fieldset>
               {studioAction !== "OBSERVE" && <SelectField
-                label="Target service"
+                label={t("Target service")}
+                disabled={studioBusy}
                 value={selectedStudioService}
                 onChange={setStudioService}
                 options={runtimeApplicationServices.map((service) => ({ value: service, label: service }))}
               />}
               {studioAction === "SCALE" && (
                 <label className="text-xs">
-                  Replicas (1–8)
+                  {t("Replicas (1–8)")}
                   <Input
                     className="mt-1 h-9 w-20"
                     type="number"
                     min={1}
                     max={8}
+                    step={1}
+                    disabled={studioBusy}
                     value={studioReplicas}
-                    onChange={(event) => setStudioReplicas(Math.max(1, Math.min(8, Number(event.target.value) || 1)))}
+                    onChange={(event) => setStudioReplicas(Math.max(1, Math.min(8, Math.trunc(Number(event.target.value)) || 1)))}
                   />
                 </label>
               )}
@@ -2702,9 +2716,10 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
             {Boolean(session.data?.infrastructureActions?.length) && (
               <div className="space-y-2 rounded-lg border p-3 text-sm">
                 <h3 className="font-medium">Studio results</h3>
-                {session.data?.infrastructureActions?.filter((action) => action.confirmed).map((action, index) => (
+                {session.data?.infrastructureActions?.map((action, index) => (
                   <div className="space-y-1" key={index}>
                     <p className="font-medium">{action.action} {action.service}</p>
+                    {!action.confirmed && <p role="status" className="text-destructive">{t("Action not confirmed")}</p>}
                     <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4">
                       <dt>Running replicas</dt><dd>{action.replicasBefore} → {action.replicasAfter}</dd>
                       <dt>Requests measured</dt><dd>{studioMetric(action.metricsBefore["requestCount"])} → {studioMetric(action.metricsAfter["requestCount"])}</dd>
