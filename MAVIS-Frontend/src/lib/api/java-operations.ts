@@ -498,6 +498,7 @@ export async function executeJava(
         failureReason: z.string().nullish(),
         diagnostics: z.array(z.string()).nullish(),
         capturedSpanCount: z.number().nullish(),
+        studioVerified: z.boolean().optional(),
         stepResults: z
           .array(
             z.object({
@@ -542,6 +543,7 @@ export async function executeJava(
         : {}),
       ...(value.failureReason !== undefined ? { failureReason: value.failureReason ?? null } : {}),
       ...(value.diagnostics !== undefined ? { diagnostics: value.diagnostics ?? [] } : {}),
+      ...(value.studioVerified !== undefined ? { studioVerified: value.studioVerified } : {}),
       ...(value.capturedSpanCount !== undefined
         ? { capturedSpanCount: value.capturedSpanCount ?? null }
         : {}),
