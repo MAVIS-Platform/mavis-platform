@@ -30,7 +30,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
-import { CourseQuiz } from "./course-quiz";
+import { CourseQuiz, useCourseQuiz } from "./course-quiz";
 import { CurriculumLibrary } from "./curriculum";
 
 type LearningStep = {
@@ -307,6 +307,9 @@ export function LabWorkspace() {
   const roadmap = useCourseRoadmap(workspaceId);
   const isLecturer = workspace?.myRole === "LECTURER" || session.data?.user?.role === "admin";
   const lab = assignments.data?.find((item) => item.id === assignmentId);
+  const quiz = useCourseQuiz(workspaceId, assignmentId,
+    Boolean(lab && roadmap.data?.guided && session.data?.user?.role === "student"));
+  const runtimeReady = !quiz.isError && quiz.data?.passed === true;
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -318,11 +321,11 @@ export function LabWorkspace() {
         label: t("Static architecture", "Kiến trúc tĩnh"),
         state: lab?.referenceSource ? "READY" : "MISSING",
       },
-      { label: t("Theory and quiz", "Lý thuyết và quiz"), state: "IN PROGRESS" },
-      { label: t("Runtime observation", "Quan sát runtime"), state: "LOCKED" },
+      { label: t("Theory and quiz", "Lý thuyết và quiz"), state: runtimeReady ? "PASSED" : "IN PROGRESS" },
+      { label: t("Runtime observation", "Quan sát runtime"), state: runtimeReady ? "READY" : "LOCKED" },
       { label: t("Studio receipt", "Biên nhận Studio"), state: "LOCKED" },
     ],
-    [lab?.referenceSource, t],
+    [lab?.referenceSource, runtimeReady, t],
   );
 
   if (!workspaceId)
@@ -404,7 +407,7 @@ export function LabWorkspace() {
             {learningSteps.map((step) => {
               const Icon = step.icon;
               const current = step.id === activeStep;
-              const available = step.id <= 2;
+              const available = step.id <= 2 || (step.id === 3 && runtimeReady);
               return (
                 <Link
                   key={step.id}
@@ -441,6 +444,7 @@ export function LabWorkspace() {
           <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <main className="min-w-0 space-y-5">
               <StepContent
+                runtimeReady={runtimeReady}
                 showQuiz={roadmap.data?.guided === true}
                 canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
                 step={activeStep}
@@ -572,6 +576,7 @@ function StepContent({
   referenceSnapshotId,
   canAttemptQuiz,
   showQuiz,
+  runtimeReady,
 }: {
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
@@ -579,10 +584,11 @@ function StepContent({
   referenceSnapshotId: string | null;
   canAttemptQuiz: boolean;
   showQuiz: boolean;
+  runtimeReady: boolean;
 }) {
   const { t } = useLocale();
   const client = useApi();
-  const projects = useApiQuery("projects", {}, { enabled: step <= 2 && Boolean(referenceSnapshotId) });
+  const projects = useApiQuery("projects", {}, { enabled: step <= 3 && Boolean(referenceSnapshotId) });
   const project = referenceSnapshotId ? projects.data?.find((item) =>
     item.workspaceId === workspaceId && item.assignmentId === labId &&
     item.projectType === "STUDENT_WORKING" && item.referenceSnapshotId === referenceSnapshotId,
@@ -599,6 +605,7 @@ function StepContent({
   const current = learningSteps.find((item) => item.id === step)!;
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
+  const nextAvailable = next === 2 || (next === 3 && runtimeReady);
   return (
     <>
       <div className="rounded-2xl border bg-card p-6">
@@ -683,10 +690,14 @@ function StepContent({
         >
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-            <p className="text-sm leading-6 text-muted-foreground">
-              This step is locked until the server confirms the prerequisite state for this learner,
-              class and Lab revision.
-            </p>
+            {step === 3 && runtimeReady ? (
+              <Button asChild><Link href={project ? `/runtime-config?${new URLSearchParams({ project: project.id })}` : sourceLink}>
+                {project ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab source", "Mở nguồn của Lab")}
+              </Link></Button>
+            ) : <p className="text-sm leading-6 text-muted-foreground">
+              {step === 3 ? t("Pass the current Lab Quiz to open Runtime.", "Hãy đạt Quiz hiện tại của Lab để mở Runtime.")
+                : t("Studio requires Runtime evidence.", "Studio cần bằng chứng Runtime.")}
+            </p>}
           </div>
         </DetailPanel>
       )}
@@ -710,8 +721,8 @@ function StepContent({
             "Tiến độ được lưu bởi dịch vụ tương ứng.",
           )}
         </span>
-        <Button asChild={Boolean(next && next <= 2)} disabled={!next || next > 2}>
-          {next && next <= 2 ? (
+        <Button asChild={nextAvailable} disabled={!nextAvailable}>
+          {nextAvailable ? (
             <Link
               href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${next}`}
             >

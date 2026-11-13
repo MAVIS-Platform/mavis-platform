@@ -189,7 +189,11 @@ class CourseHttpAcceptanceTest {
                 state.path("labs").get(0).path("state").asText(),
                 state.path("labs").get(1).path("state").asText()));
         checkVersionedQuiz(workspace, lab1, lab2, lecturer, student, foreignStudent);
-        checkCurriculum(workspace, lab1, lab2, lecturer, student);
+        UUID workingProject = id(db, """
+                INSERT INTO projects(workspace_id, owner_id, assignment_id, reference_snapshot_id, name, project_type)
+                SELECT ?, id, ?, ?, 'Quiz gate fixture', 'STUDENT_WORKING' FROM users WHERE email = ? RETURNING id
+                """, classroom, lab1, source, "learner@example.invalid");
+        checkCurriculum(workspace, lab1, lab2, lecturer, student, workingProject);
         send("GET", "assignments/" + lab2, student, null, 403);
         send("GET", "assignments/" + lab2 + "/reference-source", student, null, 403);
         send("GET", "assignments/" + lab1 + "/reference-source", foreignStudent, null, 403);
@@ -206,7 +210,8 @@ class CourseHttpAcceptanceTest {
                 Map.of("email", user + "@example.invalid", "password", PASSWORD), 200)).path("token").asText();
     }
 
-    private void checkCurriculum(String workspace, UUID lab1, UUID lab2, String lecturer, String student)
+    private void checkCurriculum(String workspace, UUID lab1, UUID lab2, String lecturer, String student,
+                                 UUID workingProject)
             throws Exception {
         send("GET", "course-curriculum", null, null, 401);
         JsonNode catalog = data(send("GET", "course-curriculum", student, null, 200));
@@ -235,6 +240,9 @@ class CourseHttpAcceptanceTest {
         assertTrue(javaLesson.path("lesson").asText().contains("https://dev.java/learn/"));
         assertEquals(4, javaLesson.path("questions").size());
         assertFalse(javaLesson.path("questions").get(0).has("correctOption"));
+        String runtime = "analyzer/runtime/sessions";
+        var runtimeRequest = Map.of("projectId", workingProject, "sourceSnapshotId", UUID.randomUUID());
+        send("POST", runtime, student, runtimeRequest, 403);
 
         String csharpQuiz = workspace + "/course-labs/" + lab2 + "/quiz";
         var csharp = Map.of("chapterId", "csharp-03");
@@ -247,6 +255,9 @@ class CourseHttpAcceptanceTest {
         assertEquals(4, csharpLesson.path("questions").size());
         var attempt = Map.of("attemptId", UUID.randomUUID(), "version", csharpVersion, "answers", List.of(1, 0, 2, 1));
         assertEquals("PASSED", data(send("POST", quiz + "/attempts", student, attempt, 200)).path("status").asText());
+        send("POST", runtime, student, runtimeRequest, 404);
+        send("POST", quiz + "/curriculum", lecturer, java, 200);
+        send("POST", runtime, student, runtimeRequest, 403);
     }
 
     private void checkVersionedQuiz(String workspace, UUID lab1, UUID lab2,

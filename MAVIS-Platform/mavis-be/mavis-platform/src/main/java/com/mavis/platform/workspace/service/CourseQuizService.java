@@ -81,10 +81,7 @@ public class CourseQuizService {
         var lab = lab(workspaceId, assignmentId, false);
         if (CourseLabPolicy.isStudent(user)) labs.requireOpen(lab, user);
         var quiz = current(lab);
-        boolean passed = CourseLabPolicy.isStudent(user) && Boolean.TRUE.equals(jdbc.queryForObject("""
-                SELECT EXISTS (SELECT 1 FROM course_quiz_attempts
-                  WHERE assignment_id = ? AND student_id = ? AND quiz_version = ? AND passed)
-                """, Boolean.class, assignmentId, user.getId(), quiz.version()));
+        boolean passed = CourseLabPolicy.isStudent(user) && labs.hasPassedCurrentQuiz(lab, user.getId());
         return view(quiz, passed);
     }
 
