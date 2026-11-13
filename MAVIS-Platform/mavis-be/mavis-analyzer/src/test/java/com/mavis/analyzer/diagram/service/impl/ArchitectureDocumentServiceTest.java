@@ -34,6 +34,32 @@ class ArchitectureDocumentServiceTest {
     private final UUID id=UUID.randomUUID();
     private final ModelVersion model=ModelVersion.builder().id(id).project(Project.builder().id(UUID.randomUUID()).build()).build();
     private final String xml="<mxfile><diagram><mxGraphModel><root/></mxGraphModel></diagram></mxfile>";
+
+    @Test void guidedStudentCannotSaveManualArchitectureDocuments() {
+        model.getProject().setWorkspace(Workspace.builder().courseMode(true).build());
+        model.getProject().setProjectType("STUDENT_WORKING");
+        when(models.findById(id)).thenReturn(Optional.of(model));
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder()
+                .role(Role.builder().code("STUDENT").build()).build());
+
+        for (String key : List.of("context", "uml-sequence:all", "uml-activity:all", "uml-state:all")) {
+            assertThatThrownBy(() -> service.save(id, key, new ArchitectureDocumentService.Save(0, xml)))
+                    .isInstanceOfSatisfying(BusinessException.class,
+                            error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.BAD_REQUEST));
+        }
+        verifyNoInteractions(entityManager, documents);
+    }
+
+    @Test void guidedLecturerWithWriteAccessCanSaveReferenceDocuments() {
+        model.getProject().setWorkspace(Workspace.builder().courseMode(true).build());
+        when(models.findById(id)).thenReturn(Optional.of(model));
+        when(access.requireCurrentActiveUser()).thenReturn(User.builder()
+                .role(Role.builder().code("LECTURER").build()).build());
+        when(documents.saveAndFlush(any())).thenAnswer(call -> call.getArgument(0));
+
+        assertThat(service.save(id, "context", new ArchitectureDocumentService.Save(0, xml)).revision())
+                .isEqualTo(1);
+    }
     @Test void exactHistoricalRevisionIsCopiedAndDoesNotFollowLaterSaves() {
         when(models.findById(id)).thenReturn(Optional.of(model));
         var old=new ArchitectureDocument();old.setId(UUID.randomUUID());old.setModelVersion(model);old.setViewKey("uml-class:all");old.setRevision(2);old.setXml(xml);
