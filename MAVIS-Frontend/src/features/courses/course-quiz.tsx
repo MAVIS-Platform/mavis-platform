@@ -1,8 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, Lock } from "lucide-react";
 import { DetailPanel } from "@/components/shared/data";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/mainflow-api";
 import { useLocale } from "@/lib/i18n/locale-context";
@@ -26,11 +29,24 @@ export function useCourseQuiz(workspaceId: string, labId: string, enabled: boole
   });
 }
 
-export function CourseQuiz({ workspaceId, labId, canSubmit }: { workspaceId: string; labId: string; canSubmit: boolean }) {
+export function CourseQuiz({
+  workspaceId,
+  labId,
+  canSubmit,
+  runtimeStepHref,
+}: {
+  workspaceId: string;
+  labId: string;
+  canSubmit: boolean;
+  runtimeStepHref?: string;
+}) {
   const { t } = useLocale();
   const cache = useQueryClient();
   const path = `workspaces/${workspaceId}/course-labs/${labId}/quiz`;
   const quiz = useCourseQuiz(workspaceId, labId, true);
+  const resolvedRuntimeHref =
+    runtimeStepHref ??
+    `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3`;
   return (
     <DetailPanel title={t("Theory and Quiz", "Lý thuyết và Quiz")}>
       {quiz.isPending && <p role="status">{t("Loading Quiz…", "Đang tải Quiz…")}</p>}
@@ -44,13 +60,14 @@ export function CourseQuiz({ workspaceId, labId, canSubmit }: { workspaceId: str
       )}
       {!quiz.isError && quiz.data && <AttemptForm key={`${path}:${quiz.data.version}`} quiz={quiz.data} path={path}
         reload={() => void quiz.refetch()} canSubmit={canSubmit}
+        runtimeStepHref={resolvedRuntimeHref}
         refreshReadiness={() => void cache.invalidateQueries({ queryKey: ["api", "course-quiz", workspaceId, labId] })} />}
     </DetailPanel>
   );
 }
 
-function AttemptForm({ quiz, path, reload, canSubmit, refreshReadiness }: {
-  quiz: Quiz; path: string; reload: () => void; canSubmit: boolean; refreshReadiness: () => void;
+function AttemptForm({ quiz, path, reload, canSubmit, runtimeStepHref, refreshReadiness }: {
+  quiz: Quiz; path: string; reload: () => void; canSubmit: boolean; runtimeStepHref: string; refreshReadiness: () => void;
 }) {
   const { t } = useLocale();
   const [answers, setAnswers] = useState<Record<number, number>>({});
@@ -75,9 +92,30 @@ function AttemptForm({ quiz, path, reload, canSubmit, refreshReadiness }: {
           </span>
         ))}
       </div>
-      <p className="text-sm text-muted-foreground">{t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}%</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+        <span>{t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}%</span>
+        <Badge variant={quiz.passed ? "default" : submit.data?.status === "NEEDS_RETRY" ? "destructive" : "outline"}>
+          {!canSubmit
+            ? `v${quiz.version} · ${t("Preview", "Xem trước")}`
+            : quiz.passed
+              ? `PASSED (v${quiz.version})`
+              : submit.data?.status === "NEEDS_RETRY"
+                ? `NEEDS_RETRY (v${quiz.version})`
+                : `NOT_PASSED (v${quiz.version})`}
+        </Badge>
+      </div>
       {!canSubmit ? <p>{t("Preview for instructors", "Bản xem trước cho giảng viên")}</p> : quiz.passed ? (
-        <p role="status">{t("Quiz passed", "Đã đạt Quiz")}</p>
+        <div className="space-y-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3">
+          <p role="status" className="text-sm font-medium">
+            PASSED (v{quiz.version}) · {t("Quiz passed", "Đã đạt Quiz")}
+          </p>
+          <Button asChild className="w-full sm:w-auto">
+            <Link href={runtimeStepHref}>
+              {t("Proceed to Step 3: Live Runtime", "Tiếp tục Bước 3: Live Runtime")}
+              <ArrowRight />
+            </Link>
+          </Button>
+        </div>
       ) : submit.data?.status === "PASSED" ? (
         <div className="space-y-2">
           <p role="status">{t("Verifying your result…", "Đang xác nhận kết quả…")}</p>
@@ -90,6 +128,15 @@ function AttemptForm({ quiz, path, reload, canSubmit, refreshReadiness }: {
           setAttemptId(id);
           submit.mutate(id);
         }}>
+          <div role="note" className="flex items-start gap-2 rounded-xl border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground">
+            <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            <span>
+              {t(
+                `Step 3 Live Docker Runtime is locked until you score at least ${quiz.passPercent}% on the current Quiz version (v${quiz.version}). Review the theory and retry if needed.`,
+                `Bước 3 Live Docker Runtime đang bị khóa cho đến khi bạn đạt tối thiểu ${quiz.passPercent}% ở phiên bản Quiz hiện tại (v${quiz.version}). Hãy ôn lại lý thuyết và làm lại nếu cần.`,
+              )}
+            </span>
+          </div>
           {quiz.questions.map((question, i) => (
             <fieldset key={i} className="space-y-2 rounded-lg border p-3" disabled={submit.isPending || !!submit.data}>
               <legend className="px-1 font-medium">{i + 1}. {question.prompt}</legend>
@@ -106,8 +153,10 @@ function AttemptForm({ quiz, path, reload, canSubmit, refreshReadiness }: {
             </fieldset>
           ))}
           {submit.data ? (
-            <div className="space-y-2">
-              <p role="status">{t("Try again", "Cần làm lại")} · {submit.data.correctCount}/{submit.data.totalQuestions}</p>
+            <div className="space-y-2 rounded-xl border border-destructive/40 bg-destructive/5 p-3">
+              <p role="status" className="text-sm font-medium">
+                NEEDS_RETRY · {t("Try again", "Cần làm lại")} · {submit.data.correctCount}/{submit.data.totalQuestions}
+              </p>
               <Button type="button" variant="outline" onClick={() => {
                 setAnswers({});
                 setAttemptId(undefined);

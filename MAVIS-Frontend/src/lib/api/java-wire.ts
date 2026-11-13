@@ -7,6 +7,7 @@ import {
   communicationRoleSchema,
   modelSchema,
   modelSummarySchema,
+  type AnalysisJob,
   type Project,
 } from "@/types/domain";
 import { ApiError } from "@/lib/errors/api-error";
@@ -169,9 +170,10 @@ export function jobView(raw: unknown) {
       errorDiagnostics: nullableText,
       analysisState: nullableText,
       dotnetStatus: nullableText,
+      promotedLatest: z.boolean().nullish(),
     })
     .parse(raw);
-  const states: Record<string, string> = {
+  const states: Record<string, AnalysisJob["status"]> = {
     PENDING: "queued",
     QUEUED: "queued",
     RUNNING: "processing",
@@ -184,8 +186,11 @@ export function jobView(raw: unknown) {
     TIMEOUT: "timed-out",
     PARTIAL: "partial",
   };
-  const status = states[j.status];
-  if (!status) throw new ApiError("contract");
+  const baseStatus = states[j.status];
+  if (!baseStatus) throw new ApiError("contract");
+  const normalizedAnalysisState = j.analysisState?.toUpperCase() ?? j.status.toUpperCase();
+  const status: AnalysisJob["status"] =
+    normalizedAnalysisState === "PARTIAL" && baseStatus === "completed" ? "partial" : baseStatus;
   return analysisJobSchema.parse({
     id: j.jobId,
     projectId: j.projectId,
@@ -193,9 +198,10 @@ export function jobView(raw: unknown) {
     status,
     progress: null,
     modelId: ["completed", "partial"].includes(status) ? (j.modelVersionId ?? null) : null,
-    message: j.errorDiagnostics || j.analysisState || j.status,
-    analysisState: j.analysisState ?? j.status,
+    message: j.errorDiagnostics || normalizedAnalysisState || j.status,
+    analysisState: normalizedAnalysisState,
     workerStatus: j.dotnetStatus ?? null,
+    promotedLatest: j.promotedLatest ?? null,
   });
 }
 export function evidenceView(raw: unknown) {

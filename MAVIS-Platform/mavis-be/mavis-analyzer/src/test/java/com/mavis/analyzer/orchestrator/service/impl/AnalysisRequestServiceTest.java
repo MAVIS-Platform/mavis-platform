@@ -66,4 +66,66 @@ class AnalysisRequestServiceTest {
         verify(jobs,never()).save(any());verifyNoInteractions(events);
     }
     @Test void deletedProjectCannotStartAnotherAnalysis(){project.setStatus("DELETED");assertThatThrownBy(()->service.start(snapshot.getId(),"deleted-project")).isInstanceOf(BusinessException.class).hasMessageContaining("Project not found");verify(jobs,never()).save(any());verifyNoInteractions(events);}
+
+    @Test
+    @DisplayName("F02-004, F02-008 & TC-N04: 10 concurrent analyze requests serialize on lock and save at most one job")
+    void tenConcurrentStartRequestsCreateSingleJobAndReuseIdempotentKey() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<Job> savedJob = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.locks.ReentrantLock dbRowLock = new java.util.concurrent.locks.ReentrantLock();
+
+        when(projects.findLockedById(project.getId())).thenAnswer(inv -> {
+            dbRowLock.lock();
+            return Optional.of(project);
+        });
+        when(jobs.findByProjectIdAndAnalysisRequestKey(eq(project.getId()), anyString())).thenAnswer(inv -> {
+            Job existing = savedJob.get();
+            String key = inv.getArgument(1);
+            if (existing != null && key.equals(existing.getAnalysisRequestKey())) {
+                return Optional.of(existing);
+            }
+            return Optional.empty();
+        });
+        when(jobs.existsByProjectIdAndJobTypeAndStatusIn(eq(project.getId()), eq("STATIC_ANALYSIS"), anyList()))
+                .thenAnswer(inv -> savedJob.get() != null);
+        when(jobs.save(any(Job.class))).thenAnswer(inv -> {
+            Job j = inv.getArgument(0);
+            j.setId(UUID.randomUUID());
+            savedJob.set(j);
+            return j;
+        });
+
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(10);
+        var gate = new java.util.concurrent.CountDownLatch(1);
+        java.util.List<java.util.concurrent.Future<String>> results = new java.util.ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            final String key = (i < 5) ? "same-key" : "other-key-" + i;
+            results.add(pool.submit(() -> {
+                gate.await();
+                try {
+                    var accepted = service.start(snapshot.getId(), key);
+                    return (accepted.existing() ? "EXISTING:" : "NEW:") + accepted.jobId();
+                } catch (BusinessException conflict) {
+                    return "CONFLICT:" + conflict.getErrorCode();
+                } finally {
+                    if (dbRowLock.isHeldByCurrentThread()) {
+                        dbRowLock.unlock();
+                    }
+                }
+            }));
+        }
+        gate.countDown();
+        int newCount = 0;
+        int conflicts = 0;
+        for (var f : results) {
+            String r = f.get();
+            if (r.startsWith("NEW:")) newCount++;
+            else if (r.startsWith("CONFLICT:")) conflicts++;
+        }
+        pool.shutdown();
+
+        assertThat(newCount).isEqualTo(1);
+        assertThat(conflicts).isGreaterThanOrEqualTo(4);
+        verify(jobs, times(1)).save(any(Job.class));
+        verify(events, times(1)).publishEvent(any(AnalyzeRequestEvent.class));
+    }
 }

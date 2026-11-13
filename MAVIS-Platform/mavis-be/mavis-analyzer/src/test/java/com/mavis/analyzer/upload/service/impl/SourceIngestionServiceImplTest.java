@@ -326,4 +326,69 @@ class SourceIngestionServiceImplTest {
         sourceIngestionService.ingestFromGitHub(GitHubImportRequest.builder().projectId(sampleProject.getId()).repositoryUrl("https://github.com/EXAMPLE/original.git").branchName("develop").build());
         assertThat(sampleProject.getRepositoryUrl()).isEqualTo("https://github.com/example/original");assertThat(sampleProject.getDefaultBranch()).isEqualTo("main");verify(projectRepository,never()).save(any());
     }
+
+    @Test
+    @DisplayName("F02-002 & F02-005: Chặn student import GitHub vào courseMode (403) và giảng viên ingest 2 SHA tạo 2 snapshot độc lập")
+    void courseModeBlocksStudentGitHubAndKeepsTwoLecturerShaVersions() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        sampleProject.setWorkspace(com.mavis.common.entity.Workspace.builder().id(workspaceId).courseMode(true).build());
+        sampleProject.setRepositoryUrl("https://github.com/example/curated");
+        sampleProject.setProjectType("TEACHER_REFERENCE");
+        sampleProject.setIsReferenceTemplate(true);
+        when(projectRepository.findLockedById(sampleProject.getId())).thenReturn(Optional.of(sampleProject));
+
+        doThrow(new BusinessException(ErrorCode.FORBIDDEN, "Lecturer required"))
+                .when(accessPolicy).requireWorkspaceLecturer(workspaceId);
+        assertThatThrownBy(() -> sourceIngestionService.ingestFromGitHub(GitHubImportRequest.builder()
+                .projectId(sampleProject.getId())
+                .repositoryUrl("https://github.com/example/curated")
+                .commitSha("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                .build()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.FORBIDDEN);
+
+        sampleProject.setProjectType("STUDENT_WORKING");
+        sampleProject.setIsReferenceTemplate(false);
+        doNothing().when(accessPolicy).requireWorkspaceLecturer(workspaceId);
+        assertThatThrownBy(() -> sourceIngestionService.ingestFromGitHub(GitHubImportRequest.builder()
+                .projectId(sampleProject.getId())
+                .repositoryUrl("https://github.com/example/curated")
+                .commitSha("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+                .build()))
+                .isInstanceOf(BusinessException.class)
+                .extracting("errorCode").isEqualTo(ErrorCode.FORBIDDEN);
+
+        sampleProject.setProjectType("TEACHER_REFERENCE");
+        sampleProject.setIsReferenceTemplate(true);
+        when(httpResponse.statusCode()).thenReturn(200);
+        when(httpResponse.body()).thenReturn(
+                new ByteArrayInputStream("zip-v1".getBytes()),
+                new ByteArrayInputStream("zip-v2".getBytes()));
+        doReturn(httpResponse).when(httpClient).send(any(HttpRequest.class), any());
+        when(storageService.store(any(InputStream.class), anyString())).thenReturn(sampleZipFile.toString());
+
+        java.util.List<String> recordedShas = new java.util.ArrayList<>();
+        when(sourceSnapshotRepository.save(any(SourceSnapshot.class))).thenAnswer(inv -> {
+            SourceSnapshot snap = inv.getArgument(0);
+            snap.setId(UUID.randomUUID());
+            recordedShas.add(snap.getCommitSha());
+            return snap;
+        });
+
+        IngestionResponseDTO first = sourceIngestionService.ingestFromGitHub(GitHubImportRequest.builder()
+                .projectId(sampleProject.getId())
+                .repositoryUrl("https://github.com/example/curated")
+                .commitSha("1111111111111111111111111111111111111111")
+                .build());
+        IngestionResponseDTO second = sourceIngestionService.ingestFromGitHub(GitHubImportRequest.builder()
+                .projectId(sampleProject.getId())
+                .repositoryUrl("https://github.com/example/curated")
+                .commitSha("2222222222222222222222222222222222222222")
+                .build());
+
+        assertThat(first.getSnapshotId()).isNotEqualTo(second.getSnapshotId());
+        assertThat(recordedShas).containsExactly(
+                "1111111111111111111111111111111111111111",
+                "2222222222222222222222222222222222222222");
+    }
 }

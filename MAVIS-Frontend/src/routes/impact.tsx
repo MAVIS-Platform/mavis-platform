@@ -21,30 +21,21 @@ import { useModel } from "@/features/architecture/use-model";
 import { useApi, useApiQuery } from "@/hooks/use-api";
 import type { ArchitecturalModel } from "@/types/domain";
 
-export type ImpactScopeMode = "all" | "source" | "components" | "strict";
+import {
+  computeArchitectureImpact,
+  type ImpactScopeMode,
+  type ImpactPathEntry,
+  type UnaffectedElementEntry,
+  type ComputedArchitectureImpact,
+} from "@/lib/architecture/reverse-bfs";
 
-export interface ImpactPathEntry {
-  elementId: string;
-  name: string;
-  elementType: string;
-  distance: number;
-  hops: string[];
-  hopIds: string[];
-  protocols: string[];
-  origins: string[];
-}
-
-export interface ComputedArchitectureImpact {
-  targetId: string;
-  targetName: string;
-  targetType: string;
-  upstreamImpacted: ImpactPathEntry[];
-  downstreamDependencies: ImpactPathEntry[];
-  directImpactCount: number;
-  indirectImpactCount: number;
-  downstreamCount: number;
-  blastRadiusCount: number;
-}
+export {
+  computeArchitectureImpact,
+  type ImpactScopeMode,
+  type ImpactPathEntry,
+  type UnaffectedElementEntry,
+  type ComputedArchitectureImpact,
+};
 
 const TYPE_BADGE: Record<string, string> = {
   SERVICE_CONTAINER: "SVC",
@@ -62,226 +53,6 @@ const SCOPE_OPTIONS: ReadonlyArray<{ value: ImpactScopeMode; label: string }> = 
   { value: "components", label: "Component Granularity (Include Internal Components)" },
   { value: "strict", label: "Strict Confirmed HTTP Policy (Worker Only)" },
 ];
-
-export function computeArchitectureImpact(
-  model: ArchitecturalModel,
-  targetId: string,
-  scope: ImpactScopeMode = "all",
-  workerPaths: readonly (readonly string[])[] = [],
-): ComputedArchitectureImpact {
-  const rawTarget = model.elements.find((e) => e.id === targetId);
-  const showComponents = scope === "components" || rawTarget?.elementType === "COMPONENT";
-  const originFilter = scope === "source" ? "source" : "all";
-
-  const projected =
-    scope === "strict"
-      ? {
-          elements: model.elements.filter((e) => e.elementType === "SERVICE_CONTAINER"),
-          edges: model.edges.filter((e) => e.protocol === "SERVICE_HTTP_CALL"),
-        }
-      : projectGraphModel(model, showComponents, originFilter).model;
-
-  const byId = new Map(projected.elements.map((e) => [e.id, e]));
-  const allById = new Map(model.elements.map((e) => [e.id, e]));
-  const targetNode = byId.get(targetId) ?? allById.get(targetId);
-  const targetName = targetNode?.name ?? targetId;
-  const targetType = targetNode?.elementType ?? "SERVICE_CONTAINER";
-
-  // Build adjacency lists:
-  // reverseAdj[X] = list of { neighbor: A, protocol, origin } where A depends on X (so changing X impacts A)
-  // forwardAdj[X] = list of { neighbor: B, protocol, origin } where X depends on B (so X relies on B)
-  const reverseAdj = new Map<
-    string,
-    Array<{ neighborId: string; protocol: string; origin: string }>
-  >();
-  const forwardAdj = new Map<
-    string,
-    Array<{ neighborId: string; protocol: string; origin: string }>
-  >();
-
-  const addDirectedDependency = (
-    dependentId: string,
-    dependencyId: string,
-    protocol: string,
-    origin: string,
-  ) => {
-    if (!dependentId || !dependencyId || dependentId === dependencyId) return;
-    if (!byId.has(dependentId) || !byId.has(dependencyId)) return;
-
-    const revList = reverseAdj.get(dependencyId) ?? [];
-    if (!revList.some((r) => r.neighborId === dependentId && r.protocol === protocol)) {
-      revList.push({ neighborId: dependentId, protocol, origin });
-      reverseAdj.set(dependencyId, revList);
-    }
-
-    const fwdList = forwardAdj.get(dependentId) ?? [];
-    if (!fwdList.some((f) => f.neighborId === dependencyId && f.protocol === protocol)) {
-      fwdList.push({ neighborId: dependencyId, protocol, origin });
-      forwardAdj.set(dependentId, fwdList);
-    }
-  };
-
-  for (const edge of projected.edges) {
-    const origin = edge.originLayer ?? "STATIC";
-    const fromEl = byId.get(edge.from);
-    const toEl = byId.get(edge.to);
-    if (!fromEl || !toEl) continue;
-
-    const fromIsChannel =
-      fromEl.elementType === "MESSAGE_CHANNEL" || fromEl.elementType === "QUEUE_BROKER";
-    const toIsChannel =
-      toEl.elementType === "MESSAGE_CHANNEL" || toEl.elementType === "QUEUE_BROKER";
-
-    if (edge.protocol === "MESSAGE_SUBSCRIBE" && fromIsChannel) {
-      // Channel -> Subscriber: Subscriber (edge.to) depends on Channel (edge.from)
-      addDirectedDependency(edge.to, edge.from, edge.protocol, origin);
-    } else if (edge.protocol === "MESSAGE_PUBLISH" && toIsChannel) {
-      // Publisher -> Channel: Publisher depends on Channel infrastructure, AND Channel contract depends on Publisher
-      addDirectedDependency(edge.from, edge.to, edge.protocol, origin);
-      addDirectedDependency(edge.to, edge.from, edge.protocol, origin);
-    } else {
-      // Standard dependency: edge.from (caller) depends on edge.to (callee)
-      addDirectedDependency(edge.from, edge.to, edge.protocol, origin);
-    }
-  }
-
-  // 1. BFS for Upstream Impact (Who breaks if targetId changes?)
-  const upstreamImpacted: ImpactPathEntry[] = [];
-  const visitedUpstream = new Set<string>([targetId]);
-  const upQueue: Array<{
-    currentId: string;
-    hopIds: string[];
-    protocols: string[];
-    origins: string[];
-  }> = [{ currentId: targetId, hopIds: [targetId], protocols: [], origins: [] }];
-
-  while (upQueue.length > 0) {
-    const current = upQueue.shift()!;
-    if (current.hopIds.length > 8) continue;
-    const neighbors = (reverseAdj.get(current.currentId) ?? [])
-      .slice()
-      .sort((a, b) =>
-        (byId.get(a.neighborId)?.name ?? "").localeCompare(byId.get(b.neighborId)?.name ?? ""),
-      );
-
-    for (const step of neighbors) {
-      if (visitedUpstream.has(step.neighborId)) continue;
-      visitedUpstream.add(step.neighborId);
-      const el = byId.get(step.neighborId)!;
-      // Path ordered from Affected Caller -> ... -> Target
-      const nextHopIds = [step.neighborId, ...current.hopIds];
-      const nextProtocols = [step.protocol, ...current.protocols];
-      const nextOrigins = [step.origin, ...current.origins];
-      upstreamImpacted.push({
-        elementId: step.neighborId,
-        name: el.name,
-        elementType: el.elementType ?? "SERVICE_CONTAINER",
-        distance: nextHopIds.length - 1,
-        hops: nextHopIds.map((id) => byId.get(id)?.name ?? allById.get(id)?.name ?? id),
-        hopIds: nextHopIds,
-        protocols: nextProtocols,
-        origins: nextOrigins,
-      });
-      upQueue.push({
-        currentId: step.neighborId,
-        hopIds: nextHopIds,
-        protocols: nextProtocols,
-        origins: nextOrigins,
-      });
-    }
-  }
-
-  // Merge any additional worker-reported paths not already present
-  for (const rawPath of workerPaths) {
-    if (!rawPath || rawPath.length < 2) continue;
-    const resolvedNames = rawPath.map((h) => allById.get(h)?.name ?? h);
-    const firstHop = rawPath[0]!;
-    const matchedEl =
-      projected.elements.find((e) => e.id === firstHop || e.name === firstHop) ??
-      model.elements.find((e) => e.id === firstHop || e.name === firstHop);
-    const elId = matchedEl?.id ?? firstHop;
-    if (
-      elId !== targetId &&
-      !upstreamImpacted.some((u) => u.elementId === elId || u.name === resolvedNames[0])
-    ) {
-      upstreamImpacted.push({
-        elementId: elId,
-        name: matchedEl?.name ?? resolvedNames[0]!,
-        elementType: matchedEl?.elementType ?? "SERVICE_CONTAINER",
-        distance: rawPath.length - 1,
-        hops: resolvedNames,
-        hopIds: [...rawPath],
-        protocols: ["SERVICE_HTTP_CALL"],
-        origins: ["STATIC"],
-      });
-    }
-  }
-
-  // 2. BFS for Downstream Dependencies (What does targetId rely on?)
-  const downstreamDependencies: ImpactPathEntry[] = [];
-  const visitedDownstream = new Set<string>([targetId]);
-  const downQueue: Array<{
-    currentId: string;
-    hopIds: string[];
-    protocols: string[];
-    origins: string[];
-  }> = [{ currentId: targetId, hopIds: [targetId], protocols: [], origins: [] }];
-
-  while (downQueue.length > 0) {
-    const current = downQueue.shift()!;
-    if (current.hopIds.length > 8) continue;
-    const neighbors = (forwardAdj.get(current.currentId) ?? [])
-      .slice()
-      .sort((a, b) =>
-        (byId.get(a.neighborId)?.name ?? "").localeCompare(byId.get(b.neighborId)?.name ?? ""),
-      );
-
-    for (const step of neighbors) {
-      if (visitedDownstream.has(step.neighborId)) continue;
-      visitedDownstream.add(step.neighborId);
-      const el = byId.get(step.neighborId)!;
-      // Path ordered from Target -> ... -> Dependency
-      const nextHopIds = [...current.hopIds, step.neighborId];
-      const nextProtocols = [...current.protocols, step.protocol];
-      const nextOrigins = [...current.origins, step.origin];
-      downstreamDependencies.push({
-        elementId: step.neighborId,
-        name: el.name,
-        elementType: el.elementType ?? "SERVICE_CONTAINER",
-        distance: nextHopIds.length - 1,
-        hops: nextHopIds.map((id) => byId.get(id)?.name ?? allById.get(id)?.name ?? id),
-        hopIds: nextHopIds,
-        protocols: nextProtocols,
-        origins: nextOrigins,
-      });
-      downQueue.push({
-        currentId: step.neighborId,
-        hopIds: nextHopIds,
-        protocols: nextProtocols,
-        origins: nextOrigins,
-      });
-    }
-  }
-
-  const directImpactCount = upstreamImpacted.filter((u) => u.distance === 1).length;
-  const indirectImpactCount = upstreamImpacted.filter((u) => u.distance > 1).length;
-  const blastRadiusIds = new Set<string>([
-    ...upstreamImpacted.map((u) => u.elementId),
-    ...downstreamDependencies.map((d) => d.elementId),
-  ]);
-
-  return {
-    targetId,
-    targetName,
-    targetType,
-    upstreamImpacted,
-    downstreamDependencies,
-    directImpactCount,
-    indirectImpactCount,
-    downstreamCount: downstreamDependencies.length,
-    blastRadiusCount: blastRadiusIds.size,
-  };
-}
 
 export default function ImpactPage() {
   return (

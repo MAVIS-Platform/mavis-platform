@@ -136,8 +136,23 @@ export function planArchitectureViews(
   // external systems/persons stay outside; ownership that the model does not establish is left
   // outside with an explicit warning instead of a boundary that would assert fake membership.
   // Recognition is independent of connectivity: isolated infrastructure is still
-  // a container. Only relationships, not the containers, are split by view.
-  const knownContainers = roots.filter((node) => ["SERVICE_CONTAINER", "DATABASE", "QUEUE_BROKER", "MESSAGE_CHANNEL", "EXTERNAL_SYSTEM", "PERSON"].includes(kindOf(node)));
+  // a container. Unparented module COMPONENTs (e.g., standalone C# projects) with
+  // architectural container edges are also kept as unresolved container roots.
+  const architecturalRootIds = new Set(
+    [...aggregated.values()]
+      .filter((edge) => {
+        const edgeType = String(edge.relationType ?? edge.type ?? "").toUpperCase();
+        return edgeType !== "CODE_DEPENDENCY" && edgeType !== "DEPENDS_ON";
+      })
+      .flatMap((edge) => [ends(edge).from, ends(edge).to]),
+  );
+  const knownContainers = roots.filter(
+    (node) =>
+      ["SERVICE_CONTAINER", "DATABASE", "QUEUE_BROKER", "MESSAGE_CHANNEL", "EXTERNAL_SYSTEM", "PERSON"].includes(
+        kindOf(node),
+      ) ||
+      (kindOf(node) === "COMPONENT" && architecturalRootIds.has(node.id)),
+  );
   const containerSelection = knownContainers.length ? knownContainers : applicationRoots.length ? applicationRoots : roots;
   const insideNodes = containerSelection.filter(insideSystemScope);
   const externalNodes = containerSelection.filter(outsideAsExternal);

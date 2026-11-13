@@ -333,4 +333,28 @@ class DiagramExportServiceImplTest {
         assertThat(result.getId()).isEqualTo(existingDeployment.getId());
         verify(diagramVersionRepository, never()).save(any(DiagramVersion.class));
     }
+
+    @Test
+    @DisplayName("RF-02/SR-07: Guided Lab student receives BAD_REQUEST when exporting behavioral UML or 4+1 diagrams")
+    void guidedStudentCannotExportBehavioralDiagrams() {
+        project.setWorkspace(Workspace.builder().id(UUID.randomUUID()).courseMode(true).build());
+        project.setProjectType("STUDENT_WORKING");
+        when(accessPolicyService.requireCurrentActiveUser()).thenReturn(User.builder()
+                .role(Role.builder().code("STUDENT").build()).build());
+
+        for (String notation : List.of("UML_SEQUENCE", "UML_ACTIVITY", "UML_STATE", "VIEW_4_PLUS_1")) {
+            UUID blockedId = UUID.randomUUID();
+            DiagramVersion blocked = DiagramVersion.builder().id(blockedId).modelVersion(modelVersion)
+                    .notation(notation).level("ALL").layoutJson(objectMapper.createObjectNode()).build();
+            when(diagramVersionRepository.findById(blockedId)).thenReturn(Optional.of(blocked));
+            assertThatThrownBy(() -> diagramExportService.exportDiagramById(blockedId, "MERMAID"))
+                    .isInstanceOfSatisfying(BusinessException.class,
+                            err -> assertThat(err.getErrorCode()).isEqualTo(ErrorCode.BAD_REQUEST));
+        }
+
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        assertThatThrownBy(() -> diagramExportService.generateOrGet4Plus1DeploymentDiagram(modelVersionId))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        err -> assertThat(err.getErrorCode()).isEqualTo(ErrorCode.BAD_REQUEST));
+    }
 }
