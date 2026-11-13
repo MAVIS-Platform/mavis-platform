@@ -1,4 +1,4 @@
-import { assignmentReferenceSchema, courseQuizEvidenceSchema } from "@/types/domain";
+import { assignmentReferenceSchema, courseQuizEvidenceSchema, runtimeActionEvidenceSchema } from "@/types/domain";
 import { planArchitectureViews } from "../architecture/view-planner";
 import { githubBranches, githubRevision } from "../github/branches";
 import { generateDrawio } from "../drawio/server";
@@ -499,6 +499,7 @@ export async function executeJava(
         diagnostics: z.array(z.string()).nullish(),
         capturedSpanCount: z.number().nullish(),
         studioVerified: z.boolean().optional(),
+        infrastructureActions: z.array(runtimeActionEvidenceSchema).nullish(),
         stepResults: z
           .array(
             z.object({
@@ -543,6 +544,7 @@ export async function executeJava(
         : {}),
       ...(value.failureReason !== undefined ? { failureReason: value.failureReason ?? null } : {}),
       ...(value.diagnostics !== undefined ? { diagnostics: value.diagnostics ?? [] } : {}),
+      ...(value.infrastructureActions ? { infrastructureActions: value.infrastructureActions } : {}),
       ...(value.studioVerified !== undefined ? { studioVerified: value.studioVerified } : {}),
       ...(value.capturedSpanCount !== undefined
         ? { capturedSpanCount: value.capturedSpanCount ?? null }
