@@ -1,4 +1,5 @@
 "use client";
+import { useLocale } from "@/lib/i18n/locale-context";
 export function RuntimeStepperBanner({
   currentStep,
   projectId,
@@ -14,24 +15,25 @@ export function RuntimeStepperBanner({
   onStep2Click?: (() => void) | undefined;
   blockedReason?: string | undefined;
 }) {
+  const { t } = useLocale();
   const steps = [
     {
       num: 1,
-      title: "Step 1: Configure Sandbox",
+      title: t("Step 1: Configure Sandbox"),
       path: "/runtime-config",
-      desc: "Set resource limits and discover services",
+      desc: t("Set resource limits and discover services"),
     },
     {
       num: 2,
-      title: "Step 2: Test Scenarios",
+      title: t("Step 2: Test Scenarios"),
       path: "/scenarios",
-      desc: "Define API request steps",
+      desc: t("Define API request steps"),
     },
     {
       num: 3,
-      title: "Step 3: Run & Trace",
+      title: t("Step 3: Run & Trace"),
       path: "/sessions",
-      desc: "Monitor execution and sequence diagrams",
+      desc: t("Monitor execution and sequence diagrams"),
     },
   ];
   return (
@@ -71,7 +73,7 @@ export function RuntimeStepperBanner({
               <div
                 key={s.num}
                 aria-disabled="true"
-                title={blockedReason || "Complete the current step below before continuing"}
+                title={blockedReason || t("Complete the current step below before continuing")}
                 className="rounded-lg border border-border/40 bg-muted/10 p-3 flex items-start gap-3 text-muted-foreground opacity-55 cursor-not-allowed select-none"
               >
                 {inner}
