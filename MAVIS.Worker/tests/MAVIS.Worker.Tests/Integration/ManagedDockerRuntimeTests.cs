@@ -35,7 +35,7 @@ public sealed class ManagedDockerRuntimeTests
                 $"services:\n  orders:\n    image: {image.GetProperty("orders").GetString()}\n    environment:\n      PAYMENT_URL: http://payment:8080\n  payment:\n    image: {image.GetProperty("payment").GetString()}\n",
                 new(profile.GetProperty("collectorImage").GetString()!, profile.GetProperty("instrumentationVolume").GetString()!,
                     new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("dotnet8-linux-x64-glibc", 8080), ["payment"] = new("java", 8080) },
-                    MemoryMiB: 512, TimeoutSeconds: 120, ApprovedForLocalPoc: true, ScenarioRunnerImage: image.GetProperty("runner").GetString()),
+                    MemoryMiB: 512, TimeoutSeconds: 290, ApprovedForLocalPoc: true, ScenarioRunnerImage: image.GetProperty("runner").GetString()),
                 new(session, [new("request", "orders", "GET", "/orders", 200)]),
                 new Dictionary<string, string> { ["orders"] = "550e8400-e29b-41d4-a716-446655440001", ["payment"] = "550e8400-e29b-41d4-a716-446655440002" }, "poc-config", "poc-scenario", project,
                 InfrastructureActions: [new("SCALE", "orders", 2)]);
@@ -55,6 +55,10 @@ public sealed class ManagedDockerRuntimeTests
                 Assert.Equal(1, action.ReplicasBefore);
                 Assert.Equal(2, action.ReplicasAfter);
                 Assert.True(action.Confirmed);
+                Assert.Equal(1, action.MetricsBefore["requestCount"]!.GetValue<int>());
+                Assert.Equal(1, action.MetricsAfter["requestCount"]!.GetValue<int>());
+                Assert.NotNull(action.MetricsAfter["p95LatencyMs"]);
+                Assert.Equal(0d, action.MetricsAfter["errorRatePercent"]!.GetValue<double>());
             }
             Assert.Equal(new[] { "ALLOCATED", "RUNNING" }, events);
             var receiptPath = Path.Combine(root, "receipts", project + ".json");

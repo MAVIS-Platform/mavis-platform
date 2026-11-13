@@ -399,12 +399,23 @@ export const runtimeStepResultSchema = z.object({
 });
 export type RuntimeStepResult = z.infer<typeof runtimeStepResultSchema>;
 
+export const runtimeActionEvidenceSchema = z.object({
+  action: z.string(),
+  service: z.string(),
+  replicasBefore: z.number(),
+  replicasAfter: z.number(),
+  metricsBefore: z.record(z.string(), z.unknown()),
+  metricsAfter: z.record(z.string(), z.unknown()),
+  confirmed: z.boolean(),
+});
+
 export const runtimeReadSchema = z.object({
   publicationGateStatus: z.string().nullable().optional(),
   failureReason: z.string().nullable().optional(),
   diagnostics: z.array(z.string()).optional(),
   capturedSpanCount: z.number().nullable().optional(),
   studioVerified: z.boolean().optional(),
+  infrastructureActions: z.array(runtimeActionEvidenceSchema).optional(),
   stepResults: z.array(runtimeStepResultSchema).optional(),
   id: z.string(),
   projectId: z.string(),
