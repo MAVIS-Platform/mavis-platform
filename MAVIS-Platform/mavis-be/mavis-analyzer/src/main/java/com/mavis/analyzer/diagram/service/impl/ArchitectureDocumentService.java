@@ -4,6 +4,7 @@ import com.mavis.common.repository.*;
 import com.mavis.common.security.AccessPolicyService;
 import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.common.exception.*;
+import com.mavis.common.utils.CourseworkDiagramTypes;
 import jakarta.persistence.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -114,6 +115,15 @@ public class ArchitectureDocumentService {
     public Document get(UUID modelId,String viewKey,Long revision) {
         validateKey(viewKey);
         ModelVersion model=model(modelId);access.requireProjectReadAccess(model.getProject());
+        var workspace = model.getProject().getWorkspace();
+        if (workspace != null && workspace.isCourseMode()
+                && !"RUNTIME_ENRICHED".equals(model.getOrigin())
+                && CourseLabPolicy.isStudent(access.requireCurrentActiveUser())) {
+            String kind = CourseworkDiagramTypes.fromView(viewKey);
+            if (!java.util.Set.of("C4_CONTEXT", "C4_CONTAINER", "C4_COMPONENT", "DEPENDENCY_GRAPH").contains(kind)) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "Unsupported static diagram for a guided Lab");
+            }
+        }
         var result=revision==null ? documents.findTopByModelVersionIdAndViewKeyOrderByRevisionDesc(modelId,viewKey) : documents.findByModelVersionIdAndViewKeyAndRevision(modelId,viewKey,revision);
         if(revision!=null&&result.isEmpty())throw new BusinessException(ErrorCode.NOT_FOUND,"Document revision not found");
         return result.map(d->view(d)).orElse(new Document(modelId,viewKey,0,null));

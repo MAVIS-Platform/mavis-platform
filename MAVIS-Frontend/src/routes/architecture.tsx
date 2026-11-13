@@ -21,6 +21,7 @@ import { useApi, useApiQuery, useSession } from "@/hooks/use-api";
 import { adminJobsReturnHref } from "@/lib/navigation/admin-job-review";
 import { FlowFrame } from "@/components/mainflow/shell";
 import { ModelFlow } from "@/components/mainflow/model-flow";
+import { useCourseRoadmap } from "@/features/workspaces/course-access";
 export default function ArchitecturePage() {
   return (
     <AppShell>
@@ -49,6 +50,10 @@ export function ArchitectureWorkspace({
     { projectId: state.projectId },
     { enabled: !!state.projectId },
   );
+  const isStudent = session.data?.user?.role === "student";
+  const course = useCourseRoadmap(
+    isStudent ? project.data?.workspaceId ?? "" : "",
+  );
   const [selected, setSelected] = useState<{ modelId: string; elementId: string } | null>(null);
   const id = selected?.modelId === state.model?.id ? (selected?.elementId ?? null) : null;
   const latestEnriched = state.models.find((m) => "origin" in m && m.origin === "RUNTIME_ENRICHED");
@@ -56,6 +61,10 @@ export function ArchitectureWorkspace({
   const currentIsEnriched = Boolean(
     currentSummary && "origin" in currentSummary && currentSummary.origin === "RUNTIME_ENRICHED",
   );
+  const awaitingCourse = isStudent && (project.isPending ||
+    (!!project.data?.workspaceId && course.isPending && course.fetchStatus !== "idle"));
+  const guidedStatic = !currentIsEnriched && (course.data?.guided === true ||
+    (isStudent && !!project.data?.workspaceId && course.isError));
   return (
     <PageContainer>
       <div className="space-y-2.5">
@@ -106,7 +115,7 @@ export function ArchitectureWorkspace({
             />
             {state.projectId && state.model && (
               <>
-                {resolvedMode !== "graph" && (
+                {resolvedMode !== "graph" && !guidedStatic && (
                   <>
                     <Button asChild size="sm" variant="outline">
                       <Link
@@ -207,12 +216,15 @@ export function ArchitectureWorkspace({
               </div>
             ) : (
               <>
-                {state.model && (
+                {state.model && awaitingCourse && <ArchitectureLoading mode={resolvedMode} loadingRevisions={false} />}
+                {state.model && !awaitingCourse && (
                   <ArchitecturePresentation
+                    key={`${state.model.id}:${guidedStatic}`}
                     model={state.model}
                     mode={resolvedMode}
                     selectedId={id}
                     systemName={project.data?.name}
+                    guidedStatic={guidedStatic}
                     onSelect={(elementId) => {
                       if (state.model)
                         setSelected(elementId ? { modelId: state.model.id, elementId } : null);
