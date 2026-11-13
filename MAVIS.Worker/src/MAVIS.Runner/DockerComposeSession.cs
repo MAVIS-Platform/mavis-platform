@@ -30,6 +30,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     private FileStream? _lease;
     private bool _resourcesMayExist;
     private readonly Dictionary<string, Uri> _endpoints = new();
+    private readonly List<RuntimeInfrastructureActionResult> _observedActions = [];
+    public IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => _observedActions.AsReadOnly();
 
     public async Task PrepareAndStartAsync(CancellationToken ct)
     {
@@ -167,7 +169,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     {
         var requested = definition.InfrastructureActions ?? [];
         if (requested.Count == 0) return [];
-        var results = new List<RuntimeInfrastructureActionResult>();
+        var results = _observedActions;
         bool replayable = definition.Scenario.Steps.All(step => step.Method is "GET" or "HEAD");
         var beforeWorkload = replayable ? _scenario : null;
         foreach (var item in requested)
@@ -193,9 +195,10 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 _ => after.running == item.Replicas
             };
             var performedAt = DateTimeOffset.UtcNow;
-            var afterWorkload = expected && beforeWorkload is not null ? await ExecuteWorkloadAsync(ct) : null;
             results.Add(new(action, service, before.running, after.running,
-                Metrics(before, beforeWorkload), Metrics(after, afterWorkload), performedAt, expected));
+                Metrics(before, beforeWorkload), Metrics(after, null), performedAt, expected));
+            var afterWorkload = expected && beforeWorkload is not null ? await ExecuteWorkloadAsync(ct) : null;
+            results[^1] = results[^1] with { MetricsAfter = Metrics(after, afterWorkload) };
             beforeWorkload = afterWorkload;
             if (!expected) throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED");
         }
