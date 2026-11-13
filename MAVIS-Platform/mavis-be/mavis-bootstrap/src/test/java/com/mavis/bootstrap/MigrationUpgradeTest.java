@@ -69,6 +69,8 @@ class MigrationUpgradeTest {
                         SQLException unsupported=assertThrows(SQLException.class,()->sql.execute("INSERT INTO context_person_probe(model_version_id,element_type,name) VALUES (uuid_generate_v4(),'INVENTED_TYPE','Invalid')"));
                         assertEquals("23514",unsupported.getSQLState());
                         try(var rows=sql.executeQuery("SELECT to_regclass('submission_reviews')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
+                        try(var rows=sql.executeQuery("SELECT count(*) FROM information_schema.columns WHERE table_name='submission_snapshots' AND column_name IN ('evidence_package_digest','student_snapshots')")) { assertTrue(rows.next());assertEquals(2,rows.getInt(1)); }
+                        try(var rows=sql.executeQuery("SELECT count(*) FROM information_schema.columns WHERE table_name='submission_reviews' AND column_name IN ('snapshot_grades','lab_outcome')")) { assertTrue(rows.next());assertEquals(2,rows.getInt(1)); }
                         try(var rows=sql.executeQuery("SELECT to_regclass('ai_usage_events')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
                         try(var rows=sql.executeQuery("SELECT to_regclass('user_notifications')")) { assertTrue(rows.next());assertNotNull(rows.getString(1)); }
                     }

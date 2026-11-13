@@ -1,9 +1,11 @@
 package com.mavis.platform.submission.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -38,4 +40,22 @@ public class SubmissionCreateRequest {
 
     @Schema(description = "Ghi chú của sinh viên khi nộp bài", example = "Em đã hoàn thành thiết kế C4 Container và cấu hình OTel trace.")
     private String submissionNotes;
+
+    @Valid
+    @Schema(description = "Danh sách các Snapshot thực hành kèm giải thích lý thuyết của sinh viên")
+    private List<StudentSnapshotItemDTO> studentSnapshots;
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class StudentSnapshotItemDTO {
+        private String snapshotId;
+        private String step;
+        private String title;
+        private String targetViewOrService;
+        private String writtenExplanation;
+        private String capturedAt;
+    }
 }

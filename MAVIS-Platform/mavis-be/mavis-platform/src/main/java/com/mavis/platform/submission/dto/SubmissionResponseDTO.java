@@ -32,6 +32,7 @@ public class SubmissionResponseDTO {
     private Double complianceScore;
     private UUID runtimeSessionId;
     private com.fasterxml.jackson.databind.JsonNode courseQuizEvidence;
+    private com.fasterxml.jackson.databind.JsonNode studentSnapshots;
     private String scenarioStatus;
     private Long feedbackCount;
     private String submissionNotes;
@@ -69,6 +70,7 @@ public class SubmissionResponseDTO {
                 .complianceScore(complianceScore)
                 .runtimeSessionId(s.getRuntimeSession() != null ? s.getRuntimeSession().getId() : null)
                 .courseQuizEvidence(s.getCourseQuizEvidence())
+                .studentSnapshots(s.getStudentSnapshots())
                 .scenarioStatus(scenarioStatus)
                 .feedbackCount(feedbackCount != null ? feedbackCount : 0L)
                 .submissionNotes(s.getSubmissionNotes())
