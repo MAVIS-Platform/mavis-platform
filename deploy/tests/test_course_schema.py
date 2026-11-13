@@ -12,6 +12,18 @@ spec.loader.exec_module(module)
 
 
 class MigrationTest(unittest.TestCase):
+    def test_quiz_uses_its_own_probe_and_transaction_lock(self):
+        version, probe = module.MIGRATIONS["V27__Course_Quizzes.sql"]
+        client = module.PostgresClient({}, version, probe)
+        with tempfile.TemporaryDirectory() as tmp, patch.object(client, "run") as run:
+            migration = Path(tmp) / "V27__Course_Quizzes.sql"
+            migration.write_text("SELECT 1;", encoding="utf-8")
+            run.return_value.stdout = b"missing\n"
+            self.assertEqual(client.probe(), "missing")
+            self.assertIn("course_quiz_attempts", run.call_args.args[-1])
+            client.apply(migration)
+            self.assertIn(b"pg_advisory_xact_lock(1296127049, 27)", run.call_args.kwargs["input_data"])
+
     def test_tls_url_preserves_connection_identity(self):
         env = module.connection({
             "MAVIS_DB_URL": "jdbc:postgresql://db.example.invalid:15432/app%5Fdb?sslmode=require",
