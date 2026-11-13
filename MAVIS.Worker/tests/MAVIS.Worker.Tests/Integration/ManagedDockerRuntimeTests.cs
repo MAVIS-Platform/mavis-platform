@@ -17,6 +17,70 @@ public sealed class ManagedDockerFactAttribute : FactAttribute
 public sealed class ManagedDockerRuntimeTests
 {
     [ManagedDockerFact]
+    public async Task InteractiveStudioProcessesStopStartScaleBeforeFinishingAndCleaning()
+    {
+        var poc = Environment.GetEnvironmentVariable("MAVIS_MANAGED_DOCKER_TEST_ROOT")!;
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(poc, "artifacts", "manifest.json")));
+        var images = manifest.RootElement.GetProperty("images");
+        var project = "mavisrun-" + Guid.NewGuid().ToString("N");
+        var root = Path.Combine(poc, "artifacts", "studio-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var definition = new RuntimeRunDefinition("studio-" + Guid.NewGuid().ToString("N"), "model", "source", "profile",
+            $"services:\n  orders:\n    image: {images.GetProperty("orders").GetString()}\n    environment:\n      PAYMENT_URL: http://payment:8080\n  payment:\n    image: {images.GetProperty("payment").GetString()}\n",
+            new(manifest.RootElement.GetProperty("collectorImage").GetString()!,
+                manifest.RootElement.GetProperty("instrumentationVolume").GetString()!,
+                new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("dotnet8-linux-x64-glibc",8080), ["payment"] = new("java",8080) },
+                MemoryMiB:512, TimeoutSeconds:290, ApprovedForLocalPoc:true, ScenarioRunnerImage:images.GetProperty("runner").GetString()),
+            new("placeholder", [new("request","orders","GET","/orders",200)]),
+            new Dictionary<string,string> { ["orders"]="550e8400-e29b-41d4-a716-446655440001", ["payment"]="550e8400-e29b-41d4-a716-446655440002" },
+            "config","scenario",project,InteractiveStudio:true);
+        definition = definition with { Scenario = definition.Scenario with { SessionId = definition.SessionId } };
+        var handler = new StudioJava(definition);
+        using var client = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080"),"fixture-managed-key",handler);
+        var outcome = await new ManagedRuntimeAdapter(client,new RecordedDocker(root))
+            .RunAsync(definition.SessionId,Path.Combine(poc,"collector.yaml"),root);
+        Assert.Equal("Completed",outcome.ExecutionStatus);
+        Assert.Equal("Confirmed",outcome.CleanupStatus);
+        Assert.Equal(new[]{"STOP","START","SCALE"}, outcome.InfrastructureActions!.Select(action=>action.Action));
+        Assert.All(outcome.InfrastructureActions!, action=>Assert.True(action.Confirmed));
+        Assert.Equal(2,outcome.InfrastructureActions![2].ReplicasAfter);
+        Assert.Equal(3,handler.Acknowledged);
+        Assert.False(Directory.Exists(Path.Combine(root,project)));
+        Assert.NotEmpty(outcome.Trace!.Spans);
+    }
+
+    private sealed class StudioJava(RuntimeRunDefinition definition) : HttpMessageHandler
+    {
+        public int Acknowledged;
+        private readonly string[] ids = [Guid.NewGuid().ToString(),Guid.NewGuid().ToString(),Guid.NewGuid().ToString()];
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
+        {
+            object response;
+            var route=request.RequestUri!.Segments.Last();
+            if(route=="run-definition") response=definition;
+            else if(route=="commands")
+                response=new {definition.SessionId,definition.ResourceProject,finishRequested=Acknowledged==3,
+                    command=Acknowledged==3?null:new {actionId=ids[Acknowledged],action=new[]{"STOP","START","SCALE"}[Acknowledged],
+                        service=Acknowledged==2?"orders":"payment",replicas=Acknowledged==2?(int?)2:null}};
+            else {
+                var body=await request.Content!.ReadAsStringAsync(ct);
+                using var json=JsonDocument.Parse(body);
+                if(route=="ack") {
+                    Assert.Equal(ids[Acknowledged],json.RootElement.GetProperty("actionId").GetString());
+                    Assert.Equal("CONFIRMED",json.RootElement.GetProperty("status").GetString());
+                    response=new {actionId=ids[Acknowledged++],status="CONFIRMED"};
+                } else if(route=="lifecycle-ack")
+                    response=new {definition.SessionId,definition.ResourceProject,stage=json.RootElement.GetProperty("stage").GetString()};
+                else {
+                    Assert.Equal("ingest-receipt-ack",route);
+                    response=new {definition.SessionId,definition.ResourceProject,receiptDigest=ReceiptCanonicalJson.Digest(body),persistenceStatus="COMMITTED"};
+                }
+            }
+            return new(HttpStatusCode.OK) {Content=new StringContent(JsonSerializer.Serialize(new {status=200,data=response},RuntimeLifecycleJournal.Json),Encoding.UTF8,"application/json")};
+        }
+    }
+
+    [ManagedDockerFact]
     public async Task RealDockerSuccessAndCancellationUseManagedIdentityAndDurableAcknowledgement()
     {
         var poc = Environment.GetEnvironmentVariable("MAVIS_MANAGED_DOCKER_TEST_ROOT")!;

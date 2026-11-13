@@ -19,7 +19,7 @@ public sealed class ManagedRuntimeAdapter(JavaRuntimeClient java, IDockerCommand
         }
         var collector = new FileInfo(collectorConfigPath);
         if (!collector.Exists || collector.Length > 1_048_576) throw new ArgumentException("Collector config unavailable.");
-        var backend = new DockerComposeSession(definition, stateRoot, await File.ReadAllTextAsync(collector.FullName, ct), docker, secrets, java);
+        var backend = new DockerComposeSession(definition, stateRoot, await File.ReadAllTextAsync(collector.FullName, ct), docker, secrets, java, java);
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
         using var stopWatcher = new CancellationTokenSource();
         var watcher = WatchAsync(Path.Combine(stateRoot, backend.ResourceProject, "cancel.request"), cancellation, stopWatcher.Token);

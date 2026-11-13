@@ -534,9 +534,24 @@ export const contracts = {
     true,
   ),
   runtimeSessions: contract(project, z.array(d.runtimeSessionSchema)),
+  studioState: contract(z.object({sessionId:id}), z.object({
+    sessionId:id, interactive:z.boolean(), services:z.array(z.string()), finishRequested:z.boolean(), executionStatus:z.string(),
+    cleanupStatus:z.string(), actions:z.array(z.object({
+      actionId:z.string().uuid(), action:z.enum(["START","STOP","SCALE"]), service:z.string(),
+      replicas:z.number().nullable().optional(), status:z.enum(["PENDING","RUNNING","CONFIRMED","FAILED","INTERRUPTED"]),
+      requestedAt:z.string(), completedAt:z.string().optional(), result:z.object({
+        action:z.string(),service:z.string(),replicasBefore:z.number(),replicasAfter:z.number(),confirmed:z.boolean(),
+        metricsBefore:z.record(z.unknown()),metricsAfter:z.record(z.unknown()),
+      }).nullable().optional(),
+    })),
+  })),
+  studioAction: contract(z.object({sessionId:id,actionId:z.string().uuid(),action:z.enum(["START","STOP","SCALE"]),
+    service:z.string().min(1),replicas:z.number().int().min(1).max(8).optional()}), z.unknown(), true),
+  studioFinish: contract(z.object({sessionId:id}),z.unknown(),true),
   runtimeSession: contract(z.object({ sessionId: id }), d.runtimeSessionSchema),
   startRuntime: contract(
     project.extend({
+      interactiveStudio:z.boolean().optional(),
       snapshotId: id,
       scenarioId: id,
       modelId: id.optional(),

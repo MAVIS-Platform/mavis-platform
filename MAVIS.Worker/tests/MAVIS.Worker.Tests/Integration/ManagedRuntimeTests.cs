@@ -194,6 +194,26 @@ public sealed class ManagedRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task StudioCommandAndAcknowledgementValidateAllocationAndActionIdentity()
+    {
+        var actionId = Guid.NewGuid().ToString();
+        var handler = new Handler(async request =>
+        {
+            if (request.Method == HttpMethod.Get)
+                return Json(new { sessionId = "s", resourceProject = Project, finishRequested = false,
+                    command = new { actionId, action = "STOP", service = "app", replicas = (int?)null } });
+            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+            Assert.Equal(actionId, body.RootElement.GetProperty("actionId").GetString());
+            return Json(new { actionId, status = "CONFIRMED" });
+        });
+        using var client = Client(handler);
+        var command = await client.NextStudioCommandAsync("s", Project, CancellationToken.None);
+        Assert.Equal("STOP", command.Command!.Action);
+        await client.AcknowledgeStudioActionAsync("s", Project, actionId, "CONFIRMED", null, CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => client.NextStudioCommandAsync("s", "mavisrun-" + new string('f', 32), CancellationToken.None));
+    }
+
+    [Fact]
     public async Task CallerCancellationDoesNotRetry()
     {
         var handler = new Handler(_ => throw new OperationCanceledException());

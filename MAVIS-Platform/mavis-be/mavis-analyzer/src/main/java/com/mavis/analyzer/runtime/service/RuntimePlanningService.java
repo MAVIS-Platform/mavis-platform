@@ -81,7 +81,8 @@ public class RuntimePlanningService {
  public record ConfigurationRequest(@NotNull UUID snapshotId,@NotNull UUID modelId,@NotBlank String profileId,@NotNull JsonNode profile,@Min(0) int expectedRevision){}
  public record ScenarioRequest(@NotBlank @Size(max=100) String name,@NotEmpty @Size(max=30) List<@NotBlank @Size(max=10000) String> steps,@Min(0) int expectedRevision){}
  public record InfrastructureActionRequest(String action,String service,Integer replicas) {}
- public record StartRequest(@NotNull UUID snapshotId,@NotNull UUID scenarioId,@Min(1) int configurationRevision,@Min(1) int scenarioRevision,@AssertTrue boolean approved,@com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY) Map<String,String> environment,List<InfrastructureActionRequest> infrastructureActions){
+ public record StartRequest(@NotNull UUID snapshotId,@NotNull UUID scenarioId,@Min(1) int configurationRevision,@Min(1) int scenarioRevision,@AssertTrue boolean approved,@com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY) Map<String,String> environment,List<InfrastructureActionRequest> infrastructureActions,boolean interactiveStudio){
+  public StartRequest(UUID snapshotId,UUID scenarioId,int configurationRevision,int scenarioRevision,boolean approved,Map<String,String> environment,List<InfrastructureActionRequest> actions){this(snapshotId,scenarioId,configurationRevision,scenarioRevision,approved,environment,actions,false);}
   public StartRequest(UUID snapshotId,UUID scenarioId,int configurationRevision,int scenarioRevision,boolean approved,Map<String,String> environment){this(snapshotId,scenarioId,configurationRevision,scenarioRevision,approved,environment,List.of());}
   @Override public String toString(){return "RuntimeStartRequest[snapshotId="+snapshotId+",scenarioId="+scenarioId+",environment=[protected],infrastructureActions="+(infrastructureActions==null?0:infrastructureActions.size())+"]";}
  }
@@ -2134,6 +2135,9 @@ public class RuntimePlanningService {
   if(!execEnv.bindings().isEmpty())profileCopy.set("environmentBindings",execEnv.bindings());
   config.set("profile",profileCopy);
   var scenario=config.putObject("scenario");scenario.set("steps",normalizedSteps);scenario.put("timeoutSeconds",settings.requireProfile(c.getProfileId()).timeoutSeconds());
+   config.put("interactiveStudio",r.interactiveStudio());
+   if(r.interactiveStudio() && r.infrastructureActions()!=null && !r.infrastructureActions().isEmpty())
+    throw new BusinessException(ErrorCode.BAD_REQUEST,"Interactive Studio accepts actions after session startup.");
    ArrayNode actionNodes=config.putArray("infrastructureActions");
    for(InfrastructureActionRequest action:r.infrastructureActions()==null?List.<InfrastructureActionRequest>of():r.infrastructureActions()){
     String type=action.action()==null?"":action.action().trim().toUpperCase(Locale.ROOT);

@@ -483,7 +483,7 @@ export function LabWorkspace() {
               <StepContent
                 runtimeReady={runtimeReady}
                 runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
-                studioHref={studioReady ? runtimeLink(studioSession?.id ?? observedRuntime?.id) : null}
+                studioHref={studioReady ? runtimeLink(studioSession?.id ?? observedRuntime?.id) + "&studio=1" : null}
                 studioVerified={Boolean(studioSession)}
                 showQuiz={roadmap.data?.guided === true}
                 canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}

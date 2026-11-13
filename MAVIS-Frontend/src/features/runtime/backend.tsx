@@ -41,6 +41,7 @@ import { ErrorState } from "@/components/shared/request-state";
 import { ConfirmDialog, Pagination, SearchInput, SelectField } from "@/components/shared/forms";
 import { AdminToolbar } from "@/features/administration/operations";
 import { Button } from "@/components/ui/button";
+import { StudioControls } from "./studio-controls";
 
 const active = new Set([
   "NOT_STARTED",
@@ -1414,6 +1415,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const [studioAction, setStudioAction] = useState<"OBSERVE" | "STOP" | "START" | "SCALE">("OBSERVE");
   const [studioService, setStudioService] = useState("");
   const [studioReplicas, setStudioReplicas] = useState(2);
+  const [interactiveStudio, setInteractiveStudio] = useState(() => params.get("studio") === "1");
 
   useEffect(() => {
     setSelectedServiceFilter(null);
@@ -2028,7 +2030,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         configurationRevision: pinnedConfig.revision,
         scenarioRevision: savedScenario.revision,
         approved: true,
-        infrastructureActions: selectedStudioService && studioAction !== "OBSERVE"
+        interactiveStudio,
+        infrastructureActions: !interactiveStudio && selectedStudioService && studioAction !== "OBSERVE"
           ? [{
               action: studioAction,
               service: selectedStudioService,
@@ -2169,7 +2172,12 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               )}
             </div>
             <div className="flex flex-wrap items-end gap-2 shrink-0">
-              <fieldset disabled={studioBusy} className="flex flex-wrap gap-1">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={interactiveStudio} disabled={studioBusy}
+                  onChange={event=>setInteractiveStudio(event.target.checked)}/>
+                {t("Interactive Studio session")}
+              </label>
+              {!interactiveStudio && <fieldset disabled={studioBusy} className="flex flex-wrap gap-1">
                 <legend className="mb-1 text-xs font-medium">{t("MAVIS Studio action")}</legend>
                 {([
                   ["OBSERVE", "Observe only"],
@@ -2188,15 +2196,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                     {t(label)}
                   </Button>
                 ))}
-              </fieldset>
-              {studioAction !== "OBSERVE" && <SelectField
+              </fieldset>}
+              {!interactiveStudio && studioAction !== "OBSERVE" && <SelectField
                 label={t("Target service")}
                 disabled={studioBusy}
                 value={selectedStudioService}
                 onChange={setStudioService}
                 options={runtimeApplicationServices.map((service) => ({ value: service, label: service }))}
               />}
-              {studioAction === "SCALE" && (
+              {!interactiveStudio && studioAction === "SCALE" && (
                 <label className="text-xs">
                   {t("Replicas (1–8)")}
                   <Input
@@ -2244,7 +2252,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   ? "Saving & Running Workflow..."
                   : active.has(upperExecStatus)
                     ? `Sandbox Running (${execStatus})...`
-                    : "⚡ Save & Run Workflow Now"}
+                    : interactiveStudio ? t("Start Studio session") : "⚡ Save & Run Workflow Now"}
               </Button>
             </div>
           </div>
@@ -2712,6 +2720,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           )}
 
           <div className="space-y-4">
+            {selectedId && <StudioControls key={selectedId} sessionId={selectedId}/>}
             {/* Visual Canvas 1: Service Workflow Topology */}
             {Boolean(session.data?.infrastructureActions?.length) && (
               <div className="space-y-2 rounded-lg border p-3 text-sm">

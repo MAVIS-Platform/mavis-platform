@@ -1324,6 +1324,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
         }
         return RunnerDefinitionExportDTO.builder()
+                .interactiveStudio(scenarioConfig != null && scenarioConfig.path("interactiveStudio").asBoolean())
                 .sessionId(session.getId().toString())
                 .modelVersionId(modelVersionIdStr)
                 .sourceSnapshotId(snapshot != null ? snapshot.getId().toString() : "")

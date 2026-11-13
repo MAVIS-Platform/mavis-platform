@@ -18,6 +18,15 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class RuntimeSession {
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public JsonNode requestedInfrastructureActions() {
+        if (scenarioConfig != null && scenarioConfig.path("interactiveStudio").asBoolean())
+            return studioControl == null ? null : studioControl.path("actions");
+        return scenarioConfig == null ? null : scenarioConfig.path("infrastructureActions");
+    }
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "studio_control")
+    private JsonNode studioControl;
 
     @com.fasterxml.jackson.annotation.JsonIgnore
     @Column(name = "environment_ciphertext", columnDefinition = "text")

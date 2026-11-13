@@ -17,6 +17,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class RunnerDefinitionExportDTO {
+    private boolean interactiveStudio;
 
     private String sessionId;
     private String modelVersionId;
