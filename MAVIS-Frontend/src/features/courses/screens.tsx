@@ -935,9 +935,16 @@ function StepContent({
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
             {step === 3 && runtimeReady ? (
-              <Button asChild><Link href={runtimeSessionHref ?? (projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink)}>
-                {runtimeSessionHref ? t("Open Runtime session", "Mở phiên Runtime") : projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
-              </Link></Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {runtimeSessionHref && <Button asChild><Link href={runtimeSessionHref}>
+                  {t("Open Runtime session", "Mở phiên Runtime")}
+                </Link></Button>}
+                <Button asChild variant={runtimeSessionHref ? "outline" : "default"}>
+                  <Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink}>
+                    {projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
+                  </Link>
+                </Button>
+              </div>
             ) : step === 4 && studioHref ? (
               <div className="space-y-2">
                 <p>{studioVerified
