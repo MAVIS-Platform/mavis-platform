@@ -42,7 +42,8 @@ test("Lab UI keeps unavailable progress gates honest and deep-links real assignm
   assert.ok(access.includes("course-roadmap"));
   assert.ok(access.includes('state: "LOCKED" | "UNLOCKED" | "PASSED"'));
   assert.match(access, /\/lab\?workspace=.*&assignment=.*&step=1/s);
-  assert.ok(course.includes("Final completion state must come from the readiness API"));
+  assert.match(course, /state: model \? "READY" : referenceSnapshotId \? "IN PROGRESS" : "MISSING"/);
+  assert.match(course, /job\.status === "completed" && job\.analysisState !== "PARTIAL"/);
   assert.match(course, /<CourseQuiz workspaceId=\{workspaceId\} labId=\{labId\}/);
   assert.match(quiz, /queryKey: \["api", "course-quiz", workspaceId, labId\]/);
   assert.match(quiz, /api<Result>\(`\$\{path\}\/attempts`/);

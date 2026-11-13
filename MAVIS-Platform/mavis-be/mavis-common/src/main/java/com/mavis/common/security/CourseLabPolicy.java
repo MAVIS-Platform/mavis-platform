@@ -1,6 +1,7 @@
 package com.mavis.common.security;
 
 import com.mavis.common.entity.Assignment;
+import com.mavis.common.entity.ModelVersion;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.User;
 import com.mavis.common.exception.BusinessException;
@@ -21,6 +22,13 @@ public class CourseLabPolicy {
 
     public boolean hasPassedCurrentQuiz(Assignment lab, UUID studentId) {
         return currentQuizPass(lab, studentId).isPresent();
+    }
+
+    public boolean hasPassedQuizVersion(UUID labId, UUID studentId, int version) {
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (SELECT FROM course_quiz_attempts
+                    WHERE assignment_id = ? AND student_id = ? AND quiz_version = ? AND passed)
+                """, Boolean.class, labId, studentId, version));
     }
 
     public record QuizPass(UUID attemptId, int quizVersion, int correctCount, int questionCount,
@@ -89,5 +97,11 @@ public class CourseLabPolicy {
 
     public static boolean isStudent(User user) {
         return user.getRole() != null && "STUDENT".equalsIgnoreCase(user.getRole().getCode());
+    }
+
+    public static boolean isGuidedStaticStudent(ModelVersion model, AccessPolicyService access) {
+        var workspace = model.getProject().getWorkspace();
+        return workspace != null && workspace.isCourseMode()
+                && !"RUNTIME_ENRICHED".equals(model.getOrigin()) && isStudent(access.requireCurrentActiveUser());
     }
 }
