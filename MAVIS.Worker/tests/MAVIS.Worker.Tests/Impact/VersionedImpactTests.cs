@@ -95,6 +95,43 @@ public sealed class VersionedImpactTests
         Assert.Equal(System.Text.Json.JsonSerializer.Serialize(first), System.Text.Json.JsonSerializer.Serialize(reversed));
     }
 
+    [Fact]
+    public void MaxDepth_ZeroOrNegative_ThrowsSourceInputException()
+    {
+        var req = Request();
+        Assert.Throws<SourceInputException>(() => _analyzer.Analyze(req with { MaxDepth = 0 }));
+    }
+
+    [Fact]
+    public void F06_005_ReverseBfs_CycleAtoBtoCtoA_AndIsolatedNodeD_TerminatesSafelyAndExcludesD()
+    {
+        // A -> B -> C -> A cyclic dependency plus completely isolated node D
+        var request = new VersionedImpactRequest(
+            "m-f06",
+            "m-f06",
+            "g-f06",
+            true,
+            "C",
+            ["A", "B", "C", "D"],
+            [
+                new("e-ab", "A", "B", "HttpRestCall", ["ev-ab"]),
+                new("e-bc", "B", "C", "HttpRestCall", ["ev-bc"]),
+                new("e-ca", "C", "A", "HttpRestCall", ["ev-ca"]),
+            ]);
+
+        var result = _analyzer.Analyze(request);
+
+        Assert.Equal(2, result.AffectedServices.Count);
+        var b = Assert.Single(result.AffectedServices, s => s.ServiceId == "B");
+        var a = Assert.Single(result.AffectedServices, s => s.ServiceId == "A");
+        Assert.Equal("Direct", b.Classification);
+        Assert.Equal(1, b.Distance);
+        Assert.Equal("Indirect", a.Classification);
+        Assert.Equal(2, a.Distance);
+        Assert.DoesNotContain(result.AffectedServices, s => s.ServiceId == "C");
+        Assert.DoesNotContain(result.AffectedServices, s => s.ServiceId == "D");
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]

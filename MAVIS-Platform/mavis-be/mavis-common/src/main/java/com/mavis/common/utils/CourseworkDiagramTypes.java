@@ -18,6 +18,10 @@ public final class CourseworkDiagramTypes {
         if (Set.of("container", "containers", "c4-container", "c4_container").contains(key)) return "C4_CONTAINER";
         if (Set.of("component", "components", "c4-component", "c4_component").contains(key)) return "C4_COMPONENT";
         for (var type : CURRENT) if (key.equals(type.toLowerCase(Locale.ROOT)) || key.equals(type.toLowerCase(Locale.ROOT).replace('_', '-'))) return type;
+        if (Set.of("class", "uml-class", "uml_class").contains(key)) return "UML_CLASS";
+        if (Set.of("package", "uml-package", "uml_package").contains(key)) return "UML_PACKAGE";
+        if (Set.of("activity", "flowchart", "uml-activity", "uml_activity").contains(key)) return "UML_ACTIVITY";
+        if (Set.of("state", "state-machine", "state_machine", "uml-state", "uml_state").contains(key)) return "UML_STATE";
         if (key.contains("scenario") || key.contains("sequence")) return "UML_SEQUENCE";
         if (Set.of("graph", "overview").contains(key)) return "DEPENDENCY_GRAPH";
         if (Set.of("logical", "development", "process", "deployment").contains(key)) return "VIEW_4_PLUS_1";

@@ -207,9 +207,17 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         boolean successfulCapture = "Completed".equalsIgnoreCase(outcome.getExecutionStatus())
                 && "Passed".equalsIgnoreCase(outcome.getScenarioStatus())
                 && "Available".equalsIgnoreCase(outcome.getEvidenceStatus());
-        boolean hasConfirmedInfrastructureAction = receipt.getInfrastructureActions() != null
-                && receipt.getInfrastructureActions().stream().anyMatch(this::isConfirmedInfrastructureAction);
-        if (successfulCapture && (spans.isEmpty() || !hasConfirmedInfrastructureAction)) {
+        var plannedActions = session.getScenarioConfig() == null ? null : session.getScenarioConfig().path("infrastructureActions");
+        boolean expectsInfrastructureAction = plannedActions != null && plannedActions.isArray() && !plannedActions.isEmpty();
+        boolean hasConfirmedInfrastructureAction = expectsInfrastructureAction && receipt.getInfrastructureActions() != null
+                && receipt.getInfrastructureActions().stream().anyMatch(action ->
+                        isConfirmedInfrastructureAction(action)
+                        && java.util.stream.StreamSupport.stream(plannedActions.spliterator(), false).anyMatch(planned ->
+                                action.getAction().equalsIgnoreCase(planned.path("action").asText())
+                                && action.getService().equals(planned.path("service").asText())
+                                && (!"SCALE".equalsIgnoreCase(action.getAction())
+                                        || action.getReplicasAfter().equals(planned.path("replicas").asInt()))));
+        if (successfulCapture && (spans.isEmpty() || (expectsInfrastructureAction && !hasConfirmedInfrastructureAction))) {
             throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
                     "INCOMPLETE_RUNTIME_SCENARIO: RuntimeReceipt requires real OpenTelemetry spans and at least one confirmed STOP, START, or SCALE action with before/after evidence");
         }
@@ -360,7 +368,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 && effectivelyMapped
                 && !hasStructuralTraceWarning
                 && correspondenceOk
-                && hasConfirmedInfrastructureAction
+                && (!expectsInfrastructureAction || hasConfirmedInfrastructureAction)
                 && modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(session.getProject().getId())
                     .map(latest -> isSessionBaseStillCurrentLatest(latest, session)).orElse(false);
 
@@ -1547,13 +1555,17 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         if (!Set.of("STOP", "START", "SCALE").contains(type)) {
             return false;
         }
-        if ("SCALE".equals(type)) {
-            Integer before = action.getReplicasBefore();
-            Integer after = action.getReplicasAfter();
-            return before != null && after != null && before >= 1 && before <= 8
-                    && after >= 1 && after <= 8 && !before.equals(after);
+        Integer before = action.getReplicasBefore();
+        Integer after = action.getReplicasAfter();
+        if (before == null || after == null || before < 0 || before > 8 || after < 0 || after > 8) {
+            return false;
         }
-        return true;
+        return switch (type) {
+            case "STOP" -> before > 0 && after == 0;
+            case "START" -> before == 0 && after > 0;
+            case "SCALE" -> before > 0 && after > 0 && !before.equals(after);
+            default -> false;
+        };
     }
 
     private record CausalStepRecord(

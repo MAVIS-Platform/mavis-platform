@@ -292,4 +292,49 @@ class AiExplanationServiceImplTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Access denied");
     }
+
+    @Test
+    @DisplayName("TC-N03: Fallback khi LLM timeout vẫn redact secret và chỉ giữ citation thuộc đúng ModelVersion")
+    void cachedAndFallbackResponsesRedactSecretsAndKeepModelScopedCitations() {
+        ModelVersion otherVersion = ModelVersion.builder().id(UUID.randomUUID()).build();
+        Evidence leakedForeign = Evidence.builder()
+                .id(UUID.randomUUID())
+                .modelVersion(otherVersion)
+                .sourceType("STATIC_CODE")
+                .locator("Foreign.java:10")
+                .excerpt("secret=other_model")
+                .build();
+        genuineEvidence.setExcerpt("String gemini = \"AIzaSyA12345678901234567890\"; String jwt = \"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.signaturepart123\";");
+        when(evidenceRepository.findAllById(any())).thenReturn(List.of(genuineEvidence, leakedForeign));
+
+        UUID cachedId = UUID.randomUUID();
+        ArrayNode cited = objectMapper.createArrayNode()
+                .add(genuineEvidenceId.toString())
+                .add(leakedForeign.getId().toString());
+        AiExplanation cached = AiExplanation.builder()
+                .id(cachedId)
+                .modelVersion(modelVersion)
+                .element(element)
+                .explanationScope("ELEMENT")
+                .explanationText("Grounded explanation")
+                .citedEvidenceIds(cited)
+                .secretRedacted(true)
+                .aiModelName("cached-model")
+                .createdAt(OffsetDateTime.now())
+                .build();
+        when(aiExplanationRepository.findFirstByModelVersionIdAndExplanationScopeAndElementIdOrderByCreatedAtDesc(
+                modelVersionId, "ELEMENT", elementId)).thenReturn(Optional.of(cached));
+
+        var response = aiExplanationService.generateOrGetExplanation(AiExplainRequestDTO.builder()
+                .modelVersionId(modelVersionId)
+                .explanationScope("ELEMENT")
+                .elementId(elementId)
+                .build());
+
+        assertThat(response.getCitedEvidences()).hasSize(1);
+        assertThat(response.getCitedEvidences().get(0).getId()).isEqualTo(genuineEvidenceId);
+        assertThat(response.getCitedEvidences().get(0).getExcerpt()).doesNotContain("AIzaSyA");
+        assertThat(response.getCitedEvidences().get(0).getExcerpt()).doesNotContain("eyJhbGciOiJIUzI1NiJ9");
+        assertThat(response.getCitedEvidences().get(0).getExcerpt()).contains("[REDACTED]");
+    }
 }

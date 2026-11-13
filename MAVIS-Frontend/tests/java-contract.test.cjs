@@ -1279,3 +1279,50 @@ test("all 14 runtime operations pass strict executeJava + validateResponse contr
  assert.equal(courseworkList.length,2);
  assert.equal(courseworkList[1].traces.length,1);
 });
+
+test("SR-06: analysisState derived states (PARTIAL, COMPLETED_WITH_REVIEW, COMPLETED_LEGACY, COMPLETED, FAILED) stay distinct across wire and UI helpers", () => {
+ const {analysisStatusBadgeProps,formatAnalysisJobMessage}=require("../src/features/source-analysis/status.ts");
+ const partial=wire.jobView({...jobDto,status:"COMPLETED",analysisState:"PARTIAL",promotedLatest:false,dotnetStatus:"FAILED"});
+ assert.equal(partial.status,"partial");
+ assert.equal(partial.analysisState,"PARTIAL");
+ assert.equal(partial.promotedLatest,false);
+ assert.equal(partial.workerStatus,"FAILED");
+ assert.equal(analysisStatusBadgeProps(partial).variant,"warning");
+ assert.equal(analysisStatusBadgeProps(partial).status,"partial");
+ assert.equal(formatAnalysisJobMessage(partial),"Partial extraction completed");
+
+ const review=wire.jobView({...jobDto,status:"COMPLETED",analysisState:"COMPLETED_WITH_REVIEW",promotedLatest:true,dotnetStatus:"COMPLETED"});
+ assert.equal(review.status,"completed");
+ assert.equal(review.analysisState,"COMPLETED_WITH_REVIEW");
+ assert.equal(review.promotedLatest,true);
+ assert.equal(analysisStatusBadgeProps(review).variant,"warning");
+ assert.equal(analysisStatusBadgeProps(review).status,"completed (review)");
+ assert.equal(formatAnalysisJobMessage(review),"Completed · Ready for architecture review");
+
+ const legacy=wire.jobView({...jobDto,status:"COMPLETED",analysisState:"COMPLETED_LEGACY",dotnetStatus:null});
+ assert.equal(legacy.analysisState,"COMPLETED_LEGACY");
+ assert.equal(analysisStatusBadgeProps(legacy).variant,"warning");
+ assert.equal(analysisStatusBadgeProps(legacy).status,"completed (legacy)");
+ assert.equal(formatAnalysisJobMessage(legacy),"Completed · Legacy static model");
+
+ const completed=wire.jobView({...jobDto,status:"COMPLETED",analysisState:"COMPLETED",promotedLatest:true,dotnetStatus:"COMPLETED"});
+ assert.equal(completed.status,"completed");
+ assert.equal(analysisStatusBadgeProps(completed).variant,"success");
+ assert.equal(analysisStatusBadgeProps(completed).status,"completed");
+ assert.equal(formatAnalysisJobMessage(completed),"Analysis completed successfully");
+
+ const pending=wire.jobView({...jobDto,status:"PENDING",analysisState:"PENDING",modelVersionId:null,dotnetStatus:null});
+ assert.equal(pending.status,"queued");
+ assert.equal(pending.modelId,null);
+ assert.equal(analysisStatusBadgeProps(pending).variant,"info");
+
+ const running=wire.jobView({...jobDto,status:"RUNNING",analysisState:"RUNNING",modelVersionId:null,dotnetStatus:null});
+ assert.equal(running.status,"processing");
+ assert.equal(analysisStatusBadgeProps(running).variant,"info");
+
+ const failed=wire.jobView({...jobDto,status:"FAILED",analysisState:"FAILED",modelVersionId:null,errorDiagnostics:"WORKER_FAILED"});
+ assert.equal(failed.status,"failed");
+ assert.equal(failed.modelId,null);
+ assert.equal(analysisStatusBadgeProps(failed).variant,"destructive");
+ assert.equal(failed.message,"WORKER_FAILED");
+});

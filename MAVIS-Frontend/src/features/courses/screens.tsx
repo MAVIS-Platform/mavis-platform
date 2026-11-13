@@ -30,8 +30,10 @@ import { Badge } from "@/components/ui/badge";
 
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { getRuleName } from "@/features/architecture/three-e-content";
 import { CourseQuiz, useCourseQuiz } from "./course-quiz";
 import { CurriculumLibrary } from "./curriculum";
+import { Step2StaticImpact } from "./step2-static-impact";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -329,6 +331,21 @@ export function LabWorkspace() {
   const model = models.data?.filter((item) => item.origin === "GENERATED" &&
     (item.latest || completeModelIds.has(item.id)),
   ).sort((left, right) => right.revision - left.revision)[0];
+  const runtimeSessions = useApiQuery("runtimeReadSessions", { projectId }, {
+    enabled: client.mode === "backend" && runtimeReady && Boolean(projectId && model),
+    poll: activeStep >= 3,
+  });
+  const labSessions = runtimeSessions.data?.filter((item) =>
+    item.projectId === projectId && item.modelId === model?.id,
+  ) ?? [];
+  const observedRuntime = labSessions.find((item) =>
+    ["COMPLETE", "PARTIAL"].includes(item.traceStatus ?? "") && (item.capturedSpanCount ?? 0) > 0,
+  );
+  const studioSession = labSessions.find((item) => item.studioVerified);
+  const studioReady = runtimeReady && Boolean(observedRuntime);
+  const runtimeLink = (sessionId?: string) => `/sessions?${new URLSearchParams({
+    project: projectId, ...(sessionId ? { session: sessionId } : {}),
+  })}`;
   const modelQuery = project && model ? new URLSearchParams({ project: project.id, model: model.id }).toString() : null;
 
   useEffect(() => {
@@ -343,9 +360,9 @@ export function LabWorkspace() {
       },
       { label: t("Theory and quiz", "Lý thuyết và quiz"), state: runtimeReady ? "PASSED" : "IN PROGRESS" },
       { label: t("Runtime observation", "Quan sát runtime"), state: runtimeReady ? "READY" : "LOCKED" },
-      { label: t("Studio receipt", "Biên nhận Studio"), state: "LOCKED" },
+      { label: t("Studio receipt", "Biên nhận Studio"), state: studioSession ? "VERIFIED" : studioReady ? "READY" : "LOCKED" },
     ],
-    [model, referenceSnapshotId, runtimeReady, t],
+    [model, referenceSnapshotId, runtimeReady, studioReady, studioSession, t],
   );
 
   if (!workspaceId)
@@ -427,7 +444,7 @@ export function LabWorkspace() {
             {learningSteps.map((step) => {
               const Icon = step.icon;
               const current = step.id === activeStep;
-              const available = step.id <= 2 || (step.id === 3 && runtimeReady);
+              const available = step.id <= 2 || (step.id === 3 && runtimeReady) || (step.id === 4 && studioReady);
               return (
                 <Link
                   key={step.id}
@@ -465,6 +482,9 @@ export function LabWorkspace() {
             <main className="min-w-0 space-y-5">
               <StepContent
                 runtimeReady={runtimeReady}
+                runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
+                studioHref={studioReady ? runtimeLink(studioSession?.id ?? observedRuntime?.id) : null}
+                studioVerified={Boolean(studioSession)}
                 showQuiz={roadmap.data?.guided === true}
                 canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
                 step={activeStep}
@@ -472,6 +492,9 @@ export function LabWorkspace() {
                 labId={lab.id}
                 projectId={projectId}
                 modelQuery={modelQuery}
+                snapshotId={lab.referenceSource?.snapshotId}
+                modelId={model?.id ?? lab.referenceSource?.modelId}
+                modelRevision={model?.revision ?? lab.referenceSource?.revision}
               />
             </main>
             <aside className="space-y-5">
@@ -549,8 +572,9 @@ export function LabWorkspace() {
                         </span>
                         {item.label}
                       </span>
-                      <Badge variant={item.state === "READY" ? "success" : "outline"}>
+                      <Badge variant={item.state === "READY" || item.state === "VERIFIED" ? "success" : "outline"}>
                         {item.state === "READY" ? t("Ready", "Sẵn sàng")
+                          : item.state === "VERIFIED" ? t("Verified", "Đã xác minh")
                           : item.state === "PASSED" ? t("Passed", "Đã đạt")
                           : item.state === "LOCKED" ? t("Locked", "Đang khóa")
                           : item.state === "MISSING" ? t("Missing", "Còn thiếu")
@@ -590,24 +614,159 @@ export function LabWorkspace() {
   );
 }
 
+const STATIC_RULE_IDS = ["RULE-01", "RULE-02", "RULE-03", "RULE-04", "RULE-05"] as const;
+
+function StaticEvaluationSummary({ modelId }: { modelId: string | undefined }) {
+  const { locale, t } = useLocale();
+  const client = useApi();
+  const enabled = client.mode === "backend" && Boolean(modelId);
+  const runs = useApiQuery("evaluations", { modelId: modelId ?? "" }, { enabled });
+  const latestRun = useMemo(
+    () =>
+      [...(runs.data ?? [])].sort((a, b) =>
+        String(b.result?.["createdAt"] ?? "").localeCompare(String(a.result?.["createdAt"] ?? "")),
+      )[0],
+    [runs.data],
+  );
+  const evaluationId = latestRun?.id ?? "";
+  const findings = useApiQuery(
+    "evaluationFindings",
+    { evaluationId, modelId: modelId ?? "" },
+    { enabled: enabled && Boolean(evaluationId) },
+  );
+
+  const ruleRows = useMemo(() => {
+    const items = findings.data ?? [];
+    return STATIC_RULE_IDS.map((ruleId) => {
+      const ruleFindings = items.filter((item) => String(item["ruleId"] ?? "") === ruleId);
+      const topFinding =
+        ruleFindings.find((item) => item["status"] === "VIOLATION") ??
+        ruleFindings.find((item) => item["status"] === "NEEDS_REVIEW") ??
+        ruleFindings[0];
+      const details =
+        topFinding && typeof topFinding["details"] === "object" && topFinding["details"]
+          ? (topFinding["details"] as Record<string, unknown>)
+          : undefined;
+      const unverifiedMetadata = details?.["evidenceSufficiency"] === "UNVERIFIED_METADATA_ONLY";
+      const status = topFinding
+        ? String(topFinding["status"] ?? "NEEDS_REVIEW")
+        : evaluationId
+          ? "PASS"
+          : "PENDING";
+      const severity = topFinding
+        ? String(topFinding["severity"] ?? "INFO")
+        : "INFO";
+      return {
+        ruleId,
+        label: getRuleName(ruleId, locale),
+        status,
+        severity,
+        unverifiedMetadata,
+        message: topFinding && typeof topFinding["message"] === "string" ? topFinding["message"] : "",
+      };
+    });
+  }, [evaluationId, findings.data, locale]);
+
+  return (
+    <DetailPanel title={t("3E Static Evaluation Summary (5 Rules)", "Tổng hợp đánh giá tĩnh 3E (5 quy tắc)")}>
+      <p className="text-xs leading-5 text-muted-foreground">
+        {t(
+          "Rule status (PASS / VIOLATION / NEEDS_REVIEW) is reported separately from severity (INFO / WARNING / ERROR).",
+          "Trạng thái quy tắc (PASS / VIOLATION / NEEDS_REVIEW) được tách biệt rõ với mức độ nghiêm trọng (INFO / WARNING / ERROR).",
+        )}
+      </p>
+      {!modelId ? (
+        <p className="text-sm text-muted-foreground">
+          {t("Pinned static model is required before rule evaluation results can load.", "Cần có model tĩnh đã ghim để tải kết quả đánh giá 5 quy tắc.")}
+        </p>
+      ) : runs.isPending || (evaluationId && findings.isPending) ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t("Loading static evaluation findings…", "Đang tải kết quả đánh giá kiến trúc tĩnh…")}
+        </p>
+      ) : runs.isError ? (
+        <ErrorState error={runs.error} onRetry={() => void runs.refetch()} />
+      ) : (
+        <div className="space-y-2.5">
+          {!evaluationId && (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "No persisted evaluation run yet; rule readiness stays pending until static evaluation completes.",
+                "Chưa có lượt đánh giá tĩnh nào được lưu; trạng thái các quy tắc sẽ hiển thị sau khi hoàn tất đánh giá.",
+              )}
+            </p>
+          )}
+          <div className="divide-y rounded-xl border bg-background">
+            {ruleRows.map((row) => (
+              <div key={row.ruleId} className="flex flex-wrap items-start justify-between gap-3 p-3 text-xs">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-semibold text-foreground">{row.ruleId}</span>
+                    <span className="font-medium text-foreground">{row.label}</span>
+                  </div>
+                  {(row.unverifiedMetadata || row.status === "NEEDS_REVIEW") && (
+                    <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                      {t("Missing Call-Site / Evidence Grounding (Needs Review)", "Thiếu bằng chứng Call-Site / cần rà soát")}
+                    </p>
+                  )}
+                  {row.message && (
+                    <p className="text-muted-foreground leading-5">{row.message}</p>
+                  )}
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <div className="text-right">
+                    <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {t("Rule Status", "Trạng thái")}
+                    </span>
+                    <StatusBadge status={row.status} />
+                  </div>
+                  <div className="text-right">
+                    <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {t("Severity", "Mức độ")}
+                    </span>
+                    <Badge variant="outline" className="font-mono text-[10px]">
+                      {row.severity}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </DetailPanel>
+  );
+}
+
 function StepContent({
   step,
   workspaceId,
   labId,
   projectId,
   modelQuery,
+  snapshotId,
+  modelId,
+  modelRevision,
   canAttemptQuiz,
   showQuiz,
   runtimeReady,
+  runtimeSessionHref,
+  studioHref,
+  studioVerified,
 }: {
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
   labId: string;
   projectId: string;
   modelQuery: string | null;
+  snapshotId?: string | undefined;
+  modelId?: string | undefined;
+  modelRevision?: number | undefined;
   canAttemptQuiz: boolean;
   showQuiz: boolean;
   runtimeReady: boolean;
+  runtimeSessionHref: string | null;
+  studioHref: string | null;
+  studioVerified: boolean;
 }) {
   const { t } = useLocale();
   const sourceLink = projectId
@@ -616,7 +775,7 @@ function StepContent({
   const current = learningSteps.find((item) => item.id === step)!;
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
-  const nextAvailable = next === 2 || (next === 3 && runtimeReady);
+  const nextAvailable = next === 2 || (next === 3 && runtimeReady) || (next === 4 && Boolean(studioHref));
   return (
     <>
       <div className="rounded-2xl border bg-card p-6">
@@ -637,64 +796,131 @@ function StepContent({
       </div>
 
       {step === 1 && (
-        <div className="grid gap-5 md:grid-cols-2">
-          <DetailPanel title={t("Reference architecture", "Kiến trúc tham chiếu")}>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {t("Inspect the C1–C3 diagrams and dependency graph from the pinned Lab source.",
-                "Xem sơ đồ C1–C3 và đồ thị phụ thuộc từ mã nguồn đã ghim của Lab.")}
-            </p>
-            <Button asChild>
-              <Link href={modelQuery ? `/architecture?${modelQuery}` : sourceLink}>
-                {modelQuery ? t("Open dependency graph", "Mở đồ thị phụ thuộc") :
-                  projectId ? t("Analyze Lab source", "Phân tích nguồn Lab") : t("Open Lab assignment", "Mở bài tập Lab")} <ArrowRight />
-              </Link>
-            </Button>
-          </DetailPanel>
-          {modelQuery && <DetailPanel title={t("C1–C3 diagrams", "Sơ đồ C1–C3")}>
-            <Button asChild variant="outline">
-              <Link href={`/diagrams?${modelQuery}&kind=CONTEXT`}>
-                {t("Open read-only diagrams", "Mở sơ đồ chỉ đọc")}
-              </Link>
-            </Button>
-          </DetailPanel>}
+        <div className="space-y-5">
+          <div className="rounded-2xl border bg-card p-5 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <Badge variant="secondary">
+                  {t(
+                    "Read-Only Structural Views (C1–C3 + Dependency Graph) · Static source evidence only (not runtime trace)",
+                    "Góc nhìn cấu trúc chỉ đọc (C1–C3 + Đồ thị phụ thuộc) · Chỉ từ bằng chứng mã nguồn tĩnh (không phải dấu vết runtime)",
+                  )}
+                </Badge>
+                <p className="mt-2 text-sm text-muted-foreground leading-6">
+                  {t(
+                    "Inspect the read-only structural diagrams and dependency graph produced from the Lab's pinned static analysis snapshot.",
+                    "Khám phá các sơ đồ cấu trúc chỉ đọc và đồ thị phụ thuộc được sinh từ bản chụp mã nguồn tĩnh đã ghim của Lab.",
+                  )}
+                </p>
+              </div>
+              <Badge variant="outline" className="font-mono">
+                {modelRevision !== undefined ? `Model Revision r${modelRevision}` : "Revision pending"}
+              </Badge>
+            </div>
+            <dl className="grid gap-3 rounded-xl border bg-muted/20 p-3 text-xs sm:grid-cols-3">
+              <div>
+                <dt className="text-muted-foreground">sourceSnapshotId</dt>
+                <dd className="mt-1 break-all font-mono text-foreground">{snapshotId || "Pending"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">modelVersionId</dt>
+                <dd className="mt-1 break-all font-mono text-foreground">{modelId || "Pending"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Model Revision</dt>
+                <dd className="mt-1 font-mono text-foreground">
+                  {modelRevision !== undefined ? `r${modelRevision}` : "Pending"}
+                </dd>
+              </div>
+            </dl>
+            <div className="flex flex-wrap gap-2">
+              {modelQuery ? (
+                <>
+                  <Button asChild variant="outline">
+                    <Link href={`/diagrams?${modelQuery}&kind=CONTEXT`}>C1 System Context</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href={`/diagrams?${modelQuery}&kind=CONTAINER`}>C2 Container</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href={`/diagrams?${modelQuery}&kind=COMPONENT`}>C3 Component</Link>
+                  </Button>
+                  <Button asChild>
+                    <Link href={`/architecture?${modelQuery}`}>
+                      {t("Service Dependency Graph (Read-Only)", "Đồ thị phụ thuộc Service (Chỉ đọc)")}
+                      <ArrowRight />
+                    </Link>
+                  </Button>
+                </>
+              ) : (
+                <Button asChild>
+                  <Link href={sourceLink}>
+                    {projectId ? t("Analyze Lab source", "Phân tích nguồn Lab") : t("Open Lab assignment", "Mở bài tập Lab")}
+                    <ArrowRight />
+                  </Link>
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <StaticEvaluationSummary modelId={modelId} />
+
           <DetailPanel title={t("Evidence and AI review", "Bằng chứng và đánh giá AI")}>
             <p className="text-sm leading-6 text-muted-foreground">
-              {t("Select a node or relationship to review source evidence and 3E findings.",
-                "Chọn nút hoặc mối quan hệ để xem bằng chứng mã nguồn và kết quả đánh giá 3E.")}
+              {t(
+                "Select a node or relationship to review source evidence and 3E findings.",
+                "Chọn nút hoặc mối quan hệ để xem bằng chứng mã nguồn và kết quả đánh giá 3E.",
+              )}
             </p>
-            {modelQuery && <Button asChild variant="outline">
-              <Link href={`/explain?${modelQuery}`}>{t("Open evidence review", "Mở đánh giá bằng chứng")}</Link>
-            </Button>}
+            {modelQuery && (
+              <Button asChild variant="outline">
+                <Link href={`/explain?${modelQuery}`}>{t("Open evidence review", "Mở đánh giá bằng chứng")}</Link>
+              </Button>
+            )}
           </DetailPanel>
         </div>
       )}
 
       {step === 2 && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)]">
-          <DetailPanel title={t("Chapter lesson", "Bài học lý thuyết")}>
-            <div className="space-y-4 text-sm leading-6 text-muted-foreground">
-              <p>
-                {t("Study the published lesson before taking the Quiz.", "Đọc bài học đã công bố trước khi làm Quiz.")}
-              </p>
-              <p>
-                {t("Use the pinned analysis to see which services depend on the element you change.",
-                  "Dùng kết quả phân tích đã ghim để xem những service phụ thuộc vào phần tử bạn thay đổi.")}
-              </p>
-            </div>
-            <Button asChild variant="outline">
-              <Link href={modelQuery ? `/impact?${modelQuery}` : sourceLink}>
-                {modelQuery ? t("Inspect static impact", "Xem tác động tĩnh") : t("Open Lab source", "Mở nguồn của Lab")}
-              </Link>
-            </Button>
-          </DetailPanel>
-          {showQuiz ? <CourseQuiz workspaceId={workspaceId} labId={labId} canSubmit={canAttemptQuiz} /> : <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
-            <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
-              <CircleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
-              <p className="text-sm leading-6 text-muted-foreground">
-                {t("Quiz attempts are available to enrolled students in published guided Labs.", "Sinh viên đã ghi danh có thể làm Quiz trong Lab tuần tự đã công bố.")}
-              </p>
-            </div>
-          </DetailPanel>}
+          <div className="space-y-5">
+            <DetailPanel title={t("Chapter lesson", "Bài học lý thuyết")}>
+              <div className="space-y-4 text-sm leading-6 text-muted-foreground">
+                <p>
+                  {t("Study the published lesson before taking the Quiz.", "Đọc bài học đã công bố trước khi làm Quiz.")}
+                </p>
+                <p>
+                  {t("Use the pinned analysis to see which services depend on the element you change.",
+                    "Dùng kết quả phân tích đã ghim để xem những service phụ thuộc vào phần tử bạn thay đổi.")}
+                </p>
+              </div>
+              <Button asChild variant="outline">
+                <Link href={modelQuery ? `/impact?${modelQuery}` : sourceLink}>
+                  {modelQuery ? t("Inspect static impact", "Xem tác động tĩnh") : t("Open Lab source", "Mở nguồn của Lab")}
+                </Link>
+              </Button>
+            </DetailPanel>
+            <Step2StaticImpact
+              projectId={projectId}
+              modelId={modelId}
+              modelQuery={modelQuery}
+              sourceLink={sourceLink}
+            />
+          </div>
+          {showQuiz ? (
+            <CourseQuiz workspaceId={workspaceId} labId={labId} canSubmit={canAttemptQuiz}
+              runtimeStepHref={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3`}
+            />
+          ) : (
+            <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
+              <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
+                <CircleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {t("Quiz attempts are available to enrolled students in published guided Labs.", "Sinh viên đã ghi danh có thể làm Quiz trong Lab tuần tự đã công bố.")}
+                </p>
+              </div>
+            </DetailPanel>
+          )}
         </div>
       )}
 
@@ -709,9 +935,23 @@ function StepContent({
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
             {step === 3 && runtimeReady ? (
-              <Button asChild><Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink}>
-                {projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
-              </Link></Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {runtimeSessionHref && <Button asChild><Link href={runtimeSessionHref}>
+                  {t("Open Runtime session", "Mở phiên Runtime")}
+                </Link></Button>}
+                <Button asChild variant={runtimeSessionHref ? "outline" : "default"}>
+                  <Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink}>
+                    {projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
+                  </Link>
+                </Button>
+              </div>
+            ) : step === 4 && studioHref ? (
+              <div className="space-y-2">
+                <p>{studioVerified
+                  ? t("This Lab has verified Studio evidence.", "Lab đã có minh chứng Studio được xác minh.")
+                  : t("Choose a service action in Runtime Sessions and run the experiment.", "Chọn thao tác dịch vụ ở trang Phiên Runtime và chạy thực nghiệm.")}</p>
+                <Button asChild><Link href={studioHref}>{t("Open MAVIS Studio", "Mở MAVIS Studio")}</Link></Button>
+              </div>
             ) : <p className="text-sm leading-6 text-muted-foreground">
               {step === 3 ? t("Pass the current Lab Quiz to open Runtime.", "Hãy đạt Quiz hiện tại của Lab để mở Runtime.")
                 : t("Studio requires Runtime evidence.", "Studio cần bằng chứng Runtime.")}

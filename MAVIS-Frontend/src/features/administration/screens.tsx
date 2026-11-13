@@ -10,7 +10,10 @@ import { RequestState, ErrorState } from "@/components/shared/request-state";
 import { ConfirmDialog, SearchInput, SelectField } from "@/components/shared/forms";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { AnalysisStatusIndicator } from "@/features/source-analysis/components";
+import {
+  AnalysisStatusIndicator,
+  analysisStatusBadgeProps,
+} from "@/features/source-analysis/components";
 import type { Response } from "@/lib/api/contracts";
 export function Accounts() {
   const query = useApiQuery("accounts", {});
@@ -894,18 +897,10 @@ export function AdminAnalysisJobs() {
               {
                 key: "state",
                 label: "Status",
-                render: (j) => (
-                  <StatusBadge
-                    status={j.status}
-                    variant={
-                      ["failed", "timed-out"].includes(j.status)
-                        ? "destructive"
-                        : j.status === "completed"
-                          ? "success"
-                          : "outline"
-                    }
-                  />
-                ),
+                render: (j) => {
+                  const badge = analysisStatusBadgeProps(j);
+                  return <StatusBadge status={badge.status} variant={badge.variant} />;
+                },
               },
               {
                 key: "progress",

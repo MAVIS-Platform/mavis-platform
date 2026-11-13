@@ -34,6 +34,10 @@ public class GroundedFindingExplanation {
         if(!legacy && finding.getDetails()!=null) finding.getDetails().path("supportingEvidenceIds").forEach(id -> allowed.add(id.asText()));
         boolean isVi = "vi".equalsIgnoreCase(request.getLocale());
         var relevant=evidences.findByModelVersionId(model.getId()).stream().filter(e -> allowed.contains(e.getId().toString()) && e.getExcerpt()!=null && !e.getExcerpt().isBlank()).sorted(Comparator.comparing(e -> e.getId().toString())).toList();
+        boolean hasHttpCallSite = relevant.stream().anyMatch(e -> ("STATIC_CODE".equals(e.getSourceType()) || "CODE".equals(e.getSourceType()))
+                && "CALL_SITE".equals(e.getProvenance() == null ? "" : e.getProvenance().path("communicationRole").asText("")));
+        boolean metadataOnly = !legacy && ((finding.getDetails() != null && "UNVERIFIED_METADATA_ONLY".equals(finding.getDetails().path("evidenceSufficiency").asText()))
+                || ("RULE-04".equals(finding.getRuleId()) && relationship != null && "SERVICE_HTTP_CALL".equalsIgnoreCase(relationship.getRelationType()) && !relevant.isEmpty() && !hasHttpCallSite));
         var content=mapper.createObjectNode();
         String summary;
         if (isVi) {
@@ -57,6 +61,7 @@ public class GroundedFindingExplanation {
                 case "RULE-02" -> "Nhiều Service cùng truy cập chung một Database hoặc Schema có thể làm tăng mức độ gắn kết chặt chẽ (tight coupling), cản trở việc triển khai độc lập và tiến hóa cơ sở dữ liệu. Hãy xác minh ranh giới sở hữu dữ liệu trước khi tái cấu trúc.";
                 case "RULE-01" -> "Phụ thuộc vòng giữa các Service có thể khiến thay đổi hoặc sự cố từ một Service lan truyền dây chuyền theo chu trình phụ thuộc.";
                 case "RULE-03" -> "Một Service có độ kết nối thấp hoặc cô lập trong mô hình có thể là một worker chạy độc lập hoặc sử dụng cơ chế liên kết động chưa được trích xuất; điều này không đồng nghĩa với việc có lỗi.";
+                case "RULE-04" -> "Quan hệ giao tiếp HTTP giữa các dịch vụ chỉ được xem là có bằng chứng đầy đủ khi trích xuất được CALL_SITE thực thi từ mã nguồn (với file/line locator và excerpt hợp lệ). Khai báo interface hoặc cấu hình metadata chỉ mang tính tham chiếu chưa xác minh.";
                 default -> "Phát hiện này nêu bật một mẫu kiến trúc trong phạm vi mô hình đã phân tích; hãy kiểm tra bằng chứng trước khi chỉnh sửa mã nguồn.";
             };
         } else {
@@ -64,6 +69,7 @@ public class GroundedFindingExplanation {
                 case "RULE-02" -> "Multiple services accessing a shared database or schema can couple independent deployments and schema evolution. Verify data ownership boundaries before refactoring.";
                 case "RULE-01" -> "Cyclic dependencies across services can cause changes or failures in one service to cascade across the dependency cycle.";
                 case "RULE-03" -> "A weakly connected or isolated service in the model may represent a standalone worker or unextracted dynamic wiring; it does not automatically indicate a defect.";
+                case "RULE-04" -> "Service-to-service HTTP calls require a statically extracted CALL_SITE invocation with a valid file/line locator and excerpt to be grounded. Interface contracts or configuration properties alone remain Unverified metadata-only.";
                 default -> "This finding highlights an architectural pattern within the analyzed model scope; verify the supporting evidence before modifying source code.";
             };
         }
@@ -76,6 +82,11 @@ public class GroundedFindingExplanation {
                 : "Historical finding has not been re-verified against the current rule set version.");
         }
         if(finding.getDetails()!=null) finding.getDetails().path("unknowns").forEach(unknowns::add);
+        if(metadataOnly && unknowns.isEmpty()) {
+            unknowns.add(isVi
+                ? "Missing Evidence (Unverified metadata-only): chỉ ghi nhận metadata khai báo/cấu hình client, chưa tìm thấy bằng chứng CALL_SITE hợp lệ."
+                : "Missing Evidence (Unverified metadata-only): only client contract or configuration metadata is linked; no verified CALL_SITE invocation evidence was extracted.");
+        }
         if(relevant.isEmpty()) {
             unknowns.add(isVi
                 ? "Hiện chưa có đoạn trích mã nguồn hoàn chỉnh nào được liên kết với phát hiện này."
@@ -108,7 +119,7 @@ public class GroundedFindingExplanation {
                 ? "Kiểm tra bằng chứng liên kết và các mối quan hệ lân cận để xác minh phát hiện này trong ngữ cảnh dự án."
                 : "Inspect linked evidence and adjacent relationships to verify this finding in project context.");
         }
-        content.put("evidenceSufficiency",legacy?"LEGACY_UNVERIFIED":relevant.isEmpty()?"INCOMPLETE":"SOURCE_REFERENCES");
+        content.put("evidenceSufficiency",legacy?"LEGACY_UNVERIFIED":metadataOnly?"UNVERIFIED_METADATA_ONLY":relevant.isEmpty()?"INCOMPLETE":"SOURCE_REFERENCES");
         var refs=content.putArray("evidenceRefs"); relevant.forEach(e -> refs.add(e.getId().toString()));
         var context=mapper.createObjectNode(); context.put("contractVersion","3e/2"); context.put("modelId",model.getId().toString());
         if(model.getSourceSnapshot()!=null)context.put("snapshotId",model.getSourceSnapshot().getId().toString());

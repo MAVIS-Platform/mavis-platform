@@ -1321,6 +1321,10 @@ function RuntimeActivityDiagramCanvas({
   );
 }
 
+function studioMetric(value: unknown) {
+  return typeof value === "number" ? Number(value.toFixed(2)) : "Unavailable";
+}
+
 export function BackendRuntime({ administrative = false }: { administrative?: boolean }) {
   const { projectId } = useSelection();
   return <RuntimeProject key={projectId} administrative={administrative} />;
@@ -1407,7 +1411,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const [quickRunRunning, setQuickRunRunning] = useState(false);
   const [quickRunMsg, setQuickRunMsg] = useState("");
   const [quickRunError, setQuickRunError] = useState("");
-  const [studioAction, setStudioAction] = useState<"STOP" | "START" | "SCALE">("SCALE");
+  const [studioAction, setStudioAction] = useState<"OBSERVE" | "STOP" | "START" | "SCALE">("OBSERVE");
   const [studioService, setStudioService] = useState("");
   const [studioReplicas, setStudioReplicas] = useState(2);
 
@@ -2022,7 +2026,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         configurationRevision: pinnedConfig.revision,
         scenarioRevision: savedScenario.revision,
         approved: true,
-        infrastructureActions: selectedStudioService
+        infrastructureActions: selectedStudioService && studioAction !== "OBSERVE"
           ? [{
               action: studioAction,
               service: selectedStudioService,
@@ -2166,19 +2170,20 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               <SelectField
                 label="MAVIS Studio action"
                 value={studioAction}
-                onChange={(value) => setStudioAction(value as "STOP" | "START" | "SCALE")}
+                onChange={(value) => setStudioAction(value as "OBSERVE" | "STOP" | "START" | "SCALE")}
                 options={[
+                  { value: "OBSERVE", label: "Observe only" },
                   { value: "SCALE", label: "Scale replicas" },
                   { value: "STOP", label: "Stop service" },
                   { value: "START", label: "Start service" },
                 ]}
               />
-              <SelectField
+              {studioAction !== "OBSERVE" && <SelectField
                 label="Target service"
                 value={selectedStudioService}
                 onChange={setStudioService}
                 options={runtimeApplicationServices.map((service) => ({ value: service, label: service }))}
-              />
+              />}
               {studioAction === "SCALE" && (
                 <label className="text-xs">
                   Replicas (1–8)
@@ -2210,7 +2215,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               </Button>
               <Button
                 onClick={handleQuickRun}
-                disabled={quickRunRunning || active.has(upperExecStatus) || !snapshots.data?.length || !selectedStudioService}
+                disabled={quickRunRunning || active.has(upperExecStatus) || !snapshots.data?.length || (studioAction !== "OBSERVE" && !selectedStudioService)}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs h-9 shadow"
               >
                 {quickRunRunning || active.has(upperExecStatus) ? (
@@ -2694,6 +2699,22 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
 
           <div className="space-y-4">
             {/* Visual Canvas 1: Service Workflow Topology */}
+            {Boolean(session.data?.infrastructureActions?.length) && (
+              <div className="space-y-2 rounded-lg border p-3 text-sm">
+                <h3 className="font-medium">Studio results</h3>
+                {session.data?.infrastructureActions?.filter((action) => action.confirmed).map((action, index) => (
+                  <div className="space-y-1" key={index}>
+                    <p className="font-medium">{action.action} {action.service}</p>
+                    <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4">
+                      <dt>Running replicas</dt><dd>{action.replicasBefore} → {action.replicasAfter}</dd>
+                      <dt>Requests measured</dt><dd>{studioMetric(action.metricsBefore["requestCount"])} → {studioMetric(action.metricsAfter["requestCount"])}</dd>
+                      <dt>p95 latency (ms)</dt><dd>{studioMetric(action.metricsBefore["p95LatencyMs"])} → {studioMetric(action.metricsAfter["p95LatencyMs"])}</dd>
+                      <dt>Request error rate (%)</dt><dd>{studioMetric(action.metricsBefore["errorRatePercent"])} → {studioMetric(action.metricsAfter["errorRatePercent"])}</dd>
+                    </dl>
+                  </div>
+                ))}
+              </div>
+            )}
             {vizMode === "topology" && (
               <div data-tour="session-topology" className="min-w-0">
                 <RuntimeWorkflowTopologyCanvas

@@ -202,3 +202,38 @@ test('Deployment retains configuration semantics and distinguishes declared imag
   for(const patch of [{state:'REJECTED'},{proposalOrigin:'USER_PROVIDED'},{evidenceIds:[]},{sourceExcerpt:''},{targetKey:'missing'}])assert.equal(projections.deriveC4ContextModel(withContextCandidates(model,[{...entry,...patch}])).persons.length,0);
   assert.equal(projections.deriveC4ContextModel(withContextCandidates(model,[entry,entry])).persons.length,1);
  });
+ test('AI redacts provider tokens and isolates C4/UML caches by user and modelVersionId', async t => {
+  const {NextRequest}=require('next/server');
+  const {redactEvidenceText}=require('../src/lib/ai/evidence-grounding.ts');
+  const {POST}=require('../app/api/ai-diagram-semantics/route.ts');
+  const raw='sk-proj-abc1234567890abcdef1234 AIzaSyD98765432109876543210abcd ghp_1234567890abcdefghijklmnop eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.signaturepart123';
+  const scrubbed=redactEvidenceText(raw);
+  for (const leak of ['sk-proj-abc','AIzaSyD','ghp_123456','eyJhbGciOiJIUzI1NiJ9']) assert.equal(scrubbed.includes(leak),false);
+  const previous=process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY='fixture-provider-key';
+  t.after(()=>{if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;});
+  let llmCalls=0;
+  t.mock.method(globalThis,'fetch',async (url,init)=>{
+   const cookie=init?.headers?.cookie ?? '';
+   if(String(url).endsWith('/api/v1/auth/me')){
+    const id=String(init?.headers?.authorization ?? '').includes('user-b') ? '22222222-2222-4222-8222-222222222222' : '11111111-1111-4111-8111-111111111111';
+    return Response.json({code:200,data:{id,fullName:'User',role:'STUDENT'}});
+   }
+   llmCalls++;
+   const prompt=JSON.parse(init.body).messages[1].content;
+   assert.equal(prompt.includes('AIzaSyD98765432109876543210abcd'),false);
+   return Response.json({choices:[{message:{content:JSON.stringify({nodeDescriptions:{n1:`Desc #${llmCalls}`}})}}]});
+  });
+  const callFor=(token,modelVersionId)=>POST(new NextRequest('http://local/api/ai-diagram-semantics',{
+   method:'POST',headers:{host:'local',origin:'http://local',cookie:`mavis_session=${token}`},
+   body:JSON.stringify({modelVersionId,projectId:'proj-1',c4Context:{kind:'CONTAINER',contextHash:'same-c4-hash',astSkeleton:'class Svc { key = "AIzaSyD98765432109876543210abcd"; }',nodes:[{id:'n1',hasSourceEvidence:true}]}})
+  }));
+  const res1=await (await callFor('token-a','mv-1')).json();
+  const res2=await (await callFor('token-a','mv-2')).json();
+  assert.equal(res1.cached,false);
+  assert.equal(res2.cached,false);
+  assert.equal(llmCalls,2);
+  const res1Again=await (await callFor('token-a','mv-1')).json();
+  assert.equal(res1Again.cached,true);
+  assert.equal(llmCalls,2);
+ });
