@@ -1,6 +1,7 @@
 package com.mavis.common.security;
 
 import com.mavis.common.entity.Assignment;
+import com.mavis.common.entity.Project;
 import com.mavis.common.entity.User;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.exception.ErrorCode;
@@ -15,6 +16,29 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CourseLabPolicy {
     private final JdbcTemplate jdbc;
+
+    public boolean hasPassedCurrentQuiz(Assignment lab, UUID studentId) {
+        if (lab.getReferenceModel() == null) return false;
+        return Boolean.TRUE.equals(jdbc.queryForObject("""
+                SELECT EXISTS (
+                    SELECT 1 FROM course_quiz_attempts a
+                    WHERE a.assignment_id = ? AND a.student_id = ? AND a.passed
+                    AND a.quiz_version = (SELECT max(q.version) FROM course_quizzes q
+                        WHERE q.assignment_id = a.assignment_id AND q.reference_model_id = ?)
+                )
+                """, Boolean.class, lab.getId(), studentId, lab.getReferenceModel().getId()));
+    }
+
+    public void requireRuntimeReadiness(Project project) {
+        if (project.getWorkspace() == null || !project.getWorkspace().isCourseMode()
+                || !"STUDENT_WORKING".equals(project.getProjectType())) return;
+        var lab = project.getAssignment();
+        var owner = project.getOwner();
+        if (lab == null || owner == null || !project.getWorkspace().getId().equals(lab.getWorkspace().getId())
+                || !canOpen(lab, owner) || !hasPassedCurrentQuiz(lab, owner.getId())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "Pass the current Lab Quiz before starting Runtime");
+        }
+    }
 
     public Set<UUID> passedAssignments(UUID workspaceId, UUID studentId) {
         return Set.copyOf(jdbc.queryForList("""
