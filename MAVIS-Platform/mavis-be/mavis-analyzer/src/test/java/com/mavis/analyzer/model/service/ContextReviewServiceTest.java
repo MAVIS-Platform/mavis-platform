@@ -27,7 +27,19 @@ class ContextReviewServiceTest {
  @Test void proposalStoresMetadataOnly(){service.review(model.getId(),request("PROPOSE"));var r=captured();assertThat(r.relationships()).isEmpty();assertThat(r.elements()).allMatch(e->"UPDATE".equals(e.operation()));var props=r.elements().get(0).properties();assertThat(props.path("contextReview").path("entries").get(0).path("state").asText()).isEqualTo("PROPOSED");assertThat(props.path("contextReview").path("audit").get(0).path("actorId").asText()).isEqualTo(actor.toString());}
  @Test void confirmedAssertionIsAtomicAndNeverRuntimeVerified(){stored("PROPOSED");service.review(model.getId(),new ContextReviewService.Request(1,"CONFIRM","c1",null,null,null,null,null,"Customer is a user outside our system boundary",null));var r=captured();assertThat(r.elements()).hasSize(2);var person=r.elements().stream().filter(e->"ADD".equals(e.operation())).findFirst().orElseThrow();assertThat(person.kind()).isEqualTo("PERSON");assertThat(person.properties().path("contextFactOrigin").asText()).isEqualTo("USER_CONFIRMED");assertThat(person.properties().has("verifiedRuntime")).isFalse();assertThat(r.relationships()).hasSize(1);assertThat(r.relationships().get(0).toRef()).isEqualTo(target.getId().toString());}
  @Test void boundaryExplanationRequired(){stored("PROPOSED");assertThatThrownBy(()->service.review(model.getId(),request("CONFIRM"))).isInstanceOf(BusinessException.class);verifyNoInteractions(revisions);}
- @Test void duplicateConfirmationRejected(){stored("CONFIRMED");assertThatThrownBy(()->service.review(model.getId(),request("CONFIRM"))).isInstanceOf(BusinessException.class);verifyNoInteractions(revisions);}
+ @Test void duplicateConfirmationOnMatchingRevisionIsIdempotent(){
+  stored("CONFIRMED");
+  var expected=new ModelVersionService.ModelView(model.getId(),project.getId(),null,null,1,model.getOrigin(),Boolean.TRUE.equals(model.getIsLatestValid()));
+  var result=service.review(model.getId(),request("CONFIRM"));
+  assertThat(result).isEqualTo(expected);
+  verifyNoInteractions(revisions);
+ }
+ @Test void duplicateConfirmationOnStaleRevisionReturnsConflict(){
+  stored("CONFIRMED");
+  assertThatThrownBy(()->service.review(model.getId(),new ContextReviewService.Request(99,"CONFIRM","c1",null,null,null,null,null,null,null)))
+   .isInstanceOfSatisfying(BusinessException.class,e->assertThat(e.getErrorCode()).isEqualTo(com.mavis.common.exception.ErrorCode.CONFLICT));
+  verifyNoInteractions(revisions);
+ }
  @Test void sourceRoleIsOnlyAProposedCandidate(){var ev=Evidence.builder().id(UUID.randomUUID()).sourceType("STATIC_CODE").element(target).locator("SecurityConfig.java:12").excerpt("@PreAuthorize(\"hasRole('ADMIN')\")").build();when(evidence.findByModelVersionId(model.getId())).thenReturn(List.of(ev));service.review(model.getId(),request("SUGGEST"));var r=captured();assertThat(r.relationships()).isEmpty();var entry=r.elements().get(0).properties().path("contextReview").path("entries").get(0);assertThat(entry.path("name").asText()).isEqualTo("Role: ADMIN");assertThat(entry.path("state").asText()).isEqualTo("PROPOSED");assertThat(entry.path("evidenceIds").get(0).asText()).isEqualTo(ev.getId().toString());}
  @Test void foreignEvidenceRejected(){var r=request("PROPOSE");assertThatThrownBy(()->service.review(model.getId(),new ContextReviewService.Request(1,r.action(),null,r.name(),r.kind(),r.targetKey(),r.direction(),r.basis(),null,List.of(UUID.randomUUID())))).isInstanceOf(BusinessException.class);verifyNoInteractions(revisions);}
  @Test void staleRevisionRejected(){assertThatThrownBy(()->service.review(model.getId(),new ContextReviewService.Request(2,"SUGGEST",null,null,null,null,null,null,null,null))).isInstanceOf(BusinessException.class);verifyNoInteractions(revisions);}

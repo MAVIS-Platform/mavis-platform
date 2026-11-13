@@ -42,8 +42,17 @@ class ArchitectureDocumentServiceTest {
         when(access.requireCurrentActiveUser()).thenReturn(User.builder()
                 .role(Role.builder().code("STUDENT").build()).build());
 
-        for (String key : List.of("context", "uml-sequence:all", "uml-activity:all", "uml-state:all")) {
+        for (String key : List.of("context", "uml-sequence:all", "uml-activity:all", "uml-state:all",
+                "class", "package", "activity", "flowchart", "state", "state-machine")) {
             assertThatThrownBy(() -> service.save(id, key, new ArchitectureDocumentService.Save(0, xml)))
+                    .isInstanceOfSatisfying(BusinessException.class,
+                            error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.BAD_REQUEST));
+        }
+        for (String key : List.of("uml-sequence:all", "uml-activity:all", "uml-state:all", "class", "state")) {
+            assertThatThrownBy(() -> service.get(id, key, null))
+                    .isInstanceOfSatisfying(BusinessException.class,
+                            error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.BAD_REQUEST));
+            assertThatThrownBy(() -> service.freeze(id, key, 1))
                     .isInstanceOfSatisfying(BusinessException.class,
                             error -> assertThat(error.getErrorCode()).isEqualTo(ErrorCode.BAD_REQUEST));
         }

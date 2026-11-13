@@ -65,10 +65,13 @@ public class DiagramProjectionServiceImpl implements DiagramProjectionService {
         var layout = json.createObjectNode().put("schemaVersion", "1.0")
                 .put("modelVersionId", model.getId().toString());
         var positions = layout.putArray("nodes");
+        var connections = layout.putArray("edges");
+        if (nodes.isEmpty()) {
+            return DiagramVersion.builder().modelVersion(model).notation("C4").level("CONTEXT").layoutJson(layout).build();
+        }
         String systemId = "system:" + model.getProject().getId();
         positions.addObject().put("id", systemId).put("kind", "SYSTEM")
                 .put("name", model.getProject().getName()).put("x", 280).put("y", 0);
-        var connections = layout.putArray("edges");
         var included = new LinkedHashSet<UUID>();
         var structuralEdges = edges.stream()
                 .filter(edge -> !"DEPLOYMENT".equals(edge.getOriginLayer()) && !"RUNTIME".equals(edge.getOriginLayer()))
