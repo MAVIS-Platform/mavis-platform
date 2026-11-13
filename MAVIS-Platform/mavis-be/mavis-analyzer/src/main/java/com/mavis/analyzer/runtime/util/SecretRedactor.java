@@ -20,9 +20,16 @@ public class SecretRedactor {
             "access_token", "client_secret", "private_key", "credential", "cloudinary_url"
     );
 
+    private static final Pattern PEM_PRIVATE_KEY_PATTERN = Pattern.compile("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)");
     private static final Pattern BEARER_PATTERN = Pattern.compile("(?i)(bearer\\s+)[A-Za-z0-9_\\-\\.]+", Pattern.CASE_INSENSITIVE);
     private static final Pattern QUERY_PARAM_SECRET = Pattern.compile("(?i)(password|token|secret|apikey|api_key)=([^&\\s]+)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern COLON_SECRET_PATTERN = Pattern.compile("(?i)\\b(password|token|secret|apikey|api_key|api-key)(\\s*:\\s*)(?:\"[^\"\\r\\n]*\"|'[^'\\r\\n]*'|[^\\s,;\"'&}]+)");
     private static final Pattern URI_USERINFO_PATTERN = Pattern.compile("([a-zA-Z][a-zA-Z0-9+.-]*://[^/:@\\s]+:)([^@\\s/]+)(@)");
+    private static final Pattern OPENAI_KEY_PATTERN = Pattern.compile("\\bsk-(?:proj-)?[A-Za-z0-9_-]{16,}\\b");
+    private static final Pattern GEMINI_KEY_PATTERN = Pattern.compile("\\bAIza[0-9A-Za-z_-]{20,}\\b");
+    private static final Pattern GITHUB_TOKEN_PATTERN = Pattern.compile("\\b(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{16,})\\b");
+    private static final Pattern AWS_KEY_PATTERN = Pattern.compile("\\bAKIA[A-Z0-9]{16}\\b");
+    private static final Pattern JWT_TOKEN_PATTERN = Pattern.compile("\\beyJ[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\.[A-Za-z0-9_-]{8,}\\b");
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -93,9 +100,16 @@ public class SecretRedactor {
             return input;
         }
 
-        String result = BEARER_PATTERN.matcher(input).replaceAll("$1" + REDACTED_MARKER);
+        String result = PEM_PRIVATE_KEY_PATTERN.matcher(input).replaceAll(REDACTED_MARKER);
+        result = BEARER_PATTERN.matcher(result).replaceAll("$1" + REDACTED_MARKER);
         result = QUERY_PARAM_SECRET.matcher(result).replaceAll("$1=" + REDACTED_MARKER);
+        result = COLON_SECRET_PATTERN.matcher(result).replaceAll("$1$2" + REDACTED_MARKER);
         result = URI_USERINFO_PATTERN.matcher(result).replaceAll("$1" + REDACTED_MARKER + "$3");
+        result = OPENAI_KEY_PATTERN.matcher(result).replaceAll(REDACTED_MARKER);
+        result = GEMINI_KEY_PATTERN.matcher(result).replaceAll(REDACTED_MARKER);
+        result = GITHUB_TOKEN_PATTERN.matcher(result).replaceAll(REDACTED_MARKER);
+        result = AWS_KEY_PATTERN.matcher(result).replaceAll(REDACTED_MARKER);
+        result = JWT_TOKEN_PATTERN.matcher(result).replaceAll(REDACTED_MARKER);
         return result;
     }
 

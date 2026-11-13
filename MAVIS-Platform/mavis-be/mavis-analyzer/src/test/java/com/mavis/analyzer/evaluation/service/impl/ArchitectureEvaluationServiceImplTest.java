@@ -419,4 +419,45 @@ class ArchitectureEvaluationServiceImplTest {
         assertThat(response.getFindings()).filteredOn(f -> "RULE-02".equals(f.getRuleId())).allMatch(f -> "NEEDS_REVIEW".equals(f.getStatus()));
         assertThat(response.getComplianceScore()).isLessThan(100.0);
     }
+
+    @Test
+    @DisplayName("SR-05/SR-10: CLIENT_CONTRACT or missing CALL_SITE role marks RULE-04 as NEEDS_REVIEW, never PASS")
+    void rule04MetadataOnlyClientContractRequiresReviewAndCallSitePasses() {
+        ModelElement order = ModelElement.builder().id(UUID.randomUUID()).name("order-service").elementType("SERVICE_CONTAINER").status("CONFIRMED").build();
+        ModelElement payment = ModelElement.builder().id(UUID.randomUUID()).name("payment-service").elementType("SERVICE_CONTAINER").status("CONFIRMED").build();
+        ModelRelationship call = ModelRelationship.builder().id(UUID.randomUUID()).sourceElement(order).targetElement(payment).relationType("SERVICE_HTTP_CALL").build();
+
+        Evidence contractOnly = Evidence.builder().id(UUID.randomUUID()).relationship(call).sourceType("STATIC_CODE")
+                .locator("PaymentClient.java:14").excerpt("@PostMapping(\"/pay\") PayResponse pay();")
+                .provenance(objectMapper.createObjectNode().put("communicationRole", "CLIENT_CONTRACT")).build();
+
+        when(modelElementRepository.findByModelVersionId(modelVersionId)).thenReturn(List.of(order, payment));
+        when(modelRelationshipRepository.findByModelVersionId(modelVersionId)).thenReturn(List.of(call));
+        when(evidenceRepository.findByModelVersionId(modelVersionId)).thenReturn(List.of(contractOnly));
+
+        EvaluationRunResponseDTO metadataRun = evaluationService.evaluateModel(modelVersionId, "1.0");
+        EvaluationFindingResponseDTO metadataFinding = metadataRun.getFindings().stream()
+                .filter(f -> "RULE-04".equals(f.getRuleId())).findFirst().orElseThrow();
+        assertThat(metadataFinding.getStatus()).isEqualTo("NEEDS_REVIEW");
+        assertThat(metadataFinding.getSeverity()).isEqualTo("WARNING");
+        assertThat(metadataFinding.getDetails().path("evidenceSufficiency").asText()).isEqualTo("UNVERIFIED_METADATA_ONLY");
+        assertThat(metadataFinding.getMessage()).contains("Unverified metadata-only").contains("CALL_SITE");
+
+        Evidence unlabelledStatic = Evidence.builder().id(UUID.randomUUID()).relationship(call).sourceType("STATIC_CODE")
+                .locator("OrderService.java:42").excerpt("paymentClient.pay(req);").build();
+        when(evidenceRepository.findByModelVersionId(modelVersionId)).thenReturn(List.of(unlabelledStatic));
+        EvaluationRunResponseDTO unlabelledRun = evaluationService.evaluateModel(modelVersionId, "1.0");
+        assertThat(unlabelledRun.getFindings()).filteredOn(f -> "RULE-04".equals(f.getRuleId()))
+                .allMatch(f -> "NEEDS_REVIEW".equals(f.getStatus()) && "WARNING".equals(f.getSeverity()));
+
+        Evidence verifiedCallSite = Evidence.builder().id(UUID.randomUUID()).relationship(call).sourceType("STATIC_CODE")
+                .locator("OrderService.java:42").excerpt("paymentClient.pay(req);")
+                .provenance(objectMapper.createObjectNode().put("communicationRole", "CALL_SITE")).build();
+        when(evidenceRepository.findByModelVersionId(modelVersionId)).thenReturn(List.of(verifiedCallSite));
+        EvaluationRunResponseDTO passRun = evaluationService.evaluateModel(modelVersionId, "1.0");
+        EvaluationFindingResponseDTO passFinding = passRun.getFindings().stream()
+                .filter(f -> "RULE-04".equals(f.getRuleId())).findFirst().orElseThrow();
+        assertThat(passFinding.getStatus()).isEqualTo("PASS");
+        assertThat(passFinding.getSeverity()).isEqualTo("INFO");
+    }
 }
