@@ -1395,6 +1395,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   );
   const storedDraft = useMemo(() => (projectId ? readStep1Target(projectId) : {}), [projectId]);
   const targetModelId =
+    session.data?.modelId ||
     storedDraft.modelId ||
     (staticModelsList.find((m) => m.latest) ?? staticModelsList[0] ?? models.data?.[0])?.id;
   const modelDetail = useApiQuery(
@@ -2057,6 +2058,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const stepResults = session.data?.stepResults ?? [];
   const diagnostics = session.data?.diagnostics ?? [];
   const capturedSpans = session.data?.capturedSpanCount;
+  const tracePending = active.has(upperExecStatus) && !observed;
 
   const pipelineStages = [
     {
@@ -2648,6 +2650,18 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
           )}
 
           <div className="space-y-4">
+            {hasSession && (
+              <p className="text-xs text-muted-foreground" role="status">
+                {observed
+                  ? "Showing calls observed in this session’s OpenTelemetry spans."
+                  : tracePending
+                    ? "The session is active. Observed calls appear once the Runner publishes evidence."
+                    : "This session has no observed service calls to display."}
+                {observed && session.data?.traceStatus?.toUpperCase() === "PARTIAL" && (
+                  <> {"Some spans or service mappings are incomplete."}</>
+                )}
+              </p>
+            )}
             {/* Visual Canvas 1: Service Workflow Topology */}
             {vizMode === "topology" && (
               <div data-tour="session-topology" className="min-w-0">

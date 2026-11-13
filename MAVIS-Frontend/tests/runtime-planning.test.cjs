@@ -90,3 +90,9 @@ test('resolveRuntimeTargetModel unwraps RUNTIME_ENRICHED references on Run #2 an
  assert.equal(pickedS2?.id,m3StaticS2.id);
  assert.equal(pickedS2?.snapshotId,s2);
 });
+
+test('observed runtime uses the selected session model and exposes partial trace evidence', () => {
+  const backend = fs.readFileSync(path.join(__dirname, '../src/features/runtime/backend.tsx'), 'utf8');
+  assert.match(backend, /const targetModelId =\s*session\.data\?\.modelId \|\|\s*storedDraft\.modelId/);
+  assert.match(backend, /observed && session\.data\?\.traceStatus\?\.toUpperCase\(\) === "PARTIAL"/);
+});
