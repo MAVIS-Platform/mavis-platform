@@ -331,6 +331,21 @@ export function LabWorkspace() {
   const model = models.data?.filter((item) => item.origin === "GENERATED" &&
     (item.latest || completeModelIds.has(item.id)),
   ).sort((left, right) => right.revision - left.revision)[0];
+  const runtimeSessions = useApiQuery("runtimeReadSessions", { projectId }, {
+    enabled: client.mode === "backend" && runtimeReady && Boolean(projectId && model),
+    poll: activeStep >= 3,
+  });
+  const labSessions = runtimeSessions.data?.filter((item) =>
+    item.projectId === projectId && item.modelId === model?.id,
+  ) ?? [];
+  const observedRuntime = labSessions.find((item) =>
+    ["COMPLETE", "PARTIAL"].includes(item.traceStatus ?? "") && (item.capturedSpanCount ?? 0) > 0,
+  );
+  const studioSession = labSessions.find((item) => item.studioVerified);
+  const studioReady = runtimeReady && Boolean(observedRuntime);
+  const runtimeLink = (sessionId?: string) => `/sessions?${new URLSearchParams({
+    project: projectId, ...(sessionId ? { session: sessionId } : {}),
+  })}`;
   const modelQuery = project && model ? new URLSearchParams({ project: project.id, model: model.id }).toString() : null;
 
   useEffect(() => {
@@ -345,9 +360,9 @@ export function LabWorkspace() {
       },
       { label: t("Theory and quiz", "Lý thuyết và quiz"), state: runtimeReady ? "PASSED" : "IN PROGRESS" },
       { label: t("Runtime observation", "Quan sát runtime"), state: runtimeReady ? "READY" : "LOCKED" },
-      { label: t("Studio receipt", "Biên nhận Studio"), state: "LOCKED" },
+      { label: t("Studio receipt", "Biên nhận Studio"), state: studioSession ? "VERIFIED" : studioReady ? "READY" : "LOCKED" },
     ],
-    [model, referenceSnapshotId, runtimeReady, t],
+    [model, referenceSnapshotId, runtimeReady, studioReady, studioSession, t],
   );
 
   if (!workspaceId)
@@ -429,7 +444,7 @@ export function LabWorkspace() {
             {learningSteps.map((step) => {
               const Icon = step.icon;
               const current = step.id === activeStep;
-              const available = step.id <= 2 || (step.id === 3 && runtimeReady);
+              const available = step.id <= 2 || (step.id === 3 && runtimeReady) || (step.id === 4 && studioReady);
               return (
                 <Link
                   key={step.id}
@@ -467,6 +482,9 @@ export function LabWorkspace() {
             <main className="min-w-0 space-y-5">
               <StepContent
                 runtimeReady={runtimeReady}
+                runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
+                studioHref={studioReady ? runtimeLink(studioSession?.id ?? observedRuntime?.id) : null}
+                studioVerified={Boolean(studioSession)}
                 showQuiz={roadmap.data?.guided === true}
                 canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
                 step={activeStep}
@@ -554,8 +572,9 @@ export function LabWorkspace() {
                         </span>
                         {item.label}
                       </span>
-                      <Badge variant={item.state === "READY" ? "success" : "outline"}>
+                      <Badge variant={item.state === "READY" || item.state === "VERIFIED" ? "success" : "outline"}>
                         {item.state === "READY" ? t("Ready", "Sẵn sàng")
+                          : item.state === "VERIFIED" ? t("Verified", "Đã xác minh")
                           : item.state === "PASSED" ? t("Passed", "Đã đạt")
                           : item.state === "LOCKED" ? t("Locked", "Đang khóa")
                           : item.state === "MISSING" ? t("Missing", "Còn thiếu")
@@ -730,6 +749,9 @@ function StepContent({
   canAttemptQuiz,
   showQuiz,
   runtimeReady,
+  runtimeSessionHref,
+  studioHref,
+  studioVerified,
 }: {
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
@@ -742,6 +764,9 @@ function StepContent({
   canAttemptQuiz: boolean;
   showQuiz: boolean;
   runtimeReady: boolean;
+  runtimeSessionHref: string | null;
+  studioHref: string | null;
+  studioVerified: boolean;
 }) {
   const { t } = useLocale();
   const sourceLink = projectId
@@ -750,7 +775,7 @@ function StepContent({
   const current = learningSteps.find((item) => item.id === step)!;
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
-  const nextAvailable = next === 2 || (next === 3 && runtimeReady);
+  const nextAvailable = next === 2 || (next === 3 && runtimeReady) || (next === 4 && Boolean(studioHref));
   return (
     <>
       <div className="rounded-2xl border bg-card p-6">
@@ -910,9 +935,16 @@ function StepContent({
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
             {step === 3 && runtimeReady ? (
-              <Button asChild><Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink}>
-                {projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
+              <Button asChild><Link href={runtimeSessionHref ?? (projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink)}>
+                {runtimeSessionHref ? t("Open Runtime session", "Mở phiên Runtime") : projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
               </Link></Button>
+            ) : step === 4 && studioHref ? (
+              <div className="space-y-2">
+                <p>{studioVerified
+                  ? t("This Lab has verified Studio evidence.", "Lab đã có minh chứng Studio được xác minh.")
+                  : t("Choose a service action in Runtime Sessions and run the experiment.", "Chọn thao tác dịch vụ ở trang Phiên Runtime và chạy thực nghiệm.")}</p>
+                <Button asChild><Link href={studioHref}>{t("Open MAVIS Studio", "Mở MAVIS Studio")}</Link></Button>
+              </div>
             ) : <p className="text-sm leading-6 text-muted-foreground">
               {step === 3 ? t("Pass the current Lab Quiz to open Runtime.", "Hãy đạt Quiz hiện tại của Lab để mở Runtime.")
                 : t("Studio requires Runtime evidence.", "Studio cần bằng chứng Runtime.")}

@@ -70,6 +70,7 @@ public class RuntimeSessionResponseDTO {
     private String failureReason;
     private List<String> diagnostics;
     private Integer capturedSpanCount;
+    private boolean studioVerified;
     private List<ScenarioStepResultDTO> stepResults;
     private Boolean sandboxEnforcementConfirmed;
     private OffsetDateTime cancelRequestedAt;
@@ -212,6 +213,17 @@ public class RuntimeSessionResponseDTO {
             }
         }
 
+        JsonNode plannedActions = entity.getScenarioConfig() == null ? null : entity.getScenarioConfig().path("infrastructureActions");
+        boolean studioVerified = plannedActions != null && plannedActions.isArray() && !plannedActions.isEmpty()
+                && capturedSpanCount != null && capturedSpanCount > 0
+                && "COMPLETED".equalsIgnoreCase(entity.getExecutionStatus())
+                && "PASSED".equalsIgnoreCase(entity.getScenarioStatus())
+                && "AVAILABLE".equalsIgnoreCase(entity.getEvidenceStatus())
+                && "CONFIRMED".equalsIgnoreCase(entity.getCleanupStatus())
+                && receipt.path("infrastructureActions").isArray()
+                && java.util.stream.StreamSupport.stream(receipt.path("infrastructureActions").spliterator(), false)
+                        .anyMatch(action -> action.path("confirmed").asBoolean(false));
+
         return RuntimeSessionResponseDTO.builder()
                 .id(entity.getId())
                 .projectId(entity.getProject() != null ? entity.getProject().getId() : null)
@@ -238,6 +250,7 @@ public class RuntimeSessionResponseDTO {
                 .failureReason(failureReason)
                 .diagnostics(diagnostics)
                 .capturedSpanCount(capturedSpanCount)
+                .studioVerified(studioVerified)
                 .stepResults(stepResults)
                 .sandboxEnforcementConfirmed(entity.getSandboxEnforcementConfirmed())
                 .traceStatus(entity.getTraceStatus())

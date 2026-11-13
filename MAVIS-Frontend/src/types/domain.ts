@@ -404,6 +404,7 @@ export const runtimeReadSchema = z.object({
   failureReason: z.string().nullable().optional(),
   diagnostics: z.array(z.string()).optional(),
   capturedSpanCount: z.number().nullable().optional(),
+  studioVerified: z.boolean().optional(),
   stepResults: z.array(runtimeStepResultSchema).optional(),
   id: z.string(),
   projectId: z.string(),
