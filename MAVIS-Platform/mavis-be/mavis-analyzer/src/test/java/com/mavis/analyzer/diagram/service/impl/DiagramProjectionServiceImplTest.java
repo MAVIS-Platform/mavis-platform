@@ -340,4 +340,58 @@ class DiagramProjectionServiceImplTest {
         assertThat(dto.getRelationshipId()).isEqualTo(relId);
         assertThat(dto.getExcerpt()).contains("restTemplate.getForObject");
     }
+
+    @Test
+    @DisplayName("F03-006: Empty Guided Lab model produces empty C1-C3 & Dependency Graph without synthetic system node")
+    void emptyCourseModelProducesEmptyNodesWithoutSyntheticSystemNode() {
+        var workspace = com.mavis.common.entity.Workspace.builder().id(UUID.randomUUID()).courseMode(true).build();
+        sampleModelVersion.getProject().setWorkspace(workspace);
+        when(diagramVersionRepository.saveAll(anyList())).thenAnswer(inv -> {
+            List<DiagramVersion> list = inv.getArgument(0);
+            for (DiagramVersion d : list) {
+                d.setId(UUID.randomUUID());
+                d.setCreatedAt(OffsetDateTime.now());
+            }
+            return list;
+        });
+
+        List<DiagramResponseDTO> results = diagramProjectionService.generateDefaultDiagramsForModel(
+                sampleModelVersion, List.of(), List.of());
+
+        assertThat(results).hasSize(4);
+        assertThat(results).allSatisfy(diagram -> {
+            assertThat(diagram.getLayoutJson().path("nodes")).isEmpty();
+            assertThat(diagram.getLayoutJson().path("edges")).isEmpty();
+        });
+    }
+
+    @Test
+    @DisplayName("RF-02/SR-07: Guided Lab students receive BAD_REQUEST on manual layout saves and behavioral UML retrieval")
+    void guidedStudentBlockedFromBehavioralDiagramsAndLayoutUpdates() {
+        var workspace = com.mavis.common.entity.Workspace.builder().id(UUID.randomUUID()).courseMode(true).build();
+        sampleModelVersion.getProject().setWorkspace(workspace);
+        sampleModelVersion.getProject().setProjectType("STUDENT_WORKING");
+        when(accessPolicy.requireCurrentActiveUser()).thenReturn(com.mavis.common.entity.User.builder()
+                .role(com.mavis.common.entity.Role.builder().code("STUDENT").build()).build());
+
+        for (String notation : List.of("UML_SEQUENCE", "UML_ACTIVITY", "UML_STATE")) {
+            UUID diagramId = UUID.randomUUID();
+            var uml = DiagramVersion.builder().id(diagramId).modelVersion(sampleModelVersion)
+                    .notation(notation).level("ALL").layoutJson(objectMapper.createObjectNode()).build();
+            when(diagramVersionRepository.findById(diagramId)).thenReturn(Optional.of(uml));
+            assertThatThrownBy(() -> diagramProjectionService.getDiagramById(diagramId))
+                    .isInstanceOfSatisfying(BusinessException.class,
+                            err -> assertThat(err.getErrorCode()).isEqualTo(ErrorCode.BAD_REQUEST));
+        }
+
+        UUID containerDiagramId = UUID.randomUUID();
+        var containerDiagram = DiagramVersion.builder().id(containerDiagramId).modelVersion(sampleModelVersion)
+                .notation("C4").level("CONTAINER").layoutJson(objectMapper.createObjectNode()).build();
+        when(diagramVersionRepository.findById(containerDiagramId)).thenReturn(Optional.of(containerDiagram));
+        ObjectNode update = objectMapper.createObjectNode();
+        update.putArray("nodes");
+        assertThatThrownBy(() -> diagramProjectionService.updateDiagramLayout(containerDiagramId, update))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        err -> assertThat(err.getErrorCode()).isEqualTo(ErrorCode.BAD_REQUEST));
+    }
 }

@@ -26,7 +26,7 @@ export function redactEvidenceText(value: string): string {
     .replace(/\bBearer\s+[\w.+/=-]+/gi, "Bearer [REDACTED]")
     .replace(/([a-z][a-z\d+.-]*:\/\/[^\s/:@]+:)[^\s/@]+(@)/gi, "$1[REDACTED]$2")
     .replace(/([\w.-]*(?:password|token|secret|api[-_]?key|credential)[\w.-]*["']?\s*[:=]\s*)(?:\[REDACTED\]|"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}\]]+)/gi, "$1[REDACTED]")
-    .replace(/\b(?:sk-(?:proj-)?[\w-]{16,}|gh[pousr]_[\w]{16,}|github_pat_[\w]{16,}|AKIA[A-Z0-9]{16})\b/g, "[REDACTED]");
+    .replace(/\b(?:sk-(?:proj-)?[\w-]{16,}|AIza[\w-]{20,}|gh[pousr]_[\w]{16,}|github_pat_[\w]{16,}|AKIA[A-Z0-9]{16}|eyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,})\b/g, "[REDACTED]");
 }
 
 export function hasAllowedEvidenceRefs(refs: unknown, allowed: Set<string>): boolean {

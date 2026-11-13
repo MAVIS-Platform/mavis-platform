@@ -208,6 +208,8 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         ArrayNode citedArray = objectMapper.createArrayNode();
         validatedCitedIds.forEach(id -> citedArray.add(id.toString()));
 
+        String redactedText = SecretRedactor.redactString(genResult.explanationText);
+
         AiExplanation entity = AiExplanation.builder()
                 .modelVersion(modelVersion)
                 .element(targetElement)
@@ -215,7 +217,7 @@ public class AiExplanationServiceImpl implements AiExplanationService {
                 .runtimeSession(targetSession)
                 .requestedBy(currentUser)
                 .explanationScope(scope)
-                .explanationText(genResult.explanationText)
+                .explanationText(redactedText)
                 .citedEvidenceIds(citedArray)
                 .secretRedacted(true)
                 .aiModelName(genResult.aiModelName)
@@ -597,7 +599,16 @@ public class AiExplanationServiceImpl implements AiExplanationService {
         if (!citedIds.isEmpty()) {
             List<Evidence> evidences = evidenceRepository.findAllById(citedIds);
             evidenceSummaries = evidences.stream()
-                    .map(EvidenceSummaryDTO::fromEntity)
+                    .filter(v -> v.getModelVersion() == null || v.getModelVersion().getId().equals(entity.getModelVersion().getId()))
+                    .map(v -> EvidenceSummaryDTO.builder()
+                            .id(v.getId())
+                            .elementId(v.getElement() == null ? null : v.getElement().getId())
+                            .relationshipId(v.getRelationship() == null ? null : v.getRelationship().getId())
+                            .sourceType(v.getSourceType())
+                            .locator(SecretRedactor.redactString(v.getLocator()))
+                            .excerpt(SecretRedactor.redactString(v.getExcerpt()))
+                            .provenance(v.getProvenance() != null ? SecretRedactor.redactJson(v.getProvenance()) : null)
+                            .build())
                     .collect(Collectors.toList());
         }
 
