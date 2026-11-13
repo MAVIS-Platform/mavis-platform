@@ -32,3 +32,5 @@ Deployment prepares V26 after pulling the candidate images and before replacing 
 The restricted backup is stored on the deploy host at `/opt/mavis/db-backups/wf01-before-v26.dump`. Confirm the host has space for a compressed database backup before the first WF-01 release. The backup and additive schema stay in place on image rollback. Reconcile V26 in Flyway history if production later enables automatic Flyway migrations.
 
 Releases with the versioned Quiz API also stage and verify V27 after V26 and before replacing the stack. If V27 is absent, the same checks apply and the verified backup is retained at `/opt/mavis/db-backups/wf02-before-v27.dump`. Image rollback retains the additive schema and Quiz history. Reconcile both versions in Flyway history before enabling automatic migrations on production.
+
+Releases with frozen submission Quiz evidence also stage and verify V28 after V27. A verified backup is retained at `/opt/mavis/db-backups/wf02-before-v28.dump` when the column is first added. Reconcile V28 in Flyway history before enabling automatic migrations.

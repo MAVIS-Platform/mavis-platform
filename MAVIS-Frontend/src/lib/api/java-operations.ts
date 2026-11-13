@@ -1,4 +1,4 @@
-import { assignmentReferenceSchema } from "@/types/domain";
+import { assignmentReferenceSchema, courseQuizEvidenceSchema } from "@/types/domain";
 import { planArchitectureViews } from "../architecture/view-planner";
 import { githubBranches, githubRevision } from "../github/branches";
 import { generateDrawio } from "../drawio/server";
@@ -236,6 +236,7 @@ export async function executeJava(
         submissionNotes: z.string().nullish(),
         evaluationRunId: z.string().uuid().nullish(),
         complianceScore: z.number().nullish(),
+        courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
         sourceSnapshotId: z.string().uuid(),
         modelVersionId: z.string().uuid(),
         runtimeSessionId: z.string().uuid().nullish(),
@@ -282,6 +283,7 @@ export async function executeJava(
       ...(diagramLayout ? { diagramLayout } : {}),
       evaluationRunId: sub.evaluationRunId ?? null,
       complianceScore: sub.complianceScore ?? null,
+      courseQuizEvidence: sub.courseQuizEvidence ?? null,
       id: sub.id,
       assignmentId: sub.assignmentId,
       studentId: sub.submittedById,

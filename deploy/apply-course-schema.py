@@ -1,4 +1,4 @@
-"""Prepare the additive WF-01 schema before replacing production containers."""
+"""Prepare additive course migrations before replacing production containers."""
 import json
 import os
 from pathlib import Path
@@ -42,6 +42,13 @@ SELECT CASE
 MIGRATIONS = {
     "V26__Course_Lab_Access.sql": (26, COURSE_ACCESS_PROBE),
     "V27__Course_Quizzes.sql": (27, QUIZ_PROBE),
+    "V28__Submission_Course_Quiz_Evidence.sql": (28, """
+SELECT coalesce((SELECT CASE WHEN data_type = 'jsonb' AND is_nullable = 'YES'
+                              THEN 'ready' ELSE 'partial' END
+                 FROM information_schema.columns WHERE table_schema = current_schema()
+                 AND table_name = 'submission_snapshots' AND column_name = 'course_quiz_evidence'),
+                CASE WHEN to_regclass('submission_snapshots') IS NULL THEN 'partial' ELSE 'missing' END);
+"""),
 }
 
 
