@@ -196,7 +196,11 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
     <RequestState query={query}>
       {query.data && (
         <div className="min-w-0 space-y-6">
-          <GradingPanel key={query.data.id} submissionId={query.data.id} />
+          <GradingPanel
+            key={query.data.id}
+            submissionId={query.data.id}
+            studentSnapshots={query.data.studentSnapshots ?? undefined}
+          />
           <section id="review" className="scroll-mt-24">
             <SubmissionVersionHeader submission={query.data} />
             <FrozenArtifacts submission={query.data} />

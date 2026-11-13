@@ -118,6 +118,39 @@ export function FrozenArtifacts({ submission }: { submission: Submission }) {
           Evidence package SHA-256: {submission.evidencePackageDigest}
         </p>
       )}
+      {submission.courseQuizEvidence && (
+        <div className="rounded-lg border bg-muted/20 p-3 text-xs">
+          <p className="font-medium">Course Quiz Gate Proof</p>
+          <p className="text-muted-foreground">
+            {submission.courseQuizEvidence.status} · {submission.courseQuizEvidence.correctCount}/
+            {submission.courseQuizEvidence.questionCount} ({submission.courseQuizEvidence.passPercent}
+            %) · Quiz v{submission.courseQuizEvidence.quizVersion}
+          </p>
+        </div>
+      )}
+      {submission.studentSnapshots && submission.studentSnapshots.length > 0 && (
+        <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-xs">
+          <p className="font-medium">Submitted Snapshots &amp; Theoretical Explanations</p>
+          <div className="space-y-2">
+            {submission.studentSnapshots.map((snap, idx) => (
+              <div key={`${snap.snapshotId}-${idx}`} className="rounded border bg-background p-2.5">
+                <p className="font-medium">
+                  {snap.title || snap.snapshotId}{" "}
+                  {snap.step && <span className="font-mono text-[11px] text-muted-foreground">({snap.step})</span>}
+                </p>
+                {snap.targetViewOrService && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Target: {snap.targetViewOrService}
+                  </p>
+                )}
+                {snap.writtenExplanation && (
+                  <p className="mt-1 whitespace-pre-wrap text-foreground">{snap.writtenExplanation}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <p className="break-all text-xs text-muted-foreground">
         Pinned bundle/version: {submission.diagramVersionId}. Later edits do not change the contents
         below.

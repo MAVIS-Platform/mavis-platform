@@ -292,6 +292,24 @@ export const courseQuizEvidenceSchema = z.object({
   commitSha: z.string().nullable(),
 });
 
+export const studentSnapshotSchema = z.object({
+  snapshotId: z.string().min(1).max(128),
+  step: z.string().max(64).optional(),
+  title: z.string().max(255).optional(),
+  targetViewOrService: z.string().max(255).optional(),
+  writtenExplanation: z.string().max(5000).optional(),
+  capturedAt: z.string().nullable().optional(),
+});
+export type StudentSnapshotItem = z.infer<typeof studentSnapshotSchema>;
+
+export const snapshotGradeSchema = z.object({
+  snapshotId: z.string().min(1).max(128),
+  title: z.string().max(255).nullable().optional(),
+  score: z.number().min(0).max(10),
+  comment: z.string().max(2000).nullable().optional(),
+});
+export type SnapshotGradeItem = z.infer<typeof snapshotGradeSchema>;
+
 export const submissionSchema = z
   .object({
     assignmentTitle: z.string().optional(),
@@ -305,6 +323,7 @@ export const submissionSchema = z
     complianceScore: z.number().nullable().optional(),
     evidencePackageDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
     courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
+    studentSnapshots: z.array(studentSnapshotSchema).nullish(),
     id: z.string(),
     assignmentId: z.string(),
     studentId: z.string(),

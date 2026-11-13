@@ -21,6 +21,8 @@ import { Textarea } from "@/components/ui/textarea";
 import type { Assignment } from "@/features/assignments/requirements";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/shared/forms";
+import { useLocale } from "@/lib/i18n/locale-context";
+import type { StudentSnapshotItem } from "@/types/domain";
 
 export function SubmissionComposer({
   assignmentId,
@@ -33,6 +35,7 @@ export function SubmissionComposer({
   requirements?: Assignment;
   guided?: boolean;
 }) {
+  const { t } = useLocale();
   const selection = useSelection();
   const state = useModel();
   const projects = useApiQuery("projects", {});
@@ -85,6 +88,8 @@ export function SubmissionComposer({
     selection: ArtifactSelection;
   } | null>(null);
   const [notes, setNotes] = useState("");
+  const [staticExplanation, setStaticExplanation] = useState("");
+  const [runtimeExplanation, setRuntimeExplanation] = useState("");
   const choice = artifacts?.modelId === state.model?.id ? (artifacts?.selection ?? null) : null;
   const diagrams = useApiQuery(
     "diagrams",
@@ -128,6 +133,33 @@ export function SubmissionComposer({
     String(selectedRuntime?.evidenceStatus ?? "").toUpperCase() === "AVAILABLE";
   const stage4Ready =
     stage3Ready && String(selectedRuntime?.cleanupStatus ?? "").toUpperCase() === "CONFIRMED";
+  const preparedSnapshots: StudentSnapshotItem[] = [
+    ...(staticExplanation.trim()
+      ? [
+          {
+            snapshotId: "STEP_1_STATIC",
+            step: "STEP_1_STATIC",
+            title: "Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning",
+            targetViewOrService: state.model?.label || state.model?.id || "architecture-model",
+            writtenExplanation: staticExplanation.trim(),
+            capturedAt: new Date().toISOString(),
+          },
+        ]
+      : []),
+    ...(runtimeExplanation.trim()
+      ? [
+          {
+            snapshotId: "STEP_4_RUNTIME",
+            step: "STEP_4_RUNTIME",
+            title: "Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis",
+            targetViewOrService: selectedRuntime?.id || "runtime-session",
+            writtenExplanation: runtimeExplanation.trim(),
+            capturedAt: new Date().toISOString(),
+          },
+        ]
+      : []),
+  ];
+  const hasWrittenExplanation = Boolean(notes.trim() || preparedSnapshots.length > 0);
 
   return (
     <DetailPanel title="Prepare coursework submission">
@@ -335,7 +367,54 @@ export function SubmissionComposer({
                   {requirements?.requiredDiagramTypes?.map(diagramTypeLabel).join(", ") ||
                     "Any saved diagram"}
                 </p>
-                <FormField label="Submission notes">
+                <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {t("Captured Snapshots & Written Theoretical Explanations")}
+                    </h4>
+                    <span className="text-[11px] text-muted-foreground">
+                      {guided
+                        ? t("Required before Guided Lab submission")
+                        : t("Optional snapshot theoretical notes")}
+                    </span>
+                  </div>
+                  <FormField label={t("Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning")}>
+                    {(props) => (
+                      <Textarea
+                        {...props}
+                        rows={2}
+                        maxLength={5000}
+                        placeholder={t(
+                          "Explain service boundaries, call-site evidence (3E), and dependency direction observed in C1–C3 views…",
+                        )}
+                        value={staticExplanation}
+                        onChange={(e) => setStaticExplanation(e.target.value)}
+                      />
+                    )}
+                  </FormField>
+                  <FormField label={t("Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis")}>
+                    {(props) => (
+                      <Textarea
+                        {...props}
+                        rows={2}
+                        maxLength={5000}
+                        placeholder={t(
+                          "Explain observed OTel trace propagation and Stop/Start/Scale Before vs. After impact…",
+                        )}
+                        value={runtimeExplanation}
+                        onChange={(e) => setRuntimeExplanation(e.target.value)}
+                      />
+                    )}
+                  </FormField>
+                  {guided && !hasWrittenExplanation && (
+                    <p role="status" className="text-xs text-amber-600">
+                      {t(
+                        "Enter at least one theoretical explanation or overall submission note before submitting this Guided Lab.",
+                      )}
+                    </p>
+                  )}
+                </div>
+                <FormField label={t("Submission notes")}>
                   {(props) => (
                     <Textarea
                       {...props}
@@ -500,6 +579,7 @@ export function SubmissionComposer({
                     !choice ||
                     choice.documents.length + choice.diagramVersionIds.length === 0 ||
                     (guided && (!stage1Ready || !stage2Ready || !stage3Ready || !stage4Ready)) ||
+                    (guided && !hasWrittenExplanation) ||
                     (requirements?.requireRuntimeTrace && !selectedRuntime) ||
                     runtimeEvidenceBlocked(
                       !!requirements?.requireRuntimeTrace,
@@ -522,6 +602,9 @@ export function SubmissionComposer({
                         runtimeSessionId: selectedRuntime?.id ?? null,
                         evaluationRunId: evaluation?.id ?? null,
                         submissionNotes: notes,
+                        ...(preparedSnapshots.length > 0
+                          ? { studentSnapshots: preparedSnapshots }
+                          : {}),
                       });
                     } catch {
                       /* Inline error below. */
