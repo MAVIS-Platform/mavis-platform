@@ -3,6 +3,7 @@ import {
   courseQuizEvidenceSchema,
   runtimeActionEvidenceSchema,
   runtimeBeforeAfterComparisonSchema,
+  studentSnapshotSchema,
 } from "@/types/domain";
 import { planArchitectureViews } from "../architecture/view-planner";
 import { githubBranches, githubRevision } from "../github/branches";
@@ -246,6 +247,7 @@ export async function executeJava(
         complianceScore: z.number().nullish(),
         evidencePackageDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
         courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
+        studentSnapshots: z.array(studentSnapshotSchema).nullish(),
         sourceSnapshotId: z.string().uuid(),
         modelVersionId: z.string().uuid(),
         runtimeSessionId: z.string().uuid().nullish(),
@@ -294,6 +296,7 @@ export async function executeJava(
       complianceScore: sub.complianceScore ?? null,
       ...(sub.evidencePackageDigest ? { evidencePackageDigest: sub.evidencePackageDigest } : {}),
       courseQuizEvidence: sub.courseQuizEvidence ?? null,
+      ...(sub.studentSnapshots ? { studentSnapshots: sub.studentSnapshots } : {}),
       id: sub.id,
       assignmentId: sub.assignmentId,
       studentId: sub.submittedById,
@@ -952,6 +955,7 @@ export async function executeJava(
           evaluationRunId: input["evaluationRunId"] ?? null,
           runtimeSessionId: input["runtimeSessionId"] ?? null,
           submissionNotes: input["submissionNotes"],
+          ...(input["studentSnapshots"] ? { studentSnapshots: input["studentSnapshots"] } : {}),
         }),
       );
     }

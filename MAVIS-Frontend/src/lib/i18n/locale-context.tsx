@@ -69,6 +69,35 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   Cleanup: "Dọn dẹp sandbox",
   "Insufficient telemetry samples": "Chưa đủ mẫu telemetry",
   "Measured before/after workload comparison captured": "Đã thu thập so sánh hiệu năng trước/sau khi chạy tải",
+  "Complete the current step below before continuing": "Hoàn tất bước hiện tại bên dưới trước khi tiếp tục",
+  "Captured Snapshots & Written Theoretical Explanations": "Ảnh chụp thực hành & Giải thích lý thuyết bằng văn bản",
+  "Required before Guided Lab submission": "Bắt buộc trước khi nộp Guided Lab",
+  "Optional snapshot theoretical notes": "Ghi chú giải thích lý thuyết (tùy chọn)",
+  "Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning": "Snapshot 1 · Kiến trúc tĩnh C1–C3 & Lập luận 3E",
+  "Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis": "Snapshot 2 · Phân tích Trước/Sau Stop/Scale trên MAVIS Studio",
+  "Explain service boundaries, call-site evidence (3E), and dependency direction observed in C1–C3 views…":
+    "Giải thích ranh giới dịch vụ, bằng chứng call-site (3E) và hướng phụ thuộc quan sát trong C1–C3…",
+  "Explain observed OTel trace propagation and Stop/Start/Scale Before vs. After impact…":
+    "Giải thích lan truyền OTel trace quan sát được và tác động Trước vs. Sau của thao tác Stop/Start/Scale…",
+  "Enter at least one theoretical explanation or overall submission note before submitting this Guided Lab.":
+    "Nhập ít nhất một giải thích lý thuyết hoặc ghi chú nộp bài trước khi nộp Guided Lab này.",
+  "Per-snapshot grading results (> 5.0 / 10 required)": "Kết quả chấm từng Snapshot (bắt buộc > 5.0 / 10)",
+  "Apply the requested changes in your working project, save the new model/diagram revisions and submit again from the assignment. This submission remains unchanged.":
+    "Thực hiện các chỉnh sửa theo yêu cầu trên dự án làm việc, lưu phiên bản mô hình/sơ đồ mới rồi nộp lại từ bài tập. Bản nộp này được giữ nguyên bất biến.",
+  "Every required snapshot must score > 5.0 / 10 (5.1 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.":
+    "Mọi Snapshot bắt buộc phải đạt > 5.0 / 10 (từ 5.1 trở lên) kèm nhận xét tổng thể bắt buộc mới đạt ĐẠT và mở khóa Lab tiếp theo; bất kỳ Snapshot nào <= 5.0 sẽ là CẦN CHỈNH SỬA.",
+  "Per-snapshot grading (0–10)": "Chấm điểm từng Snapshot (thang 0–10)",
+  "PASS (> 5.0)": "ĐẠT (> 5.0)",
+  "NEEDS REVISION (<= 5.0)": "CẦN SỬA (<= 5.0)",
+  "Snapshot comment (optional)": "Nhận xét cho Snapshot (tùy chọn)",
+  "Computed overall equivalent": "Điểm tổng quy đổi tự động",
+  "Enter a score between 0.0 and 10.0 for every snapshot (e.g. 5.1 to pass).":
+    "Nhập điểm từ 0.0 đến 10.0 cho từng Snapshot (ví dụ 5.1 để đạt).",
+  "Calculated outcome": "Kết quả tính toán",
+  "Add an overall review before publishing or returning this snapshot.":
+    "Thêm nhận xét tổng thể trước khi công bố điểm hoặc trả lại bản nộp.",
+  "Publish this score and summary to the student?": "Công bố điểm và nhận xét này cho sinh viên?",
+  "Return this submission with change requests?": "Trả lại bài nộp này kèm yêu cầu chỉnh sửa?",
   "Evidence details": "Chi tiết bằng chứng",
   "Interaction details": "Chi tiết tương tác",
   "Assessment summary": "Tóm tắt đánh giá",
