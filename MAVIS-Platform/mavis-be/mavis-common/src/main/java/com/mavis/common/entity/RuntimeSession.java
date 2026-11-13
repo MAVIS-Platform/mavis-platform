@@ -149,4 +149,38 @@ public class RuntimeSession {
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
+
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean hasVerifiedStudioEvidence() {
+        if (scenarioConfig == null || runnerReceiptJson == null || receiptDigest == null
+                || !"COMPLETED".equalsIgnoreCase(executionStatus) || !"PASSED".equalsIgnoreCase(scenarioStatus)
+                || !"AVAILABLE".equalsIgnoreCase(evidenceStatus) || !"CONFIRMED".equalsIgnoreCase(cleanupStatus)
+                || !Boolean.TRUE.equals(sandboxEnforcementConfirmed)
+                || !("COMPLETE".equalsIgnoreCase(traceStatus) || "PARTIAL".equalsIgnoreCase(traceStatus))) return false;
+        var spans = runnerReceiptJson.path("outcome").path("trace").path("spans");
+        var planned = scenarioConfig.path("infrastructureActions");
+        var actual = runnerReceiptJson.path("infrastructureActions");
+        if (!spans.isArray() || spans.isEmpty() || !planned.isArray() || !actual.isArray()) return false;
+        for (var action : actual) {
+            if (!action.path("confirmed").asBoolean(false)) continue;
+            String type = action.path("action").asText();
+            String service = action.path("service").asText();
+            int before = action.path("replicasBefore").asInt(-1);
+            int after = action.path("replicasAfter").asInt(-1);
+            if (service.isBlank() || before < 0 || before > 8 || after < 0 || after > 8
+                    || !action.path("metricsBefore").isObject() || !action.path("metricsAfter").isObject()) continue;
+            boolean changed = switch (type) {
+                case "STOP" -> before > 0 && after == 0;
+                case "START" -> before == 0 && after > 0;
+                case "SCALE" -> before > 0 && after > 0 && before != after;
+                default -> false;
+            };
+            if (!changed) continue;
+            for (var plan : planned) {
+                if (type.equals(plan.path("action").asText()) && service.equals(plan.path("service").asText())
+                        && (!"SCALE".equals(type) || after == plan.path("replicas").asInt(-1))) return true;
+            }
+        }
+        return false;
+    }
 }

@@ -195,6 +195,15 @@ public class SubmissionServiceImpl implements SubmissionService {
             }
         }
 
+        if (Boolean.TRUE.equals(assignment.getRequireRuntimeTrace()) && assignment.getWorkspace() != null
+                && assignment.getWorkspace().isCourseMode()
+                && (!runtimeSession.hasVerifiedStudioEvidence()
+                    || (modelVersion.getRuntimeSession() == null && (runtimeSession.getModelVersion() == null
+                        || !modelVersion.getId().equals(runtimeSession.getModelVersion().getId()))))) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST,
+                    "Attach verified MAVIS Studio evidence for the selected Lab model");
+        }
+
         // 9. Lưu bản ghi nộp bài bất biến vào submission_snapshots
         SubmissionSnapshot submission = SubmissionSnapshot.builder()
                 .assignment(assignment)
