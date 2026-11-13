@@ -193,7 +193,20 @@ class CourseHttpAcceptanceTest {
                 INSERT INTO projects(workspace_id, owner_id, assignment_id, reference_snapshot_id, name, project_type)
                 SELECT ?, id, ?, ?, 'Quiz gate fixture', 'STUDENT_WORKING' FROM users WHERE email = ? RETURNING id
                 """, classroom, lab1, source, "learner@example.invalid");
-        checkCurriculum(workspace, lab1, lab2, lecturer, student, workingProject);
+        UUID workingSource = id(db, """
+                INSERT INTO source_snapshots(project_id,source_type,artifact_hash)
+                SELECT ?, source_type, artifact_hash FROM source_snapshots WHERE id = ? RETURNING id
+                """, workingProject, source);
+        UUID workingModel = id(db, """
+                INSERT INTO model_versions(project_id,source_snapshot_id) VALUES (?,?) RETURNING id
+                """, workingProject, workingSource);
+        UUID workingDiagram = id(db, """
+                INSERT INTO diagram_versions(model_version_id,notation,level,layout_json)
+                VALUES (?,'C4','CONTAINER','{}') RETURNING id
+                """, workingModel);
+        checkCurriculum(workspace, lab1, lab2, lecturer, student, workingProject,
+                Map.of("assignmentId", lab1, "projectId", workingProject,
+                        "modelVersionId", workingModel, "diagramVersionId", workingDiagram));
         send("GET", "assignments/" + lab2, student, null, 403);
         send("GET", "assignments/" + lab2 + "/reference-source", student, null, 403);
         send("GET", "assignments/" + lab1 + "/reference-source", foreignStudent, null, 403);
@@ -211,7 +224,7 @@ class CourseHttpAcceptanceTest {
     }
 
     private void checkCurriculum(String workspace, UUID lab1, UUID lab2, String lecturer, String student,
-                                 UUID workingProject)
+                                 UUID workingProject, Map<String, UUID> submission)
             throws Exception {
         send("GET", "course-curriculum", null, null, 401);
         JsonNode catalog = data(send("GET", "course-curriculum", student, null, 200));
@@ -243,6 +256,7 @@ class CourseHttpAcceptanceTest {
         String runtime = "analyzer/runtime/sessions";
         var runtimeRequest = Map.of("projectId", workingProject, "sourceSnapshotId", UUID.randomUUID());
         send("POST", runtime, student, runtimeRequest, 403);
+        send("POST", "submissions", student, submission, 403);
 
         String csharpQuiz = workspace + "/course-labs/" + lab2 + "/quiz";
         var csharp = Map.of("chapterId", "csharp-03");
@@ -256,8 +270,16 @@ class CourseHttpAcceptanceTest {
         var attempt = Map.of("attemptId", UUID.randomUUID(), "version", csharpVersion, "answers", List.of(1, 0, 2, 1));
         assertEquals("PASSED", data(send("POST", quiz + "/attempts", student, attempt, 200)).path("status").asText());
         send("POST", runtime, student, runtimeRequest, 404);
+        JsonNode saved = data(send("POST", "submissions", student, submission, 200));
+        JsonNode frozen = saved.path("courseQuizEvidence");
+        assertEquals(attempt.get("attemptId").toString(), frozen.path("attemptId").asText());
+        assertEquals(csharpVersion, frozen.path("quizVersion").asInt());
+        assertFalse(frozen.has("answers"));
         send("POST", quiz + "/curriculum", lecturer, java, 200);
         send("POST", runtime, student, runtimeRequest, 403);
+        send("POST", "submissions", student, submission, 403);
+        assertEquals(frozen, data(send("GET", "submissions/" + saved.path("id").asText(), lecturer, null, 200))
+                .path("courseQuizEvidence"));
     }
 
     private void checkVersionedQuiz(String workspace, UUID lab1, UUID lab2,
