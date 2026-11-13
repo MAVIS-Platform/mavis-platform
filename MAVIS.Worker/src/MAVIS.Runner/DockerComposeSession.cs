@@ -155,16 +155,21 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     public async Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct)
     {
         Stage = "SCENARIO";
-        _scenario = await RunInsideNetwork(definition.Scenario,
-            _endpoints.Where(p => p.Key != "mavis-collector").ToDictionary(), secrets ?? new Dictionary<string, string>(), ct);
+        _scenario = await ExecuteWorkloadAsync(ct);
         return _scenario;
     }
+
+    private Task<HttpScenarioOutcome> ExecuteWorkloadAsync(CancellationToken ct) =>
+        RunInsideNetwork(definition.Scenario, _endpoints.Where(p => p.Key != "mavis-collector").ToDictionary(),
+            secrets ?? new Dictionary<string, string>(), ct);
 
     public async Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct)
     {
         var requested = definition.InfrastructureActions ?? [];
         if (requested.Count == 0) return [];
         var results = new List<RuntimeInfrastructureActionResult>();
+        bool replayable = definition.Scenario.Steps.All(step => step.Method is "GET" or "HEAD");
+        var beforeWorkload = replayable ? _scenario : null;
         foreach (var item in requested)
         {
             var action = item.Action?.Trim().ToUpperInvariant();
@@ -187,17 +192,35 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                 "START" => after.running >= 1,
                 _ => after.running == item.Replicas
             };
+            var performedAt = DateTimeOffset.UtcNow;
+            var afterWorkload = expected && beforeWorkload is not null ? await ExecuteWorkloadAsync(ct) : null;
             results.Add(new(action, service, before.running, after.running,
-                Metrics(before), Metrics(after), DateTimeOffset.UtcNow, expected));
+                Metrics(before, beforeWorkload), Metrics(after, afterWorkload), performedAt, expected));
+            beforeWorkload = afterWorkload;
             if (!expected) throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED");
         }
         return results;
 
-        static JsonObject Metrics((int total, int running) value) => new()
+        static JsonObject Metrics((int total, int running) value, HttpScenarioOutcome? workload)
         {
-            ["replicas"] = value.total,
-            ["runningReplicas"] = value.running
-        };
+            var metrics = new JsonObject
+            {
+                ["replicas"] = value.total,
+                ["runningReplicas"] = value.running
+            };
+            if (workload is not null)
+            {
+                var samples = workload.Steps.Select(step => step.ElapsedMilliseconds).Order().ToArray();
+                metrics["requestCount"] = samples.Length;
+                if (samples.Length > 0)
+                {
+                    metrics["p95LatencyMs"] = samples[(int)Math.Ceiling(samples.Length * 0.95) - 1];
+                    metrics["errorRatePercent"] = 100d * workload.Steps.Count(step =>
+                        step.StatusCode is null or >= 400) / samples.Length;
+                }
+            }
+            return metrics;
+        }
     }
 
     private async Task<(int total, int running)> ReadServiceMetrics(string service, CancellationToken ct)
