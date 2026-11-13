@@ -268,7 +268,10 @@ export const assignmentReferenceSchema = z.object({
 export const assignmentSchema = z.object({
   referenceSource: assignmentReferenceSchema.nullish(),
   requiredDiagramTypes: z.array(z.string()).optional(),
+  ruleSetVersion: z.string().nullish(),
   requireRuntimeTrace: z.boolean().optional(),
+  aiPolicy: z.union([z.record(z.unknown()), z.string()]).nullish(),
+  labOrder: z.number().int().positive().nullish(),
   id: z.string(),
   workspaceId: z.string(),
   title: z.string(),

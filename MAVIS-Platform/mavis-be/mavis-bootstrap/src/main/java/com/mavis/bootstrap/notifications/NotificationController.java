@@ -60,6 +60,7 @@ public class NotificationController {
     public record ReadAll(@NotNull Instant before){}
     @PostMapping("/read-all") @Transactional
     public ApiResponse<?> readAll(@jakarta.validation.Valid @RequestBody ReadAll input){
+        if(input==null||input.before()==null)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Invalid notification request");
         UUID user=policy.requireCurrentActiveUser().getId();Instant now=Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);Instant requested=input.before().truncatedTo(java.time.temporal.ChronoUnit.MICROS);Instant cutoff=requested.isAfter(now)?now:requested;
         jdbc.update("UPDATE user_notifications SET read_at=? WHERE recipient_id=? AND read_at IS NULL AND created_at<=?",Timestamp.from(now),user,Timestamp.from(cutoff));
         var result=acknowledgement(user,now,now);result.put("before",cutoff.toString());return ApiResponse.success(result);
