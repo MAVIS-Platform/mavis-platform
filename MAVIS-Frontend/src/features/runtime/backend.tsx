@@ -2699,18 +2699,101 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
 
           <div className="space-y-4">
             {/* Visual Canvas 1: Service Workflow Topology */}
-            {Boolean(session.data?.infrastructureActions?.length) && (
+            {Boolean(session.data?.infrastructureActions?.length || session.data?.beforeAfterComparison?.length) && (
               <div className="space-y-2 rounded-lg border p-3 text-sm">
-                <h3 className="font-medium">Studio results</h3>
-                {session.data?.infrastructureActions?.filter((action) => action.confirmed).map((action, index) => (
-                  <div className="space-y-1" key={index}>
-                    <p className="font-medium">{action.action} {action.service}</p>
-                    <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4">
-                      <dt>Running replicas</dt><dd>{action.replicasBefore} → {action.replicasAfter}</dd>
-                      <dt>Requests measured</dt><dd>{studioMetric(action.metricsBefore["requestCount"])} → {studioMetric(action.metricsAfter["requestCount"])}</dd>
-                      <dt>p95 latency (ms)</dt><dd>{studioMetric(action.metricsBefore["p95LatencyMs"])} → {studioMetric(action.metricsAfter["p95LatencyMs"])}</dd>
-                      <dt>Request error rate (%)</dt><dd>{studioMetric(action.metricsBefore["errorRatePercent"])} → {studioMetric(action.metricsAfter["errorRatePercent"])}</dd>
+                <h3 className="font-medium">
+                  {t("Studio results (Before vs. After)")}
+                </h3>
+                {(session.data?.beforeAfterComparison?.length
+                  ? session.data.beforeAfterComparison
+                  : (session.data?.infrastructureActions ?? [])
+                      .filter((action) => action.confirmed)
+                      .map((action) => {
+                        const reqBefore =
+                          typeof action.metricsBefore["requestCount"] === "number"
+                            ? action.metricsBefore["requestCount"]
+                            : null;
+                        const reqAfter =
+                          typeof action.metricsAfter["requestCount"] === "number"
+                            ? action.metricsAfter["requestCount"]
+                            : null;
+                        const p95Before =
+                          typeof action.metricsBefore["p95LatencyMs"] === "number"
+                            ? action.metricsBefore["p95LatencyMs"]
+                            : null;
+                        const p95After =
+                          typeof action.metricsAfter["p95LatencyMs"] === "number"
+                            ? action.metricsAfter["p95LatencyMs"]
+                            : null;
+                        const errBefore =
+                          typeof action.metricsBefore["errorRatePercent"] === "number"
+                            ? action.metricsBefore["errorRatePercent"]
+                            : null;
+                        const errAfter =
+                          typeof action.metricsAfter["errorRatePercent"] === "number"
+                            ? action.metricsAfter["errorRatePercent"]
+                            : null;
+                        const hasSamples =
+                          reqBefore !== null &&
+                          reqBefore > 0 &&
+                          reqAfter !== null &&
+                          reqAfter > 0 &&
+                          p95Before !== null &&
+                          p95After !== null;
+                        return {
+                          action: action.action,
+                          service: action.service,
+                          replicasBefore: action.replicasBefore,
+                          replicasAfter: action.replicasAfter,
+                          requestCountBefore: reqBefore,
+                          requestCountAfter: reqAfter,
+                          p95LatencyMsBefore: p95Before,
+                          p95LatencyMsAfter: p95After,
+                          errorRateBefore: errBefore,
+                          errorRateAfter: errAfter,
+                          capturedSpanCount: session.data?.capturedSpanCount ?? null,
+                          cleanupStatus: session.data?.cleanupStatus ?? null,
+                          measurementStatus: hasSamples
+                            ? "MEASURED"
+                            : "INSUFFICIENT_TELEMETRY_SAMPLES",
+                          measurementNote: hasSamples
+                            ? "Measured before/after workload comparison captured"
+                            : "Insufficient telemetry samples",
+                        };
+                      })
+                ).map((item, index) => (
+                  <div className="space-y-1.5 rounded-md border bg-muted/20 p-2.5" key={index}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium">
+                        {item.action} {item.service}
+                      </p>
+                      <StatusLabel status={item.measurementStatus} />
+                    </div>
+                    <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-xs">
+                      <dt>{t("Running replicas")}</dt>
+                      <dd>
+                        {studioMetric(item.replicasBefore)} → {studioMetric(item.replicasAfter)}
+                      </dd>
+                      <dt>{t("Requests measured")}</dt>
+                      <dd>
+                        {studioMetric(item.requestCountBefore)} →{" "}
+                        {studioMetric(item.requestCountAfter)}
+                      </dd>
+                      <dt>{t("p95 latency (ms)")}</dt>
+                      <dd>
+                        {studioMetric(item.p95LatencyMsBefore)} →{" "}
+                        {studioMetric(item.p95LatencyMsAfter)}
+                      </dd>
+                      <dt>{t("Request error rate (%)")}</dt>
+                      <dd>
+                        {studioMetric(item.errorRateBefore)} → {studioMetric(item.errorRateAfter)}
+                      </dd>
+                      <dt>{t("Captured OTel spans")}</dt>
+                      <dd>{studioMetric(item.capturedSpanCount)}</dd>
+                      <dt>{t("Cleanup")}</dt>
+                      <dd>{item.cleanupStatus ?? "—"}</dd>
                     </dl>
+                    <p className="text-[11px] text-muted-foreground">{item.measurementNote}</p>
                   </div>
                 ))}
               </div>

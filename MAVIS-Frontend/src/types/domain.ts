@@ -413,6 +413,23 @@ export const runtimeActionEvidenceSchema = z.object({
   confirmed: z.boolean(),
 });
 
+export const runtimeBeforeAfterComparisonSchema = z.object({
+  action: z.string(),
+  service: z.string(),
+  replicasBefore: z.number().nullable().optional(),
+  replicasAfter: z.number().nullable().optional(),
+  requestCountBefore: z.number().nullable().optional(),
+  requestCountAfter: z.number().nullable().optional(),
+  p95LatencyMsBefore: z.number().nullable().optional(),
+  p95LatencyMsAfter: z.number().nullable().optional(),
+  errorRateBefore: z.number().nullable().optional(),
+  errorRateAfter: z.number().nullable().optional(),
+  capturedSpanCount: z.number().nullable().optional(),
+  cleanupStatus: z.string().nullable().optional(),
+  measurementStatus: z.string(),
+  measurementNote: z.string(),
+});
+
 export const runtimeReadSchema = z.object({
   publicationGateStatus: z.string().nullable().optional(),
   failureReason: z.string().nullable().optional(),
@@ -420,6 +437,7 @@ export const runtimeReadSchema = z.object({
   capturedSpanCount: z.number().nullable().optional(),
   studioVerified: z.boolean().optional(),
   infrastructureActions: z.array(runtimeActionEvidenceSchema).optional(),
+  beforeAfterComparison: z.array(runtimeBeforeAfterComparisonSchema).nullish(),
   stepResults: z.array(runtimeStepResultSchema).optional(),
   id: z.string(),
   projectId: z.string(),
