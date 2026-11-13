@@ -210,17 +210,21 @@ class CourseHttpAcceptanceTest {
             throws Exception {
         send("GET", "course-curriculum", null, null, 401);
         JsonNode catalog = data(send("GET", "course-curriculum", student, null, 200));
-        assertEquals(13, catalog.size());
+        assertEquals(30, catalog.size());
         int javaChapters = 0;
         int csharpChapters = 0;
+        var stages = new java.util.HashSet<String>();
         for (JsonNode chapter : catalog) {
             assertFalse(chapter.has("questions"));
             assertFalse(chapter.path("sources").isEmpty());
+            stages.add(chapter.path("track").asText() + "/" + chapter.path("phase").asText());
             if ("Java".equals(chapter.path("track").asText())) javaChapters++;
             if ("C#".equals(chapter.path("track").asText())) csharpChapters++;
         }
-        assertEquals(12, javaChapters);
-        assertEquals(1, csharpChapters);
+        assertEquals(18, javaChapters);
+        assertEquals(12, csharpChapters);
+        assertEquals(java.util.Set.of("Java/foundation", "Java/lab", "Java/advanced",
+                "C#/foundation", "C#/lab", "C#/advanced"), stages);
         String quiz = workspace + "/course-labs/" + lab1 + "/quiz";
         var java = Map.of("chapterId", "java-01");
         send("POST", quiz + "/curriculum", student, java, 403);
@@ -233,13 +237,13 @@ class CourseHttpAcceptanceTest {
         assertFalse(javaLesson.path("questions").get(0).has("correctOption"));
 
         String csharpQuiz = workspace + "/course-labs/" + lab2 + "/quiz";
-        var csharp = Map.of("chapterId", "csharp-13");
+        var csharp = Map.of("chapterId", "csharp-03");
         send("POST", csharpQuiz + "/curriculum", lecturer, csharp, 200);
         send("GET", csharpQuiz, student, null, 403);
         int csharpVersion = data(send("POST", quiz + "/curriculum", lecturer, csharp, 200)).path("version").asInt();
         assertEquals(javaVersion + 1, csharpVersion);
         JsonNode csharpLesson = data(send("GET", quiz, student, null, 200));
-        assertTrue(csharpLesson.path("lesson").asText().contains("https://learn.microsoft.com/en-us/dotnet/csharp/"));
+        assertTrue(csharpLesson.path("lesson").asText().contains("https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/"));
         assertEquals(4, csharpLesson.path("questions").size());
         var attempt = Map.of("attemptId", UUID.randomUUID(), "version", csharpVersion, "answers", List.of(1, 0, 2, 1));
         assertEquals("PASSED", data(send("POST", quiz + "/attempts", student, attempt, 200)).path("status").asText());
