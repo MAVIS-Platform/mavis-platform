@@ -23,7 +23,7 @@ export function getResultName(status: string, locale: "en" | "vi" = "en"): strin
   return resultNames[status] ?? status;
 }
 
-export const RULE_SET = "3e-2";
+export const RULE_SET = "3e-3";
 export const ruleNames: Record<string, string> = {
   "RULE-01": "Cyclic dependencies between services",
   "RULE-02": "Data ownership boundary across services",

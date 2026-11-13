@@ -8,6 +8,7 @@ public final class CourseworkDiagramTypes {
     private CourseworkDiagramTypes() { }
     public static final Set<String> CURRENT = Set.of("C4_CONTEXT", "C4_CONTAINER", "C4_COMPONENT",
         "UML_CLASS", "UML_SEQUENCE", "UML_PACKAGE", "UML_DEPLOYMENT", "UML_ACTIVITY", "UML_STATE", "DEPENDENCY_GRAPH");
+    public static final Set<String> GUIDED_STATIC = Set.of("C4_CONTEXT", "C4_CONTAINER", "C4_COMPONENT", "DEPENDENCY_GRAPH");
     public static boolean supportedRequirement(String type) {
         return CURRENT.contains(type) || "C4".equals(type) || "VIEW_4_PLUS_1".equals(type);
     }

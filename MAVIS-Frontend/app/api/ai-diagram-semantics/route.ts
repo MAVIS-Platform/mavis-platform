@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { reportAiUsage } from "@/lib/ai/usage-report";
 import { currentSession } from "@/lib/api/java-operations";
-import { literalSourceContext, normalizeThreeE, normalizeC4 } from "@/lib/ai/evidence-grounding";
+import { hasAllowedEvidenceRefs, literalSourceContext, normalizeThreeE, normalizeC4, redactEvidenceText } from "@/lib/ai/evidence-grounding";
 import type { CompactFlowAiContext, SequenceAiEnrichment } from "@/features/architecture/scenario-design";
 import type { C4AiDiagramEnrichment, CompactC4AiContext } from "@/features/architecture/diagram-projections";
 import type { CompactUmlAiContext, UmlAiDiagramEnrichment } from "@/features/architecture/uml-diagrams";
@@ -104,6 +105,7 @@ Given the selected architectural element or relationship and its extracted sourc
 - exploreSimple: (1-2 sentences) Summarize what the extracted source code evidence below implements (citing key classes/files).
 - evaluateSimple: Describe risks only as conditional possibilities supported by the snippets or recorded findings. Missing findings do not prove correctness, low coupling or operational safety.
 - snippetNotes: Map supplied snippet IDs only to what that snippet declares; preserve dependency kinds and do not invent validation, persistence or execution order.
+- evidenceRefs: Object mapping explainSimple, exploreSimple and evaluateSimple to the non-empty arrays of supplied snippet IDs supporting each field. Omit any field without citations.
 - assumptions: string array of explicitly unverified inferences; empty when unsupported.
 - unknowns: string array of missing facts that prevent stronger conclusions.
 Return valid JSON only.`;
@@ -115,7 +117,7 @@ STRICT SCOPE GUARDRAIL:
 2. NEVER answer off-topic questions (food, weather, daily life, entertainment, general coding tasks, trivia) or questions about unrelated services outside target.title's direct architectural scope.
 3. If userQuestion is unrelated to the software architecture, code evidence, dependencies, or design risks of target.title, DO NOT answer the question. Instead, return { "offTopic": true, "answer": "<1-sentence refusal in English stating you only answer questions about target.title's architecture and code evidence>" }.
 4. For valid in-scope questions, respond in English regardless of the language of userQuestion. Use 2-4 concise sentences, citing concrete classes, files, methods, or peers from the provided context.
-Return valid JSON only: { "answer": "concise response", "offTopic": false }`;
+Return valid JSON only: { "answer": "concise response", "offTopic": false, "evidenceRefs": ["supplied-snippet-id"] }`;
 
 async function callStructuredLlm<T>(
   resolved: { key: string; provider: "openai" | "gemini" },
@@ -263,7 +265,7 @@ export async function POST(request: NextRequest) {
     if (body.threeEChat && body.threeEChat.question?.trim()) {
       const { threeEContext: rawChatContext, currentExplanation, history = [], question } = body.threeEChat;
       const tCtx = literalSourceContext(rawChatContext);
-      const q = question.trim();
+      const q = redactEvidenceText(question.trim());
 
       // Layer 1: Zero-token deterministic scope guardrail before any LLM API call
       const guard = checkThreeEScopeGuardrail(q, tCtx);
@@ -275,7 +277,9 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const chatCacheKey = `evidence-v3-${locale}:${tCtx.contextHash}::${q.toLowerCase()}`;
+      const chatCacheKey = createHash("sha256")
+        .update(JSON.stringify([userId, locale, tCtx, currentExplanation, history, q]))
+        .digest("hex");
       const cachedAnswer = threeEChatCache.get(chatCacheKey);
       if (cachedAnswer) {
         return NextResponse.json({
@@ -292,7 +296,7 @@ export async function POST(request: NextRequest) {
         const children = tCtx.childComponents.slice(0, 5).join(", ");
         if (locale === "vi") {
           const parts: string[] = [
-            `Về "${tCtx.title}" (${tCtx.type}): ${currentExplanation?.explainSimple || tCtx.summary}`,
+            `Về "${tCtx.title}" (${tCtx.type}): ${tCtx.summary}`,
           ];
           if (inbound || outbound) {
             parts.push(
@@ -310,7 +314,7 @@ export async function POST(request: NextRequest) {
           return parts.join(" ");
         }
         const parts: string[] = [
-          `Regarding "${tCtx.title}" (${tCtx.type}): ${currentExplanation?.explainSimple || tCtx.summary}`,
+          `Regarding "${tCtx.title}" (${tCtx.type}): ${tCtx.summary}`,
         ];
         if (inbound || outbound) {
           parts.push(
@@ -343,10 +347,10 @@ export async function POST(request: NextRequest) {
       const chatSystemPrompt =
         locale === "vi"
           ? THREE_E_CHAT_SYSTEM_PROMPT +
-            `\n\nIMPORTANT LANGUAGE INSTRUCTION: Return all explanation text in clear, natural Vietnamese Software Engineering terminology, while keeping class names, method names, service names, and file paths unchanged. Return valid JSON only: { "answer": "...", "offTopic": false }`
+            `\n\nIMPORTANT LANGUAGE INSTRUCTION: Return all explanation text in clear, natural Vietnamese Software Engineering terminology, while keeping class names, method names, service names, and file paths unchanged.`
           : THREE_E_CHAT_SYSTEM_PROMPT;
 
-      const parsedChat = await callStructuredLlm<{ answer?: string; offTopic?: boolean }>(
+      const parsedChat = await callStructuredLlm<{ answer?: string; offTopic?: boolean; evidenceRefs?: unknown }>(
         resolved,
         userId,
         chatSystemPrompt,
@@ -361,19 +365,24 @@ export async function POST(request: NextRequest) {
             findingsSummary: tCtx.findingsSummary,
             codeSnippets: tCtx.codeSnippets,
           },
-          currentExplanation,
-          history: history.slice(-4),
+          currentExplanation: currentExplanation ? {
+            explainSimple: redactEvidenceText(currentExplanation.explainSimple ?? ""),
+            exploreSimple: redactEvidenceText(currentExplanation.exploreSimple ?? ""),
+            evaluateSimple: redactEvidenceText(currentExplanation.evaluateSimple ?? ""),
+          } : undefined,
+          history: history.slice(-4).map(({ role, content }) => ({ role, content: redactEvidenceText(content) })),
           userQuestion: q,
         }),
         1024,
-      );
+      ).catch(() => null);
 
-      const answer =
-        typeof parsedChat?.answer === "string" && parsedChat.answer.trim()
-          ? parsedChat.answer.trim()
-          : buildFallbackAnswer();
+      const allowed = new Set(tCtx.codeSnippets.map(({ id }) => id));
+      const citedAnswer = typeof parsedChat?.answer === "string" &&
+        hasAllowedEvidenceRefs(parsedChat.evidenceRefs, allowed)
+        ? redactEvidenceText(parsedChat.answer.trim()) : "";
+      const answer = citedAnswer || buildFallbackAnswer();
 
-      if (parsedChat?.answer) {
+      if (citedAnswer) {
         if (threeEChatCache.size >= 500) {
           const oldest = threeEChatCache.keys().next().value;
           if (oldest) threeEChatCache.delete(oldest);
@@ -383,7 +392,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         answer,
-        provider: parsedChat?.answer ? resolved.provider : "ast-skeleton",
+        provider: citedAnswer ? resolved.provider : "ast-skeleton",
       });
     }
 
@@ -391,7 +400,7 @@ export async function POST(request: NextRequest) {
     if (body.threeEContext && body.threeEContext.contextHash) {
       const tCtx = literalSourceContext(body.threeEContext);
       const fallback3E = normalizeThreeE(null, tCtx, locale);
-      const cacheKey = `evidence-v2:${locale}:${tCtx.contextHash}`;
+      const cacheKey = createHash("sha256").update(JSON.stringify([userId, locale, tCtx])).digest("hex");
       const hit = threeEEnrichmentCache.get(cacheKey);
       if (hit) {
         return NextResponse.json({ threeEEnrichment: hit, cached: true });
@@ -437,7 +446,7 @@ export async function POST(request: NextRequest) {
         userId,
         threeESystemPrompt,
         userPayload,
-      );
+      ).catch(() => null);
       const merged3E: ThreeEAiSimplifiedExplanation = {
         ...normalizeThreeE(parsed3E, tCtx, locale),
         tokenStats: {
@@ -452,11 +461,13 @@ export async function POST(request: NextRequest) {
         merged3E.exploreSimple = `Phân tích dựa trên ${tCtx.codeSnippets.length} đoạn mã nguồn đã chọn; bằng chứng là một phần và hành vi runtime chưa được xác minh.`;
         merged3E.evaluateSimple = "Tính đúng đắn, chất lượng kiến trúc và độ an toàn vận hành không thể khẳng định chỉ từ ngữ cảnh cục bộ này.";
       }
-      if (threeEEnrichmentCache.size >= 500) {
-        const oldest = threeEEnrichmentCache.keys().next().value;
-        if (oldest) threeEEnrichmentCache.delete(oldest);
+      if (parsed3E) {
+        if (threeEEnrichmentCache.size >= 500) {
+          const oldest = threeEEnrichmentCache.keys().next().value;
+          if (oldest) threeEEnrichmentCache.delete(oldest);
+        }
+        threeEEnrichmentCache.set(cacheKey, merged3E);
       }
-      threeEEnrichmentCache.set(cacheKey, merged3E);
       return NextResponse.json({ threeEEnrichment: merged3E, cached: false });
     }
 

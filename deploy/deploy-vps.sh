@@ -84,6 +84,18 @@ if [ -e "$migration" ] || [ -e "$schema_tool" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$migration" /opt/mavis/db-backups/wf01-before-v26.dump
 fi
+quiz_migration="$incoming/V27__Course_Quizzes.sql"
+if [ -e "$quiz_migration" ]; then
+  test -f "$migration" && test -f "$schema_tool" || { echo "Incomplete WF-02 schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$quiz_migration" /opt/mavis/db-backups/wf02-before-v27.dump
+fi
+quiz_evidence_migration="$incoming/V28__Submission_Course_Quiz_Evidence.sql"
+if [ -e "$quiz_evidence_migration" ]; then
+  test -f "$quiz_migration" && test -f "$schema_tool" || { echo "Incomplete WF-02 evidence schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$quiz_evidence_migration" /opt/mavis/db-backups/wf02-before-v28.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans

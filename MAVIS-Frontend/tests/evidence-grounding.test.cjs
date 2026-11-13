@@ -5,13 +5,23 @@ for(const ext of ['.ts','.tsx'])require.extensions[ext]=(module,file)=>{
  module._compile(output.replace(/require\(["']@\/([^"']+)["']\)/g,(_,name)=>'require('+JSON.stringify(path.join(root,'src',name))+')'),file);
 };
 const projections=require('../src/features/architecture/diagram-projections.ts');
-const {selectDiagram}=require('../src/features/architecture/diagram-catalog.ts');
+const {selectDiagram,resolveDiagramKind,resolveGuidedDiagramKind,guidedDiagramOptions}=require('../src/features/architecture/diagram-catalog.ts');
 const {collectConcreteThreeEEvidences,buildThreeEAiContext,buildDeterministicThreeESimplified}=require('../src/features/architecture/three-e-content.ts');
 const {normalizeThreeE,normalizeC4}=require('../src/lib/ai/evidence-grounding.ts');
 const element=(id,kind,name=id,parentId=null)=>({id,name,elementType:kind,parentId,description:'',layer:'unclassified',evidence:[],properties:parentId?{responsibility:'Exposes HTTP endpoints'}:{}});
 const edge=(id,from,to,protocol='SERVICE_HTTP_CALL',originLayer='STATIC',properties={})=>({id,from,to,protocol,originLayer,properties,evidence:[],uncertain:false});
 function fixture(){return{id:'audit-model',projectId:'audit-project',snapshotId:'source',revision:1,label:'Audit',elements:[...['employee','department','organization','gateway','config','discovery','zipkin'].map(id=>element(id,'SERVICE_CONTAINER')),...['employee','department','organization'].map(id=>element(id+'-controller','COMPONENT',id[0].toUpperCase()+id.slice(1)+'Controller',id))],edges:[edge('e1','organization','department'),edge('e2','organization','employee'),edge('e3','department','employee')]};}
 function subject(model,node=model.elements[0],relationship=null){return{activeTargetId:relationship?.id??node.id,scopeKey:'selection',subject:{node:relationship?null:node,edge:relationship,title:relationship?.id??node.name,type:relationship?.protocol??node.elementType,summary:'Declared model element',connections:model.edges.filter(e=>e.from===node.id||e.to===node.id)}};}
+
+test('guided static diagram selection supports C1–C3 and keeps behavioral UML outside the Lab catalog',()=>{
+ assert.deepEqual(guidedDiagramOptions.map(({value})=>value),['CONTEXT','CONTAINER','COMPONENT']);
+ for(const kind of ['CONTEXT','CONTAINER','COMPONENT'])assert.equal(resolveGuidedDiagramKind(kind),kind);
+ for(const kind of ['UML_SEQUENCE','UML_ACTIVITY','UML_STATE']){
+  assert.equal(resolveGuidedDiagramKind(kind),'CONTEXT');
+  assert.equal(resolveDiagramKind(kind),kind);
+ }
+ assert.equal(selectDiagram(fixture(),'CONTEXT').document.level,'CONTEXT');
+});
 
 test('C4 context does not invent people or business purpose from controllers',()=>{
  const model=fixture();const result=projections.deriveC4ContextModel(model);
@@ -63,6 +73,46 @@ test('C4 AI cannot create actors, invent a business purpose, or annotate unsuppo
  const output=normalizeC4({persons:{invented:{name:'Employee User'}},systemDescription:'Banking system',nodeDescriptions:{supported:'Exposes employee endpoints','metadata-only':'Validates employees',invented:'Invented'}},context);
  assert.deepEqual(output,{nodeDescriptions:{supported:'Exposes employee endpoints'}});
  assert.deepEqual(normalizeC4({persons:{user:{name:'User'}}},{...context,astSkeleton:''}),{});
+});
+test('3E redacts provider payloads, checks citations and recovers from a timeout', async t => {
+ const {NextRequest}=require('next/server');
+ const {POST}=require('../app/api/ai-diagram-semantics/route.ts');
+ const model=fixture(),ctx=subject(model);
+ const context=buildThreeEAiContext(model,ctx,[{
+  id:'saved-2',kind:'source',origin:'persisted',sourceType:'STATIC_CODE',
+  location:'Employees.cs:12:5-12:72',snippet:'string apiKey = "fake-value-only-for-test"; return employees.FindAll();',complete:false
+ }],[]);
+ const previous=process.env.OPENAI_API_KEY;
+ process.env.OPENAI_API_KEY='fixture-provider-key';
+ t.after(()=>{if(previous===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=previous;});
+ let providerCalls=0;
+ t.mock.method(globalThis,'fetch',async (url,init)=>{
+  if(String(url).endsWith('/api/v1/auth/me'))return Response.json({code:200,data:{id:'11111111-1111-4111-8111-111111111111',fullName:'Test User',role:'STUDENT'}});
+  if(!String(url).includes('/chat/completions'))return Response.json({});
+  providerCalls++;
+  const prompt=JSON.parse(JSON.parse(init.body).messages[1].content);
+  assert.equal(prompt.codeSnippets[0].id,'saved-2');
+  assert.match(prompt.codeSnippets[0].snippet,/\[REDACTED\]/);
+  assert.doesNotMatch(prompt.codeSnippets[0].snippet,/fake-value-only-for-test/);
+  if(providerCalls===1)throw new DOMException('Timed out','TimeoutError');
+  return Response.json({choices:[{message:{content:JSON.stringify({
+   explainSimple:'Delegates to the repository.',
+   exploreSimple:'Unsupported claim.',
+   evaluateSimple:'Missing citation.',
+   evidenceRefs:{explainSimple:['saved-2'],exploreSimple:['invented']}
+  })}}]});
+ });
+ const request=()=>new NextRequest('http://local/api/ai-diagram-semantics',{
+  method:'POST',headers:{host:'local',origin:'http://local',cookie:'mavis_session=valid'},
+  body:JSON.stringify({threeEContext:context})
+ });
+ const first=await (await POST(request())).json();
+ assert.equal(first.threeEEnrichment.tokenStats.provider,'ast-skeleton');
+ const second=await (await POST(request())).json();
+ assert.equal(providerCalls,2);
+ assert.equal(second.threeEEnrichment.explainSimple,'Delegates to the repository.');
+ assert.doesNotMatch(second.threeEEnrichment.exploreSimple,/Unsupported claim/);
+ assert.doesNotMatch(second.threeEEnrichment.evaluateSimple,/Missing citation/);
 });
 test('AI routes do not call an LLM without literal source evidence',async t=>{
  const {NextRequest}=require('next/server');const {POST}=require('../app/api/ai-diagram-semantics/route.ts');let calls=0;

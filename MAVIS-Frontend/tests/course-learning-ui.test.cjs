@@ -35,14 +35,18 @@ test("student navigation follows Course to Roadmap to Lab and submissions", () =
 test("Lab UI keeps unavailable progress gates honest and deep-links real assignment data", () => {
   const course = read("src/features/courses/screens.tsx");
   const access = read("src/features/workspaces/course-access.tsx");
+  const quiz = read("src/features/courses/course-quiz.tsx");
 
   assert.ok(course.includes('<CourseEnrollment destination="roadmap" />'));
   assert.ok(access.includes('"course-enrollments/redeem"'));
   assert.ok(access.includes("course-roadmap"));
   assert.ok(access.includes('state: "LOCKED" | "UNLOCKED" | "PASSED"'));
   assert.match(access, /\/lab\?workspace=.*&assignment=.*&step=1/s);
-  assert.ok(course.includes("Final completion state must come from the readiness API"));
-  assert.ok(course.includes("Quiz attempt state is awaiting the versioned Quiz API"));
+  assert.match(course, /state: model \? "READY" : referenceSnapshotId \? "IN PROGRESS" : "MISSING"/);
+  assert.match(course, /job\.status === "completed" && job\.analysisState !== "PARTIAL"/);
+  assert.match(course, /<CourseQuiz workspaceId=\{workspaceId\} labId=\{labId\}/);
+  assert.match(quiz, /queryKey: \["api", "course-quiz", workspaceId, labId\]/);
+  assert.match(quiz, /api<Result>\(`\$\{path\}\/attempts`/);
   assert.match(course, /\/assignments\?workspace=.*&assignment=/s);
   assert.match(course, /\/submissions\?workspace=.*&assignment=/s);
 });

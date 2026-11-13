@@ -9,7 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useApiMutation, useApiQuery, useSession, usePermission } from "@/hooks/use-api";
 import type { Submission } from "@/types/domain";
+import { useLocale } from "@/lib/i18n/locale-context";
 export function SubmissionVersionHeader({ submission }: { submission: Submission }) {
+  const { t } = useLocale();
+  const quiz = submission.courseQuizEvidence;
   return (
     <DetailPanel title="Submitted snapshot">
       <StatusBadge status="Frozen submitted results · read-only" variant="source" />
@@ -31,6 +34,12 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
       </p>
       {submission.submissionNotes && (
         <p className="whitespace-pre-wrap text-sm">{submission.submissionNotes}</p>
+      )}
+      {quiz && (
+        <p className="text-sm">
+          {t("Lab Quiz passed", "Đã đạt Quiz của Lab")} · {quiz.correctCount}/{quiz.questionCount}
+          {" · "}{t("Version", "Phiên bản")} {quiz.quizVersion}
+        </p>
       )}
       <SubmissionExport submissionId={submission.id} />
       <p className="text-xs text-muted-foreground">

@@ -42,13 +42,32 @@ public final class InputFingerprint {
             if (Thread.currentThread().isInterrupted()) throw new IOException("Snapshot preparation interrupted");
             long size = Files.size(entry.getValue());
             if (size > 1_048_576 || (total += size) > 20_971_520) throw new IOException("Snapshot byte budget exceeded");
-            byte[] bytes;
-            try (var stream = Files.newInputStream(entry.getValue(), LinkOption.NOFOLLOW_LINKS)) { bytes = stream.readNBytes(1_048_577); }
-            if (bytes.length != size) throw new IOException("Snapshot changed during preparation");
             digest.update(entry.getKey().getBytes(StandardCharsets.UTF_8)); digest.update((byte) 0);
-            digest.update(sha256().digest(decode(bytes).getBytes(StandardCharsets.UTF_8)));
+            digest.update(sha256().digest(readSource(entry.getValue(), size).getBytes(StandardCharsets.UTF_8)));
         }
         return new Manifest(HexFormat.of().formatHex(digest.digest()), files.keySet().stream().anyMatch(n -> n.toLowerCase(Locale.ROOT).endsWith(".csproj") || n.toLowerCase(Locale.ROOT).endsWith(".sln")), List.copyOf(files.keySet()));
+    }
+
+    public static String readVerifiedSource(Path root, String relative, String expectedHash) throws IOException {
+        validateDirectory(root);
+        Path file = root.resolve(relative).normalize();
+        if (!file.startsWith(root) || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Snapshot source unavailable");
+        }
+        validateDirectory(file.getParent());
+        String source = readSource(file, Files.size(file));
+        if (!HexFormat.of().formatHex(sha256().digest(source.getBytes(StandardCharsets.UTF_8))).equals(expectedHash)) {
+            throw new IOException("Snapshot source digest mismatch");
+        }
+        return source;
+    }
+
+    private static String readSource(Path file, long size) throws IOException {
+        if (size > 1_048_576) throw new IOException("Snapshot byte budget exceeded");
+        byte[] bytes;
+        try (var stream = Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS)) { bytes = stream.readNBytes(1_048_577); }
+        if (bytes.length != size) throw new IOException("Snapshot changed during preparation");
+        return decode(bytes);
     }
     static void validateDirectory(Path path) throws IOException {
         if (!path.isAbsolute() || !Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) throw new IOException("Snapshot directory required");
