@@ -214,16 +214,7 @@ public class RuntimeSessionResponseDTO {
             }
         }
 
-        JsonNode plannedActions = entity.getScenarioConfig() == null ? null : entity.getScenarioConfig().path("infrastructureActions");
-        boolean studioVerified = plannedActions != null && plannedActions.isArray() && !plannedActions.isEmpty()
-                && capturedSpanCount != null && capturedSpanCount > 0
-                && "COMPLETED".equalsIgnoreCase(entity.getExecutionStatus())
-                && "PASSED".equalsIgnoreCase(entity.getScenarioStatus())
-                && "AVAILABLE".equalsIgnoreCase(entity.getEvidenceStatus())
-                && "CONFIRMED".equalsIgnoreCase(entity.getCleanupStatus())
-                && receipt.path("infrastructureActions").isArray()
-                && java.util.stream.StreamSupport.stream(receipt.path("infrastructureActions").spliterator(), false)
-                        .anyMatch(action -> action.path("confirmed").asBoolean(false));
+        boolean studioVerified = entity.hasVerifiedStudioEvidence();
 
         return RuntimeSessionResponseDTO.builder()
                 .id(entity.getId())

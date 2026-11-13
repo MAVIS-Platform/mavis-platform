@@ -97,6 +97,7 @@ export function SubmissionComposer({
     diagrams.data ?? [],
   );
   const overdue = isDeadlinePassed(requirements?.dueAt);
+  const requiresStudio = guided && requirements?.requireRuntimeTrace === true;
   const compatible = useMemo(() => {
     const allCompleted = (sessions.data ?? []).filter(
       (s) =>
@@ -104,6 +105,12 @@ export function SubmissionComposer({
         String(s.status).toUpperCase() === "COMPLETED" ||
         String(s.executionStatus).toUpperCase() === "COMPLETED",
     );
+    if (requiresStudio) {
+      const model = state.model;
+      if (!model) return [];
+      return allCompleted.filter((s) => s.studioVerified && s.snapshotId === model.snapshotId
+        && (s.modelId === model.id || s.enrichedModelId === model.id));
+    }
     if (!state.model) return allCompleted;
     const exactMatch = allCompleted.filter(
       (s) =>
@@ -112,7 +119,7 @@ export function SubmissionComposer({
         s.enrichedModelId === state.model?.id,
     );
     return exactMatch.length > 0 ? exactMatch : allCompleted;
-  }, [sessions.data, state.model]);
+  }, [sessions.data, state.model, requiresStudio]);
   const selectedRuntime = compatible.find((s) => s.id === runtimeId);
 
   return (
@@ -335,7 +342,7 @@ export function SubmissionComposer({
                   <SelectField
                     label={
                       requirements?.requireRuntimeTrace
-                        ? "Required runtime evidence"
+                        ? (requiresStudio ? "Required verified Studio evidence" : "Required runtime evidence")
                         : "Optional runtime evidence"
                     }
                     value={selectedRuntime?.id ?? ""}
