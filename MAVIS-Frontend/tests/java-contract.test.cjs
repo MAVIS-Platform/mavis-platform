@@ -590,7 +590,7 @@ test("audit: graph layers retain explicit classification and resolved certainty"
 
 test("audit: legacy proxy permits documented reads/evaluation while excluding internal and arbitrary paths",()=>{
  const {allowedBackendPath}=require("../src/lib/api/backend-path.ts");
- for(const p of [`projects/${project}/snapshots`,`projects/${project}/jobs`,`analyzer/snapshots/${snapshot}`,`analyzer/models/${model}/elements`,`analyzer/models/${model}/elements/${node}`,`analyzer/models/${model}/evaluate`,`analyzer/evaluations/${job}/findings`,`assignments/${job}/reference-source`]) assert.equal(allowedBackendPath(p),true,p);
+ for(const p of [`projects/${project}/snapshots`,`projects/${project}/jobs`,`analyzer/snapshots/${snapshot}`,`analyzer/models/${model}/elements`,`analyzer/models/${model}/elements/${node}`,`analyzer/models/${model}/evaluate`,`analyzer/evaluations/${job}/findings`,`assignments/${job}/reference-source`,"notifications","notifications/read-all",`notifications/${node}/read`]) assert.equal(allowedBackendPath(p),true,p);
  for(const p of ["admin/users",`analyzer/runtime/sessions/${job}/recovery-result`,"../admin/users",`projects/${project}/snapshots/extra`,"https://private",`analyzer/models/${model}/evaluate/extra`]) assert.equal(allowedBackendPath(p),false,p);
 });
 
@@ -682,6 +682,38 @@ test("notification contracts reject unsafe redirects and invalid filters",()=>{
  const data={items:[{id:node,title:'Test',body:'Body',category:'ACCOUNT',targetPath:'//evil.example',createdAt:'2026-10-28T00:00:00Z',readAt:null}],total:1,unreadCount:1,page:0,size:20,asOf:'2026-10-28T00:00:00Z'};
  assert.equal(contracts.notifications.output.safeParse(data).success,false);
  const {mutationInvalidations}=require('../src/lib/api/cache-policy.ts');assert.ok(mutationInvalidations.readNotification.includes('notifications'));assert.ok(mutationInvalidations.readAllNotifications.includes('notifications'));
+});
+
+test("SR-08 and SR-14: assignment BFF preserves ruleSetVersion/aiPolicy/labOrder and notification BFF returns 400 on invalid filters", async t => {
+ environment(t);
+ const {NextRequest}=require("next/server");
+ const route=require("../app/api/mavis/[operation]/route.ts");
+ const {contracts}=require("../src/lib/api/contracts.ts");
+ const {MockAdapter}=require("../src/lib/api/mock-adapter.ts");
+
+ // SR-08: createAssignment & updateAssignment forward ruleSetVersion, aiPolicy, labOrder
+ const createInput={workspaceId:project,title:"Lab 1 Contract",description:"Inspect C4",dueAt:null,requiredDiagramTypes:["C4_CONTAINER"],ruleSetVersion:"3e-2",requireRuntimeTrace:true,aiPolicy:{allowExplanation:true,maxHints:2},labOrder:1,referenceModelId:model};
+ assert.equal(contracts.createAssignment.input.safeParse(createInput).success,true);
+ t.mock.method(globalThis,"fetch",async(_url,options)=>{
+  const sent=JSON.parse(options.body);
+  return Response.json({code:200,data:{id:node,workspaceId:project,title:sent.title,description:sent.description,dueAt:null,requiredDiagramTypes:sent.requiredDiagramTypes,ruleSetVersion:sent.ruleSetVersion,requireRuntimeTrace:sent.requireRuntimeTrace,aiPolicy:sent.aiPolicy,labOrder:sent.labOrder,referenceSource:null}});
+ });
+ const created=await executeJava("createAssignment",createInput,"jwt",new AbortController().signal);
+ assert.equal(created.ruleSetVersion,"3e-2");
+ assert.deepEqual(created.aiPolicy,{allowExplanation:true,maxHints:2});
+ assert.equal(created.labOrder,1);
+
+ const mock=new MockAdapter("normal",0);await mock.execute("mockLogin",{role:"lecturer"});
+ const mockCreated=await mock.execute("createAssignment",{workspaceId:"workspace-1",title:"Mock Lab",dueAt:null,requiredDiagramTypes:["C4_CONTAINER"],ruleSetVersion:"3e-2",requireRuntimeTrace:false,aiPolicy:"STRICT",labOrder:2});
+ assert.equal(mockCreated.ruleSetVersion,"3e-2");
+ assert.equal(mockCreated.aiPolicy,"STRICT");
+ assert.equal(mockCreated.labOrder,2);
+
+ // SR-14: notification validation failures return HTTP 400 from BFF route
+ const badList=await route.GET(new NextRequest(`http://localhost:3000/api/mavis/notifications?input=${encodeURIComponent(JSON.stringify({page:-1,size:20,unreadOnly:false}))}`,{headers:{cookie:"mavis_session=fixture"}}),{params:Promise.resolve({operation:"notifications"})});
+ assert.equal(badList.status,400);
+ const badReadAll=await route.POST(new NextRequest("http://localhost:3000/api/mavis/readAllNotifications",{method:"POST",headers:{host:"localhost:3000",origin:"http://localhost:3000",cookie:"mavis_session=fixture","content-type":"application/json"},body:JSON.stringify({before:"not-an-iso-date"})}),{params:Promise.resolve({operation:"readAllNotifications"})});
+ assert.equal(badReadAll.status,400);
 });
 
 
