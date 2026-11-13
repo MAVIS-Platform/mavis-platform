@@ -1,5 +1,190 @@
 [
   {
+    "id": "java-f01",
+    "track": "Java",
+    "phase": "foundation",
+    "title": "Java nền tảng và ranh giới kiểu dữ liệu",
+    "minutes": 45,
+    "objective": "Đọc record, interface, lớp triển khai và xác định quy tắc kiểm dữ liệu ở biên.",
+    "lesson": "Khi đọc một endpoint, lần theo DTO đầu vào, interface nghiệp vụ và phần triển khai. Một record tiện mang giá trị nhưng không làm bất biến mọi object mà nó tham chiếu. Interface mô tả khả năng gọi. Lớp triển khai quyết định hành vi. Phân biệt lỗi dữ liệu cần trả về cho caller với lỗi hạ tầng cần ghi nhận.",
+    "exercise": "Tạo một DTO đơn hàng và một interface tra kho trên repo bài tập. Lập bảng input hợp lệ, thiếu trường, số lượng âm. Bàn giao test và file/dòng từ DTO tới hàm kiểm dữ liệu.",
+    "sources": [
+      {
+        "publisher": "Dev.java",
+        "title": "Getting to Know the Language",
+        "url": "https://dev.java/learn/language/"
+      },
+      {
+        "publisher": "Oracle",
+        "title": "JDK 21 Specifications",
+        "url": "https://docs.oracle.com/en/java/javase/21/docs/specs/index.html"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Interface chủ yếu biểu diễn gì?",
+        "options": [
+          "Hợp đồng gọi giữa các lớp",
+          "Mọi instance đang chạy",
+          "Cấu hình môi trường"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Record chứa List có luôn bất biến sâu không?",
+        "options": [
+          "Có trong mọi trường hợp",
+          "Có nếu dùng JDK 21",
+          "Không, cần xem danh sách có bị sửa được hay không"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Dấu hiệu nào xác nhận implementation đang dùng?",
+        "options": [
+          "Chỉ tên interface",
+          "Binding thực tế trong cấu hình hoặc nơi khởi tạo",
+          "Số lượng method"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Số lượng âm nên có ca thử ở đâu?",
+        "options": [
+          "Biên nhận dữ liệu và quy tắc nghiệp vụ",
+          "Chỉ bảng màu UI",
+          "Chỉ khi triển khai production"
+        ],
+        "correctOption": 0
+      }
+    ]
+  },
+  {
+    "id": "java-f02",
+    "track": "Java",
+    "phase": "foundation",
+    "title": "Collections, Streams và xử lý dữ liệu",
+    "minutes": 45,
+    "objective": "Chọn List, Set và Map phù hợp; viết pipeline không làm thay đổi đầu vào.",
+    "lesson": "List giữ thứ tự, Set biểu diễn tập hợp và Map tra theo khóa. Chọn semantics theo dữ liệu cần bảo toàn. Với Stream, filter chọn phần tử, map chuyển đổi, terminal operation thu kết quả. Tránh side effect trong pipeline. Tách dữ liệu thuần với lời gọi I/O để test dễ và tránh lặp yêu cầu.",
+    "exercise": "Từ danh sách endpoint có trùng, tạo Map theo service và danh sách route theo thứ tự. Chốt cách xử lý khóa trùng. Thêm fixture rỗng và route trùng. Bàn giao kết quả dự kiến cùng test.",
+    "sources": [
+      {
+        "publisher": "Dev.java",
+        "title": "Collections and Streams",
+        "url": "https://dev.java/learn/api/collections-and-streams/"
+      },
+      {
+        "publisher": "Oracle",
+        "title": "JDK 21 Specifications",
+        "url": "https://docs.oracle.com/en/java/javase/21/docs/specs/index.html"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Kiểu nào phù hợp để tra service theo ID?",
+        "options": [
+          "List không có chỉ mục khóa",
+          "Map",
+          "Stream đã đóng"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Thao tác nào lấy phần tử đáp ứng predicate?",
+        "options": [
+          "filter",
+          "collect",
+          "sort"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Dùng Set khi nào có thể sai?",
+        "options": [
+          "Khi chỉ kiểm tồn tại",
+          "Khi mỗi ID cần duy nhất",
+          "Khi cần giữ số lần xuất hiện"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Cần làm gì khi hai bản ghi có cùng khóa?",
+        "options": [
+          "Luôn bỏ ngẫu nhiên một bản ghi",
+          "Định nghĩa quy tắc hợp nhất hoặc từ chối",
+          "Đổi tên package"
+        ],
+        "correctOption": 1
+      }
+    ]
+  },
+  {
+    "id": "java-f03",
+    "track": "Java",
+    "phase": "foundation",
+    "title": "Build Maven, cấu hình và phiên bản Spring",
+    "minutes": 40,
+    "objective": "Đọc pom, Maven Wrapper và tìm cấu hình theo môi trường.",
+    "lesson": "POM mô tả dependency và plugin. Dependency management quy định phiên bản nhưng không tự thêm dependency. Wrapper giúp nhóm dùng phiên bản Maven đã chọn. Spring có nhiều nguồn cấu hình. Tách profile và biến môi trường, dùng secret từ cơ chế quản lý riêng. Kiểm tương thích JDK, Boot và Cloud trước khi nâng dependency.",
+    "exercise": "Từ repo Java, ghi JDK, Maven, Boot và BOM Cloud nếu có. Chạy Maven Wrapper test. Chỉ ra một giá trị được ghi đè bởi profile và một giá trị đến từ biến môi trường.",
+    "sources": [
+      {
+        "publisher": "Apache Maven",
+        "title": "Maven Getting Started Guide",
+        "url": "https://maven.apache.org/guides/getting-started/index.html"
+      },
+      {
+        "publisher": "Spring",
+        "title": "Externalized Configuration",
+        "url": "https://docs.spring.io/spring-boot/reference/features/external-config.html"
+      },
+      {
+        "publisher": "Oracle",
+        "title": "JDK 21 Specifications",
+        "url": "https://docs.oracle.com/en/java/javase/21/docs/specs/index.html"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Maven Wrapper giúp gì?",
+        "options": [
+          "Tự chọn đúng database",
+          "Thay thế test",
+          "Dùng phiên bản Maven được repo ghim"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Dependency management tự thêm dependency không?",
+        "options": [
+          "Có với mọi artifact",
+          "Không, nó quản lý cấu hình và phiên bản dependency",
+          "Chỉ khi dùng Linux"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Làm sao kiểm giá trị cấu hình thực tế?",
+        "options": [
+          "Đối chiếu các nguồn và profile đang kích hoạt",
+          "Đọc duy nhất application.yml",
+          "Đo kích thước JAR"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Khi nâng Spring Cloud, kiểm gì trước?",
+        "options": [
+          "Tên thư mục src",
+          "Số bảng dữ liệu",
+          "Phiên bản Boot, JDK và BOM tương thích"
+        ],
+        "correctOption": 2
+      }
+    ]
+  },
+  {
     "id": "java-01",
     "track": "Java",
     "title": "Từ monolith đến microservices và C4",
@@ -61,7 +246,8 @@
         ],
         "correctOption": 0
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-02",
@@ -125,7 +311,8 @@
         ],
         "correctOption": 2
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-03",
@@ -189,7 +376,8 @@
         ],
         "correctOption": 1
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-04",
@@ -253,7 +441,8 @@
         ],
         "correctOption": 1
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-05",
@@ -317,7 +506,8 @@
         ],
         "correctOption": 0
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-06",
@@ -381,7 +571,8 @@
         ],
         "correctOption": 2
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-07",
@@ -445,7 +636,8 @@
         ],
         "correctOption": 2
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-08",
@@ -509,7 +701,8 @@
         ],
         "correctOption": 1
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-09",
@@ -573,7 +766,8 @@
         ],
         "correctOption": 0
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-10",
@@ -637,7 +831,8 @@
         ],
         "correctOption": 0
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-11",
@@ -701,7 +896,8 @@
         ],
         "correctOption": 2
       }
-    ]
+    ],
+    "phase": "lab"
   },
   {
     "id": "java-12",
@@ -774,6 +970,837 @@
           "Mọi đường đi đã quan sát"
         ],
         "correctOption": 1
+      }
+    ],
+    "phase": "lab"
+  },
+  {
+    "id": "java-a01",
+    "track": "Java",
+    "phase": "advanced",
+    "title": "Kiểm thử Spring Boot, hợp đồng và PostgreSQL",
+    "minutes": 55,
+    "objective": "Phân biệt test logic, test HTTP và test dữ liệu trên engine thật.",
+    "lesson": "Unit test phản hồi nhanh và kiểm quyết định nghiệp vụ. Web test kiểm status, binding và JSON. Integration test với PostgreSQL test có thể phát hiện khác biệt về SQL, transaction hoặc migration. Contract cần kiểm cả ca tương thích cũ và lỗi. Dùng fixture nhỏ cố định để tái hiện lỗi.",
+    "exercise": "Chọn một endpoint đọc và một endpoint ghi. Viết test thành công, sai quyền và xung đột dữ liệu. Chạy migration trên PostgreSQL cô lập. Ghi SHA và kết quả từng tầng.",
+    "sources": [
+      {
+        "publisher": "Spring",
+        "title": "Spring Boot Testcontainers",
+        "url": "https://docs.spring.io/spring-boot/reference/testing/testcontainers.html"
+      },
+      {
+        "publisher": "Spring",
+        "title": "Testing the Web Layer",
+        "url": "https://spring.io/guides/gs/testing-web/"
+      },
+      {
+        "publisher": "OpenAPI Initiative",
+        "title": "OpenAPI 3.1.1",
+        "url": "https://spec.openapis.org/oas/v3.1.1.html"
+      },
+      {
+        "publisher": "PostgreSQL",
+        "title": "Transaction Isolation",
+        "url": "https://www.postgresql.org/docs/current/transaction-iso.html"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Test nào phát hiện tốt khác biệt cú pháp SQL PostgreSQL?",
+        "options": [
+          "Integration test dùng PostgreSQL",
+          "Snapshot ảnh UI",
+          "Unit test chỉ mock repository"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Web layer test phù hợp kiểm gì?",
+        "options": [
+          "Phiên bản JDK của mọi máy",
+          "Thông lượng production",
+          "Binding, status và JSON"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Khi đổi response contract, cần kiểm gì?",
+        "options": [
+          "Chỉ số dòng code",
+          "Consumer hiện tại và trường dữ liệu lỗi",
+          "Chỉ status 200"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Fixture ổn định giúp gì?",
+        "options": [
+          "Tái hiện và so sánh kết quả",
+          "Tự sửa migration",
+          "Tạo secret cho production"
+        ],
+        "correctOption": 0
+      }
+    ]
+  },
+  {
+    "id": "java-a02",
+    "track": "Java",
+    "phase": "advanced",
+    "title": "Giao dịch, cạnh tranh và tính nhất quán",
+    "minutes": 55,
+    "objective": "Kiểm lost update, retry giao dịch và ràng buộc duy nhất bằng hai kết nối thử.",
+    "lesson": "Isolation quyết định dữ liệu mỗi giao dịch quan sát được. Hành vi phụ thuộc engine và mức isolation. Dùng ràng buộc duy nhất cho định danh nghiệp vụ. Khi gặp serialization failure, xử lý retry toàn giao dịch theo budget. Với tích hợp ngoài DB, suy luận rõ tác dụng phụ trước khi thử lại.",
+    "exercise": "Mô phỏng hai yêu cầu dùng cùng mã thao tác trong database thử. Chứng minh trạng thái cuối bằng số bản ghi và ID, kèm log một ca xung đột. Kiểm rollback khi ghi bước sau thất bại.",
+    "sources": [
+      {
+        "publisher": "PostgreSQL",
+        "title": "Transaction Isolation",
+        "url": "https://www.postgresql.org/docs/current/transaction-iso.html"
+      },
+      {
+        "publisher": "Spring",
+        "title": "Spring Boot Testcontainers",
+        "url": "https://docs.spring.io/spring-boot/reference/testing/testcontainers.html"
+      },
+      {
+        "publisher": "Apache Maven",
+        "title": "Maven Getting Started Guide",
+        "url": "https://maven.apache.org/guides/getting-started/index.html"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Cách đáng tin cậy để duy trì mã thao tác duy nhất?",
+        "options": [
+          "Kiểm trên trình duyệt",
+          "Đặt tên biến khác nhau",
+          "Ràng buộc unique tại DB"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Serialization failure thường thử lại phạm vi nào?",
+        "options": [
+          "Chỉ render trang",
+          "Toàn giao dịch theo chính sách",
+          "Chỉ câu SELECT đầu tiên"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Test cạnh tranh nên kiểm gì?",
+        "options": [
+          "Trạng thái cuối và tác dụng phụ",
+          "Chỉ cả hai request đã gửi",
+          "Chỉ số thread"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Rollback DB có tự hủy email đã gửi không?",
+        "options": [
+          "Có trong mọi trường hợp",
+          "Có nếu timeout ngắn",
+          "Không, email là tác dụng phụ bên ngoài"
+        ],
+        "correctOption": 2
+      }
+    ]
+  },
+  {
+    "id": "java-a03",
+    "track": "Java",
+    "phase": "advanced",
+    "title": "Vận hành Spring Boot có xác thực và telemetry",
+    "minutes": 55,
+    "objective": "Ghép kiểm quyền, health check và truy vết để nghiệm thu một API.",
+    "lesson": "Resource server xác minh token trước khi áp chính sách quyền. Health cần phân biệt ứng dụng còn sống và sẵn sàng nhận tải. Truyền context liên dịch vụ giúp nối trace, nhưng dữ liệu nhạy cảm không nên đi trong baggage hoặc log. Tránh gắn ID không giới hạn làm nhãn metric. Kiểm một request hợp lệ và một request bị từ chối.",
+    "exercise": "Trên fixture, ghi chứng cứ request hợp lệ, token sai đối tượng và readiness khi dependency thử mất kết nối. Đối chiếu trace và metric, che credential và thông tin cá nhân.",
+    "sources": [
+      {
+        "publisher": "Spring",
+        "title": "OAuth 2.0 Resource Server JWT",
+        "url": "https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html"
+      },
+      {
+        "publisher": "Spring",
+        "title": "Spring Boot Observability",
+        "url": "https://docs.spring.io/spring-boot/reference/actuator/observability.html"
+      },
+      {
+        "publisher": "OpenTelemetry",
+        "title": "Context propagation",
+        "url": "https://opentelemetry.io/docs/concepts/context-propagation/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Audience kiểm điều gì?",
+        "options": [
+          "Token có dành cho resource server này không",
+          "Tên container",
+          "Số queue"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Readiness giúp quyết định gì?",
+        "options": [
+          "Tất cả dữ liệu là đúng",
+          "Có nên đổi compiler",
+          "Có nên chuyển tải đến instance"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Vì sao tránh user ID làm nhãn metric?",
+        "options": [
+          "Không thể ghi metric",
+          "Cardinality cao và có thể lộ thông tin",
+          "Thay đổi HTTP method"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Trace qua hai service nối bằng gì?",
+        "options": [
+          "Context được truyền giữa các lời gọi",
+          "Tên file giống nhau",
+          "Màu node"
+        ],
+        "correctOption": 0
+      }
+    ]
+  },
+  {
+    "id": "csharp-f01",
+    "track": "C#",
+    "phase": "foundation",
+    "title": "Kiểu dữ liệu C#, interface và nullable",
+    "minutes": 45,
+    "objective": "Đọc kiểu giá trị, kiểu tham chiếu, record và hợp đồng nullable.",
+    "lesson": "Interface định nghĩa hợp đồng. Class hoặc record cài đặt hành vi. Nullable reference types cung cấp phân tích và cảnh báo ở thời điểm biên dịch, không thay kiểm tra dữ liệu bên ngoài ở runtime. Phân biệt string rỗng, null và trường thiếu. Cần đọc phiên bản compiler cùng TargetFramework.",
+    "exercise": "Tạo DTO đơn hàng và interface kiểm tồn kho trong repo thử. Viết ca null, chuỗi rỗng và ID không tồn tại. So sánh dấu ? với kiểm tra điều kiện trước khi gọi nghiệp vụ.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "C# language documentation",
+        "url": "https://learn.microsoft.com/en-us/dotnet/csharp/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "C# Standard Specification",
+        "url": "https://learn.microsoft.com/en-us/dotnet/csharp/specification/overview"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Nullable reference types chính yếu cung cấp gì?",
+        "options": [
+          "Bảo đảm mọi JSON đầu vào đúng",
+          "Phân tích biên dịch và cảnh báo",
+          "Tự thêm ràng buộc SQL"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Interface mô tả gì?",
+        "options": [
+          "Hợp đồng gọi",
+          "Mọi bản ghi DB",
+          "Phiên bản image"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "JSON thiếu trường nên được kiểm ở đâu?",
+        "options": [
+          "Chỉ dashboard",
+          "Chỉ Build",
+          "Biên binding/validation và nghiệp vụ"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Xác định phiên bản compiler dựa trên gì?",
+        "options": [
+          "Tên controller",
+          "SDK, cấu hình và TargetFramework",
+          "Số route"
+        ],
+        "correctOption": 1
+      }
+    ]
+  },
+  {
+    "id": "csharp-f02",
+    "track": "C#",
+    "phase": "foundation",
+    "title": "LINQ, truy vấn và chi phí thực thi",
+    "minutes": 45,
+    "objective": "Phân biệt lọc, ánh xạ, materialization và truy vấn qua provider.",
+    "lesson": "LINQ hỗ trợ truy vấn trên collection và provider. IEnumerable thường chạy trên dữ liệu trong bộ nhớ. IQueryable mô tả truy vấn để provider có thể dịch. Một số biểu thức thực thi trì hoãn. Gọi ToList tạo snapshot kết quả tại thời điểm đó. Khi dùng EF Core, kiểm SQL và tránh tải dữ liệu lớn chỉ để lọc ở client.",
+    "exercise": "Viết truy vấn lọc đơn theo trạng thái, chọn DTO tối thiểu, thêm ca không có kết quả và nhiều phần tử. Với dữ liệu thử EF Core, kiểm SQL sinh ra và số dòng đọc.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "LINQ in C#",
+        "url": "https://learn.microsoft.com/en-us/dotnet/csharp/linq/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Entity Framework Core",
+        "url": "https://learn.microsoft.com/en-us/ef/core/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "ToList thường làm gì với truy vấn trì hoãn?",
+        "options": [
+          "Chỉ đổi tên biến",
+          "Mở socket Runtime",
+          "Thực thi và materialize kết quả"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "IQueryable có thể cung cấp gì cho provider?",
+        "options": [
+          "Access token",
+          "Biểu thức để dịch truy vấn",
+          "File Compose"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Nên làm gì trước khi tải cả bảng để lọc?",
+        "options": [
+          "Kiểm provider có dịch filter tại DB được không",
+          "Luôn tải hết",
+          "Luôn tắt index"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Ca nào giúp kiểm giới hạn truy vấn?",
+        "options": [
+          "Chỉ một dòng hợp lệ",
+          "Chỉ xem loại nút",
+          "Tập rỗng và tập lớn có kiểm số dòng"
+        ],
+        "correctOption": 2
+      }
+    ]
+  },
+  {
+    "id": "csharp-f03",
+    "track": "C#",
+    "phase": "foundation",
+    "title": "Task, async/await và hủy thao tác",
+    "minutes": 45,
+    "objective": "Theo dõi đường đi của Task và CancellationToken trong HTTP API.",
+    "lesson": "Await cho phép tiếp tục khi I/O hoàn tất; nó không biến mọi đoạn code thành xử lý song song. Token hủy cần được truyền qua các tầng tới I/O hỗ trợ. Tránh chặn Task bằng Result trên đường request. Tách timeout, client hủy và lỗi downstream để ghi nhận đúng nguyên nhân.",
+    "exercise": "Viết API thử gọi I/O giả có thể hủy. Thử trả về bình thường, client hủy và timeout. Ghi đường đi token và trạng thái cuối từng ca.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Asynchronous programming",
+        "url": "https://learn.microsoft.com/en-us/dotnet/csharp/asynchronous-programming/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "HTTP resilience",
+        "url": "https://learn.microsoft.com/en-us/dotnet/core/resilience/http-resilience"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Await I/O có nghĩa gì?",
+        "options": [
+          "Luôn tạo một thread mới",
+          "Tiếp tục khi Task hoàn tất",
+          "Luôn chạy song song"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Token cần đi tới đâu?",
+        "options": [
+          "Thao tác I/O hỗ trợ hủy",
+          "Chỉ controller",
+          "Chỉ log"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Task.Result trên đường request có thể gây gì?",
+        "options": [
+          "Tự tối ưu timeout",
+          "Tự truyền trace",
+          "Chặn thread"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Nên phân biệt trường hợp nào khi đo lỗi?",
+        "options": [
+          "Chỉ tên controller",
+          "Client hủy, timeout và lỗi downstream",
+          "Chỉ số instance"
+        ],
+        "correctOption": 1
+      }
+    ]
+  },
+  {
+    "id": "csharp-01",
+    "track": "C#",
+    "phase": "lab",
+    "title": "HTTP API ASP.NET Core và hợp đồng OpenAPI",
+    "minutes": 50,
+    "objective": "Đọc route của Minimal API và Controller rồi đối chiếu với hợp đồng HTTP.",
+    "lesson": "Minimal API có thể khai báo MapGet/MapPost tại Program.cs hoặc extension. Controller dùng attribute routing và binding. So khớp verb, template, request và response giữa code và OpenAPI. Chọn status cho dữ liệu sai, thiếu quyền và tài nguyên không tồn tại. Công cụ phát hiện route cần ghép prefix đúng phạm vi.",
+    "exercise": "Tìm hai route trong repo C# mẫu. Ghi verb, prefix, input và output, thêm ba request đúng, sai dữ liệu và tài nguyên không có. So sánh route trong MAVIS với file/dòng.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "ASP.NET Core Fundamentals",
+        "url": "https://learn.microsoft.com/en-us/training/paths/aspnet-core-fundamentals/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Controller-based Web API",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/tutorials/first-web-api"
+      },
+      {
+        "publisher": "OpenAPI Initiative",
+        "title": "OpenAPI 3.1.1",
+        "url": "https://spec.openapis.org/oas/v3.1.1.html"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Đối chiếu hợp đồng cần gì?",
+        "options": [
+          "Chỉ tên hàm",
+          "Chỉ một response 200",
+          "Verb, path, input, status và schema"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Minimal API thường dùng khai báo gì?",
+        "options": [
+          "pom.xml",
+          "MapGet hoặc MapPost",
+          "Repository annotation Java"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Khi route dùng prefix, cần kiểm gì?",
+        "options": [
+          "Path ghép cuối cùng",
+          "Số method private",
+          "Tên container"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Ca âm tối thiểu nên bao gồm gì?",
+        "options": [
+          "Chỉ đổi màu nút",
+          "Chỉ gọi lại request hợp lệ",
+          "Dữ liệu sai và tài nguyên không tồn tại"
+        ],
+        "correctOption": 2
+      }
+    ]
+  },
+  {
+    "id": "csharp-02",
+    "track": "C#",
+    "phase": "lab",
+    "title": "Dependency injection, cấu hình và vòng đời service",
+    "minutes": 45,
+    "objective": "Phân tích đăng ký dịch vụ, lifetime và phạm vi request.",
+    "lesson": "Transient tạo mới khi resolve. Scoped thường theo request web. Singleton tồn tại trong thời gian sống của container DI. Singleton không nên giữ trực tiếp scoped dependency. Cấu hình theo môi trường nên được bind với kiểu options phù hợp và xác minh khi khởi động nếu cần. Ghi nơi đăng ký và nơi tiêu thụ để giải thích C3.",
+    "exercise": "Tìm AddScoped, AddTransient hoặc AddSingleton trong repo. Vẽ đường từ controller tới implementation và config. Tạo một test kiểm missing config hoặc captive dependency trên môi trường thử.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Dependency injection in ASP.NET Core",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "ASP.NET Core Fundamentals",
+        "url": "https://learn.microsoft.com/en-us/training/paths/aspnet-core-fundamentals/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Scoped mặc định trong ứng dụng web thường theo gì?",
+        "options": [
+          "Phạm vi request",
+          "Mỗi máy chủ vật lý",
+          "Mỗi bảng dữ liệu"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Singleton giữ scoped dependency trực tiếp có vấn đề gì?",
+        "options": [
+          "Chỉ khác tên interface",
+          "Tự động an toàn",
+          "Lifetime phụ thuộc bị kéo dài sai phạm vi"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Bằng chứng DI cần ghi gì?",
+        "options": [
+          "Số replica",
+          "Nơi đăng ký, kiểu resolve và nơi tiêu thụ",
+          "Màu graph"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Cấu hình bắt buộc thiếu nên xử lý thế nào?",
+        "options": [
+          "Xác minh sớm và báo lỗi rõ ràng",
+          "Bỏ qua trong mọi trường hợp",
+          "Chèn secret cố định vào source"
+        ],
+        "correctOption": 0
+      }
+    ]
+  },
+  {
+    "id": "csharp-03",
+    "track": "C#",
+    "phase": "lab",
+    "title": "EF Core, migration và dữ liệu theo service",
+    "minutes": 55,
+    "objective": "Theo dõi DbContext, kiểm migration và ranh giới quyền ghi dữ liệu.",
+    "lesson": "DbContext theo dõi thay đổi và lưu unit of work. Migration mô tả các bước thay đổi schema từ model. Đối chiếu SQL trên provider thật trước khi triển khai. Bảo toàn dữ liệu cũ với ca upgrade. Trong microservices, cần xác định service sở hữu schema và quyền ghi, kể cả khi nhiều service chia máy chủ.",
+    "exercise": "Xác định DbContext, entity và migration của một service. Tạo DB thử, kiểm cài sạch, nâng cấp từ schema trước và truy vấn dữ liệu cũ. Ghi cả ca migration lỗi.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Entity Framework Core",
+        "url": "https://learn.microsoft.com/en-us/ef/core/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "EF Core migrations",
+        "url": "https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/"
+      },
+      {
+        "publisher": "PostgreSQL",
+        "title": "Transaction Isolation",
+        "url": "https://www.postgresql.org/docs/current/transaction-iso.html"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Migration dùng để làm gì?",
+        "options": [
+          "Tự chia tải",
+          "Mô tả thay đổi schema theo phiên bản",
+          "Chấm Quiz"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Thử nâng cấp cần xác minh gì?",
+        "options": [
+          "Dữ liệu cũ còn đúng và schema mới hợp lệ",
+          "Chỉ process exit 0",
+          "Chỉ file README"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Hai service cùng máy chủ DB có chắc cùng quyền ghi không?",
+        "options": [
+          "Có trong mọi trường hợp",
+          "Có nếu cùng engine",
+          "Không, kiểm quyền và schema"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Chọn provider nào để test hành vi SQL?",
+        "options": [
+          "Mock luôn đủ",
+          "Provider sát môi trường mục tiêu",
+          "Provider ngẫu nhiên"
+        ],
+        "correctOption": 1
+      }
+    ]
+  },
+  {
+    "id": "csharp-04",
+    "track": "C#",
+    "phase": "lab",
+    "title": "Typed HttpClient, timeout và resilience",
+    "minutes": 50,
+    "objective": "Lần từ typed client tới downstream và kiểm xử lý lỗi HTTP.",
+    "lesson": "IHttpClientFactory quản lý cấu hình và vòng đời handler. Typed client đóng gói contract của downstream. Đặt timeout theo tổng budget và chọn retry cho thao tác phù hợp. Bảo vệ lệnh ghi khỏi tác dụng phụ trùng. Circuit breaker hạn chế gọi dependency đang lỗi; phân biệt với retry và timeout.",
+    "exercise": "Lần từ đăng ký typed client đến call site. Dùng stub mô phỏng 200, timeout và 503. Kiểm số lần gọi, khoảng chờ và kết quả fallback. Đối chiếu dependency graph với file/dòng.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "IHttpClientFactory",
+        "url": "https://learn.microsoft.com/en-us/dotnet/core/extensions/httpclient-factory"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "HTTP resilience",
+        "url": "https://learn.microsoft.com/en-us/dotnet/core/resilience/http-resilience"
+      },
+      {
+        "publisher": "OpenTelemetry",
+        "title": "Context propagation",
+        "url": "https://opentelemetry.io/docs/concepts/context-propagation/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Typed client giúp đóng gói gì?",
+        "options": [
+          "Cấu hình và hợp đồng của downstream",
+          "Migration PostgreSQL",
+          "Quyền lớp"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Khi retry lệnh ghi cần kiểm gì?",
+        "options": [
+          "Tên package",
+          "Màu badge",
+          "Idempotency và tác dụng phụ"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Breaker open thường làm gì?",
+        "options": [
+          "Tự tăng tất cả timeout",
+          "Hạn chế hoặc từ chối gọi downstream",
+          "Tự tạo route"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Stub 503 giúp kiểm gì?",
+        "options": [
+          "Policy retry và fallback",
+          "Mọi lỗi production",
+          "Tốc độ JDK"
+        ],
+        "correctOption": 0
+      }
+    ]
+  },
+  {
+    "id": "csharp-05",
+    "track": "C#",
+    "phase": "lab",
+    "title": "Messaging, idempotency và bù trừ Saga",
+    "minutes": 55,
+    "objective": "Đọc publisher và handler rồi kiểm hành vi khi sự kiện được gửi lại.",
+    "lesson": "Consumer có thể nhận lại thông điệp khi xử lý hoặc xác nhận không hoàn tất. Dùng khóa sự kiện ổn định và giao dịch phù hợp để tránh tác dụng phụ trùng. Trong Saga, mỗi service thực hiện một local transaction và có thể cần hành động bù. Sử dụng correlation ID và trạng thái để truy vết.",
+    "exercise": "Tạo fixture hai sự kiện trùng ID và một lỗi ở bước thanh toán. Vẽ đường đi qua broker, ghi tác dụng phụ mong đợi và ca bù thất bại. Kiểm lại sau retry.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Asynchronous message-based communication",
+        "url": "https://learn.microsoft.com/en-us/dotnet/architecture/microservices/architect-microservice-container-applications/asynchronous-message-based-communication"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Entity Framework Core",
+        "url": "https://learn.microsoft.com/en-us/ef/core/"
+      },
+      {
+        "publisher": "OpenTelemetry",
+        "title": "Context propagation",
+        "url": "https://opentelemetry.io/docs/concepts/context-propagation/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Mục đích dedup theo event ID là gì?",
+        "options": [
+          "Thay kiểm quyền",
+          "Tránh tác dụng phụ trùng",
+          "Thay hết log"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Compensation có phải rollback DB toàn cục không?",
+        "options": [
+          "Không, là thao tác nghiệp vụ bù riêng",
+          "Có mọi lúc",
+          "Có nếu event đã gửi"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Sự kiện publish thành công có chứng minh consumer đã hoàn tất không?",
+        "options": [
+          "Có trong mọi cấu hình",
+          "Có nếu cùng ngôn ngữ",
+          "Không, cần chứng cứ ở consumer"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Cần gì để theo dõi cùng Saga qua nhiều service?",
+        "options": [
+          "Chỉ tên image",
+          "Correlation ID và trạng thái từng bước",
+          "Chỉ độ dài payload"
+        ],
+        "correctOption": 1
+      }
+    ]
+  },
+  {
+    "id": "csharp-06",
+    "track": "C#",
+    "phase": "lab",
+    "title": "JWT bearer, phân quyền và kiểm dữ liệu",
+    "minutes": 50,
+    "objective": "Đối chiếu cấu hình xác thực với policy kiểm quyền tại resource.",
+    "lesson": "JWT bearer cần xác minh chữ ký, issuer, audience và thời hạn theo cấu hình. Một danh tính đã xác thực vẫn có thể thiếu quyền hành động. Kiểm cả route có policy và ràng buộc owner của tài nguyên. Che secret, token và dữ liệu nhạy cảm khi ghi log hoặc minh chứng.",
+    "exercise": "Dùng token fixture thử ca hợp lệ, hết hạn, sai audience và danh tính hợp lệ nhưng thiếu quyền. Ghi status dự kiến và dòng kiểm quyền trên repo thử.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "JWT bearer authentication",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/security/authentication/configure-jwt-bearer-authentication"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "ASP.NET Core Fundamentals",
+        "url": "https://learn.microsoft.com/en-us/training/paths/aspnet-core-fundamentals/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "ASP.NET Core integration testing",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Audience biểu diễn gì?",
+        "options": [
+          "Tên bảng",
+          "Số lượng instance",
+          "API hoặc đối tượng nhận token"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Token hợp lệ luôn cho phép truy cập mọi resource không?",
+        "options": [
+          "Có với mọi role",
+          "Không, còn policy và ownership",
+          "Có nếu token mới"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Thông tin nào cần che trong log?",
+        "options": [
+          "Token và secret",
+          "HTTP status",
+          "Tên API thông thường"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Ca xác thực và phân quyền nên kiểm thế nào?",
+        "options": [
+          "Chỉ ca 200",
+          "Chỉ health check",
+          "Token không hợp lệ và token hợp lệ thiếu quyền"
+        ],
+        "correctOption": 2
+      }
+    ]
+  },
+  {
+    "id": "csharp-07",
+    "track": "C#",
+    "phase": "lab",
+    "title": "Kiểm thử ASP.NET Core từ HTTP đến lưu trữ",
+    "minutes": 55,
+    "objective": "Tạo test host, thay dependency thử và kiểm response thật.",
+    "lesson": "Integration test bằng test host có thể đi qua routing, middleware, DI và serialization. Unit test vẫn hữu ích cho luật nghiệp vụ riêng. Chọn fixture DB phù hợp với yêu cầu kiểm transaction và migration. Kiểm cả ca lỗi, quyền tài nguyên và hợp đồng tương thích.",
+    "exercise": "Dùng test host cho một endpoint đọc và một endpoint ghi. Thêm test 2xx, sai dữ liệu và sai quyền. Với PostgreSQL thử, xác nhận dữ liệu và trạng thái cuối sau lỗi.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "ASP.NET Core integration testing",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/test/integration-tests"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "EF Core migrations",
+        "url": "https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/"
+      },
+      {
+        "publisher": "OpenAPI Initiative",
+        "title": "OpenAPI 3.1.1",
+        "url": "https://spec.openapis.org/oas/v3.1.1.html"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Test host giúp đi qua phần nào?",
+        "options": [
+          "Routing, middleware và DI thật của app thử",
+          "Chỉ bảng màu",
+          "Chỉ README"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Khi test migration cần gì?",
+        "options": [
+          "Chỉ mock HTTP",
+          "Chỉ build",
+          "DB/provider phù hợp và fixture dữ liệu trước nâng cấp"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Khi nào nên dùng unit test cho logic nghiệp vụ?",
+        "options": [
+          "Muốn chứng minh ingress production",
+          "Muốn kiểm quy tắc nghiệp vụ độc lập",
+          "Muốn xác minh DNS"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Kết quả endpoint ghi nên kiểm gì ngoài status?",
+        "options": [
+          "Trạng thái dữ liệu và tác dụng phụ",
+          "Chỉ tên test",
+          "Chỉ độ dài body"
+        ],
+        "correctOption": 0
       }
     ]
   },
@@ -863,6 +1890,87 @@
           "Chỉ TargetFramework"
         ],
         "correctOption": 1
+      }
+    ],
+    "phase": "lab"
+  },
+  {
+    "id": "csharp-a01",
+    "track": "C#",
+    "phase": "advanced",
+    "title": "Docker, health check và OpenTelemetry cho .NET",
+    "minutes": 60,
+    "objective": "Phân tích image và Compose rồi đối chiếu bằng chứng tĩnh với telemetry.",
+    "lesson": "Image đóng gói chương trình, Compose mô tả service, mạng và cấu hình. Liveness và readiness phục vụ hai quyết định khác nhau. Truyền trace context nối span giữa services. Aspire là tài liệu mở rộng cho service defaults; lab dùng công cụ theo repo đã ghim. Khi so trước/sau, giữ workload tương đương và ghi số mẫu, tỷ lệ lỗi.",
+    "exercise": "Đọc Dockerfile, Compose, mapping health và instrumentation trên repo đã duyệt. Chạy sandbox nếu được cấp, thu trace, ghi readiness và số mẫu trước/sau. Nếu thiếu môi trường, bàn giao kế hoạch đo với trạng thái chưa quan sát.",
+    "sources": [
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Containerize a .NET app",
+        "url": "https://learn.microsoft.com/en-us/dotnet/core/docker/build-container"
+      },
+      {
+        "publisher": "Docker Docs",
+        "title": "How Compose works",
+        "url": "https://docs.docker.com/compose/intro/compose-application-model/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "ASP.NET Core Health checks",
+        "url": "https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks"
+      },
+      {
+        "publisher": "OpenTelemetry",
+        "title": ".NET instrumentation",
+        "url": "https://opentelemetry.io/docs/languages/dotnet/"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Aspire Service Defaults",
+        "url": "https://learn.microsoft.com/dotnet/aspire/fundamentals/service-defaults"
+      },
+      {
+        "publisher": "Microsoft Learn",
+        "title": "Roslyn APIs",
+        "url": "https://learn.microsoft.com/en-us/dotnet/csharp/roslyn-sdk/"
+      }
+    ],
+    "questions": [
+      {
+        "prompt": "Readiness dùng để quyết định gì?",
+        "options": [
+          "Class có bao nhiêu method",
+          "Có cần đổi schema không",
+          "Instance có sẵn sàng nhận tải không"
+        ],
+        "correctOption": 2
+      },
+      {
+        "prompt": "Truyền trace context để làm gì?",
+        "options": [
+          "Tự tăng replica",
+          "Nối span giữa các service",
+          "Giữ secret trong header log"
+        ],
+        "correctOption": 1
+      },
+      {
+        "prompt": "Khi so latency trước/sau cần gì?",
+        "options": [
+          "Workload tương đương và ghi số mẫu",
+          "Chỉ một request ngẫu nhiên",
+          "Chỉ file Compose"
+        ],
+        "correctOption": 0
+      },
+      {
+        "prompt": "Kết luận khi thiếu runtime evidence là gì?",
+        "options": [
+          "Tất cả traffic đã xác minh",
+          "Có thể suy ra p95 chính xác",
+          "Chỉ mô tả phát hiện tĩnh và ghi chưa quan sát"
+        ],
+        "correctOption": 2
       }
     ]
   }

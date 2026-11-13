@@ -13,10 +13,10 @@ import java.util.List;
 @Component
 public class CourseCurriculum {
     public record Source(String publisher, String title, String url) {}
-    public record Chapter(String id, String track, String title, int minutes, String objective,
+    public record Chapter(String id, String track, String phase, String title, int minutes, String objective,
                           String lesson, String exercise, List<Source> sources,
                           List<CourseQuizService.Question> questions) {}
-    public record Preview(String id, String track, String title, int minutes, String objective,
+    public record Preview(String id, String track, String phase, String title, int minutes, String objective,
                           String lesson, String exercise, List<Source> sources) {}
 
     private final List<Chapter> chapters;
@@ -28,7 +28,7 @@ public class CourseCurriculum {
     }
 
     public List<Preview> previews() {
-        return chapters.stream().map(chapter -> new Preview(chapter.id(), chapter.track(), chapter.title(),
+        return chapters.stream().map(chapter -> new Preview(chapter.id(), chapter.track(), chapter.phase(), chapter.title(),
                 chapter.minutes(), chapter.objective(), chapter.lesson(), chapter.exercise(), chapter.sources())).toList();
     }
 

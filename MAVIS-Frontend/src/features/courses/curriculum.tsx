@@ -5,14 +5,17 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { DetailPanel } from "@/components/shared/data";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { api } from "@/lib/mainflow-api";
 
 type Source = { publisher: string; title: string; url: string };
+const phases = ["foundation", "lab", "advanced"] as const;
 type Chapter = {
   id: string;
   track: "Java" | "C#";
+  phase: (typeof phases)[number];
   title: string;
   minutes: number;
   objective: string;
@@ -33,7 +36,16 @@ export function CurriculumLibrary() {
   const { t } = useLocale();
   const [open, setOpen] = useState(false);
   const [track, setTrack] = useState<Chapter["track"]>("Java");
+  const [search, setSearch] = useState("");
   const library = useCurriculum(open);
+  const phaseLabels = {
+    foundation: t("Foundations", "Nền tảng"),
+    lab: t("Hands-on Labs", "Thực hành Lab"),
+    advanced: t("Advanced", "Nâng cao"),
+  };
+  const keyword = search.trim().toLowerCase();
+  const chapters = library.data?.filter((chapter) => chapter.track === track &&
+    [chapter.title, chapter.objective].some((text) => text.toLowerCase().includes(keyword))) ?? [];
   return (
     <DetailPanel title={t("Java and C# curriculum", "Giáo trình Java và C#")}>
       <Button type="button" variant="outline" aria-expanded={open} onClick={() => setOpen(!open)}>
@@ -51,31 +63,47 @@ export function CurriculumLibrary() {
               {language}
             </Button>
           ))}
+          <label className="grid gap-1 text-sm font-medium">
+            {t("Search lessons", "Tìm bài học")}
+            <Input type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
+          </label>
           {library.isPending && <p role="status">{t("Loading curriculum…", "Đang tải giáo trình…")}</p>}
           {library.isError && (
             <Button type="button" variant="outline" onClick={() => void library.refetch()}>
               {t("Retry loading curriculum", "Tải lại giáo trình")}
             </Button>
           )}
-          {library.data?.filter((chapter) => chapter.track === track).map((chapter) => (
-            <details key={chapter.id} className="rounded-lg border p-3">
-              <summary className="cursor-pointer font-medium">{chapter.title} · {chapter.minutes} {t("min", "phút")}</summary>
-              <div className="mt-3 space-y-2 text-sm" lang="vi">
-                <p><strong>Mục tiêu. </strong>{chapter.objective}</p>
-                <p>{chapter.lesson}</p>
-                <p><strong>Thực hành. </strong>{chapter.exercise}</p>
-                <ul className="list-disc space-y-1 pl-5">
-                  {chapter.sources.map((source) => (
-                    <li key={source.url}>
-                      <a className="text-primary underline" href={source.url} target="_blank" rel="noreferrer">
-                        {source.publisher} · {source.title}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </details>
-          ))}
+          {library.isSuccess && chapters.length === 0 && (
+            <p role="status">{t("No lessons match your search.", "Không tìm thấy bài học phù hợp.")}</p>
+          )}
+          {phases.map((phase) => {
+            const group = chapters.filter((chapter) => chapter.phase === phase);
+            if (!group.length) return null;
+            return (
+              <section key={phase} className="space-y-2">
+                <h3 className="text-sm font-semibold">{phaseLabels[phase]} · {group.length}</h3>
+                {group.map((chapter) => (
+                  <details key={chapter.id} className="rounded-lg border p-3">
+                    <summary className="cursor-pointer font-medium">{chapter.title} · {chapter.minutes} {t("min", "phút")}</summary>
+                    <div className="mt-3 space-y-2 text-sm" lang="vi">
+                      <p><strong>Mục tiêu. </strong>{chapter.objective}</p>
+                      <p>{chapter.lesson}</p>
+                      <p><strong>Thực hành. </strong>{chapter.exercise}</p>
+                      <ul className="list-disc space-y-1 pl-5">
+                        {chapter.sources.map((source) => (
+                          <li key={source.url}>
+                            <a className="text-primary underline" href={source.url} target="_blank" rel="noreferrer">
+                              {source.publisher} · {source.title}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </details>
+                ))}
+              </section>
+            );
+          })}
         </div>
       )}
     </DetailPanel>
@@ -113,8 +141,12 @@ export function CurriculumPublisher({ workspaceId, assignmentId }: { workspaceId
             publish.reset();
           }}>
           <option value="">{t("Select a Java or C# chapter", "Chọn bài Java hoặc C#")}</option>
-          {library.data?.map((chapter) => (
-            <option key={chapter.id} value={chapter.id}>{chapter.track} · {chapter.title}</option>
+          {(["Java", "C#"] as const).map((track) => (
+            <optgroup key={track} label={track}>
+              {library.data?.filter((chapter) => chapter.track === track).map((chapter) => (
+                <option key={chapter.id} value={chapter.id}>{chapter.title}</option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </label>
