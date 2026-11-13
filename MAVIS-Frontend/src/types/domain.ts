@@ -45,6 +45,22 @@ export const snapshotSchema = z.object({
   evidenceComplete: z.boolean().nullable(),
 });
 export type SourceSnapshot = z.infer<typeof snapshotSchema>;
+export const analysisStateSchema = z.enum([
+  "PENDING",
+  "QUEUED",
+  "DISPATCHED",
+  "RUNNING",
+  "PROCESSING",
+  "CANCELLING",
+  "CANCELLED",
+  "FAILED",
+  "TIMED_OUT",
+  "TIMEOUT",
+  "PARTIAL",
+  "COMPLETED",
+  "COMPLETED_WITH_REVIEW",
+  "COMPLETED_LEGACY",
+]);
 export const analysisJobSchema = z.object({
   id: z.string(),
   projectId: z.string(),
@@ -60,8 +76,9 @@ export const analysisJobSchema = z.object({
     "partial",
   ]),
   progress: z.number().min(0).max(100).nullable(),
-  analysisState: z.string().optional(),
+  analysisState: analysisStateSchema.optional(),
   workerStatus: z.string().nullable().optional(),
+  promotedLatest: z.boolean().nullable().optional(),
   modelId: z.string().nullable(),
   message: z.string(),
 });
