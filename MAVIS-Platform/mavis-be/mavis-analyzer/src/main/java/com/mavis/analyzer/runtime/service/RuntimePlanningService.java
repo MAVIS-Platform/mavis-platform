@@ -80,7 +80,11 @@ public class RuntimePlanningService {
 
  public record ConfigurationRequest(@NotNull UUID snapshotId,@NotNull UUID modelId,@NotBlank String profileId,@NotNull JsonNode profile,@Min(0) int expectedRevision){}
  public record ScenarioRequest(@NotBlank @Size(max=100) String name,@NotEmpty @Size(max=30) List<@NotBlank @Size(max=10000) String> steps,@Min(0) int expectedRevision){}
- public record StartRequest(@NotNull UUID snapshotId,@NotNull UUID scenarioId,@Min(1) int configurationRevision,@Min(1) int scenarioRevision,@AssertTrue boolean approved,@com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY) Map<String,String> environment){ @Override public String toString(){return "RuntimeStartRequest[snapshotId="+snapshotId+",scenarioId="+scenarioId+",environment=[protected]]";} }
+ public record InfrastructureActionRequest(String action,String service,Integer replicas) {}
+ public record StartRequest(@NotNull UUID snapshotId,@NotNull UUID scenarioId,@Min(1) int configurationRevision,@Min(1) int scenarioRevision,@AssertTrue boolean approved,@com.fasterxml.jackson.annotation.JsonProperty(access=com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY) Map<String,String> environment,List<InfrastructureActionRequest> infrastructureActions){
+  public StartRequest(UUID snapshotId,UUID scenarioId,int configurationRevision,int scenarioRevision,boolean approved,Map<String,String> environment){this(snapshotId,scenarioId,configurationRevision,scenarioRevision,approved,environment,List.of());}
+  @Override public String toString(){return "RuntimeStartRequest[snapshotId="+snapshotId+",scenarioId="+scenarioId+",environment=[protected],infrastructureActions="+(infrastructureActions==null?0:infrastructureActions.size())+"]";}
+ }
  public record ConfigurationView(UUID projectId,UUID snapshotId,UUID modelId,String profileId,JsonNode profile,int revision,boolean configured,boolean supported,boolean ready,List<String> prerequisites,boolean protectedInputsReady){}
  public record ScenarioView(UUID id,UUID projectId,String name,List<String> steps,int revision){}
  public record GenerateScenarioRequest(UUID snapshotId,UUID modelId,@Size(max=500) String goal,UUID repairSessionId){
@@ -2130,6 +2134,14 @@ public class RuntimePlanningService {
   if(!execEnv.bindings().isEmpty())profileCopy.set("environmentBindings",execEnv.bindings());
   config.set("profile",profileCopy);
   var scenario=config.putObject("scenario");scenario.set("steps",normalizedSteps);scenario.put("timeoutSeconds",settings.requireProfile(c.getProfileId()).timeoutSeconds());
+   ArrayNode actionNodes=config.putArray("infrastructureActions");
+   for(InfrastructureActionRequest action:r.infrastructureActions()==null?List.<InfrastructureActionRequest>of():r.infrastructureActions()){
+    String type=action.action()==null?"":action.action().trim().toUpperCase(Locale.ROOT);
+    String service=action.service()==null?"":action.service().trim();
+    if(!Set.of("STOP","START","SCALE").contains(type)||!appKeys.contains(service))throw new BusinessException(ErrorCode.BAD_REQUEST,"Infrastructure action must target a pinned application service");
+    if("SCALE".equals(type)&&(action.replicas()==null||action.replicas()<1||action.replicas()>8))throw new BusinessException(ErrorCode.BAD_REQUEST,"REPLICA_BOUNDS_EXCEEDED");
+    ObjectNode node=actionNodes.addObject();node.put("action",type);node.put("service",service);if(action.replicas()!=null)node.put("replicas",action.replicas());
+   }
   var planning=config.putObject("planning");planning.put("scenarioId",s.getId().toString());planning.put("scenarioRevision",s.getRevision());planning.put("configurationRevision",c.getRevision());
   Map<String,String> confirmedMappings=resolveConfirmedServiceMappings(c.getModelVersionId(),c.getProfile(),pre,apps);
   var createBuilder=RuntimeSessionCreateRequest.builder()

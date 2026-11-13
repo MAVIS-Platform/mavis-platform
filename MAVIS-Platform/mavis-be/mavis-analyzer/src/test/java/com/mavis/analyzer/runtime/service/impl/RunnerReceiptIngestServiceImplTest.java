@@ -194,7 +194,44 @@ class RunnerReceiptIngestServiceImplTest {
                 .runConfigurationVersionId(runConfigurationVersionId)
                 .scenarioVersionId(scenarioVersionId)
                 .resourceProject(validResourceProject)
+                .infrastructureActions(List.of(RuntimeInfrastructureActionDTO.builder()
+                        .action("SCALE")
+                        .service("order-service")
+                        .replicasBefore(1)
+                        .replicasAfter(2)
+                        .metricsBefore(new ObjectMapper().createObjectNode().put("p95LatencyMs", 125))
+                        .metricsAfter(new ObjectMapper().createObjectNode().put("p95LatencyMs", 82))
+                        .performedAt(OffsetDateTime.now().toString())
+                        .confirmed(true)
+                        .build()))
                 .sandboxEnforcementConfirmed(true);
+    }
+
+    @Test
+    @DisplayName("BR-08: từ chối receipt thành công khi chưa có thao tác hạ tầng thật")
+    void rejectsSuccessfulReceiptWithoutInfrastructureAction() {
+        RunnerCorrelatedSpanDTO span = RunnerCorrelatedSpanDTO.builder()
+                .traceId("4bf92f3577b34da6a3ce929d0e0e4736")
+                .spanId("00f067aa0ba902b7")
+                .runtimeService("order-service")
+                .modelServiceId(serviceAId.toString())
+                .build();
+        RunnerOutcomeDTO outcome = RunnerOutcomeDTO.builder()
+                .executionStatus("Completed")
+                .scenarioStatus("Passed")
+                .evidenceStatus("Available")
+                .cleanupStatus("Confirmed")
+                .mappingStatus("Mapped")
+                .trace(RunnerTraceCorrelationDTO.builder().spans(List.of(span)).warnings(List.of()).build())
+                .build();
+        RunnerReceiptIngestRequestDTO receipt = createValidReceiptBuilder()
+                .infrastructureActions(List.of())
+                .outcome(outcome)
+                .build();
+
+        assertThatThrownBy(() -> runnerReceiptIngestService.ingestRunnerReceipt(sessionId, receipt))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("INCOMPLETE_RUNTIME_SCENARIO");
     }
 
     @Test

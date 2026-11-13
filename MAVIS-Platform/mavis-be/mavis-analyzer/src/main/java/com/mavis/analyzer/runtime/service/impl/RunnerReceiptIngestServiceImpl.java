@@ -204,6 +204,16 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 ? trace.getSpans()
                 : Collections.emptyList();
 
+        boolean successfulCapture = "Completed".equalsIgnoreCase(outcome.getExecutionStatus())
+                && "Passed".equalsIgnoreCase(outcome.getScenarioStatus())
+                && "Available".equalsIgnoreCase(outcome.getEvidenceStatus());
+        boolean hasConfirmedInfrastructureAction = receipt.getInfrastructureActions() != null
+                && receipt.getInfrastructureActions().stream().anyMatch(this::isConfirmedInfrastructureAction);
+        if (successfulCapture && (spans.isEmpty() || !hasConfirmedInfrastructureAction)) {
+            throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
+                    "INCOMPLETE_RUNTIME_SCENARIO: RuntimeReceipt requires real OpenTelemetry spans and at least one confirmed STOP, START, or SCALE action with before/after evidence");
+        }
+
         // [CHẶNG 12]: Tập hợp danh sách externalRootSpanIds từ outcome.scenario.steps
         Set<String> externalRootSpanIds = new HashSet<>();
         Map<String, JsonNode> externalRootStepByTraceParent = new LinkedHashMap<>();
@@ -350,6 +360,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
                 && effectivelyMapped
                 && !hasStructuralTraceWarning
                 && correspondenceOk
+                && hasConfirmedInfrastructureAction
                 && modelVersionRepository.findFirstByProjectIdAndIsLatestValidTrueOrderByRevisionDesc(session.getProject().getId())
                     .map(latest -> isSessionBaseStillCurrentLatest(latest, session)).orElse(false);
 
@@ -1518,6 +1529,32 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
     }
 
     private record InteractionPersistenceResult(ModelRelationship relationship, Evidence evidence) {}
+
+    private boolean isConfirmedInfrastructureAction(RuntimeInfrastructureActionDTO action) {
+        if (action == null || !Boolean.TRUE.equals(action.getConfirmed())
+                || action.getAction() == null || action.getService() == null
+                || action.getService().isBlank() || action.getPerformedAt() == null || action.getPerformedAt().isBlank()
+                || action.getMetricsBefore() == null || action.getMetricsAfter() == null
+                || !action.getMetricsBefore().isObject() || !action.getMetricsAfter().isObject()) {
+            return false;
+        }
+        try {
+            OffsetDateTime.parse(action.getPerformedAt());
+        } catch (RuntimeException invalidTimestamp) {
+            return false;
+        }
+        String type = action.getAction().trim().toUpperCase(Locale.ROOT);
+        if (!Set.of("STOP", "START", "SCALE").contains(type)) {
+            return false;
+        }
+        if ("SCALE".equals(type)) {
+            Integer before = action.getReplicasBefore();
+            Integer after = action.getReplicasAfter();
+            return before != null && after != null && before >= 1 && before <= 8
+                    && after >= 1 && after <= 8 && !before.equals(after);
+        }
+        return true;
+    }
 
     private record CausalStepRecord(
             int order,

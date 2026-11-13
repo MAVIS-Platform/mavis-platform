@@ -7,7 +7,12 @@ namespace MAVIS.Runner;
 public sealed record RuntimeRunDefinition(string SessionId, string ModelVersionId, string SourceSnapshotId,
     string ProfileVersionId, string ComposeYaml, RunnerExecutionProfile Profile, HttpScenarioDefinition Scenario,
     IReadOnlyDictionary<string, string> ConfirmedServiceMappings, string? RunConfigurationVersionId = null, string? ScenarioVersionId = null,
-    string? ResourceProject = null, bool ProtectedEnvironmentAvailable = false);
+    string? ResourceProject = null, bool ProtectedEnvironmentAvailable = false,
+    IReadOnlyList<RuntimeInfrastructureActionDefinition>? InfrastructureActions = null);
+
+public sealed record RuntimeInfrastructureActionDefinition(string Action, string Service, int? Replicas = null);
+public sealed record RuntimeInfrastructureActionResult(string Action, string Service, int ReplicasBefore, int ReplicasAfter,
+    JsonObject MetricsBefore, JsonObject MetricsAfter, DateTimeOffset PerformedAt, bool Confirmed);
 
 /// <summary>Operator-invoked local PoC adapter. Not an internet-facing arbitrary repository execution service.</summary>
 public sealed class DockerComposeSession(RuntimeRunDefinition definition, string stateRoot, string collectorConfiguration,
@@ -18,6 +23,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     public bool AllocationReserved { get; private set; }
     public string Stage { get; private set; } = "VALIDATE";
     public Dictionary<string, string> ActualImageIds { get; } = new(StringComparer.Ordinal);
+    public bool ImageSourceCorrespondenceVerified { get; private set; }
     public bool SandboxEnforcementConfirmed { get; private set; }
     public Dictionary<string, string> DeclaredInstrumentationVersions { get; } = new(StringComparer.Ordinal);
     private string? _directory;
@@ -90,7 +96,8 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             if (inspected.ExitCode != 0 || !inspected.StandardOutput.Trim().StartsWith("sha256:", StringComparison.Ordinal))
                 throw new RuntimeStageException("IMAGE_PROVENANCE_UNAVAILABLE");
             ActualImageIds[service] = inspected.StandardOutput.Trim();
-            if (preflight.PinnedImages?.GetValueOrDefault(service) is { } requested && requested.StartsWith("sha256:", StringComparison.Ordinal) && requested != ActualImageIds[service])
+            if (preflight.PinnedImages?.GetValueOrDefault(service) is { } requested &&
+                PinnedDigest(requested) != ActualImageIds[service])
                 throw new RuntimeStageException("IMAGE_ID_MISMATCH");
             var config = await docker.RunAsync(["inspect", "--format", "{{json .HostConfig}}", id], _directory, 10, ct);
             if (config.ExitCode != 0) throw new RuntimeStageException("SANDBOX_ENFORCEMENT_UNCONFIRMED");
@@ -109,10 +116,21 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         }
         var network = await docker.RunAsync(["network", "inspect", ResourceProject + "_default", "--format", "{{.Internal}}"], _directory, 10, ct);
         if (network.ExitCode != 0 || network.StandardOutput.Trim() != "true") throw new RuntimeStageException("INTERNAL_NETWORK_UNCONFIRMED");
+        var collectorDigest = definition.Profile.CollectorImage.Split('@').LastOrDefault();
+        ImageSourceCorrespondenceVerified = preflight.Services.All(service =>
+                preflight.PinnedImages?.GetValueOrDefault(service) is { } requested &&
+                ActualImageIds.GetValueOrDefault(service) == PinnedDigest(requested)) &&
+            collectorDigest?.StartsWith("sha256:", StringComparison.Ordinal) == true &&
+            ActualImageIds.GetValueOrDefault("mavis-collector") == collectorDigest;
+        if (!ImageSourceCorrespondenceVerified) throw new RuntimeStageException("IMAGE_SOURCE_CORRESPONDENCE_UNCONFIRMED");
         SandboxEnforcementConfirmed = true;
         foreach (var app in definition.Profile.Applications)
             _endpoints[app.Key] = new Uri($"http://{app.Key}:{app.Value.ContainerPort}");
         _endpoints["mavis-collector"] = new Uri("http://mavis-collector:13133");
+
+        static string PinnedDigest(string image) => image.StartsWith("sha256:", StringComparison.Ordinal)
+            ? image
+            : "sha256:" + image.Split("@sha256:").Last();
     }
 
     public async Task WaitUntilReadyAsync(CancellationToken ct)
@@ -140,6 +158,54 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         _scenario = await RunInsideNetwork(definition.Scenario,
             _endpoints.Where(p => p.Key != "mavis-collector").ToDictionary(), secrets ?? new Dictionary<string, string>(), ct);
         return _scenario;
+    }
+
+    public async Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct)
+    {
+        var requested = definition.InfrastructureActions ?? [];
+        if (requested.Count == 0) return [];
+        var results = new List<RuntimeInfrastructureActionResult>();
+        foreach (var item in requested)
+        {
+            var action = item.Action?.Trim().ToUpperInvariant();
+            var service = item.Service?.Trim();
+            if (action is not ("STOP" or "START" or "SCALE") || string.IsNullOrWhiteSpace(service) ||
+                !definition.Profile.Applications.ContainsKey(service))
+                throw new RuntimeStageException("INFRASTRUCTURE_ACTION_INVALID");
+            if (action == "SCALE" && item.Replicas is not (>= 1 and <= 8))
+                throw new RuntimeStageException("REPLICA_BOUNDS_EXCEEDED");
+
+            Stage = "INFRASTRUCTURE_" + action;
+            var before = await ReadServiceMetrics(service, ct);
+            if (action == "STOP") await Require(["stop", "--timeout", "5", service], ct);
+            else if (action == "START") await Require(["start", service], ct);
+            else await Require(["up", "--detach", "--no-deps", "--scale", service + "=" + item.Replicas, service], ct);
+            var after = await ReadServiceMetrics(service, ct);
+            var expected = action switch
+            {
+                "STOP" => after.running == 0,
+                "START" => after.running >= 1,
+                _ => after.running == item.Replicas
+            };
+            results.Add(new(action, service, before.running, after.running,
+                Metrics(before), Metrics(after), DateTimeOffset.UtcNow, expected));
+            if (!expected) throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED");
+        }
+        return results;
+
+        static JsonObject Metrics((int total, int running) value) => new()
+        {
+            ["replicas"] = value.total,
+            ["runningReplicas"] = value.running
+        };
+    }
+
+    private async Task<(int total, int running)> ReadServiceMetrics(string service, CancellationToken ct)
+    {
+        var all = await Require(["ps", "--all", "--quiet", service], ct);
+        var running = await Require(["ps", "--quiet", service], ct);
+        return (Lines(all.StandardOutput), Lines(running.StandardOutput));
+        static int Lines(string value) => value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Length;
     }
 
     public async Task<TraceCorrelationResult?> PreserveEvidenceAsync(CancellationToken ct)

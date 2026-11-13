@@ -39,7 +39,9 @@ public sealed class ManagedRuntimeAdapter(JavaRuntimeClient java, IDockerCommand
         JsonSerializer.Serialize(new { definition.SessionId, definition.ModelVersionId, definition.SourceSnapshotId,
             definition.ProfileVersionId, definition.RunConfigurationVersionId, definition.ScenarioVersionId,
             backend.ResourceProject, actualImageIds = backend.ActualImageIds, backend.DeclaredInstrumentationVersions,
-            backend.SandboxEnforcementConfirmed, outcome, imageSourceCorrespondence = "Unverified", profileAcceptance = "Unverified" }, RuntimeLifecycleJournal.Json);
+            backend.SandboxEnforcementConfirmed, infrastructureActions = outcome.InfrastructureActions ?? [], outcome,
+            imageSourceCorrespondence = backend.ImageSourceCorrespondenceVerified ? "Verified" : "Unverified",
+            profileAcceptance = definition.Profile.ApprovedForLocalPoc && backend.SandboxEnforcementConfirmed ? "Verified" : "Unverified" }, RuntimeLifecycleJournal.Json);
 
     private static async Task WatchAsync(string marker, CancellationTokenSource cancellation, CancellationToken stopping)
     {
