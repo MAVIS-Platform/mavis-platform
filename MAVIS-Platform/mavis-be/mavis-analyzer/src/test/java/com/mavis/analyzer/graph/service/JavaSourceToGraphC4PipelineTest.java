@@ -416,7 +416,7 @@ class JavaSourceToGraphC4PipelineTest {
 
         var importer = new com.mavis.analyzer.workerclient.service.impl.WorkerCanonicalImporter(
                 modelElementRepo, modelRelRepo, evidenceRepo, mapper);
-        importer.importResult(modelVersion, csharpResult);
+        importer.importResult(modelVersion, csharpResult, java.util.Map.of());
 
         assertThat(savedElements).isNotEmpty();
         assertThat(savedRelationships).isNotEmpty();

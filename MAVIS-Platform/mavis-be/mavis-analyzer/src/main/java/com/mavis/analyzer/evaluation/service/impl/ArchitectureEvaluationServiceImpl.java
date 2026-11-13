@@ -464,7 +464,8 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
     private static boolean isGroundedRelationshipEvidence(Evidence evidence) {
         var relationship = evidence.getRelationship();
         if (relationship == null || evidence.getExcerpt() == null || evidence.getExcerpt().isBlank()
-                || evidence.getLocator() == null || !evidence.getLocator().matches(".+:[1-9]\\d*")) return false;
+                || evidence.getLocator() == null
+                || !evidence.getLocator().matches(".+:[1-9]\\d*(?::[1-9]\\d*-[1-9]\\d*:(?:[1-9]\\d*|\\*))?")) return false;
         String type = evidence.getSourceType();
         boolean code = "STATIC_CODE".equals(type) || "CODE".equals(type);
         if ("SERVICE_HTTP_CALL".equalsIgnoreCase(relationship.getRelationType())) {

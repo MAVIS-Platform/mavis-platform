@@ -80,7 +80,7 @@ test('3E redacts provider payloads, checks citations and recovers from a timeout
  const model=fixture(),ctx=subject(model);
  const context=buildThreeEAiContext(model,ctx,[{
   id:'saved-2',kind:'source',origin:'persisted',sourceType:'STATIC_CODE',
-  location:'Employee.java:12',snippet:'String apiKey = "fake-value-only-for-test"; return employees.findAll();',complete:false
+  location:'Employees.cs:12:5-12:72',snippet:'string apiKey = "fake-value-only-for-test"; return employees.FindAll();',complete:false
  }],[]);
  const previous=process.env.OPENAI_API_KEY;
  process.env.OPENAI_API_KEY='fixture-provider-key';

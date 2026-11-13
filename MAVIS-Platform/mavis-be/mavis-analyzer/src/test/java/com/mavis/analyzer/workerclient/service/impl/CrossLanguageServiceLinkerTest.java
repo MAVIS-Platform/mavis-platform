@@ -25,16 +25,16 @@ class CrossLanguageServiceLinkerTest {
         when(elements.findByModelVersionId(model.getId())).thenReturn(List.of(service("java"),service("a"),service("b")));
         var linker=new CrossLanguageServiceLinker(elements,rels,evidence,new ObjectMapper());
         var call=CodeEvidenceDTO.builder().elementType("REST_TEMPLATE_CALL").endpointAlias("localhost:5001").filePath(root.resolve("src/App.java").toString()).lineNumber(1).build();
-        var report=linker.link(model,root.toString(),null,List.of(call));
+        var report=linker.link(model,root.toString(),null,List.of(call),Map.of());
         assertEquals(1,report.ambiguous());assertEquals(0,report.linked());
         when(elements.findByModelVersionId(model.getId())).thenReturn(List.of(service("java"),service("java"),service("a")));
-        report=linker.link(model,root.toString(),null,List.of(call));assertEquals(0,report.linked());
+        report=linker.link(model,root.toString(),null,List.of(call),Map.of());assertEquals(0,report.linked());
     }
     @Test void absentBindingsPreserveUnresolvedWithoutCreatingEdges()throws Exception{
         var elements=mock(ModelElementRepository.class);var rels=mock(ModelRelationshipRepository.class);var evidence=mock(EvidenceRepository.class);
         var model=ModelVersion.builder().id(UUID.randomUUID()).build();when(elements.findByModelVersionId(model.getId())).thenReturn(List.of(service("java"),service("localhost")));
         var call=CodeEvidenceDTO.builder().elementType("REST_TEMPLATE_CALL").endpointAlias("localhost:5001").filePath(root.resolve("App.java").toString()).lineNumber(1).build();
-        var result=new CrossLanguageServiceLinker(elements,rels,evidence,new ObjectMapper()).link(model,root.toString(),null,List.of(call));
+        var result=new CrossLanguageServiceLinker(elements,rels,evidence,new ObjectMapper()).link(model,root.toString(),null,List.of(call),Map.of());
         assertEquals(1,result.unresolved());assertEquals(0,result.linked());assertNull(result.bindingHash());
     }
     private static ModelElement service(String name){return ModelElement.builder().id(UUID.randomUUID()).name(name).elementType("SERVICE_CONTAINER").build();}
@@ -49,7 +49,7 @@ class CrossLanguageServiceLinkerTest {
         when(elements.findByModelVersionId(model.getId())).thenReturn(List.of(service("order"),service("catalog")));
         var client=CodeEvidenceDTO.builder().elementType("FEIGN_CLIENT").endpointAlias("catalog")
                 .filePath(root.resolve("src/Client.java").toString()).metadata(Map.of("clientFramework","OPENFEIGN")).build();
-        var result=new CrossLanguageServiceLinker(elements,rels,evidence,new ObjectMapper()).link(model,root.toString(),null,List.of(client));
+        var result=new CrossLanguageServiceLinker(elements,rels,evidence,new ObjectMapper()).link(model,root.toString(),null,List.of(client),Map.of());
         assertEquals(0,result.linked());assertEquals(0,result.unresolved());assertEquals(0,result.ambiguous());
         verify(rels).saveAll(List.of());verify(evidence).saveAll(List.of());
     }
