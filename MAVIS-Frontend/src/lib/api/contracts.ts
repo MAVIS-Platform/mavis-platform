@@ -558,6 +558,11 @@ export const contracts = {
       configurationRevision: z.number().int().nonnegative().transform((v) => Math.max(1, v)),
       scenarioRevision: z.number().int().nonnegative().transform((v) => Math.max(1, v)),
       environment: z.record(z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/), z.string().max(16000)).refine(v => Object.keys(v).length <= 64).optional(),
+      infrastructureActions: z.array(z.object({
+        action: z.enum(["STOP", "START", "SCALE"]),
+        service: z.string().min(1).max(128),
+        replicas: z.number().int().min(1).max(8).optional(),
+      })).min(1).max(8).optional(),
       approved: z.literal(true).default(true),
     }),
     d.runtimeSessionSchema,

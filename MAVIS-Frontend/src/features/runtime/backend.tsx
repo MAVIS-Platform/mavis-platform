@@ -32,6 +32,7 @@ import {
   type ApiFeatureClusterMeta,
 } from "./scenario-suggestions";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Input } from "@/components/ui/input";
 import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { DetailPanel, StatusLabel } from "@/components/shared/data";
 import { translatedStatusLabel } from "@/lib/status-label";
@@ -1406,6 +1407,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   const [quickRunRunning, setQuickRunRunning] = useState(false);
   const [quickRunMsg, setQuickRunMsg] = useState("");
   const [quickRunError, setQuickRunError] = useState("");
+  const [studioAction, setStudioAction] = useState<"STOP" | "START" | "SCALE">("SCALE");
+  const [studioService, setStudioService] = useState("");
+  const [studioReplicas, setStudioReplicas] = useState(2);
 
   useEffect(() => {
     setSelectedServiceFilter(null);
@@ -1436,6 +1440,11 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
   ]);
 
   const rawProfile = (config.data?.profile ?? {}) as Record<string, unknown>;
+  const runtimeApplicationServices = useMemo(() => {
+    const apps = rawProfile["applications"];
+    return apps && typeof apps === "object" && !Array.isArray(apps) ? Object.keys(apps) : [];
+  }, [rawProfile]);
+  const selectedStudioService = studioService || runtimeApplicationServices[0] || "";
   const detectedEndpoints = useMemo(
     () =>
       Array.isArray(rawProfile["detectedEndpoints"])
@@ -2013,6 +2022,13 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         configurationRevision: pinnedConfig.revision,
         scenarioRevision: savedScenario.revision,
         approved: true,
+        infrastructureActions: selectedStudioService
+          ? [{
+              action: studioAction,
+              service: selectedStudioService,
+              ...(studioAction === "SCALE" ? { replicas: studioReplicas } : {}),
+            }]
+          : undefined,
         ...(Object.keys(boundedEnv).length ? { environment: boundedEnv } : {}),
       });
 
@@ -2146,7 +2162,36 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                 </div>
               )}
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-end gap-2 shrink-0">
+              <SelectField
+                label="MAVIS Studio action"
+                value={studioAction}
+                onChange={(value) => setStudioAction(value as "STOP" | "START" | "SCALE")}
+                options={[
+                  { value: "SCALE", label: "Scale replicas" },
+                  { value: "STOP", label: "Stop service" },
+                  { value: "START", label: "Start service" },
+                ]}
+              />
+              <SelectField
+                label="Target service"
+                value={selectedStudioService}
+                onChange={setStudioService}
+                options={runtimeApplicationServices.map((service) => ({ value: service, label: service }))}
+              />
+              {studioAction === "SCALE" && (
+                <label className="text-xs">
+                  Replicas (1–8)
+                  <Input
+                    className="mt-1 h-9 w-20"
+                    type="number"
+                    min={1}
+                    max={8}
+                    value={studioReplicas}
+                    onChange={(event) => setStudioReplicas(Math.max(1, Math.min(8, Number(event.target.value) || 1)))}
+                  />
+                </label>
+              )}
               {selectedId &&
                 (isExecFailed || isTimedOut || (isCompleted && scenarioStatus !== "PASSED")) && (
                   <Button
@@ -2165,7 +2210,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               </Button>
               <Button
                 onClick={handleQuickRun}
-                disabled={quickRunRunning || active.has(upperExecStatus) || !snapshots.data?.length}
+                disabled={quickRunRunning || active.has(upperExecStatus) || !snapshots.data?.length || !selectedStudioService}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs h-9 shadow"
               >
                 {quickRunRunning || active.has(upperExecStatus) ? (

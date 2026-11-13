@@ -24,7 +24,9 @@ public sealed class ManagedDockerRuntimeTests
         var profile = manifest.RootElement;
         var root = Path.Combine(poc, "artifacts", "managed-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
-        foreach (var cancel in new[] { false, true })
+        // DS-03c: repeat enough mixed terminal paths to prove teardown leaves zero
+        // managed projects behind, instead of relying on a single happy-path run.
+        foreach (var cancel in new[] { false, true, false, true, false })
         {
             var session = "managed-" + Guid.NewGuid().ToString("N");
             var project = "mavisrun-" + Guid.NewGuid().ToString("N");
@@ -35,7 +37,8 @@ public sealed class ManagedDockerRuntimeTests
                     new Dictionary<string, RuntimeServiceProfile> { ["orders"] = new("dotnet8-linux-x64-glibc", 8080), ["payment"] = new("java", 8080) },
                     MemoryMiB: 512, TimeoutSeconds: 120, ApprovedForLocalPoc: true, ScenarioRunnerImage: image.GetProperty("runner").GetString()),
                 new(session, [new("request", "orders", "GET", "/orders", 200)]),
-                new Dictionary<string, string> { ["orders"] = "550e8400-e29b-41d4-a716-446655440001", ["payment"] = "550e8400-e29b-41d4-a716-446655440002" }, "poc-config", "poc-scenario", project);
+                new Dictionary<string, string> { ["orders"] = "550e8400-e29b-41d4-a716-446655440001", ["payment"] = "550e8400-e29b-41d4-a716-446655440002" }, "poc-config", "poc-scenario", project,
+                InfrastructureActions: [new("SCALE", "orders", 2)]);
             var events = new List<string>();
             var handler = new FakeJava(definition, root, cancel, events);
             using var java = new JavaRuntimeClient(new Uri("http://127.0.0.1:8080"), "fixture-managed-key", handler);
@@ -47,6 +50,11 @@ public sealed class ManagedDockerRuntimeTests
                 Assert.Equal("Passed", outcome.ScenarioStatus);
                 Assert.Equal("Available", outcome.EvidenceStatus);
                 Assert.NotEmpty(outcome.Trace!.Interactions!);
+                var action = Assert.Single(outcome.InfrastructureActions!);
+                Assert.Equal("SCALE", action.Action);
+                Assert.Equal(1, action.ReplicasBefore);
+                Assert.Equal(2, action.ReplicasAfter);
+                Assert.True(action.Confirmed);
             }
             Assert.Equal(new[] { "ALLOCATED", "RUNNING" }, events);
             var receiptPath = Path.Combine(root, "receipts", project + ".json");
@@ -55,6 +63,9 @@ public sealed class ManagedDockerRuntimeTests
             using var receipt = JsonDocument.Parse(File.ReadAllText(receiptPath));
             Assert.Equal(project, receipt.RootElement.GetProperty("resourceProject").GetString());
             Assert.True(receipt.RootElement.GetProperty("sandboxEnforcementConfirmed").GetBoolean());
+            Assert.Equal("Verified", receipt.RootElement.GetProperty("imageSourceCorrespondence").GetString());
+            Assert.Equal("Verified", receipt.RootElement.GetProperty("profileAcceptance").GetString());
+            if (!cancel) Assert.Single(receipt.RootElement.GetProperty("infrastructureActions").EnumerateArray());
             Assert.False(Directory.Exists(Path.Combine(root, project)));
             // Cleanup result itself checks actual containers, volumes and networks through DockerCommands.
         }

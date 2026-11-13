@@ -1323,7 +1323,21 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 .scenario(scenarioCopy)
                 .confirmedServiceMappings(mappings)
                 .protectedEnvironmentAvailable(session.getEnvironmentCiphertext() != null)
+                .infrastructureActions(readInfrastructureActions(scenarioConfig))
                 .build();
+    }
+
+    private List<RuntimeInfrastructureActionDTO> readInfrastructureActions(JsonNode scenarioConfig) {
+        if (scenarioConfig == null || !scenarioConfig.path("infrastructureActions").isArray()) return List.of();
+        List<RuntimeInfrastructureActionDTO> actions = new ArrayList<>();
+        for (JsonNode node : scenarioConfig.path("infrastructureActions")) {
+            String type = node.path("action").asText("").trim().toUpperCase(Locale.ROOT);
+            String service = node.path("service").asText("").trim();
+            if (!Set.of("STOP", "START", "SCALE").contains(type) || service.isBlank()) continue;
+            actions.add(RuntimeInfrastructureActionDTO.builder().action(type).service(service)
+                    .replicas(node.has("replicas") ? node.path("replicas").asInt() : null).build());
+        }
+        return List.copyOf(actions);
     }
 
     private static boolean isUuid(String value) {

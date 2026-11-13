@@ -9,6 +9,7 @@ public sealed class RuntimeLifecycleTests
     {
         public bool FailStart, FailEvidence, FailCleanup, Cancel;
         public int CleanupCalls, PreserveCalls;
+        public IReadOnlyList<RuntimeInfrastructureActionResult> Actions = [];
         public Task PrepareAndStartAsync(CancellationToken ct)
         {
             if (FailStart) throw new InvalidOperationException("SECRET_SENTINEL");
@@ -17,6 +18,8 @@ public sealed class RuntimeLifecycleTests
         }
         public Task WaitUntilReadyAsync(CancellationToken ct) => Task.CompletedTask;
         public Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct) => Task.FromResult(new HttpScenarioOutcome("s", "Failed", []));
+        public Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct) =>
+            Task.FromResult(Actions);
         public Task<TraceCorrelationResult?> PreserveEvidenceAsync(CancellationToken ct)
         {
             PreserveCalls++;
@@ -42,6 +45,15 @@ public sealed class RuntimeLifecycleTests
         var result = await RuntimeSessionLifecycle.RunAsync(new Backend { FailCleanup = true }, 5);
         Assert.Equal("Completed", result.ExecutionStatus); Assert.Equal("Failed", result.ScenarioStatus);
         Assert.Equal("Empty", result.EvidenceStatus); Assert.Equal("Incomplete", result.CleanupStatus);
+    }
+
+    [Fact]
+    public async Task ConfirmedInfrastructureActionsAreIncludedInOutcomeBeforeReceiptSerialization()
+    {
+        var action = new RuntimeInfrastructureActionResult("SCALE", "orders", 1, 4,
+            new() { ["replicas"] = 1 }, new() { ["replicas"] = 4 }, DateTimeOffset.UtcNow, true);
+        var result = await RuntimeSessionLifecycle.RunAsync(new Backend { Actions = [action] }, 5);
+        Assert.Equal(action, Assert.Single(result.InfrastructureActions!));
     }
 
     [Fact]

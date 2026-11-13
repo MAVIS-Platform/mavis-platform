@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.Map;
+import java.util.List;
 
 /**
  * Maps 100% to MAVIS.Runner's RuntimeRunDefinition record in DockerComposeSession.cs.
@@ -29,4 +30,5 @@ public class RunnerDefinitionExportDTO {
     private Map<String, String> confirmedServiceMappings;
     private String resourceProject;
     private boolean protectedEnvironmentAvailable;
+    private List<RuntimeInfrastructureActionDTO> infrastructureActions;
 }

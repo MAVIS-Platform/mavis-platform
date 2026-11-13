@@ -13,6 +13,7 @@ public enum ErrorCode {
     FORBIDDEN(403, "Không có quyền truy cập tài nguyên này"),
     NOT_FOUND(404, "Không tìm thấy dữ liệu yêu cầu"),
     CONFLICT(409, "Yêu cầu xung đột với dữ liệu đã lưu"),
+    UNPROCESSABLE_ENTITY(422, "Yêu cầu chưa đáp ứng điều kiện nghiệp vụ"),
     METHOD_NOT_ALLOWED(405, "Phương thức HTTP không được hỗ trợ"),
     TOO_MANY_REQUESTS(429, "Bạn thao tác quá nhanh, vui lòng thử lại sau"),
     PROJECT_LIMIT_EXCEEDED(4002, "Đã vượt quá giới hạn số lượng dự án của gói cước"),
