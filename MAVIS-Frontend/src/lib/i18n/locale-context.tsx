@@ -15,6 +15,14 @@ interface LocaleContextValue {
 const STORAGE_KEY = "mavis.locale";
 
 export const EXACT_VI_DICTIONARY: Record<string, string> = {
+  "MAVIS Studio action": "Thao tác MAVIS Studio",
+  "Observe only": "Chỉ quan sát",
+  "Stop service": "Dừng dịch vụ",
+  "Start service": "Khởi động dịch vụ",
+  "Scale replicas": "Điều chỉnh số bản chạy",
+  "Target service": "Dịch vụ mục tiêu",
+  "Replicas (1–8)": "Số bản chạy (1–8)",
+  "Action not confirmed": "Chưa xác nhận được thao tác",
   "Manage your personal information and account security.": "Quản lý thông tin cá nhân và bảo mật tài khoản.",
   "Profile summary": "Tóm tắt hồ sơ",
   "Personal Information": "Thông tin cá nhân",
