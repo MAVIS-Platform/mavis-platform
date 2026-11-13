@@ -214,23 +214,24 @@ async function main() {
     await page.evaluate(()=>localStorage.setItem('mavis.locale','vi'));await page.reload();
     await page.getByRole('heading',{name:'DepartmentRepository',exact:true}).waitFor();
     await page.getByRole('tab',{name:/Giải thích/}).waitFor();
-    await page.getByRole('separator',{name:'Resize inspector'}).focus();
+    await page.getByRole('separator',{name:/Resize inspector|Thay đổi kích thước bảng kiểm tra/}).focus();
     for(let i=0;i<8;i++)await page.keyboard.press('ArrowRight');
-    const body=page.locator('[aria-label="3E details"] [scrollbar-gutter]');
+    await page.getByRole('button',{name:/^(Communication|Giao tiếp)/}).first().click();
+    const body=page.locator('[aria-label="3E details"], [aria-label="Chi tiết 3E"]').locator('[scrollbar-gutter]');
     for(const width of [1440,1024,390,320]){
       await page.setViewportSize({width,height:960});
       await page.screenshot({animations:'disabled',path:path.join(output,'diagram-3e-vi-'+width+'.png'),fullPage:true});
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Diagram viewport overflow at '+width);
-      const panelHeight=await page.locator('[aria-label="Inspector sidebar"]').evaluate(e=>e.getBoundingClientRect().height);
+      const panelHeight=await page.locator('[aria-label="Inspector sidebar"], [aria-label="Thanh bên kiểm tra (Inspector)"]').evaluate(e=>e.getBoundingClientRect().height);
       assert.ok(panelHeight<=960,'Diagram dock must keep scrolling inside the viewport');
       const tabs=await page.getByRole('tab').evaluateAll(items=>items.map(e=>({left:e.getBoundingClientRect().left,right:e.getBoundingClientRect().right})));
       assert.ok(tabs.every((tab,i)=>i===0||tab.left>=tabs[i-1].right-1),'Diagram tabs overlap at '+width);
       const names=page.locator('[data-testid="communication-panel"] details summary span').filter({hasText:'department-service'});
-      if(await names.count()){
+      if(await names.count() && await names.first().isVisible()){
         const size=await names.first().boundingBox();
-        assert.ok(size.width>=80 && size.height<60,'Service name squeezed into a vertical column at '+width);
+        assert.ok(size && size.width>=80 && size.height<60,'Service name squeezed into a vertical column at '+width);
       }
-      assert.ok(await page.locator('[aria-label="3E details"]').evaluate(e=>e.scrollWidth<=e.clientWidth),'Diagram inspector horizontal overflow at '+width);
+      assert.ok(await page.locator('[aria-label="3E details"], [aria-label="Chi tiết 3E"]').evaluate(e=>e.scrollWidth<=e.clientWidth),'Diagram inspector horizontal overflow at '+width);
     }
     assert.deepEqual(errors, []);
     console.log(

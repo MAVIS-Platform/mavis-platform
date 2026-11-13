@@ -84,3 +84,20 @@ test("new Course and Lab surfaces expose direct Vietnamese copy", () => {
   ])
     assert.ok(course.includes(text), text);
 });
+
+test("Guided Lab Step 1 exposes read-only C1-C3 quick views, pinned IDs, and 5-rule severity separation", () => {
+  const course = read("src/features/courses/screens.tsx");
+  assert.ok(course.includes("Read-Only Structural Views (C1–C3 + Dependency Graph) · Static source evidence only (not runtime trace)"));
+  assert.ok(course.includes("C1 System Context"));
+  assert.ok(course.includes("C2 Container"));
+  assert.ok(course.includes("C3 Component"));
+  assert.ok(course.includes("kind=CONTEXT"));
+  assert.ok(course.includes("kind=CONTAINER"));
+  assert.ok(course.includes("kind=COMPONENT"));
+  assert.ok(course.includes("Service Dependency Graph (Read-Only)"));
+  assert.ok(course.includes("sourceSnapshotId"));
+  assert.ok(course.includes("modelVersionId"));
+  assert.ok(course.includes("Model Revision"));
+  assert.ok(course.includes("StaticEvaluationSummary"));
+  assert.ok(course.includes("Missing Call-Site / Evidence Grounding"));
+});
