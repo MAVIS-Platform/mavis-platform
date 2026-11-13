@@ -10,6 +10,8 @@ public sealed class RuntimeLifecycleTests
         public bool FailStart, FailEvidence, FailCleanup, Cancel;
         public int CleanupCalls, PreserveCalls;
         public IReadOnlyList<RuntimeInfrastructureActionResult> Actions = [];
+        public bool FailActions;
+        public IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => FailActions ? Actions : [];
         public Task PrepareAndStartAsync(CancellationToken ct)
         {
             if (FailStart) throw new InvalidOperationException("SECRET_SENTINEL");
@@ -19,7 +21,7 @@ public sealed class RuntimeLifecycleTests
         public Task WaitUntilReadyAsync(CancellationToken ct) => Task.CompletedTask;
         public Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct) => Task.FromResult(new HttpScenarioOutcome("s", "Failed", []));
         public Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct) =>
-            Task.FromResult(Actions);
+            FailActions ? throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED") : Task.FromResult(Actions);
         public Task<TraceCorrelationResult?> PreserveEvidenceAsync(CancellationToken ct)
         {
             PreserveCalls++;
@@ -54,6 +56,19 @@ public sealed class RuntimeLifecycleTests
             new() { ["replicas"] = 1 }, new() { ["replicas"] = 4 }, DateTimeOffset.UtcNow, true);
         var result = await RuntimeSessionLifecycle.RunAsync(new Backend { Actions = [action] }, 5);
         Assert.Equal(action, Assert.Single(result.InfrastructureActions!));
+    }
+
+    [Fact]
+    public async Task PartialActionEvidenceSurvivesFailureAndCleanup()
+    {
+        var action = new RuntimeInfrastructureActionResult("STOP", "orders", 1, 0,
+            new() { ["replicas"] = 1 }, new() { ["replicas"] = 0 }, DateTimeOffset.UtcNow, true);
+        var backend = new Backend { Actions = [action], FailActions = true };
+        var result = await RuntimeSessionLifecycle.RunAsync(backend, 5);
+        Assert.Equal("Failed", result.ExecutionStatus);
+        Assert.Equal(action, Assert.Single(result.InfrastructureActions!));
+        Assert.Equal("Confirmed", result.CleanupStatus);
+        Assert.Equal(1, backend.CleanupCalls);
     }
 
     [Fact]

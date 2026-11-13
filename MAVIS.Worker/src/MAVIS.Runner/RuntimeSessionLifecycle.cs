@@ -8,6 +8,7 @@ public interface IRuntimeSessionBackend
     Task PrepareAndStartAsync(CancellationToken ct);
     Task WaitUntilReadyAsync(CancellationToken ct);
     Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct);
+    IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => [];
     Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct) =>
         Task.FromResult<IReadOnlyList<RuntimeInfrastructureActionResult>>([]);
     Task<TraceCorrelationResult?> PreserveEvidenceAsync(CancellationToken ct);
@@ -47,6 +48,8 @@ public static class RuntimeSessionLifecycle
         catch (Exception ex) { diagnostics.Add("SESSION_EXECUTION_FAILED_AT_" + backend.Stage); diagnostics.Add(ex.GetType().Name); }
         finally
         {
+            if (backend.ObservedInfrastructureActions.Count > 0)
+                infrastructureActions = backend.ObservedInfrastructureActions.ToArray();
             // Fresh bounded cleanup tokens: an expired/cancelled run must still attempt evidence preservation and teardown.
             using var drain = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             try
