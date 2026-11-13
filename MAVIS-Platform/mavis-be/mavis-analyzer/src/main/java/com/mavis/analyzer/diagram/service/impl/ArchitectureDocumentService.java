@@ -32,6 +32,7 @@ public class ArchitectureDocumentService {
     public UUID freezeArtifacts(UUID modelId, ArtifactSelection selection) {
         var model = model(modelId);
         access.requireProjectWriteAccess(model.getProject());
+        boolean guided = CourseLabPolicy.isGuidedStaticStudent(model, access);
         if (selection == null) throw invalid();
         var docs = selection.documents() == null ? java.util.List.<SelectedDocument>of() : selection.documents();
         var versions = selection.diagramVersionIds() == null ? java.util.List.<UUID>of() : selection.diagramVersionIds();
@@ -42,6 +43,7 @@ public class ArchitectureDocumentService {
         for (var doc : docs) {
             if (doc == null) throw invalid();
             validateKey(doc.viewId());
+            if (guided) requireGuidedView(CourseworkDiagramTypes.fromView(doc.viewId()));
             if (!viewKeys.add(doc.viewId())) throw new BusinessException(ErrorCode.BAD_REQUEST, "Select one revision per diagram view");
             revisions.add(doc.revision());
         }
@@ -76,6 +78,8 @@ public class ArchitectureDocumentService {
             var diagram = diagramsById.get(id);
             if (diagram == null) throw new BusinessException(ErrorCode.NOT_FOUND);
             if (!diagram.getModelVersion().getId().equals(modelId)) throw new BusinessException(ErrorCode.BAD_REQUEST, "Diagram belongs to another model");
+            if (guided) requireGuidedView(CourseworkDiagramTypes.fromArtifact(
+                    diagram.getNotation(), diagram.getLevel(), diagram.getLayoutJson()));
             artifacts.addObject().put("diagramVersionId", id.toString()).put("notation", diagram.getNotation())
                     .put("level", diagram.getLevel()).set("layoutJson", diagram.getLayoutJson().deepCopy());
         }
@@ -88,13 +92,16 @@ public class ArchitectureDocumentService {
     @Transactional(readOnly=true)
     public java.util.List<Revision> revisions(UUID modelId) {
         var model = model(modelId); access.requireProjectReadAccess(model.getProject());
+        boolean guided = CourseLabPolicy.isGuidedStaticStudent(model, access);
         return documents.findByModelVersionIdOrderByViewKeyAscRevisionDesc(modelId).stream()
+            .filter(d -> !guided || CourseworkDiagramTypes.GUIDED_STATIC.contains(CourseworkDiagramTypes.fromView(d.getViewKey())))
             .map(d -> new Revision(modelId, d.getViewKey(), d.getRevision(), d.getUpdatedAt())).toList();
     }
     @Transactional
     public UUID freeze(UUID modelId, String viewKey, long revision) {
         validateKey(viewKey);
         var model = model(modelId); access.requireProjectWriteAccess(model.getProject());
+        if (CourseLabPolicy.isGuidedStaticStudent(model, access)) requireGuidedView(CourseworkDiagramTypes.fromView(viewKey));
         var document = documents.findByModelVersionIdAndViewKeyAndRevision(modelId, viewKey, revision)
             .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Saved diagram revision not found"));
         return diagrams.save(frozenDocument(model, document)).getId();
@@ -115,14 +122,8 @@ public class ArchitectureDocumentService {
     public Document get(UUID modelId,String viewKey,Long revision) {
         validateKey(viewKey);
         ModelVersion model=model(modelId);access.requireProjectReadAccess(model.getProject());
-        var workspace = model.getProject().getWorkspace();
-        if (workspace != null && workspace.isCourseMode()
-                && !"RUNTIME_ENRICHED".equals(model.getOrigin())
-                && CourseLabPolicy.isStudent(access.requireCurrentActiveUser())) {
-            String kind = CourseworkDiagramTypes.fromView(viewKey);
-            if (!java.util.Set.of("C4_CONTEXT", "C4_CONTAINER", "C4_COMPONENT", "DEPENDENCY_GRAPH").contains(kind)) {
-                throw new BusinessException(ErrorCode.BAD_REQUEST, "Unsupported static diagram for a guided Lab");
-            }
+        if (CourseLabPolicy.isGuidedStaticStudent(model, access)) {
+            requireGuidedView(CourseworkDiagramTypes.fromView(viewKey));
         }
         var result=revision==null ? documents.findTopByModelVersionIdAndViewKeyOrderByRevisionDesc(modelId,viewKey) : documents.findByModelVersionIdAndViewKeyAndRevision(modelId,viewKey,revision);
         if(revision!=null&&result.isEmpty())throw new BusinessException(ErrorCode.NOT_FOUND,"Document revision not found");
@@ -166,4 +167,9 @@ public class ArchitectureDocumentService {
         } catch(BusinessException error) {throw error;} catch(Exception error) {throw invalid();}
     }
     private static BusinessException invalid(){return new BusinessException(ErrorCode.BAD_REQUEST,"Invalid architecture document");}
+    private static void requireGuidedView(String kind) {
+        if (kind == null || !CourseworkDiagramTypes.GUIDED_STATIC.contains(kind)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Unsupported static diagram for a guided Lab");
+        }
+    }
 }

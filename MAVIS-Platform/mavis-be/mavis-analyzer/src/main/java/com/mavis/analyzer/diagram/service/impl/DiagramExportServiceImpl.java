@@ -15,7 +15,9 @@ import com.mavis.common.repository.ModelElementRepository;
 import com.mavis.common.repository.ModelRelationshipRepository;
 import com.mavis.common.repository.ModelVersionRepository;
 import com.mavis.common.security.AccessPolicyService;
+import com.mavis.common.security.CourseLabPolicy;
 import com.mavis.common.utils.MermaidDslGenerator;
+import com.mavis.common.utils.CourseworkDiagramTypes;
 import com.mavis.common.utils.SecurityUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +52,11 @@ public class DiagramExportServiceImpl implements DiagramExportService {
 
         ModelVersion modelVersion = diagram.getModelVersion();
         checkProjectReadAccess(modelVersion.getProject());
+        if (accessPolicyService != null && CourseLabPolicy.isGuidedStaticStudent(modelVersion, accessPolicyService)
+                && !CourseworkDiagramTypes.GUIDED_STATIC.contains(CourseworkDiagramTypes.fromArtifact(
+                        diagram.getNotation(), diagram.getLevel(), diagram.getLayoutJson()))) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Unsupported static diagram for a guided Lab");
+        }
 
         String targetFormat = (format != null && !format.isBlank()) ? format.toUpperCase() : "MERMAID";
         String content;
@@ -111,6 +118,9 @@ public class DiagramExportServiceImpl implements DiagramExportService {
 
         checkProjectReadAccess(modelVersion.getProject());
 
+        if (accessPolicyService != null && CourseLabPolicy.isGuidedStaticStudent(modelVersion, accessPolicyService)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Unsupported static diagram for a guided Lab");
+        }
         // Kiểm tra xem đã có sơ đồ VIEW_4_PLUS_1 / DEPLOYMENT chưa
         List<DiagramVersion> existingDiagrams = diagramVersionRepository.findByModelVersionId(modelVersionId);
         Optional<DiagramVersion> existingDeployment = existingDiagrams.stream()

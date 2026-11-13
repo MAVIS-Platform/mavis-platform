@@ -227,16 +227,18 @@ class CourseHttpAcceptanceTest {
                 .path("ruleSetVersion").asText());
         JsonNode diagrams = data(send("GET", analyzedModel + "/diagrams", student, null, 200));
         var staticTypes = new java.util.HashSet<String>();
+        var c4Diagrams = new java.util.ArrayList<UUID>();
         UUID workingDiagram = null;
         for (var diagram : diagrams) {
             String notation = diagram.path("notation").asText();
             String level = diagram.path("level").asText();
             staticTypes.add(notation + "/" + level);
+            if ("C4".equals(notation)) c4Diagrams.add(UUID.fromString(diagram.path("id").asText()));
             if ("C4".equals(notation) && "CONTAINER".equals(level)) {
                 workingDiagram = UUID.fromString(diagram.path("id").asText());
             }
         }
-        assertEquals(java.util.Set.of("DEPENDENCY_GRAPH/SERVICE", "C4/CONTAINER", "C4/COMPONENT"), staticTypes);
+        assertEquals(java.util.Set.of("DEPENDENCY_GRAPH/SERVICE", "C4/CONTEXT", "C4/CONTAINER", "C4/COMPONENT"), staticTypes);
         assertNotNull(workingDiagram);
         for (String supported : List.of("context", "container", "component", "graph")) {
             send("GET", analyzedModel + "/documents/" + supported, student, null, 200);
@@ -244,9 +246,25 @@ class CourseHttpAcceptanceTest {
         for (String unsupported : List.of("uml-sequence", "uml-activity", "uml-state")) {
             send("GET", analyzedModel + "/documents/" + unsupported, student, null, 400);
         }
+        send("POST", analyzedModel + "/diagrams/deployment", student, null, 400);
+        String diagramPath = "analyzer/diagrams/" + workingDiagram;
+        send("GET", diagramPath + "/export?format=JSON", student, null, 200);
+        send("PUT", diagramPath + "/layout", student, Map.of("nodes", List.of()), 400);
+        UUID legacyDeployment = id(db, """
+                INSERT INTO diagram_versions(model_version_id,notation,level,layout_json)
+                VALUES (?,'VIEW_4_PLUS_1','DEPLOYMENT','{}') RETURNING id
+                """, workingModel);
+        assertEquals(diagrams, data(send("GET", analyzedModel + "/diagrams", student, null, 200)));
+        send("GET", "analyzer/diagrams/" + legacyDeployment, student, null, 400);
+        send("GET", "analyzer/diagrams/" + legacyDeployment + "/export?format=JSON", student, null, 400);
+        send("POST", analyzedModel + "/documents/freeze", student,
+                Map.of("diagramVersionIds", List.of(legacyDeployment)), 400);
+        db.update("UPDATE assignments SET required_diagram_types = '[\"C4_CONTEXT\",\"C4_CONTAINER\",\"C4_COMPONENT\"]'::jsonb WHERE id = ?", lab1);
+        UUID bundle = UUID.fromString(data(send("POST", analyzedModel + "/documents/freeze", student,
+                Map.of("diagramVersionIds", c4Diagrams), 200)).asText());
         checkCurriculum(workspace, lab1, lab2, lecturer, student, workingProject,
                 Map.of("assignmentId", lab1, "projectId", workingProject,
-                        "modelVersionId", workingModel, "diagramVersionId", workingDiagram));
+                        "modelVersionId", workingModel, "diagramVersionId", bundle));
         send("GET", "assignments/" + lab2, student, null, 403);
         send("GET", "assignments/" + lab2 + "/reference-source", student, null, 403);
         send("GET", "assignments/" + lab1 + "/reference-source", foreignStudent, null, 403);
@@ -354,8 +372,16 @@ class CourseHttpAcceptanceTest {
         var failed = Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 0));
         var passed = Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 1));
         assertEquals("NEEDS_RETRY", data(send("POST", quiz + "/attempts", student, failed, 200)).path("status").asText());
-        JsonNode first = data(send("POST", quiz + "/attempts", student, passed, 200));
+        var request = request("POST", quiz + "/attempts", student, passed).build();
+        var firstResponse = http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+        var repeatedResponse = http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+        var firstReply = firstResponse.get(15, TimeUnit.SECONDS);
+        var repeatedReply = repeatedResponse.get(15, TimeUnit.SECONDS);
+        assertEquals(200, firstReply.statusCode());
+        assertEquals(200, repeatedReply.statusCode());
+        JsonNode first = data(firstReply);
         assertEquals("PASSED", first.path("status").asText());
+        assertEquals(first, data(repeatedReply));
         assertEquals(first, data(send("POST", quiz + "/attempts", student, passed, 200)));
         send("POST", quiz + "/attempts", student,
                 Map.of("attemptId", passed.get("attemptId"), "version", 1, "answers", List.of(1, 1)), 409);
