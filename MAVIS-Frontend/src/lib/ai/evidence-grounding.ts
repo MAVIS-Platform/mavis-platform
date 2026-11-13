@@ -19,15 +19,44 @@ const list = (value: unknown) =>
         .filter(Boolean)
         .slice(0, 5)
     : [];
+
+export function redactEvidenceText(value: string): string {
+  return value
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, "[REDACTED]")
+    .replace(/\bBearer\s+[\w.+/=-]+/gi, "Bearer [REDACTED]")
+    .replace(/([a-z][a-z\d+.-]*:\/\/[^\s/:@]+:)[^\s/@]+(@)/gi, "$1[REDACTED]$2")
+    .replace(/([\w.-]*(?:password|token|secret|api[-_]?key|credential)[\w.-]*["']?\s*[:=]\s*)(?:\[REDACTED\]|"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;&}\]]+)/gi, "$1[REDACTED]")
+    .replace(/\b(?:sk-(?:proj-)?[\w-]{16,}|gh[pousr]_[\w]{16,}|github_pat_[\w]{16,}|AKIA[A-Z0-9]{16})\b/g, "[REDACTED]");
+}
+
+export function hasAllowedEvidenceRefs(refs: unknown, allowed: Set<string>): boolean {
+  return Array.isArray(refs) && refs.length > 0 &&
+    refs.every((ref) => typeof ref === "string" && allowed.has(ref));
+}
+
 export function literalSourceContext(context: ThreeEAiPromptContext): ThreeEAiPromptContext {
   return {
     ...context,
+    title: redactEvidenceText(context.title),
+    type: redactEvidenceText(context.type),
+    elementType: redactEvidenceText(context.elementType),
+    summary: redactEvidenceText(context.summary),
+    inboundPeers: context.inboundPeers.map(redactEvidenceText),
+    outboundPeers: context.outboundPeers.map(redactEvidenceText),
+    childComponents: context.childComponents.map(redactEvidenceText),
+    findingsSummary: context.findingsSummary.map(redactEvidenceText),
     codeSnippets: context.codeSnippets.filter(
       (item) =>
         !/preview|model_metadata/i.test(item.sourceType) &&
         !item.id.startsWith("ast-") &&
+        /.+:[1-9]\d*$/.test(item.locator) &&
         !!item.snippet.trim(),
-    ),
+    ).map(({ id, locator, sourceType, snippet }) => ({
+      id: redactEvidenceText(id),
+      locator: redactEvidenceText(locator),
+      sourceType: redactEvidenceText(sourceType),
+      snippet: redactEvidenceText(snippet),
+    })),
   };
 }
 export function normalizeThreeE(
@@ -55,10 +84,13 @@ export function normalizeThreeE(
   };
   const data = supplied ? record(candidate) : {};
   const allowed = new Set(source.map((item) => item.id));
+  const evidenceRefs = record(data["evidenceRefs"]);
+  const citedText = (field: string) =>
+    hasAllowedEvidenceRefs(evidenceRefs[field], allowed) ? redactEvidenceText(text(data[field])) : "";
   const snippetNotes = Object.fromEntries(
     Object.entries(record(data["snippetNotes"]))
       .filter(([id, note]) => allowed.has(id) && !!text(note))
-      .map(([id, note]) => [id, text(note, 500)]),
+      .map(([id, note]) => [id, redactEvidenceText(text(note, 500))]),
   );
   const defaultExplain = locale === "vi"
     ? `Mô hình biểu diễn "${context.title}" dưới dạng ${context.type}. Vai trò nghiệp vụ và hành vi Runtime chưa được xác lập chỉ qua tên gọi hoặc số lượng kết nối.`
@@ -71,13 +103,13 @@ export function normalizeThreeE(
     ? "Tính đúng đắn, chất lượng kiến trúc và độ an toàn vận hành chưa thể xác lập đầy đủ từ ngữ cảnh thu gọn này."
     : "Correctness, architectural quality and operational safety cannot be established from this partial context.";
   return {
-    explainSimple: text(data["explainSimple"]) || defaultExplain,
-    exploreSimple: text(data["exploreSimple"]) || grounding.notice,
-    evaluateSimple: text(data["evaluateSimple"]) || defaultEvaluate,
+    explainSimple: citedText("explainSimple") || defaultExplain,
+    exploreSimple: citedText("exploreSimple") || grounding.notice,
+    evaluateSimple: citedText("evaluateSimple") || defaultEvaluate,
     snippetNotes,
     grounding,
-    assumptions: list(data["assumptions"]),
-    unknowns: [grounding.notice, ...list(data["unknowns"])],
+    assumptions: list(data["assumptions"]).map(redactEvidenceText),
+    unknowns: [grounding.notice, ...list(data["unknowns"]).map(redactEvidenceText)],
   };
 }
 export function normalizeC4(

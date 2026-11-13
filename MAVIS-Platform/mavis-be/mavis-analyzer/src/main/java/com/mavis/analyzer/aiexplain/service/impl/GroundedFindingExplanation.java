@@ -29,7 +29,7 @@ public class GroundedFindingExplanation {
         boolean selected=element!=null && (finding.getElement()!=null && finding.getElement().getId().equals(element.getId()) || contains(finding.getDetails(),"relatedElementIds",element.getId()));
         selected |= relationship!=null && (finding.getRelationship()!=null && finding.getRelationship().getId().equals(relationship.getId()) || contains(finding.getDetails(),"relatedRelationshipIds",relationship.getId()));
         if(!selected) throw invalid("Finding is not related to the currently selected element or relationship.");
-        boolean legacy=!"3e-2".equals(run.getRuleSetVersion());
+        boolean legacy=!Set.of("3e-2","3e-3").contains(Objects.toString(run.getRuleSetVersion(),""));
         Set<String> allowed=new HashSet<>();
         if(!legacy && finding.getDetails()!=null) finding.getDetails().path("supportingEvidenceIds").forEach(id -> allowed.add(id.asText()));
         boolean isVi = "vi".equalsIgnoreCase(request.getLocale());
