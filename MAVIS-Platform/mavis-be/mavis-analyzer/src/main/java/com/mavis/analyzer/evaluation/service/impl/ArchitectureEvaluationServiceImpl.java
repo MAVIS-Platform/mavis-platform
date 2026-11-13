@@ -430,21 +430,38 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
                         || "DATABASE_ACCESS".equalsIgnoreCase(rel.getRelationType()))
                 .collect(Collectors.toList());
 
+        Set<UUID> relIdsWithMetadataOnly = evidences.stream()
+                .filter(ArchitectureEvaluationServiceImpl::isUnverifiedMetadataEvidence)
+                .map(ev -> ev.getRelationship().getId())
+                .collect(Collectors.toSet());
+
         boolean hasMissingEvidence = false;
         for (ModelRelationship rel : groundedCandidates) {
             if (!relIdsWithEvidence.contains(rel.getId())) {
                 hasMissingEvidence = true;
                 ModelElement src = elementMap.getOrDefault(rel.getSourceElement().getId(), rel.getSourceElement());
                 ModelElement tgt = elementMap.getOrDefault(rel.getTargetElement().getId(), rel.getTargetElement());
+                boolean metadataOnly = "SERVICE_HTTP_CALL".equalsIgnoreCase(rel.getRelationType())
+                        && relIdsWithMetadataOnly.contains(rel.getId());
+                ObjectNode details = objectMapper.createObjectNode();
+                details.put("evidenceSufficiency", metadataOnly ? "UNVERIFIED_METADATA_ONLY" : "INCOMPLETE");
+                if (metadataOnly) {
+                    details.putArray("unknowns")
+                            .add("Missing Evidence: only client interface/configuration metadata exists without a verified CALL_SITE locator and excerpt.");
+                }
 
                 findings.add(EvaluationFinding.builder()
                         .ruleId("RULE-04")
                         .severity("WARNING")
-                        .status("VIOLATION")
+                        .status(metadataOnly ? "NEEDS_REVIEW" : "VIOLATION")
                         .element(src)
                         .relationship(rel)
-                        .message("Quan hệ '" + rel.getRelationType() + "' từ '" + src.getName()
-                                + "' tới '" + tgt.getName() + "' thiếu bằng chứng trích xuất mã nguồn (Missing Evidence Grounding).")
+                        .details(details)
+                        .message(metadataOnly
+                                ? "Quan hệ '" + rel.getRelationType() + "' từ '" + src.getName()
+                                        + "' tới '" + tgt.getName() + "' chỉ có metadata/khai báo client (Unverified metadata-only / Missing Evidence Grounding), thiếu bằng chứng CALL_SITE."
+                                : "Quan hệ '" + rel.getRelationType() + "' từ '" + src.getName()
+                                        + "' tới '" + tgt.getName() + "' thiếu bằng chứng trích xuất mã nguồn (Missing Evidence Grounding).")
                         .build());
             }
         }
@@ -461,18 +478,38 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
         return findings;
     }
 
-    private static boolean isGroundedRelationshipEvidence(Evidence evidence) {
+    private static boolean hasValidEvidenceLocator(Evidence evidence) {
+        return evidence.getRelationship() != null && evidence.getExcerpt() != null && !evidence.getExcerpt().isBlank()
+                && evidence.getLocator() != null
+                && evidence.getLocator().matches(".+:[1-9]\\d*(?::[1-9]\\d*-[1-9]\\d*:(?:[1-9]\\d*|\\*))?");
+    }
+
+    private static boolean isUnverifiedMetadataEvidence(Evidence evidence) {
+        if (!hasValidEvidenceLocator(evidence)) return false;
         var relationship = evidence.getRelationship();
-        if (relationship == null || evidence.getExcerpt() == null || evidence.getExcerpt().isBlank()
-                || evidence.getLocator() == null
-                || !evidence.getLocator().matches(".+:[1-9]\\d*(?::[1-9]\\d*-[1-9]\\d*:(?:[1-9]\\d*|\\*))?")) return false;
+        if (!"SERVICE_HTTP_CALL".equalsIgnoreCase(relationship.getRelationType())) return false;
         String type = evidence.getSourceType();
-        boolean code = "STATIC_CODE".equals(type) || "CODE".equals(type);
-        if ("SERVICE_HTTP_CALL".equalsIgnoreCase(relationship.getRelationType())) {
-            String role = evidence.getProvenance() == null ? "" : evidence.getProvenance().path("communicationRole").asText();
-            return code && (role.isEmpty() || "CALL_SITE".equals(role));
+        String role = evidence.getProvenance() == null ? "" : evidence.getProvenance().path("communicationRole").asText("");
+        if ("CLIENT_CONTRACT".equals(role) || "CLIENT_DECLARATION".equals(role) || "CLIENT_CONFIGURATION".equals(role)) {
+            return true;
         }
-        return code || "CONFIG_FILE".equals(type) || "CONFIG".equals(type);
+        return "STATIC_CODE".equals(type) && role.isEmpty();
+    }
+
+    private static boolean isGroundedRelationshipEvidence(Evidence evidence) {
+        if (!hasValidEvidenceLocator(evidence)) return false;
+        var relationship = evidence.getRelationship();
+        String type = evidence.getSourceType();
+        boolean staticCode = "STATIC_CODE".equals(type);
+        boolean legacyCode = "CODE".equals(type);
+        if ("SERVICE_HTTP_CALL".equalsIgnoreCase(relationship.getRelationType())) {
+            String role = evidence.getProvenance() == null ? "" : evidence.getProvenance().path("communicationRole").asText("");
+            if (staticCode) {
+                return "CALL_SITE".equals(role);
+            }
+            return legacyCode && (role.isEmpty() || "CALL_SITE".equals(role));
+        }
+        return staticCode || legacyCode || "CONFIG_FILE".equals(type) || "CONFIG".equals(type);
     }
 
     /**

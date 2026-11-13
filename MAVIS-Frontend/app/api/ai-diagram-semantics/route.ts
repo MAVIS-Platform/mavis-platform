@@ -247,6 +247,9 @@ export async function POST(request: NextRequest) {
       threeEContext?: ThreeEAiPromptContext;
       threeEFallback?: ThreeEAiSimplifiedExplanation;
       locale?: "en" | "vi";
+      modelVersionId?: string;
+      projectId?: string;
+      scopeKey?: string;
       threeEChat?: {
         threeEContext: ThreeEAiPromptContext;
         currentExplanation?: {
@@ -260,6 +263,7 @@ export async function POST(request: NextRequest) {
       };
     };
     const locale = body.locale === "vi" || body.threeEChat?.locale === "vi" ? "vi" : "en";
+    const cacheScope = [userId, locale, body.modelVersionId ?? "", body.projectId ?? "", body.scopeKey ?? ""];
 
     // Branch -2: Interactive 3E Follow-up Q&A Chat
     if (body.threeEChat && body.threeEChat.question?.trim()) {
@@ -278,7 +282,7 @@ export async function POST(request: NextRequest) {
       }
 
       const chatCacheKey = createHash("sha256")
-        .update(JSON.stringify([userId, locale, tCtx, currentExplanation, history, q]))
+        .update(JSON.stringify([...cacheScope, tCtx, currentExplanation, history, q]))
         .digest("hex");
       const cachedAnswer = threeEChatCache.get(chatCacheKey);
       if (cachedAnswer) {
@@ -400,7 +404,7 @@ export async function POST(request: NextRequest) {
     if (body.threeEContext && body.threeEContext.contextHash) {
       const tCtx = literalSourceContext(body.threeEContext);
       const fallback3E = normalizeThreeE(null, tCtx, locale);
-      const cacheKey = createHash("sha256").update(JSON.stringify([userId, locale, tCtx])).digest("hex");
+      const cacheKey = createHash("sha256").update(JSON.stringify([...cacheScope, tCtx])).digest("hex");
       const hit = threeEEnrichmentCache.get(cacheKey);
       if (hit) {
         return NextResponse.json({ threeEEnrichment: hit, cached: true });
@@ -474,7 +478,9 @@ export async function POST(request: NextRequest) {
     // Branch 0: UML Diagram Enrichment (Class / Package / Deployment / Activity / State)
     if (body.umlContext && body.umlContext.contextHash) {
       const umlCtx = body.umlContext;
-      const umlCacheKey = `${umlCtx.contextHash}:${locale}`;
+      const umlCacheKey = createHash("sha256")
+        .update(JSON.stringify([...cacheScope, umlCtx.diagramKind, umlCtx.contextHash]))
+        .digest("hex");
       const hit = umlEnrichmentCache.get(umlCacheKey);
       if (hit) {
         return NextResponse.json({ umlEnrichment: hit, cached: true });
@@ -483,12 +489,12 @@ export async function POST(request: NextRequest) {
       if (!resolved) {
         return NextResponse.json({ umlEnrichment: {}, cached: false });
       }
-      const userPayload = JSON.stringify({
+      const userPayload = redactEvidenceText(JSON.stringify({
         diagramKind: umlCtx.diagramKind,
         scopeSummary: umlCtx.scopeSummary,
         items: umlCtx.items,
         astSkeleton: umlCtx.astSkeleton,
-      });
+      }));
       const umlSystemPrompt =
         locale === "vi"
           ? UML_SYSTEM_PROMPT +
@@ -564,7 +570,9 @@ export async function POST(request: NextRequest) {
       if (!["CONTAINER", "COMPONENT"].includes(c4Ctx.kind)) {
         return NextResponse.json({ error: "Unsupported C4 diagram kind" }, { status: 422 });
       }
-      const c4CacheKey = `${c4Ctx.contextHash}:${locale}`;
+      const c4CacheKey = createHash("sha256")
+        .update(JSON.stringify([...cacheScope, c4Ctx.kind, c4Ctx.contextHash]))
+        .digest("hex");
       const hit = c4EnrichmentCache.get(c4CacheKey);
       if (hit) {
         return NextResponse.json({ c4Enrichment: hit, cached: true });
@@ -573,14 +581,14 @@ export async function POST(request: NextRequest) {
       if (!resolved || !c4Ctx.astSkeleton.trim()) {
         return NextResponse.json({ c4Enrichment: {}, cached: false });
       }
-      const userPayload = JSON.stringify({
+      const userPayload = redactEvidenceText(JSON.stringify({
         kind: c4Ctx.kind,
         systemName: c4Ctx.systemName,
         nodes: c4Ctx.nodes,
         persons: c4Ctx.persons,
         externals: c4Ctx.externals,
         astSkeleton: c4Ctx.astSkeleton,
-      });
+      }));
       const c4SystemPrompt =
         locale === "vi"
           ? C4_SYSTEM_PROMPT +
@@ -616,7 +624,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ enrichment: fallback, cached: false });
     }
 
-    const seqCacheKey = `${ctx.contextHash}:${locale}`;
+    const seqCacheKey = createHash("sha256")
+      .update(JSON.stringify([...cacheScope, ctx.level, ctx.contextHash]))
+      .digest("hex");
     const hit = enrichmentCache.get(seqCacheKey);
     if (hit) {
       return NextResponse.json({ enrichment: hit, cached: true });
@@ -627,12 +637,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ enrichment: fallback, cached: false });
     }
 
-    const userPayload = JSON.stringify({
+    const userPayload = redactEvidenceText(JSON.stringify({
       flow: ctx.title,
       level: ctx.level,
       steps: ctx.steps,
       astSkeleton: ctx.astSkeleton,
-    });
+    }));
 
     const seqSystemPrompt =
       locale === "vi"

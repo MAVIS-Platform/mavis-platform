@@ -47,6 +47,9 @@ public class ContextReviewService {
    if(item==null && entries.size()<100){
     for(var candidate:roleCandidates(modelId,inside,evidence.findByModelVersionId(modelId)))if(!rejectedSourceKeys.contains(candidate.path("sourceRoleKey").asText())&&candidate.path("id").asText().equals(r.candidateId())){item=candidate;entries.add(item);break;}
    }
+   if("CONFIRM".equals(action)&&item!=null&&"CONFIRMED".equals(item.path("state").asText())){
+    return new ModelVersionService.ModelView(base.getId(),base.getProject().getId(),base.getSourceSnapshot()==null?null:base.getSourceSnapshot().getId(),base.getBaseModelVersion()==null?null:base.getBaseModelVersion().getId(),base.getRevision(),base.getOrigin(),Boolean.TRUE.equals(base.getIsLatestValid()));
+   }
    if(item==null||!"PROPOSED".equals(item.path("state").asText()))throw invalid("Only proposed context can be reviewed");
   }
   if(r.evidenceIds()!=null && r.evidenceIds().size()>20)throw invalid("Too many evidence references");
