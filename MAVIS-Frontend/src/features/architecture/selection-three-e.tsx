@@ -414,6 +414,7 @@ export function SelectionThreeE({
         </div>
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-5 py-5 text-sm leading-6 [scrollbar-gutter:stable]">
           <TabsContent value="explain" className="m-0 space-y-5">
+            <h3 className="text-base font-semibold">Understand this selection</h3>
             <InspectorSection
               title={meaningTitle}
               {...sectionProps("meaning", true)}
@@ -552,6 +553,7 @@ export function SelectionThreeE({
             )}
           </TabsContent>
           <TabsContent value="evidence" className="m-0 space-y-5">
+            <h3 className="text-base font-semibold">Trace it to the source</h3>
             <InspectorSection
               title="Evidence overview"
               {...sectionProps("evidence-overview", true)}
@@ -611,7 +613,7 @@ export function SelectionThreeE({
                 />
               </InspectorSection>
             )}
-            <InspectorSection title="Source snippets" {...sectionProps("snippets")}>
+            <InspectorSection title="Source snippets" {...sectionProps("snippets", true)}>
               <p className="text-xs text-muted-foreground">
                 Internal declaration evidence ({subject.title})
               </p>
@@ -874,6 +876,7 @@ export function SelectionThreeE({
             )}
           </TabsContent>
           <TabsContent value="evaluate" className="m-0 space-y-5">
+            <h3 className="text-base font-semibold">Assess what is supported</h3>
             <InspectorSection title="Assessment summary" {...sectionProps("assessment", true)}>
               <p className="text-sm leading-7">{active3E.evaluateSimple}</p>
             </InspectorSection>

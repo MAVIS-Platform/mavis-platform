@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { getRuleName } from "@/features/architecture/three-e-content";
 import { CourseQuiz, useCourseQuiz } from "./course-quiz";
 import { CurriculumLibrary } from "./curriculum";
 
@@ -472,6 +473,9 @@ export function LabWorkspace() {
                 labId={lab.id}
                 projectId={projectId}
                 modelQuery={modelQuery}
+                snapshotId={lab.referenceSource?.snapshotId}
+                modelId={model?.id ?? lab.referenceSource?.modelId}
+                modelRevision={model?.revision ?? lab.referenceSource?.revision}
               />
             </main>
             <aside className="space-y-5">
@@ -590,12 +594,138 @@ export function LabWorkspace() {
   );
 }
 
+const STATIC_RULE_IDS = ["RULE-01", "RULE-02", "RULE-03", "RULE-04", "RULE-05"] as const;
+
+function StaticEvaluationSummary({ modelId }: { modelId: string | undefined }) {
+  const { locale, t } = useLocale();
+  const client = useApi();
+  const enabled = client.mode === "backend" && Boolean(modelId);
+  const runs = useApiQuery("evaluations", { modelId: modelId ?? "" }, { enabled });
+  const latestRun = useMemo(
+    () =>
+      [...(runs.data ?? [])].sort((a, b) =>
+        String(b.result?.["createdAt"] ?? "").localeCompare(String(a.result?.["createdAt"] ?? "")),
+      )[0],
+    [runs.data],
+  );
+  const evaluationId = latestRun?.id ?? "";
+  const findings = useApiQuery(
+    "evaluationFindings",
+    { evaluationId, modelId: modelId ?? "" },
+    { enabled: enabled && Boolean(evaluationId) },
+  );
+
+  const ruleRows = useMemo(() => {
+    const items = findings.data ?? [];
+    return STATIC_RULE_IDS.map((ruleId) => {
+      const ruleFindings = items.filter((item) => String(item["ruleId"] ?? "") === ruleId);
+      const topFinding =
+        ruleFindings.find((item) => item["status"] === "VIOLATION") ??
+        ruleFindings.find((item) => item["status"] === "NEEDS_REVIEW") ??
+        ruleFindings[0];
+      const details =
+        topFinding && typeof topFinding["details"] === "object" && topFinding["details"]
+          ? (topFinding["details"] as Record<string, unknown>)
+          : undefined;
+      const unverifiedMetadata = details?.["evidenceSufficiency"] === "UNVERIFIED_METADATA_ONLY";
+      const status = topFinding
+        ? String(topFinding["status"] ?? "NEEDS_REVIEW")
+        : evaluationId
+          ? "PASS"
+          : "PENDING";
+      const severity = topFinding
+        ? String(topFinding["severity"] ?? "INFO")
+        : "INFO";
+      return {
+        ruleId,
+        label: getRuleName(ruleId, locale),
+        status,
+        severity,
+        unverifiedMetadata,
+        message: topFinding && typeof topFinding["message"] === "string" ? topFinding["message"] : "",
+      };
+    });
+  }, [evaluationId, findings.data, locale]);
+
+  return (
+    <DetailPanel title={t("3E Static Evaluation Summary (5 Rules)", "Tổng hợp đánh giá tĩnh 3E (5 quy tắc)")}>
+      <p className="text-xs leading-5 text-muted-foreground">
+        {t(
+          "Rule status (PASS / VIOLATION / NEEDS_REVIEW) is reported separately from severity (INFO / WARNING / ERROR).",
+          "Trạng thái quy tắc (PASS / VIOLATION / NEEDS_REVIEW) được tách biệt rõ với mức độ nghiêm trọng (INFO / WARNING / ERROR).",
+        )}
+      </p>
+      {!modelId ? (
+        <p className="text-sm text-muted-foreground">
+          {t("Pinned static model is required before rule evaluation results can load.", "Cần có model tĩnh đã ghim để tải kết quả đánh giá 5 quy tắc.")}
+        </p>
+      ) : runs.isPending || (evaluationId && findings.isPending) ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t("Loading static evaluation findings…", "Đang tải kết quả đánh giá kiến trúc tĩnh…")}
+        </p>
+      ) : runs.isError ? (
+        <ErrorState error={runs.error} onRetry={() => void runs.refetch()} />
+      ) : (
+        <div className="space-y-2.5">
+          {!evaluationId && (
+            <p className="text-xs text-muted-foreground">
+              {t(
+                "No persisted evaluation run yet; rule readiness stays pending until static evaluation completes.",
+                "Chưa có lượt đánh giá tĩnh nào được lưu; trạng thái các quy tắc sẽ hiển thị sau khi hoàn tất đánh giá.",
+              )}
+            </p>
+          )}
+          <div className="divide-y rounded-xl border bg-background">
+            {ruleRows.map((row) => (
+              <div key={row.ruleId} className="flex flex-wrap items-start justify-between gap-3 p-3 text-xs">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-mono font-semibold text-foreground">{row.ruleId}</span>
+                    <span className="font-medium text-foreground">{row.label}</span>
+                  </div>
+                  {(row.unverifiedMetadata || row.status === "NEEDS_REVIEW") && (
+                    <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                      {t("Missing Call-Site / Evidence Grounding (Needs Review)", "Thiếu bằng chứng Call-Site / cần rà soát")}
+                    </p>
+                  )}
+                  {row.message && (
+                    <p className="text-muted-foreground leading-5">{row.message}</p>
+                  )}
+                </div>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <div className="text-right">
+                    <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {t("Rule Status", "Trạng thái")}
+                    </span>
+                    <StatusBadge status={row.status} />
+                  </div>
+                  <div className="text-right">
+                    <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {t("Severity", "Mức độ")}
+                    </span>
+                    <Badge variant="outline" className="font-mono text-[10px]">
+                      {row.severity}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </DetailPanel>
+  );
+}
+
 function StepContent({
   step,
   workspaceId,
   labId,
   projectId,
   modelQuery,
+  snapshotId,
+  modelId,
+  modelRevision,
   canAttemptQuiz,
   showQuiz,
   runtimeReady,
@@ -605,6 +735,9 @@ function StepContent({
   labId: string;
   projectId: string;
   modelQuery: string | null;
+  snapshotId?: string | undefined;
+  modelId?: string | undefined;
+  modelRevision?: number | undefined;
   canAttemptQuiz: boolean;
   showQuiz: boolean;
   runtimeReady: boolean;
@@ -637,34 +770,87 @@ function StepContent({
       </div>
 
       {step === 1 && (
-        <div className="grid gap-5 md:grid-cols-2">
-          <DetailPanel title={t("Reference architecture", "Kiến trúc tham chiếu")}>
-            <p className="text-sm leading-6 text-muted-foreground">
-              {t("Inspect the C1–C3 diagrams and dependency graph from the pinned Lab source.",
-                "Xem sơ đồ C1–C3 và đồ thị phụ thuộc từ mã nguồn đã ghim của Lab.")}
-            </p>
-            <Button asChild>
-              <Link href={modelQuery ? `/architecture?${modelQuery}` : sourceLink}>
-                {modelQuery ? t("Open dependency graph", "Mở đồ thị phụ thuộc") :
-                  projectId ? t("Analyze Lab source", "Phân tích nguồn Lab") : t("Open Lab assignment", "Mở bài tập Lab")} <ArrowRight />
-              </Link>
-            </Button>
-          </DetailPanel>
-          {modelQuery && <DetailPanel title={t("C1–C3 diagrams", "Sơ đồ C1–C3")}>
-            <Button asChild variant="outline">
-              <Link href={`/diagrams?${modelQuery}&kind=CONTEXT`}>
-                {t("Open read-only diagrams", "Mở sơ đồ chỉ đọc")}
-              </Link>
-            </Button>
-          </DetailPanel>}
+        <div className="space-y-5">
+          <div className="rounded-2xl border bg-card p-5 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <Badge variant="secondary">
+                  {t(
+                    "Read-Only Structural Views (C1–C3 + Dependency Graph) · Static source evidence only (not runtime trace)",
+                    "Góc nhìn cấu trúc chỉ đọc (C1–C3 + Đồ thị phụ thuộc) · Chỉ từ bằng chứng mã nguồn tĩnh (không phải dấu vết runtime)",
+                  )}
+                </Badge>
+                <p className="mt-2 text-sm text-muted-foreground leading-6">
+                  {t(
+                    "Inspect the read-only structural diagrams and dependency graph produced from the Lab's pinned static analysis snapshot.",
+                    "Khám phá các sơ đồ cấu trúc chỉ đọc và đồ thị phụ thuộc được sinh từ bản chụp mã nguồn tĩnh đã ghim của Lab.",
+                  )}
+                </p>
+              </div>
+              <Badge variant="outline" className="font-mono">
+                {modelRevision !== undefined ? `Model Revision r${modelRevision}` : "Revision pending"}
+              </Badge>
+            </div>
+            <dl className="grid gap-3 rounded-xl border bg-muted/20 p-3 text-xs sm:grid-cols-3">
+              <div>
+                <dt className="text-muted-foreground">sourceSnapshotId</dt>
+                <dd className="mt-1 break-all font-mono text-foreground">{snapshotId || "Pending"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">modelVersionId</dt>
+                <dd className="mt-1 break-all font-mono text-foreground">{modelId || "Pending"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Model Revision</dt>
+                <dd className="mt-1 font-mono text-foreground">
+                  {modelRevision !== undefined ? `r${modelRevision}` : "Pending"}
+                </dd>
+              </div>
+            </dl>
+            <div className="flex flex-wrap gap-2">
+              {modelQuery ? (
+                <>
+                  <Button asChild variant="outline">
+                    <Link href={`/diagrams?${modelQuery}&kind=CONTEXT`}>C1 System Context</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href={`/diagrams?${modelQuery}&kind=CONTAINER`}>C2 Container</Link>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <Link href={`/diagrams?${modelQuery}&kind=COMPONENT`}>C3 Component</Link>
+                  </Button>
+                  <Button asChild>
+                    <Link href={`/architecture?${modelQuery}`}>
+                      {t("Service Dependency Graph (Read-Only)", "Đồ thị phụ thuộc Service (Chỉ đọc)")}
+                      <ArrowRight />
+                    </Link>
+                  </Button>
+                </>
+              ) : (
+                <Button asChild>
+                  <Link href={sourceLink}>
+                    {projectId ? t("Analyze Lab source", "Phân tích nguồn Lab") : t("Open Lab assignment", "Mở bài tập Lab")}
+                    <ArrowRight />
+                  </Link>
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <StaticEvaluationSummary modelId={modelId} />
+
           <DetailPanel title={t("Evidence and AI review", "Bằng chứng và đánh giá AI")}>
             <p className="text-sm leading-6 text-muted-foreground">
-              {t("Select a node or relationship to review source evidence and 3E findings.",
-                "Chọn nút hoặc mối quan hệ để xem bằng chứng mã nguồn và kết quả đánh giá 3E.")}
+              {t(
+                "Select a node or relationship to review source evidence and 3E findings.",
+                "Chọn nút hoặc mối quan hệ để xem bằng chứng mã nguồn và kết quả đánh giá 3E.",
+              )}
             </p>
-            {modelQuery && <Button asChild variant="outline">
-              <Link href={`/explain?${modelQuery}`}>{t("Open evidence review", "Mở đánh giá bằng chứng")}</Link>
-            </Button>}
+            {modelQuery && (
+              <Button asChild variant="outline">
+                <Link href={`/explain?${modelQuery}`}>{t("Open evidence review", "Mở đánh giá bằng chứng")}</Link>
+              </Button>
+            )}
           </DetailPanel>
         </div>
       )}
