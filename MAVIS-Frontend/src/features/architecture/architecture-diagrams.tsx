@@ -297,7 +297,10 @@ export function ArchitectureDiagrams({
           role="status"
           className="rounded-lg border bg-muted/30 p-3 text-xs leading-5 text-muted-foreground"
         >
-          {selection.notice}
+          {guidedStatic && kind === "CONTEXT"
+            ? t("This view shows the system boundary and external relationships established by this revision.",
+                "Sơ đồ hiển thị ranh giới hệ thống và các liên kết bên ngoài đã xác định trong phiên bản này.")
+            : selection.notice}
         </p>
       )}
       <div data-tour="diagram-canvas">
