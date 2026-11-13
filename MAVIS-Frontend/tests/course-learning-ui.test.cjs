@@ -51,6 +51,13 @@ test("Lab UI keeps unavailable progress gates honest and deep-links real assignm
   assert.match(course, /\/submissions\?workspace=.*&assignment=/s);
 });
 
+test("guided Lab resumes a Runtime session scoped to its selected project and static model", () => {
+  const course = read("src/features/courses/screens.tsx");
+  assert.match(course, /item\.projectId === projectId && item\.modelId === model\.id/);
+  assert.match(course, /new URLSearchParams\(\{ project: projectId, session: runtimeSession\.id \}\)/);
+  assert.match(course, /Open Runtime session/);
+});
+
 test("assignment and submission screens preserve the selected Lab context", () => {
   const assignments = read("src/features/assignments/screens.tsx");
   const submissions = read("src/features/submissions/screens.tsx");

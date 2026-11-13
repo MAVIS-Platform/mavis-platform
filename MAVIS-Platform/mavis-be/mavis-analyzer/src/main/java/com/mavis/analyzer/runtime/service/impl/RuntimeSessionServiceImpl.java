@@ -619,7 +619,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
             }
             if (pinnedModel.getSourceSnapshot() != null && !snapshot.getId().equals(pinnedModel.getSourceSnapshot().getId())) {
                 // Tự động đồng bộ sang SourceSnapshot của pinnedModel nếu thuộc cùng Project
-                if (pinnedModel.getProject() != null && pinnedModel.getProject().getId().equals(project.getId())) {
+                if (!isGuidedRuntime(project) && pinnedModel.getProject() != null && pinnedModel.getProject().getId().equals(project.getId())) {
                     snapshot = pinnedModel.getSourceSnapshot();
                 } else {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "Pinned model must belong to the selected snapshot");
@@ -639,6 +639,8 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "Pinned model must belong to the selected snapshot");
             }
         }
+
+        requireGuidedRuntimeSource(project, snapshot, pinnedModel);
 
         // [WJ-01 / Chặng 11]: Suy ra & chuẩn hóa confirmedServiceMappings sang UUID thật của model_elements thuộc pinnedModel
         List<com.mavis.common.entity.ModelElement> elements = modelElementRepository.findByModelVersionId(pinnedModel.getId());
@@ -957,6 +959,7 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         validateAdministrativeLimits(session);
         requireCourseRuntime(session.getProject());
+        requireGuidedRuntimeSource(session.getProject(), session.getSourceSnapshot(), session.getModelVersion());
         // [CHẶNG 11]: Kiểm tra preflight (Hỗ trợ fallback từ SERVICE_CONTAINER của Model nếu snapshot không chứa file compose vật lý)
         PreflightCheckResponseDTO preflight = runComposePreflight(session.getSourceSnapshot().getId());
         List<String> serviceNames = preflight.getDetectedServices() != null
@@ -1152,6 +1155,8 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
 
         runnerServiceAuthGuard.checkRunnerOrProjectWriteAccess(session.getProject());
         validateAdministrativeLimits(session);
+        requireCourseRuntime(session.getProject());
+        requireGuidedRuntimeSource(session.getProject(), session.getSourceSnapshot(), session.getModelVersion());
 
         SourceSnapshot snapshot = session.getSourceSnapshot();
         String composeYaml = "";
@@ -1681,8 +1686,35 @@ public class RuntimeSessionServiceImpl implements RuntimeSessionService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Runtime session not found"));
             accessPolicyService.requireProjectWriteAccess(session.getProject());
             requireCourseRuntime(session.getProject());
+            requireGuidedRuntimeSource(session.getProject(), session.getSourceSnapshot(), session.getModelVersion());
         });
         return runtimeRunnerDispatcher.dispatchSession(sessionId);
+    }
+
+    private static boolean isGuidedRuntime(Project project) {
+        return project != null && project.getWorkspace() != null && project.getWorkspace().isCourseMode()
+                && "STUDENT_WORKING".equals(project.getProjectType());
+    }
+
+    private static void requireGuidedRuntimeSource(Project project, SourceSnapshot snapshot, ModelVersion model) {
+        if (!isGuidedRuntime(project)) return;
+
+        var lab = project.getAssignment();
+        var referenceModel = lab == null ? null : lab.getReferenceModel();
+        var reference = referenceModel == null ? null : referenceModel.getSourceSnapshot();
+        if (reference == null || !Boolean.TRUE.equals(reference.getIsPublished())
+                || !Objects.equals(reference.getId(), project.getReferenceSnapshotId())
+                || snapshot == null || snapshot.getProject() == null
+                || !Objects.equals(project.getId(), snapshot.getProject().getId())
+                || reference.getArtifactHash() == null
+                || !reference.getArtifactHash().equals(snapshot.getArtifactHash())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Runtime source does not match the current Lab reference");
+        }
+        if (model == null || model.getProject() == null || !Objects.equals(project.getId(), model.getProject().getId())
+                || model.getSourceSnapshot() == null || !snapshot.getId().equals(model.getSourceSnapshot().getId())
+                || "RUNTIME_ENRICHED".equalsIgnoreCase(model.getOrigin())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "Pinned model must belong to the selected snapshot");
+        }
     }
 
     private void requireCourseRuntime(Project project) {

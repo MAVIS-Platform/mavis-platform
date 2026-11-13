@@ -84,6 +84,63 @@ class RuntimeSessionServiceImplTest {
     @InjectMocks
     private RuntimeSessionServiceImpl runtimeSessionService;
 
+    @Mock
+    private com.mavis.common.security.CourseLabPolicy courseLabPolicy;
+
+    @Test
+    void guidedRuntimeRejectsModelFromAnotherSnapshotInTheSameProject() {
+        configureGuidedRuntime();
+        validModel.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).project(project).build());
+        when(modelVersionRepository.findById(validModel.getId())).thenReturn(Optional.of(validModel));
+
+        var request = RuntimeSessionCreateRequest.builder().projectId(projectId).sourceSnapshotId(snapshotId)
+                .modelVersionId(validModel.getId()).build();
+        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("selected snapshot");
+        verify(runtimeSessionRepository, never()).save(any());
+    }
+
+    @Test
+    void guidedRuntimeRejectsArtifactDifferentFromThePublishedLabSource() {
+        configureGuidedRuntime();
+        snapshot.setArtifactHash("another-artifact");
+        when(modelVersionRepository.findById(validModel.getId())).thenReturn(Optional.of(validModel));
+
+        var request = RuntimeSessionCreateRequest.builder().projectId(projectId).sourceSnapshotId(snapshotId)
+                .modelVersionId(validModel.getId()).build();
+        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("current Lab reference");
+        verify(runtimeSessionRepository, never()).save(any());
+    }
+
+    @Test
+    void runnerCannotExportAnOldSessionAfterTheLabReferenceChanges() {
+        configureGuidedRuntime();
+        UUID sessionId = UUID.randomUUID();
+        var session = RuntimeSession.builder().id(sessionId).project(project).sourceSnapshot(snapshot)
+                .modelVersion(validModel).build();
+        when(runtimeSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        project.getAssignment().getReferenceModel().getSourceSnapshot().setId(UUID.randomUUID());
+
+        assertThatThrownBy(() -> runtimeSessionService.exportRunDefinition(sessionId))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("current Lab reference");
+    }
+
+    private void configureGuidedRuntime() {
+        org.springframework.test.util.ReflectionTestUtils.setField(runtimeSessionService, "courseLabPolicy", courseLabPolicy);
+        project.setWorkspace(com.mavis.common.entity.Workspace.builder().courseMode(true).build());
+        project.setProjectType("STUDENT_WORKING");
+        snapshot.setArtifactHash("curated-artifact");
+        var reference = SourceSnapshot.builder().id(UUID.randomUUID()).artifactHash(snapshot.getArtifactHash())
+                .isPublished(true).build();
+        project.setReferenceSnapshotId(reference.getId());
+        project.setAssignment(com.mavis.common.entity.Assignment.builder()
+                .referenceModel(ModelVersion.builder().sourceSnapshot(reference).build()).build());
+    }
+
     private UUID projectId;
     private UUID snapshotId;
     private Project project;

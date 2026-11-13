@@ -329,6 +329,16 @@ export function LabWorkspace() {
   const model = models.data?.filter((item) => item.origin === "GENERATED" &&
     (item.latest || completeModelIds.has(item.id)),
   ).sort((left, right) => right.revision - left.revision)[0];
+  const runtimeSessions = useApiQuery("runtimeReadSessions", { projectId }, {
+    enabled: client.mode === "backend" && runtimeReady && Boolean(projectId && model),
+    poll: activeStep === 3,
+  });
+  const runtimeSession = model && runtimeSessions.data?.filter((item) =>
+    item.projectId === projectId && item.modelId === model.id,
+  ).sort((left, right) => (right.createdAt ?? "").localeCompare(left.createdAt ?? ""))[0];
+  const runtimeSessionLink = runtimeSession
+    ? `/sessions?${new URLSearchParams({ project: projectId, session: runtimeSession.id })}`
+    : null;
   const modelQuery = project && model ? new URLSearchParams({ project: project.id, model: model.id }).toString() : null;
 
   useEffect(() => {
@@ -465,6 +475,7 @@ export function LabWorkspace() {
             <main className="min-w-0 space-y-5">
               <StepContent
                 runtimeReady={runtimeReady}
+                runtimeSessionLink={runtimeSessionLink}
                 showQuiz={roadmap.data?.guided === true}
                 canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
                 step={activeStep}
@@ -599,6 +610,7 @@ function StepContent({
   canAttemptQuiz,
   showQuiz,
   runtimeReady,
+  runtimeSessionLink,
 }: {
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
@@ -608,6 +620,7 @@ function StepContent({
   canAttemptQuiz: boolean;
   showQuiz: boolean;
   runtimeReady: boolean;
+  runtimeSessionLink: string | null;
 }) {
   const { t } = useLocale();
   const sourceLink = projectId
@@ -709,9 +722,18 @@ function StepContent({
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
             {step === 3 && runtimeReady ? (
-              <Button asChild><Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink}>
-                {projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
-              </Link></Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {runtimeSessionLink && (
+                  <Button asChild><Link href={runtimeSessionLink}>
+                    {t("Open Runtime session", "Mở phiên Runtime")}
+                  </Link></Button>
+                )}
+                <Button asChild variant={runtimeSessionLink ? "outline" : "default"}>
+                  <Link href={projectId ? `/runtime-config?${new URLSearchParams({ project: projectId })}` : sourceLink}>
+                    {projectId ? t("Configure Runtime", "Cấu hình Runtime") : t("Open Lab assignment", "Mở bài tập Lab")}
+                  </Link>
+                </Button>
+              </div>
             ) : <p className="text-sm leading-6 text-muted-foreground">
               {step === 3 ? t("Pass the current Lab Quiz to open Runtime.", "Hãy đạt Quiz hiện tại của Lab để mở Runtime.")
                 : t("Studio requires Runtime evidence.", "Studio cần bằng chứng Runtime.")}
