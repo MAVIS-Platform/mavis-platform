@@ -673,4 +673,69 @@ class SubmissionServiceImplTest {
         student.setRole(Role.builder().code("SYSTEM_ADMIN").build());when(submissionSnapshotRepository.findVisibleTo(userId,true)).thenReturn(List.of());assertThat(submissionService.getMySubmissions()).isEmpty();
         verify(submissionSnapshotRepository).findVisibleTo(userId,false);verify(submissionSnapshotRepository).findVisibleTo(userId,true);
     }
+
+    @Test
+    @DisplayName("WF-04 F11-002: Course Lab submission requires written explanation and freezes studentSnapshots in SHA-256 package digest")
+    void courseSubmissionRequiresExplanationAndPersistsStudentSnapshots() {
+        var workspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        student.setRole(Role.builder().code("STUDENT").build());
+        assignment.setWorkspace(workspace);
+        assignment.setLabOrder(1);
+        assignment.setReferenceModel(modelVersion);
+        project.setWorkspace(workspace);
+        project.setAssignment(assignment);
+        snapshot.setArtifactHash("sha256:" + "a".repeat(64));
+        project.setReferenceSnapshotId(snapshot.getId());
+        runtimeSession.setReceiptDigest("sha256:" + "b".repeat(64));
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(assignmentRepository.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        when(evaluationRunRepository.findById(evaluationRunId)).thenReturn(Optional.of(evaluationRun));
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(runtimeSession));
+        when(courseLabs.currentQuizPass(assignment, userId)).thenReturn(Optional.of(
+                new com.mavis.common.security.CourseLabPolicy.QuizPass(UUID.randomUUID(), 1, 8, 10, 80, OffsetDateTime.now())));
+
+        var missingNotesReq = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId).projectId(projectId)
+                .modelVersionId(modelVersionId).diagramVersionId(diagramVersionId)
+                .evaluationRunId(evaluationRunId).runtimeSessionId(runtimeSessionId)
+                .submissionNotes("   ")
+                .build();
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(missingNotesReq))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Written theoretical explanation is required");
+
+        var snapshotItems = List.of(
+                SubmissionCreateRequest.StudentSnapshotItemDTO.builder()
+                        .snapshotId("STEP_1_STATIC")
+                        .step("STEP_1_STATIC")
+                        .title("Order -> Payment boundary")
+                        .targetViewOrService("order-service")
+                        .writtenExplanation("Gateway routes synchronously to order-service over REST before async payment event.")
+                        .build()
+        );
+        var completeReq = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId).projectId(projectId)
+                .modelVersionId(modelVersionId).diagramVersionId(diagramVersionId)
+                .evaluationRunId(evaluationRunId).runtimeSessionId(runtimeSessionId)
+                .studentSnapshots(snapshotItems)
+                .build();
+
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call -> {
+            SubmissionSnapshot saved = call.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+
+        SubmissionResponseDTO dto = submissionService.submitAssignment(completeReq);
+        assertThat(dto.getStudentSnapshots()).isNotNull();
+        assertThat(dto.getStudentSnapshots().isArray()).isTrue();
+        assertThat(dto.getStudentSnapshots().get(0).path("snapshotId").asText()).isEqualTo("STEP_1_STATIC");
+        assertThat(dto.getEvidencePackageDigest()).matches("^sha256:[a-f0-9]{64}$");
+    }
 }

@@ -209,10 +209,25 @@ public class SubmissionServiceImpl implements SubmissionService {
                 missingStages.add("STEP_4_SIGNED_RUNTIME_RECEIPT");
             if (!missingStages.isEmpty()) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
                     "INCOMPLETE_4STAGE_EVIDENCE: " + String.join(",", missingStages));
+
+            if (com.mavis.common.security.CourseLabPolicy.isStudent(submitter)) {
+                boolean hasWrittenExplanation = (request.getSubmissionNotes() != null && !request.getSubmissionNotes().isBlank())
+                        || (request.getStudentSnapshots() != null && request.getStudentSnapshots().stream()
+                                .anyMatch(item -> item != null && item.getWrittenExplanation() != null && !item.getWrittenExplanation().isBlank()));
+                if (!hasWrittenExplanation) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST,
+                            "Written theoretical explanation is required for course Lab submission");
+                }
+            }
         }
 
+        ObjectMapper mapper = this.json != null ? this.json : new ObjectMapper();
+        JsonNode studentSnapshotsNode = (request.getStudentSnapshots() != null && !request.getStudentSnapshots().isEmpty())
+                ? mapper.valueToTree(request.getStudentSnapshots())
+                : null;
+
         String evidencePackageDigest = evidencePackageDigest(assignment, project, sourceSnapshot, modelVersion,
-                diagramVersion, evaluationRun, runtimeSession, courseQuizEvidence, request.getSubmissionNotes());
+                diagramVersion, evaluationRun, runtimeSession, courseQuizEvidence, studentSnapshotsNode, request.getSubmissionNotes());
 
         // 9. Lưu bản ghi nộp bài bất biến vào submission_snapshots
         SubmissionSnapshot submission = SubmissionSnapshot.builder()
@@ -225,6 +240,7 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .evaluationRun(evaluationRun)
                 .runtimeSession(runtimeSession)
                 .courseQuizEvidence(courseQuizEvidence)
+                .studentSnapshots(studentSnapshotsNode)
                 .submissionNotes(request.getSubmissionNotes())
                 .evidencePackageDigest(evidencePackageDigest)
                 .build();
@@ -341,6 +357,9 @@ public class SubmissionServiceImpl implements SubmissionService {
                 .reviewedAt(releasedReview.map(SubmissionReview::getUpdatedAt).orElse(null))
                 .runtimeSessionId(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getId() : null)
                 .courseQuizEvidence(submission.getCourseQuizEvidence())
+                .studentSnapshots(submission.getStudentSnapshots())
+                .snapshotGrades(releasedReview.map(SubmissionReview::getSnapshotGrades).orElse(null))
+                .labOutcome(releasedReview.map(SubmissionReview::getLabOutcome).orElse(null))
                 .scenarioStatus(submission.getRuntimeSession() != null ? submission.getRuntimeSession().getScenarioStatus() : null)
                 .lecturerFeedbacks(feedbacks)
                 .markdownSummaryReport(markdownReport)
@@ -416,7 +435,7 @@ public class SubmissionServiceImpl implements SubmissionService {
     private String evidencePackageDigest(Assignment assignment, Project project, SourceSnapshot sourceSnapshot,
                                          ModelVersion modelVersion, DiagramVersion diagramVersion,
                                          EvaluationRun evaluationRun, RuntimeSession runtimeSession,
-                                         JsonNode courseQuizEvidence, String notes) {
+                                         JsonNode courseQuizEvidence, JsonNode studentSnapshots, String notes) {
         String canonical = String.join("|",
                 assignment.getId().toString(), project.getId().toString(), sourceSnapshot.getId().toString(),
                 Objects.toString(sourceSnapshot.getArtifactHash(), ""), modelVersion.getId().toString(),
@@ -426,7 +445,9 @@ public class SubmissionServiceImpl implements SubmissionService {
                 evaluationRun == null ? "" : Objects.toString(evaluationRun.getSummaryMetrics(), ""),
                 runtimeSession == null ? "" : runtimeSession.getId().toString(),
                 runtimeSession == null ? "" : Objects.toString(runtimeSession.getReceiptDigest(), ""),
-                Objects.toString(courseQuizEvidence, ""), Objects.toString(notes, ""));
+                Objects.toString(courseQuizEvidence, ""),
+                Objects.toString(studentSnapshots, ""),
+                Objects.toString(notes, ""));
         return "sha256:" + com.mavis.common.utils.HashUtils.sha256Hex(canonical.getBytes(StandardCharsets.UTF_8));
     }
 
