@@ -33,6 +33,7 @@ import { useLocale } from "@/lib/i18n/locale-context";
 import { getRuleName } from "@/features/architecture/three-e-content";
 import { CourseQuiz, useCourseQuiz } from "./course-quiz";
 import { CurriculumLibrary } from "./curriculum";
+import { Step2StaticImpact } from "./step2-static-impact";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -857,30 +858,44 @@ function StepContent({
 
       {step === 2 && (
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)]">
-          <DetailPanel title={t("Chapter lesson", "Bài học lý thuyết")}>
-            <div className="space-y-4 text-sm leading-6 text-muted-foreground">
-              <p>
-                {t("Study the published lesson before taking the Quiz.", "Đọc bài học đã công bố trước khi làm Quiz.")}
-              </p>
-              <p>
-                {t("Use the pinned analysis to see which services depend on the element you change.",
-                  "Dùng kết quả phân tích đã ghim để xem những service phụ thuộc vào phần tử bạn thay đổi.")}
-              </p>
-            </div>
-            <Button asChild variant="outline">
-              <Link href={modelQuery ? `/impact?${modelQuery}` : sourceLink}>
-                {modelQuery ? t("Inspect static impact", "Xem tác động tĩnh") : t("Open Lab source", "Mở nguồn của Lab")}
-              </Link>
-            </Button>
-          </DetailPanel>
-          {showQuiz ? <CourseQuiz workspaceId={workspaceId} labId={labId} canSubmit={canAttemptQuiz} /> : <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
-            <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
-              <CircleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
-              <p className="text-sm leading-6 text-muted-foreground">
-                {t("Quiz attempts are available to enrolled students in published guided Labs.", "Sinh viên đã ghi danh có thể làm Quiz trong Lab tuần tự đã công bố.")}
-              </p>
-            </div>
-          </DetailPanel>}
+          <div className="space-y-5">
+            <DetailPanel title={t("Chapter lesson", "Bài học lý thuyết")}>
+              <div className="space-y-4 text-sm leading-6 text-muted-foreground">
+                <p>
+                  {t("Study the published lesson before taking the Quiz.", "Đọc bài học đã công bố trước khi làm Quiz.")}
+                </p>
+                <p>
+                  {t("Use the pinned analysis to see which services depend on the element you change.",
+                    "Dùng kết quả phân tích đã ghim để xem những service phụ thuộc vào phần tử bạn thay đổi.")}
+                </p>
+              </div>
+              <Button asChild variant="outline">
+                <Link href={modelQuery ? `/impact?${modelQuery}` : sourceLink}>
+                  {modelQuery ? t("Inspect static impact", "Xem tác động tĩnh") : t("Open Lab source", "Mở nguồn của Lab")}
+                </Link>
+              </Button>
+            </DetailPanel>
+            <Step2StaticImpact
+              projectId={projectId}
+              modelId={modelId}
+              modelQuery={modelQuery}
+              sourceLink={sourceLink}
+            />
+          </div>
+          {showQuiz ? (
+            <CourseQuiz workspaceId={workspaceId} labId={labId} canSubmit={canAttemptQuiz}
+              runtimeStepHref={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3`}
+            />
+          ) : (
+            <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
+              <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
+                <CircleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
+                <p className="text-sm leading-6 text-muted-foreground">
+                  {t("Quiz attempts are available to enrolled students in published guided Labs.", "Sinh viên đã ghi danh có thể làm Quiz trong Lab tuần tự đã công bố.")}
+                </p>
+              </div>
+            </DetailPanel>
+          )}
         </div>
       )}
 
