@@ -74,6 +74,8 @@ export function operationPermission(operation: Operation): Permission | undefine
       "buildRuntimeSandboxImages",
       "saveScenario",
       "startRuntime",
+      "studioAction",
+      "studioFinish",
       "runtimeApprove",
       "explain",
       "freezeArtifacts",

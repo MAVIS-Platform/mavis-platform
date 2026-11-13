@@ -621,6 +621,12 @@ export async function executeJava(
     case "startRuntime": {
       return courseworkRuntime(await post(`analyzer/projects/${id(input,"projectId")}/runtime-plan/start`, input), input);
     }
+    case "studioState":
+      return get(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio`);
+    case "studioAction":
+      return post(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/actions`,input);
+    case "studioFinish":
+      return post(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/finish`,{});
     case "runtimeSessions":
       return Promise.all(
         list

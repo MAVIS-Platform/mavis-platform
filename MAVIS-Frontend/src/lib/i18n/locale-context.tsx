@@ -15,6 +15,14 @@ interface LocaleContextValue {
 const STORAGE_KEY = "mavis.locale";
 
 export const EXACT_VI_DICTIONARY: Record<string, string> = {
+  "Interactive Studio session": "Phiên Studio tương tác",
+  "Start Studio session": "Khởi chạy phiên Studio",
+  "Cancel Studio session": "Hủy phiên Studio",
+  "Request metrics require a replayable GET/HEAD workload.": "Số liệu request cần workload GET/HEAD có thể chạy lại.",
+  "Finish Studio and save evidence": "Kết thúc Studio và lưu minh chứng",
+  "Finishing Studio and cleaning up": "Đang kết thúc Studio và dọn tài nguyên",
+  "Waiting for Runner confirmation": "Đang chờ Runner xác nhận",
+  "Studio session ready": "Phiên Studio sẵn sàng",
   "MAVIS Studio action": "Thao tác MAVIS Studio",
   "Observe only": "Chỉ quan sát",
   "Stop service": "Dừng dịch vụ",

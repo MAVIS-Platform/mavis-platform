@@ -8,7 +8,7 @@ public sealed record RuntimeRunDefinition(string SessionId, string ModelVersionI
     string ProfileVersionId, string ComposeYaml, RunnerExecutionProfile Profile, HttpScenarioDefinition Scenario,
     IReadOnlyDictionary<string, string> ConfirmedServiceMappings, string? RunConfigurationVersionId = null, string? ScenarioVersionId = null,
     string? ResourceProject = null, bool ProtectedEnvironmentAvailable = false,
-    IReadOnlyList<RuntimeInfrastructureActionDefinition>? InfrastructureActions = null);
+    IReadOnlyList<RuntimeInfrastructureActionDefinition>? InfrastructureActions = null, bool InteractiveStudio = false);
 
 public sealed record RuntimeInfrastructureActionDefinition(string Action, string Service, int? Replicas = null);
 public sealed record RuntimeInfrastructureActionResult(string Action, string Service, int ReplicasBefore, int ReplicasAfter,
@@ -17,7 +17,7 @@ public sealed record RuntimeInfrastructureActionResult(string Action, string Ser
 /// <summary>Operator-invoked local PoC adapter. Not an internet-facing arbitrary repository execution service.</summary>
 public sealed class DockerComposeSession(RuntimeRunDefinition definition, string stateRoot, string collectorConfiguration,
     IDockerCommands docker, IReadOnlyDictionary<string, string>? secrets = null,
-    IRuntimeLifecycleObserver? lifecycle = null) : IRuntimeSessionBackend
+    IRuntimeLifecycleObserver? lifecycle = null, JavaRuntimeClient? studio = null) : IRuntimeSessionBackend
 {
     public string ResourceProject { get; } = RuntimeAllocation.ProjectName(definition.ResourceProject);
     public bool AllocationReserved { get; private set; }
@@ -30,6 +30,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     private FileStream? _lease;
     private bool _resourcesMayExist;
     private readonly Dictionary<string, Uri> _endpoints = new();
+    private readonly Dictionary<string, string> _studioTraceSteps = new(StringComparer.Ordinal);
     private readonly List<RuntimeInfrastructureActionResult> _observedActions = [];
     public IReadOnlyList<RuntimeInfrastructureActionResult> ObservedInfrastructureActions => _observedActions.AsReadOnly();
 
@@ -158,6 +159,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     {
         Stage = "SCENARIO";
         _scenario = await ExecuteWorkloadAsync(ct);
+        foreach (var step in _scenario.Steps) _studioTraceSteps[step.TraceId] = step.StepId;
         return _scenario;
     }
 
@@ -167,10 +169,36 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
 
     public async Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteInfrastructureActionsAsync(CancellationToken ct)
     {
-        var requested = definition.InfrastructureActions ?? [];
+        if (definition.InteractiveStudio) {
+            if (studio is null) throw new RuntimeStageException("STUDIO_REQUIRES_MANAGED_RUNNER");
+            while (true) {
+                ct.ThrowIfCancellationRequested();
+                var command = await studio.NextStudioCommandAsync(definition.SessionId, ResourceProject, ct);
+                if (command.FinishRequested) return _observedActions.ToArray();
+                if (command.Command is null) { await Task.Delay(500, ct); continue; }
+                var item = command.Command;
+                RuntimeInfrastructureActionResult? result = null;
+                var status = "FAILED";
+                var resultCount = _observedActions.Count;
+                try {
+                    await ExecuteActionsAsync([new(item.Action, item.Service, item.Replicas)], ct);
+                    result = _observedActions.Last();
+                    status = result.Confirmed ? "CONFIRMED" : "FAILED";
+                } catch (RuntimeStageException) {
+                    result = _observedActions.Count > resultCount ? _observedActions.Last() : null;
+                }
+                await studio.AcknowledgeStudioActionAsync(definition.SessionId, ResourceProject, item.ActionId, status, result, ct);
+            }
+        }
+        return await ExecuteActionsAsync(definition.InfrastructureActions ?? [], ct);
+    }
+
+    private async Task<IReadOnlyList<RuntimeInfrastructureActionResult>> ExecuteActionsAsync(
+        IReadOnlyList<RuntimeInfrastructureActionDefinition> requested, CancellationToken ct)
+    {
         if (requested.Count == 0) return [];
         var results = _observedActions;
-        bool replayable = definition.Scenario.Steps.All(step => step.Method is "GET" or "HEAD");
+        bool replayable = definition.Scenario.Steps.Count > 0 && definition.Scenario.Steps.All(step => step.Method is "GET" or "HEAD");
         var beforeWorkload = replayable ? _scenario : null;
         foreach (var item in requested)
         {
@@ -186,20 +214,24 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             var before = await ReadServiceMetrics(service, ct);
             if (action == "STOP") await Require(["stop", "--timeout", "5", service], ct);
             else if (action == "START") await Require(["start", service], ct);
-            else await Require(["up", "--detach", "--no-deps", "--scale", service + "=" + item.Replicas, service], ct);
+            else await Require(["up", "--detach", "--no-deps", "--no-recreate", "--no-build", "--pull", "never",
+                "--wait", "--wait-timeout", "30", "--scale", service + "=" + item.Replicas, service], ct);
             var after = await ReadServiceMetrics(service, ct);
             var expected = action switch
             {
-                "STOP" => after.running == 0,
-                "START" => after.running >= 1,
-                _ => after.running == item.Replicas
+                "STOP" => before.running > 0 && after.running == 0,
+                "START" => before.running == 0 && after.running >= 1,
+                _ => before.running > 0 && after.running == item.Replicas && before.running != after.running
             };
             var performedAt = DateTimeOffset.UtcNow;
             results.Add(new(action, service, before.running, after.running,
                 Metrics(before, beforeWorkload), Metrics(after, null), performedAt, expected));
             var afterWorkload = expected && beforeWorkload is not null ? await ExecuteWorkloadAsync(ct) : null;
+            if (afterWorkload is not null)
+                foreach (var step in afterWorkload.Steps) _studioTraceSteps[step.TraceId] = step.StepId;
             results[^1] = results[^1] with { MetricsAfter = Metrics(after, afterWorkload) };
             beforeWorkload = afterWorkload;
+            _scenario = afterWorkload ?? _scenario;
             if (!expected) throw new RuntimeStageException("INFRASTRUCTURE_ACTION_UNCONFIRMED");
         }
         return results;
@@ -260,7 +292,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             }
         }
         var payload = new JsonObject { ["resourceSpans"] = resources }.ToJsonString();
-        var stepMap = _scenario?.Steps.ToDictionary(s => s.TraceId, s => s.StepId);
+        var stepMap = _studioTraceSteps.Count > 0 ? _studioTraceSteps : _scenario?.Steps.ToDictionary(s => s.TraceId, s => s.StepId);
         return TraceCorrelator.Correlate(definition.SessionId, definition.ModelVersionId, payload, definition.ConfirmedServiceMappings, stepMap);
 
         void Append(JsonNode? node)

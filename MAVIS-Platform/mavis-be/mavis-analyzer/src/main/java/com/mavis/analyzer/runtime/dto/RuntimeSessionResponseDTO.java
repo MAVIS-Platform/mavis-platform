@@ -214,7 +214,7 @@ public class RuntimeSessionResponseDTO {
             }
         }
 
-        JsonNode plannedActions = entity.getScenarioConfig() == null ? null : entity.getScenarioConfig().path("infrastructureActions");
+        JsonNode plannedActions = entity.requestedInfrastructureActions();
         boolean studioVerified = plannedActions != null && plannedActions.isArray() && !plannedActions.isEmpty()
                 && capturedSpanCount != null && capturedSpanCount > 0
                 && "COMPLETED".equalsIgnoreCase(entity.getExecutionStatus())

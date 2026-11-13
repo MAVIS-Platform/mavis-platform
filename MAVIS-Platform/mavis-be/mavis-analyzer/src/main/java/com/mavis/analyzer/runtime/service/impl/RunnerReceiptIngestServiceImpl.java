@@ -207,12 +207,13 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         boolean successfulCapture = "Completed".equalsIgnoreCase(outcome.getExecutionStatus())
                 && "Passed".equalsIgnoreCase(outcome.getScenarioStatus())
                 && "Available".equalsIgnoreCase(outcome.getEvidenceStatus());
-        var plannedActions = session.getScenarioConfig() == null ? null : session.getScenarioConfig().path("infrastructureActions");
-        boolean expectsInfrastructureAction = plannedActions != null && plannedActions.isArray() && !plannedActions.isEmpty();
+        var plannedActions = session.requestedInfrastructureActions();
+        boolean interactiveStudio = session.getScenarioConfig() != null && session.getScenarioConfig().path("interactiveStudio").asBoolean();
+        boolean expectsInfrastructureAction = interactiveStudio || (plannedActions != null && plannedActions.isArray() && !plannedActions.isEmpty());
         boolean hasConfirmedInfrastructureAction = expectsInfrastructureAction && receipt.getInfrastructureActions() != null
                 && receipt.getInfrastructureActions().stream().anyMatch(action ->
                         isConfirmedInfrastructureAction(action)
-                        && java.util.stream.StreamSupport.stream(plannedActions.spliterator(), false).anyMatch(planned ->
+                        && plannedActions != null && java.util.stream.StreamSupport.stream(plannedActions.spliterator(), false).anyMatch(planned ->
                                 action.getAction().equalsIgnoreCase(planned.path("action").asText())
                                 && action.getService().equals(planned.path("service").asText())
                                 && (!"SCALE".equalsIgnoreCase(action.getAction())

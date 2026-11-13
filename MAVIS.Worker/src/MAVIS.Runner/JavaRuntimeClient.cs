@@ -8,6 +8,26 @@ namespace MAVIS.Runner;
 /// <summary>Proposed round-2 Java callback transport. No credentials or response bodies in errors.</summary>
 public sealed class JavaRuntimeClient : IRuntimeLifecycleObserver, IDisposable
 {
+    public sealed record StudioCommand(string ActionId, string Action, string Service, int? Replicas);
+    public sealed record StudioPoll(bool FinishRequested, StudioCommand? Command);
+    public async Task<StudioPoll> NextStudioCommandAsync(string sessionId, string project, CancellationToken ct)
+    {
+        var json = await SendAsync(HttpMethod.Get, Route(sessionId, "studio/commands") + "?resourceProject=" + Uri.EscapeDataString(project), null, ct);
+        using var doc = JsonDocument.Parse(json);
+        var data = Data(doc.RootElement);
+        RequireIdentity(data, sessionId, project);
+        return data.Deserialize<StudioPoll>(RuntimeLifecycleJournal.Json) ?? throw new InvalidOperationException("Invalid Studio command.");
+    }
+    public async Task AcknowledgeStudioActionAsync(string sessionId, string project, string actionId, string status,
+        RuntimeInfrastructureActionResult? result, CancellationToken ct)
+    {
+        var json = await SendAsync(HttpMethod.Post, Route(sessionId, "studio/ack"),
+            JsonSerializer.Serialize(new { sessionId, resourceProject = project, actionId, status, result }, RuntimeLifecycleJournal.Json), ct);
+        using var doc = JsonDocument.Parse(json);
+        var data = Data(doc.RootElement);
+        if (data.GetProperty("actionId").GetString() != actionId || data.GetProperty("status").GetString() != status)
+            throw new InvalidOperationException("Studio acknowledgement mismatch.");
+    }
     private readonly HttpClient client;
     private readonly Uri baseUri;
     private readonly string serviceKey;
