@@ -10,6 +10,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
+import java.util.Optional;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Component
@@ -18,15 +20,26 @@ public class CourseLabPolicy {
     private final JdbcTemplate jdbc;
 
     public boolean hasPassedCurrentQuiz(Assignment lab, UUID studentId) {
-        if (lab.getReferenceModel() == null) return false;
-        return Boolean.TRUE.equals(jdbc.queryForObject("""
-                SELECT EXISTS (
-                    SELECT 1 FROM course_quiz_attempts a
-                    WHERE a.assignment_id = ? AND a.student_id = ? AND a.passed
-                    AND a.quiz_version = (SELECT max(q.version) FROM course_quizzes q
-                        WHERE q.assignment_id = a.assignment_id AND q.reference_model_id = ?)
-                )
-                """, Boolean.class, lab.getId(), studentId, lab.getReferenceModel().getId()));
+        return currentQuizPass(lab, studentId).isPresent();
+    }
+
+    public record QuizPass(UUID attemptId, int quizVersion, int correctCount, int questionCount,
+                           int passPercent, OffsetDateTime submittedAt) {}
+
+    public Optional<QuizPass> currentQuizPass(Assignment lab, UUID studentId) {
+        if (lab.getReferenceModel() == null) return Optional.empty();
+        return jdbc.query("""
+                SELECT a.attempt_id, a.quiz_version, a.correct_count, jsonb_array_length(q.questions),
+                       q.pass_percent, a.submitted_at
+                FROM course_quiz_attempts a
+                JOIN course_quizzes q ON q.assignment_id = a.assignment_id AND q.version = a.quiz_version
+                WHERE a.assignment_id = ? AND a.student_id = ? AND a.passed
+                  AND q.version = (SELECT max(current.version) FROM course_quizzes current
+                                   WHERE current.assignment_id = a.assignment_id AND current.reference_model_id = ?)
+                ORDER BY a.submitted_at DESC, a.attempt_id DESC LIMIT 1
+                """, (rs, row) -> new QuizPass(rs.getObject(1, UUID.class), rs.getInt(2), rs.getInt(3),
+                rs.getInt(4), rs.getInt(5), rs.getObject(6, OffsetDateTime.class)),
+                lab.getId(), studentId, lab.getReferenceModel().getId()).stream().findFirst();
     }
 
     public void requireRuntimeReadiness(Project project) {
