@@ -90,3 +90,41 @@ test('resolveRuntimeTargetModel unwraps RUNTIME_ENRICHED references on Run #2 an
  assert.equal(pickedS2?.id,m3StaticS2.id);
  assert.equal(pickedS2?.snapshotId,s2);
 });
+
+test('WF-03 F05-006/007: runtimeReadSchema preserves honest beforeAfterComparison without fabricated latency', () => {
+ const { runtimeReadSchema } = require('../src/types/domain.ts');
+ const session = runtimeReadSchema.parse({
+  id: '11111111-1111-4111-8111-111111111111',
+  projectId: '22222222-2222-4222-8222-222222222222',
+  snapshotId: '33333333-3333-4333-8333-333333333333',
+  modelId: '44444444-4444-4444-8444-444444444444',
+  scenarioName: 'Scale orders',
+  profileName: 'SPRING_BOOT_DOTNET_COMPOSE_V1',
+  executionStatus: 'COMPLETED',
+  scenarioStatus: 'PASSED',
+  evidenceStatus: 'AVAILABLE',
+  cleanupStatus: 'CONFIRMED',
+  traceQuality: 'COMPLETE',
+  mappingStatus: 'MAPPED',
+  studioVerified: true,
+  capturedSpanCount: 6,
+  beforeAfterComparison: [{
+   action: 'SCALE',
+   service: 'order-service',
+   replicasBefore: 1,
+   replicasAfter: 4,
+   requestCountBefore: 0,
+   requestCountAfter: 0,
+   p95LatencyMsBefore: null,
+   p95LatencyMsAfter: null,
+   measurementStatus: 'INSUFFICIENT_TELEMETRY_SAMPLES',
+   measurementNote: 'Insufficient telemetry samples'
+  }],
+  createdAt: '2026-11-14T00:00:00Z',
+  startedAt: '2026-11-14T00:00:01Z',
+  completedAt: '2026-11-14T00:00:10Z'
+ });
+ assert.equal(session.studioVerified, true);
+ assert.equal(session.beforeAfterComparison?.[0]?.measurementStatus, 'INSUFFICIENT_TELEMETRY_SAMPLES');
+ assert.equal(session.beforeAfterComparison?.[0]?.p95LatencyMsAfter, null);
+});
