@@ -13,6 +13,7 @@ import com.mavis.common.entity.Project;
 import com.mavis.common.entity.RuntimeSession;
 import com.mavis.common.entity.SourceSnapshot;
 import com.mavis.common.exception.BusinessException;
+import com.mavis.common.exception.ErrorCode;
 import com.mavis.common.repository.*;
 import com.mavis.common.security.AccessPolicyService;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +30,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -769,5 +771,43 @@ class RuntimeSessionServiceImplTest {
         assertThat(exportedStep.path("bodyReference").asText()).isEqualTo("ORDER_SERVICE_BODY_1");
         assertThat(exportedStep.has("rationale")).isFalse();
         assertThat(exported.getProfile().has("serviceImageOverrides")).isFalse();
+    }
+
+    @Test
+    @DisplayName("WF-03 F08-002: Rejects invalid SCALE replica bounds (0 or 9) and unapproved service in createRuntimeSession")
+    void rejectsInvalidInfrastructureActionBoundsAndUnapprovedService() {
+        when(projectRepository.findLockedById(projectId)).thenReturn(Optional.of(project));
+        when(sourceSnapshotRepository.findById(snapshotId)).thenReturn(Optional.of(snapshot));
+        when(modelVersionRepository.findById(validModel.getId())).thenReturn(Optional.of(validModel));
+        when(modelElementRepository.findByModelVersionId(validModel.getId())).thenReturn(Collections.emptyList());
+
+        for (int badReplica : List.of(0, 9)) {
+            ObjectNode cfg = objectMapper.createObjectNode();
+            cfg.putObject("profile").putObject("applications").putObject("order-service").put("runtime", "java");
+            cfg.putArray("infrastructureActions").addObject()
+                    .put("action", "SCALE").put("service", "order-service").put("replicas", badReplica);
+
+            RuntimeSessionCreateRequest req = RuntimeSessionCreateRequest.builder()
+                    .projectId(projectId).sourceSnapshotId(snapshotId).modelVersionId(validModel.getId())
+                    .profileName("SPRING_BOOT_DOTNET_COMPOSE_V1").scenarioConfig(cfg).build();
+
+            assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(req))
+                    .isInstanceOf(BusinessException.class)
+                    .hasMessageContaining("REPLICA_BOUNDS_EXCEEDED")
+                    .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.BAD_REQUEST);
+        }
+
+        ObjectNode badSvcCfg = objectMapper.createObjectNode();
+        badSvcCfg.putObject("profile").putObject("applications").putObject("order-service").put("runtime", "java");
+        badSvcCfg.putArray("infrastructureActions").addObject()
+                .put("action", "STOP").put("service", "unauthorized-service");
+        RuntimeSessionCreateRequest badSvcReq = RuntimeSessionCreateRequest.builder()
+                .projectId(projectId).sourceSnapshotId(snapshotId).modelVersionId(validModel.getId())
+                .profileName("SPRING_BOOT_DOTNET_COMPOSE_V1").scenarioConfig(badSvcCfg).build();
+
+        assertThatThrownBy(() -> runtimeSessionService.createRuntimeSession(badSvcReq))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("INFRASTRUCTURE_ACTION_INVALID")
+                .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.BAD_REQUEST);
     }
 }
