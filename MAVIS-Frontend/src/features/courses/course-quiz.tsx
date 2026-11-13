@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DetailPanel } from "@/components/shared/data";
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/mainflow-api";
@@ -16,14 +16,21 @@ type Quiz = {
 };
 type Result = { correctCount: number; totalQuestions: number; status: "PASSED" | "NEEDS_RETRY" };
 
-export function CourseQuiz({ workspaceId, labId, canSubmit }: { workspaceId: string; labId: string; canSubmit: boolean }) {
-  const { t } = useLocale();
+export function useCourseQuiz(workspaceId: string, labId: string, enabled: boolean) {
   const path = `workspaces/${workspaceId}/course-labs/${labId}/quiz`;
-  const quiz = useQuery({
+  return useQuery({
     queryKey: ["api", "course-quiz", workspaceId, labId],
     queryFn: ({ signal }) => api<Quiz>(path, { signal }),
     retry: false,
+    enabled,
   });
+}
+
+export function CourseQuiz({ workspaceId, labId, canSubmit }: { workspaceId: string; labId: string; canSubmit: boolean }) {
+  const { t } = useLocale();
+  const cache = useQueryClient();
+  const path = `workspaces/${workspaceId}/course-labs/${labId}/quiz`;
+  const quiz = useCourseQuiz(workspaceId, labId, true);
   return (
     <DetailPanel title={t("Theory and Quiz", "Lý thuyết và Quiz")}>
       {quiz.isPending && <p role="status">{t("Loading Quiz…", "Đang tải Quiz…")}</p>}
@@ -35,12 +42,16 @@ export function CourseQuiz({ workspaceId, labId, canSubmit }: { workspaceId: str
           <Button variant="outline" onClick={() => void quiz.refetch()}>{t("Retry", "Thử lại")}</Button>
         </div>
       )}
-      {quiz.data && <AttemptForm key={`${path}:${quiz.data.version}`} quiz={quiz.data} path={path} reload={() => void quiz.refetch()} canSubmit={canSubmit} />}
+      {quiz.data && <AttemptForm key={`${path}:${quiz.data.version}`} quiz={quiz.data} path={path}
+        reload={() => void quiz.refetch()} canSubmit={canSubmit}
+        refreshReadiness={() => void cache.invalidateQueries({ queryKey: ["api", "course-quiz", workspaceId, labId] })} />}
     </DetailPanel>
   );
 }
 
-function AttemptForm({ quiz, path, reload, canSubmit }: { quiz: Quiz; path: string; reload: () => void; canSubmit: boolean }) {
+function AttemptForm({ quiz, path, reload, canSubmit, refreshReadiness }: {
+  quiz: Quiz; path: string; reload: () => void; canSubmit: boolean; refreshReadiness: () => void;
+}) {
   const { t } = useLocale();
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [attemptId, setAttemptId] = useState<string>();
@@ -49,6 +60,7 @@ function AttemptForm({ quiz, path, reload, canSubmit }: { quiz: Quiz; path: stri
       method: "POST",
       body: JSON.stringify({ attemptId: id, version: quiz.version, answers: quiz.questions.map((_, i) => answers[i]) }),
     }),
+    onSuccess: (result) => { if (result.status === "PASSED") refreshReadiness(); },
   });
 
   return (
