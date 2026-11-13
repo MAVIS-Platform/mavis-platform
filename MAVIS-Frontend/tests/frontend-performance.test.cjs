@@ -666,3 +666,55 @@ test("Observed runtime UML_ACTIVITY projects multi-swimlane actions, decision br
   const xml = buildUmlDrawioXml(proj);
   assert.ok(xml.includes("api-gateway") && xml.includes("order-service") && xml.includes("catalog-service"));
 });
+
+test("TC-N01: Reverse BFS + C4 graph projection on 50 nodes and 150 edges completes within 2000ms", () => {
+  const { projectGraphModel } = require("../src/features/architecture/graph-projection.ts");
+  const { computeArchitectureImpact } = require("../src/lib/architecture/reverse-bfs.ts");
+
+  const elements = [];
+  for (let i = 0; i < 50; i++) {
+    elements.push({
+      id: `svc-${i}`,
+      name: `service-${i}`,
+      elementType: i % 10 === 9 ? "DATABASE" : "SERVICE_CONTAINER",
+      description: "",
+      layer: "unclassified",
+      evidence: [],
+    });
+  }
+  const edges = [];
+  for (let e = 0; e < 150; e++) {
+    const from = e % 49;
+    const step = (Math.floor(e / 49) % 5) + 1;
+    const to = (from + step) % 50;
+    if (from === to) continue;
+    edges.push({
+      id: `edge-${e}`,
+      from: `svc-${from}`,
+      to: `svc-${to}`,
+      protocol: to % 10 === 9 ? "DATABASE_ACCESS" : "SERVICE_HTTP_CALL",
+      originLayer: "STATIC",
+      uncertain: false,
+      evidence: [],
+    });
+  }
+
+  const benchmarkModel = {
+    id: "n01-benchmark-50-150",
+    projectId: "p-bench",
+    snapshotId: "s-bench",
+    revision: 1,
+    label: "Benchmark 50x150",
+    elements,
+    edges,
+  };
+
+  const t0 = performance.now();
+  const projected = projectGraphModel(benchmarkModel, false, "all");
+  const impact = computeArchitectureImpact(benchmarkModel, "svc-49", "all");
+  const elapsedMs = performance.now() - t0;
+
+  assert.equal(projected.model.elements.length, 50);
+  assert.ok(impact.upstreamImpacted.length > 0, "Target should have upstream reverse BFS callers");
+  assert.ok(elapsedMs <= 2000, `Expected <= 2000ms for 50 nodes / 150 edges, took ${Math.round(elapsedMs)}ms`);
+});
