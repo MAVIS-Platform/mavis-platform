@@ -2277,6 +2277,7 @@ test("architecture view tabs preserve project/model and deep link every diagram 
   '@/hooks/use-api':{useSession:()=>({data:{user:{role}}}),useApiQuery:()=>({...query,data:{id:'foreign-project',name:'QA Spring Demo'}})},
   '@/features/projects/components':{ProjectSelector:({selectedProject})=>React.createElement('span',null,selectedProject?.name)},
   '@/features/architecture/components':{ModelVersionSelector:()=>null},
+  '@/features/workspaces/course-access':{useCourseRoadmap:()=>({data:undefined})},
   '@/features/architecture/architecture-presentation':{ArchitecturePresentation:({mode})=>React.createElement('div',{'data-view-mode':mode})},
  });
  for(const kind of kinds){

@@ -22,6 +22,7 @@ type Props = {
   onSelect: (id: string | null) => void;
   systemName?: string | undefined;
   mode?: "graph" | "diagram" | undefined;
+  guidedStatic?: boolean;
 };
 
 export function ArchitecturePresentation({
@@ -30,6 +31,7 @@ export function ArchitecturePresentation({
   onSelect,
   systemName,
   mode = "graph",
+  guidedStatic = false,
 }: Props) {
   const [highlight, setHighlight] = useState<{ modelId: string; ids: string[] } | null>(null);
   const [typeFilter, setTypeFilter] = useState<{ modelId: string; hidden: GraphCategory[] }>({
@@ -251,6 +253,7 @@ export function ArchitecturePresentation({
               model={model}
               selectedId={selectedId}
               systemName={systemName}
+              guidedStatic={guidedStatic}
               onSelect={handleSelect}
               onSelectSequence={(id, seqCtx) => {
                 setHighlight(null);

@@ -118,6 +118,17 @@ export function resolveDiagramKind(value: string | null): DiagramKind {
   if (value === "SCENARIOS") return "UML_SEQUENCE";
   return canonicalDiagramCatalog.find(item => item.kind === value)?.kind ?? "CONTAINER";
 }
+export const guidedDiagramOptions: typeof diagramKinds.C4 = [
+  {
+    value: "CONTEXT",
+    label: "System Context",
+    description: "The software system and its confirmed external relationships.",
+  },
+  ...diagramKinds.C4,
+];
+export function resolveGuidedDiagramKind(value: string | null): DiagramKind {
+  return guidedDiagramOptions.find((option) => option.value === value)?.value ?? "CONTEXT";
+}
 export function modelDocument(model: ArchitecturalModel): DiagramDocument {
   const nodes: DiagramDocument["layoutJson"]["nodes"] = model.elements.map((node) => {
     const isClient = isDeclarativeClientElement(node);
