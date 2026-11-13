@@ -31,6 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { CourseQuiz } from "./course-quiz";
+import { CurriculumLibrary } from "./curriculum";
 
 type LearningStep = {
   id: 1 | 2 | 3 | 4;
@@ -92,6 +93,7 @@ function workspaceHref(workspaceId: string, extra = "") {
 
 export function Courses() {
   const { t } = useLocale();
+  const client = useApi();
   const session = useSession();
   const selection = useSelection();
   const query = useApiQuery("workspaces", {});
@@ -117,6 +119,7 @@ export function Courses() {
       </div>
 
       {isStudent && <CourseEnrollment destination="roadmap" />}
+      {client.mode === "backend" && <CurriculumLibrary />}
 
       <RequestState
         query={query}
@@ -438,6 +441,7 @@ export function LabWorkspace() {
           <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <main className="min-w-0 space-y-5">
               <StepContent
+                showQuiz={roadmap.data?.guided === true}
                 canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
                 step={activeStep}
                 workspaceId={workspaceId}
@@ -567,12 +571,14 @@ function StepContent({
   labId,
   referenceSnapshotId,
   canAttemptQuiz,
+  showQuiz,
 }: {
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
   labId: string;
   referenceSnapshotId: string | null;
   canAttemptQuiz: boolean;
+  showQuiz: boolean;
 }) {
   const { t } = useLocale();
   const client = useApi();
@@ -656,7 +662,7 @@ function StepContent({
               </Link>
             </Button>
           </DetailPanel>
-          {canAttemptQuiz ? <CourseQuiz workspaceId={workspaceId} labId={labId} /> : <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
+          {showQuiz ? <CourseQuiz workspaceId={workspaceId} labId={labId} canSubmit={canAttemptQuiz} /> : <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
             <div className="flex items-start gap-3 rounded-xl border bg-muted/30 p-4">
               <CircleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
               <p className="text-sm leading-6 text-muted-foreground">
