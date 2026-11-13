@@ -103,7 +103,7 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
 
             ObjectNode details = finding.getDetails() instanceof ObjectNode d ? d : objectMapper.createObjectNode();
             details.put("contractVersion", "3e/2");
-            details.put("ruleSetVersion", "3e-2");
+            details.put("ruleSetVersion", "3e-3");
             if (!details.has("applicability")) details.put("applicability", finding.getElement()==null && finding.getRelationship()==null ? "MODEL_SCOPE" : "APPLICABLE");
             var nodeIds = new HashSet<String>();
             if (finding.getElement()!=null) nodeIds.add(finding.getElement().getId().toString());
@@ -169,7 +169,7 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
         // Lưu EvaluationRun
         EvaluationRun evaluationRun = EvaluationRun.builder()
                 .modelVersion(modelVersion)
-                .ruleSetVersion("3e-2")
+                .ruleSetVersion("3e-3")
                 .summaryMetrics(metricsNode)
                 .build();
         EvaluationRun savedRun = evaluationRunRepository.save(evaluationRun);
@@ -421,7 +421,7 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
         List<EvaluationFinding> findings = new ArrayList<>();
 
         Set<UUID> relIdsWithEvidence = evidences.stream()
-                .filter(ev -> ev.getRelationship() != null)
+                .filter(ArchitectureEvaluationServiceImpl::isGroundedRelationshipEvidence)
                 .map(ev -> ev.getRelationship().getId())
                 .collect(Collectors.toSet());
 
@@ -459,6 +459,19 @@ public class ArchitectureEvaluationServiceImpl implements ArchitectureEvaluation
         }
 
         return findings;
+    }
+
+    private static boolean isGroundedRelationshipEvidence(Evidence evidence) {
+        var relationship = evidence.getRelationship();
+        if (relationship == null || evidence.getExcerpt() == null || evidence.getExcerpt().isBlank()
+                || evidence.getLocator() == null || !evidence.getLocator().matches(".+:[1-9]\\d*")) return false;
+        String type = evidence.getSourceType();
+        boolean code = "STATIC_CODE".equals(type) || "CODE".equals(type);
+        if ("SERVICE_HTTP_CALL".equalsIgnoreCase(relationship.getRelationType())) {
+            String role = evidence.getProvenance() == null ? "" : evidence.getProvenance().path("communicationRole").asText();
+            return code && (role.isEmpty() || "CALL_SITE".equals(role));
+        }
+        return code || "CONFIG_FILE".equals(type) || "CONFIG".equals(type);
     }
 
     /**
