@@ -83,14 +83,14 @@ class CourseHttpAcceptanceTest {
         send("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "654321"), 400);
         send("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "789123"), 400);
         var verification = Map.of("email", email, "otpCode", "123456");
-        assertOneOtpAccepted(db, user, request("POST", "auth/verify-email", null, verification),
-                request("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "246810")));
+        assertOneOtpAccepted(db, user, request("POST", "auth/verify-email", null, verification).build(),
+                request("POST", "auth/verify-email", null, Map.of("email", email, "otpCode", "246810")).build());
         send("POST", "auth/verify-email", null, verification, 400);
         assertFalse(login("verify-learner").isBlank());
 
         String newPassword = "Changed-isolated-WF01-password!";
         var reset = request("POST", "auth/reset-password", null,
-                Map.of("email", email, "otpCode", "789123", "newPassword", newPassword));
+                Map.of("email", email, "otpCode", "789123", "newPassword", newPassword)).build();
         assertOneOtpAccepted(db, user, reset, reset);
         send("POST", "auth/login", null, Map.of("email", email, "password", PASSWORD), 401);
         send("POST", "auth/login", null, Map.of("email", email, "password", newPassword), 200);
@@ -138,6 +138,17 @@ class CourseHttpAcceptanceTest {
         try (var archive = new ZipOutputStream(Files.newOutputStream(zip))) {
             archive.putNextEntry(new ZipEntry("README.md"));
             archive.write("Course fixture".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            archive.closeEntry();
+            archive.putNextEntry(new ZipEntry("src/main/java/example/OrderController.java"));
+            archive.write("""
+                    package example;
+                    import org.springframework.web.bind.annotation.GetMapping;
+                    import org.springframework.web.bind.annotation.RestController;
+                    @RestController
+                    class OrderController {
+                        @GetMapping("/orders") String orders() { return "orders"; }
+                    }
+                    """.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             archive.closeEntry();
         }
         UUID reference = id(db, """
@@ -194,16 +205,39 @@ class CourseHttpAcceptanceTest {
                 SELECT ?, id, ?, ?, 'Quiz gate fixture', 'STUDENT_WORKING' FROM users WHERE email = ? RETURNING id
                 """, classroom, lab1, source, "learner@example.invalid");
         UUID workingSource = id(db, """
-                INSERT INTO source_snapshots(project_id,source_type,artifact_hash)
-                SELECT ?, source_type, artifact_hash FROM source_snapshots WHERE id = ? RETURNING id
+                INSERT INTO source_snapshots(project_id,source_type,artifact_hash,storage_path)
+                SELECT ?, source_type, artifact_hash, storage_path FROM source_snapshots WHERE id = ? RETURNING id
                 """, workingProject, source);
-        UUID workingModel = id(db, """
-                INSERT INTO model_versions(project_id,source_snapshot_id) VALUES (?,?) RETURNING id
-                """, workingProject, workingSource);
-        UUID workingDiagram = id(db, """
-                INSERT INTO diagram_versions(model_version_id,notation,level,layout_json)
-                VALUES (?,'C4','CONTAINER','{}') RETURNING id
-                """, workingModel);
+        String analysis = "analyzer/snapshots/" + workingSource + "/analyze";
+        var denied = request("POST", analysis, foreignStudent, null).header("Idempotency-Key", "wf02-static").build();
+        assertEquals(403, http.send(denied, HttpResponse.BodyHandlers.discarding()).statusCode());
+        var analyze = request("POST", analysis, student, null).header("Idempotency-Key", "wf02-static").build();
+        var accepted = http.send(analyze, HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(202, accepted.statusCode());
+        String jobId = data(accepted).path("jobId").asText();
+        assertFalse(jobId.isBlank());
+        var retry = http.send(analyze, HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(202, retry.statusCode());
+        assertEquals(jobId, data(retry).path("jobId").asText());
+        JsonNode job = waitForStaticAnalysis(jobId, student);
+        assertEquals(workingSource.toString(), job.path("sourceSnapshotId").asText());
+        UUID workingModel = UUID.fromString(job.path("modelVersionId").asText());
+        String analyzedModel = "analyzer/models/" + workingModel;
+        assertEquals("3e-3", data(send("POST", analyzedModel + "/evaluate", student, null, 200))
+                .path("ruleSetVersion").asText());
+        JsonNode diagrams = data(send("GET", analyzedModel + "/diagrams", student, null, 200));
+        var staticTypes = new java.util.HashSet<String>();
+        UUID workingDiagram = null;
+        for (var diagram : diagrams) {
+            String notation = diagram.path("notation").asText();
+            String level = diagram.path("level").asText();
+            staticTypes.add(notation + "/" + level);
+            if ("C4".equals(notation) && "CONTAINER".equals(level)) {
+                workingDiagram = UUID.fromString(diagram.path("id").asText());
+            }
+        }
+        assertEquals(java.util.Set.of("DEPENDENCY_GRAPH/SERVICE", "C4/CONTAINER", "C4/COMPONENT"), staticTypes);
+        assertNotNull(workingDiagram);
         checkCurriculum(workspace, lab1, lab2, lecturer, student, workingProject,
                 Map.of("assignmentId", lab1, "projectId", workingProject,
                         "modelVersionId", workingModel, "diagramVersionId", workingDiagram));
@@ -221,6 +255,20 @@ class CourseHttpAcceptanceTest {
     private String login(String user) throws Exception {
         return data(send("POST", "auth/login", null,
                 Map.of("email", user + "@example.invalid", "password", PASSWORD), 200)).path("token").asText();
+    }
+
+    private JsonNode waitForStaticAnalysis(String jobId, String student) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        JsonNode job;
+        do {
+            job = data(send("GET", "analyzer/jobs/" + jobId, student, null, 200));
+            String state = job.path("status").asText();
+            if ("COMPLETED".equals(state)) return job;
+            assertTrue(List.of("PENDING", "RUNNING").contains(state),
+                    () -> "Static analysis failed with status " + state);
+            Thread.sleep(100);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError("Static analysis did not complete before the test deadline");
     }
 
     private void checkCurriculum(String workspace, UUID lab1, UUID lab2, String lecturer, String student,
@@ -314,12 +362,12 @@ class CourseHttpAcceptanceTest {
 
     private HttpResponse<byte[]> send(String method, String path, String token, Map<String, ?> body,
                                       int expectedStatus) throws IOException, InterruptedException {
-        var response = http.send(request(method, path, token, body), HttpResponse.BodyHandlers.ofByteArray());
+        var response = http.send(request(method, path, token, body).build(), HttpResponse.BodyHandlers.ofByteArray());
         assertEquals(expectedStatus, response.statusCode(), () -> method + " " + path);
         return response;
     }
 
-    private HttpRequest request(String method, String path, String token, Map<String, ?> body) throws IOException {
+    private HttpRequest.Builder request(String method, String path, String token, Map<String, ?> body) throws IOException {
         var request = HttpRequest.newBuilder(URI.create(api + path)).timeout(Duration.ofSeconds(10));
         if (token != null) request.header("Authorization", "Bearer " + token);
         var data = HttpRequest.BodyPublishers.noBody();
@@ -327,7 +375,7 @@ class CourseHttpAcceptanceTest {
             request.header("Content-Type", "application/json");
             data = HttpRequest.BodyPublishers.ofByteArray(json.writeValueAsBytes(body));
         }
-        return request.method(method, data).build();
+        return request.method(method, data);
     }
 
     private JsonNode data(HttpResponse<byte[]> response) throws IOException {
