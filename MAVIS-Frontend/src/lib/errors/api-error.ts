@@ -33,6 +33,14 @@ export const publicErrors = {
   SUBMISSION_DIAGRAM_MISMATCH: "The selected diagram bundle does not belong to this model version.",
   SUBMISSION_REQUIRED_DIAGRAM:
     "One or more required diagram types are missing from your selection. Save or select the required diagrams first.",
+  SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED: "Add an explanation for each required Snapshot (up to 5,000 characters each).",
+  SUBMISSION_SNAPSHOT_IDS_INVALID: "The Snapshot selection has changed. Reload the Lab and review its required evidence.",
+  SUBMISSION_STUDIO_RECEIPT_REQUIRED: "Select a verified Studio receipt for the selected model version.",
+  SUBMISSION_QUIZ_REQUIRED: "Pass the current Lab Quiz before submitting.",
+  REVIEW_SNAPSHOT_GRADES_INCOMPLETE: "Enter a grade for every frozen Snapshot before publishing.",
+  REVIEW_SNAPSHOT_GRADES_INVALID: "The Snapshot grades do not match this submission. Refresh the review.",
+  REVIEW_FROZEN_SNAPSHOTS_REQUIRED: "Return this submission with instructions to resubmit the required Snapshots.",
+  REVIEW_PASSED_FINAL: "This Lab result is finalized. Refresh the review to see the published grade.",
   SUBMISSION_EVALUATION_MISMATCH:
     "The selected evaluation run does not belong to this model version.",
   SUBMISSION_RUNTIME_MISMATCH:
@@ -82,7 +90,22 @@ export function backendErrorCode(
     if (message === "This snapshot has dependent revisions or protected records.")
       return "DELETE_REFERENCED";
   }
+  if (/^submissions\/[^/]+\/review$/.test(path)) {
+    if (status === 409 && message === "PASSED_LAB_REVIEW_FINAL") return "REVIEW_PASSED_FINAL";
+    if (status === 400 && message === "SNAPSHOT_GRADES_INCOMPLETE") return "REVIEW_SNAPSHOT_GRADES_INCOMPLETE";
+    if (status === 400 && message === "INVALID_SNAPSHOT_GRADE_IDS") return "REVIEW_SNAPSHOT_GRADES_INVALID";
+    if (status === 400 && ["SUBMISSION_SNAPSHOTS_REQUIRED", "INVALID_SUBMISSION_SNAPSHOTS"].includes(message))
+      return "REVIEW_FROZEN_SNAPSHOTS_REQUIRED";
+  }
   if (path === "submissions") {
+    if (status === 400 && message === "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED")
+      return "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED";
+    if (status === 400 && message === "SUBMISSION_SNAPSHOT_IDS_INVALID")
+      return "SUBMISSION_SNAPSHOT_IDS_INVALID";
+    if (status === 400 && message === "STEP_4_SIGNED_RUNTIME_RECEIPT")
+      return "SUBMISSION_STUDIO_RECEIPT_REQUIRED";
+    if (status === 403 && message === "Pass the current Lab Quiz before submitting")
+      return "SUBMISSION_QUIZ_REQUIRED";
     if (status === 400 && message === "Đã quá hạn nộp bài cho đề bài này")
       return "SUBMISSION_DEADLINE";
     if (status === 400 && message === "Dự án không thuộc về không gian làm việc của đề bài")

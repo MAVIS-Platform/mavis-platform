@@ -157,7 +157,7 @@ class Wf04AcceptanceMatrixTest {
         ModelVersion refModel = ModelVersion.builder().id(UUID.randomUUID()).project(refProj).sourceSnapshot(sourceSnapshot).revision(1).isLatestValid(true).build();
 
         ObjectNode reqDiagrams = objectMapper.createObjectNode();
-        lab01 = Assignment.builder().id(UUID.randomUUID()).workspace(workspace).title("Lab 01").labOrder(1).referenceModel(refModel)
+        lab01 = Assignment.builder().id(UUID.randomUUID()).workspace(workspace).title("Lab 01").labOrder(1).referenceModel(refModel).requireRuntimeTrace(true)
                 .requiredDiagramTypes(objectMapper.createArrayNode().add("C4_CONTAINER")).build();
         lab02 = Assignment.builder().id(UUID.randomUUID()).workspace(workspace).title("Lab 02").labOrder(2).referenceModel(refModel)
                 .build();
@@ -332,18 +332,12 @@ class Wf04AcceptanceMatrixTest {
     }
 
     @Test
-    @DisplayName("F04-007: Low complianceScore (< 70.0) on EvaluationRun blocks guided Lab submission")
-    void f04_007_lowEvaluationScoreBlocksGuidedSubmission() {
-        EvaluationRun lowRun = EvaluationRun.builder().id(UUID.randomUUID()).modelVersion(modelVersion)
-                .summaryMetrics(objectMapper.createObjectNode().put("complianceScore", 55.0)).build();
-        when(evaluationRunRepository.findById(lowRun.getId())).thenReturn(Optional.of(lowRun));
-
-        var req = SubmissionCreateRequest.builder()
-                .assignmentId(lab01.getId()).projectId(studentProject.getId())
-                .modelVersionId(modelVersion.getId()).diagramVersionId(diagramVersion.getId())
-                .evaluationRunId(lowRun.getId()).runtimeSessionId(verifiedSession.getId())
-                .studentSnapshots(validSnapshots()).build();
-        assertThatThrownBy(() -> submissionService.submitAssignment(req)).isInstanceOf(BusinessException.class);
+    @DisplayName("F04-007: A passing versioned Quiz permits submission with a low 3E score")
+    void f04_007_preservesLowComplianceScoreAsEvidence() {
+        evaluationRun.setSummaryMetrics(objectMapper.createObjectNode().put("complianceScore", 55.0));
+        var submitted = submitValidLab01Package(new AtomicReference<>());
+        assertThat(submitted.getComplianceScore()).isEqualTo(55.0);
+        assertThat(submitted.getCourseQuizEvidence().path("status").asText()).isEqualTo("PASSED");
     }
 
     @Test
@@ -376,7 +370,7 @@ class Wf04AcceptanceMatrixTest {
                 .submissionNotes("  ").build();
         assertThatThrownBy(() -> submissionService.submitAssignment(noNotesReq))
                 .isInstanceOf(BusinessException.class)
-                .hasMessageContaining("Written theoretical explanation is required");
+                .hasMessageContaining("SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED");
     }
 
     @Test
