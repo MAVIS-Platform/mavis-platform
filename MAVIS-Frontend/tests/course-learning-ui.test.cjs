@@ -317,4 +317,69 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
   });
   assert.equal(passReview.labOutcome, "PASSED");
   assert.equal(passReview.score, 60);
+
+  // Verify resolveSubmissionOutcome & SubmissionResult logic on (9.0, 5.0) -> score: 70, labOutcome: "NEEDS_REVISION"
+  const submissionsScreen = read("src/features/submissions/screens.tsx");
+  const { resolveSubmissionOutcome } = require("../src/features/submissions/grading.tsx");
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 70,
+      labOutcome: "NEEDS_REVISION",
+      snapshotGrades: [
+        { score: 9.0 },
+        { score: 5.0 },
+      ],
+    }),
+    "NEEDS REVISION",
+  );
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 70,
+      snapshotGrades: [
+        { score: 9.0 },
+        { score: 5.0 },
+      ],
+    }),
+    "NEEDS REVISION",
+  );
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 60,
+      labOutcome: "PASSED",
+      snapshotGrades: [
+        { score: 5.1 },
+        { score: 6.9 },
+      ],
+    }),
+    "PASS",
+  );
+  assert.ok(submissionsScreen.includes("resolveSubmissionOutcome(query.data)"));
+  assert.ok(grading.includes("At least one snapshot scored <= 5.0 / 10"));
+});
+
+test("Stage 1 reference views, 1-click workspace init, Step 4 submit bridge, and composer 1-click analysis", () => {
+  const course = read("src/features/courses/screens.tsx");
+  const composer = read("src/features/submissions/composer.tsx");
+
+  assert.ok(course.includes("const referenceModelQuery ="));
+  assert.ok(course.includes("Initialize & Analyze My Lab Workspace"));
+  assert.ok(course.includes("Proceed to Submit Lab"));
+  assert.ok(course.includes("#submission-composer"));
+  assert.ok(composer.includes('id="submission-composer"'));
+  assert.ok(composer.includes("(guided || useReferenceSnapshot) && requirements?.referenceSource?.snapshotId"));
+  assert.ok(composer.includes("Run Static Analysis Now"));
+});
+
+test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and assignments pages", () => {
+  const access = read("src/features/workspaces/course-access.tsx");
+  const course = read("src/features/courses/screens.tsx");
+  const assignments = read("src/features/assignments/screens.tsx");
+
+  assert.ok(access.includes("export function SeedCuratedCourseLabs"));
+  assert.ok(access.includes("course-labs/seed-curated"));
+  assert.ok(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
+  assert.ok(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
 });

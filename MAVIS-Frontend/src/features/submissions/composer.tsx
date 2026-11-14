@@ -2,7 +2,8 @@
 import { diagramTypeLabel } from "@/lib/architecture/coursework-diagram-types";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
+import { useQueryClient } from "@tanstack/react-query";
+import { useApi, useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { useModel } from "@/features/architecture/use-model";
 import { ModelVersionSelector } from "@/features/architecture/components";
 import { ProjectSelector } from "@/features/projects/components";
@@ -36,12 +37,17 @@ export function SubmissionComposer({
   guided?: boolean;
 }) {
   const { t } = useLocale();
+  const client = useApi();
+  const queryClient = useQueryClient();
   const selection = useSelection();
   const state = useModel();
   const projects = useApiQuery("projects", {});
   const create = useApiMutation("createProject");
   const [projectName, setProjectName] = useState("");
+  const [prefilledName, setPrefilledName] = useState(false);
   const [useReferenceSnapshot, setUseReferenceSnapshot] = useState(true);
+  const [startingStaticAnalysis, setStartingStaticAnalysis] = useState(false);
+  const [staticAnalysisError, setStaticAnalysisError] = useState<string | null>(null);
 
   const selectedProject = projects.data?.find((p) => p.id === state.projectId);
   const compatibleProject =
@@ -54,6 +60,47 @@ export function SubmissionComposer({
       (p.assignmentId === assignmentId || (!guided && !p.assignmentId)),
   );
   const personalProjectsCount = (projects.data ?? []).filter((p) => !p.workspaceId).length;
+
+  useEffect(() => {
+    if (
+      guided &&
+      !prefilledName &&
+      projects.data &&
+      classProjects.length === 0 &&
+      !projectName &&
+      requirements?.title
+    ) {
+      setProjectName(`${requirements.title} - Workspace`.slice(0, 255));
+      setPrefilledName(true);
+    }
+  }, [guided, prefilledName, projects.data, classProjects.length, projectName, requirements?.title]);
+
+  async function handleRunStaticAnalysis() {
+    if (!state.projectId || startingStaticAnalysis) return;
+    setStartingStaticAnalysis(true);
+    setStaticAnalysisError(null);
+    try {
+      const snaps = await client.execute("snapshots", { projectId: state.projectId });
+      const targetSnapshot = snaps[0];
+      if (!targetSnapshot) {
+        throw new Error("No source snapshot found yet. Open Source Snapshots to import or clone one first.");
+      }
+      await client.execute("startAnalysis", {
+        projectId: state.projectId,
+        snapshotId: targetSnapshot.id,
+        idempotencyKey: `composer-analyze-${state.projectId}-${targetSnapshot.id}`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["api", "analysisJobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["api", "modelVersions"] }),
+        queryClient.invalidateQueries({ queryKey: ["api", "models"] }),
+      ]);
+    } catch (err) {
+      setStaticAnalysisError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setStartingStaticAnalysis(false);
+    }
+  }
 
   const sessions = useApiQuery(
     "runtimeSessions",
@@ -162,6 +209,7 @@ export function SubmissionComposer({
   const hasWrittenExplanation = Boolean(notes.trim() || preparedSnapshots.length > 0);
 
   return (
+    <div id="submission-composer" className="scroll-mt-20">
     <DetailPanel title="Prepare coursework submission">
       <p className="text-sm text-muted-foreground">
         {guided
@@ -182,7 +230,7 @@ export function SubmissionComposer({
               name: projectName.trim(),
               workspaceId,
               assignmentId,
-              ...(!guided && useReferenceSnapshot && requirements?.referenceSource?.snapshotId
+              ...((guided || useReferenceSnapshot) && requirements?.referenceSource?.snapshotId
                 ? { referenceSnapshotId: requirements.referenceSource.snapshotId }
                 : {}),
             },
@@ -289,8 +337,16 @@ export function SubmissionComposer({
                   : "Import source code and run static analysis to produce an architecture model revision."}
               </p>
               <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={startingStaticAnalysis}
+                  onClick={() => void handleRunStaticAnalysis()}
+                >
+                  {startingStaticAnalysis ? "Starting Static Analysis…" : "Run Static Analysis Now"}
+                </Button>
                 {!guided && (
-                  <Button asChild size="sm">
+                  <Button asChild size="sm" variant="outline">
                     <Link
                       href={`/snapshots?project=${encodeURIComponent(state.projectId)}&import=1`}
                     >
@@ -304,6 +360,11 @@ export function SubmissionComposer({
                   </Link>
                 </Button>
               </div>
+              {staticAnalysisError && (
+                <p role="alert" className="text-xs text-destructive">
+                  {staticAnalysisError}
+                </p>
+              )}
             </div>
           ) : (
             state.model && (
@@ -500,14 +561,21 @@ export function SubmissionComposer({
                         {stage2Ready ? (
                           <span>
                             Required diagrams selected
-                            {guided ? ` · score ${evaluationScore?.toFixed(1)} / 100` : ""}
+                            {guided ? ` · score ${evaluationScore?.toFixed(1)} / 100 (>= 70% pass)` : ""}
                           </span>
                         ) : (
                           <span>
                             {guided && (evaluationScore === null || evaluationScore < 70)
-                              ? "Run evaluation and reach at least 70%. "
+                              ? evaluationScore !== null
+                                ? `Architecture evaluation score ${evaluationScore.toFixed(1)} / 100 (< 70%). `
+                                : "Run architecture evaluation and reach at least 70%. "
                               : ""}
-                            Missing {missing.map(diagramTypeLabel).join(", ") || "diagram selection"} —{" "}
+                            {missing.length > 0
+                              ? `Missing ${missing.map(diagramTypeLabel).join(", ")}`
+                              : !choice || choice.documents.length + choice.diagramVersionIds.length === 0
+                                ? "Select at least one saved diagram"
+                                : "Evaluation >= 70% required"}{" "}
+                            —{" "}
                             <Link
                               className="text-primary underline"
                               href={`/diagrams?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
@@ -650,5 +718,6 @@ export function SubmissionComposer({
         </RequestState>
       )}
     </DetailPanel>
+    </div>
   );
 }
