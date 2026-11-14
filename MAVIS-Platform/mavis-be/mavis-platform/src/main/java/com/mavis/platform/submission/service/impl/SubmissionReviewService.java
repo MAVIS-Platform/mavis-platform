@@ -83,6 +83,8 @@ public class SubmissionReviewService {
         if(!java.util.Set.of("DRAFT","RETURNED","GRADED").contains(request.status()) || request.expectedRevision()<0 || request.summary()==null || request.summary().length()>10000 ||
             (request.score()!=null && (request.score().signum()<0 || request.score().compareTo(new BigDecimal("100"))>0 || request.score().scale()>2)))throw new BusinessException(ErrorCode.BAD_REQUEST,"Invalid review");
 
+        boolean guidedLab = submission.getAssignment().getLabOrder() != null;
+        boolean publishing = "GRADED".equals(request.status());
         List<SnapshotGrade> normalizedGrades = request.snapshotGrades() == null ? List.of() : request.snapshotGrades();
         boolean hasSnapshotGrades = !normalizedGrades.isEmpty();
         boolean allSnapshotsPassed = true;
@@ -101,13 +103,12 @@ public class SubmissionReviewService {
                 }
                 total = total.add(grade.score());
             }
-            if (resolvedScore == null) {
-                resolvedScore = total
-                        .divide(BigDecimal.valueOf(normalizedGrades.size()), 4, RoundingMode.HALF_UP)
-                        .multiply(BigDecimal.TEN)
-                        .setScale(2, RoundingMode.HALF_UP);
+            if ((guidedLab && publishing) || (!guidedLab && resolvedScore == null)) {
+                resolvedScore = total.multiply(BigDecimal.TEN)
+                        .divide(BigDecimal.valueOf(normalizedGrades.size()), 2, RoundingMode.HALF_UP);
             }
         }
+        if (guidedLab && !publishing) resolvedScore = null;
 
         if("GRADED".equals(request.status())&&resolvedScore==null)throw new BusinessException(ErrorCode.BAD_REQUEST,"A published grade requires a score out of 100");
         if("GRADED".equals(request.status())&&request.summary().isBlank())throw new BusinessException(ErrorCode.BAD_REQUEST,"APPROVAL_SUMMARY_REQUIRED");
@@ -116,11 +117,10 @@ public class SubmissionReviewService {
         var review=reviews.findBySubmissionId(id).orElseGet(SubmissionReview::new);
         if(review.getRevision()!=request.expectedRevision())throw new BusinessException(ErrorCode.CONFLICT,"Review changed. Reload before saving");
 
-        boolean guidedLab = submission.getAssignment().getLabOrder() != null;
         if (guidedLab && "GRADED".equals(review.getStatus()) && "PASSED".equals(review.getLabOutcome())) {
             throw new BusinessException(ErrorCode.CONFLICT, "PASSED_LAB_REVIEW_FINAL");
         }
-        if ("GRADED".equals(request.status()) && guidedLab) {
+        if (guidedLab && (publishing || hasSnapshotGrades)) {
             var required = new HashSet<String>();
             JsonNode snapshots = submission.getStudentSnapshots();
             if (snapshots != null && snapshots.isArray()) {
@@ -139,7 +139,7 @@ public class SubmissionReviewService {
                     throw new BusinessException(ErrorCode.BAD_REQUEST, "INVALID_SNAPSHOT_GRADE_IDS");
                 }
             }
-            if (!required.isEmpty()) {
+            if (publishing && !required.isEmpty()) {
                 throw new BusinessException(ErrorCode.BAD_REQUEST, "SNAPSHOT_GRADES_INCOMPLETE");
             }
         }

@@ -193,6 +193,27 @@ export function buildInitialSnapshotGrades(
   ];
 }
 
+export function parseSnapshotGradeRows(rows: readonly EditableSnapshotGrade[]) {
+  const items: SnapshotGradeItem[] = [];
+  let invalid = false;
+  for (const row of rows) {
+    const input = row.score.trim();
+    if (!input) continue;
+    const score = Number(input);
+    if (!/^\d+(\.\d{1,2})?$/.test(input) || score > 10) {
+      invalid = true;
+      continue;
+    }
+    items.push({
+      snapshotId: row.snapshotId,
+      title: row.title,
+      score,
+      comment: row.comment.trim() || null,
+    });
+  }
+  return { items, invalid, complete: rows.length > 0 && items.length === rows.length };
+}
+
 function GradeForm({
   review,
   studentSnapshots,
@@ -218,37 +239,11 @@ function GradeForm({
   const [score, setScore] = useState(review.score === null ? "" : String(review.score));
   const [summary, setSummary] = useState(review.summary);
 
-  const parsedSnapshots: { items: SnapshotGradeItem[]; valid: boolean; allPassed: boolean } = (() => {
-    if (!usePerSnapshot) return { items: [], valid: true, allPassed: true };
-    const items: SnapshotGradeItem[] = [];
-    for (const row of snapshotRows) {
-      const trimmed = row.score.trim();
-      const num = trimmed === "" ? NaN : Number(trimmed);
-      if (
-        !trimmed ||
-        !Number.isFinite(num) ||
-        num < 0 ||
-        num > 10 ||
-        !/^\d+(\.\d{1,2})?$/.test(trimmed)
-      ) {
-        return { items: [], valid: false, allPassed: false };
-      }
-      items.push({
-        snapshotId: row.snapshotId,
-        title: row.title,
-        score: num,
-        comment: row.comment.trim() || null,
-      });
-    }
-    return {
-      items,
-      valid: items.length > 0,
-      allPassed: items.length > 0 && items.every((item) => item.score > SNAPSHOT_PASS_EXCLUSIVE),
-    };
-  })();
+  const parsedSnapshots = parseSnapshotGradeRows(snapshotRows);
+  const allSnapshotsPassed = parsedSnapshots.items.every((item) => item.score > SNAPSHOT_PASS_EXCLUSIVE);
 
   const computedScale100 =
-    usePerSnapshot && parsedSnapshots.valid && parsedSnapshots.items.length > 0
+    usePerSnapshot && parsedSnapshots.complete
       ? Number(
           (
             (parsedSnapshots.items.reduce((acc, g) => acc + g.score, 0) /
@@ -264,26 +259,25 @@ function GradeForm({
       ? null
       : Number(score);
   const valid = usePerSnapshot
-    ? parsedSnapshots.valid
+    ? parsedSnapshots.complete
     : value === null ||
       (Number.isFinite(value) && value >= 0 && value <= 100 && /^\d+(\.\d{1,2})?$/.test(score));
 
   const outcome = usePerSnapshot
-    ? parsedSnapshots.valid
-      ? parsedSnapshots.allPassed
+    ? parsedSnapshots.complete
+      ? allSnapshotsPassed
         ? "PASS"
         : "NEEDS REVISION"
       : null
     : resolveSubmissionOutcome({ score: value });
 
   function submit(status: "DRAFT" | "RETURNED" | "GRADED") {
-    if (save.isPending || (status === "GRADED" && (!valid || !canPublish))) return;
+    if (save.isPending || (usePerSnapshot && parsedSnapshots.invalid)
+        || (status === "GRADED" && (!valid || !canPublish))) return;
     if (status !== "DRAFT" && !summary.trim()) return;
     if (!usePerSnapshot) {
       if (status === "GRADED" && (value === null || value <= PASSING_SCORE)) return;
       if (!guidedLab && status === "RETURNED" && (!valid || (value !== null && value > PASSING_SCORE))) return;
-    } else if (status === "GRADED" && !parsedSnapshots.valid) {
-      return;
     }
     if (
       status !== "DRAFT" &&
@@ -416,11 +410,19 @@ function GradeForm({
           />
         )}
       </FormField>
-      {!valid && (
+      {!valid && (!usePerSnapshot || parsedSnapshots.invalid) && (
         <p role="alert" className="text-sm text-destructive">
           {usePerSnapshot
             ? t("Enter a score between 0.0 and 10.0 for every snapshot (e.g. 5.01 to pass).")
             : t("Enter a score between 0 and 100 with at most two decimal places.")}
+        </p>
+      )}
+      {usePerSnapshot && !parsedSnapshots.complete && !parsedSnapshots.invalid && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t(
+            "You can save a partial draft. Enter all Snapshot scores before publishing.",
+            "Bạn có thể lưu nháp. Hãy nhập điểm cho mọi Snapshot trước khi công bố.",
+          )}
         </p>
       )}
       {valid && outcome && (
@@ -429,7 +431,7 @@ function GradeForm({
           <Badge variant={outcome === "PASS" ? "success" : "warning"}>{outcome}</Badge>
         </div>
       )}
-      {usePerSnapshot && parsedSnapshots.valid && parsedSnapshots.allPassed === false && (
+      {usePerSnapshot && parsedSnapshots.complete && !allSnapshotsPassed && (
         <p
           role="status"
           className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
@@ -447,7 +449,7 @@ function GradeForm({
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
-          disabled={save.isPending || (!usePerSnapshot && !valid)}
+          disabled={save.isPending || (usePerSnapshot ? parsedSnapshots.invalid : !valid)}
           onClick={() => submit("DRAFT")}
         >
           {t("Save grading draft")}
@@ -456,6 +458,7 @@ function GradeForm({
           variant="outline"
           disabled={
             save.isPending ||
+            (usePerSnapshot && parsedSnapshots.invalid) ||
             !summary.trim() ||
             (!guidedLab && (!valid || (!usePerSnapshot && value !== null && value > PASSING_SCORE)))
           }
