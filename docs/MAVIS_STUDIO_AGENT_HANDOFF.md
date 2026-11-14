@@ -136,3 +136,43 @@ Tiếp tục MAVIS Studio tại C:/Users/nhuth/Desktop/MAVIS-Root/mavis-studio-s
 - RuntimeStudioApiIntegrationTest có 1 ca pass, 0 lỗi và 0 skip. Spring context khởi động với các constructor auth/logout mới và chạy API Studio trên PostgreSQL 18 test riêng.
 - Database test chạy migration đến V33. Sau kiểm tra, container test được dọn theo đúng label mavis.studio.handoff.
 - git diff --check pass. Commit tài liệu bàn giao được lưu local sau commit merge.
+
+## 9 Nghiệm thu Full-Stack, Key Rotation & Outbox Recovery (14/11/2026)
+
+1. **Sửa lỗi và hoàn thiện bảo mật/tích hợp:**
+   - `RunnerServiceAuthGuard`: Bổ sung `mavis.runner.previous-service-key` và `activeKeys()` hỗ trợ xoay vòng khóa (zero-downtime key rotation) cho cả header `X-Mavis-Runner-Key` và xác thực chữ ký `X-Mavis-Receipt-Signature` (`hmac-sha256:<hex>`), đồng thời giữ từ chối khóa mặc định không an toàn `mavis-local-runner-secret-key`.
+   - `RunnerReceiptIngestServiceImpl.importReceiptFromStateRoot`: Bọc lời gọi nội bộ `ingestRunnerReceipt` trong `RunnerServiceAuthGuard.runWithInternalBypass(...)` sau khi đã xác thực `requireRunnerService()` và chống path traversal/symlink, đảm bảo đường `/sync-outbox` hoạt động cho cả phiên `interactiveStudio`.
+   - `RuntimeSessionServiceImpl.runComposePreflight`: Đổi sang `runnerServiceAuthGuard.checkRunnerOrProjectReadAccess(snapshot.getProject())` để `.NET Runner` gọi `GET /run-definition` bằng `X-Mavis-Runner-Key` (không cần JWT người dùng) vẫn chạy được preflight khi `sandboxCompose` chưa dựng sẵn.
+   - Đã publish lại `MAVIS.Worker/samples/runtime-poc/artifacts/runner-publish/MAVIS.Runner.dll` đồng bộ với source `MAVIS.Runner` mới nhất.
+
+2. **Bằng chứng nghiệm thu Full-Stack trên Docker Engine thật & PostgreSQL 18 (`V33`):**
+   - **Base Git SHA (trước commit nghiệm thu):** `a16e063` (nhánh `feat/wf03-studio-session`, `origin/main` tại `594cb99`).
+   - **Runner Artifact:** `MAVIS.Worker/samples/runtime-poc/artifacts/runner-publish/MAVIS.Runner.dll` (SHA-256: `79d4a2287107eb997960b127b88bc9ca8fed1af615ab75b039ca912672ac6c42`).
+   - **Database Schema:** PostgreSQL `18.7` (`mavis_test`), Flyway validate & migrate thành công **33 migrations (`V1`..`V33`)**.
+   - **Luồng nghiệm thu (`RuntimeStudioApiIntegrationTest#realManagedDotnetRunnerAndDockerFullStackStudioFlow`):**
+     - Lecturer phát hành Lab 1 & Lab 2, cấp Course Passkey, gắn chương `java-f01`.
+     - Student đổi Passkey vào khóa học, nộp bài Quiz đạt `PASSED` (thời gian chấm tự động: **`105 ms`**).
+     - Khởi chạy tiến trình `dotnet MAVIS.Runner.dll managed` thật kết nối qua HTTP bridge tới Spring Boot + Docker Linux Engine thật (`orders`, `payment`, `mavis-collector`):
+       - `sessionId`: `2d073f83-6123-4784-b509-facb31918575`
+       - `resourceProject`: `mavisrun-369e0d552d5e446e89089c19c35b1779`
+       - `snapshotBeforeId` (Step 3 Baseline PNG): `a1650c08-afb2-48e1-9ef9-4461fecc373d`
+       - Thực thi lệnh thật trên Docker:
+         1. `STOP payment`: `replicas 1 -> 0`, `p95LatencyMs: 114 ms -> 78 ms`, `errorRatePercent: 0% -> 100%` (trace `3d8e7c4d998f10a93e337b2c51d8c9de` -> `d95318b5a3d304c3fb6d06caf8d90eac`).
+         2. `START payment`: `replicas 0 -> 1`, `p95LatencyMs: 78 ms -> 55 ms` (trace `29d690ed3605e30189fcf9f05b5ee724`).
+         3. `SCALE orders`: `replicas 1 -> 2` (`runningReplicas: 2`), `p95LatencyMs: 55 ms -> 467 ms` (trace `cc7a0ebef6575d3c529d4d95ec289592`).
+       - `snapshotAfterId` (Step 4 Post-Action PNG): `d5d5f3b7-658b-46e0-8e60-db6cb2ec78c5`
+       - Gửi `/finish`, Runner thu thập OTel spans, dọn dẹp container/network/volume (`cleanupStatus: CONFIRMED`), ký và gửi `RunnerReceipt`:
+         - `receiptDigest`: `sha256:6ba4f802cb7b893534b68e6da81e74bf1814dcbd19d9523f6e647efb99e53a8c`
+         - `receiptSignature`: `hmac-sha256:0be17cc248fcb9ae447dca74f9dc81f25fc16339b56ff00cc52e9d09fc3ae49f`
+       - Student nộp bài Lab 1 kèm 2 snapshot Before/After:
+         - `submissionId`: `5de8f105-89c4-4061-b809-60d7dc613bdf`
+         - `evidencePackageDigest`: `sha256:25b339288d7589c393fbc3af01113cb9900ed477b368e82ba58e80fdfe6f9f72`
+       - Lecturer chấm cả 2 snapshot (`8.5` và `9.0` > `5.0`) -> Lab 1 chuyển sang `PASSED`, Lab 2 tự động chuyển từ `LOCKED` sang `UNLOCKED`.
+   - **Luồng kiểm thử MockMvc + Scaling Latency Improvement + Outbox Recovery (`fullStackCourseLabQuizStudioSnapshotsHmacReceiptSubmissionAndGradingUnlocksNextLab`):**
+     - Kiểm chứng kịch bản cân bằng tải khi scale `orders` `1 -> 2` replicas (`p95LatencyMs: 42 ms -> 19 ms`, giảm `54.8%`), nộp bài, chấm điểm mở khóa Lab 2, và kiểm chứng `/sync-outbox` khôi phục thành công `RunnerReceipt` của phiên `interactiveStudio` từ đĩa local (`executionStatus: COMPLETED`, `cleanupStatus: CONFIRMED`).
+
+3. **Tổng hợp kết quả chạy test & dọn dẹp môi trường:**
+   - Frontend: `npm run typecheck` (PASS), `node tests/studio-ui.browser.cjs` (PASS).
+   - .NET Runner: `ManagedDockerRuntimeTests` (2/2 PASS trên Docker thật).
+   - Java: `RunnerServiceAuthGuardTest` (4/4 PASS), `RuntimeStudioServiceTest` (7/7 PASS), `RuntimeStudioApiIntegrationTest` (3/3 PASS).
+   - Dọn dẹp: Đã xóa container `mavis-studio-handoff-pg`, kiểm tra `docker ps -a`, `docker network ls`, `docker volume ls` xác nhận `0` tài nguyên `mavisrun-*` hay container test bị rò rỉ.

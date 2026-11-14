@@ -29,4 +29,20 @@ class RunnerServiceAuthGuardTest {
   org.springframework.test.util.ReflectionTestUtils.setField(guard,"runnerServiceKey","mavis-local-runner-secret-key");org.springframework.test.util.ReflectionTestUtils.setField(guard,"httpServletRequest",request);
   org.assertj.core.api.Assertions.assertThat(guard.isConfigured()).isFalse();org.assertj.core.api.Assertions.assertThat(guard.isRunnerServiceKeyValid()).isFalse();
  }
+
+ @Test void keyRotationAcceptsPreviousServiceKeyAndHmacWhileRejectingInternalBypassHeaderRequirement() throws Exception {
+  var guard = new RunnerServiceAuthGuard(mock(AccessPolicyService.class));
+  var request = new MockHttpServletRequest();
+  ReflectionTestUtils.setField(guard, "httpServletRequest", request);
+  ReflectionTestUtils.setField(guard, "runnerServiceKey", "rotated-active-key");
+  ReflectionTestUtils.setField(guard, "previousRunnerServiceKey", "rotated-previous-key");
+  request.addHeader("X-Mavis-Runner-Key", "rotated-previous-key");
+  assertDoesNotThrow(guard::requireRunnerService);
+  var mac = javax.crypto.Mac.getInstance("HmacSHA256");
+  mac.init(new javax.crypto.spec.SecretKeySpec("rotated-previous-key".getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+  String sig = "hmac-sha256:" + java.util.HexFormat.of().formatHex(mac.doFinal("sha256:rotated".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+  request.addHeader("X-Mavis-Receipt-Signature", sig);
+  assertEquals(sig, guard.requireReceiptSignature("sha256:rotated"));
+  RunnerServiceAuthGuard.runWithInternalBypass(() -> assertNull(guard.requireReceiptSignature("sha256:any")));
+ }
 }

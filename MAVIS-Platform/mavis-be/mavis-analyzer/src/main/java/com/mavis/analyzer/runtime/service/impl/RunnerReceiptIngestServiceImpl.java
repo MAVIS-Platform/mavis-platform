@@ -1533,7 +1533,7 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
             String content = Files.readString(targetFile, StandardCharsets.UTF_8);
             RunnerReceiptIngestRequestDTO receipt = objectMapper.readValue(content, RunnerReceiptIngestRequestDTO.class);
 
-            ingestRunnerReceipt(sessionId, receipt);
+            RunnerServiceAuthGuard.runWithInternalBypass(() -> ingestRunnerReceipt(sessionId, receipt));
 
             RuntimeSession updated = runtimeSessionRepository.findById(sessionId).orElseThrow();
             return RuntimeSessionResponseDTO.fromEntity(updated);
