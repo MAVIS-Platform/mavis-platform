@@ -57,7 +57,7 @@ public class CourseLabPolicy {
         var owner = project.getOwner();
         if (lab == null || owner == null || !project.getWorkspace().getId().equals(lab.getWorkspace().getId())
                 || !canOpen(lab, owner) || !hasPassedCurrentQuiz(lab, owner.getId())) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Pass the current Lab Quiz before starting Runtime");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "RUNTIME_QUIZ_REQUIRED", "Pass the current Lab Quiz before starting Runtime");
         }
     }
 

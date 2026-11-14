@@ -31,7 +31,8 @@ public class CourseQuizService {
     public record Question(String prompt, List<String> options, Integer correctOption) {}
     public record PublicQuestion(String prompt, List<String> options) {}
     public record Publish(String lesson, Integer passPercent, List<Question> questions) {}
-    public record Quiz(int version, String lesson, int passPercent, List<PublicQuestion> questions, boolean passed) {}
+    public record Quiz(int version, String lesson, int passPercent, List<PublicQuestion> questions,
+                       boolean passed, String latestStatus, boolean runtimeUnlocked) {}
     public record Submit(UUID attemptId, int version, List<Integer> answers) {}
     public record Result(UUID attemptId, int version, int correctCount, int totalQuestions, String status) {}
     private record Definition(int version, String lesson, int threshold, List<Question> questions) {}
@@ -61,7 +62,7 @@ public class CourseQuizService {
                     """, Integer.class, assignmentId, lab.getReferenceModel().getId(), lesson, threshold,
                     questions, assignmentId);
             if (!published.isEmpty()) {
-                return view(new Definition(published.getFirst(), lesson, threshold, request.questions()), false);
+                return view(new Definition(published.getFirst(), lesson, threshold, request.questions()), null);
             }
         }
         int next = jdbc.queryForObject("""
@@ -71,7 +72,7 @@ public class CourseQuizService {
                 INSERT INTO course_quizzes(assignment_id, version, reference_model_id, lesson, pass_percent, questions)
                 VALUES (?, ?, ?, ?, ?, CAST(? AS jsonb))
                 """, assignmentId, next, lab.getReferenceModel().getId(), lesson, threshold, questions);
-        return view(new Definition(next, lesson, threshold, request.questions()), false);
+        return view(new Definition(next, lesson, threshold, request.questions()), null);
     }
 
     @Transactional(readOnly = true)
@@ -81,16 +82,20 @@ public class CourseQuizService {
         var lab = lab(workspaceId, assignmentId, false);
         if (CourseLabPolicy.isStudent(user)) labs.requireOpen(lab, user);
         var quiz = current(lab);
-        boolean passed = CourseLabPolicy.isStudent(user)
-                && labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version());
-        return view(quiz, passed);
+        String latestStatus = null;
+        if (CourseLabPolicy.isStudent(user)) {
+            latestStatus = labs.hasPassedQuizVersion(lab.getId(), user.getId(), quiz.version())
+                    ? "PASSED"
+                    : latestStatus(lab.getId(), user.getId(), quiz.version());
+        }
+        return view(quiz, latestStatus);
     }
 
     public Result submit(UUID workspaceId, UUID assignmentId, Submit request) {
         access.requireWorkspaceMember(workspaceId);
         User student = access.requireCurrentActiveUser();
         if (!CourseLabPolicy.isStudent(student)) {
-            throw new BusinessException(ErrorCode.FORBIDDEN, "Only students can submit a course Quiz");
+            throw new BusinessException(ErrorCode.FORBIDDEN, "QUIZ_REQUIRES_STUDENT", "Only students can submit a course Quiz");
         }
         var lab = lab(workspaceId, assignmentId, true);
         labs.requireOpen(lab, student);
@@ -104,13 +109,13 @@ public class CourseQuizService {
         if (previous.isPresent()) {
             var attempt = previous.get();
             if (attempt.version() != request.version() || !request.answers().equals(decode(attempt.answers(), new TypeReference<List<Integer>>() {}))) {
-                throw new BusinessException(ErrorCode.CONFLICT, "Attempt already submitted with different answers or version");
+                throw new BusinessException(ErrorCode.CONFLICT, "QUIZ_ATTEMPT_CONFLICT", "Attempt already submitted with different answers or version");
             }
             return result(request, attempt.correct(), request.answers().size(), attempt.passed());
         }
         var quiz = current(lab);
         if (request.version() != quiz.version()) {
-            throw new BusinessException(ErrorCode.CONFLICT, "Quiz version changed. Reload before submitting.");
+            throw new BusinessException(ErrorCode.CONFLICT, "QUIZ_STALE_VERSION", "Quiz version changed. Reload before submitting.");
         }
         int correct = score(quiz.questions(), request.answers());
         boolean passed = passes(correct, quiz.questions().size(), quiz.threshold());
@@ -118,6 +123,13 @@ public class CourseQuizService {
                 INSERT INTO course_quiz_attempts(assignment_id, quiz_version, student_id, attempt_id, answers, correct_count, passed)
                 VALUES (?, ?, ?, ?, CAST(? AS jsonb), ?, ?)
                 """, assignmentId, quiz.version(), student.getId(), request.attemptId(), encode(request.answers()), correct, passed);
+        jdbc.update("""
+                INSERT INTO audit_logs(actor_id, action, target_type, target_id, details)
+                VALUES (?, 'COURSE_QUIZ_SUBMITTED', 'ASSIGNMENT', ?,
+                        jsonb_build_object('attemptId', ?, 'quizVersion', ?, 'correctCount', ?,
+                                           'questionCount', ?, 'status', ?))
+                """, student.getId(), assignmentId, request.attemptId(), quiz.version(), correct,
+                quiz.questions().size(), passed ? "PASSED" : "NEEDS_RETRY");
         return result(request, correct, quiz.questions().size(), passed);
     }
 
@@ -136,7 +148,17 @@ public class CourseQuizService {
                 """, (rs, row) -> new Definition(rs.getInt(1), rs.getString(2), rs.getInt(3),
                         decode(rs.getString(4), new TypeReference<List<Question>>() {})),
                 lab.getId(), lab.getReferenceModel().getId()).stream().findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "Quiz has not been published"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "QUIZ_NOT_PUBLISHED", "Quiz has not been published"));
+    }
+
+    private String latestStatus(UUID assignmentId, UUID studentId, int version) {
+        return jdbc.query("""
+                SELECT CASE WHEN passed THEN 'PASSED' ELSE 'NEEDS_RETRY' END
+                FROM course_quiz_attempts
+                WHERE assignment_id = ? AND student_id = ? AND quiz_version = ?
+                ORDER BY submitted_at DESC, attempt_id DESC LIMIT 1
+                """, (rs, row) -> rs.getString(1), assignmentId, studentId, version)
+                .stream().findFirst().orElse("NOT_ATTEMPTED");
     }
 
     private static void validateDefinition(Publish request, int threshold) {
@@ -171,9 +193,11 @@ public class CourseQuizService {
         return value != null && !value.isBlank() && value.length() <= max;
     }
 
-    private static Quiz view(Definition quiz, boolean passed) {
+    private static Quiz view(Definition quiz, String latestStatus) {
+        boolean passed = "PASSED".equals(latestStatus);
         return new Quiz(quiz.version(), quiz.lesson(), quiz.threshold(), quiz.questions().stream()
-                .map(question -> new PublicQuestion(question.prompt(), question.options())).toList(), passed);
+                .map(question -> new PublicQuestion(question.prompt(), question.options())).toList(),
+                passed, latestStatus, passed);
     }
 
     private static Result result(Submit request, int correct, int total, boolean passed) {
@@ -197,6 +221,6 @@ public class CourseQuizService {
     }
 
     private static BusinessException invalid() {
-        return new BusinessException(ErrorCode.BAD_REQUEST, "Invalid course Quiz or answers");
+        return new BusinessException(ErrorCode.BAD_REQUEST, "QUIZ_INVALID", "Invalid course Quiz or answers");
     }
 }

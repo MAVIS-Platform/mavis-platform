@@ -30,7 +30,7 @@ Tất cả endpoint sử dụng tiền tố `/api/v1` và yêu cầu xác thực
 | POST | `/analyzer/models/{modelVersionId}/evaluate` | Chạy đánh giá `RULE-01..05`; tách `status` (`NEEDS_REVIEW` / `CONFIRMED`) khỏi `severity` (`INFO` / `WARNING` / `CRITICAL`) |
 | POST | `/analyzer/ai/explain` | Giải thích `ELEMENT`, `RELATIONSHIP`, `RULE_FINDING` qua LLM hoặc Deterministic Grounded Synthesis; che secret `[REDACTED]` và khóa citation allowlist |
 | GET | `/course-curriculum` | Danh sách 30 bài học chuẩn hóa Java (18) và C# (12) kèm mục tiêu, bài tập và nguồn đọc HTTPS chính thức |
-| GET | `/workspaces/{workspaceId}/course-labs/{assignmentId}/quiz` | Trả đề Quiz hiện hành, `version`, `passPercent`, `latestStatus` (`PASSED` / `NEEDS_RETRY`) và `runtimeUnlocked` (`Cache-Control: no-store`) |
+| GET | `/workspaces/{workspaceId}/course-labs/{assignmentId}/quiz` | Trả đề Quiz hiện hành, `version`, `passPercent`, `latestStatus` (`NOT_ATTEMPTED` / `NEEDS_RETRY` / `PASSED`) và `runtimeUnlocked` (`Cache-Control: no-store`) |
 | POST | `/workspaces/{workspaceId}/course-labs/{assignmentId}/quiz` | Giảng viên công bố câu hỏi Quiz tùy chỉnh; giữ version nếu nội dung trùng khớp, tăng version nếu thay đổi |
 | POST | `/workspaces/{workspaceId}/course-labs/{assignmentId}/quiz/curriculum` | Giảng viên công bố Quiz từ `chapterId` trong bộ giáo trình 30 bài (`java-csharp-v1.json`) |
 | POST | `/workspaces/{workspaceId}/course-labs/{assignmentId}/quiz/attempts` | Sinh viên nộp bài (`attemptId`, `version`, `answers[]`); trả `PASSED` hoặc `NEEDS_RETRY`; phát hiện version cũ (`409`) và giữ idempotency theo `attemptId` |

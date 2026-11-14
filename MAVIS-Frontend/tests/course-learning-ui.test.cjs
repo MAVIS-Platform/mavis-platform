@@ -248,6 +248,9 @@ test("Stage 4 Step 2 UI integrates Reverse BFS Explorer, C1-C3 Back-Links, and e
 
   assert.ok(quiz.includes("PASSED (v${quiz.version})"));
   assert.ok(quiz.includes("NEEDS_RETRY (v${quiz.version})"));
+  assert.ok(quiz.includes("quiz.runtimeUnlocked"));
+  assert.ok(quiz.includes("quiz.latestStatus"));
+  assert.match(course, /quiz\.data\?\.runtimeUnlocked === true/);
   assert.ok(quiz.includes("Proceed to Step 3: Live Runtime"));
   assert.ok(quiz.includes("Step 3 Live Docker Runtime is locked until you score at least"));
 });

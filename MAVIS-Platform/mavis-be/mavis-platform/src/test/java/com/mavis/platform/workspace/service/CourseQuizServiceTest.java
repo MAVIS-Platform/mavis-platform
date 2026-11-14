@@ -54,6 +54,8 @@ class CourseQuizServiceTest {
         var quiz = service.get(workspaceId, labId);
         assertEquals(1, quiz.version());
         assertTrue(quiz.passed());
+        assertEquals("PASSED", quiz.latestStatus());
+        assertTrue(quiz.runtimeUnlocked());
         verify(policy, never()).hasPassedCurrentQuiz(any(), any());
     }
 
@@ -186,6 +188,8 @@ class CourseQuizServiceTest {
         assertEquals(2, failedResult.totalQuestions());
         verify(jdbc).update(contains("INSERT INTO course_quiz_attempts"), eq(labId), eq(2), eq(studentId),
                 eq(attemptId), eq("[1,0]"), eq(0), eq(false));
+        verify(jdbc).update(contains("INSERT INTO audit_logs"), eq(studentId), eq(labId), eq(attemptId),
+                eq(2), eq(0), eq(2), eq("NEEDS_RETRY"));
 
         // 2. Stale quiz version -> CONFLICT
         var conflict = assertThrows(BusinessException.class, () ->
@@ -249,6 +253,8 @@ class CourseQuizServiceTest {
         var quizV2 = service.get(workspaceId, labId);
         assertEquals(2, quizV2.version());
         assertFalse(quizV2.passed(), "Student who only passed v1 must re-pass v2 before Runtime opens");
+        assertEquals("NOT_ATTEMPTED", quizV2.latestStatus());
+        assertFalse(quizV2.runtimeUnlocked());
         assertEquals(1, snapshot.getCourseQuizEvidence().path("quizVersion").asInt());
         assertEquals("PASSED", snapshot.getCourseQuizEvidence().path("status").asText());
     }

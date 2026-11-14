@@ -321,7 +321,7 @@ export function LabWorkspace() {
   const lab = assignments.data?.find((item) => item.id === assignmentId);
   const quiz = useCourseQuiz(workspaceId, assignmentId,
     Boolean(lab && roadmap.data?.guided && session.data?.user?.role === "student"));
-  const runtimeReady = !quiz.isError && quiz.data?.passed === true;
+  const runtimeReady = !quiz.isError && quiz.data?.runtimeUnlocked === true;
   const requiresRuntime = lab?.requireRuntimeTrace === true;
   const displayedStep = !requiresRuntime && activeStep > 2 ? 2 : activeStep;
   const referenceSnapshotId = lab?.referenceSource?.snapshotId;

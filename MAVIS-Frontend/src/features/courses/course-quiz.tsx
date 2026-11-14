@@ -15,6 +15,8 @@ type Quiz = {
   lesson: string;
   passPercent: number;
   passed: boolean;
+  latestStatus: "PASSED" | "NEEDS_RETRY" | "NOT_ATTEMPTED" | null;
+  runtimeUnlocked: boolean;
   questions: { prompt: string; options: string[] }[];
 };
 type Result = { correctCount: number; totalQuestions: number; status: "PASSED" | "NEEDS_RETRY" };
@@ -97,17 +99,17 @@ function AttemptForm({ quiz, path, reload, canSubmit, runtimeStepHref, submissio
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
         <span>{t("Passing score", "Ngưỡng đạt")} {quiz.passPercent}%</span>
-        <Badge variant={quiz.passed ? "default" : submit.data?.status === "NEEDS_RETRY" ? "destructive" : "outline"}>
+        <Badge variant={quiz.runtimeUnlocked ? "default" : (submit.data?.status ?? quiz.latestStatus) === "NEEDS_RETRY" ? "destructive" : "outline"}>
           {!canSubmit
             ? `v${quiz.version} · ${t("Preview", "Xem trước")}`
-            : quiz.passed
+            : quiz.runtimeUnlocked
               ? `PASSED (v${quiz.version})`
-              : submit.data?.status === "NEEDS_RETRY"
+              : (submit.data?.status ?? quiz.latestStatus) === "NEEDS_RETRY"
                 ? `NEEDS_RETRY (v${quiz.version})`
                 : `NOT_PASSED (v${quiz.version})`}
         </Badge>
       </div>
-      {!canSubmit ? <p>{t("Preview for instructors", "Bản xem trước cho giảng viên")}</p> : quiz.passed ? (
+      {!canSubmit ? <p>{t("Preview for instructors", "Bản xem trước cho giảng viên")}</p> : quiz.runtimeUnlocked ? (
         <div className="space-y-3 rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3">
           <p role="status" className="text-sm font-medium">
             PASSED (v{quiz.version}) · {t("Quiz passed", "Đã đạt Quiz")}

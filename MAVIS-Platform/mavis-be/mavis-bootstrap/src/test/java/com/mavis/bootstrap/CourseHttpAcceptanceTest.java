@@ -484,10 +484,15 @@ class CourseHttpAcceptanceTest {
         assertEquals(1, data(send("POST", quiz, lecturer, definition, 200)).path("version").asInt());
         JsonNode publicQuiz = data(send("GET", quiz, student, null, 200));
         assertEquals(70, publicQuiz.path("passPercent").asInt());
+        assertEquals("NOT_ATTEMPTED", publicQuiz.path("latestStatus").asText());
+        assertFalse(publicQuiz.path("runtimeUnlocked").asBoolean());
         assertFalse(publicQuiz.path("questions").get(0).has("correctOption"));
         var failed = Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 0));
         var passed = Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 1));
         assertEquals("NEEDS_RETRY", data(send("POST", quiz + "/attempts", student, failed, 200)).path("status").asText());
+        JsonNode retryQuiz = data(send("GET", quiz, student, null, 200));
+        assertEquals("NEEDS_RETRY", retryQuiz.path("latestStatus").asText());
+        assertFalse(retryQuiz.path("runtimeUnlocked").asBoolean());
         var request = request("POST", quiz + "/attempts", student, passed).build();
         var firstResponse = http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
         var repeatedResponse = http.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
@@ -501,11 +506,17 @@ class CourseHttpAcceptanceTest {
         assertEquals(first, data(send("POST", quiz + "/attempts", student, passed, 200)));
         send("POST", quiz + "/attempts", student,
                 Map.of("attemptId", passed.get("attemptId"), "version", 1, "answers", List.of(1, 1)), 409);
-        assertTrue(data(send("GET", quiz, student, null, 200)).path("passed").asBoolean());
+        JsonNode passedQuiz = data(send("GET", quiz, student, null, 200));
+        assertTrue(passedQuiz.path("passed").asBoolean());
+        assertEquals("PASSED", passedQuiz.path("latestStatus").asText());
+        assertTrue(passedQuiz.path("runtimeUnlocked").asBoolean());
         assertEquals(2, data(send("POST", quiz, lecturer, definition, 200)).path("version").asInt());
         send("POST", quiz + "/attempts", student,
                 Map.of("attemptId", UUID.randomUUID(), "version", 1, "answers", List.of(0, 1)), 409);
-        assertFalse(data(send("GET", quiz, student, null, 200)).path("passed").asBoolean());
+        JsonNode republishedQuiz = data(send("GET", quiz, student, null, 200));
+        assertFalse(republishedQuiz.path("passed").asBoolean());
+        assertEquals("NOT_ATTEMPTED", republishedQuiz.path("latestStatus").asText());
+        assertFalse(republishedQuiz.path("runtimeUnlocked").asBoolean());
     }
 
     private HttpResponse<byte[]> send(String method, String path, String token, Map<String, ?> body,
