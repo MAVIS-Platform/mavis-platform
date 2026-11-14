@@ -587,7 +587,7 @@ export function StudioWorkbench() {
   const [bottomTab, setBottomTab] = useState<"MATRIX" | "SNAPSHOTS">("MATRIX");
   const [leftWidth, setLeftWidth] = useState(286);
   const [rightWidth, setRightWidth] = useState(268);
-  const [bottomHeight, setBottomHeight] = useState(196);
+  const [bottomHeight, setBottomHeight] = useState(242);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [bottomCollapsed, setBottomCollapsed] = useState(false);
@@ -960,6 +960,42 @@ export function StudioWorkbench() {
     deploymentRows.length > 0
       ? deploymentRows.reduce((s, r) => s + r.perPodCpu, 0) / deploymentRows.length
       : 0;
+  const healthyServicesCount = deploymentRows.filter((r) => r.replicasNow > 0).length;
+  const downServicesCount = deploymentRows.length - healthyServicesCount;
+  const bottleneckCount = deploymentRows.filter((r) => Boolean(r.bottleneckTarget)).length;
+  const totalVcpuAllocated = deploymentRows.reduce((sum, r) => {
+    const vcpuPerPod = r.cfg.instanceTier === "S" ? 0.5 : r.cfg.instanceTier === "L" ? 2.0 : 1.0;
+    return sum + r.replicasNow * vcpuPerPod;
+  }, 0);
+  const maxServerVcpu = 16;
+  const maxServerRamMiB = 4096;
+  const peakCpuRow = [...deploymentRows].sort((a, b) => b.perPodCpu - a.perPodCpu)[0];
+  const clusterRps = deploymentRows.reduce(
+    (sum, r) => sum + r.replicasNow * r.cfg.trafficMult * 240,
+    0,
+  );
+  const avgClusterP95 =
+    healthyServicesCount > 0
+      ? Math.round(
+          deploymentRows
+            .filter((r) => r.replicasNow > 0)
+            .reduce((s, r) => s + r.p95Now, 0) / healthyServicesCount,
+        )
+      : 999;
+  const e2eP95 =
+    downServicesCount > 0
+      ? 999
+      : Math.round(avgClusterP95 * Math.min(3.0, Math.max(1.5, activeEdges.length * 0.35)));
+  const clusterErrorRate =
+    downServicesCount > 0
+      ? Math.min(
+          100,
+          Number(((downServicesCount / Math.max(1, deploymentRows.length)) * 100).toFixed(1)),
+        )
+      : avgCpu > 80
+        ? Number(((avgCpu - 75) * 0.4).toFixed(2))
+        : 0.02;
+  const clusterSla = Number(Math.max(0, 100 - clusterErrorRate).toFixed(2));
 
   async function captureLocalSnapshot() {
     const graph = workspaceRef.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
@@ -1473,14 +1509,183 @@ export function StudioWorkbench() {
               </div>
 
               {!bottomCollapsed && (
-                <div className="flex-1 overflow-y-auto p-2.5">
+                <div className="flex-1 space-y-2.5 overflow-y-auto p-2.5">
                   {bottomTab === "MATRIX" ? (
-                    <div
-                      style={{
-                        gridTemplateColumns: "repeat(auto-fill, minmax(235px, 1fr))",
-                      }}
-                      className="grid gap-2"
-                    >
+                    <>
+                      {/* 1. WHOLE-SERVER ADMIN POV: 4-Card Cluster Host Overview */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                            Server Cluster Overview (Admin POV)
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-400">
+                            Host: mavis-prod-cluster-01 · {activeEdges.length} Mesh Links
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))",
+                          }}
+                          className="grid gap-2"
+                        >
+                          {/* Admin Card A: Cluster Availability & SLA */}
+                          <div className="rounded-xl border border-slate-800 bg-slate-950/90 p-2.5">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-semibold uppercase text-slate-400">
+                                Cluster Health & SLA
+                              </span>
+                              <span
+                                className={`rounded-full px-2 py-0.5 font-mono text-[9.5px] font-bold ${
+                                  downServicesCount > 0
+                                    ? "bg-rose-500/20 text-rose-300"
+                                    : bottleneckCount > 0
+                                      ? "bg-amber-500/20 text-amber-300"
+                                      : "bg-emerald-500/20 text-emerald-300"
+                                }`}
+                              >
+                                {downServicesCount > 0
+                                  ? `✕ ${downServicesCount} DOWN (503)`
+                                  : bottleneckCount > 0
+                                    ? `⚠ ${bottleneckCount} BOTTLENECK`
+                                    : "● HEALTHY"}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex items-baseline justify-between font-mono">
+                              <span className="text-sm font-extrabold text-slate-100">
+                                {clusterSla}% SLA
+                              </span>
+                              <span className="text-[11px] text-emerald-400">
+                                {healthyServicesCount}/{deploymentRows.length} APIs · {totalRunningPods} Pods
+                              </span>
+                            </div>
+                            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  downServicesCount > 0 ? "bg-rose-500" : "bg-emerald-400"
+                                }`}
+                                style={{
+                                  width: `${Math.round(
+                                    (healthyServicesCount / Math.max(1, deploymentRows.length)) * 100,
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Admin Card B: Whole-Server CPU & vCPU Allocation */}
+                          <div className="rounded-xl border border-slate-800 bg-slate-950/90 p-2.5">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-semibold uppercase text-slate-400">
+                                Server CPU & vCPU Pool
+                              </span>
+                              <span className="font-mono text-sky-400">
+                                {totalVcpuAllocated.toFixed(1)} / {maxServerVcpu} vCPU
+                              </span>
+                            </div>
+                            <div className="mt-1 flex items-baseline justify-between font-mono">
+                              <span className="text-sm font-extrabold text-sky-300">
+                                {avgCpu.toFixed(1)}% Avg Load
+                              </span>
+                              <span className="truncate text-[10px] text-slate-400">
+                                Peak: {peakCpuRow?.serviceName ?? "n/a"} (
+                                {peakCpuRow ? `${peakCpuRow.perPodCpu.toFixed(0)}%` : "0%"})
+                              </span>
+                            </div>
+                            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  avgCpu > 75 ? "bg-amber-400" : "bg-sky-400"
+                                }`}
+                                style={{ width: `${Math.min(100, Math.round(avgCpu))}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Admin Card C: Physical Host Memory Capacity */}
+                          <div className="rounded-xl border border-slate-800 bg-slate-950/90 p-2.5">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-semibold uppercase text-slate-400">
+                                Host RAM Capacity
+                              </span>
+                              <span className="font-mono text-emerald-400">
+                                {Math.round((totalRamMiB / maxServerRamMiB) * 100)}% Used
+                              </span>
+                            </div>
+                            <div className="mt-1 flex items-baseline justify-between font-mono">
+                              <span className="text-sm font-extrabold text-emerald-300">
+                                {Math.round(totalRamMiB)} / {maxServerRamMiB} MiB
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                Free: {Math.max(0, maxServerRamMiB - Math.round(totalRamMiB))}M
+                              </span>
+                            </div>
+                            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  totalRamMiB > 3400 ? "bg-rose-400" : "bg-emerald-400"
+                                }`}
+                                style={{
+                                  width: `${Math.min(
+                                    100,
+                                    Math.round((totalRamMiB / maxServerRamMiB) * 100),
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Admin Card D: Global Traffic, E2E p95 Latency & 5xx Error Rate */}
+                          <div className="rounded-xl border border-slate-800 bg-slate-950/90 p-2.5">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-semibold uppercase text-slate-400">
+                                Global Traffic & E2E p95
+                              </span>
+                              <span
+                                className={`font-mono font-bold ${
+                                  clusterErrorRate > 1 ? "text-rose-400" : "text-amber-300"
+                                }`}
+                              >
+                                5xx: {clusterErrorRate}%
+                              </span>
+                            </div>
+                            <div className="mt-1 flex items-baseline justify-between font-mono">
+                              <span className="text-sm font-extrabold text-amber-300">
+                                {clusterRps.toLocaleString()} req/s
+                              </span>
+                              <span className="text-[11px] text-slate-200">
+                                E2E p95: <strong>{e2eP95}ms</strong> (avg {avgClusterP95}ms)
+                              </span>
+                            </div>
+                            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  clusterErrorRate > 1 ? "bg-rose-500" : "bg-amber-400"
+                                }`}
+                                style={{
+                                  width: `${Math.min(100, Math.round((clusterRps / 6000) * 100))}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 2. PER-SERVICE / API TELEMETRY BREAKDOWN */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                            Per-Service / API Telemetry ({deploymentRows.length})
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-400">
+                            Click any node card to inspect or scale inline (− / +)
+                          </span>
+                        </div>
+                        <div
+                          style={{
+                            gridTemplateColumns: "repeat(auto-fill, minmax(235px, 1fr))",
+                          }}
+                          className="grid gap-2"
+                        >
                       {deploymentRows.map((row) => {
                         const isSelected = row.serviceName === selectedService;
                         const isDown = row.replicasNow === 0;
@@ -1672,7 +1877,9 @@ export function StudioWorkbench() {
                           </div>
                         );
                       })}
-                    </div>
+                        </div>
+                      </div>
+                    </>
                   ) : localSnapshots.length === 0 ? (
                     <p className="text-xs text-muted-foreground">No snapshots captured yet.</p>
                   ) : (
