@@ -23,6 +23,7 @@ import { ErrorState, LoadingState, RequestState } from "@/components/shared/requ
 import {
   CourseEnrollment,
   CourseRoadmap as CourseLabRoadmap,
+  SeedCuratedCourseLabs,
   useCourseRoadmap,
 } from "@/features/workspaces/course-access";
 import { DetailPanel, StatusBadge, SummaryCard } from "@/components/shared/data";
@@ -197,6 +198,7 @@ export function Courses() {
 export function CourseRoadmap() {
   const { t } = useLocale();
   const params = useSearchParams();
+  const client = useApi();
   const selection = useSelection();
   const session = useSession();
   const workspaceId = params.get("workspace") || selection.workspaceId;
@@ -252,6 +254,7 @@ export function CourseRoadmap() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {client.mode === "backend" && <SeedCuratedCourseLabs workspaceId={workspaceId} />}
                   <Button asChild variant="outline">
                     <Link href={`/members?workspace=${encodeURIComponent(workspaceId)}`}>
                       {t("Manage members", "Quản lý thành viên")}
