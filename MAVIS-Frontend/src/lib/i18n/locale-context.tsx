@@ -93,15 +93,15 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Per-snapshot grading results (> 5.0 / 10 required)": "Kết quả chấm từng Snapshot (bắt buộc > 5.0 / 10)",
   "Apply the requested changes in your working project, save the new model/diagram revisions and submit again from the assignment. This submission remains unchanged.":
     "Thực hiện các chỉnh sửa theo yêu cầu trên dự án làm việc, lưu phiên bản mô hình/sơ đồ mới rồi nộp lại từ bài tập. Bản nộp này được giữ nguyên bất biến.",
-  "Every required snapshot must score > 5.0 / 10 (5.1 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.":
-    "Mọi Snapshot bắt buộc phải đạt > 5.0 / 10 (từ 5.1 trở lên) kèm nhận xét tổng thể bắt buộc mới đạt ĐẠT và mở khóa Lab tiếp theo; bất kỳ Snapshot nào <= 5.0 sẽ là CẦN CHỈNH SỬA.",
+  "Every required snapshot must score > 5.0 / 10 (5.01 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.":
+    "Mọi Snapshot bắt buộc phải đạt > 5.0 / 10 (từ 5.01 trở lên) kèm nhận xét tổng thể bắt buộc mới đạt ĐẠT và mở khóa Lab tiếp theo; bất kỳ Snapshot nào <= 5.0 sẽ là CẦN CHỈNH SỬA.",
   "Per-snapshot grading (0–10)": "Chấm điểm từng Snapshot (thang 0–10)",
   "PASS (> 5.0)": "ĐẠT (> 5.0)",
   "NEEDS REVISION (<= 5.0)": "CẦN SỬA (<= 5.0)",
   "Snapshot comment (optional)": "Nhận xét cho Snapshot (tùy chọn)",
   "Computed overall equivalent": "Điểm tổng quy đổi tự động",
-  "Enter a score between 0.0 and 10.0 for every snapshot (e.g. 5.1 to pass).":
-    "Nhập điểm từ 0.0 đến 10.0 cho từng Snapshot (ví dụ 5.1 để đạt).",
+  "Enter a score between 0.0 and 10.0 for every snapshot (e.g. 5.01 to pass).":
+    "Nhập điểm từ 0.0 đến 10.0 cho từng Snapshot (ví dụ 5.01 để đạt).",
   "Calculated outcome": "Kết quả tính toán",
   "At least one snapshot scored <= 5.0 / 10 — publishing or returning this review will set Lab Outcome to NEEDS REVISION.":
     "Ít nhất một Snapshot <= 5.0 / 10 — công bố điểm hoặc trả lại sẽ gán Kết quả Lab là CẦN SỬA (NEEDS REVISION).",

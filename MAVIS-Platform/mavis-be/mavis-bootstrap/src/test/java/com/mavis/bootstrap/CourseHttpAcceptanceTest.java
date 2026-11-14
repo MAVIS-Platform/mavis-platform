@@ -365,6 +365,13 @@ class CourseHttpAcceptanceTest {
                 "diagramVersionId", submission.get("diagramVersionId")), 400);
         JsonNode saved = data(send("POST", "submissions", student, submission, 200));
         assertTrue(saved.path("evidencePackageDigest").asText().startsWith("sha256:"));
+        String review = "submissions/" + saved.path("id").asText() + "/review";
+        send("PUT", review, lecturer, Map.of("expectedRevision", 0, "status", "GRADED",
+                "score", 90, "summary", "Fixture feedback"), 400);
+        send("PUT", review, lecturer, Map.of("expectedRevision", 0, "status", "GRADED",
+                "summary", "Fixture feedback", "snapshotGrades", List.of(
+                        Map.of("snapshotId", "wrong-snapshot", "score", 9))), 400);
+        assertEquals("PENDING", data(send("GET", review, student, null, 200)).path("status").asText());
         JsonNode frozen = saved.path("courseQuizEvidence");
         assertEquals(attempt.get("attemptId").toString(), frozen.path("attemptId").asText());
         assertEquals(csharpVersion, frozen.path("quizVersion").asInt());
