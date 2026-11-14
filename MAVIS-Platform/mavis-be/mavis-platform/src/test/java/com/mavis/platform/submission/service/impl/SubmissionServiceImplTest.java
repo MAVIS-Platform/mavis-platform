@@ -200,6 +200,58 @@ class SubmissionServiceImplTest {
                 .build();
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void guidedLabRequiringRuntimeChecksStudioEvidence(boolean studio) {
+        var workspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).build();
+        assignment.setWorkspace(workspace);
+        assignment.setRequireRuntimeTrace(true);
+        project.setWorkspace(workspace);
+        project.setAssignment(assignment);
+        runtimeSession.setModelVersion(modelVersion);
+        snapshot.setArtifactHash("sha256:" + "a".repeat(64));
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(runtimeSession));
+
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        when(evaluationRunRepository.findById(evaluationRunId)).thenReturn(Optional.of(evaluationRun));
+        var request = SubmissionCreateRequest.builder().assignmentId(assignmentId).projectId(projectId)
+                .modelVersionId(modelVersionId).diagramVersionId(diagramVersionId).evaluationRunId(evaluationRunId)
+                .runtimeSessionId(runtimeSessionId).build();
+        if (!studio) {
+            assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                    .isInstanceOf(BusinessException.class).hasMessageContaining("STEP_4_SIGNED_RUNTIME_RECEIPT");
+            verify(submissionSnapshotRepository, never()).save(any());
+            return;
+        }
+
+        runtimeSession.setSandboxEnforcementConfirmed(true);
+        runtimeSession.setReceiptDigest("sha256:" + "a".repeat(64));
+        var plan = objectMapper.createObjectNode();
+        plan.putArray("infrastructureActions").addObject().put("action", "SCALE")
+                .put("service", "orders").put("replicas", 4);
+        runtimeSession.setScenarioConfig(plan);
+        var receipt = objectMapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject();
+        var action = receipt.putArray("infrastructureActions").addObject().put("action", "SCALE")
+                .put("service", "orders").put("replicasBefore", 1).put("replicasAfter", 4).put("confirmed", true);
+        action.putObject("metricsBefore");
+        action.putObject("metricsAfter");
+        runtimeSession.setRunnerReceiptJson(receipt);
+        when(submissionSnapshotRepository.save(any(SubmissionSnapshot.class))).thenAnswer(inv -> {
+            SubmissionSnapshot saved = inv.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            saved.setSubmittedAt(OffsetDateTime.now());
+            return saved;
+        });
+
+        assertThat(submissionService.submitAssignment(request).getRuntimeSessionId()).isEqualTo(runtimeSessionId);
+    }
+
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
@@ -687,6 +739,19 @@ class SubmissionServiceImplTest {
         snapshot.setArtifactHash("sha256:" + "a".repeat(64));
         project.setReferenceSnapshotId(snapshot.getId());
         runtimeSession.setReceiptDigest("sha256:" + "b".repeat(64));
+        runtimeSession.setSandboxEnforcementConfirmed(true);
+        runtimeSession.setModelVersion(modelVersion);
+        var plan = objectMapper.createObjectNode();
+        plan.putArray("infrastructureActions").addObject().put("action", "SCALE")
+                .put("service", "orders").put("replicas", 4);
+        runtimeSession.setScenarioConfig(plan);
+        var receipt = objectMapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject();
+        var action = receipt.putArray("infrastructureActions").addObject().put("action", "SCALE")
+                .put("service", "orders").put("replicasBefore", 1).put("replicasAfter", 4).put("confirmed", true);
+        action.putObject("metricsBefore");
+        action.putObject("metricsAfter");
+        runtimeSession.setRunnerReceiptJson(receipt);
 
         when(userRepository.findById(userId)).thenReturn(Optional.of(student));
         when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));

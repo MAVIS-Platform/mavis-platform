@@ -470,6 +470,7 @@ export async function executeJava(
       modelId: r["modelVersionId"] ? String(r["modelVersionId"]) : null,
       enrichedModelId: r["enrichedModelVersionId"] ? String(r["enrichedModelVersionId"]) : null,
       configurationRevision: resolvedConfigRev,
+      ...(typeof r["studioVerified"] === "boolean" ? { studioVerified: r["studioVerified"] } : {}),
       scenarioRevision: resolvedScenarioRev,
       status: statuses[execution] ?? "unknown",
       executionStatus: execution,

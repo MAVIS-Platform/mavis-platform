@@ -811,7 +811,7 @@ function StepContent({
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
   const nextAvailable = next === 2 || (next === 3 && runtimeReady) || (next === 4 && Boolean(studioHref));
-  const canSubmitFromStep4 = step === 4 && (studioVerified || runtimeReady);
+  const canSubmitFromStep4 = step === 4 && runtimeReady && studioVerified;
 
   async function handleInitializeWorkspace() {
     if (!snapshotId || initializingWorkspace) return;

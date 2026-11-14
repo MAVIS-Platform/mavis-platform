@@ -1129,6 +1129,10 @@ class RunnerReceiptIngestServiceImplTest {
         session.setEvidenceStatus("AVAILABLE");
         session.setCleanupStatus("CONFIRMED");
 
+        session.setTraceStatus("COMPLETE");
+        session.setSandboxEnforcementConfirmed(true);
+        session.setReceiptDigest("sha256:" + "a".repeat(64));
+
         ObjectNode receipt = objectMapper.createObjectNode();
         receipt.putObject("outcome").putObject("trace").putArray("spans").addObject().put("traceId", "4bf92f3577b34da6a3ce929d0e0e4736");
         var actions = receipt.putArray("infrastructureActions");

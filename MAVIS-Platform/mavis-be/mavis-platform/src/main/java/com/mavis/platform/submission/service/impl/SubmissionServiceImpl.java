@@ -204,8 +204,9 @@ public class SubmissionServiceImpl implements SubmissionService {
             if (score < 70) missingStages.add("STEP_2_C4_GROUND_TRUTH_70");
             if (runtimeSession == null || !("COMPLETE".equalsIgnoreCase(runtimeSession.getTraceStatus()) || "PARTIAL".equalsIgnoreCase(runtimeSession.getTraceStatus())))
                 missingStages.add("STEP_3_RUNTIME_OTEL_VIEW");
-            if (runtimeSession == null || runtimeSession.getReceiptDigest() == null || runtimeSession.getReceiptDigest().isBlank()
-                    || runtimeSession.getRunnerReceiptJson() == null || !"CONFIRMED".equalsIgnoreCase(runtimeSession.getCleanupStatus()))
+            if (runtimeSession == null || !runtimeSession.hasVerifiedStudioEvidence()
+                    || (modelVersion.getRuntimeSession() == null && (runtimeSession.getModelVersion() == null
+                        || !modelVersion.getId().equals(runtimeSession.getModelVersion().getId()))))
                 missingStages.add("STEP_4_SIGNED_RUNTIME_RECEIPT");
             if (!missingStages.isEmpty()) throw new BusinessException(ErrorCode.UNPROCESSABLE_ENTITY,
                     "INCOMPLETE_4STAGE_EVIDENCE: " + String.join(",", missingStages));

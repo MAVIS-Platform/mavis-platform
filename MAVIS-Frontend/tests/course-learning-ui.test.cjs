@@ -383,3 +383,11 @@ test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and
   assert.ok(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
   assert.ok(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
 });
+
+test("guided submission requires Studio evidence on the selected model", () => {
+  const lab = read("src/features/courses/screens.tsx");
+  const composer = read("src/features/submissions/composer.tsx");
+  assert.match(lab, /canSubmitFromStep4 = step === 4 && runtimeReady && studioVerified/);
+  assert.match(composer, /s\.studioVerified && s\.snapshotId === model\.snapshotId/);
+  assert.match(composer, /stage3Ready && selectedRuntime\?\.studioVerified === true/);
+});
