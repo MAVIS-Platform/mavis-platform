@@ -423,6 +423,420 @@ function renderNodeFunctionGlyph(
   );
 }
 
+function render3DSeNodeSculpture(
+  name: string,
+  archetype: string,
+  cx: number,
+  cy: number,
+  activePods: number,
+  isStopped: boolean,
+  theme: { stroke: string; cardFill: string; iconBg: string; accent: string },
+) {
+  const n = name.toLowerCase();
+  const s = theme.stroke;
+  const a = theme.accent;
+  const fill = theme.cardFill;
+  const top = theme.iconBg;
+  const hScale = isStopped ? 0 : Math.min(activePods, 6) * 2.2;
+
+  // 1. CDN EDGE: 3D Geodesic Network Sphere / Global POP Globe
+  if (n.includes("cdn") || n.includes("cloudflare") || n.includes("cloudfront")) {
+    const gy = cy - 16;
+    const r = 24;
+    return (
+      <g>
+        <circle cx={cx} cy={gy} r={r} fill={fill} stroke={s} strokeWidth="1.8" />
+        {/* 3D Right-Hemisphere Shading */}
+        <path
+          d={`M ${cx},${gy - r} A ${r} ${r} 0 0 1 ${cx},${gy + r} A ${r * 0.45} ${r} 0 0 0 ${cx},${gy - r} Z`}
+          fill="#050811"
+          opacity="0.45"
+        />
+        {/* Latitude & Longitude Wireframe Meridians */}
+        <ellipse cx={cx} cy={gy} rx={r} ry={r * 0.42} fill="none" stroke={a} strokeWidth="1.2" opacity="0.85" />
+        <ellipse cx={cx} cy={gy} rx={r * 0.48} ry={r} fill="none" stroke={a} strokeWidth="1.2" opacity="0.85" />
+        <line x1={cx - r} y1={gy} x2={cx + r} y2={gy} stroke={s} strokeWidth="1" opacity="0.6" />
+        <line x1={cx} y1={gy - r} x2={cx} y2={gy + r} stroke={s} strokeWidth="1" opacity="0.6" />
+        {/* Edge POP Satellite Nodes */}
+        <circle cx={cx - 11} cy={gy - 8} r="2.8" fill={a} />
+        <circle cx={cx + 12} cy={gy - 6} r="2.8" fill={a} />
+        <circle cx={cx} cy={gy + 10} r="2.8" fill={a} />
+      </g>
+    );
+  }
+
+  // 2. WAF FIREWALL: 3D Brick Firewall Wall + Upright Heraldic Security Shield
+  if (n.includes("waf") || n.includes("shield") || n.includes("firewall") || n.includes("ddos")) {
+    const wy = cy - 6;
+    return (
+      <g>
+        {/* 3D Isometric Firewall Barrier Wall */}
+        {renderIsoBox(cx, wy, 36, 12, 24, s, fill, 1.4, top)}
+        {/* Brick Mortar Lines on Left Wall */}
+        <line x1={cx - 36} y1={wy - 8} x2={cx} y2={wy + 4} stroke={a} strokeWidth="1" opacity="0.55" />
+        <line x1={cx - 36} y1={wy - 16} x2={cx} y2={wy - 4} stroke={a} strokeWidth="1" opacity="0.55" />
+        {/* 3D Upright Security Shield Emblem in Front */}
+        <path
+          d={`M ${cx},${wy - 28} L ${cx + 15},${wy - 22} L ${cx + 15},${wy - 9} C ${cx + 15},${wy + 1} ${cx},${wy + 8} ${cx},${wy + 8} C ${cx},${wy + 8} ${cx - 15},${wy + 1} ${cx - 15},${wy - 9} L ${cx - 15},${wy - 22} Z`}
+          fill={top}
+          stroke={a}
+          strokeWidth="1.8"
+        />
+        <path
+          d={`M ${cx - 5},${wy - 11} L ${cx - 1},${wy - 7} L ${cx + 6},${wy - 15}`}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </g>
+    );
+  }
+
+  // 3. LOAD BALANCER: 3D Cylindrical Traffic Distributor with 1 -> 3 Fan-Out Routing Arrows
+  if (n.includes("load-balancer") || n.includes("lb")) {
+    const h = 16 + hScale * 0.6;
+    const by = cy - 4;
+    return (
+      <g>
+        <path
+          d={`M ${cx - 34},${by - h} L ${cx - 34},${by} A 34 16 0 0 0 ${cx + 34},${by} L ${cx + 34},${by - h} Z`}
+          fill={fill}
+          stroke={s}
+          strokeWidth="1.5"
+        />
+        <ellipse cx={cx} cy={by - h} rx="34" ry="16" fill={top} stroke={s} strokeWidth="1.6" />
+        {/* SE Standard 1-to-3 Load Distribution Fan-Out Arrows on Roof */}
+        <g stroke={a} strokeWidth="1.8" strokeLinecap="round" fill="none">
+          <circle cx={cx - 14} cy={by - h} r="3.2" fill={a} />
+          <path d={`M ${cx - 11},${by - h} L ${cx + 12},${by - h - 7}`} />
+          <path d={`M ${cx - 11},${by - h} L ${cx + 15},${by - h}`} />
+          <path d={`M ${cx - 11},${by - h} L ${cx + 12},${by - h + 7}`} />
+          <circle cx={cx + 13} cy={by - h - 7} r="2.3" fill="#ffffff" />
+          <circle cx={cx + 16} cy={by - h} r="2.3" fill="#ffffff" />
+          <circle cx={cx + 13} cy={by - h + 7} r="2.3" fill="#ffffff" />
+        </g>
+      </g>
+    );
+  }
+
+  // 4. API GATEWAY: 3D Twin-Pillar Arch Portal Gate (SE Gateway Arch)
+  if (archetype === "GATEWAY" || n.includes("gateway") || n.includes("edge")) {
+    const gy = cy - 2;
+    return (
+      <g>
+        {/* Left Gateway Pillar */}
+        {renderIsoBox(cx - 18, gy - 4, 11, 6, 24, s, fill, 1.3, top)}
+        {/* Right Gateway Pillar */}
+        {renderIsoBox(cx + 18, gy + 4, 11, 6, 24, s, fill, 1.3, top)}
+        {/* Top Bridging Gateway Arch Header */}
+        {renderIsoBox(cx, gy - 22, 34, 14, 8, a, fill, 1.6, top)}
+        {/* Bidirectional API Routing Glyph on Arch Roof */}
+        <path
+          d={`M ${cx - 12},${gy - 22} L ${cx + 12},${gy - 22} M ${cx + 7},${gy - 25} L ${cx + 12},${gy - 22} L ${cx + 7},${gy - 19}`}
+          stroke="#ffffff"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </g>
+    );
+  }
+
+  // 5. S3 OBJECT STORAGE: 3D Tapered Storage Bucket with Handle Arc & Object Cubes
+  if (n.includes("s3") || n.includes("storage") || n.includes("bucket") || n.includes("blob")) {
+    const by = cy - 4;
+    const topY = by - 24;
+    return (
+      <g>
+        {/* Tapered Bucket Body (wider top rim 32px, narrower bottom base 23px) */}
+        <path
+          d={`M ${cx - 32},${topY} L ${cx - 23},${by} A 23 10 0 0 0 ${cx + 23},${by} L ${cx + 32},${topY} Z`}
+          fill={fill}
+          stroke={s}
+          strokeWidth="1.6"
+        />
+        {/* Bucket Top Opening Rim */}
+        <ellipse cx={cx} cy={topY} rx="32" ry="13" fill="#06101e" stroke={s} strokeWidth="1.6" />
+        {/* Stored Object Cubes inside Bucket */}
+        <polygon
+          points={`${cx - 8},${topY - 2} ${cx},${topY - 6} ${cx + 8},${topY - 2} ${cx},${topY + 2}`}
+          fill={a}
+          opacity="0.85"
+        />
+        <polygon
+          points={`${cx + 4},${topY + 2} ${cx + 12},${topY - 2} ${cx + 20},${topY + 2} ${cx + 12},${topY + 6}`}
+          fill={s}
+          opacity="0.75"
+        />
+        {/* Curved Bucket Bail Handle */}
+        <path
+          d={`M ${cx - 32},${topY} A 32 22 0 0 1 ${cx + 32},${topY}`}
+          fill="none"
+          stroke={a}
+          strokeWidth="1.8"
+          strokeDasharray="3 2"
+        />
+      </g>
+    );
+  }
+
+  // 6. REDIS IN-MEMORY CACHE: 3D Hexagonal Memory Prism + High-Speed Lightning Bolt
+  if (n.includes("redis") || n.includes("memcache") || n.includes("cache")) {
+    const ry = cy - 4;
+    const h = 18 + hScale * 0.5;
+    const ty = ry - h;
+    const hexTop = `${cx - 28},${ty} ${cx - 14},${ty - 12} ${cx + 14},${ty - 12} ${cx + 28},${ty} ${cx + 14},${ty + 12} ${cx - 14},${ty + 12}`;
+    return (
+      <g>
+        {/* 3D Front Hexagonal Prism Walls */}
+        <polygon
+          points={`${cx - 28},${ty} ${cx - 14},${ty + 12} ${cx - 14},${ry + 12} ${cx - 28},${ry}`}
+          fill={fill}
+          stroke={s}
+          strokeWidth="1.3"
+        />
+        <polygon
+          points={`${cx - 14},${ty + 12} ${cx + 14},${ty + 12} ${cx + 14},${ry + 12} ${cx - 14},${ry + 12}`}
+          fill={top}
+          stroke={s}
+          strokeWidth="1.3"
+        />
+        <polygon
+          points={`${cx + 14},${ty + 12} ${cx + 28},${ty} ${cx + 28},${ry} ${cx + 14},${ry + 12}`}
+          fill="#050811"
+          stroke={s}
+          strokeWidth="1.3"
+        />
+        {/* Hexagonal Top Face */}
+        <polygon points={hexTop} fill={top} stroke={a} strokeWidth="1.6" />
+        {/* Lightning Bolt on Roof */}
+        <polygon
+          points={`${cx + 3},${ty - 8} ${cx - 7},${ty} ${cx},${ty} ${cx - 3},${ty + 8} ${cx + 7},${ty} ${cx},${ty}`}
+          fill="#ffffff"
+        />
+      </g>
+    );
+  }
+
+  // 7. ELASTICSEARCH: 3D Inverted-Index Drum + 3D Magnifying Glass Lens
+  if (n.includes("elastic") || n.includes("opensearch") || n.includes("search")) {
+    const by = cy - 4;
+    const h = 18;
+    const ty = by - h;
+    return (
+      <g>
+        <path
+          d={`M ${cx - 30},${ty} L ${cx - 30},${by} A 30 13 0 0 0 ${cx + 30},${by} L ${cx + 30},${ty} Z`}
+          fill={fill}
+          stroke={s}
+          strokeWidth="1.5"
+        />
+        <ellipse cx={cx} cy={ty} rx="30" ry="13" fill={top} stroke={s} strokeWidth="1.5" />
+        {/* Bold 3D Magnifying Glass Emblem floating above Drum */}
+        <circle cx={cx - 3} cy={ty - 4} r="9" fill="#06141f" stroke={a} strokeWidth="2.4" />
+        <line
+          x1={cx + 3.5}
+          y1={ty + 2.5}
+          x2={cx + 13}
+          y2={ty + 11}
+          stroke="#ffffff"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+      </g>
+    );
+  }
+
+  // 8. POSTGRES / MONGODB / SQL DATABASE: Clean Multi-Platter 3D Cylinder (NO base tray underneath!)
+  if (archetype === "DATABASE") {
+    const h = 22 + hScale;
+    const by = cy - 2;
+    const ty = by - h;
+    const isMongo = n.includes("mongo") || n.includes("nosql") || n.includes("doc");
+    return (
+      <g>
+        {/* Cylinder Drum Body */}
+        <path
+          d={`M ${cx - 32},${ty} L ${cx - 32},${by} A 32 14 0 0 0 ${cx + 32},${by} L ${cx + 32},${ty} Z`}
+          fill={fill}
+          stroke={s}
+          strokeWidth="1.6"
+        />
+        {/* Right-Half Cylinder Deep Shadow for 3D Curvature */}
+        <path
+          d={`M ${cx},${ty + 14} L ${cx},${by + 14} A 32 14 0 0 0 ${cx + 32},${by} L ${cx + 32},${ty} Z`}
+          fill="#050811"
+          opacity="0.45"
+        />
+        {/* Platter Rings */}
+        {[0.34, 0.68].map((ratio, idx) => (
+          <path
+            key={idx}
+            d={`M ${cx - 32},${by - h * ratio} A 32 14 0 0 0 ${cx + 32},${by - h * ratio}`}
+            fill="none"
+            stroke={a}
+            strokeWidth="1.2"
+            opacity="0.75"
+          />
+        ))}
+        {/* Top Illuminated Elliptical Cap */}
+        <ellipse cx={cx} cy={ty} rx="32" ry="14" fill={top} stroke={s} strokeWidth="1.6" />
+        {isMongo ? (
+          /* MongoDB Leaf Emblem on Top Cap */
+          <path
+            d={`M ${cx},${ty - 7} C ${cx + 6},${ty - 3} ${cx + 6},${ty + 3} ${cx},${ty + 7} C ${cx - 6},${ty + 3} ${cx - 6},${ty - 3} ${cx},${ty - 7} Z`}
+            fill={a}
+          />
+        ) : (
+          <>
+            <ellipse cx={cx} cy={ty} rx="15" ry="6.5" fill="none" stroke={a} strokeWidth="1.2" opacity="0.85" />
+            <circle cx={cx} cy={ty} r="3" fill={a} />
+          </>
+        )}
+      </g>
+    );
+  }
+
+  // 9. PROMETHEUS / OTEL OBSERVABILITY: 3D Ascending Telemetry Bar-Chart Histogram
+  if (n.includes("otel") || n.includes("prometheus") || n.includes("metric") || n.includes("monitor")) {
+    const by = cy - 2;
+    return (
+      <g>
+        {/* 3 Ascending 3D Isometric Histogram Columns (Low -> Med -> High) */}
+        {renderIsoBox(cx - 18, by, 9, 5, 12, s, fill, 1.3, top)}
+        {renderIsoBox(cx, by + 2, 9, 5, 21, s, fill, 1.3, top)}
+        {renderIsoBox(cx + 18, by + 4, 9, 5, 30, a, fill, 1.5, top)}
+        {/* Floating Telemetry Pulse Line above Bars */}
+        <polyline
+          points={`${cx - 22},${by - 16} ${cx - 6},${by - 22} ${cx + 2},${by - 18} ${cx + 18},${by - 32}`}
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle cx={cx + 18} cy={by - 32} r="2.8" fill={a} />
+      </g>
+    );
+  }
+
+  // 10. KAFKA / RABBITMQ MESSAGE BROKER: SE Standard 3D Horizontal Message Pipe / Queue Cylinder
+  if (archetype === "QUEUE" || n.includes("kafka") || n.includes("rabbit") || n.includes("mq") || n.includes("stream")) {
+    const py = cy - 15;
+    const isRabbit = n.includes("rabbit") || n.includes("amqp") || n.includes("bus");
+    return (
+      <g>
+        {/* Horizontal 3D Cylinder Pipe Body: [======)> */}
+        <path
+          d={`M ${cx - 28},${py - 12} L ${cx + 24},${py - 12} A 8 12 0 0 1 ${cx + 24},${py + 12} L ${cx - 28},${py + 12} Z`}
+          fill={fill}
+          stroke={s}
+          strokeWidth="1.6"
+        />
+        {/* Lower Pipe Shadow Band */}
+        <path
+          d={`M ${cx - 28},${py + 2} L ${cx + 26},${py + 2} A 8 12 0 0 1 ${cx + 24},${py + 12} L ${cx - 28},${py + 12} Z`}
+          fill="#050811"
+          opacity="0.45"
+        />
+        {/* Pipe Segment Rings */}
+        <path d={`M ${cx - 8},${py - 12} A 7 12 0 0 1 ${cx - 8},${py + 12}`} fill="none" stroke={a} strokeWidth="1.2" opacity="0.7" />
+        <path d={`M ${cx + 8},${py - 12} A 7 12 0 0 1 ${cx + 8},${py + 12}`} fill="none" stroke={a} strokeWidth="1.2" opacity="0.7" />
+        {/* Left Pipe Opening Mouth */}
+        <ellipse cx={cx - 28} cy={py} rx="7.5" ry="12" fill="#060c18" stroke={a} strokeWidth="1.6" />
+        {/* Message Packets Flowing Inside Pipe */}
+        {isRabbit ? (
+          <polygon
+            points={`${cx - 6},${py} ${cx + 8},${py - 5} ${cx + 4},${py + 5}`}
+            fill="#ffffff"
+          />
+        ) : (
+          <>
+            <circle cx={cx - 16} cy={py} r="2.8" fill={a} />
+            <circle cx={cx} cy={py} r="2.8" fill="#ffffff" />
+            <circle cx={cx + 16} cy={py} r="2.8" fill={a} />
+          </>
+        )}
+      </g>
+    );
+  }
+
+  // 11. AUTH / SSO: 3D Security Padlock (Vault Body + Metallic U-Shackle Arch)
+  if (n.includes("auth") || n.includes("sso") || n.includes("iam") || n.includes("oauth")) {
+    const ly = cy - 3;
+    return (
+      <g>
+        {/* U-Shaped Padlock Shackle Arch */}
+        <path
+          d={`M ${cx - 11},${ly - 16} L ${cx - 11},${ly - 27} A 11 9 0 0 1 ${cx + 11},${ly - 27} L ${cx + 11},${ly - 16}`}
+          fill="none"
+          stroke={a}
+          strokeWidth="3.2"
+          strokeLinecap="round"
+        />
+        {/* 3D Padlock Vault Body */}
+        {renderIsoBox(cx, ly, 26, 13, 18, s, fill, 1.5, top)}
+        {/* Keyhole Emblem on Front */}
+        <circle cx={cx - 11} cy={ly - 7} r="2.4" fill="#ffffff" />
+        <line x1={cx - 11} y1={ly - 5} x2={cx - 11} y2={ly - 1} stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
+      </g>
+    );
+  }
+
+  // 12. SERVERLESS FUNCTION: 3D Lambda (λ) Compute Prism
+  if (n.includes("lambda") || n.includes("serverless") || n.includes("fn")) {
+    const fy = cy - 4;
+    return (
+      <g>
+        {renderIsoBox(cx, fy, 32, 16, 12, s, fill, 1.5, top)}
+        {/* Bold Lambda λ Symbol on Roof */}
+        <g stroke="#ffffff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="none">
+          <path d={`M ${cx - 6},${fy - 18} L ${cx - 1},${fy - 18} L ${cx + 6},${fy - 7}`} />
+          <path d={`M ${cx + 1},${fy - 14} L ${cx - 6},${fy - 7}`} />
+        </g>
+      </g>
+    );
+  }
+
+  // 13. ASYNC WORKER: 3D Multi-Core Microchip Die with Pins & Cog
+  if (n.includes("worker") || n.includes("async") || n.includes("consumer") || n.includes("fraud")) {
+    const wy = cy - 4;
+    return (
+      <g>
+        {/* Microchip Contact Pins */}
+        {[-12, 0, 12].map((off) => (
+          <g key={off} stroke={a} strokeWidth="1.8" strokeLinecap="round">
+            <line x1={cx - 24 + off * 0.6} y1={wy - 1 + off * 0.3} x2={cx - 31 + off * 0.6} y2={wy + 3 + off * 0.3} />
+            <line x1={cx + 24 + off * 0.6} y1={wy - 1 - off * 0.3} x2={cx + 31 + off * 0.6} y2={wy + 3 - off * 0.3} />
+          </g>
+        ))}
+        {renderIsoBox(cx, wy, 32, 16, 12, s, fill, 1.5, top)}
+        {/* Processor Core & Gear Ring on Roof */}
+        <ellipse cx={cx} cy={wy - 12} rx="11" ry="5.5" fill="none" stroke="#ffffff" strokeWidth="1.8" strokeDasharray="3 2" />
+        <circle cx={cx} cy={wy - 12} r="2.5" fill={a} />
+      </g>
+    );
+  }
+
+  // 14. MICROSERVICE CONTAINER (Order / Payment / Inventory / App Service): Clean Single 3D Container Unit + Domain Emblem
+  const cyBase = cy - 3;
+  const h = 15 + Math.min(activePods, 4) * 1.5;
+  const roofY = cyBase - h;
+  return (
+    <g>
+      {renderIsoBox(cx, cyBase, 34, 17, h, s, fill, 1.5, top)}
+      {/* Container Status LEDs on Front-Left Wall */}
+      <circle cx={cx - 20} cy={cyBase - h * 0.45} r="1.7" fill={a} />
+      <circle cx={cx - 13} cy={cyBase - h * 0.45 + 3.2} r="1.7" fill="#10b981" />
+      {/* Domain Emblem on Container Roof */}
+      {renderNodeFunctionGlyph(name, archetype, cx, roofY, "#ffffff")}
+    </g>
+  );
+}
+
 export function StudioObservability({
   data,
   selected,
@@ -1485,10 +1899,8 @@ export function StudioObservability({
               );
               const strokeColor = theme.stroke;
 
-              // 3D Isometric Pedestal + Sleek Volumetric Sculptures & Floating Pill Label (Cloudcraft / Isoflow style)
+              // Clean SE-Standard 3D Sculptures (NO base tray / pedestal) + Floating Pill Name Tag
               if (view === "3D") {
-                const towerHeight = isStopped ? 12 : 18 + Math.min(activePods, 6) * 4;
-                const bladeCount = isStopped ? 1 : Math.min(4, Math.max(2, activePods + 1));
                 const labelWidth = Math.max(114, Math.min(172, name.length * 7 + 50));
                 const pillBadgeText = isStopped
                   ? "0"
@@ -1546,218 +1958,34 @@ export function StudioObservability({
                     }}
                     className="cursor-grab outline-none focus:outline-none active:cursor-grabbing"
                   >
-                    {/* Soft 3D Isometric Ambient Ground Glow */}
-                    <polygon
-                      points={`${point.x},${point.y - 30} ${point.x + 70},${point.y + 4} ${point.x},${point.y + 38} ${point.x - 70},${point.y + 4}`}
-                      fill={theme.stroke}
-                      opacity={isSelected ? "0.24" : "0.11"}
-                    />
-
-                    {/* Isometric Diamond Selection / Drop Halo on Ground Plane */}
-                    {(isSelected || isDropTarget) && (
-                      <polygon
-                        points={`${point.x},${point.y - 35} ${point.x + 76},${point.y + 4} ${point.x},${point.y + 43} ${point.x - 76},${point.y + 4}`}
-                        fill="none"
-                        stroke={isDropTarget ? "#38bdf8" : theme.accent}
-                        strokeWidth={isDropTarget ? "2.2" : "1.6"}
-                        strokeDasharray={isDropTarget ? "5 3" : undefined}
-                        opacity="0.9"
-                      />
-                    )}
-
-                    {/* Sleek Low-Profile 3D Isometric Base Pad */}
-                    {renderIsoBox(
+                    {/* Pure 3D Software Engineering Sculpture (no base tray underneath) */}
+                    {render3DSeNodeSculpture(
+                      name,
+                      archetype,
                       point.x,
-                      point.y + 4,
-                      60,
-                      29,
-                      7,
-                      strokeColor,
-                      "#090e1a",
-                      isSelected || isDropTarget ? 1.8 : 1.1,
-                      theme.cardFill,
+                      point.y,
+                      activePods,
+                      isStopped,
+                      theme,
                     )}
 
-                    {/* Main 3D Archetype Sculpture: Multi-Ring Cylinder / Stepped Router Prism / Isometric Pipeline / Stacked Server Blades */}
-                    {archetype === "DATABASE" ? (
-                      <g>
-                        {/* Cylinder Drum Body */}
-                        <path
-                          d={`M ${point.x - 34},${point.y - 6 - towerHeight} L ${point.x - 34},${point.y - 4} A 34 15 0 0 0 ${point.x + 34},${point.y - 4} L ${point.x + 34},${point.y - 6 - towerHeight} Z`}
-                          fill={theme.cardFill}
-                          stroke={strokeColor}
-                          strokeWidth="1.5"
-                        />
-                        {/* Right-Half Cylinder Deep Shadow for Smooth 3D Curvature */}
-                        <path
-                          d={`M ${point.x},${point.y + 11 - towerHeight} L ${point.x},${point.y + 11} A 34 15 0 0 0 ${point.x + 34},${point.y - 4} L ${point.x + 34},${point.y - 6 - towerHeight} Z`}
-                          fill="#050811"
-                          opacity="0.45"
-                        />
-                        {/* Glowing Isometric Platter Rings */}
-                        {[0.33, 0.66].map((ratio, idx) => (
-                          <path
-                            key={idx}
-                            d={`M ${point.x - 34},${point.y - 4 - towerHeight * ratio} A 34 15 0 0 0 ${point.x + 34},${point.y - 4 - towerHeight * ratio}`}
-                            fill="none"
-                            stroke={theme.accent}
-                            strokeWidth="1.2"
-                            opacity="0.7"
-                          />
-                        ))}
-                        {/* Top Illuminated Elliptical Cap */}
-                        <ellipse
-                          cx={point.x}
-                          cy={point.y - 6 - towerHeight}
-                          rx="34"
-                          ry="15"
-                          fill={theme.iconBg}
-                          stroke={strokeColor}
-                          strokeWidth="1.5"
-                        />
-                        <ellipse
-                          cx={point.x}
-                          cy={point.y - 6 - towerHeight}
-                          rx="16"
-                          ry="7"
-                          fill="none"
-                          stroke={theme.accent}
-                          strokeWidth="1.2"
-                          opacity="0.85"
-                        />
-                        <circle
-                          cx={point.x}
-                          cy={point.y - 6 - towerHeight}
-                          r="3"
-                          fill={theme.accent}
-                        />
-                      </g>
-                    ) : archetype === "GATEWAY" ? (
-                      <g>
-                        {/* Lower Router Switch Chassis */}
-                        {renderIsoBox(
-                          point.x,
-                          point.y - 3,
-                          42,
-                          20,
-                          11,
-                          strokeColor,
-                          theme.cardFill,
-                          1.4,
-                          theme.iconBg,
-                        )}
-                        {/* Upper Concentric Routing Core */}
-                        {renderIsoBox(
-                          point.x,
-                          point.y - 14,
-                          26,
-                          12.5,
-                          9 + Math.min(activePods, 4) * 2,
-                          theme.accent,
-                          theme.cardFill,
-                          1.3,
-                          theme.iconBg,
-                        )}
-                        {/* Center Signal Beacon */}
-                        <line
-                          x1={point.x}
-                          y1={point.y - 23 - Math.min(activePods, 4) * 2}
-                          x2={point.x}
-                          y2={point.y - 34 - Math.min(activePods, 4) * 2}
-                          stroke={theme.accent}
-                          strokeWidth="1.8"
-                        />
-                        <circle
-                          cx={point.x}
-                          cy={point.y - 36 - Math.min(activePods, 4) * 2}
-                          r="3.5"
-                          fill={theme.accent}
-                        />
-                      </g>
-                    ) : archetype === "QUEUE" ? (
-                      <g>
-                        {/* 3 True Isometric Parallel Event Stream Channels */}
-                        {[-13, 0, 13].map((offset, idx) => {
-                          const chanX = point.x + offset * 0.85;
-                          const chanY = point.y - 5 + offset * 0.42;
-                          return (
-                            <g key={idx}>
-                              {renderIsoBox(
-                                chanX,
-                                chanY,
-                                32,
-                                8.5,
-                                9 + Math.min(activePods, 4) * 1.5,
-                                strokeColor,
-                                theme.cardFill,
-                                1.2,
-                                theme.iconBg,
-                              )}
-                              <circle
-                                cx={chanX}
-                                cy={chanY - 9 - Math.min(activePods, 4) * 1.5}
-                                r="2.2"
-                                fill={theme.accent}
-                              />
-                            </g>
-                          );
-                        })}
-                      </g>
-                    ) : (
-                      <g>
-                        {/* Stacked 3D Isometric Server Blades (scales vertically with activePods) */}
-                        {Array.from({ length: bladeCount }, (_, idx) => {
-                          const bladeY = point.y - 3 - idx * 10;
-                          return (
-                            <g key={idx}>
-                              {renderIsoBox(
-                                point.x,
-                                bladeY,
-                                40,
-                                19,
-                                7.5,
-                                strokeColor,
-                                theme.cardFill,
-                                1.3,
-                                theme.iconBg,
-                              )}
-                              {/* Glowing Front-Left Blade Status LEDs */}
-                              <circle
-                                cx={point.x - 24}
-                                cy={bladeY - 1}
-                                r="1.5"
-                                fill={theme.accent}
-                              />
-                              <circle
-                                cx={point.x - 16}
-                                cy={bladeY + 3}
-                                r="1.5"
-                                fill={theme.accent}
-                                opacity="0.65"
-                              />
-                            </g>
-                          );
-                        })}
-                      </g>
-                    )}
-
-                    {/* Sleek Floating Pill Name Tag below the 3D Pedestal with Functional Icon Badge */}
+                    {/* Sleek Floating Pill Name Tag directly below the 3D Sculpture */}
                     <rect
                       x={point.x - labelWidth / 2}
-                      y={point.y + 16}
+                      y={point.y + 10}
                       width={labelWidth}
                       height="24"
                       rx="12"
                       fill="#090d16"
-                      fillOpacity="0.92"
+                      fillOpacity="0.94"
                       stroke={isSelected ? theme.accent : strokeColor}
-                      strokeOpacity={isSelected ? "0.95" : "0.45"}
-                      strokeWidth={isSelected ? 1.6 : 1.1}
+                      strokeOpacity={isSelected ? "0.95" : "0.5"}
+                      strokeWidth={isSelected ? 1.8 : 1.1}
                     />
                     {/* Left Functional Component Icon Badge inside the Pill */}
                     <rect
                       x={point.x - labelWidth / 2 + 4}
-                      y={point.y + 20}
+                      y={point.y + 14}
                       width="16"
                       height="16"
                       rx="8"
@@ -1767,12 +1995,12 @@ export function StudioObservability({
                       name,
                       archetype,
                       point.x - labelWidth / 2 + 12,
-                      point.y + 28,
+                      point.y + 22,
                       isStopped ? "#fda4af" : theme.accent,
                     )}
                     <text
                       x={point.x - 4}
-                      y={point.y + 31.5}
+                      y={point.y + 25.5}
                       textAnchor="middle"
                       fill="#f8fafc"
                       fontSize="11"
@@ -1783,7 +2011,7 @@ export function StudioObservability({
                     {/* Compact Replica Count Badge inside the right end of the Pill */}
                     <rect
                       x={point.x + labelWidth / 2 - 31}
-                      y={point.y + 20}
+                      y={point.y + 14}
                       width="25"
                       height="16"
                       rx="8"
@@ -1791,7 +2019,7 @@ export function StudioObservability({
                     />
                     <text
                       x={point.x + labelWidth / 2 - 18.5}
-                      y={point.y + 31}
+                      y={point.y + 25}
                       textAnchor="middle"
                       fill={isStopped ? "#fda4af" : theme.accent}
                       fontSize="9.5"
