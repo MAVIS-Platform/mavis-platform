@@ -483,6 +483,26 @@ type LocalSnapshot = {
   totalRamMiB: number;
 };
 
+type NodeSimConfig = {
+  instanceTier: "S" | "M" | "L";
+  trafficMult: 1 | 2 | 4 | 8;
+  injectedLatencyMs: 0 | 40 | 180 | 600;
+  circuitBreaker: boolean;
+  autoScaleHpa: boolean;
+  readCache: boolean;
+  rateLimiter: boolean;
+};
+
+const DEFAULT_NODE_CONFIG: NodeSimConfig = {
+  instanceTier: "M",
+  trafficMult: 1,
+  injectedLatencyMs: 0,
+  circuitBreaker: true,
+  autoScaleHpa: false,
+  readCache: false,
+  rateLimiter: false,
+};
+
 function renderComponentIcon(keyOrName: string, className = "size-4") {
   const n = keyOrName.toLowerCase();
   if (n.includes("cdn")) return <Globe className={className} />;
@@ -536,6 +556,9 @@ export function StudioWorkbench() {
     template.services[1] ?? "order-service",
   );
   const [newNodeName, setNewNodeName] = useState("");
+  const [nodeConfigs, setNodeConfigs] = useState<Record<string, NodeSimConfig>>({});
+  const [extraEdges, setExtraEdges] = useState<Array<{ from: string; to: string; protocol: string }>>([]);
+  const [removedEdges, setRemovedEdges] = useState<string[]>([]);
   const [componentCategory, setComponentCategory] = useState<
     "ALL" | "EDGE" | "COMPUTE" | "DATA" | "INFRA"
   >("ALL");
@@ -600,8 +623,40 @@ export function StudioWorkbench() {
     const initialReps = Object.fromEntries(found.services.map((s) => [s, 1]));
     setReplicasMap(initialReps);
     setBaselineReplicasMap(initialReps);
+    setNodeConfigs({});
+    setExtraEdges([]);
+    setRemovedEdges([]);
     setSelectedService(found.services[1] ?? found.services[0] ?? "");
     setActionsLog([]);
+  }
+
+  function getNodeConfig(svc: string): NodeSimConfig {
+    return nodeConfigs[svc] ?? DEFAULT_NODE_CONFIG;
+  }
+
+  function updateNodeConfig(svc: string, patch: Partial<NodeSimConfig>) {
+    setNodeConfigs((prev) => {
+      const current = prev[svc] ?? DEFAULT_NODE_CONFIG;
+      const next = { ...current, ...patch };
+      // If Auto-Scale HPA is enabled and traffic is high, auto-bump replicas to at least 4
+      if (next.autoScaleHpa && next.trafficMult >= 2 && (replicasMap[svc] ?? 1) < 4) {
+        setReplicasMap((rm) => ({ ...rm, [svc]: 4 }));
+      }
+      return { ...prev, [svc]: next };
+    });
+  }
+
+  function toggleOutboundEdge(fromSvc: string, toSvc: string) {
+    if (!toSvc || fromSvc === toSvc) return;
+    const key = `${fromSvc}->${toSvc}`;
+    const existsInActive = activeEdges.some((e) => e.from === fromSvc && e.to === toSvc);
+    if (existsInActive) {
+      setRemovedEdges((prev) => [...prev, key]);
+      setExtraEdges((prev) => prev.filter((e) => !(e.from === fromSvc && e.to === toSvc)));
+    } else {
+      setRemovedEdges((prev) => prev.filter((k) => k !== key));
+      setExtraEdges((prev) => [...prev, { from: fromSvc, to: toSvc, protocol: "HTTP" }]);
+    }
   }
 
   function applySandboxAction(cmd: StudioQuickAction) {
@@ -694,8 +749,8 @@ export function StudioWorkbench() {
     }
   }
 
-  const activeEdges = useMemo(
-    () => [
+  const activeEdges = useMemo(() => {
+    const base = [
       ...template.edges.filter(
         (e) => customServices.includes(e.from) && customServices.includes(e.to),
       ),
@@ -727,9 +782,18 @@ export function StudioWorkbench() {
             protocol: "HTTP",
           };
         }),
-    ],
-    [template, customServices],
-  );
+      ...extraEdges.filter(
+        (e) => customServices.includes(e.from) && customServices.includes(e.to),
+      ),
+    ];
+    const seen = new Set<string>();
+    return base.filter((e) => {
+      const key = `${e.from}->${e.to}`;
+      if (removedEdges.includes(key) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [template, customServices, extraEdges, removedEdges]);
 
   const sandboxStudioData: StudioData = useMemo(() => {
     const nowIso = new Date().toISOString();
@@ -834,18 +898,30 @@ export function StudioWorkbench() {
     return customServices.map((svc) => {
       const before = baselineReplicasMap[svc] ?? 1;
       const now = replicasMap[svc] ?? 1;
+      const cfg = nodeConfigs[svc] ?? DEFAULT_NODE_CONFIG;
       const catalogMatch = STUDIO_COMPONENT_CATALOG.find((item) => svc.startsWith(item.key));
       const baseCpuVal = template.baseCpu[svc] ?? catalogMatch?.baseCpu ?? 26.5;
       const baseRamVal = template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
-      const perPodCpu = now <= 0 ? 0 : Math.max(4.2, baseCpuVal / Math.pow(now, 0.68));
-      const perPodRam = now <= 0 ? 0 : baseRamVal;
+      const tierCpuFactor = cfg.instanceTier === "S" ? 1.35 : cfg.instanceTier === "L" ? 0.62 : 1.0;
+      const tierRamFactor = cfg.instanceTier === "S" ? 0.75 : cfg.instanceTier === "L" ? 1.45 : 1.0;
+      const effectiveTraffic = cfg.rateLimiter ? Math.min(2, cfg.trafficMult) : cfg.trafficMult;
+      const cacheCpuFactor = cfg.readCache ? 0.75 : 1.0;
+      const rawPodCpu =
+        now <= 0
+          ? 0
+          : ((baseCpuVal * tierCpuFactor * effectiveTraffic * cacheCpuFactor) /
+              Math.pow(now, 0.68));
+      const perPodCpu = now <= 0 ? 0 : Math.min(99.5, Math.max(4.2, rawPodCpu));
+      const perPodRam = now <= 0 ? 0 : Math.round(baseRamVal * tierRamFactor);
       const totalRam = perPodRam * Math.max(0, now);
       const inbound = activeEdges.filter((e) => e.to === svc);
       const outbound = activeEdges.filter((e) => e.from === svc);
       const bottleneckTarget = outbound
         .map((e) => e.to)
-        .find((ds) => now >= 4 && (replicasMap[ds] ?? 1) <= 1);
-      const p95Now = now <= 0 ? 980 : Math.max(8, Math.round(48 / Math.sqrt(Math.max(1, now))));
+        .find((ds) => (now >= 4 || cfg.trafficMult >= 2) && (replicasMap[ds] ?? 1) <= 1);
+      const baseP95 = Math.max(8, Math.round((48 * Math.sqrt(effectiveTraffic)) / Math.sqrt(Math.max(1, now))));
+      const cachedP95 = cfg.readCache ? Math.max(5, Math.round(baseP95 * 0.62)) : baseP95;
+      const p95Now = now <= 0 ? 980 : cachedP95 + cfg.injectedLatencyMs;
       return {
         serviceName: svc,
         layer: template.layers[svc] ?? catalogMatch?.layer ?? "domain",
@@ -861,9 +937,10 @@ export function StudioWorkbench() {
         totalRam,
         p95Now,
         bottleneckTarget,
+        cfg,
       };
     });
-  }, [customServices, baselineReplicasMap, replicasMap, template, activeEdges]);
+  }, [customServices, baselineReplicasMap, replicasMap, nodeConfigs, template, activeEdges]);
 
   const selectedRow =
     deploymentRows.find((r) => r.serviceName === selectedService) ?? deploymentRows[0];
@@ -1580,7 +1657,7 @@ export function StudioWorkbench() {
             <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
           </div>
 
-          {/* 3. RIGHT INSPECTOR DOCK: Full-Height Right Sidebar (Never overlapped by bottom dock) */}
+          {/* 3. RIGHT INSPECTOR DOCK: Full-Height Interactive Node Control Center */}
           {!rightCollapsed && (
             <aside
               style={{ width: rightWidth }}
@@ -1588,7 +1665,7 @@ export function StudioWorkbench() {
             >
               {selectedRow && (
                 <div className="space-y-2.5">
-                  {/* Card 1: Selected Node + Inline Replica & Fault Controls */}
+                  {/* Card 1: Selected Node Identity + Replica & Lifecycle Controls */}
                   <div
                     className={`space-y-2 rounded-lg border p-2.5 ${
                       selectedRow.replicasNow === 0
@@ -1631,15 +1708,20 @@ export function StudioWorkbench() {
                       </span>
                     </div>
 
-                    <div>
-                      <h2 className="truncate font-mono text-sm font-bold text-foreground">
-                        {selectedRow.serviceName}
-                      </h2>
-                      <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                        CPU <strong className="text-sky-400">{selectedRow.perPodCpu.toFixed(1)}%</strong> · RAM{" "}
-                        <strong className="text-emerald-400">{Math.round(selectedRow.totalRam)}M</strong> · p95{" "}
-                        <strong className="text-amber-300">{selectedRow.p95Now}ms</strong>
-                      </p>
+                    <div className="flex items-center gap-2">
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-background/60 text-emerald-300">
+                        {renderComponentIcon(selectedRow.serviceName, "size-4")}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <h2 className="truncate font-mono text-sm font-bold text-foreground">
+                          {selectedRow.serviceName}
+                        </h2>
+                        <p className="font-mono text-[10.5px] text-muted-foreground">
+                          CPU <strong className="text-sky-400">{selectedRow.perPodCpu.toFixed(1)}%</strong> · RAM{" "}
+                          <strong className="text-emerald-400">{Math.round(selectedRow.totalRam)}M</strong> · p95{" "}
+                          <strong className="text-amber-300">{selectedRow.p95Now}ms</strong>
+                        </p>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-4 gap-1 pt-0.5">
@@ -1664,7 +1746,7 @@ export function StudioWorkbench() {
                         </button>
                       ))}
                     </div>
-                    <div className="grid grid-cols-2 gap-1">
+                    <div className="grid grid-cols-3 gap-1">
                       <button
                         type="button"
                         disabled={selectedRow.replicasNow === 0}
@@ -1691,10 +1773,158 @@ export function StudioWorkbench() {
                       >
                         Start
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => addCustomBlock(selectedRow.serviceName)}
+                        className="h-6 rounded border border-sky-500/40 bg-sky-500/15 text-[11px] font-semibold text-sky-300 transition hover:bg-sky-500/25"
+                      >
+                        + Clone
+                      </button>
                     </div>
                   </div>
 
-                  {/* Card 2: Unified Impact & Topology Card */}
+                  {/* Card 2: Hardware Spec & Stress Simulation (Instance Tier, Traffic Spike, Latency Fault) */}
+                  <div className="space-y-2 rounded-lg border border-sky-500/30 bg-sky-950/10 p-2.5 text-[11px]">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                      Hardware & Stress Simulation
+                    </p>
+
+                    {/* Instance Tier */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Instance Size (vCPU / RAM)</span>
+                        <span className="font-mono text-sky-300">
+                          {selectedRow.cfg.instanceTier === "S"
+                            ? "0.5 vCPU · 256M"
+                            : selectedRow.cfg.instanceTier === "L"
+                              ? "2 vCPU · 1024M"
+                              : "1 vCPU · 512M"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {(
+                          [
+                            ["S", "Small"],
+                            ["M", "Medium"],
+                            ["L", "Large"],
+                          ] as const
+                        ).map(([tierKey, tierLabel]) => (
+                          <button
+                            key={tierKey}
+                            type="button"
+                            onClick={() =>
+                              updateNodeConfig(selectedRow.serviceName, { instanceTier: tierKey })
+                            }
+                            className={`h-6 rounded border font-mono text-[10px] font-semibold transition ${
+                              selectedRow.cfg.instanceTier === tierKey
+                                ? "border-sky-400 bg-sky-500/25 text-sky-200"
+                                : "border-border/70 bg-background/70 text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {tierLabel}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Traffic Multiplier */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Traffic Load Spike</span>
+                        <span className="font-mono text-amber-300">
+                          {selectedRow.cfg.trafficMult}× ({selectedRow.replicasNow * selectedRow.cfg.trafficMult * 240} req/s)
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {([1, 2, 4, 8] as const).map((mult) => (
+                          <button
+                            key={mult}
+                            type="button"
+                            onClick={() =>
+                              updateNodeConfig(selectedRow.serviceName, { trafficMult: mult })
+                            }
+                            className={`h-6 rounded border font-mono text-[10px] font-semibold transition ${
+                              selectedRow.cfg.trafficMult === mult
+                                ? "border-amber-400 bg-amber-500/25 text-amber-200"
+                                : "border-border/70 bg-background/70 text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {mult}×
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Injected Network Latency */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>Network / Query Lag</span>
+                        <span className="font-mono text-rose-300">
+                          +{selectedRow.cfg.injectedLatencyMs}ms
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {([0, 40, 180, 600] as const).map((lag) => (
+                          <button
+                            key={lag}
+                            type="button"
+                            onClick={() =>
+                              updateNodeConfig(selectedRow.serviceName, { injectedLatencyMs: lag })
+                            }
+                            className={`h-6 rounded border font-mono text-[10px] font-semibold transition ${
+                              selectedRow.cfg.injectedLatencyMs === lag
+                                ? "border-rose-400 bg-rose-500/25 text-rose-200"
+                                : "border-border/70 bg-background/70 text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            +{lag}ms
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Resilience & Architecture Policies (4 Interactive Toggles) */}
+                  <div className="space-y-1.5 rounded-lg border border-emerald-500/30 bg-emerald-950/10 p-2.5 text-[11px]">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                      Resilience Policies
+                    </p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {(
+                        [
+                          ["circuitBreaker", "🛡 Circuit Breaker"],
+                          ["autoScaleHpa", "📈 Auto-Scale HPA"],
+                          ["readCache", "⚡ L1 Read Cache"],
+                          ["rateLimiter", "🚦 Rate Limiter"],
+                        ] as const
+                      ).map(([field, label]) => {
+                        const enabled = selectedRow.cfg[field];
+                        return (
+                          <button
+                            key={field}
+                            type="button"
+                            onClick={() =>
+                              updateNodeConfig(selectedRow.serviceName, { [field]: !enabled })
+                            }
+                            className={`flex items-center justify-between rounded border px-2 py-1 text-left text-[10px] font-semibold transition ${
+                              enabled
+                                ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-200"
+                                : "border-border/70 bg-background/60 text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            <span className="truncate">{label}</span>
+                            <span
+                              className={`ml-1 size-2 shrink-0 rounded-full ${
+                                enabled ? "bg-emerald-400" : "bg-slate-600"
+                              }`}
+                            />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Card 4: Impact & Interactive Topology Wiring */}
                   <div
                     className={`space-y-2 rounded-lg border border-l-4 p-2.5 text-[11px] ${
                       selectedRow.replicasNow === 0
@@ -1705,7 +1935,7 @@ export function StudioWorkbench() {
                     }`}
                   >
                     <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                      Impact & Topology
+                      Impact & Live Topology Wiring
                     </p>
                     {selectedRow.replicasNow === 0 ? (
                       <p className="text-rose-300">
@@ -1729,32 +1959,100 @@ export function StudioWorkbench() {
                       </div>
                     ) : (
                       <p className="text-muted-foreground">
-                        Single-pod baseline (100% traffic). Scale ×4 or ×8 to distribute load.
+                        Single-pod baseline (100% traffic). Scale ×4 or enable Cache/HPA to optimize.
                       </p>
                     )}
 
-                    <div className="space-y-1 border-t border-border/60 pt-1.5 font-mono text-[10px]">
-                      <div className="truncate">
-                        <span className="text-muted-foreground">In: </span>
-                        <span className="text-amber-300">
-                          {selectedRow.inboundCallers.length > 0
-                            ? selectedRow.inboundCallers.join(", ")
-                            : "Ingress"}
-                        </span>
+                    <div className="space-y-1.5 border-t border-border/60 pt-1.5 font-mono text-[10px]">
+                      <div className="flex flex-wrap items-center gap-1">
+                        <span className="text-muted-foreground">In:</span>
+                        {selectedRow.inboundCallers.length > 0 ? (
+                          selectedRow.inboundCallers.map((caller) => (
+                            <button
+                              key={caller}
+                              type="button"
+                              onClick={() => setSelectedService(caller)}
+                              className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-300 hover:bg-amber-500/25"
+                            >
+                              {caller}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="text-amber-300/80">Ingress</span>
+                        )}
                       </div>
-                      <div className="truncate">
-                        <span className="text-muted-foreground">Out: </span>
-                        <span className="text-sky-300">
-                          {selectedRow.outboundTargets.length > 0
-                            ? selectedRow.outboundTargets.join(", ")
-                            : "Leaf / Store"}
-                        </span>
+
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className="text-muted-foreground">Out:</span>
+                          {selectedRow.outboundTargets.length > 0 ? (
+                            selectedRow.outboundTargets.map((target) => (
+                              <span
+                                key={target}
+                                className="inline-flex items-center gap-1 rounded bg-sky-500/15 px-1.5 py-0.5 text-sky-300"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedService(target)}
+                                  className="hover:underline"
+                                >
+                                  {target}
+                                </button>
+                                <button
+                                  type="button"
+                                  title={`Disconnect ${selectedRow.serviceName} → ${target}`}
+                                  onClick={() =>
+                                    toggleOutboundEdge(selectedRow.serviceName, target)
+                                  }
+                                  className="text-sky-300/70 hover:text-rose-400"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-sky-300/70">Leaf / Store</span>
+                          )}
+                        </div>
+                        <select
+                          aria-label="Connect outbound service"
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              toggleOutboundEdge(selectedRow.serviceName, e.target.value);
+                            }
+                          }}
+                          className="h-6 w-full rounded border border-border/70 bg-background/80 px-1.5 font-sans text-[10px] text-muted-foreground"
+                        >
+                          <option value="">+ Connect outbound link to...</option>
+                          {customServices
+                            .filter(
+                              (s) =>
+                                s !== selectedRow.serviceName &&
+                                !selectedRow.outboundTargets.includes(s),
+                            )
+                            .map((s) => (
+                              <option key={s} value={s} className="bg-slate-950 text-slate-100">
+                                → {s}
+                              </option>
+                            ))}
+                        </select>
                       </div>
                     </div>
                   </div>
 
-                  {/* Card 3: Compact 1-Row Snapshot Capture */}
+                  {/* Card 5: Live Container Log Tail & Snapshot Capture */}
                   <div className="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-950/10 p-2">
+                    <div className="rounded bg-slate-950/90 p-1.5 font-mono text-[9.5px] leading-relaxed text-slate-300">
+                      <p className="truncate text-emerald-400">
+                        $ docker logs --tail 2 {selectedRow.serviceName}
+                      </p>
+                      <p className="truncate text-slate-400">
+                        {selectedRow.replicasNow === 0
+                          ? `[ERR] 503 CircuitBreaker OPEN — 0 pods running`
+                          : `[OK] ${selectedRow.replicasNow} pod(s) · Tier=${selectedRow.cfg.instanceTier} · Load=${selectedRow.cfg.trafficMult}x`}
+                      </p>
+                    </div>
                     <p className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
                       Snapshot ({localSnapshots.length})
                     </p>
