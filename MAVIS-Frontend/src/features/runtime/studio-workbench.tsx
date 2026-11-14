@@ -374,12 +374,13 @@ export function StudioWorkbench() {
             ? `kafka-mq-${customServices.length + 1}`
             : `service-${customServices.length + 1}`);
     const clean = rawName.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
-    if (!clean || customServices.includes(clean)) return;
+    if (!clean || customServices.includes(clean)) return undefined;
     setCustomServices((prev) => [...prev, clean]);
     setReplicasMap((prev) => ({ ...prev, [clean]: 1 }));
     setBaselineReplicasMap((prev) => ({ ...prev, [clean]: 1 }));
     setSelectedService(clean);
     setNewNodeName("");
+    return clean;
   }
 
   function removeCustomBlock(svc: string) {
@@ -765,63 +766,98 @@ export function StudioWorkbench() {
                 </div>
               </div>
 
-              {/* Section B: 3D Architecture Block Spawner (200Lab Component Cards style) */}
+              {/* Section B: 3D Architecture Block Spawner (Click OR Drag onto Canvas like draw.io) */}
               <div className="space-y-2 border-t pt-3">
                 <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
                   2. {t("3D Block Library (Add Node)")}
                 </p>
+                <p className="text-[10px] text-muted-foreground">
+                  Click để thêm ngay hoặc kéo thả trực tiếp ra vị trí bất kỳ trên Canvas
+                </p>
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData("application/x-mavis-studio-spawn", "SERVICE");
+                      event.dataTransfer.effectAllowed = "copy";
+                    }}
                     onClick={() => addCustomBlock("SERVICE")}
-                    className="flex items-center gap-2 rounded-lg border border-indigo-500/35 bg-indigo-500/10 p-2 text-left text-[11px] transition hover:border-indigo-400 hover:bg-indigo-500/20"
+                    className="flex cursor-grab items-center justify-between gap-1.5 rounded-lg border border-indigo-500/35 bg-indigo-500/10 p-2 text-left text-[11px] transition hover:border-indigo-400 hover:bg-indigo-500/20 active:cursor-grabbing"
                   >
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-indigo-500/25 text-indigo-300">
-                      <Server className="size-3.5" />
-                    </span>
-                    <div className="min-w-0 leading-tight">
-                      <p className="truncate font-semibold text-indigo-200">+ Service</p>
-                      <p className="truncate text-[9px] text-indigo-300/75">App Server</p>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded bg-indigo-500/25 text-indigo-300">
+                        <Server className="size-3.5" />
+                      </span>
+                      <div className="min-w-0 leading-tight">
+                        <p className="truncate font-semibold text-indigo-200">+ Service</p>
+                        <p className="truncate text-[9px] text-indigo-300/75">App Server</p>
+                      </div>
                     </div>
+                    <span className="text-[10px] text-indigo-300/60">⋮⋮</span>
                   </button>
                   <button
                     type="button"
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData("application/x-mavis-studio-spawn", "GATEWAY");
+                      event.dataTransfer.effectAllowed = "copy";
+                    }}
                     onClick={() => addCustomBlock("GATEWAY")}
-                    className="flex items-center gap-2 rounded-lg border border-amber-500/35 bg-amber-500/10 p-2 text-left text-[11px] transition hover:border-amber-400 hover:bg-amber-500/20"
+                    className="flex cursor-grab items-center justify-between gap-1.5 rounded-lg border border-amber-500/35 bg-amber-500/10 p-2 text-left text-[11px] transition hover:border-amber-400 hover:bg-amber-500/20 active:cursor-grabbing"
                   >
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-amber-500/25 text-amber-300">
-                      <Workflow className="size-3.5" />
-                    </span>
-                    <div className="min-w-0 leading-tight">
-                      <p className="truncate font-semibold text-amber-200">+ Gateway</p>
-                      <p className="truncate text-[9px] text-amber-300/75">Load Balancer</p>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded bg-amber-500/25 text-amber-300">
+                        <Workflow className="size-3.5" />
+                      </span>
+                      <div className="min-w-0 leading-tight">
+                        <p className="truncate font-semibold text-amber-200">+ Gateway</p>
+                        <p className="truncate text-[9px] text-amber-300/75">Load Balancer</p>
+                      </div>
                     </div>
+                    <span className="text-[10px] text-amber-300/60">⋮⋮</span>
                   </button>
                   <button
                     type="button"
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData("application/x-mavis-studio-spawn", "DATABASE");
+                      event.dataTransfer.effectAllowed = "copy";
+                    }}
                     onClick={() => addCustomBlock("DATABASE")}
-                    className="flex items-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/10 p-2 text-left text-[11px] transition hover:border-emerald-400 hover:bg-emerald-500/20"
+                    className="flex cursor-grab items-center justify-between gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 p-2 text-left text-[11px] transition hover:border-emerald-400 hover:bg-emerald-500/20 active:cursor-grabbing"
                   >
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-emerald-500/25 text-emerald-300">
-                      <Database className="size-3.5" />
-                    </span>
-                    <div className="min-w-0 leading-tight">
-                      <p className="truncate font-semibold text-emerald-200">+ Database</p>
-                      <p className="truncate text-[9px] text-emerald-300/75">Relational DB</p>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded bg-emerald-500/25 text-emerald-300">
+                        <Database className="size-3.5" />
+                      </span>
+                      <div className="min-w-0 leading-tight">
+                        <p className="truncate font-semibold text-emerald-200">+ Database</p>
+                        <p className="truncate text-[9px] text-emerald-300/75">Relational DB</p>
+                      </div>
                     </div>
+                    <span className="text-[10px] text-emerald-300/60">⋮⋮</span>
                   </button>
                   <button
                     type="button"
+                    draggable
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData("application/x-mavis-studio-spawn", "QUEUE");
+                      event.dataTransfer.effectAllowed = "copy";
+                    }}
                     onClick={() => addCustomBlock("QUEUE")}
-                    className="flex items-center gap-2 rounded-lg border border-purple-500/35 bg-purple-500/10 p-2 text-left text-[11px] transition hover:border-purple-400 hover:bg-purple-500/20"
+                    className="flex cursor-grab items-center justify-between gap-1.5 rounded-lg border border-purple-500/35 bg-purple-500/10 p-2 text-left text-[11px] transition hover:border-purple-400 hover:bg-purple-500/20 active:cursor-grabbing"
                   >
-                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-purple-500/25 text-purple-300">
-                      <Layers className="size-3.5" />
-                    </span>
-                    <div className="min-w-0 leading-tight">
-                      <p className="truncate font-semibold text-purple-200">+ Broker</p>
-                      <p className="truncate text-[9px] text-purple-300/75">Event Queue</p>
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="flex size-6 shrink-0 items-center justify-center rounded bg-purple-500/25 text-purple-300">
+                        <Layers className="size-3.5" />
+                      </span>
+                      <div className="min-w-0 leading-tight">
+                        <p className="truncate font-semibold text-purple-200">+ Broker</p>
+                        <p className="truncate text-[9px] text-purple-300/75">Event Queue</p>
+                      </div>
                     </div>
+                    <span className="text-[10px] text-purple-300/60">⋮⋮</span>
                   </button>
                 </div>
                 <div className="flex gap-1 pt-1">
@@ -955,6 +991,7 @@ export function StudioWorkbench() {
                   onSelect={setSelectedService}
                   busy={false}
                   onQuickAction={applySandboxAction}
+                  onSpawnBlock={addCustomBlock}
                   canvasOnly
                   defaultView="3D"
                 />

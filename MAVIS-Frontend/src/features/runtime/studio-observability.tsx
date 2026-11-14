@@ -227,6 +227,7 @@ export function StudioObservability({
   onSelect,
   busy = false,
   onQuickAction,
+  onSpawnBlock,
   canvasOnly = false,
   defaultView = "2D",
 }: {
@@ -235,6 +236,7 @@ export function StudioObservability({
   onSelect: (service: string) => void;
   busy?: boolean;
   onQuickAction?: (command: StudioQuickAction) => void;
+  onSpawnBlock?: (archetype: "SERVICE" | "GATEWAY" | "DATABASE" | "QUEUE") => string | undefined;
   canvasOnly?: boolean;
   defaultView?: "2D" | "3D";
 }) {
@@ -246,6 +248,9 @@ export function StudioObservability({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [camera, setCamera] = useState({ yaw: 0.45, pitch: 0.35 });
   const [customOffsets, setCustomOffsets] = useState<Record<string, { x: number; y: number }>>({});
+  const [pinnedPositions, setPinnedPositions] = useState<Record<string, { x: number; y: number }>>(
+    {},
+  );
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const [draggedTool, setDraggedTool] = useState<DragPaletteItem | null>(null);
   const [dropTargetNode, setDropTargetNode] = useState<string | null>(null);
@@ -404,11 +409,16 @@ export function StudioObservability({
       const fit = Math.min(1, 470 / Math.max(1, maxX - minX), 240 / Math.max(1, maxY - minY));
       for (const [name, point] of raw.entries()) {
         const offset = customOffsets[name] ?? { x: 0, y: 0 };
-        let px = 350 + (point.x - (minX + maxX) / 2) * fit + offset.x + pan.x;
-        let py = 248 + (point.y - (minY + maxY) / 2) * fit + offset.y + pan.y;
+        const pinned = pinnedPositions[name];
+        let px = pinned
+          ? pinned.x + offset.x + pan.x
+          : 350 + (point.x - (minX + maxX) / 2) * fit + offset.x + pan.x;
+        let py = pinned
+          ? pinned.y + offset.y + pan.y
+          : 248 + (point.y - (minY + maxY) / 2) * fit + offset.y + pan.y;
         px = 350 + (px - 350) * zoom;
         py = 248 + (py - 248) * zoom;
-        if (snapToGrid && view === "2D" && (offset.x !== 0 || offset.y !== 0)) {
+        if (snapToGrid && view === "2D" && (offset.x !== 0 || offset.y !== 0 || Boolean(pinned))) {
           px = Math.round(px / 16) * 16;
           py = Math.round(py / 16) * 16;
         }
@@ -417,7 +427,18 @@ export function StudioObservability({
       }
     }
     return raw;
-  }, [data.services, serviceDepth, layoutMode, view, camera, customOffsets, pan, zoom, snapToGrid]);
+  }, [
+    data.services,
+    serviceDepth,
+    layoutMode,
+    view,
+    camera,
+    customOffsets,
+    pinnedPositions,
+    pan,
+    zoom,
+    snapToGrid,
+  ]);
 
   function resolveLiveReplicas(serviceName: string): number {
     const live = telemetry?.services.find((item) => item.service === serviceName);
@@ -668,6 +689,7 @@ export function StudioObservability({
             variant="outline"
             onClick={() => {
               setCustomOffsets({});
+              setPinnedPositions({});
               setPan({ x: 0, y: 0 });
               setZoom(1);
               setCamera({ yaw: 0.45, pitch: 0.35 });
@@ -757,6 +779,34 @@ export function StudioObservability({
             maxHeight: 540,
             touchAction: view === "3D" || draggingNode ? "none" : "auto",
             cursor: draggingNode ? "grabbing" : view === "3D" ? "grab" : "default",
+          }}
+          onDragOver={(event) => {
+            if (busy) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+          }}
+          onDrop={(event) => {
+            const spawnArch = event.dataTransfer.getData("application/x-mavis-studio-spawn") as
+              | "SERVICE"
+              | "GATEWAY"
+              | "DATABASE"
+              | "QUEUE"
+              | "";
+            if (!spawnArch || !onSpawnBlock) return;
+            event.preventDefault();
+            const createdName = onSpawnBlock(spawnArch);
+            if (createdName && svg.current) {
+              const rect = svg.current.getBoundingClientRect();
+              const dropX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 700;
+              const dropY = ((event.clientY - rect.top) / Math.max(1, rect.height)) * 460;
+              setPinnedPositions((prev) => ({
+                ...prev,
+                [createdName]: {
+                  x: Math.max(92, Math.min(608, dropX)),
+                  y: Math.max(96, Math.min(395, dropY)),
+                },
+              }));
+            }
           }}
           onPointerDown={(event) => {
             if (event.target === event.currentTarget) {
