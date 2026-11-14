@@ -454,3 +454,18 @@ test("lecturer grading uses frozen Snapshot rows and preserves matching draft gr
   ]);
   assert.equal(buildInitialSnapshotGrades(review)[0].score, "5.01");
 });
+
+test("a partial grading draft keeps valid entered scores and leaves publication incomplete", () => {
+  const { parseSnapshotGradeRows } = require("../src/features/submissions/grading.tsx");
+  const rows = [
+    { snapshotId: "static", title: "Static", score: "5.01", comment: " Verified " },
+    { snapshotId: "runtime", title: "Studio", score: "", comment: "" },
+  ];
+  assert.deepEqual(parseSnapshotGradeRows(rows), {
+    items: [{ snapshotId: "static", title: "Static", score: 5.01, comment: "Verified" }],
+    invalid: false,
+    complete: false,
+  });
+  assert.equal(parseSnapshotGradeRows([rows[0], { ...rows[1], score: "10.01" }]).invalid, true);
+  assert.equal(parseSnapshotGradeRows([rows[0], { ...rows[1], score: "5.00" }]).complete, true);
+});
