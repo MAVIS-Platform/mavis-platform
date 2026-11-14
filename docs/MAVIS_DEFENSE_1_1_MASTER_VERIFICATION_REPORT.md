@@ -60,21 +60,22 @@ Tài liệu kỹ thuật từng workflow:
 
 ## 4. Kết Quả Vòng Kiểm Chứng Full-Stack Cuối Cùng
 
-Chạy trực tiếp trên nhánh `feat/mavis-final-100pct-all-workflows-polish` (môi trường Windows 11, JDK 21, .NET 10, Node.js 25, Python 3):
+Chạy trực tiếp trên nhánh `feat/argon-complete-100pct-all-workflows-studio2d-curriculum` (môi trường Windows 11, JDK 21, .NET 10, Node.js 25, Python 3):
 
 1. **Java Backend (`MAVIS-Platform/mavis-be` · profile `.github/workflows/deploy-production.yml` với `-pl mavis-bootstrap -am` bao gồm `CourseLabSeederServiceTest`):**
    - `mavis-common`: **18/18 PASS** (`0` fail, `0` error, `0` skip)
-   - `mavis-platform`: **125/125 PASS** (`0` fail, `0` error, `0` skip — bao gồm `CourseLabSeederServiceTest` 2/2, `CourseQuizServiceTest`, `SubmissionServiceImplTest`, `SubmissionReviewServiceTest`, `AssignmentServiceImplTest`)
-   - `mavis-analyzer`: **219/219 PASS** (`0` fail, `0` error, `0` skip — bao gồm `RuntimePlanningServiceTest`, `RuntimeSessionServiceImplTest`, `RunnerReceiptIngestServiceImplTest`, `OtelTraceCorrelationServiceImplTest`)
-   - `mavis-bootstrap`: **146 executed PASS**, **6 skip có điều kiện PostgreSQL** (`MigrationUpgradeTest`, `SessionLogoutPostgresTest`, `CourseAccessPostgresTest`, `CourseHttpAcceptanceTest`, `ResourceDeletionPostgresTest`, `NotificationReadPostgresTest` tự động skip khi chưa đặt `MAVIS_MIGRATION_TEST_JDBC_URL`; tổng `152`, `0` fail, `0` error — bao gồm **119/119 PASS** của `Wf01` 29/29, `Wf02` 29/29, `Wf03` 28/28, `Wf04` 33/33)
-   - **Tổng kết BE CI Profile:** **508/508 test thực thi PASS** (`514` tổng, `6` conditional Postgres skip, `0` fail, `0` error).
-2. **.NET Worker & Runner (`MAVIS.Worker/tests/MAVIS.Worker.Tests` · `--configuration Release`):**
-   - **240 PASS**, `3` skip có điều kiện nền tảng Linux/Docker daemon (`SourceFileAndRootSymlinksCannotEscapeScope`, `LinkedStateRootIsRejectedWithoutChangingTarget`, `RealDockerSuccessAndCancellationUseManagedIdentityAndDurableAcknowledgement`), tổng `243`, **`0` fail** (`7 s`).
+   - `mavis-platform`: **128/128 PASS** (`0` fail, `0` error, `0` skip — bao gồm `CourseLabSeederServiceTest` 3/3, `CourseQuizServiceTest` 7/7, `SubmissionServiceImplTest` 25/25, `SubmissionReviewServiceTest` 7/7, `AssignmentServiceImplTest` 14/14)
+   - `mavis-analyzer`: **219/219 PASS** (`0` fail, `0` error, `0` skip — bao gồm `RuntimePlanningServiceTest` 22/22, `RuntimeSessionServiceImplTest` 22/22, `RunnerReceiptIngestServiceImplTest` 17/17, `OtelTraceCorrelationServiceImplTest` 11/11)
+   - `mavis-bootstrap`: **147 executed PASS**, **6 skip có điều kiện PostgreSQL** (`MigrationUpgradeTest`, `SessionLogoutPostgresTest`, `CourseAccessPostgresTest`, `CourseHttpAcceptanceTest`, `ResourceDeletionPostgresTest`, `NotificationReadPostgresTest` tự động skip khi chưa đặt `MAVIS_MIGRATION_TEST_JDBC_URL`; tổng `153`, `0` fail, `0` error — bao gồm **120/120 PASS** của `Wf01` 30/30, `Wf02` 29/29, `Wf03` 28/28, `Wf04` 33/33)
+   - **Tổng kết BE CI Profile:** **512/512 test thực thi PASS** (`518` tổng, `6` conditional Postgres skip, `0` fail, `0` error; `01:07 min`).
+2. **.NET Worker & Runner (`MAVIS.Worker/tests/MAVIS.Worker.Tests/MAVIS.Worker.Tests.csproj` · `--configuration Release`):**
+   - **240 PASS**, `3` skip có điều kiện nền tảng Linux/Docker daemon (`SourceFileAndRootSymlinksCannotEscapeScope`, `RealDockerSuccessAndCancellationUseManagedIdentityAndDurableAcknowledgement`, `LinkedStateRootIsRejectedWithoutChangingTarget`), tổng `243`, **`0` fail** (`6 s`).
 3. **Python Deploy & Schema Migration Tests (`deploy/tests`):**
-   - **7/7 OK** (`0.031s`, đã bao gồm `test_course_schema.py` cho `V26`–`V30`).
+   - **7/7 OK** (`0.015s`, chạy bằng `python -B -m unittest discover -s deploy/tests -p "test_*.py" -v`).
 4. **Next.js Frontend (`MAVIS-Frontend`):**
+   - `node --check ../scripts/measure-wf01-roadmap.mjs`: **PASS**
    - `npm run typecheck`: **PASS** (`tsc --noEmit --incremental false`)
-   - `npm test`: **387/387 PASS**, `0` fail, `0` skipped (`14852.18 ms`)
-   - `npm run test:connected`: **3/3 PASS**, `0` fail, `0` skipped
+   - `npm test`: **390/390 PASS**, `0` fail, `0` skipped (`13451.6724 ms`)
+   - `npm run test:connected`: **3/3 PASS**, `0` fail, `0` skipped (`1756.9363 ms`)
    - `MAVIS_TEST_BROWSER_CHANNEL=chrome npm run test:three-e-ui`: **PASS** (`PASS: full 3E browser suite plus diagram dock regression; synthetic API only.`)
-   - `npm run build`: **PASS** (`Next.js 15.5.25`, compiled successfully in `6.9s`, `0` errors).
+   - `npm run build`: **PASS** (`Next.js 15.5.25`, compiled successfully in `7.5s`, `0` errors).
