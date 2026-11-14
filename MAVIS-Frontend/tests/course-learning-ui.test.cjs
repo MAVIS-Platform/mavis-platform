@@ -318,9 +318,23 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
   assert.equal(passReview.labOutcome, "PASSED");
   assert.equal(passReview.score, 60);
 
-  // Verify resolveSubmissionOutcome & SubmissionResult logic on (9.0, 5.0) -> score: 70, labOutcome: "NEEDS_REVISION"
+  // TC-GR01 / TC-GR02 / TC-GR03: Verify resolveSubmissionOutcome & SubmissionResult logic on > 5.0 / 10 rule
   const submissionsScreen = read("src/features/submissions/screens.tsx");
   const { resolveSubmissionOutcome } = require("../src/features/submissions/grading.tsx");
+  // TC-GR01: [5.1, 8.0] -> PASS
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 65.5,
+      labOutcome: "PASSED",
+      snapshotGrades: [
+        { score: 5.1 },
+        { score: 8.0 },
+      ],
+    }),
+    "PASS",
+  );
+  // TC-GR02: [9.0, 5.0] -> score: 70, labOutcome: "NEEDS_REVISION" -> NEEDS REVISION
   assert.equal(
     resolveSubmissionOutcome({
       status: "GRADED",
@@ -340,6 +354,18 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
       snapshotGrades: [
         { score: 9.0 },
         { score: 5.0 },
+      ],
+    }),
+    "NEEDS REVISION",
+  );
+  // TC-GR03: [4.9, 9.5] -> score: 72 -> NEEDS REVISION even without explicit labOutcome
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 72,
+      snapshotGrades: [
+        { score: 4.9 },
+        { score: 9.5 },
       ],
     }),
     "NEEDS REVISION",
