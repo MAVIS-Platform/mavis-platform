@@ -171,8 +171,13 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     {
         if (definition.InteractiveStudio) {
             if (studio is null) throw new RuntimeStageException("STUDIO_REQUIRES_MANAGED_RUNNER");
+            var nextSample = DateTimeOffset.MinValue;
             while (true) {
                 ct.ThrowIfCancellationRequested();
+                if (DateTimeOffset.UtcNow >= nextSample) {
+                    await PublishStudioTelemetryAsync(ct);
+                    nextSample=DateTimeOffset.UtcNow.AddSeconds(8);
+                }
                 var command = await studio.NextStudioCommandAsync(definition.SessionId, ResourceProject, ct);
                 if (command.FinishRequested) return _observedActions.ToArray();
                 if (command.Command is null) { await Task.Delay(500, ct); continue; }
@@ -188,6 +193,7 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
                     result = _observedActions.Count > resultCount ? _observedActions.Last() : null;
                 }
                 await studio.AcknowledgeStudioActionAsync(definition.SessionId, ResourceProject, item.ActionId, status, result, ct);
+                nextSample=DateTimeOffset.MinValue;
             }
         }
         return await ExecuteActionsAsync(definition.InfrastructureActions ?? [], ct);
@@ -245,6 +251,9 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             };
             if (workload is not null)
             {
+                var traceIds=new JsonArray();
+                foreach(var traceId in workload.Steps.Select(step=>step.TraceId).Distinct()) traceIds.Add(traceId);
+                metrics["traceIds"]=traceIds;
                 var samples = workload.Steps.Select(step => step.ElapsedMilliseconds).Order().ToArray();
                 metrics["requestCount"] = samples.Length;
                 if (samples.Length > 0)
@@ -273,6 +282,46 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
         await Require(new[] { "stop", "--timeout", "5" }.Concat(definition.Profile.Applications.Keys).ToArray(), ct);
         await Task.Delay(1500, ct); // Collector stays alive while application shutdown hooks flush spans.
         await Require(["stop", "--timeout", "5", "mavis-collector"], ct);
+        return await ReadTraceEvidenceAsync(ct, live: false);
+    }
+
+    private async Task PublishStudioTelemetryAsync(CancellationToken ct)
+    {
+        var services = new List<object>();
+        foreach (var service in definition.Profile.Applications.Keys) {
+            var metrics=await ReadServiceMetrics(service,ct);
+            var ids=await Require(["ps","--quiet",service],ct);
+            var containerIds=ids.StandardOutput.Split((char[]?)null,StringSplitOptions.RemoveEmptyEntries);
+            var stats=new List<object>();
+            if(containerIds.Length>0) {
+                var result=await docker.RunAsync(new[]{"stats","--no-stream","--format","{{json .}}"}.Concat(containerIds).ToArray(),_directory!,15,ct);
+                foreach(var line in result.StandardOutput.Split('\n',StringSplitOptions.RemoveEmptyEntries)) {
+                    try {
+                        using var json=JsonDocument.Parse(line);
+                        var data=json.RootElement;
+                        stats.Add(new {containerId=data.GetProperty("Container").GetString(),cpu=data.GetProperty("CPUPerc").GetString(),
+                            memory=data.GetProperty("MemUsage").GetString(),network=data.GetProperty("NetIO").GetString()});
+                    } catch(Exception error) when(error is JsonException or KeyNotFoundException) { }
+                }
+            }
+            var logs=await Command(["logs","--no-color","--tail","10",service],ct);
+            var text=logs.StandardOutput;
+            foreach(var secret in (secrets?.Values ?? []).Where(value=>!string.IsNullOrWhiteSpace(value)).OrderByDescending(value=>value.Length))
+                text=text.Replace(secret,"[REDACTED]",StringComparison.Ordinal);
+            services.Add(new {service,replicas=metrics.total,runningReplicas=metrics.running,stats,logs=text[..Math.Min(text.Length,4000)]});
+        }
+        var trace=await ReadTraceEvidenceAsync(ct,live:true);
+        await studio!.PublishStudioTelemetryAsync(definition.SessionId,ResourceProject,new {
+            observedAt=DateTimeOffset.UtcNow,services,
+            spans=trace?.Spans.TakeLast(200).ToArray() ?? [],
+            interactions=trace?.Interactions?.TakeLast(200).ToArray() ?? [],
+            warnings=trace?.Warnings ?? [],workload=_scenario
+        },ct);
+    }
+
+    private async Task<TraceCorrelationResult?> ReadTraceEvidenceAsync(CancellationToken ct, bool live)
+    {
+        if (_directory is null) return null;
         var directory = Path.Combine(_directory, "raw-traces");
         Directory.CreateDirectory(directory);
         var copied = await Command(["cp", "mavis-collector:/traces/.", directory], ct);
@@ -287,8 +336,12 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
             try { Append(JsonNode.Parse(text)); }
             catch (JsonException)
             {
-                foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-                { ct.ThrowIfCancellationRequested(); Append(JsonNode.Parse(line)); }
+                var lines=text.Split('\n',StringSplitOptions.RemoveEmptyEntries);
+                for(var index=0;index<lines.Length;index++) {
+                    ct.ThrowIfCancellationRequested();
+                    try {Append(JsonNode.Parse(lines[index]));}
+                    catch(JsonException) when(live && index==lines.Length-1) { }
+                }
             }
         }
         var payload = new JsonObject { ["resourceSpans"] = resources }.ToJsonString();

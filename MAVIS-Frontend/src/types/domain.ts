@@ -301,6 +301,7 @@ export const submissionSchema = z
     evaluationRunId: z.string().nullable().optional(),
     complianceScore: z.number().nullable().optional(),
     courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
+    studioEvidence:z.record(z.unknown()).nullish(),
     id: z.string(),
     assignmentId: z.string(),
     studentId: z.string(),

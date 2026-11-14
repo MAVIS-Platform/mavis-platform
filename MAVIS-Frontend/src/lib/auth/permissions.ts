@@ -76,6 +76,7 @@ export function operationPermission(operation: Operation): Permission | undefine
       "startRuntime",
       "studioAction",
       "studioFinish",
+      "studioCapture",
       "runtimeApprove",
       "explain",
       "freezeArtifacts",

@@ -18,6 +18,9 @@ import java.util.UUID;
 @AllArgsConstructor
 @Builder
 public class SubmissionSnapshot {
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name="studio_evidence",updatable=false)
+    private JsonNode studioEvidence;
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

@@ -45,6 +45,9 @@ public sealed class ManagedDockerRuntimeTests
         Assert.All(outcome.InfrastructureActions!, action=>Assert.True(action.Confirmed));
         Assert.Equal(2,outcome.InfrastructureActions![2].ReplicasAfter);
         Assert.Equal(3,handler.Acknowledged);
+        Assert.True(handler.Telemetry.Count>=4);
+        Assert.Contains(handler.Telemetry,sample=>sample.GetProperty("spans").GetArrayLength()>0);
+        Assert.All(handler.Telemetry,sample=>Assert.Equal(2,sample.GetProperty("services").GetArrayLength()));
         Assert.False(Directory.Exists(Path.Combine(root,project)));
         Assert.NotEmpty(outcome.Trace!.Spans);
     }
@@ -52,6 +55,7 @@ public sealed class ManagedDockerRuntimeTests
     private sealed class StudioJava(RuntimeRunDefinition definition) : HttpMessageHandler
     {
         public int Acknowledged;
+        public List<JsonElement> Telemetry {get;}=[];
         private readonly string[] ids = [Guid.NewGuid().ToString(),Guid.NewGuid().ToString(),Guid.NewGuid().ToString()];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken ct)
         {
@@ -65,7 +69,11 @@ public sealed class ManagedDockerRuntimeTests
             else {
                 var body=await request.Content!.ReadAsStringAsync(ct);
                 using var json=JsonDocument.Parse(body);
-                if(route=="ack") {
+                if(route=="telemetry") {
+                    Telemetry.Add(json.RootElement.GetProperty("telemetry").Clone());
+                    response=new {definition.SessionId,definition.ResourceProject};
+                }
+                else if(route=="ack") {
                     Assert.Equal(ids[Acknowledged],json.RootElement.GetProperty("actionId").GetString());
                     Assert.Equal("CONFIRMED",json.RootElement.GetProperty("status").GetString());
                     response=new {actionId=ids[Acknowledged++],status="CONFIRMED"};
@@ -73,6 +81,10 @@ public sealed class ManagedDockerRuntimeTests
                     response=new {definition.SessionId,definition.ResourceProject,stage=json.RootElement.GetProperty("stage").GetString()};
                 else {
                     Assert.Equal("ingest-receipt-ack",route);
+                    var signature=System.Security.Cryptography.HMACSHA256.HashData(Encoding.UTF8.GetBytes("fixture-managed-key"),
+                        Encoding.UTF8.GetBytes(ReceiptCanonicalJson.Digest(body)));
+                    Assert.Equal("hmac-sha256:"+Convert.ToHexString(signature).ToLowerInvariant(),
+                        Assert.Single(request.Headers.GetValues("X-Mavis-Receipt-Signature")));
                     response=new {definition.SessionId,definition.ResourceProject,receiptDigest=ReceiptCanonicalJson.Digest(body),persistenceStatus="COMMITTED"};
                 }
             }

@@ -129,6 +129,14 @@ public class RunnerReceiptIngestServiceImpl implements RunnerReceiptIngestServic
         // 2. CANONICAL RECEIPT DIGEST & IDEMPOTENCY / CONFLICT (CHẶNG 11)
         // =========================================================================
         String incomingDigest = CanonicalReceiptDigestUtils.computeDigest(objectMapper.valueToTree(receipt));
+        if(session.getScenarioConfig()!=null && session.getScenarioConfig().path("interactiveStudio").asBoolean()) {
+            String signature=runnerServiceAuthGuard.requireReceiptSignature(incomingDigest);
+            if(signature!=null) {
+                ObjectNode control=session.getStudioControl() instanceof ObjectNode existing?existing.deepCopy():objectMapper.createObjectNode();
+                control.put("receiptSignature",signature);
+                session.setStudioControl(control);
+            }
+        }
 
         if (session.getReceiptDigest() != null) {
             if (session.getReceiptDigest().equals(incomingDigest)) {

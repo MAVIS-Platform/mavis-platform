@@ -535,6 +535,23 @@ export const contracts = {
   ),
   runtimeSessions: contract(project, z.array(d.runtimeSessionSchema)),
   studioState: contract(z.object({sessionId:id}), z.object({
+    projectId:z.string().optional(),modelVersionId:z.string().optional(),sourceSnapshotId:z.string().optional(),
+    serviceMappings:z.record(z.string()).optional(),
+    receiptDigest:z.string().nullable().optional(),telemetryReceivedAt:z.string().optional(),
+    receiptSignature:z.string().optional(),
+    telemetry:z.object({
+      observedAt:z.string(),services:z.array(z.object({
+        service:z.string(),replicas:z.number(),runningReplicas:z.number(),
+        stats:z.array(z.object({containerId:z.string().nullable(),cpu:z.string().nullable(),memory:z.string().nullable(),network:z.string().nullable()})),
+        logs:z.string(),
+      })),spans:z.array(z.object({
+        traceId:z.string(),spanId:z.string(),runtimeService:z.string(),spanStatus:z.string().nullable().optional(),
+        httpStatusCode:z.number().nullable().optional(),durationNanoseconds:z.string().nullable().optional(),
+      })),interactions:z.array(z.object({traceId:z.string(),fromService:z.string(),toService:z.string(),parentSpanId:z.string(),childSpanId:z.string()})),
+      warnings:z.array(z.string()).optional(),
+    }).optional(),
+    snapshots:z.array(z.object({id:z.string(),sessionId:z.string(),sourceSnapshotId:z.string(),modelVersionId:z.string(),
+      capturedAt:z.string(),explanation:z.string(),digest:z.string()})).optional(),
     sessionId:id, interactive:z.boolean(), services:z.array(z.string()), finishRequested:z.boolean(), executionStatus:z.string(),
     cleanupStatus:z.string(), actions:z.array(z.object({
       actionId:z.string().uuid(), action:z.enum(["START","STOP","SCALE"]), service:z.string(),
@@ -548,6 +565,10 @@ export const contracts = {
   studioAction: contract(z.object({sessionId:id,actionId:z.string().uuid(),action:z.enum(["START","STOP","SCALE"]),
     service:z.string().min(1),replicas:z.number().int().min(1).max(8).optional()}), z.unknown(), true),
   studioFinish: contract(z.object({sessionId:id}),z.unknown(),true),
+  studioCapture: contract(z.object({sessionId:id,explanation:z.string().trim().min(1).max(4000),
+    imageData:z.string().max(1500000).optional(),observedAt:z.string().max(100).optional()}),z.record(z.unknown()),true),
+  studioSnapshot: contract(z.object({sessionId:id,snapshotId:id}),z.record(z.unknown())),
+  studioReceipt: contract(z.object({sessionId:id}),z.record(z.unknown())),
   runtimeSession: contract(z.object({ sessionId: id }), d.runtimeSessionSchema),
   startRuntime: contract(
     project.extend({

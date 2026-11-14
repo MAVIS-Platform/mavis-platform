@@ -7,6 +7,20 @@ import com.mavis.common.exception.BusinessException;
 import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 class RunnerServiceAuthGuardTest {
+ @Test void receiptSignatureIsBoundToCanonicalDigest() throws Exception {
+  var guard=new RunnerServiceAuthGuard(mock(AccessPolicyService.class));
+  var request=new MockHttpServletRequest();
+  ReflectionTestUtils.setField(guard,"httpServletRequest",request);
+  ReflectionTestUtils.setField(guard,"runnerServiceKey","fixture-key");
+  request.addHeader("X-Mavis-Runner-Key","fixture-key");
+  assertThrows(BusinessException.class,()->guard.requireReceiptSignature("sha256:first"));
+  var mac=javax.crypto.Mac.getInstance("HmacSHA256");
+  mac.init(new javax.crypto.spec.SecretKeySpec("fixture-key".getBytes(java.nio.charset.StandardCharsets.UTF_8),"HmacSHA256"));
+  String signature="hmac-sha256:"+java.util.HexFormat.of().formatHex(mac.doFinal("sha256:first".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+  request.addHeader("X-Mavis-Receipt-Signature",signature);
+  assertEquals(signature,guard.requireReceiptSignature("sha256:first"));
+  assertThrows(BusinessException.class,()->guard.requireReceiptSignature("sha256:changed"));
+ }
  @Test void callbacksRequireDedicatedCredentialRatherThanProjectOwnership(){var p=mock(AccessPolicyService.class);var g=new RunnerServiceAuthGuard(p);var r=new MockHttpServletRequest();ReflectionTestUtils.setField(g,"httpServletRequest",r);ReflectionTestUtils.setField(g,"runnerServiceKey","fixture-key");assertThrows(BusinessException.class,g::requireRunnerService);r.addHeader("X-Mavis-Runner-Key","wrong");assertThrows(BusinessException.class,g::requireRunnerService);r.removeHeader("X-Mavis-Runner-Key");r.addHeader("X-Mavis-Runner-Key","fixture-key");assertDoesNotThrow(g::requireRunnerService);verifyNoInteractions(p);}
 
  @org.junit.jupiter.api.Test void publishedDevelopmentKeyCannotAuthorizeRunner(){

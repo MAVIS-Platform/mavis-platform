@@ -1,23 +1,28 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { useApiMutation, useApiQuery } from "@/hooks/use-api";
+import { useApi, useApiMutation, useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SelectField } from "@/components/shared/forms";
 import { ErrorState } from "@/components/shared/request-state";
 import { useLocale } from "@/lib/i18n/locale-context";
+import { StudioObservability, captureStudioImage } from "./studio-observability";
+import { Textarea } from "@/components/ui/textarea";
 
 export function StudioControls({ sessionId }: { sessionId: string }) {
   const { t } = useLocale();
-  const state = useApiQuery(
-    "studioState",
-    { sessionId },
-    { enabled: !!sessionId, poll: true },
-  );
+  const api = useApi();
+  const [downloadError, setDownloadError] = useState<Error | null>(null);
+  const state = useApiQuery("studioState", { sessionId }, { enabled: !!sessionId, poll: true });
   const action = useApiMutation("studioAction");
   const finish = useApiMutation("studioFinish");
   const cancel = useApiMutation("stopRuntime");
+  const capture = useApiMutation("studioCapture");
+  const [explanation, setExplanation] = useState("");
+  const [capturing, setCapturing] = useState(false);
+  const workspace = useRef<HTMLElement>(null);
+  const [chaosTarget, setChaosTarget] = useState("");
   const [service, setService] = useState("");
   const [replicas, setReplicas] = useState(2);
   const pending = useRef<{
@@ -34,9 +39,9 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
     (item) => item.status === "PENDING" || item.status === "RUNNING",
   );
   const hasConfirmedAction = data.actions.some((item) => item.status === "CONFIRMED");
-  const runningReplicas = [...data.actions].reverse().find(
-    (item) => item.service === target && item.status === "CONFIRMED",
-  )?.result?.replicasAfter;
+  const runningReplicas = [...data.actions]
+    .reverse()
+    .find((item) => item.service === target && item.status === "CONFIRMED")?.result?.replicasAfter;
   const busy =
     action.isPending ||
     finish.isPending ||
@@ -44,18 +49,18 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
     waiting ||
     data.finishRequested ||
     data.executionStatus !== "RUNNING";
-  async function send(kind: "START" | "STOP" | "SCALE") {
+  async function send(kind: "START" | "STOP" | "SCALE", targetService = target) {
     const previous = pending.current;
     const command =
       previous &&
       previous.action === kind &&
-      previous.service === target &&
+      previous.service === targetService &&
       previous.replicas === (kind === "SCALE" ? replicas : undefined)
         ? previous
         : {
             actionId: crypto.randomUUID(),
             action: kind,
-            service: target,
+            service: targetService,
             ...(kind === "SCALE" ? { replicas } : {}),
           };
     pending.current = command;
@@ -68,8 +73,9 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
     }
   }
   return (
-    <section className="space-y-3 rounded-lg border p-4" aria-label="MAVIS Studio">
+    <section ref={workspace} className="space-y-3 rounded-lg border p-4" aria-label="MAVIS Studio">
       <h3 className="font-medium">MAVIS Studio</h3>
+      <StudioObservability data={data} selected={target} onSelect={setService} />
       <div className="flex flex-wrap items-end gap-2">
         <SelectField
           label={t("Target service")}
@@ -107,6 +113,17 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
             onChange={(event) =>
               setReplicas(Math.max(1, Math.min(8, Math.trunc(Number(event.target.value)) || 1)))
             }
+          />
+          <input
+            type="range"
+            min={1}
+            max={8}
+            step={1}
+            value={replicas}
+            disabled={busy}
+            aria-label={t("Scale replica slider")}
+            className="block w-32"
+            onChange={(event) => setReplicas(Number(event.target.value))}
           />
         </label>
         <Button
@@ -150,9 +167,52 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
           {t("Cancel Studio session")}
         </Button>
       </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          disabled={busy || !data.telemetry?.services.some((item) => item.runningReplicas > 0)}
+          onClick={() => {
+            const running =
+              data.telemetry?.services
+                .filter((item) => item.runningReplicas > 0)
+                .map((item) => item.service) ?? [];
+            if (running.length)
+              setChaosTarget(
+                running[crypto.getRandomValues(new Uint32Array(1))[0]! % running.length]!,
+              );
+          }}
+        >
+          {t("Chaos Monkey experiment")}
+        </Button>
+        {chaosTarget && (
+          <>
+            <p className="text-sm">
+              {t("Stop the selected running service")}: {chaosTarget}
+            </p>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={busy}
+              onClick={() => {
+                setService(chaosTarget);
+                void send("STOP", chaosTarget);
+                setChaosTarget("");
+              }}
+            >
+              {t("Confirm fault injection")}
+            </Button>
+            <Button type="button" variant="outline" onClick={() => setChaosTarget("")}>
+              {t("Cancel")}
+            </Button>
+          </>
+        )}
+      </div>
       {action.isError && <ErrorState error={action.error} />}
       {finish.isError && <ErrorState error={finish.error} />}
       {cancel.isError && <ErrorState error={cancel.error} />}
+      {capture.isError && <ErrorState error={capture.error} />}
+      {downloadError && <ErrorState error={downloadError} />}
       <p role="status" className="text-sm text-muted-foreground">
         {t(
           data.finishRequested
@@ -199,6 +259,18 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
                   ))}
                 </dl>
               )}
+              {item.result && (
+                <details className="text-sm">
+                  <summary>{t("Before/After trace evidence")}</summary>
+                  <p>
+                    {t("Before")}: {traceIds(item.result.metricsBefore["traceIds"])}
+                  </p>
+                  <p>
+                    {t("After")}: {traceIds(item.result.metricsAfter["traceIds"])}
+                  </p>
+                  <p>{item.completedAt ? new Date(item.completedAt).toLocaleString() : ""}</p>
+                </details>
+              )}
               {item.result && item.result.metricsAfter["requestCount"] === undefined && (
                 <p className="text-sm text-muted-foreground">
                   {t("Request metrics require a replayable GET/HEAD workload.")}
@@ -208,6 +280,121 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
           ))}
         </ol>
       )}
+      <section className="space-y-2">
+        <h4 className="font-medium">{t("Capture evidence snapshot")}</h4>
+        {data.receiptDigest && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setDownloadError(null);
+              void api
+                .execute("studioReceipt", { sessionId })
+                .then((evidence) => {
+                  const url = URL.createObjectURL(
+                    new Blob([JSON.stringify(evidence, null, 2)], { type: "application/json" }),
+                  );
+                  const link = document.createElement("a");
+                  link.href = url;
+                  link.download = `studio-receipt-${sessionId}.json`;
+                  link.click();
+                  URL.revokeObjectURL(url);
+                })
+                .catch((error) =>
+                  setDownloadError(
+                    error instanceof Error ? error : new Error("Could not load receipt"),
+                  ),
+                );
+            }}
+          >
+            {t(data.receiptSignature ? "Download signed receipt" : "Download receipt")}
+          </Button>
+        )}
+        <label className="block text-sm">
+          {t("Explain the observed behavior")}
+          <Textarea
+            value={explanation}
+            maxLength={4000}
+            onChange={(event) => setExplanation(event.target.value)}
+          />
+        </label>
+        <Button
+          type="button"
+          disabled={
+            !data.telemetry ||
+            !explanation.trim() ||
+            capture.isPending ||
+            capturing ||
+            waiting ||
+            (data.snapshots?.length ?? 0) >= 8
+          }
+          onClick={() => {
+            setCapturing(true);
+            setDownloadError(null);
+            const graph = workspace.current?.querySelector<SVGSVGElement>("svg[data-studio-graph]");
+            if (!graph) {
+              setCapturing(false);
+              return;
+            }
+            void captureStudioImage(graph)
+              .then((imageData) =>
+                capture.mutateAsync({
+                  sessionId,
+                  explanation: explanation.trim(),
+                  imageData,
+                  observedAt: data.telemetry?.observedAt,
+                }),
+              )
+              .then(() => {
+                setExplanation("");
+                return state.refetch();
+              })
+              .catch((error) =>
+                setDownloadError(
+                  error instanceof Error ? error : new Error("Could not capture evidence"),
+                ),
+              )
+              .finally(() => setCapturing(false));
+          }}
+        >
+          {t("Capture evidence snapshot")}
+        </Button>
+        {data.snapshots?.map((snapshot) => (
+          <div key={snapshot.id} className="rounded border p-2 text-sm">
+            <p>
+              {new Date(snapshot.capturedAt).toLocaleString()} · {snapshot.explanation}
+            </p>
+            <p className="break-all font-mono">{snapshot.digest}</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDownloadError(null);
+                void api
+                  .execute("studioSnapshot", { sessionId, snapshotId: snapshot.id })
+                  .then((evidence) => {
+                    const url = URL.createObjectURL(
+                      new Blob([JSON.stringify(evidence, null, 2)], { type: "application/json" }),
+                    );
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = `studio-evidence-${snapshot.id}.json`;
+                    link.click();
+                    URL.revokeObjectURL(url);
+                  })
+                  .catch((error) =>
+                    setDownloadError(
+                      error instanceof Error ? error : new Error("Could not load evidence"),
+                    ),
+                  );
+              }}
+            >
+              {t("Download evidence")}
+            </Button>
+          </div>
+        ))}
+      </section>
     </section>
   );
 }
@@ -216,4 +403,7 @@ function metric(value: unknown) {
   return typeof value === "number" && Number.isFinite(value)
     ? Number(value.toFixed(2)).toString()
     : "—";
+}
+function traceIds(value: unknown) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string").join(", ") : "—";
 }

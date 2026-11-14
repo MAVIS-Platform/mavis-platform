@@ -86,6 +86,22 @@ public class RunnerServiceAuthGuard {
         }
     }
 
+    public String requireReceiptSignature(String digest) {
+        if (Boolean.TRUE.equals(INTERNAL_DISPATCH.get())) return null;
+        requireRunnerService();
+        try {
+            String provided=httpServletRequest==null?null:httpServletRequest.getHeader("X-Mavis-Receipt-Signature");
+            var mac=javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(runnerServiceKey.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
+            String expected="hmac-sha256:"+java.util.HexFormat.of().formatHex(mac.doFinal(digest.getBytes(StandardCharsets.UTF_8)));
+            if(provided!=null && MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),provided.getBytes(StandardCharsets.UTF_8)))
+                return provided;
+        } catch(java.security.GeneralSecurityException failure) {
+            throw new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR,"Receipt signature verification unavailable");
+        }
+        throw new BusinessException(ErrorCode.FORBIDDEN,"A valid Runner receipt signature is required");
+    }
+
     public void checkRunnerOrProjectWriteAccess(Project project) {
         if (isRunnerServiceKeyValid()) {
             log.debug("Xác thực thành công qua header X-Mavis-Runner-Key");

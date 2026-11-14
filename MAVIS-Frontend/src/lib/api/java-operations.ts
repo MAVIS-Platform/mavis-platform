@@ -237,6 +237,7 @@ export async function executeJava(
         evaluationRunId: z.string().uuid().nullish(),
         complianceScore: z.number().nullish(),
         courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
+        studioEvidence:z.record(z.unknown()).nullish(),
         sourceSnapshotId: z.string().uuid(),
         modelVersionId: z.string().uuid(),
         runtimeSessionId: z.string().uuid().nullish(),
@@ -284,6 +285,7 @@ export async function executeJava(
       evaluationRunId: sub.evaluationRunId ?? null,
       complianceScore: sub.complianceScore ?? null,
       courseQuizEvidence: sub.courseQuizEvidence ?? null,
+      studioEvidence:sub.studioEvidence??null,
       id: sub.id,
       assignmentId: sub.assignmentId,
       studentId: sub.submittedById,
@@ -627,6 +629,12 @@ export async function executeJava(
       return post(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/actions`,input);
     case "studioFinish":
       return post(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/finish`,{});
+    case "studioCapture":
+      return post(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/snapshots`,input);
+    case "studioSnapshot":
+      return get(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/snapshots/${id(input,"snapshotId")}`);
+    case "studioReceipt":
+      return get(`analyzer/runtime/sessions/${id(input,"sessionId")}/studio/receipt`);
     case "runtimeSessions":
       return Promise.all(
         list
