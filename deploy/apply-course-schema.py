@@ -76,6 +76,22 @@ SELECT CASE
         THEN 'ready'
     ELSE 'partial' END;
 """),
+    "V31__WF01_Customer_Ready_Identity_And_Course.sql": (31, """
+WITH expected(present) AS (VALUES
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'users' AND column_name = 'avatar_url')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'users' AND column_name = 'preferred_locale')),
+    (EXISTS (SELECT FROM information_schema.columns WHERE table_schema = current_schema()
+             AND table_name = 'workspaces' AND column_name = 'max_students')),
+    (to_regclass('refresh_sessions') IS NOT NULL),
+    (to_regclass('ix_refresh_sessions_user_active') IS NOT NULL),
+    (to_regclass('auth_rate_limits') IS NOT NULL)
+)
+SELECT CASE WHEN bool_and(present) THEN 'ready'
+            WHEN bool_or(present) THEN 'partial'
+            ELSE 'missing' END FROM expected;
+"""),
 }
 
 
