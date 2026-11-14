@@ -188,6 +188,8 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Hãy chọn biên nhận Studio đã xác minh cho đúng phiên bản mô hình.",
   "Pass the current Lab Quiz before submitting.":
     "Hãy đạt Quiz hiện hành của Lab trước khi nộp.",
+  "This Lab is already complete. View your passing submission in My Submissions.":
+    "Lab đã hoàn thành. Bạn có thể xem bài đã đạt trong Bài nộp của tôi.",
   "Enter a grade for every frozen Snapshot before publishing.":
     "Hãy nhập điểm cho từng Snapshot đã đóng băng trước khi công bố.",
   "The Snapshot grades do not match this submission. Refresh the review.":

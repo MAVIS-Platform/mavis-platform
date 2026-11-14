@@ -190,6 +190,7 @@ class Wf04AcceptanceMatrixTest {
         when(assignmentRepository.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspace.getId()))
                 .thenReturn(List.of(lab01, lab02));
         when(workspaceRepository.findById(workspace.getId())).thenReturn(Optional.of(workspace));
+        when(workspaceRepository.findLockedById(workspace.getId())).thenReturn(Optional.of(workspace));
         when(projectRepository.findById(studentProject.getId())).thenReturn(Optional.of(studentProject));
         when(modelVersionRepository.findById(modelVersion.getId())).thenReturn(Optional.of(modelVersion));
         when(diagramVersionRepository.findById(diagramVersion.getId())).thenReturn(Optional.of(diagramVersion));

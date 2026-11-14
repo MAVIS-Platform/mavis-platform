@@ -75,6 +75,9 @@ class SubmissionServiceImplTest {
     private AssignmentRepository assignmentRepository;
 
     @Mock
+    private WorkspaceRepository workspaceRepository;
+
+    @Mock
     private ProjectRepository projectRepository;
 
     @Mock
@@ -339,6 +342,7 @@ class SubmissionServiceImplTest {
     @Test
     void courseSubmissionRequiresImmutableStaticEvidence() {
         var workspace=Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        when(workspaceRepository.findLockedById(workspace.getId())).thenReturn(Optional.of(workspace));
         student.setRole(Role.builder().code("STUDENT").build());
         assignment.setWorkspace(workspace);assignment.setLabOrder(1);assignment.setRequireRuntimeTrace(false);
         assignment.setReferenceModel(modelVersion);project.setWorkspace(workspace);project.setAssignment(assignment);
@@ -759,9 +763,27 @@ class SubmissionServiceImplTest {
     }
 
     @Test
+    void rejectsResubmissionAfterGuidedLabPasses() {
+        var workspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        student.setRole(Role.builder().code("STUDENT").build());
+        assignment.setWorkspace(workspace);
+        assignment.setLabOrder(1);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(workspaceRepository.findLockedById(workspace.getId())).thenReturn(Optional.of(workspace));
+        when(courseLabs.passedAssignments(workspace.getId(), userId)).thenReturn(java.util.Set.of(assignmentId));
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(
+                SubmissionCreateRequest.builder().assignmentId(assignmentId).build()))
+                .isInstanceOf(BusinessException.class).hasMessage("LAB_SUBMISSION_ALREADY_PASSED");
+        verifyNoInteractions(projectRepository, submissionSnapshotRepository);
+    }
+
+    @Test
     @DisplayName("WF-04 F11-002: Course Lab submission requires written explanation and freezes studentSnapshots in SHA-256 package digest")
     void courseSubmissionRequiresExplanationAndPersistsStudentSnapshots() {
         var workspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        when(workspaceRepository.findLockedById(workspace.getId())).thenReturn(Optional.of(workspace));
         student.setRole(Role.builder().code("STUDENT").build());
         assignment.setWorkspace(workspace);
         assignment.setLabOrder(1);

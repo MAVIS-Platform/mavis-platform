@@ -37,6 +37,7 @@ export const publicErrors = {
   SUBMISSION_SNAPSHOT_IDS_INVALID: "The Snapshot selection has changed. Reload the Lab and review its required evidence.",
   SUBMISSION_STUDIO_RECEIPT_REQUIRED: "Select a verified Studio receipt for the selected model version.",
   SUBMISSION_QUIZ_REQUIRED: "Pass the current Lab Quiz before submitting.",
+  SUBMISSION_LAB_PASSED: "This Lab is already complete. View your passing submission in My Submissions.",
   REVIEW_SNAPSHOT_GRADES_INCOMPLETE: "Enter a grade for every frozen Snapshot before publishing.",
   REVIEW_SNAPSHOT_GRADES_INVALID: "The Snapshot grades do not match this submission. Refresh the review.",
   REVIEW_FROZEN_SNAPSHOTS_REQUIRED: "Return this submission with instructions to resubmit the required Snapshots.",
@@ -98,6 +99,7 @@ export function backendErrorCode(
       return "REVIEW_FROZEN_SNAPSHOTS_REQUIRED";
   }
   if (path === "submissions") {
+    if (status === 409 && message === "LAB_SUBMISSION_ALREADY_PASSED") return "SUBMISSION_LAB_PASSED";
     if (status === 400 && message === "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED")
       return "SUBMISSION_SNAPSHOT_EXPLANATIONS_REQUIRED";
     if (status === 400 && message === "SUBMISSION_SNAPSHOT_IDS_INVALID")
