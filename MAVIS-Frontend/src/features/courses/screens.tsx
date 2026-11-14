@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   ArrowRight,
@@ -347,6 +348,13 @@ export function LabWorkspace() {
     project: projectId, ...(sessionId ? { session: sessionId } : {}),
   })}`;
   const modelQuery = project && model ? new URLSearchParams({ project: project.id, model: model.id }).toString() : null;
+  const referenceModelQuery =
+    lab?.referenceSource?.projectId && lab?.referenceSource?.modelId
+      ? new URLSearchParams({
+          project: lab.referenceSource.projectId,
+          model: lab.referenceSource.modelId,
+        }).toString()
+      : null;
 
   useEffect(() => {
     if (workspaceId && workspaceId !== selection.workspaceId) selection.setWorkspaceId(workspaceId);
@@ -487,11 +495,19 @@ export function LabWorkspace() {
                 studioVerified={Boolean(studioSession)}
                 showQuiz={roadmap.data?.guided === true}
                 canAttemptQuiz={session.data?.user?.role === "student" && roadmap.data?.guided === true}
+                isStudent={!isLecturer}
+                labTitle={lab.title}
+                hasActiveAnalysisJob={Boolean(
+                  jobs.data?.some((job) =>
+                    ["queued", "processing", "running"].includes(String(job.status)),
+                  ),
+                )}
                 step={activeStep}
                 workspaceId={workspaceId}
                 labId={lab.id}
                 projectId={projectId}
                 modelQuery={modelQuery}
+                referenceModelQuery={referenceModelQuery}
                 snapshotId={lab.referenceSource?.snapshotId}
                 modelId={model?.id ?? lab.referenceSource?.modelId}
                 modelRevision={model?.revision ?? lab.referenceSource?.revision}
@@ -741,13 +757,17 @@ function StepContent({
   step,
   workspaceId,
   labId,
+  labTitle,
   projectId,
   modelQuery,
+  referenceModelQuery,
   snapshotId,
   modelId,
   modelRevision,
   canAttemptQuiz,
   showQuiz,
+  isStudent,
+  hasActiveAnalysisJob,
   runtimeReady,
   runtimeSessionHref,
   studioHref,
@@ -756,26 +776,77 @@ function StepContent({
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
   labId: string;
+  labTitle?: string | undefined;
   projectId: string;
   modelQuery: string | null;
+  referenceModelQuery?: string | null | undefined;
   snapshotId?: string | undefined;
   modelId?: string | undefined;
   modelRevision?: number | undefined;
   canAttemptQuiz: boolean;
   showQuiz: boolean;
+  isStudent?: boolean | undefined;
+  hasActiveAnalysisJob?: boolean | undefined;
   runtimeReady: boolean;
   runtimeSessionHref: string | null;
   studioHref: string | null;
   studioVerified: boolean;
 }) {
   const { t } = useLocale();
+  const client = useApi();
+  const selection = useSelection();
+  const queryClient = useQueryClient();
+  const [initializingWorkspace, setInitializingWorkspace] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
   const sourceLink = projectId
     ? `/snapshots?${new URLSearchParams({ project: projectId })}`
     : `/assignments?${new URLSearchParams({ workspace: workspaceId, assignment: labId })}`;
+  const submitHref = `/assignments?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}#submission-composer`;
+  const viewModelQuery = modelQuery ?? referenceModelQuery ?? null;
+  const showingReferenceModel = !modelQuery && Boolean(referenceModelQuery);
   const current = learningSteps.find((item) => item.id === step)!;
   const Icon = current.icon;
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
   const nextAvailable = next === 2 || (next === 3 && runtimeReady) || (next === 4 && Boolean(studioHref));
+  const canSubmitFromStep4 = step === 4 && (studioVerified || runtimeReady);
+
+  async function handleInitializeWorkspace() {
+    if (!snapshotId || initializingWorkspace) return;
+    setInitializingWorkspace(true);
+    setInitError(null);
+    try {
+      let targetProjectId = projectId;
+      if (!targetProjectId) {
+        const created = await client.execute("createProject", {
+          name: `${labTitle || "Lab"} - Workspace`.slice(0, 255),
+          workspaceId,
+          assignmentId: labId,
+          referenceSnapshotId: snapshotId,
+        });
+        targetProjectId = created.id;
+        selection.setProjectId(targetProjectId);
+      }
+      const snaps = await client.execute("snapshots", { projectId: targetProjectId });
+      const targetSnapshot = snaps[0];
+      if (!targetSnapshot) {
+        throw new Error(t("No snapshot found in the initialized Lab project.", "Không tìm thấy snapshot trong không gian Lab vừa khởi tạo."));
+      }
+      await client.execute("startAnalysis", {
+        projectId: targetProjectId,
+        snapshotId: targetSnapshot.id,
+        idempotencyKey: `lab-init-${targetProjectId}-${targetSnapshot.id}`,
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["api", "projects"] }),
+        queryClient.invalidateQueries({ queryKey: ["api", "analysisJobs"] }),
+        queryClient.invalidateQueries({ queryKey: ["api", "modelVersions"] }),
+      ]);
+    } catch (err) {
+      setInitError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInitializingWorkspace(false);
+    }
+  }
   return (
     <>
       <div className="rounded-2xl border bg-card p-6">
@@ -834,33 +905,58 @@ function StepContent({
               </div>
             </dl>
             <div className="flex flex-wrap gap-2">
-              {modelQuery ? (
+              {viewModelQuery ? (
                 <>
                   <Button asChild variant="outline">
-                    <Link href={`/diagrams?${modelQuery}&kind=CONTEXT`}>C1 System Context</Link>
+                    <Link href={`/diagrams?${viewModelQuery}&kind=CONTEXT`}>C1 System Context</Link>
                   </Button>
                   <Button asChild variant="outline">
-                    <Link href={`/diagrams?${modelQuery}&kind=CONTAINER`}>C2 Container</Link>
+                    <Link href={`/diagrams?${viewModelQuery}&kind=CONTAINER`}>C2 Container</Link>
                   </Button>
                   <Button asChild variant="outline">
-                    <Link href={`/diagrams?${modelQuery}&kind=COMPONENT`}>C3 Component</Link>
+                    <Link href={`/diagrams?${viewModelQuery}&kind=COMPONENT`}>C3 Component</Link>
                   </Button>
-                  <Button asChild>
-                    <Link href={`/architecture?${modelQuery}`}>
+                  <Button asChild variant={showingReferenceModel ? "outline" : "default"}>
+                    <Link href={`/architecture?${viewModelQuery}`}>
                       {t("Service Dependency Graph (Read-Only)", "Đồ thị phụ thuộc Service (Chỉ đọc)")}
                       <ArrowRight />
                     </Link>
                   </Button>
                 </>
               ) : (
-                <Button asChild>
+                <Button asChild variant="outline">
                   <Link href={sourceLink}>
                     {projectId ? t("Analyze Lab source", "Phân tích nguồn Lab") : t("Open Lab assignment", "Mở bài tập Lab")}
                     <ArrowRight />
                   </Link>
                 </Button>
               )}
+              {!modelQuery && isStudent && snapshotId && (
+                <Button
+                  type="button"
+                  disabled={initializingWorkspace || hasActiveAnalysisJob}
+                  onClick={() => void handleInitializeWorkspace()}
+                >
+                  {initializingWorkspace || hasActiveAnalysisJob
+                    ? t("Initializing & Analyzing Lab Workspace…", "Đang khởi tạo & phân tích Không gian Lab…")
+                    : t("Initialize & Analyze My Lab Workspace", "Khởi tạo & Phân tích Không gian Lab của tôi")}
+                  <ArrowRight />
+                </Button>
+              )}
             </div>
+            {showingReferenceModel && (
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "Currently previewing the Lecturer's curated reference architecture. Initialize & analyze your own Lab workspace to build, modify, and submit your work.",
+                  "Đang xem trước kiến trúc mẫu tham chiếu của Giảng viên. Hãy khởi tạo & phân tích không gian Lab riêng để thực hành và nộp bài.",
+                )}
+              </p>
+            )}
+            {initError && (
+              <p role="alert" className="text-xs text-destructive">
+                {initError}
+              </p>
+            )}
           </div>
 
           <StaticEvaluationSummary modelId={modelId} />
@@ -872,9 +968,9 @@ function StepContent({
                 "Chọn nút hoặc mối quan hệ để xem bằng chứng mã nguồn và kết quả đánh giá 3E.",
               )}
             </p>
-            {modelQuery && (
+            {viewModelQuery && (
               <Button asChild variant="outline">
-                <Link href={`/explain?${modelQuery}`}>{t("Open evidence review", "Mở đánh giá bằng chứng")}</Link>
+                <Link href={`/explain?${viewModelQuery}`}>{t("Open evidence review", "Mở đánh giá bằng chứng")}</Link>
               </Button>
             )}
           </DetailPanel>
@@ -946,11 +1042,22 @@ function StepContent({
                 </Button>
               </div>
             ) : step === 4 && studioHref ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <p>{studioVerified
                   ? t("This Lab has verified Studio evidence.", "Lab đã có minh chứng Studio được xác minh.")
                   : t("Choose a service action in Runtime Sessions and run the experiment.", "Chọn thao tác dịch vụ ở trang Phiên Runtime và chạy thực nghiệm.")}</p>
-                <Button asChild><Link href={studioHref}>{t("Open MAVIS Studio", "Mở MAVIS Studio")}</Link></Button>
+                <div className="flex flex-wrap gap-2">
+                  {studioVerified && (
+                    <Button asChild>
+                      <Link href={submitHref}>
+                        {t("Proceed to Submit Lab", "Chuyển sang Nộp bài Lab")} <ArrowRight />
+                      </Link>
+                    </Button>
+                  )}
+                  <Button asChild variant={studioVerified ? "outline" : "default"}>
+                    <Link href={studioHref}>{t("Open MAVIS Studio", "Mở MAVIS Studio")}</Link>
+                  </Button>
+                </div>
               </div>
             ) : <p className="text-sm leading-6 text-muted-foreground">
               {step === 3 ? t("Pass the current Lab Quiz to open Runtime.", "Hãy đạt Quiz hiện tại của Lab để mở Runtime.")
@@ -979,21 +1086,29 @@ function StepContent({
             "Tiến độ được lưu bởi dịch vụ tương ứng.",
           )}
         </span>
-        <Button asChild={nextAvailable} disabled={!nextAvailable}>
-          {nextAvailable ? (
-            <Link
-              href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${next}`}
-            >
-              {t("Next step", "Bước tiếp theo")} <ArrowRight />
-            </Link>
-          ) : (
-            <span>
-              {step === 4
-                ? t("Review submission", "Xem lại bài nộp")
-                : t("Complete prerequisite", "Hoàn thành điều kiện trước")}
-            </span>
-          )}
-        </Button>
+        {step === 4 ? (
+          <Button asChild={canSubmitFromStep4} disabled={!canSubmitFromStep4}>
+            {canSubmitFromStep4 ? (
+              <Link href={submitHref}>
+                {t("Proceed to Submit Lab", "Chuyển sang Nộp bài Lab")} <ArrowRight />
+              </Link>
+            ) : (
+              <span>{t("Complete prerequisite", "Hoàn thành điều kiện trước")}</span>
+            )}
+          </Button>
+        ) : (
+          <Button asChild={nextAvailable} disabled={!nextAvailable}>
+            {nextAvailable ? (
+              <Link
+                href={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=${next}`}
+              >
+                {t("Next step", "Bước tiếp theo")} <ArrowRight />
+              </Link>
+            ) : (
+              <span>{t("Complete prerequisite", "Hoàn thành điều kiện trước")}</span>
+            )}
+          </Button>
+        )}
       </div>
     </>
   );
