@@ -598,7 +598,8 @@ class Wf04AcceptanceMatrixTest {
 
         reviewService.save(submitted.getId(), new SubmissionReviewService.Save(
                 0, "GRADED", null, "All clear.",
-                List.of(new SubmissionReviewService.SnapshotGrade("STEP_1_STATIC", "Static", new BigDecimal("7.50"), "Ok"))));
+                List.of(new SubmissionReviewService.SnapshotGrade("STEP_1_STATIC", "Static", new BigDecimal("7.50"), "Ok"),
+                        new SubmissionReviewService.SnapshotGrade("STEP_4_RUNTIME", "Runtime", new BigDecimal("5.01"), "Verified"))));
 
         authenticate(student);
         assertThat(courseAccess.roadmap(workspace.getId()).labs()).extracting(CourseAccessService.Lab::state)
@@ -778,7 +779,9 @@ class Wf04AcceptanceMatrixTest {
         assertThat(returned.labOutcome()).isEqualTo("NEEDS_REVISION");
 
         var graded = reviewService.save(submitted.getId(), new SubmissionReviewService.Save(
-                2, "GRADED", BigDecimal.valueOf(85), "Approved after fix."));
+                2, "GRADED", null, "Approved after fix.",
+                List.of(new SubmissionReviewService.SnapshotGrade("STEP_1_STATIC", "Static", new BigDecimal("8.00"), "Ok"),
+                        new SubmissionReviewService.SnapshotGrade("STEP_4_RUNTIME", "Runtime", new BigDecimal("9.00"), "Verified"))));
         assertThat(graded.status()).isEqualTo("GRADED");
         assertThat(graded.labOutcome()).isEqualTo("PASSED");
     }
