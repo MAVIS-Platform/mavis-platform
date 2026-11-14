@@ -108,6 +108,12 @@ if [ -e "$grading_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$grading_migration" /opt/mavis/db-backups/wf04-before-v30.dump
 fi
+identity_migration="$incoming/V31__WF01_Customer_Ready_Identity_And_Course.sql"
+if [ -e "$identity_migration" ]; then
+  test -f "$grading_migration" && test -f "$schema_tool" || { echo "Incomplete WF-01 identity schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$identity_migration" /opt/mavis/db-backups/wf01-before-v31.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans
