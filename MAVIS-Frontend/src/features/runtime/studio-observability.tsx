@@ -554,35 +554,51 @@ export function StudioObservability({
     [reference.data, data.serviceMappings],
   );
 
-  // Compute topological depth for LAYERED layout (uses staticEdges or falls back to telemetry interactions)
+  // Compute deterministic topological tier for LAYERED layout (invariant under STOP/START/SCALE so nodes never jump)
   const serviceDepth = useMemo(() => {
     const depths = new Map<string, number>();
-    data.services.forEach((s) => depths.set(s, 0));
-    const flowEdges =
-      staticEdges.length > 0
-        ? staticEdges
-        : (telemetry?.interactions ?? []).map((edge) => ({
-            from: edge.fromService,
-            to: edge.toService,
-          }));
-    for (let pass = 0; pass < data.services.length; pass++) {
-      for (const edge of flowEdges) {
-        const dFrom = depths.get(edge.from) ?? 0;
-        const dTo = depths.get(edge.to) ?? 0;
-        if (dTo <= dFrom) {
-          depths.set(edge.to, Math.min(3, dFrom + 1));
+    if (staticEdges.length > 0) {
+      data.services.forEach((s) => depths.set(s, 0));
+      for (let pass = 0; pass < data.services.length; pass++) {
+        for (const edge of staticEdges) {
+          const dFrom = depths.get(edge.from) ?? 0;
+          const dTo = depths.get(edge.to) ?? 0;
+          if (dTo <= dFrom) {
+            depths.set(edge.to, Math.min(3, dFrom + 1));
+          }
         }
       }
+      data.services.forEach((s) => {
+        const arch = classifyArchetype(s);
+        if ((arch === "DATABASE" || arch === "QUEUE") && (depths.get(s) ?? 0) >= 2) {
+          depths.set(s, 3);
+        }
+      });
+      return depths;
     }
-    // Keep stateful Databases & Message Brokers in the rightmost data/infra tier
+
+    // Deterministic architectural tiering when staticEdges is empty (Sandbox mode)
     data.services.forEach((s) => {
+      const lower = s.toLowerCase();
       const arch = classifyArchetype(s);
-      if ((arch === "DATABASE" || arch === "QUEUE") && (depths.get(s) ?? 0) >= 2) {
+      if (arch === "GATEWAY" || /(cdn|waf|shield|firewall|load-balancer|gateway|edge|ingress)/.test(lower)) {
+        depths.set(s, 0);
+      } else if (
+        arch === "DATABASE" ||
+        arch === "QUEUE" ||
+        /(postgres|mysql|mongo|redis|cache|s3|storage|elastic|search|kafka|rabbit|mq|otel|prometheus|db|settlement)/.test(
+          lower,
+        )
+      ) {
         depths.set(s, 3);
+      } else if (/(payment|inventory|fraud|worker|async|billing|shipping|notification)/.test(lower)) {
+        depths.set(s, 2);
+      } else {
+        depths.set(s, 1);
       }
     });
     return depths;
-  }, [data.services, staticEdges, telemetry?.interactions]);
+  }, [data.services, staticEdges]);
 
   const project3DPoint = useMemo(() => {
     const cosY = Math.cos(camera.yaw);
@@ -1412,7 +1428,9 @@ export function StudioObservability({
               const from = positions.get(edge.fromService);
               const to = positions.get(edge.toService);
               if (!from || !to) return null;
+              const fromStopped = resolveLiveReplicas(edge.fromService) === 0;
               const targetStopped = resolveLiveReplicas(edge.toService) === 0;
+              const edgeSevered = fromStopped || targetStopped;
               const targetReplicas = resolveLiveReplicas(edge.toService);
               const mx = (from.x + to.x) / 2;
               const my = (from.y + to.y) / 2;
@@ -1426,7 +1444,7 @@ export function StudioObservability({
               const speedSec = Math.max(0.7, 2.2 / Math.max(1, Math.min(targetReplicas, 6))).toFixed(
                 2,
               );
-              const edgeColor = targetStopped ? "#f43f5e" : "#38bdf8";
+              const edgeColor = edgeSevered ? "#f43f5e" : "#38bdf8";
               return (
                 <g
                   key={edge.traceId + index}
@@ -1438,13 +1456,37 @@ export function StudioObservability({
                     d={pathD}
                     fill="none"
                     stroke={edgeColor}
-                    strokeDasharray={targetStopped ? "6 4" : undefined}
-                    strokeWidth="1.8"
-                    opacity={targetStopped ? "0.85" : "0.5"}
+                    strokeDasharray={edgeSevered ? "6 4" : undefined}
+                    strokeWidth={edgeSevered ? "2.1" : "1.8"}
+                    opacity={edgeSevered ? "0.9" : "0.5"}
                     markerEnd={
-                      targetStopped ? "url(#studio-arrow-fault)" : "url(#studio-arrow-live)"
+                      edgeSevered ? "url(#studio-arrow-fault)" : "url(#studio-arrow-live)"
                     }
                   />
+                  {edgeSevered && (
+                    <g>
+                      <rect
+                        x={mx - 22}
+                        y={my - 8}
+                        width="44"
+                        height="16"
+                        rx="8"
+                        fill="#090d16"
+                        stroke="#f43f5e"
+                        strokeWidth="1.1"
+                      />
+                      <text
+                        x={mx}
+                        y={my + 3}
+                        textAnchor="middle"
+                        fill="#fda4af"
+                        fontSize="8.5"
+                        fontWeight="700"
+                      >
+                        503 ✕
+                      </text>
+                    </g>
+                  )}
                   {/* Static snapshot anchor dots (only in legacy non-canvasOnly mode) + Live animated motion pulse */}
                   {!canvasOnly && (
                     <>
@@ -1453,7 +1495,7 @@ export function StudioObservability({
                       <circle cx={qx2} cy={qy2} r="3" fill={edgeColor} opacity="0.65" />
                     </>
                   )}
-                  {!targetStopped && (
+                  {!edgeSevered && (
                     <circle r="3.8" fill="#38bdf8">
                       <animateMotion dur={`${speedSec}s`} repeatCount="indefinite" path={pathD} />
                     </circle>

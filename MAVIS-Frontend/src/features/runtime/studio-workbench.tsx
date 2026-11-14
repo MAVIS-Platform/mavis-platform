@@ -797,20 +797,13 @@ export function StudioWorkbench() {
 
   const sandboxStudioData: StudioData = useMemo(() => {
     const nowIso = new Date().toISOString();
-    const interactions = activeEdges.flatMap((edge, idx) => {
-      const fromRep = replicasMap[edge.from] ?? 1;
-      const toRep = replicasMap[edge.to] ?? 1;
-      if (fromRep <= 0 || toRep <= 0) return [];
-      return [
-        {
-          traceId: `studio-trace-${idx + 1}`,
-          fromService: edge.from,
-          toService: edge.to,
-          parentSpanId: `span-${edge.from}-${idx}`,
-          childSpanId: `span-${edge.to}-${idx}`,
-        },
-      ];
-    });
+    const interactions = activeEdges.map((edge, idx) => ({
+      traceId: `studio-trace-${idx + 1}`,
+      fromService: edge.from,
+      toService: edge.to,
+      parentSpanId: `span-${edge.from}-${idx}`,
+      childSpanId: `span-${edge.to}-${idx}`,
+    }));
 
     const spans = customServices.flatMap((svc, idx) => {
       const reps = replicasMap[svc] ?? 1;
