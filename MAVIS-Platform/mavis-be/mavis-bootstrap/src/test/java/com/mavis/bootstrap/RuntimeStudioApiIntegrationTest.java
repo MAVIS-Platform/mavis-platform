@@ -99,7 +99,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
         String lecturerAuth = testAuthorization(lecturer.getEmail());
         String studentAuth = testAuthorization(student.getEmail());
 
-        var uploadRoot = java.nio.file.Path.of("C:/mavis/uploads/studio-test");
+        var uploadRoot = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "mavis-uploads", "studio-test");
         java.nio.file.Files.createDirectories(uploadRoot);
         var composeFile = uploadRoot.resolve("docker-compose-" + UUID.randomUUID() + ".yml");
         java.nio.file.Files.writeString(composeFile, """
@@ -427,7 +427,7 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
         String composeYaml = "services:\n  orders:\n    image: " + images.path("orders").asText()
             + "\n    environment:\n      PAYMENT_URL: http://payment:8080\n  payment:\n    image: "
             + images.path("payment").asText() + "\n";
-        var uploadRoot = java.nio.file.Path.of("C:/mavis/uploads/studio-test");
+        var uploadRoot = java.nio.file.Path.of(System.getProperty("java.io.tmpdir"), "mavis-uploads", "studio-test");
         java.nio.file.Files.createDirectories(uploadRoot);
         var composeFile = uploadRoot.resolve("docker-compose-live-" + UUID.randomUUID() + ".yml");
         java.nio.file.Files.writeString(composeFile, composeYaml);
