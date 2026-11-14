@@ -34,3 +34,7 @@ The restricted backup is stored on the deploy host at `/opt/mavis/db-backups/wf0
 Releases with the versioned Quiz API also stage and verify V27 after V26 and before replacing the stack. If V27 is absent, the same checks apply and the verified backup is retained at `/opt/mavis/db-backups/wf02-before-v27.dump`. Image rollback retains the additive schema and Quiz history. Reconcile both versions in Flyway history before enabling automatic migrations on production.
 
 Releases with frozen submission Quiz evidence also stage and verify V28 after V27. A verified backup is retained at `/opt/mavis/db-backups/wf02-before-v28.dump` when the column is first added. Reconcile V28 in Flyway history before enabling automatic migrations.
+
+## WF-04 schema prerequisites
+
+Releases with WF-04 submission evidence digests and per-snapshot grading stage and verify `V29__Submission_Evidence_Package_Digest.sql` and `V30__Submission_Snapshot_Grades_And_Explanations.sql` after V28 before replacing the live stack. When each migration is first applied, verified backups are retained at `/opt/mavis/db-backups/wf04-before-v29.dump` and `/opt/mavis/db-backups/wf04-before-v30.dump`. Image rollback preserves these additive columns and tables; reconcile V29 and V30 in Flyway history before enabling automatic migrations on production.
