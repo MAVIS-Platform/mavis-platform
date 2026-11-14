@@ -868,7 +868,7 @@ export function StudioWorkbench() {
             <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-mono text-[11px] font-extrabold text-emerald-400">
               MAVIS
             </span>
-            <span className="text-xs font-bold tracking-tight">Studio</span>
+            <span className="text-xs font-bold tracking-tight text-emerald-400">Studio</span>
           </div>
           {mode === "SANDBOX" && (
             <select
