@@ -53,8 +53,8 @@ public class AuthServiceImpl implements AuthService {
     private final com.mavis.platform.security.jwt.RefreshSessionService refreshSessions;
     private final com.mavis.platform.auth.service.AuthAbuseGuard abuseGuard;
 
-    AuthServiceImpl(UserRepository users, RoleRepository roles, UserOtpRepository otps,
-                    PasswordEncoder passwords, JwtUtil jwt, EmailService email) {
+    public AuthServiceImpl(UserRepository users, RoleRepository roles, UserOtpRepository otps,
+                           PasswordEncoder passwords, JwtUtil jwt, EmailService email) {
         this(users, roles, otps, passwords, jwt, email, null, null);
     }
 
