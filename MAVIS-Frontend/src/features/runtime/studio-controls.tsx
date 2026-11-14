@@ -239,6 +239,37 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
         {" · "}
         {t("Cleanup")}: {data.cleanupStatus}
       </p>
+      <div className="rounded-lg border bg-muted/20 p-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t("Guided Lab Mission Checklist")}
+        </p>
+        <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2 lg:grid-cols-4">
+          {(
+            [
+              ["Step 1: Capture baseline snapshot", (data.snapshots?.length ?? 0) >= 1],
+              ["Step 2: Scale replicas (4 → 8) or inject fault", hasConfirmedAction],
+              [
+                "Step 3: Capture post-change snapshot & compare",
+                (data.snapshots?.length ?? 0) >= 2,
+              ],
+              [
+                "Step 4: Finish Studio & seal HMAC receipt",
+                data.executionStatus === "COMPLETED" || Boolean(data.receiptDigest),
+              ],
+            ] as const
+          ).map(([label, done]) => (
+            <div
+              key={label}
+              className={`flex items-center gap-2 rounded border px-2.5 py-1.5 ${
+                done ? "border-primary/40 bg-primary/10 font-medium" : "bg-background opacity-80"
+              }`}
+            >
+              <span className="font-mono text-sm">{done ? "✓" : "○"}</span>
+              <span>{t(label)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
       <StudioObservability
         data={data}
         selected={target}

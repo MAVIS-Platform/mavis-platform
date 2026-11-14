@@ -68,6 +68,34 @@ const PALETTE_ITEMS: DragPaletteItem[] = [
   },
 ];
 
+function parseCpuPercent(raw?: string | null): number {
+  if (!raw) return 0;
+  const match = raw.match(/(\d+(?:\.\d+)?)\s*%/);
+  return match ? Math.min(100, Math.max(0, Number(match[1]))) : 0;
+}
+
+function parseRamMiB(raw?: string | null): { usedMiB: number; limitMiB: number; percent: number } {
+  if (!raw) return { usedMiB: 0, limitMiB: 512, percent: 0 };
+  const parts = raw.split("/");
+  const toMiB = (part?: string) => {
+    if (!part) return 0;
+    const m = part.trim().match(/(\d+(?:\.\d+)?)\s*(GiB|GB|MiB|MB|KiB|KB)?/i);
+    if (!m) return 0;
+    const val = Number(m[1]);
+    const unit = (m[2] ?? "MiB").toUpperCase();
+    if (unit.startsWith("G")) return val * 1024;
+    if (unit.startsWith("K")) return val / 1024;
+    return val;
+  };
+  const usedMiB = toMiB(parts[0]);
+  const limitMiB = Math.max(1, toMiB(parts[1]) || 512);
+  return {
+    usedMiB,
+    limitMiB,
+    percent: Math.min(100, Math.max(0, (usedMiB / limitMiB) * 100)),
+  };
+}
+
 export function StudioObservability({
   data,
   selected,
@@ -134,7 +162,9 @@ export function StudioObservability({
           ([, id]) => id === edge.from,
         )?.[0];
         const to = Object.entries(data.serviceMappings ?? {}).find(([, id]) => id === edge.to)?.[0];
-        return from && to ? [{ from, to, id: edge.id }] : [];
+        return from && to
+          ? [{ from, to, id: edge.id, protocol: edge.protocol ?? "HTTP" }]
+          : [];
       }) ?? [],
     [reference.data, data.serviceMappings],
   );
@@ -159,7 +189,6 @@ export function StudioObservability({
     const raw = new Map<string, { x: number; y: number; z: number; tier: number }>();
     const total = Math.max(1, data.services.length);
 
-    // Group by tier for LAYERED mode
     const tierGroups = new Map<number, string[]>();
     data.services.forEach((name) => {
       const tier = serviceDepth.get(name) ?? 0;
@@ -189,7 +218,6 @@ export function StudioObservability({
         y = (row - (rows - 1) / 2) * 125;
         z = (row - (rows - 1) / 2) * 90;
       } else {
-        // LAYERED architecture tiers (Ingress/Upstream -> Core Services -> Downstream/Data)
         const tierIndex = Math.max(0, tierKeys.indexOf(tier));
         const tierCount = Math.max(1, tierKeys.length);
         const siblings = tierGroups.get(tier) ?? [name];
@@ -226,7 +254,7 @@ export function StudioObservability({
       const maxX = Math.max(...points.map((point) => point.x));
       const minY = Math.min(...points.map((point) => point.y));
       const maxY = Math.max(...points.map((point) => point.y));
-      const fit = Math.min(1, 480 / Math.max(1, maxX - minX), 270 / Math.max(1, maxY - minY));
+      const fit = Math.min(1, 480 / Math.max(1, maxX - minX), 260 / Math.max(1, maxY - minY));
       for (const [name, point] of raw.entries()) {
         const offset = customOffsets[name] ?? { x: 0, y: 0 };
         let px = 350 + (point.x - (minX + maxX) / 2) * fit + offset.x + pan.x;
@@ -237,8 +265,8 @@ export function StudioObservability({
           px = Math.round(px / 16) * 16;
           py = Math.round(py / 16) * 16;
         }
-        point.x = Math.max(82, Math.min(618, px));
-        point.y = Math.max(66, Math.min(404, py));
+        point.x = Math.max(84, Math.min(616, px));
+        point.y = Math.max(68, Math.min(400, py));
       }
     }
     return raw;
@@ -291,6 +319,84 @@ export function StudioObservability({
 
   const selectedLive = telemetry?.services.find((item) => item.service === selected);
   const selectedReplicas = resolveLiveReplicas(selected);
+
+  // Compute Project Deployment & Scaling Impact Matrix rows (Static AST + Live Docker/OTel Delta)
+  const deploymentRows = useMemo(() => {
+    return data.services.map((serviceName) => {
+      const elId = data.serviceMappings?.[serviceName];
+      const element = reference.data?.elements.find((el) => el.id === elId);
+      const inboundStatic = staticEdges.filter((e) => e.to === serviceName);
+      const outboundStatic = staticEdges.filter((e) => e.from === serviceName);
+      const live = telemetry?.services.find((item) => item.service === serviceName);
+      const latestAction = [...data.actions]
+        .reverse()
+        .find((item) => item.service === serviceName && item.status === "CONFIRMED");
+      const firstAction = data.actions.find(
+        (item) => item.service === serviceName && item.status === "CONFIRMED",
+      );
+      const replicasBefore = firstAction?.result?.replicasBefore ?? 1;
+      const replicasNow = live?.runningReplicas ?? latestAction?.result?.replicasAfter ?? 1;
+      const cpuValues = (live?.stats ?? []).map((s) => parseCpuPercent(s.cpu));
+      const ramValues = (live?.stats ?? []).map((s) => parseRamMiB(s.memory));
+      const avgCpu =
+        cpuValues.length > 0
+          ? cpuValues.reduce((acc, v) => acc + v, 0) / cpuValues.length
+          : 0;
+      const perInstanceRamMiB =
+        ramValues.length > 0
+          ? ramValues.reduce((acc, v) => acc + v.usedMiB, 0) / ramValues.length
+          : 0;
+      const ramLimitMiB = ramValues[0]?.limitMiB ?? 512;
+      // When scaling 1 -> 4 -> 8 instances, total cluster memory footprint scales across running containers
+      const totalServiceRamMiB =
+        ramValues.length > 1
+          ? ramValues.reduce((acc, v) => acc + v.usedMiB, 0)
+          : perInstanceRamMiB * Math.max(0, replicasNow);
+      const p95Before = latestAction?.result?.metricsBefore?.["p95LatencyMs"];
+      const p95After = latestAction?.result?.metricsAfter?.["p95LatencyMs"];
+      const reqBefore = latestAction?.result?.metricsBefore?.["requestCount"];
+      const reqAfter = latestAction?.result?.metricsAfter?.["requestCount"];
+      const errAfter = latestAction?.result?.metricsAfter?.["errorRatePercent"];
+
+      // Check if any downstream dependency has significantly fewer replicas (bottleneck warning when scaling 4 -> 8)
+      const downstreamServices = outboundStatic.map((e) => e.to);
+      const bottleneckTarget = downstreamServices.find((ds) => {
+        const dsReplicas = resolveLiveReplicas(ds);
+        return replicasNow >= 4 && dsReplicas <= 1;
+      });
+
+      return {
+        serviceName,
+        layer: element?.layer ?? "domain",
+        elementType: element?.elementType ?? "SERVICE_CONTAINER",
+        evidenceCount: element?.evidence?.length ?? 0,
+        inboundCount: inboundStatic.length,
+        outboundCount: outboundStatic.length,
+        protocols: [...new Set([...inboundStatic, ...outboundStatic].map((e) => e.protocol))].join(
+          ", ",
+        ),
+        replicasBefore,
+        replicasNow,
+        avgCpu,
+        perInstanceRamMiB,
+        totalServiceRamMiB,
+        ramLimitMiB,
+        p95Before: typeof p95Before === "number" ? p95Before : undefined,
+        p95After: typeof p95After === "number" ? p95After : undefined,
+        reqBefore: typeof reqBefore === "number" ? reqBefore : undefined,
+        reqAfter: typeof reqAfter === "number" ? reqAfter : undefined,
+        errAfter: typeof errAfter === "number" ? errAfter : undefined,
+        bottleneckTarget,
+      };
+    });
+  }, [data.services, data.serviceMappings, data.actions, reference.data, staticEdges, telemetry]);
+
+  const totalRunningInstances = deploymentRows.reduce((sum, r) => sum + r.replicasNow, 0);
+  const totalRamMiB = deploymentRows.reduce((sum, r) => sum + r.totalServiceRamMiB, 0);
+  const avgClusterCpu =
+    deploymentRows.length > 0
+      ? deploymentRows.reduce((sum, r) => sum + r.avgCpu, 0) / deploymentRows.length
+      : 0;
 
   return (
     <div className="space-y-4">
@@ -449,7 +555,7 @@ export function StudioObservability({
         </div>
       </div>
 
-      {/* Interactive 2D/3D Studio Canvas + Direct Node Manipulation */}
+      {/* Interactive 2D/3D Studio Canvas + Direct Node Manipulation + Circuit Breaker & Mini CPU/RAM Bars */}
       <div className="relative max-w-full overflow-x-auto">
         <svg
           ref={svg}
@@ -548,6 +654,17 @@ export function StudioObservability({
             >
               <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--primary)" />
             </marker>
+            <marker
+              id="studio-arrow-fault"
+              viewBox="0 0 10 10"
+              refX="8"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--destructive)" />
+            </marker>
           </defs>
 
           {/* Subtle Studio Blueprint Grid */}
@@ -578,38 +695,74 @@ export function StudioObservability({
             {layoutMode} · {Math.round(zoom * 100)}%
           </text>
 
-          {/* Static Dependency Edges (Dashed) */}
+          {/* Static Dependency Edges + Severed Link / Circuit Breaker Banner when target is STOPPED */}
           {staticEdges.map((edge) => {
             const from = positions.get(edge.from);
             const to = positions.get(edge.to);
-            return from && to ? (
-              <line
-                key={edge.id}
-                x1={from.x}
-                y1={from.y}
-                x2={to.x}
-                y2={to.y}
-                stroke="currentColor"
-                strokeDasharray="5 5"
-                strokeWidth="1.5"
-                opacity=".28"
-              />
-            ) : null;
+            if (!from || !to) return null;
+            const targetStopped = resolveLiveReplicas(edge.to) === 0;
+            const midX = (from.x + to.x) / 2;
+            const midY = (from.y + to.y) / 2;
+            return (
+              <g key={edge.id}>
+                <line
+                  x1={from.x}
+                  y1={from.y}
+                  x2={to.x}
+                  y2={to.y}
+                  stroke={targetStopped ? "var(--destructive)" : "currentColor"}
+                  strokeDasharray={targetStopped ? "6 4" : "5 5"}
+                  strokeWidth={targetStopped ? "2.2" : "1.5"}
+                  opacity={targetStopped ? "0.9" : ".28"}
+                  markerEnd={targetStopped ? "url(#studio-arrow-fault)" : undefined}
+                />
+                {targetStopped && (
+                  <g>
+                    <rect
+                      x={midX - 54}
+                      y={midY - 10}
+                      width="108"
+                      height="18"
+                      rx="4"
+                      fill="var(--background)"
+                      stroke="var(--destructive)"
+                      strokeWidth="1.2"
+                    />
+                    <text
+                      x={midX}
+                      y={midY + 2}
+                      textAnchor="middle"
+                      fill="var(--destructive)"
+                      fontSize="9"
+                      fontWeight="700"
+                    >
+                      {t("503 / CIRCUIT OPEN")}
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
           })}
 
-          {/* Observed Live OTel Trace Edges + Animated Request Particles */}
+          {/* Observed Live OTel Trace Edges + Animated SVG Traffic Pulses */}
           {telemetry?.interactions
             .filter((edge) => !traceId || edge.traceId === traceId)
             .map((edge, index) => {
               const from = positions.get(edge.fromService);
               const to = positions.get(edge.toService);
               if (!from || !to) return null;
+              const targetStopped = resolveLiveReplicas(edge.toService) === 0;
+              const targetReplicas = resolveLiveReplicas(edge.toService);
               const mx = (from.x + to.x) / 2;
               const my = (from.y + to.y) / 2;
               const qx1 = from.x + (to.x - from.x) * 0.28;
               const qy1 = from.y + (to.y - from.y) * 0.28;
               const qx2 = from.x + (to.x - from.x) * 0.72;
               const qy2 = from.y + (to.y - from.y) * 0.72;
+              const pathD = `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+              const speedSec = Math.max(0.7, 2.2 / Math.max(1, Math.min(targetReplicas, 6))).toFixed(
+                2,
+              );
               return (
                 <g
                   key={edge.traceId + index}
@@ -622,19 +775,44 @@ export function StudioObservability({
                     y1={from.y}
                     x2={to.x}
                     y2={to.y}
-                    stroke="var(--primary)"
+                    stroke={targetStopped ? "var(--destructive)" : "var(--primary)"}
+                    strokeDasharray={targetStopped ? "6 4" : undefined}
                     strokeWidth="2.5"
-                    markerEnd="url(#studio-arrow-live)"
+                    markerEnd={
+                      targetStopped ? "url(#studio-arrow-fault)" : "url(#studio-arrow-live)"
+                    }
                   />
-                  {/* Telemetry Flow Particles along the active trace link */}
-                  <circle cx={qx1} cy={qy1} r="3" fill="var(--primary)" opacity="0.65" />
-                  <circle cx={mx} cy={my} r="4.5" fill="var(--primary)" />
-                  <circle cx={qx2} cy={qy2} r="3" fill="var(--primary)" opacity="0.65" />
+                  {/* Static snapshot anchor dots + Live animated motion pulses */}
+                  <circle
+                    cx={qx1}
+                    cy={qy1}
+                    r="3"
+                    fill={targetStopped ? "var(--destructive)" : "var(--primary)"}
+                    opacity="0.65"
+                  />
+                  <circle
+                    cx={mx}
+                    cy={my}
+                    r="4.5"
+                    fill={targetStopped ? "var(--destructive)" : "var(--primary)"}
+                  />
+                  <circle
+                    cx={qx2}
+                    cy={qy2}
+                    r="3"
+                    fill={targetStopped ? "var(--destructive)" : "var(--primary)"}
+                    opacity="0.65"
+                  />
+                  {!targetStopped && (
+                    <circle r="4" fill="var(--primary)">
+                      <animateMotion dur={`${speedSec}s`} repeatCount="indefinite" path={pathD} />
+                    </circle>
+                  )}
                 </g>
               );
             })}
 
-          {/* Interactive Draggable 2D/3D Service Blocks & Volumetric Replica Pods */}
+          {/* Interactive Draggable 2D/3D Service Blocks + Mini CPU/RAM Bars & Replica Pod Clusters */}
           {[...positions.entries()]
             .sort((a, b) => b[1].z - a[1].z)
             .map(([name, point]) => {
@@ -644,7 +822,10 @@ export function StudioObservability({
               const isDropTarget = dropTargetNode === name;
               const isStopped = live !== undefined && live.runningReplicas === 0;
               const activePods = Math.min(live?.runningReplicas ?? 0, 8);
-              const depthOffset = view === "3D" ? 12 : 0;
+              const depthOffset = view === "3D" ? 13 : 0;
+
+              const cpuPercent = parseCpuPercent(live?.stats[0]?.cpu);
+              const ramInfo = parseRamMiB(live?.stats[0]?.memory);
 
               const strokeColor = isDropTarget
                 ? "var(--primary)"
@@ -709,14 +890,14 @@ export function StudioObservability({
                   {view === "3D" && (
                     <>
                       <polygon
-                        points={`${point.x - 74},${point.y - 30} ${point.x - 74 + depthOffset},${point.y - 30 - depthOffset} ${point.x + 74 + depthOffset},${point.y - 30 - depthOffset} ${point.x + 74},${point.y - 30}`}
+                        points={`${point.x - 76},${point.y - 34} ${point.x - 76 + depthOffset},${point.y - 34 - depthOffset} ${point.x + 76 + depthOffset},${point.y - 34 - depthOffset} ${point.x + 76},${point.y - 34}`}
                         fill="currentColor"
                         opacity="0.14"
                         stroke={strokeColor}
                         strokeWidth="1"
                       />
                       <polygon
-                        points={`${point.x + 74},${point.y - 30} ${point.x + 74 + depthOffset},${point.y - 30 - depthOffset} ${point.x + 74 + depthOffset},${point.y + 30 - depthOffset} ${point.x + 74},${point.y + 30}`}
+                        points={`${point.x + 76},${point.y - 34} ${point.x + 76 + depthOffset},${point.y - 34 - depthOffset} ${point.x + 76 + depthOffset},${point.y + 34 - depthOffset} ${point.x + 76},${point.y + 34}`}
                         fill="currentColor"
                         opacity="0.22"
                         stroke={strokeColor}
@@ -728,10 +909,10 @@ export function StudioObservability({
                   {/* Drop Target Highlight Halo */}
                   {isDropTarget && (
                     <rect
-                      x={point.x - 80}
-                      y={point.y - 36}
-                      width="160"
-                      height="72"
+                      x={point.x - 82}
+                      y={point.y - 40}
+                      width="164"
+                      height="80"
                       rx="11"
                       fill="none"
                       stroke="var(--primary)"
@@ -742,10 +923,10 @@ export function StudioObservability({
 
                   {/* Main Service Container Card */}
                   <rect
-                    x={point.x - 74}
-                    y={point.y - 30}
-                    width="148"
-                    height="60"
+                    x={point.x - 76}
+                    y={point.y - 34}
+                    width="152"
+                    height="68"
                     rx="9"
                     fill="var(--background)"
                     stroke={strokeColor}
@@ -754,8 +935,8 @@ export function StudioObservability({
 
                   {/* Health Status Dot */}
                   <circle
-                    cx={point.x - 58}
-                    cy={point.y - 12}
+                    cx={point.x - 60}
+                    cy={point.y - 17}
                     r="4"
                     fill={isStopped ? "var(--destructive)" : "var(--primary)"}
                   />
@@ -763,7 +944,7 @@ export function StudioObservability({
                   {/* Service Name */}
                   <text
                     x={point.x + 4}
-                    y={point.y - 8}
+                    y={point.y - 13}
                     textAnchor="middle"
                     fill="currentColor"
                     fontSize="12"
@@ -775,10 +956,10 @@ export function StudioObservability({
                   {/* Running / Configured Replicas Status */}
                   <text
                     x={point.x}
-                    y={point.y + 10}
+                    y={point.y + 2}
                     textAnchor="middle"
                     fill="currentColor"
-                    fontSize="11"
+                    fontSize="10.5"
                     opacity="0.85"
                   >
                     {live
@@ -786,21 +967,57 @@ export function StudioObservability({
                       : t("Waiting for telemetry")}
                   </text>
 
+                  {/* Mini Embedded CPU & RAM Resource Progress Bars inside the Node */}
+                  <rect
+                    x={point.x - 62}
+                    y={point.y + 8}
+                    width="58"
+                    height="4"
+                    rx="2"
+                    fill="currentColor"
+                    opacity="0.14"
+                  />
+                  <rect
+                    x={point.x - 62}
+                    y={point.y + 8}
+                    width={Math.max(3, Math.round((cpuPercent / 100) * 58))}
+                    height="4"
+                    rx="2"
+                    fill="var(--primary)"
+                  />
+                  <rect
+                    x={point.x + 4}
+                    y={point.y + 8}
+                    width="58"
+                    height="4"
+                    rx="2"
+                    fill="currentColor"
+                    opacity="0.14"
+                  />
+                  <rect
+                    x={point.x + 4}
+                    y={point.y + 8}
+                    width={Math.max(3, Math.round((ramInfo.percent / 100) * 58))}
+                    height="4"
+                    rx="2"
+                    fill="var(--primary)"
+                  />
+
                   {/* Visual Replica Pod Cluster (1..8 Pods rendered inside/below the block) */}
                   {Array.from({ length: activePods }, (_, i) => {
-                    const podX = point.x - 52 + i * 14;
-                    const podY = point.y + 20 + (view === "3D" ? (i % 2) * 2 : 0);
+                    const podX = point.x - 52 + i * 14.5;
+                    const podY = point.y + 21 + (view === "3D" ? (i % 2) * 2 : 0);
                     return (
                       <g key={i}>
                         <rect
                           x={podX - 4.5}
-                          y={podY - 4}
+                          y={podY - 3.5}
                           width="9"
-                          height="7"
-                          rx="2"
+                          height="6.5"
+                          rx="1.8"
                           fill="var(--primary)"
                         />
-                        <circle cx={podX} cy={podY + 18} r="2.2" fill="var(--primary)" />
+                        <circle cx={podX} cy={podY + 20} r="2.2" fill="var(--primary)" />
                       </g>
                     );
                   })}
@@ -846,6 +1063,114 @@ export function StudioObservability({
           </div>
         </div>
       )}
+
+      {/* Project Deployment & Scaling Impact Matrix (Static Architecture + Live 1 -> 4 -> 8 Scaling Delta) */}
+      <section className="space-y-3 rounded-lg border bg-card p-3.5 text-sm shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h4 className="font-medium">{t("Project Deployment & Scaling Impact Matrix")}</h4>
+            <p className="text-xs text-muted-foreground">
+              {t("Static Architecture Footprint")} + {t("Live Deployment & Scaling Delta")}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded border bg-muted/40 px-2.5 py-1 font-mono">
+              {t("Total running instances")}: <strong>{totalRunningInstances}</strong>
+            </span>
+            <span className="rounded border bg-muted/40 px-2.5 py-1 font-mono">
+              {t("Total CPU load")}: <strong>{avgClusterCpu.toFixed(1)}%</strong>
+            </span>
+            <span className="rounded border bg-muted/40 px-2.5 py-1 font-mono">
+              {t("Total RAM footprint")}: <strong>{Math.round(totalRamMiB)} MiB</strong>
+            </span>
+          </div>
+        </div>
+
+        <div className="max-w-full overflow-x-auto">
+          <table className="w-full min-w-[620px] border-collapse text-left text-xs">
+            <thead>
+              <tr className="border-b text-muted-foreground">
+                <th className="py-2 pr-3 font-medium">Service</th>
+                <th className="px-2 py-2 font-medium">{t("Layer / Type")}</th>
+                <th className="px-2 py-2 font-medium">{t("Inbound / Outbound")}</th>
+                <th className="px-2 py-2 font-medium">{t("Replicas (Before → Now)")}</th>
+                <th className="px-2 py-2 font-medium">{t("Per-instance CPU / RAM")}</th>
+                <th className="px-2 py-2 font-medium">{t("Aggregated service RAM")}</th>
+                <th className="pl-2 py-2 font-medium">{t("Scaling & Fault Impact")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {deploymentRows.map((row) => {
+                const isSelectedRow = row.serviceName === selected;
+                const scaleFactor =
+                  row.replicasBefore > 0 ? row.replicasNow / row.replicasBefore : row.replicasNow;
+                return (
+                  <tr
+                    key={row.serviceName}
+                    onClick={() => onSelect(row.serviceName)}
+                    className={`cursor-pointer border-b last:border-0 transition hover:bg-muted/40 ${
+                      isSelectedRow ? "bg-muted/30 font-medium" : ""
+                    }`}
+                  >
+                    <td className="py-2 pr-3 font-mono font-semibold">{row.serviceName}</td>
+                    <td className="px-2 py-2">
+                      <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+                        {row.layer} · {row.elementType}
+                      </span>
+                      {row.evidenceCount > 0 && (
+                        <span className="ml-1 text-[10px] text-muted-foreground">
+                          ({row.evidenceCount} {t("Source evidence")})
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 font-mono">
+                      {row.inboundCount} in / {row.outboundCount} out
+                      {row.protocols ? ` (${row.protocols})` : ""}
+                    </td>
+                    <td className="px-2 py-2 font-mono">
+                      {row.replicasBefore} → <strong>{row.replicasNow}</strong>
+                      {scaleFactor > 1 && (
+                        <span className="ml-1 rounded bg-primary/15 px-1 py-0.5 text-[10px] text-primary">
+                          ×{scaleFactor.toFixed(0)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 font-mono">
+                      {row.avgCpu.toFixed(1)}% · {Math.round(row.perInstanceRamMiB)} MiB
+                    </td>
+                    <td className="px-2 py-2 font-mono">
+                      <strong>{Math.round(row.totalServiceRamMiB)} MiB</strong> /{" "}
+                      {Math.round(row.ramLimitMiB * Math.max(1, row.replicasNow))} MiB
+                    </td>
+                    <td className="pl-2 py-2">
+                      {row.replicasNow === 0 ? (
+                        <span className="font-semibold text-destructive">
+                          {t("Service stopped (Fault injected)")} · {t("503 / CIRCUIT OPEN")}
+                        </span>
+                      ) : row.replicasNow > 1 ? (
+                        <span>
+                          {t("Load balanced across")} {row.replicasNow} {t("instances")} (~
+                          {Math.round(100 / row.replicasNow)}%/pod)
+                          {row.p95Before !== undefined && row.p95After !== undefined
+                            ? ` · p95: ${row.p95Before}ms → ${row.p95After}ms`
+                            : ""}
+                          {row.bottleneckTarget
+                            ? ` · ⚠ ${t("Downstream bottleneck risk")}: ${row.bottleneckTarget} (1 pod)`
+                            : ""}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {t("Single instance baseline")} (100%/pod)
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {!telemetry && <p role="status">{t("Waiting for observed telemetry from Runner.")}</p>}
       {telemetry && (

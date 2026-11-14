@@ -130,6 +130,9 @@ async function main() {
     await page.getByRole("button", { name: "Rotate right", exact: true }).click();
     await page.getByRole("button", { name: "2D", exact: true }).click();
     await page.getByRole("button", { name: "Reset layout", exact: true }).click();
+    await page
+      .getByRole("heading", { name: "Project Deployment & Scaling Impact Matrix", exact: true })
+      .waitFor();
     assert.equal(
       await page.getByRole("button", { name: "payment", exact: true }).getAttribute("aria-pressed"),
       "true",
