@@ -756,13 +756,14 @@ class Wf01AcceptanceMatrixTest {
     }
 
     @Test
-    @DisplayName("F10-009: 1-Click seedCurated publishes Lab 01 & Lab 02 with valid reference archive, C1-C3 model, and quizzes idempotently")
+    @DisplayName("F10-009: 1-Click seedCurated publishes STANDARD_DEMO (3 Labs) with valid reference archive, C1-C3 model, and quizzes idempotently")
     void f10_009_seedCuratedLabsPopulatesWorkspaceIdempotently() throws Exception {
         authenticate(lecturerA);
         when(workspaces.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        Assignment lab03 = Assignment.builder().id(UUID.randomUUID()).workspace(classA).title("Lab 03").labOrder(3).build();
         when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(classA.getId()))
                 .thenReturn(List.of())
-                .thenReturn(List.of(lab01, lab02));
+                .thenReturn(List.of(lab01, lab02, lab03));
 
         ProjectRepository projectRepo = mock(ProjectRepository.class);
         SourceSnapshotRepository snapshotRepo = mock(SourceSnapshotRepository.class);
@@ -796,7 +797,47 @@ class Wf01AcceptanceMatrixTest {
         assertThat(classA.isCourseMode()).isTrue();
         verify(diagramRepo).saveAll(anyList());
         verify(evalRepo).save(any());
-        verify(quizService, org.mockito.Mockito.times(2)).publishCurriculum(eq(classA.getId()), any(), any());
+        verify(quizService, org.mockito.Mockito.times(3)).publishCurriculum(eq(classA.getId()), any(), any());
+    }
+
+    @Test
+    @DisplayName("F10-010: FULL_CURRICULUM preset seeds all 13 guided Labs (12 Java + 1 C# ASP.NET Core) with quizzes idempotently")
+    void f10_010_seedFullCurriculumPopulatesAll13LabsIdempotently() throws Exception {
+        authenticate(lecturerA);
+        when(workspaces.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(classA.getId()))
+                .thenReturn(List.of());
+
+        ProjectRepository projectRepo = mock(ProjectRepository.class);
+        SourceSnapshotRepository snapshotRepo = mock(SourceSnapshotRepository.class);
+        ModelVersionRepository modelRepo = mock(ModelVersionRepository.class);
+        ModelElementRepository elementRepo = mock(ModelElementRepository.class);
+        ModelRelationshipRepository relRepo = mock(ModelRelationshipRepository.class);
+        DiagramVersionRepository diagramRepo = mock(DiagramVersionRepository.class);
+        EvaluationRunRepository evalRepo = mock(EvaluationRunRepository.class);
+        EvidenceRepository evidenceRepo = mock(EvidenceRepository.class);
+        CourseQuizService quizService = mock(CourseQuizService.class);
+
+        when(projectRepo.save(any())).thenAnswer(inv -> { Project p = inv.getArgument(0); p.setId(UUID.randomUUID()); return p; });
+        when(snapshotRepo.save(any())).thenAnswer(inv -> { SourceSnapshot s = inv.getArgument(0); s.setId(UUID.randomUUID()); return s; });
+        when(modelRepo.saveAndFlush(any())).thenAnswer(inv -> { ModelVersion m = inv.getArgument(0); m.setId(UUID.randomUUID()); return m; });
+        when(elementRepo.save(any())).thenAnswer(inv -> { ModelElement e = inv.getArgument(0); e.setId(UUID.randomUUID()); return e; });
+        when(relRepo.save(any())).thenAnswer(inv -> { ModelRelationship r = inv.getArgument(0); r.setId(UUID.randomUUID()); return r; });
+        when(evidenceRepo.save(any())).thenAnswer(inv -> { Evidence ev = inv.getArgument(0); ev.setId(UUID.randomUUID()); return ev; });
+        when(diagramRepo.saveAll(anyList())).thenAnswer(inv -> inv.getArgument(0));
+        when(evalRepo.save(any())).thenAnswer(inv -> { EvaluationRun er = inv.getArgument(0); er.setId(UUID.randomUUID()); return er; });
+        when(assignments.saveAndFlush(any())).thenAnswer(inv -> { Assignment a = inv.getArgument(0); a.setId(UUID.randomUUID()); return a; });
+
+        CourseLabSeederService seeder = new CourseLabSeederService(
+                accessPolicy, workspaces, assignments, projectRepo, snapshotRepo, modelRepo,
+                elementRepo, relRepo, diagramRepo, evalRepo, evidenceRepo,
+                new CourseCurriculum(new ObjectMapper()), quizService, courseAccess, jdbc, new ObjectMapper(), tempDir.toString());
+
+        CourseAccessService.Roadmap seeded = seeder.seedCurated(classA.getId(), CourseLabSeederService.PRESET_FULL_CURRICULUM);
+        assertThat(seeded.guided()).isTrue();
+        assertThat(classA.isCourseMode()).isTrue();
+        verify(assignments, org.mockito.Mockito.times(13)).saveAndFlush(any(Assignment.class));
+        verify(quizService, org.mockito.Mockito.times(13)).publishCurriculum(eq(classA.getId()), any(), any());
     }
 
     // ==================== E2E, STATE TRANSITIONS & NFR ====================

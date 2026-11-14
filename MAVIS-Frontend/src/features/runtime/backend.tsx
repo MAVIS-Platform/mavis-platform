@@ -462,18 +462,119 @@ function buildRuntimeSequenceSvgString(
   return { svgMarkup: parts.join("\n"), width, height, participants };
 }
 
+export interface StudioComparisonOverlay {
+  action: string;
+  service: string;
+  replicasBefore?: number | null | undefined;
+  replicasAfter?: number | null | undefined;
+  requestCountBefore?: number | null | undefined;
+  requestCountAfter?: number | null | undefined;
+  p95LatencyMsBefore?: number | null | undefined;
+  p95LatencyMsAfter?: number | null | undefined;
+  errorRateBefore?: number | null | undefined;
+  errorRateAfter?: number | null | undefined;
+  capturedSpanCount?: number | null | undefined;
+  cleanupStatus?: string | null | undefined;
+  measurementStatus?: string | null | undefined;
+  measurementNote?: string | null | undefined;
+}
+
+function resolveSessionStudioComparisons(
+  data: {
+    beforeAfterComparison?: StudioComparisonOverlay[] | null | undefined;
+    capturedSpanCount?: number | null | undefined;
+    cleanupStatus?: string | null | undefined;
+    infrastructureActions?: Array<{
+      action: string;
+      service: string;
+      confirmed?: boolean;
+      replicasBefore?: number | null;
+      replicasAfter?: number | null;
+      metricsBefore: Record<string, unknown>;
+      metricsAfter: Record<string, unknown>;
+    }> | null | undefined;
+  } | null | undefined,
+): StudioComparisonOverlay[] {
+  if (!data) return [];
+  if (data.beforeAfterComparison?.length) {
+    return data.beforeAfterComparison;
+  }
+  return (data.infrastructureActions ?? [])
+    .filter((action) => action.confirmed)
+    .map((action) => {
+      const reqBefore =
+        typeof action.metricsBefore["requestCount"] === "number"
+          ? action.metricsBefore["requestCount"]
+          : null;
+      const reqAfter =
+        typeof action.metricsAfter["requestCount"] === "number"
+          ? action.metricsAfter["requestCount"]
+          : null;
+      const p95Before =
+        typeof action.metricsBefore["p95LatencyMs"] === "number"
+          ? action.metricsBefore["p95LatencyMs"]
+          : null;
+      const p95After =
+        typeof action.metricsAfter["p95LatencyMs"] === "number"
+          ? action.metricsAfter["p95LatencyMs"]
+          : null;
+      const errBefore =
+        typeof action.metricsBefore["errorRatePercent"] === "number"
+          ? action.metricsBefore["errorRatePercent"]
+          : null;
+      const errAfter =
+        typeof action.metricsAfter["errorRatePercent"] === "number"
+          ? action.metricsAfter["errorRatePercent"]
+          : null;
+      const hasSamples =
+        reqBefore !== null &&
+        reqBefore > 0 &&
+        reqAfter !== null &&
+        reqAfter > 0 &&
+        p95Before !== null &&
+        p95After !== null;
+      return {
+        action: action.action,
+        service: action.service,
+        replicasBefore: action.replicasBefore,
+        replicasAfter: action.replicasAfter,
+        requestCountBefore: reqBefore,
+        requestCountAfter: reqAfter,
+        p95LatencyMsBefore: p95Before,
+        p95LatencyMsAfter: p95After,
+        errorRateBefore: errBefore,
+        errorRateAfter: errAfter,
+        capturedSpanCount: data.capturedSpanCount ?? null,
+        cleanupStatus: data.cleanupStatus ?? null,
+        measurementStatus: hasSamples ? "MEASURED" : "INSUFFICIENT_TELEMETRY_SAMPLES",
+        measurementNote: hasSamples
+          ? "Measured before/after workload comparison captured"
+          : "Insufficient telemetry samples",
+      };
+    });
+}
+
 function RuntimeWorkflowTopologyCanvas({
   steps,
   planned,
   selectedService,
   onSelectService,
+  studioComparisons = [],
+  onQuickStudioAction,
+  quickRunPending = false,
 }: {
   steps: ObservedStepItem[];
   planned: boolean;
   selectedService: string | null;
   onSelectService: (svc: string | null) => void;
+  studioComparisons?: StudioComparisonOverlay[];
+  onQuickStudioAction?: (service: string, action: "STOP" | "START" | "SCALE", replicas?: number) => void;
+  quickRunPending?: boolean;
 }) {
+  const { t } = useLocale();
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const [nodeAction, setNodeAction] = useState<"STOP" | "START" | "SCALE">("SCALE");
+  const [nodeReplicas, setNodeReplicas] = useState<number>(2);
   const [customPositions, setCustomPositions] = useState<Record<string, { x: number; y: number }>>(
     {},
   );
@@ -549,7 +650,7 @@ function RuntimeWorkflowTopologyCanvas({
 
     const maxRows = Math.max(1, ...columns.map((c) => c.length));
     const svgW = Math.max(880, columns.length * 300 + 120);
-    const svgH = Math.max(360, maxRows * 130 + 110);
+    const svgH = Math.max(380, maxRows * 135 + 120);
 
     const posMap = new Map<string, { x: number; y: number; tier: number }>();
     columns.forEach((col, colIdx) => {
@@ -577,12 +678,33 @@ function RuntimeWorkflowTopologyCanvas({
           ? {
               ...n,
               x: Math.max(84, Math.min(width - 84, custom.x)),
-              y: Math.max(40, Math.min(height - 40, custom.y)),
+              y: Math.max(54, Math.min(height - 40, custom.y)),
             }
           : n;
       }),
     [baseNodes, customPositions, width, height],
   );
+
+  const findNodeStudioState = (nodeName: string): StudioComparisonOverlay | undefined => {
+    const key = nodeName.trim().toLowerCase();
+    return [...studioComparisons]
+      .reverse()
+      .find((item) => {
+        const svc = item.service.trim().toLowerCase();
+        return svc === key || (svc.length > 2 && (key.includes(svc) || svc.includes(key)));
+      });
+  };
+
+  const selectedStudioState =
+    selectedService && !isRunnerActor(selectedService)
+      ? findNodeStudioState(selectedService)
+      : undefined;
+  const selectedIsStopped = Boolean(
+    selectedStudioState &&
+      (selectedStudioState.replicasAfter === 0 ||
+        selectedStudioState.action?.toUpperCase() === "STOP"),
+  );
+  const selectedReplicas = selectedIsStopped ? 0 : (selectedStudioState?.replicasAfter ?? 1);
 
   const toSvgPoint = (clientX: number, clientY: number) => {
     const svg = svgRef.current;
@@ -613,8 +735,8 @@ function RuntimeWorkflowTopologyCanvas({
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
             {planned
-              ? "PLANNED: built from your Step 2 requests and real model edges. Drag nodes to rearrange or click a node to filter."
-              : "OBSERVED: built from captured trace spans. Drag nodes to rearrange or click a service node to filter calls below."}
+              ? "PLANNED: built from your Step 2 requests and real model edges. Drag nodes or click a service node to control Studio Stop/Start/Scale."
+              : "OBSERVED: built from captured trace spans. Drag nodes or click a service node to control Studio Stop/Start/Scale directly."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -642,6 +764,116 @@ function RuntimeWorkflowTopologyCanvas({
           )}
         </div>
       </div>
+
+      {selectedService && !isRunnerActor(selectedService) && onQuickStudioAction && (
+        <div
+          data-testid="studio-2d-node-control-bar"
+          className="rounded-lg border border-sky-500/40 bg-slate-900/90 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-sky-300">
+              🎯 {t("Selected 2D Service Node")}:{" "}
+              <span className="font-mono text-white">{selectedService}</span>
+            </span>
+            <span
+              className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold border ${
+                selectedIsStopped
+                  ? "border-rose-500/50 bg-rose-500/15 text-rose-300"
+                  : selectedReplicas > 1
+                    ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+                    : "border-sky-500/40 bg-sky-500/10 text-sky-300"
+              }`}
+            >
+              {selectedIsStopped
+                ? `⛔ STOPPED (0 replicas)`
+                : selectedReplicas > 1
+                  ? `📦 SCALED (×${selectedReplicas} replicas)`
+                  : "RUNNING (1 replica)"}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-md border border-slate-700 bg-slate-950 p-0.5">
+              <button
+                type="button"
+                onClick={() => setNodeAction("STOP")}
+                className={`rounded px-2.5 py-1 font-medium transition ${
+                  nodeAction === "STOP"
+                    ? "bg-rose-600 text-white shadow-sm"
+                    : "text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                ⏹ Stop {selectedService}
+              </button>
+              <button
+                type="button"
+                onClick={() => setNodeAction("START")}
+                className={`rounded px-2.5 py-1 font-medium transition ${
+                  nodeAction === "START"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                ▶ Start {selectedService}
+              </button>
+              <button
+                type="button"
+                onClick={() => setNodeAction("SCALE")}
+                className={`rounded px-2.5 py-1 font-medium transition ${
+                  nodeAction === "SCALE"
+                    ? "bg-sky-600 text-white shadow-sm"
+                    : "text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                📈 Scale {selectedService}
+              </button>
+            </div>
+            {nodeAction === "SCALE" && (
+              <div className="flex items-center gap-1.5">
+                {[2, 4, 8].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setNodeReplicas(preset)}
+                    className={`rounded border px-2 py-1 font-mono text-[11px] font-semibold transition ${
+                      nodeReplicas === preset
+                        ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                        : "border-slate-700 bg-slate-950 text-slate-300 hover:border-slate-500"
+                    }`}
+                  >
+                    ×{preset}
+                  </button>
+                ))}
+                <Input
+                  aria-label="Scale replicas (1 to 8)"
+                  type="number"
+                  min={1}
+                  max={8}
+                  value={nodeReplicas}
+                  onChange={(e) =>
+                    setNodeReplicas(Math.max(1, Math.min(8, Number(e.target.value) || 1)))
+                  }
+                  className="h-7 w-14 border-slate-700 bg-slate-950 text-center font-mono text-xs text-white"
+                />
+              </div>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              disabled={quickRunPending}
+              onClick={() =>
+                onQuickStudioAction(
+                  selectedService,
+                  nodeAction,
+                  nodeAction === "SCALE" ? nodeReplicas : undefined,
+                )
+              }
+              className="h-7 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs"
+            >
+              ⚡ {t("Apply & Run Studio Experiment")}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-slate-800 bg-[#070d19] p-2">
         <svg
@@ -811,13 +1043,33 @@ function RuntimeWorkflowTopologyCanvas({
             const isGateway = node.name.toLowerCase().includes("gateway");
             const isSelected = selectedService === node.name;
             const isDragging = draggingNode === node.name;
+            const studioState = !isRunner ? findNodeStudioState(node.name) : undefined;
+            const isStopped = Boolean(
+              studioState &&
+                (studioState.replicasAfter === 0 || studioState.action?.toUpperCase() === "STOP"),
+            );
+            const activeReplicas = isStopped ? 0 : (studioState?.replicasAfter ?? 1);
+            const isScaled = !isStopped && activeReplicas > 1;
             const borderCol = isSelected
               ? "#facc15"
-              : isRunner
-                ? "#a855f7"
-                : isGateway
+              : isStopped
+                ? "#f43f5e"
+                : isScaled || isGateway
                   ? "#10b981"
-                  : "#38bdf8";
+                  : isRunner
+                    ? "#a855f7"
+                    : "#38bdf8";
+            const fillCol = isStopped
+              ? isSelected
+                ? "#4c0519"
+                : "#3b0a1e"
+              : isScaled
+                ? isSelected
+                  ? "#064e3b"
+                  : "#062e26"
+                : isSelected
+                  ? "#1e293b"
+                  : "#0f172a";
             const roleLabel = isRunner
               ? "⚡ TEST RUNNER"
               : isGateway
@@ -852,7 +1104,7 @@ function RuntimeWorkflowTopologyCanvas({
                   }
                   const pt = toSvgPoint(e.clientX, e.clientY);
                   const nextX = Math.max(84, Math.min(width - 84, pt.x - activeDrag.offsetX));
-                  const nextY = Math.max(36, Math.min(height - 36, pt.y - activeDrag.offsetY));
+                  const nextY = Math.max(54, Math.min(height - 36, pt.y - activeDrag.offsetY));
                   setCustomPositions((prev) => ({
                     ...prev,
                     [node.name]: { x: nextX, y: nextY },
@@ -877,16 +1129,91 @@ function RuntimeWorkflowTopologyCanvas({
                   setDraggingNode(null);
                 }}
               >
+                {isScaled && activeReplicas > 2 && (
+                  <rect
+                    x={node.x - 68}
+                    y={node.y - 36}
+                    width="152"
+                    height="56"
+                    rx="10"
+                    fill="#064e3b"
+                    fillOpacity="0.55"
+                    stroke="#10b981"
+                    strokeWidth="1.2"
+                  />
+                )}
+                {isScaled && (
+                  <rect
+                    x={node.x - 72}
+                    y={node.y - 32}
+                    width="152"
+                    height="56"
+                    rx="10"
+                    fill="#065f46"
+                    fillOpacity="0.7"
+                    stroke="#10b981"
+                    strokeWidth="1.4"
+                  />
+                )}
                 <rect
                   x={node.x - 76}
                   y={node.y - 28}
                   width="152"
                   height="56"
                   rx="10"
-                  fill={isSelected ? "#1e293b" : "#0f172a"}
+                  fill={fillCol}
                   stroke={borderCol}
+                  strokeDasharray={isStopped ? "5 3" : undefined}
                   strokeWidth={isSelected || isDragging ? "2.5" : "1.8"}
                 />
+                {isStopped && (
+                  <g>
+                    <rect
+                      x={node.x - 74}
+                      y={node.y - 47}
+                      width="148"
+                      height="16"
+                      rx="4"
+                      fill="#9f1239"
+                      stroke="#fb7185"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={node.x}
+                      y={node.y - 36}
+                      textAnchor="middle"
+                      fill="#fff1f2"
+                      fontSize="8.5"
+                      fontWeight="bold"
+                    >
+                      ⛔ STOPPED · 0 Replicas
+                    </text>
+                  </g>
+                )}
+                {isScaled && (
+                  <g>
+                    <rect
+                      x={node.x - 56}
+                      y={node.y - 47}
+                      width="112"
+                      height="16"
+                      rx="4"
+                      fill="#065f46"
+                      stroke="#34d399"
+                      strokeWidth="1"
+                    />
+                    <text
+                      x={node.x}
+                      y={node.y - 36}
+                      textAnchor="middle"
+                      fill="#ecfdf5"
+                      fontSize="8.5"
+                      fontWeight="bold"
+                    >
+                      ×{activeReplicas} REPLICAS
+                    </text>
+                  </g>
+                )}
                 <circle cx={node.x - 60} cy={node.y - 10} r="4" fill={borderCol} />
                 <text
                   x={node.x - 50}
@@ -1654,8 +1981,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     [workflowData.steps],
   );
 
-  const handleQuickRun = async () => {
+  const runWorkflowWithStudio = async (override?: {
+    service?: string;
+    action?: "OBSERVE" | "STOP" | "START" | "SCALE";
+    replicas?: number;
+  }) => {
     if (!projectId || quickRunRunning) return;
+    const effAction = override?.action ?? studioAction;
+    const effService = override?.service ?? selectedStudioService;
+    const effReplicas = override?.replicas ?? studioReplicas;
     setQuickRunRunning(true);
     setQuickRunMsg("Saving Step 1 & Step 2 runtime configuration and launching workflow...");
     setQuickRunError("");
@@ -2042,13 +2376,16 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
         configurationRevision: pinnedConfig.revision,
         scenarioRevision: savedScenario.revision,
         approved: true,
-        infrastructureActions: selectedStudioService && studioAction !== "OBSERVE"
-          ? [{
-              action: studioAction,
-              service: selectedStudioService,
-              ...(studioAction === "SCALE" ? { replicas: studioReplicas } : {}),
-            }]
-          : undefined,
+        infrastructureActions:
+          effService && effAction !== "OBSERVE"
+            ? [
+                {
+                  action: effAction,
+                  service: effService,
+                  ...(effAction === "SCALE" ? { replicas: effReplicas } : {}),
+                },
+              ]
+            : undefined,
         ...(Object.keys(boundedEnv).length ? { environment: boundedEnv } : {}),
       });
 
@@ -2067,6 +2404,15 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       setQuickRunRunning(false);
     }
   };
+
+  const handleQuickRun = () => {
+    void runWorkflowWithStudio();
+  };
+
+  const studioComparisons = useMemo(
+    () => resolveSessionStudioComparisons(session.data),
+    [session.data],
+  );
 
   if (!projectId && !administrative)
     return (
@@ -2725,75 +3071,18 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
 
           <div className="space-y-4">
             {/* Visual Canvas 1: Service Workflow Topology */}
-            {Boolean(session.data?.infrastructureActions?.length || session.data?.beforeAfterComparison?.length) && (
+            {Boolean(studioComparisons.length) && (
               <div className="space-y-2 rounded-lg border p-3 text-sm">
                 <h3 className="font-medium">
                   {t("Studio results (Before vs. After)")}
                 </h3>
-                {(session.data?.beforeAfterComparison?.length
-                  ? session.data.beforeAfterComparison
-                  : (session.data?.infrastructureActions ?? [])
-                      .filter((action) => action.confirmed)
-                      .map((action) => {
-                        const reqBefore =
-                          typeof action.metricsBefore["requestCount"] === "number"
-                            ? action.metricsBefore["requestCount"]
-                            : null;
-                        const reqAfter =
-                          typeof action.metricsAfter["requestCount"] === "number"
-                            ? action.metricsAfter["requestCount"]
-                            : null;
-                        const p95Before =
-                          typeof action.metricsBefore["p95LatencyMs"] === "number"
-                            ? action.metricsBefore["p95LatencyMs"]
-                            : null;
-                        const p95After =
-                          typeof action.metricsAfter["p95LatencyMs"] === "number"
-                            ? action.metricsAfter["p95LatencyMs"]
-                            : null;
-                        const errBefore =
-                          typeof action.metricsBefore["errorRatePercent"] === "number"
-                            ? action.metricsBefore["errorRatePercent"]
-                            : null;
-                        const errAfter =
-                          typeof action.metricsAfter["errorRatePercent"] === "number"
-                            ? action.metricsAfter["errorRatePercent"]
-                            : null;
-                        const hasSamples =
-                          reqBefore !== null &&
-                          reqBefore > 0 &&
-                          reqAfter !== null &&
-                          reqAfter > 0 &&
-                          p95Before !== null &&
-                          p95After !== null;
-                        return {
-                          action: action.action,
-                          service: action.service,
-                          replicasBefore: action.replicasBefore,
-                          replicasAfter: action.replicasAfter,
-                          requestCountBefore: reqBefore,
-                          requestCountAfter: reqAfter,
-                          p95LatencyMsBefore: p95Before,
-                          p95LatencyMsAfter: p95After,
-                          errorRateBefore: errBefore,
-                          errorRateAfter: errAfter,
-                          capturedSpanCount: session.data?.capturedSpanCount ?? null,
-                          cleanupStatus: session.data?.cleanupStatus ?? null,
-                          measurementStatus: hasSamples
-                            ? "MEASURED"
-                            : "INSUFFICIENT_TELEMETRY_SAMPLES",
-                          measurementNote: hasSamples
-                            ? "Measured before/after workload comparison captured"
-                            : "Insufficient telemetry samples",
-                        };
-                      })
-                ).map((item, index) => (
+                {studioComparisons.map((item, index) => (
                   <div className="space-y-1.5 rounded-md border bg-muted/20 p-2.5" key={index}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="font-medium">
                         {item.action} {item.service}
                       </p>
-                      <StatusLabel status={item.measurementStatus} />
+                      <StatusLabel status={item.measurementStatus ?? "UNKNOWN"} />
                     </div>
                     <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-xs">
                       <dt>{t("Running replicas")}</dt>
@@ -2831,6 +3120,18 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   planned={!observed}
                   selectedService={selectedServiceFilter}
                   onSelectService={setSelectedServiceFilter}
+                  studioComparisons={studioComparisons}
+                  quickRunPending={quickRunRunning}
+                  onQuickStudioAction={(svc, act, reps) => {
+                    setStudioAction(act);
+                    setStudioService(svc);
+                    if (reps !== undefined) setStudioReplicas(reps);
+                    void runWorkflowWithStudio({
+                      service: svc,
+                      action: act,
+                      ...(reps !== undefined ? { replicas: reps } : {}),
+                    });
+                  }}
                 />
               </div>
             )}
