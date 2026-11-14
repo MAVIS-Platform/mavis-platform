@@ -10,6 +10,7 @@ import {
   RuntimeScenarios,
   RuntimeSessions,
 } from "@/features/runtime/screens";
+import { StudioWorkbench } from "@/features/runtime/studio-workbench";
 import {
   Workspaces,
   WorkspaceOverview,
@@ -119,6 +120,11 @@ const screens: Record<
     title: "Lab Workspace",
     scope: "workspace",
     component: LabWorkspace,
+  },
+  studio: {
+    title: "MAVIS Studio",
+    scope: "global",
+    component: StudioWorkbench,
   },
 };
 export default async function FeaturePage({ params }: { params: Promise<{ screen: string }> }) {

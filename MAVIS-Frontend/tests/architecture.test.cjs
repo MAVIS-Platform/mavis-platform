@@ -534,6 +534,7 @@ test("project navigation preserves every destination and keeps role menus intact
  assert.deepEqual(projectNavigation.map(g=>g.label),["Project","Architecture","Analysis","Runtime","Insights"]);
  assert.equal(globalNavigation.student.flatMap(g=>g.items).filter(i=>i.href==="/").length,1);
  assert.ok(globalNavigation.admin.flatMap(g=>g.items).some(i=>i.href==="/administration/users"));assert.equal(contextualNavigation("admin","project").length,0);
+ for(const role of ["student","lecturer","admin"])assert.ok(globalNavigation[role].flatMap(g=>g.items).some(i=>i.id==="studio"&&i.href==="/studio"));
 });
 
 test("status presentation uses sentence case while retaining data, styling and localized wording",()=>{

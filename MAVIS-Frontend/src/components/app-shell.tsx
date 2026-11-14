@@ -81,7 +81,7 @@ export function AppShell(props: AppShellProps) {
   if (props.live) return <ShellChrome {...props} />;
   const preview = Boolean(props.onPreviewNavigate);
   const permission: Permission | undefined =
-    preview || ["/design-system", "/profile", "/notifications"].includes(pathname)
+    preview || ["/design-system", "/profile", "/notifications", "/studio"].includes(pathname)
       ? undefined
       : pathname.startsWith("/administration")
         ? "admin:manage"

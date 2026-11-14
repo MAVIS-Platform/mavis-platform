@@ -59,6 +59,7 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
       items: [
         { id: "courses", label: "My Courses", icon: GraduationCap, href: "/" },
         { id: "join-course", label: "Join Course", icon: KeyRound, href: "/#course-passkey" },
+        { id: "studio", label: "MAVIS Studio", icon: Boxes, href: "/studio" },
       ],
     },
     {
@@ -71,7 +72,10 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
   lecturer: [
     {
       label: "Workspaces",
-      items: [{ id: "workspaces", label: "My Workspaces", icon: Users, href: "/workspaces" }],
+      items: [
+        { id: "workspaces", label: "My Workspaces", icon: Users, href: "/workspaces" },
+        { id: "studio", label: "MAVIS Studio", icon: Boxes, href: "/studio" },
+      ],
     },
   ],
   admin: [
@@ -109,6 +113,12 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
     {
       label: "Runtime Administration",
       items: [
+        {
+          id: "studio",
+          label: "MAVIS Studio",
+          icon: Boxes,
+          href: "/studio",
+        },
         {
           id: "runtime-summary",
           label: "Runtime Summary",
@@ -298,6 +308,9 @@ export function existingRouteContext(pathname: string) {
   }
   if (pathname === "/submissions") {
     return { scope: "global" as const, title: "My Submissions", activeId: "submissions" };
+  }
+  if (pathname === "/studio" || pathname === "/administration/studio") {
+    return { scope: "global" as const, title: "MAVIS Studio", activeId: "studio" };
   }
   return { scope: "global" as const, title: "My Courses", activeId: "courses" };
 }

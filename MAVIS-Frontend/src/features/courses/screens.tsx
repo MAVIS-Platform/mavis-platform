@@ -119,6 +119,12 @@ export function Courses() {
               )}
             </p>
           </div>
+          <Button asChild size="sm">
+            <Link href="/studio">
+              <Play className="mr-1.5 size-3.5" />
+              {t("Open MAVIS Studio Workbench", "Mở MAVIS Studio độc lập")}
+            </Link>
+          </Button>
         </div>
       </div>
 
