@@ -54,19 +54,27 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
     waiting ||
     data.finishRequested ||
     data.executionStatus !== "RUNNING";
-  async function send(kind: "START" | "STOP" | "SCALE", targetService = target) {
+  async function send(
+    kind: "START" | "STOP" | "SCALE",
+    targetService = target,
+    overrideReplicas?: number,
+  ) {
+    const requestedReplicas = overrideReplicas ?? replicas;
+    if (overrideReplicas !== undefined) {
+      setReplicas(overrideReplicas);
+    }
     const previous = pending.current;
     const command =
       previous &&
       previous.action === kind &&
       previous.service === targetService &&
-      previous.replicas === (kind === "SCALE" ? replicas : undefined)
+      previous.replicas === (kind === "SCALE" ? requestedReplicas : undefined)
         ? previous
         : {
             actionId: crypto.randomUUID(),
             action: kind,
             service: targetService,
-            ...(kind === "SCALE" ? { replicas } : {}),
+            ...(kind === "SCALE" ? { replicas: requestedReplicas } : {}),
           };
     pending.current = command;
     try {
@@ -231,7 +239,16 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
         {" · "}
         {t("Cleanup")}: {data.cleanupStatus}
       </p>
-      <StudioObservability data={data} selected={target} onSelect={setService} />
+      <StudioObservability
+        data={data}
+        selected={target}
+        onSelect={setService}
+        busy={busy}
+        onQuickAction={(cmd) => {
+          setService(cmd.service);
+          void send(cmd.action, cmd.service, cmd.replicas);
+        }}
+      />
       {data.actions.length > 0 && (
         <ol className="space-y-2 text-sm">
           {data.actions.map((item) => (

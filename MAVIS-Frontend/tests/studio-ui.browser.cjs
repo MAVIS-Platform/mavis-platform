@@ -123,9 +123,13 @@ async function main() {
     await page
       .getByRole("heading", { name: "Worker verified impact paths", exact: true })
       .waitFor();
+    await page.getByRole("button", { name: "Circular", exact: true }).click();
+    await page.getByRole("button", { name: "Grid", exact: true }).click();
+    await page.getByRole("button", { name: "Layered", exact: true }).click();
     await page.getByRole("button", { name: "3D", exact: true }).click();
     await page.getByRole("button", { name: "Rotate right", exact: true }).click();
     await page.getByRole("button", { name: "2D", exact: true }).click();
+    await page.getByRole("button", { name: "Reset layout", exact: true }).click();
     assert.equal(
       await page.getByRole("button", { name: "payment", exact: true }).getAttribute("aria-pressed"),
       "true",
