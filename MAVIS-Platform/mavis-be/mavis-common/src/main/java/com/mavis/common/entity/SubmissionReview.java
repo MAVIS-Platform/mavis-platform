@@ -1,7 +1,11 @@
 package com.mavis.common.entity;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -15,5 +19,10 @@ public class SubmissionReview {
     @Column(nullable=false,length=24) private String status;
     @Column(precision=5,scale=2) private BigDecimal score;
     @Column(nullable=false,columnDefinition="text") private String summary;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name="snapshot_grades")
+    private JsonNode snapshotGrades;
+    @Column(name="lab_outcome",length=24)
+    private String labOutcome;
     @Column(name="updated_at",nullable=false) private OffsetDateTime updatedAt;
 }

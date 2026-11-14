@@ -152,7 +152,7 @@ public class RuntimeSession {
 
     @com.fasterxml.jackson.annotation.JsonIgnore
     public boolean hasVerifiedStudioEvidence() {
-        if (scenarioConfig == null || runnerReceiptJson == null || receiptDigest == null
+        if (scenarioConfig == null || runnerReceiptJson == null || receiptDigest == null || receiptDigest.isBlank()
                 || !"COMPLETED".equalsIgnoreCase(executionStatus) || !"PASSED".equalsIgnoreCase(scenarioStatus)
                 || !"AVAILABLE".equalsIgnoreCase(evidenceStatus) || !"CONFIRMED".equalsIgnoreCase(cleanupStatus)
                 || !Boolean.TRUE.equals(sandboxEnforcementConfirmed)

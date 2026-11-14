@@ -50,12 +50,15 @@ Bảng mã lỗi HTTP chuẩn của `C02` và `C05` (`ErrorCode`):
 ## Điểm bàn giao Liên Workflow (`C01 -> C02 -> C03 / C04`)
 
 - **Từ `WF-01` (`C01`) vào `WF-02` (`C02`):** `CourseLabPolicy.requireOpen(lab, user)` xác nhận lớp đang `ACTIVE`, sinh viên đã ghi danh, và Lab trước đó đã `PASSED` trước khi cho phép tải giáo trình hoặc làm Quiz. `CourseLabPolicy.isGuidedStaticStudent(model, access)` khóa view kiến trúc của sinh viên tại 4 góc nhìn tĩnh (`C4_CONTEXT`, `C4_CONTAINER`, `C4_COMPONENT`, `DEPENDENCY_GRAPH`).
-- **Từ `WF-02` (`C02`) sang `WF-03` (`C03`):** `RuntimeSessionServiceImpl` gọi `CourseLabPolicy.requireRuntimeReadiness(project)` trước khi cấp phép khởi tạo phiên Docker Runtime cho dự án thuộc Guided Lab. Nếu không có bản ghi `PASSED` trong `course_quiz_attempts` khớp `quiz_version` hiện hành tại `course_quizzes` (`V27`), backend từ chối với `HTTP 403`.
-- **Từ `WF-02` (`C02`) sang `WF-04` (`C04`):** `SubmissionServiceImpl` kiểm tra `CourseLabPolicy.requireRuntimeReadiness(project)` khi tạo submission và đóng băng ảnh chụp chứng chỉ Quiz vào cột `course_quiz_evidence` của `SubmissionSnapshot` (`V28`). Nhờ đóng băng này, việc giảng viên công bố lại Quiz ở version cao hơn chỉ khóa lượt thao tác kế tiếp mà vẫn giữ nguyên bằng chứng hợp lệ của bài đã nộp.
+- **Từ `WF-02` (`C02`) sang `WF-03` (`C03`):** `RuntimeSessionServiceImpl` gọi `CourseLabPolicy.requireRuntimeReadiness(project)` trước khi cấp phép khởi tạo phiên Docker Runtime cho dự án thuộc Guided Lab (chi tiết hợp đồng `C03` tại [`WF03_RUNTIME_STUDIO_C03.md`](./WF03_RUNTIME_STUDIO_C03.md)). Nếu không có bản ghi `PASSED` trong `course_quiz_attempts` khớp `quiz_version` hiện hành tại `course_quizzes` (`V27`), backend từ chối với `HTTP 403`.
+- **Từ `WF-02` (`C02`) sang `WF-04` (`C04`):** `SubmissionServiceImpl` kiểm tra `CourseLabPolicy.requireRuntimeReadiness(project)` khi tạo submission và đóng băng ảnh chụp chứng chỉ Quiz vào cột `course_quiz_evidence` của `SubmissionSnapshot` (`V28`, cùng digest `V29` và giải trình/chấm từng snapshot `V30` tại [`WF04_SUBMISSION_GRADING_C04.md`](./WF04_SUBMISSION_GRADING_C04.md)). Nhờ đóng băng này, việc giảng viên công bố lại Quiz ở version cao hơn chỉ khóa lượt thao tác kế tiếp mà vẫn giữ nguyên bằng chứng hợp lệ của bài đã nộp.
+
+> Tổng hợp đối chiếu `RF-01..12`, `SR-01..16` và ma trận `Wf01..Wf04AcceptanceMatrixTest` trên toàn nền tảng được ghi nhận tại [`MAVIS_DEFENSE_1_1_MASTER_VERIFICATION_REPORT.md`](./MAVIS_DEFENSE_1_1_MASTER_VERIFICATION_REPORT.md) và `.github/workflows/deploy-production.yml`.
 
 ## Khắc phục Audit Findings & Chuỗi phát hành trên `main`
 
 - **Audit Findings đã xử lý triệt để (`RF-02`, `RF-06`, `RF-10`, `SR-02`, `SR-05`, `SR-06`, `SR-07`, `SR-10`, `SR-11`):**
+  - Đóng vòng khép kín UX phân tích tĩnh & dữ liệu mẫu: Step 1 hiển thị trước mô hình tham chiếu `C1–C3` + Service Dependency Graph từ `lab.referenceSource` ngay cả trước khi khởi tạo dự án cá nhân, bổ sung nút 1-click `"Initialize & Analyze My Lab Workspace"` (`createProject` gắn `referenceSnapshotId` -> `snapshots` -> `startAnalysis` kèm `Idempotency-Key`) và hỗ trợ seed dữ liệu mẫu chuẩn qua `POST /workspaces/{workspaceId}/course-labs/seed-curated`.
   - Chặn `UPLOAD` / `GITHUB` tự do cho sinh viên Guided Lab và ghim snapshot tham chiếu (`RF-02`, Chặng 1 `5b5033c` -> `3b65a57`).
   - Bảo toàn `is_latest_valid` trên phiên bản hợp lệ trước khi job sau `FAILED` và chuẩn hóa `analysisState` phân tách `PARTIAL` / `COMPLETED_WITH_REVIEW` (`SR-06`, Chặng 1 `5b5033c` -> `3b65a57`).
   - Khóa `C1–C3` + `DEPENDENCY_GRAPH` tại `DiagramProjectionServiceImpl`, `ArchitectureDocumentService`, `DiagramExportServiceImpl` (`HTTP 400` cho `UML_SEQUENCE/ACTIVITY/STATE`); giữ bằng chứng 3E `CALL_SITE` vs `UNVERIFIED_METADATA_ONLY`, `[REDACTED]` Zero-Leak AI, và idempotency phân tích (`SR-05`, `SR-07`, `SR-10`, `SR-11`, Chặng 2 `89796c1` -> `c90b282`).
@@ -74,18 +77,17 @@ Bảng mã lỗi HTTP chuẩn của `C02` và `C05` (`ErrorCode`):
 | `TC-ST02`, `TC-N03`, `TC-N04` | `Wf02AcceptanceMatrixTest`, `AiExplanationServiceImplTest`, `ModelVersionServiceImplTest` | `mvnw -pl mavis-bootstrap -am -Dtest=Wf02AcceptanceMatrixTest test` | PASS (`AnalysisJob` & `QuizAttempt` state machine; 0 secret leak; 10 mutate đồng thời giữ digest & trả `409` stale) |
 | `TC-N01` (`WF-02`) | `Wf02AcceptanceMatrixTest.tcN01QuizScoringAndCurriculumBenchmarkWithin2Seconds` & `frontend-performance.test.cjs` | `npm test` & Maven | PASS (nạp 30 bài / 120 câu + 30 lượt chấm Quiz `<= 2000 ms`; Reverse BFS + chiếu đồ thị 50 nodes / 150 edges `<= 2000 ms`) |
 
-Số liệu kiểm thử cuối cùng ghi nhận trên nhánh phát hành WF-02 (môi trường Windows 11, JDK 21, .NET 10.0.404, Node 25.2.1; không gắn PostgreSQL cổng 15438 cục bộ nên 6 test `*PostgresTest` / `MigrationUpgradeTest` / `CourseHttpAcceptanceTest` tự động skip theo biến môi trường CI `MAVIS_MIGRATION_TEST_JDBC_URL` và 3 test Linux-only/Docker-only trong `.NET` tự động skip theo điều kiện nền tảng):
+Số liệu kiểm thử cập nhật sau hợp nhất hoàn thiện UX & ma trận kiểm thử (`feat/mavis-final-100pct-all-workflows-polish`, JDK 21, .NET 10, Node 25; 6 test PostgreSQL CI tự động skip khi chưa đặt `MAVIS_MIGRATION_TEST_JDBC_URL` và 3 test Linux-only/Docker-only trong `.NET` tự động skip theo điều kiện nền tảng):
 
 - **Backend CI Regression Profile (`-pl mavis-bootstrap -am` theo `.github/workflows/deploy-production.yml`):**
   - `mavis-common`: **18/18 PASS** (0 fail, 0 error, 0 skip).
-  - `mavis-platform`: **112/112 PASS** (0 fail, 0 error, 0 skip; bao gồm `CourseQuizServiceTest` 7/7).
-  - `mavis-analyzer`: **190/190 PASS** (0 fail, 0 error, 0 skip).
-  - `mavis-bootstrap`: **54/54 chạy thực thi PASS** + 6 Postgres CI test skip có điều kiện (tổng 60, 0 fail, 0 error; bao gồm `Wf02AcceptanceMatrixTest` **29/29 PASS**).
-  - Bổ sung nhóm dịch vụ phân tích WF-02 (`AiExplanationServiceImplTest` 10 + `DiagramProjectionServiceImplTest` 11 + `GraphServiceImplTest` 17): **38/38 PASS** (0 fail, 0 error, 0 skip).
-- **.NET Worker (`MAVIS.Worker.Tests` Release):** **235 PASS**, 3 skip theo nền tảng, tổng 238, 0 fail (bao gồm `VersionedImpactTests` **14/14 PASS**).
+  - `mavis-platform`: **125/125 PASS** (0 fail, 0 error, 0 skip; bao gồm `CourseQuizServiceTest` và `CourseLabSeederServiceTest` 2/2).
+  - `mavis-analyzer`: **219/219 PASS** (0 fail, 0 error, 0 skip).
+  - `mavis-bootstrap`: **146/146 chạy thực thi PASS** + 6 Postgres CI test skip có điều kiện (tổng 152, 0 fail, 0 error; bao gồm `Wf02AcceptanceMatrixTest` **29/29 PASS**).
+- **.NET Worker (`MAVIS.Worker.Tests` Release):** **240 PASS**, 3 skip theo nền tảng, tổng 243, 0 fail.
 - **Frontend (`MAVIS-Frontend`):**
   - `npm run typecheck`: **PASS** (`tsc --noEmit --incremental false`).
-  - `npm test`: **379/379 PASS**, 0 fail, 0 skip.
+  - `npm test`: **387/387 PASS**, 0 fail, 0 skip.
   - `npm run test:connected`: **3/3 PASS**, 0 fail, 0 skip.
   - `MAVIS_TEST_BROWSER_CHANNEL=chrome npm run test:three-e-ui`: **PASS** (`PASS: full 3E browser suite plus diagram dock regression; synthetic API only.`).
-  - `npm run build`: **PASS** (Next.js 15.5.25 compiled successfully).
+  - `npm run build`: **PASS** (Next.js 15.5.25 compiled successfully in `6.9s`).
