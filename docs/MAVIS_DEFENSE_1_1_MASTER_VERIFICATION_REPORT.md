@@ -20,7 +20,8 @@ Tài liệu kỹ thuật từng workflow:
 | **Chặng 4** | `feat/all-stage4-fe-4stage-workspace-grading-and-bilingual-ux` | `a644a5a` -> `621f8d6` | Hoàn thiện UI 4 chặng soạn giải trình (`composer.tsx`), hiển thị digest & Quiz đóng băng (`frozen-artifacts.tsx`), bảng chấm từng Snapshot (`grading.tsx`) và từ điển song ngữ `EN/VI` Runtime/Studio (`SR-15`) |
 | **Chặng 5** | `test/all-stage5-wf01-wf03-wf04-acceptance-matrices-108-cases` | `34d79f5` -> `55e2040` | Bổ sung `Wf01AcceptanceMatrixTest.java`, `Wf03AcceptanceMatrixTest.java`, `Wf04AcceptanceMatrixTest.java` cùng `Wf02AcceptanceMatrixTest.java` phủ trọn bộ **108 ca cam kết BM04** |
 | **Chặng 6** | `ci/all-stage6-ci-pipeline-and-nfr-benchmarks` | `c83785a` -> `288ff04` | Đăng ký `Wf01..Wf04AcceptanceMatrixTest`, `RuntimePlanningServiceTest`, `SubmissionReviewServiceTest` và chuỗi migration `V29` + `V30` vào `.github/workflows/deploy-production.yml`, `deploy/apply-course-schema.py`, `deploy/deploy-vps.sh`, `deploy/tests/test_course_schema.py` và `deploy/CI-CD.md` (`SR-13`) |
-| **Chặng 7** | `docs/all-stage7-handover-docs-wf01-to-wf04-and-final-audit` | *(nhánh hiện tại)* | Xuất bản `WF03_RUNTIME_STUDIO_C03.md`, `WF04_SUBMISSION_GRADING_C04.md`, cập nhật `WF01`/`WF02` và báo cáo nghiệm thu tổng thể kèm kết quả kiểm thử full-stack |
+| **Chặng 7** | `docs/all-stage7-handover-docs-wf01-to-wf04-and-final-audit` | `ad234cc` | Xuất bản `WF03_RUNTIME_STUDIO_C03.md`, `WF04_SUBMISSION_GRADING_C04.md`, cập nhật `WF01`/`WF02` và báo cáo nghiệm thu tổng thể |
+| **Đợt hoàn thiện cuối (Single-Branch)** | `feat/mavis-final-100pct-all-workflows-polish` | `dca1892` -> `7dad574` -> *(Chặng 5/6 hiện tại)* | Sửa nhất quán `resolveSubmissionOutcome` trên `SubmissionResult` & `GradeForm` (`5.0/10` -> `NEEDS REVISION`), đóng vòng UX 1-click Guided Lab & Phân tích tĩnh (`#submission-composer`, xem trước `C1–C3 + Dependency Graph`), bổ sung `CourseLabSeederService` (`POST /course-labs/seed-curated` + nút 1-click Giảng viên + CI), mở rộng `Wf01` (29) + `Wf02` (29) + `Wf03` (28) + `Wf04` (33) = **119 ca `@Test` chi tiết** |
 
 > **Ghi chú đồng bộ Flyway (`V29` & `V30`):** Nhánh `main` trước đó đã tiếp nhận commit `a2119f0` (`V29__Submission_Evidence_Package_Digest.sql` của đồng đội). Hệ thống giữ nguyên 100% `V29` và đánh số migration chấm từng Snapshot tiếp theo là **`V30__Submission_Snapshot_Grades_And_Explanations.sql`**, đồng thời cập nhật CI/VPS schema pre-flight hỗ trợ tuần tự đầy đủ **`V26 -> V27 -> V28 -> V29 -> V30`**.
 
@@ -45,34 +46,34 @@ Tài liệu kỹ thuật từng workflow:
 
 ---
 
-## 3. Đối chiếu Ma trận Kiểm thử Cam kết (`108` ca BM04 + `DS-01..04` + `TC-GR01..06` + `TC-N01..06`)
+## 3. Đối chiếu Ma trận Kiểm thử Cam kết (**119 ca `@Test` chi tiết** phủ trọn 108 ca BM04 + `DS-01..04` + `TC-GR01..06` + `TC-N01..06`)
 
 | Workflow | Lớp kiểm thử tự động | Phạm vi mã ca bao phủ | Kết quả thực thi gần nhất |
 |---|---|---|---|
-| **WF-01** (`C01`/`C05`) | `com.mavis.bootstrap.acceptance.Wf01AcceptanceMatrixTest` | `F01-001..008`, `F09-001..008`, `F10-001..008`, `TC-WF01-E2E` (`DS-01a/b`), `TC-ST01`, `TC-N01` (`<= 3000ms`), `TC-N02` | **3/3 PASS** (`0` fail, `0` error, `3.761 s`) |
-| **WF-02** (`C02`) | `com.mavis.bootstrap.Wf02AcceptanceMatrixTest` | `F02-001..008`, `F03-001..008`, `F06-001..008`, `TC-WF02-E2E` (`DS-02a/b`), `TC-ST02`, `TC-N01`, `TC-N03`, `TC-N04` | **29/29 PASS** (`0` fail, `0` error, `1.111 s`) |
-| **WF-03** (`C03`) | `com.mavis.bootstrap.acceptance.Wf03AcceptanceMatrixTest` + `StudioInfrastructureActionTests.cs` | `F05-001..008`, `F07-001..008`, `F08-001..008`, `TC-WF03-E2E` (`DS-03a/b`), `TC-ST03`, `TC-N05` (`<= 300s`) | **3/3 PASS** (`0` fail, `0` error, `10.44 s`) |
-| **WF-04** (`C04`/`C05`) | `com.mavis.bootstrap.acceptance.Wf04AcceptanceMatrixTest` + `SubmissionReviewServiceTest` | `F04-001..008`, `F11-001..008`, `F12-001..008`, `TC-GR01..06`, `TC-WF04-E2E` (`DS-04a/b`), `TC-ST04`, `TC-N06` | **3/3 PASS** (`0` fail, `0` error, `0.937 s`) |
+| **WF-01** (`C01`/`C05`) | `com.mavis.bootstrap.acceptance.Wf01AcceptanceMatrixTest` + `CourseLabSeederServiceTest` | `F01-001..008`, `F09-001..008`, `F10-001..009`, `TC-WF01-E2E` (`DS-01a/b`), `TC-ST01`, `TC-N01` (`<= 3000ms`), `TC-N02` | **29/29 PASS** (`0` fail, `0` error, `3.696 s`) |
+| **WF-02** (`C02`) | `com.mavis.bootstrap.Wf02AcceptanceMatrixTest` | `F02-001..008`, `F03-001..008`, `F06-001..008`, `TC-WF02-E2E` (`DS-02a/b`), `TC-ST02`, `TC-N01`, `TC-N03`, `TC-N04` | **29/29 PASS** (`0` fail, `0` error, `0.925 s`) |
+| **WF-03** (`C03`) | `com.mavis.bootstrap.acceptance.Wf03AcceptanceMatrixTest` + `StudioInfrastructureActionTests.cs` | `F05-001..008`, `F07-001..008`, `F08-001..008`, `TC-WF03-E2E` (`DS-03a/b`), `DS-03`, `TC-ST03`, `TC-N05` (`<= 300s`) | **28/28 PASS** (`0` fail, `0` error, `15.75 s`) |
+| **WF-04** (`C04`/`C05`) | `com.mavis.bootstrap.acceptance.Wf04AcceptanceMatrixTest` + `SubmissionReviewServiceTest` | `F04-001..008`, `F11-001..008`, `F12-001..008`, `TC-GR01..06`, `TC-WF04-E2E` (`DS-04a/b`), `TC-ST04`, `TC-N06` | **33/33 PASS** (`0` fail, `0` error, `0.739 s`) |
 
 ---
 
 ## 4. Kết Quả Vòng Kiểm Chứng Full-Stack Cuối Cùng
 
-Chạy trực tiếp trên nhánh `docs/all-stage7-handover-docs-wf01-to-wf04-and-final-audit` (trùng hợp mã nguồn ứng dụng với `main` sau Chặng 6 `288ff04`; môi trường Windows 11, JDK 21, .NET 10, Node.js, Python 3):
+Chạy trực tiếp trên nhánh `feat/mavis-final-100pct-all-workflows-polish` (môi trường Windows 11, JDK 21, .NET 10, Node.js 25, Python 3):
 
-1. **Java Backend (`MAVIS-Platform/mavis-be` · profile `.github/workflows/deploy-production.yml` với `-pl mavis-bootstrap -am`):**
+1. **Java Backend (`MAVIS-Platform/mavis-be` · profile `.github/workflows/deploy-production.yml` với `-pl mavis-bootstrap -am` bao gồm `CourseLabSeederServiceTest`):**
    - `mavis-common`: **18/18 PASS** (`0` fail, `0` error, `0` skip)
-   - `mavis-platform`: **123/123 PASS** (`0` fail, `0` error, `0` skip — bao gồm `CourseQuizServiceTest`, `SubmissionServiceImplTest`, `SubmissionReviewServiceTest`, `AssignmentServiceImplTest`)
+   - `mavis-platform`: **125/125 PASS** (`0` fail, `0` error, `0` skip — bao gồm `CourseLabSeederServiceTest` 2/2, `CourseQuizServiceTest`, `SubmissionServiceImplTest`, `SubmissionReviewServiceTest`, `AssignmentServiceImplTest`)
    - `mavis-analyzer`: **219/219 PASS** (`0` fail, `0` error, `0` skip — bao gồm `RuntimePlanningServiceTest`, `RuntimeSessionServiceImplTest`, `RunnerReceiptIngestServiceImplTest`, `OtelTraceCorrelationServiceImplTest`)
-   - `mavis-bootstrap`: **65 executed PASS**, **6 skip có điều kiện PostgreSQL** (`MigrationUpgradeTest`, `SessionLogoutPostgresTest`, `CourseAccessPostgresTest`, `CourseHttpAcceptanceTest`, `ResourceDeletionPostgresTest`, `NotificationReadPostgresTest` tự động skip khi chưa đặt `MAVIS_MIGRATION_TEST_JDBC_URL`; tổng `71`, `0` fail, `0` error — bao gồm `Wf01` 3/3, `Wf02` 29/29, `Wf03` 3/3, `Wf04` 3/3)
-   - **Tổng kết BE CI Profile:** **425/425 test thực thi PASS** (`431` tổng, `6` conditional Postgres skip, `0` fail, `0` error).
-2. **.NET Worker & Runner (`MAVIS.Worker/tests/MAVIS.Worker.Tests` · `-c Release`):**
-   - **240 PASS**, `3` skip có điều kiện nền tảng Linux/Docker daemon (`SourceFileAndRootSymlinksCannotEscapeScope`, `LinkedStateRootIsRejectedWithoutChangingTarget`, `RealDockerSuccessAndCancellationUseManagedIdentityAndDurableAcknowledgement`), tổng `243`, **`0` fail**.
+   - `mavis-bootstrap`: **146 executed PASS**, **6 skip có điều kiện PostgreSQL** (`MigrationUpgradeTest`, `SessionLogoutPostgresTest`, `CourseAccessPostgresTest`, `CourseHttpAcceptanceTest`, `ResourceDeletionPostgresTest`, `NotificationReadPostgresTest` tự động skip khi chưa đặt `MAVIS_MIGRATION_TEST_JDBC_URL`; tổng `152`, `0` fail, `0` error — bao gồm **119/119 PASS** của `Wf01` 29/29, `Wf02` 29/29, `Wf03` 28/28, `Wf04` 33/33)
+   - **Tổng kết BE CI Profile:** **508/508 test thực thi PASS** (`514` tổng, `6` conditional Postgres skip, `0` fail, `0` error).
+2. **.NET Worker & Runner (`MAVIS.Worker/tests/MAVIS.Worker.Tests` · `--configuration Release`):**
+   - **240 PASS**, `3` skip có điều kiện nền tảng Linux/Docker daemon (`SourceFileAndRootSymlinksCannotEscapeScope`, `LinkedStateRootIsRejectedWithoutChangingTarget`, `RealDockerSuccessAndCancellationUseManagedIdentityAndDurableAcknowledgement`), tổng `243`, **`0` fail** (`7 s`).
 3. **Python Deploy & Schema Migration Tests (`deploy/tests`):**
-   - **7/7 OK** (`0.017s`, đã bao gồm probe & advisory lock cho `V26`–`V30`).
+   - **7/7 OK** (`0.031s`, đã bao gồm `test_course_schema.py` cho `V26`–`V30`).
 4. **Next.js Frontend (`MAVIS-Frontend`):**
    - `npm run typecheck`: **PASS** (`tsc --noEmit --incremental false`)
-   - `npm test`: **385/385 PASS**, `0` fail, `0` skipped
+   - `npm test`: **387/387 PASS**, `0` fail, `0` skipped (`14852.18 ms`)
    - `npm run test:connected`: **3/3 PASS**, `0` fail, `0` skipped
    - `MAVIS_TEST_BROWSER_CHANNEL=chrome npm run test:three-e-ui`: **PASS** (`PASS: full 3E browser suite plus diagram dock regression; synthetic API only.`)
-   - `npm run build`: **PASS** (`Next.js 15.5.25`, compiled successfully in `6.8s`, `0` errors).
+   - `npm run build`: **PASS** (`Next.js 15.5.25`, compiled successfully in `6.9s`, `0` errors).
