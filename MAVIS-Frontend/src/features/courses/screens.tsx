@@ -18,7 +18,7 @@ import {
   Play,
   ShieldCheck,
 } from "lucide-react";
-import { useApi, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
+import { useApi, useApiMutation, useApiQuery, useSelection, useSession } from "@/hooks/use-api";
 import { ErrorState, LoadingState, RequestState } from "@/components/shared/request-state";
 import {
   CourseEnrollment,
@@ -635,11 +635,18 @@ export function LabWorkspace() {
 
 const STATIC_RULE_IDS = ["RULE-01", "RULE-02", "RULE-03", "RULE-04", "RULE-05"] as const;
 
-function StaticEvaluationSummary({ modelId }: { modelId: string | undefined }) {
+function StaticEvaluationSummary({
+  modelId,
+  allowRunEvaluation = false,
+}: {
+  modelId: string | undefined;
+  allowRunEvaluation?: boolean | undefined;
+}) {
   const { locale, t } = useLocale();
   const client = useApi();
   const enabled = client.mode === "backend" && Boolean(modelId);
   const runs = useApiQuery("evaluations", { modelId: modelId ?? "" }, { enabled });
+  const evaluate = useApiMutation("evaluateModel");
   const latestRun = useMemo(
     () =>
       [...(runs.data ?? [])].sort((a, b) =>
@@ -707,12 +714,27 @@ function StaticEvaluationSummary({ modelId }: { modelId: string | undefined }) {
       ) : (
         <div className="space-y-2.5">
           {!evaluationId && (
-            <p className="text-xs text-muted-foreground">
-              {t(
-                "No persisted evaluation run yet; rule readiness stays pending until static evaluation completes.",
-                "Chưa có lượt đánh giá tĩnh nào được lưu; trạng thái các quy tắc sẽ hiển thị sau khi hoàn tất đánh giá.",
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                {t(
+                  "No persisted evaluation run yet; rule readiness stays pending until static evaluation completes.",
+                  "Chưa có lượt đánh giá tĩnh nào được lưu; trạng thái các quy tắc sẽ hiển thị sau khi hoàn tất đánh giá.",
+                )}
+              </p>
+              {allowRunEvaluation && modelId && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={evaluate.isPending}
+                  onClick={() => evaluate.mutate({ modelId }, { onSuccess: () => void runs.refetch() })}
+                >
+                  {evaluate.isPending
+                    ? t("Evaluating 5 Rules…", "Đang đánh giá 5 quy tắc…")
+                    : t("Run 5-Rule Static Evaluation", "Chạy đánh giá 5 quy tắc")}
+                </Button>
               )}
-            </p>
+            </div>
           )}
           <div className="divide-y rounded-xl border bg-background">
             {ruleRows.map((row) => (
@@ -962,7 +984,7 @@ function StepContent({
             )}
           </div>
 
-          <StaticEvaluationSummary modelId={modelId} />
+          <StaticEvaluationSummary modelId={modelId} allowRunEvaluation={!showingReferenceModel} />
 
           <DetailPanel title={t("Evidence and AI review", "Bằng chứng và đánh giá AI")}>
             <p className="text-sm leading-6 text-muted-foreground">
