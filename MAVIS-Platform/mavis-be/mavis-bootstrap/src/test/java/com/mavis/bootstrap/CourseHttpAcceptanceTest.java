@@ -262,9 +262,24 @@ class CourseHttpAcceptanceTest {
         db.update("UPDATE assignments SET required_diagram_types = '[\"C4_CONTEXT\",\"C4_CONTAINER\",\"C4_COMPONENT\"]'::jsonb WHERE id = ?", lab1);
         UUID bundle = UUID.fromString(data(send("POST", analyzedModel + "/documents/freeze", student,
                 Map.of("diagramVersionIds", c4Diagrams), 200)).asText());
+        UUID verifiedRuntime = id(db, """
+                INSERT INTO runtime_sessions(project_id, source_snapshot_id, model_version_id, scenario_status,
+                                             execution_status, evidence_status, cleanup_status, trace_status,
+                                             receipt_digest, runner_receipt_json, publication_gate_status)
+                VALUES (?, ?, ?, 'PASSED', 'COMPLETED', 'AVAILABLE', 'CONFIRMED', 'COMPLETE',
+                        ?, '{"outcome":{"executionStatus":"COMPLETED"}}'::jsonb, 'NONE')
+                RETURNING id
+                """, workingProject, workingSource, workingModel, "sha256:" + "e".repeat(64));
         checkCurriculum(workspace, lab1, lab2, lecturer, student, workingProject,
                 Map.of("assignmentId", lab1, "projectId", workingProject,
-                        "modelVersionId", workingModel, "diagramVersionId", bundle));
+                        "modelVersionId", workingModel, "diagramVersionId", bundle,
+                        "runtimeSessionId", verifiedRuntime,
+                        "submissionNotes", "Verified 4-stage C1-C3 static and runtime submission evidence.",
+                        "studentSnapshots", List.of(Map.of(
+                                "snapshotId", "snap-1",
+                                "step", "STEP_2",
+                                "title", "Static C4 & Runtime OTel Evidence",
+                                "writtenExplanation", "Static architecture evaluation and verified runtime trace attached."))));
         send("GET", "assignments/" + lab2, student, null, 403);
         send("GET", "assignments/" + lab2 + "/reference-source", student, null, 403);
         send("GET", "assignments/" + lab1 + "/reference-source", foreignStudent, null, 403);
@@ -296,7 +311,7 @@ class CourseHttpAcceptanceTest {
     }
 
     private void checkCurriculum(String workspace, UUID lab1, UUID lab2, String lecturer, String student,
-                                 UUID workingProject, Map<String, UUID> submission)
+                                 UUID workingProject, Map<String, Object> submission)
             throws Exception {
         send("GET", "course-curriculum", null, null, 401);
         JsonNode catalog = data(send("GET", "course-curriculum", student, null, 200));
@@ -342,7 +357,13 @@ class CourseHttpAcceptanceTest {
         var attempt = Map.of("attemptId", UUID.randomUUID(), "version", csharpVersion, "answers", List.of(1, 0, 2, 1));
         assertEquals("PASSED", data(send("POST", quiz + "/attempts", student, attempt, 200)).path("status").asText());
         send("POST", runtime, student, runtimeRequest, 404);
+        send("POST", "submissions", student, Map.of(
+                "assignmentId", submission.get("assignmentId"),
+                "projectId", submission.get("projectId"),
+                "modelVersionId", submission.get("modelVersionId"),
+                "diagramVersionId", submission.get("diagramVersionId")), 400);
         JsonNode saved = data(send("POST", "submissions", student, submission, 200));
+        assertTrue(saved.path("evidencePackageDigest").asText().startsWith("sha256:"));
         JsonNode frozen = saved.path("courseQuizEvidence");
         assertEquals(attempt.get("attemptId").toString(), frozen.path("attemptId").asText());
         assertEquals(csharpVersion, frozen.path("quizVersion").asInt());
