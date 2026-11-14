@@ -182,43 +182,27 @@ function getArchetypeTheme(
                                 ? { badgeText: "STREAM", typeLabel: "EVENT BROKER" }
                                 : { badgeText: "COMPUTE", typeLabel: "APP SERVER" };
 
-  const base = isEdge
-    ? {
-        stroke: "#38bdf8",
-        cardFill: "#081926",
-        iconBg: "#0c4a6e",
-        accent: "#7dd3fc",
-        ...badgeAndType,
-      }
+  // Meta / Linear / Cloudcraft SE Standard Palette:
+  // Unified dark graphite CAD chassis (#0f172a body, #1e293b top cap, #64748b structural wireframe)
+  // with restrained semantic accent strictly on the inner functional emblem & icon.
+  const accent = isEdge
+    ? "#38bdf8"
     : isData
-      ? {
-          stroke: "#10b981",
-          cardFill: "#061f17",
-          iconBg: "#064e3b",
-          accent: "#34d399",
-          ...badgeAndType,
-        }
+      ? "#34d399"
       : isInfra
-        ? {
-            stroke: "#f59e0b",
-            cardFill: "#1d1407",
-            iconBg: "#451a03",
-            accent: "#fbbf24",
-            ...badgeAndType,
-          }
-        : {
-            stroke: "#818cf8",
-            cardFill: "#0f152a",
-            iconBg: "#1e1b4b",
-            accent: "#a5b4fc",
-            ...badgeAndType,
-          };
+        ? "#cbd5e1"
+        : "#94a3b8";
 
-  if (isDropTarget) {
-    return { ...base, stroke: "#38bdf8", accent: "#38bdf8" };
-  }
-  if (isSelected) {
-    return { ...base, stroke: base.accent };
+  const base = {
+    stroke: "#64748b",
+    cardFill: "#0f172a",
+    iconBg: "#1e293b",
+    accent,
+    ...badgeAndType,
+  };
+
+  if (isDropTarget || isSelected) {
+    return { ...base, stroke: "#38bdf8", iconBg: "#0f2942", accent: "#38bdf8" };
   }
   return base;
 }
@@ -1259,7 +1243,7 @@ export function StudioObservability({
                   setCustomOffsets({});
                   setPinnedPositions({});
                 }}
-                className="rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-400 transition hover:bg-slate-800"
+                className="rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
               >
                 {Math.round((((camera.yaw * 180) / Math.PI) % 360 + 360) % 360)}°
               </button>
@@ -1279,9 +1263,9 @@ export function StudioObservability({
               type="button"
               aria-pressed={view === mode}
               onClick={() => setView(mode)}
-              className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-bold transition ${
+              className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-semibold transition ${
                 view === mode
-                  ? "bg-indigo-500 text-white shadow-xs"
+                  ? "bg-slate-100 text-slate-950 shadow-xs"
                   : "text-slate-400 hover:text-slate-200"
               }`}
             >
@@ -1813,7 +1797,7 @@ export function StudioObservability({
               const speedSec = Math.max(0.7, 2.2 / Math.max(1, Math.min(targetReplicas, 6))).toFixed(
                 2,
               );
-              const edgeColor = edgeSevered ? "#f43f5e" : "#38bdf8";
+              const edgeColor = edgeSevered ? "#f43f5e" : "#64748b";
               return (
                 <g
                   key={edge.traceId + index}
@@ -1826,8 +1810,8 @@ export function StudioObservability({
                     fill="none"
                     stroke={edgeColor}
                     strokeDasharray={edgeSevered ? "6 4" : undefined}
-                    strokeWidth={edgeSevered ? "2.1" : "1.8"}
-                    opacity={edgeSevered ? "0.9" : "0.5"}
+                    strokeWidth={edgeSevered ? "2.0" : "1.5"}
+                    opacity={edgeSevered ? "0.9" : "0.6"}
                     markerEnd={
                       edgeSevered ? "url(#studio-arrow-fault)" : "url(#studio-arrow-live)"
                     }
@@ -1976,11 +1960,11 @@ export function StudioObservability({
                       width={labelWidth}
                       height="24"
                       rx="12"
-                      fill="#090d16"
-                      fillOpacity="0.94"
-                      stroke={isSelected ? theme.accent : strokeColor}
-                      strokeOpacity={isSelected ? "0.95" : "0.5"}
-                      strokeWidth={isSelected ? 1.8 : 1.1}
+                      fill="#0b111e"
+                      fillOpacity="0.96"
+                      stroke={isStopped ? "#f43f5e" : isSelected ? "#38bdf8" : "#334155"}
+                      strokeOpacity={isSelected || isStopped ? "0.95" : "0.85"}
+                      strokeWidth={isSelected || isStopped ? 1.6 : 1.1}
                     />
                     {/* Left Functional Component Icon Badge inside the Pill */}
                     <rect
@@ -1989,7 +1973,7 @@ export function StudioObservability({
                       width="16"
                       height="16"
                       rx="8"
-                      fill={isStopped ? "#881337" : theme.iconBg}
+                      fill={isStopped ? "#881337" : "#1e293b"}
                     />
                     {renderNodeFunctionGlyph(
                       name,
@@ -2002,7 +1986,7 @@ export function StudioObservability({
                       x={point.x - 4}
                       y={point.y + 25.5}
                       textAnchor="middle"
-                      fill="#f8fafc"
+                      fill="#f1f5f9"
                       fontSize="11"
                       fontWeight="600"
                     >
@@ -2015,15 +1999,15 @@ export function StudioObservability({
                       width="25"
                       height="16"
                       rx="8"
-                      fill={isStopped ? "#881337" : theme.iconBg}
+                      fill={isStopped ? "#881337" : isSelected ? "#0c4a6e" : "#1e293b"}
                     />
                     <text
                       x={point.x + labelWidth / 2 - 18.5}
                       y={point.y + 25}
                       textAnchor="middle"
-                      fill={isStopped ? "#fda4af" : theme.accent}
+                      fill={isStopped ? "#fda4af" : isSelected ? "#7dd3fc" : "#cbd5e1"}
                       fontSize="9.5"
-                      fontWeight="700"
+                      fontWeight="600"
                     >
                       {pillBadgeText}
                     </text>
