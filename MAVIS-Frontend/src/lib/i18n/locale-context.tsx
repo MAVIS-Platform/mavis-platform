@@ -1755,6 +1755,7 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "Reset cluster": "Khôi phục mặc định",
   "snapshots captured": "bản chụp đã lưu",
   "Open Standalone MAVIS Studio": "Mở MAVIS Studio độc lập",
+  "Open MAVIS Studio": "Mở MAVIS Studio",
 };
 
 export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [

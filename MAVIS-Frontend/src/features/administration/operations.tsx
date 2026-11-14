@@ -102,6 +102,11 @@ export function SystemHealth() {
         <span className="text-sm text-muted-foreground">
           Live checks · refresh every 30 seconds
         </span>
+        <Button asChild size="sm">
+          <Link href="/administration/studio">
+            Open MAVIS Studio <ArrowUpRight className="size-4" />
+          </Link>
+        </Button>
       </AdminToolbar>
       <RequestState query={health}>
         {data && (
@@ -217,11 +222,18 @@ export function SystemHealth() {
       <DetailPanel
         title="Platform inventory"
         actions={
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/administration/jobs">
-              Review analysis jobs <ArrowUpRight className="size-4" />
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/administration/studio">
+                Open MAVIS Studio <ArrowUpRight className="size-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/administration/jobs">
+                Review analysis jobs <ArrowUpRight className="size-4" />
+              </Link>
+            </Button>
+          </div>
         }
       >
         <RequestState query={counts}>
@@ -250,6 +262,11 @@ export function AdminRuntimeSummary() {
         updatedAt={q.dataUpdatedAt}
         refresh={() => void q.refetch()}
       >
+        <Button asChild size="sm">
+          <Link href="/administration/studio">
+            Open MAVIS Studio <ArrowUpRight className="size-4" />
+          </Link>
+        </Button>
         <Button asChild variant="outline" size="sm">
           <Link href="/administration/admin-sessions">
             Inspect sessions <ArrowUpRight className="size-4" />

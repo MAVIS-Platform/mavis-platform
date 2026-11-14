@@ -2657,7 +2657,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
               Latest 50 sessions · inspect before stopping a run
             </span>
             <Button asChild size="sm" variant="outline">
-              <Link href="/studio">Open Standalone MAVIS Studio</Link>
+              <Link href="/administration/studio">Open Standalone MAVIS Studio</Link>
             </Button>
           </AdminToolbar>
           <div className="grid gap-3 rounded-xl border bg-card p-4 sm:grid-cols-[2fr_1fr]">

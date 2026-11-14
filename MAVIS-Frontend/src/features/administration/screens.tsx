@@ -333,7 +333,11 @@ export function RuntimeProfiles() {
         fetching={q.isFetching}
         updatedAt={q.dataUpdatedAt}
         refresh={() => void q.refetch()}
-      />
+      >
+        <Button asChild size="sm" variant="outline">
+          <Link href="/administration/studio">Open MAVIS Studio</Link>
+        </Button>
+      </AdminToolbar>
       <Notice>
         Profile changes affect new runtime sessions. Settings currently reset on restart; review
         limits before enabling a profile.

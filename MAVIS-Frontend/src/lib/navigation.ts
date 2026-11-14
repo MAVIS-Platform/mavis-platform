@@ -117,7 +117,7 @@ export const globalNavigation: Record<AppRole, readonly NavigationGroup[]> = {
           id: "studio",
           label: "MAVIS Studio",
           icon: Boxes,
-          href: "/studio",
+          href: "/administration/studio",
         },
         {
           id: "runtime-summary",
