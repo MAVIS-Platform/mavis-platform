@@ -139,20 +139,32 @@ public sealed class DockerComposeSession(RuntimeRunDefinition definition, string
     public async Task WaitUntilReadyAsync(CancellationToken ct)
     {
         Stage = "READINESS";
+        var steps = definition.Profile.Applications.Select(p => new HttpScenarioStep(p.Key, p.Key, "GET", p.Value.ReadinessPath, 200, AllowClientError: p.Value.AllowClientErrorReadiness))
+            .Append(new("collector", "mavis-collector", "GET", "/", 200)).ToArray();
+        var probe = new HttpScenarioDefinition("readiness", steps, Math.Clamp(steps.Length * 3, 5, 30));
         for (var attempt = 0; attempt < 90; attempt++)
         {
             ct.ThrowIfCancellationRequested();
-            var steps = definition.Profile.Applications.Select(p => new HttpScenarioStep(p.Key, p.Key, "GET", p.Value.ReadinessPath, 200, AllowClientError: p.Value.AllowClientErrorReadiness))
-                .Append(new("collector", "mavis-collector", "GET", "/", 200)).ToArray();
-            var result = await RunInsideNetwork(new("readiness", steps, Math.Clamp(steps.Length * 3, 5, 30)), _endpoints, new Dictionary<string, string>(), ct);
-            if (result.Status == "Passed")
+            HttpScenarioOutcome? result = null;
+            try
+            {
+                result = await RunInsideNetwork(probe, _endpoints, new Dictionary<string, string>(), ct);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // A probe can time out while Docker is still warming up. The session deadline still applies.
+                if (!await ScenarioContainerCleanup.RemoveAsync(docker, _directory!, ResourceProject, ct))
+                    throw new RuntimeStageException("READINESS_PROBE_CLEANUP_UNCONFIRMED");
+            }
+
+            if (result?.Status == "Passed")
             {
                 await CheckpointAsync("RUNNING", 2, ct);
                 return;
             }
             await Task.Delay(1000, ct);
         }
-        throw new InvalidOperationException("Readiness could not be confirmed.");
+        throw new RuntimeStageException("READINESS_NOT_CONFIRMED");
     }
 
     public async Task<HttpScenarioOutcome> ExecuteScenarioAsync(CancellationToken ct)

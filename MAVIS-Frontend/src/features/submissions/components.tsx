@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import { DetailPanel, StatusBadge } from "@/components/shared/data";
 import { downloadArtifact } from "./frozen-artifacts";
 import { SelectField } from "@/components/shared/forms";
@@ -43,7 +44,15 @@ export function SubmissionVersionHeader({ submission }: { submission: Submission
       )}
       <SubmissionExport submissionId={submission.id} />
       <p className="text-xs text-muted-foreground">
-        Runtime: {submission.runtime ? submission.runtime.id : "Not included"}
+        {submission.runtime ? (
+          <Link className="underline" href={`/sessions?${new URLSearchParams({
+            project: submission.runtime.projectId, session: submission.runtime.id,
+          })}`}>
+            {submission.runtime.studioVerified
+              ? t("Verified Studio evidence", "Minh chứng Studio đã xác minh")
+              : t("Runtime evidence", "Minh chứng Runtime")} · {submission.runtime.id.slice(0, 8)}
+          </Link>
+        ) : t("No runtime evidence attached", "Chưa đính kèm minh chứng Runtime")}
       </p>
     </DetailPanel>
   );

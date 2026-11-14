@@ -7,6 +7,7 @@ import { allowedBackendPath } from "@/lib/api/backend-path";
 
 export const runtime = "nodejs";
 const cookieName = "mavis_session";
+const refreshCookieName = "mavis_refresh";
 async function handler(request: NextRequest, context: { params: Promise<{ path: string[] }> }) {
   const path = (await context.params).path.join("/");
   const jar = await cookies();
@@ -19,12 +20,17 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
     try {
       const token = jar.get(cookieName)?.value;
       if (token)
-        await javaRequest("auth/logout", token, { method: "POST", signal: request.signal });
+        await javaRequest("auth/logout", token, {
+          method: "POST",
+          headers: { "X-Refresh-Token": jar.get(refreshCookieName)?.value ?? "" },
+          signal: request.signal,
+        });
       const response = NextResponse.json(
         { data: null },
         { headers: { "Cache-Control": "no-store" } },
       );
       response.cookies.delete(cookieName);
+      response.cookies.delete(refreshCookieName);
       return response;
     } catch {
       return NextResponse.json({ message: "Sign out unavailable. Please retry." }, { status: 503 });
@@ -46,7 +52,7 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
   if (!allowedBackendPath(path))
     return NextResponse.json({ message: "Unsupported API path" }, { status: 404 });
   const login = path === "auth/login" && request.method === "POST";
-  const token = jar.get(cookieName)?.value;
+  let token = jar.get(cookieName)?.value;
   if (!login && !token) return NextResponse.json({ message: "Please sign in" }, { status: 401 });
   try {
     const headers = new Headers();
@@ -89,7 +95,8 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
       }
     }
     const base = process.env["MAVIS_JAVA_URL"] ?? "http://127.0.0.1:8081";
-    const upstream = await fetch(
+    let rotatedRefresh: string | undefined;
+    let upstream = await fetch(
       `${base.replace(/\/$/, "")}/api/v1/${path}${request.nextUrl.search}`,
       {
         method: request.method,
@@ -100,9 +107,27 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
         signal: AbortSignal.timeout(120000),
       },
     );
+    if (upstream.status === 401 && !login && jar.get(refreshCookieName)?.value) {
+      const refreshed = (await javaRequest("auth/refresh", undefined, {
+        method: "POST",
+        body: JSON.stringify({ refreshToken: jar.get(refreshCookieName)!.value }),
+        signal: request.signal,
+      })) as { token: string; refreshToken: string };
+      token = refreshed.token;
+      rotatedRefresh = refreshed.refreshToken;
+      headers.set("Authorization", `Bearer ${token}`);
+      upstream = await fetch(`${base.replace(/\/$/, "")}/api/v1/${path}${request.nextUrl.search}`, {
+        method: request.method,
+        headers,
+        body: body ?? null,
+        cache: "no-store",
+        redirect: "error",
+        signal: AbortSignal.timeout(120000),
+      });
+    }
     if (login && upstream.ok) {
       const result = await upstream.json();
-      const { token: jwt, ...user } = result.data ?? {};
+      const { token: jwt, refreshToken, ...user } = result.data ?? {};
       if (!jwt) return NextResponse.json({ message: "Invalid login response" }, { status: 502 });
       const response = NextResponse.json({ ...result, data: user });
       response.cookies.set(cookieName, jwt, {
@@ -110,8 +135,16 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
         sameSite: "lax",
         secure: request.nextUrl.protocol === "https:",
         path: "/",
-        maxAge: 86400,
+        maxAge: 900,
       });
+      if (refreshToken)
+        response.cookies.set(refreshCookieName, refreshToken, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: request.nextUrl.protocol === "https:",
+          path: "/",
+          maxAge: 604800,
+        });
       return response;
     }
     const response = new NextResponse(await upstream.arrayBuffer(), {
@@ -124,6 +157,22 @@ async function handler(request: NextRequest, context: { params: Promise<{ path: 
           : {}),
       },
     });
+    if (rotatedRefresh && token) {
+      response.cookies.set(cookieName, token, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: request.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge: 900,
+      });
+      response.cookies.set(refreshCookieName, rotatedRefresh, {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: request.nextUrl.protocol === "https:",
+        path: "/",
+        maxAge: 604800,
+      });
+    }
     if (upstream.status === 401) response.cookies.delete(cookieName);
     return response;
   } catch {

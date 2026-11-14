@@ -40,4 +40,18 @@ class NotificationControllerTest {
   }
   verifyNoInteractions(jdbc);
  }
+ @Test void listFilterBoundariesReturnHttp400BeforeQuery() throws Exception {
+  var mvc=MockMvcBuilders.standaloneSetup(controller).setControllerAdvice(new GlobalExceptionHandler()).build();
+  for(String query:List.of("?page=-1&size=20","?page=10001&size=20","?page=0&size=0","?page=0&size=51","?page=0&size=20&category=UNKNOWN")) {
+   mvc.perform(get("/api/v1/notifications"+query))
+     .andExpect(status().isBadRequest())
+     .andExpect(jsonPath("$.code").value(400));
+  }
+  verifyNoInteractions(jdbc);
+ }
+ @Test void readAllNullPayloadRejectsWithHttp400() {
+  assertThatThrownBy(()->controller.readAll(null)).isInstanceOf(ResponseStatusException.class);
+  assertThatThrownBy(()->controller.readAll(new NotificationController.ReadAll(null))).isInstanceOf(ResponseStatusException.class);
+  verifyNoInteractions(jdbc);
+ }
 }

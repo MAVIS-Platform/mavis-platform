@@ -90,3 +90,89 @@ test('resolveRuntimeTargetModel unwraps RUNTIME_ENRICHED references on Run #2 an
  assert.equal(pickedS2?.id,m3StaticS2.id);
  assert.equal(pickedS2?.snapshotId,s2);
 });
+
+test('WF-03 F05-006/007: runtimeReadSchema preserves honest beforeAfterComparison without fabricated latency', () => {
+ const { runtimeReadSchema } = require('../src/types/domain.ts');
+ const session = runtimeReadSchema.parse({
+  id: '11111111-1111-4111-8111-111111111111',
+  projectId: '22222222-2222-4222-8222-222222222222',
+  snapshotId: '33333333-3333-4333-8333-333333333333',
+  modelId: '44444444-4444-4444-8444-444444444444',
+  scenarioName: 'Scale orders',
+  profileName: 'SPRING_BOOT_DOTNET_COMPOSE_V1',
+  executionStatus: 'COMPLETED',
+  scenarioStatus: 'PASSED',
+  evidenceStatus: 'AVAILABLE',
+  cleanupStatus: 'CONFIRMED',
+  traceQuality: 'COMPLETE',
+  mappingStatus: 'MAPPED',
+  studioVerified: true,
+  capturedSpanCount: 6,
+  beforeAfterComparison: [{
+   action: 'SCALE',
+   service: 'order-service',
+   replicasBefore: 1,
+   replicasAfter: 4,
+   requestCountBefore: 0,
+   requestCountAfter: 0,
+   p95LatencyMsBefore: null,
+   p95LatencyMsAfter: null,
+   measurementStatus: 'INSUFFICIENT_TELEMETRY_SAMPLES',
+   measurementNote: 'Insufficient telemetry samples'
+  }],
+  createdAt: '2026-11-14T00:00:00Z',
+  startedAt: '2026-11-14T00:00:01Z',
+  completedAt: '2026-11-14T00:00:10Z'
+ });
+ assert.equal(session.studioVerified, true);
+ assert.equal(session.beforeAfterComparison?.[0]?.measurementStatus, 'INSUFFICIENT_TELEMETRY_SAMPLES');
+ assert.equal(session.beforeAfterComparison?.[0]?.p95LatencyMsAfter, null);
+});
+
+test('runtime history keeps evidence scoped to its pinned project and model', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/features/runtime/backend.tsx'), 'utf8');
+  assert.match(source, /sessionProjectId = session\.data\?\.projectId/);
+  assert.match(source, /requestedModelId = selectedId \? sessionModelId : targetModelId/);
+  assert.match(source, /if \(selectedId\) \{\s+return \(session\.data\?\.stepResults \?\? \[\]\)/);
+  assert.match(source, /projectId=\{sessionProjectId\}\s+targetGraphModelId=\{enrichedModelId \?\? sessionModelId\}/);
+  assert.match(source, /observed && session\.data\?\.traceStatus\?\.toUpperCase\(\) === "PARTIAL"/);
+});
+
+test('runtime sequence SVG displays recorded span fields without inventing responses', () => {
+  const filename = path.join(__dirname, '../src/features/runtime/backend.tsx');
+  const source = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'),
+    ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = new Set(['isRunnerActor', 'normalizeEndpointDisplay', 'methodStrokeColor',
+    'buildRuntimeSequenceSvgString']);
+  const functions = source.statements.filter(node => ts.isFunctionDeclaration(node) &&
+    names.has(node.name?.text)).map(node => node.getText(source)).join('\n');
+  const js = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2022 } });
+  const render = new Function(js.outputText + '\nreturn buildRuntimeSequenceSvgString;')();
+  const call = { callerService: 'orders', calleeService: 'broker' };
+  const partial = render([{ ...call, operation: 'Publish order.created' }], 'Recorded session').svgMarkup;
+  assert.match(partial, /Publish order\.created/);
+  assert.doesNotMatch(partial, /GET|HTTP 200|\/api\/|seq-reply-arrow/);
+  const measured = render([{ ...call, httpMethod: 'POST', operation: 'POST /events',
+    httpStatusCode: 503, durationMs: 12 }], 'Recorded session').svgMarkup;
+  assert.match(measured, /POST \/events/);
+  assert.match(measured, /HTTP 503 · 12 ms/);
+  assert.doesNotMatch(measured, /POST POST|seq-reply-arrow/);
+});
+
+test('interactive 2D Studio topology renders stacked replica cards, stopped node badge, and direct node control bar', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/features/runtime/backend.tsx'), 'utf8');
+  const dict = fs.readFileSync(path.join(__dirname, '../src/lib/i18n/locale-context.tsx'), 'utf8');
+  assert.ok(source.includes('studio-2d-node-control-bar'));
+  assert.ok(source.includes('Selected 2D Service Node'));
+  assert.ok(source.includes('Run new Studio experiment'));
+  assert.ok(source.includes('STOPPED · 0 Replicas'));
+  assert.ok(source.includes('REPLICAS'));
+  assert.ok(source.includes('onQuickStudioAction'));
+  assert.ok(source.includes('runWorkflowWithStudio'));
+  assert.ok(dict.includes('Selected 2D Service Node'));
+  assert.ok(dict.includes('Run new Studio experiment'));
+  assert.ok(source.includes('Each experiment starts a new sandbox run.'));
+  assert.ok(source.includes('studioServices.includes(selectedService)'));
+  assert.ok(source.includes('No confirmed replica count'));
+  assert.ok(source.includes('aria-pressed={isSelected}'));
+});

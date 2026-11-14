@@ -356,4 +356,62 @@ class AssignmentServiceImplTest {
         assertThat(assignment.getReferenceModel()).isNull();
         verifyNoInteractions(modelVersionRepository);
     }
+
+    @Test
+    @DisplayName("SR-08: Supports string or JSON aiPolicy, ruleSetVersion, and labOrder on create/update")
+    void supportsStringOrJsonAiPolicyRuleSetVersionAndLabOrder() {
+        when(workspaceRepository.findWithCreatorById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+        when(assignmentRepository.save(any(Assignment.class))).thenAnswer(inv -> {
+            Assignment a = inv.getArgument(0);
+            if (a.getId() == null) a.setId(UUID.randomUUID());
+            return a;
+        });
+
+        AssignmentResponseDTO created = assignmentService.createAssignment(workspaceId, AssignmentCreateRequest.builder()
+                .title("SR-08 Guided Assignment")
+                .ruleSetVersion("3e-2")
+                .aiPolicy("{\"allowExplanation\":true,\"maxHints\":3}")
+                .labOrder(2)
+                .build());
+
+        assertThat(created.getRuleSetVersion()).isEqualTo("3e-2");
+        assertThat(created.getAiPolicy().path("allowExplanation").asBoolean()).isTrue();
+        assertThat(created.getAiPolicy().path("maxHints").asInt()).isEqualTo(3);
+        assertThat(created.getLabOrder()).isEqualTo(2);
+
+        Assignment existing = Assignment.builder()
+                .id(created.getId())
+                .workspace(workspace)
+                .createdBy(currentUser)
+                .title("SR-08 Guided Assignment")
+                .ruleSetVersion("SWD_DEFAULT_V1")
+                .build();
+        when(assignmentRepository.findLockedById(created.getId())).thenReturn(Optional.of(existing));
+
+        AssignmentResponseDTO updated = assignmentService.updateAssignment(created.getId(), AssignmentUpdateRequest.builder()
+                .title("SR-08 Updated")
+                .ruleSetVersion("3e-3")
+                .aiPolicy("HINT_ONLY")
+                .labOrder(3)
+                .build());
+
+        assertThat(updated.getRuleSetVersion()).isEqualTo("3e-3");
+        assertThat(updated.getAiPolicy().asText()).isEqualTo("HINT_ONLY");
+        assertThat(updated.getLabOrder()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("SR-08: Rejects malformed JSON string in aiPolicy with BAD_REQUEST")
+    void rejectsMalformedJsonAiPolicy() {
+        when(workspaceRepository.findWithCreatorById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(currentUser));
+
+        assertThatThrownBy(() -> assignmentService.createAssignment(workspaceId, AssignmentCreateRequest.builder()
+                .title("Broken policy")
+                .aiPolicy("{invalid-json")
+                .build()))
+                .isInstanceOf(BusinessException.class)
+                .matches(ex -> ((BusinessException) ex).getErrorCode() == ErrorCode.BAD_REQUEST);
+    }
 }

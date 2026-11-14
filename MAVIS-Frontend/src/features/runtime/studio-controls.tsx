@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/shared/request-state";
 import { useLocale } from "@/lib/i18n/locale-context";
 import { StudioObservability, captureStudioImage } from "./studio-observability";
 import { Textarea } from "@/components/ui/textarea";
+import { StudioSnapshotComparison } from "./studio-snapshot-comparison";
 
 export function StudioControls({ sessionId }: { sessionId: string }) {
   const { t } = useLocale();
@@ -33,7 +34,10 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
   } | null>(null);
   const services = state.data?.services ?? [];
   const target = services.includes(service) ? service : (services[0] ?? "");
-  if (!state.data?.interactive) return state.isError ? <ErrorState error={state.error} /> : null;
+  if (!state.data?.interactive)
+    return state.isError ? (
+      <ErrorState error={state.error} onRetry={() => void state.refetch()} />
+    ) : null;
   const data = state.data;
   const waiting = data.actions.some(
     (item) => item.status === "PENDING" || item.status === "RUNNING",
@@ -43,6 +47,7 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
     .reverse()
     .find((item) => item.service === target && item.status === "CONFIRMED")?.result?.replicasAfter;
   const busy =
+    state.isError ||
     action.isPending ||
     finish.isPending ||
     cancel.isPending ||
@@ -75,7 +80,7 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
   return (
     <section ref={workspace} className="space-y-3 rounded-lg border p-4" aria-label="MAVIS Studio">
       <h3 className="font-medium">MAVIS Studio</h3>
-      <StudioObservability data={data} selected={target} onSelect={setService} />
+      {state.isError && <ErrorState error={state.error} onRetry={() => void state.refetch()} />}
       <div className="flex flex-wrap items-end gap-2">
         <SelectField
           label={t("Target service")}
@@ -226,6 +231,7 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
         {" · "}
         {t("Cleanup")}: {data.cleanupStatus}
       </p>
+      <StudioObservability data={data} selected={target} onSelect={setService} />
       {data.actions.length > 0 && (
         <ol className="space-y-2 text-sm">
           {data.actions.map((item) => (
@@ -279,6 +285,9 @@ export function StudioControls({ sessionId }: { sessionId: string }) {
             </li>
           ))}
         </ol>
+      )}
+      {(data.snapshots?.length ?? 0) > 1 && (
+        <StudioSnapshotComparison sessionId={sessionId} snapshots={data.snapshots ?? []} />
       )}
       <section className="space-y-2">
         <h4 className="font-medium">{t("Capture evidence snapshot")}</h4>

@@ -2,6 +2,7 @@ package com.mavis.platform.workspace.controller;
 
 import com.mavis.common.dto.ApiResponse;
 import com.mavis.platform.workspace.service.CourseAccessService;
+import com.mavis.platform.workspace.service.CourseLabSeederService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -19,9 +20,11 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CourseAccessController {
     private final CourseAccessService courses;
+    private final CourseLabSeederService seeder;
 
-    public record IssueKey(@Min(1) @Max(168) int validHours) {}
+    public record IssueKey(@Min(1) @Max(168) int validHours, @Min(1) @Max(10000) Integer maxStudents) {}
     public record RedeemKey(@NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{22}") String code) {}
+    public record SeedCuratedRequest(String preset) {}
 
     @GetMapping("/workspaces/{workspaceId}/course-roadmap")
     public ApiResponse<CourseAccessService.Roadmap> roadmap(@PathVariable UUID workspaceId) {
@@ -33,6 +36,13 @@ public class CourseAccessController {
         return ApiResponse.success(courses.publish(workspaceId, assignmentId));
     }
 
+    @PostMapping("/workspaces/{workspaceId}/course-labs/seed-curated")
+    public ApiResponse<CourseAccessService.Roadmap> seedCurated(
+            @PathVariable UUID workspaceId,
+            @RequestBody(required = false) SeedCuratedRequest request) {
+        return ApiResponse.success(seeder.seedCurated(workspaceId, request != null ? request.preset() : null));
+    }
+
     @GetMapping("/workspaces/{workspaceId}/course-passkey")
     public ApiResponse<CourseAccessService.KeyStatus> keyStatus(@PathVariable UUID workspaceId) {
         return ApiResponse.success(courses.keyStatus(workspaceId));
@@ -42,7 +52,7 @@ public class CourseAccessController {
     public ResponseEntity<ApiResponse<CourseAccessService.Passkey>> issue(
             @PathVariable UUID workspaceId, @Valid @RequestBody IssueKey request) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(ApiResponse.success(courses.issue(workspaceId, request.validHours())));
+                .body(ApiResponse.success(courses.issue(workspaceId, request.validHours(), request.maxStudents())));
     }
 
     @PostMapping("/workspaces/{workspaceId}/course-passkey/revoke")

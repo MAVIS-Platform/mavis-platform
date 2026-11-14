@@ -106,8 +106,7 @@ public class RuntimeStudioService {
             } catch(IllegalArgumentException invalid) {throw error(ErrorCode.BAD_REQUEST,"Snapshot image must be a bounded PNG.");}
         }
         try {
-            evidence.put("digest", "sha256:" + java.util.HexFormat.of().formatHex(
-                java.security.MessageDigest.getInstance("SHA-256").digest(mapper.writeValueAsBytes(evidence))));
+            evidence.put("digest", com.mavis.analyzer.runtime.utils.CanonicalReceiptDigestUtils.computeDigest(evidence));
         } catch (Exception failure) { throw error(ErrorCode.INTERNAL_SERVER_ERROR, "Could not freeze snapshot."); }
         control.withArray("snapshots").add(evidence);
         save(session, control);

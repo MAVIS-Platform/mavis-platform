@@ -7,6 +7,7 @@ public sealed class RuntimeLifecycleTests
 {
     private sealed class Backend : IRuntimeSessionBackend
     {
+        public string Stage => "READINESS";
         public bool FailStart, FailEvidence, FailCleanup, Cancel;
         public int CleanupCalls, PreserveCalls;
         public IReadOnlyList<RuntimeInfrastructureActionResult> Actions = [];
@@ -77,6 +78,16 @@ public sealed class RuntimeLifecycleTests
         var backend = new Backend { Cancel = true };
         var result = await RuntimeSessionLifecycle.RunAsync(backend, 5, new CancellationToken(true));
         Assert.Equal("Cancelled", result.ExecutionStatus); Assert.Equal(1, backend.PreserveCalls); Assert.Equal(1, backend.CleanupCalls);
+    }
+
+    [Fact]
+    public async Task TimeoutReportsStageAndStillCleansUp()
+    {
+        var backend = new Backend { Cancel = true };
+        var result = await RuntimeSessionLifecycle.RunAsync(backend, 5);
+        Assert.Equal("TimedOut", result.ExecutionStatus);
+        Assert.Contains("SESSION_TIMED_OUT_AT_READINESS", result.Diagnostics);
+        Assert.Equal("Confirmed", result.CleanupStatus);
     }
 
     [Fact]

@@ -16,6 +16,7 @@ Các endpoint bên dưới dùng tiền tố `/api/v1` và nhận JWT ở backen
 | HTTP | Đường dẫn | Kết quả hoặc dữ liệu gửi |
 |---|---|---|
 | GET | `/workspaces/{workspaceId}/course-roadmap` | `guided`, `enrollmentStatus`, `labs[]` với `assignmentId`, `position`, `title`, `state`, `reason` |
+| POST | `/workspaces/{workspaceId}/course-labs/seed-curated` | `CourseLabSeederService`: nhận `{ "preset": "STANDARD_DEMO" \| "FULL_CURRICULUM" }` (mặc định `STANDARD_DEMO`), khởi tạo idempotent nguồn mẫu `TEACHER_REFERENCE` đa service Spring Boot + C# ASP.NET Core (`inventory-service`, `Orders/Program.cs`, `Catalog/Program.cs`), ZIP + SHA-256, `ModelVersion`, 4 sơ đồ tĩnh (`C4/CONTEXT`, `DEPENDENCY_GRAPH/SERVICE`, `C4/CONTAINER`, `C4/COMPONENT`), `EvaluationRun`, chế độ `STANDARD_DEMO` (3 Lab: `java-04`, `java-07`, `csharp-13`) hoặc `FULL_CURRICULUM` (13 Lab: `java-01..12` + `csharp-13`), được mở khóa trực tiếp qua Next.js BFF `allowedBackendPath` (`COURSE_LABS_SEEDED_CURATED`) |
 | POST | `/workspaces/{workspaceId}/course-labs/{assignmentId}/publish` | Lab đã công bố. Gửi lại cùng assignment trả số Lab đã cấp |
 | GET | `/workspaces/{workspaceId}/course-passkey` | `active`, `expiresAt` |
 | POST | `/workspaces/{workspaceId}/course-passkey` | Gửi `{ "validHours": 24 }`. Nhận `code`, `expiresAt` một lần |
@@ -36,7 +37,9 @@ Roadmap trả `ENROLLED`, `IN_PROGRESS` hoặc `COMPLETED` cho sinh viên đã g
 
 ## Nối kết quả WF-04 và thông báo
 
-WF-04 gọi `CourseProgressionService.recordFinalizedResult(submissionId, reviewRevision, passed)` trong luồng server-side khi đã xác minh các Snapshot bắt buộc và lưu kết quả cuối. Khi kết nối producer WF-04, lưu và flush bản review rồi gọi dịch vụ trong cùng transaction JPA để bản ghi điểm, tiến độ và thông báo cùng commit hoặc rollback. Tiến độ đọc review bằng JDBC. Kết quả không đạt giữ Lab sau khóa. API chấm điểm tổng 0–100 hiện tại có nghiệp vụ riêng.
+WF-04 gọi `CourseProgressionService.recordFinalizedResult(submissionId, reviewRevision, passed)` trong luồng server-side khi đã xác minh các Snapshot bắt buộc (`> 5.0/10`) và lưu kết quả cuối (chi tiết tại [`WF04_SUBMISSION_GRADING_C04.md`](./WF04_SUBMISSION_GRADING_C04.md)). Khi kết nối producer WF-04, lưu và flush bản review rồi gọi dịch vụ trong cùng transaction JPA để bản ghi điểm, tiến độ và thông báo cùng commit hoặc rollback. Tiến độ đọc review bằng JDBC. Kết quả không đạt giữ Lab sau khóa. API chấm điểm tổng 0–100 hiện tại có nghiệp vụ riêng.
+
+> Tài liệu liên quan: [`WF02_STATIC_QUIZ_C02.md`](./WF02_STATIC_QUIZ_C02.md) · [`WF03_RUNTIME_STUDIO_C03.md`](./WF03_RUNTIME_STUDIO_C03.md) · [`WF04_SUBMISSION_GRADING_C04.md`](./WF04_SUBMISSION_GRADING_C04.md) · [`MAVIS_DEFENSE_1_1_MASTER_VERIFICATION_REPORT.md`](./MAVIS_DEFENSE_1_1_MASTER_VERIFICATION_REPORT.md) (bao gồm `Wf01AcceptanceMatrixTest` tự động hóa **30 ca** nhóm `F01`/`F09`/`F10` kèm `CourseLabSeederServiceTest` 3/3 cho cả `STANDARD_DEMO` 3 Lab & `FULL_CURRICULUM` 13 Lab). Giao diện Giảng viên tại Courses & Assignments tích hợp 2 nút 1-click `<SeedCuratedCourseLabs />` và Next.js BFF `allowedBackendPath` hỗ trợ `/course-labs/seed-curated`. Bổ sung `V31__WF01_Customer_Ready_Identity_And_Course.sql` (`users.avatar_url`, `users.preferred_locale`, `workspaces.max_students`, `refresh_sessions`, `auth_rate_limits`).
 
 Progression kiểm tra bài nộp mới nhất, bản review `GRADED` đúng revision, nhận xét có nội dung, sinh viên thuộc lớp và đã qua các Lab trước. Khi đạt, kết quả và thông báo mở Lab kế tiếp được lưu trong cùng giao dịch. Cơ chế gửi lặp dựa trên revision và khóa sự kiện `course-lab-unlocked:{assignmentId}`.
 

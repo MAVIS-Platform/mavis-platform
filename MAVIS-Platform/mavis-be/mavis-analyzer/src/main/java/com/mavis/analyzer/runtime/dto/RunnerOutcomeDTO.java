@@ -23,4 +23,5 @@ public class RunnerOutcomeDTO {
     private List<String> diagnostics;
     private JsonNode scenario;
     private RunnerTraceCorrelationDTO trace;
+    private List<RuntimeInfrastructureActionDTO> infrastructureActions;
 }

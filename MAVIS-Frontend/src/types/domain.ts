@@ -11,6 +11,8 @@ export const sessionSchema = z.object({
       name: z.string(),
       role: roleSchema,
       email: z.string().email().nullish(),
+      avatarUrl: z.string().url().nullish(),
+      preferredLocale: z.enum(["en", "vi"]).optional(),
     })
     .nullable(),
 });
@@ -177,6 +179,7 @@ export const runtimeSessionSchema = z.object({
   scenarioId: z.string().nullable(),
   modelId: z.string().nullable().optional(),
   enrichedModelId: z.string().nullable().optional(),
+  studioVerified: z.boolean().optional(),
   configurationRevision: z.number().int().nonnegative().nullable(),
   scenarioRevision: z.number().int().nonnegative().nullable(),
   executionStatus: z.string().optional(),
@@ -251,7 +254,8 @@ export const explanationSchema = z.object({
   cached: z.boolean().optional(),
 });
 export const workspaceSchema = z.object({
-  createdById:z.string().optional(),description:z.string().optional(),
+  createdById: z.string().optional(),
+  description: z.string().optional(),
   id: z.string(),
   name: z.string(),
   code: z.string().optional(),
@@ -260,15 +264,24 @@ export const workspaceSchema = z.object({
   members: z.array(z.object({ id: z.string(), name: z.string(), role: z.string() })),
 });
 export const assignmentReferenceSchema = z.object({
-  projectId: z.string(), projectName: z.string(), snapshotId: z.string(), modelId: z.string(),
-  revision: z.number().int().positive(), sourceType: z.string(),
-  repositoryUrl: z.string().nullish(), branch: z.string().nullish(),
-  commitSha: z.string().nullish(), artifactHash: z.string().nullish(),
+  projectId: z.string(),
+  projectName: z.string(),
+  snapshotId: z.string(),
+  modelId: z.string(),
+  revision: z.number().int().positive(),
+  sourceType: z.string(),
+  repositoryUrl: z.string().nullish(),
+  branch: z.string().nullish(),
+  commitSha: z.string().nullish(),
+  artifactHash: z.string().nullish(),
 });
 export const assignmentSchema = z.object({
   referenceSource: assignmentReferenceSchema.nullish(),
   requiredDiagramTypes: z.array(z.string()).optional(),
+  ruleSetVersion: z.string().nullish(),
   requireRuntimeTrace: z.boolean().optional(),
+  aiPolicy: z.union([z.record(z.unknown()), z.string()]).nullish(),
+  labOrder: z.number().int().positive().nullish(),
   id: z.string(),
   workspaceId: z.string(),
   title: z.string(),
@@ -289,6 +302,24 @@ export const courseQuizEvidenceSchema = z.object({
   commitSha: z.string().nullable(),
 });
 
+export const studentSnapshotSchema = z.object({
+  snapshotId: z.string().min(1).max(128),
+  step: z.string().max(64).optional(),
+  title: z.string().max(255).optional(),
+  targetViewOrService: z.string().max(255).optional(),
+  writtenExplanation: z.string().max(5000).optional(),
+  capturedAt: z.string().nullable().optional(),
+});
+export type StudentSnapshotItem = z.infer<typeof studentSnapshotSchema>;
+
+export const snapshotGradeSchema = z.object({
+  snapshotId: z.string().min(1).max(128),
+  title: z.string().max(255).nullable().optional(),
+  score: z.number().min(0).max(10),
+  comment: z.string().max(2000).nullable().optional(),
+});
+export type SnapshotGradeItem = z.infer<typeof snapshotGradeSchema>;
+
 export const submissionSchema = z
   .object({
     assignmentTitle: z.string().optional(),
@@ -300,8 +331,13 @@ export const submissionSchema = z
     diagramLayout: z.record(z.unknown()).optional(),
     evaluationRunId: z.string().nullable().optional(),
     complianceScore: z.number().nullable().optional(),
+    evidencePackageDigest: z
+      .string()
+      .regex(/^sha256:[a-f0-9]{64}$/)
+      .optional(),
     courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
     studioEvidence:z.record(z.unknown()).nullish(),
+    studentSnapshots: z.array(studentSnapshotSchema).nullish(),
     id: z.string(),
     assignmentId: z.string(),
     studentId: z.string(),
@@ -310,7 +346,15 @@ export const submissionSchema = z
     snapshot: snapshotSchema,
     runtime: runtimeSessionSchema.nullable(),
     feedback: z.array(
-      z.object({ id: z.string(), text: z.string(), createdAt: z.string(), authorId: z.string(), authorName:z.string().optional(), elementId:z.string().nullable().optional(), relationshipId:z.string().nullable().optional() }),
+      z.object({
+        id: z.string(),
+        text: z.string(),
+        createdAt: z.string(),
+        authorId: z.string(),
+        authorName: z.string().optional(),
+        elementId: z.string().nullable().optional(),
+        relationshipId: z.string().nullable().optional(),
+      }),
     ),
   })
   .superRefine((submission, ctx) => {
@@ -410,6 +454,23 @@ export const runtimeActionEvidenceSchema = z.object({
   confirmed: z.boolean(),
 });
 
+export const runtimeBeforeAfterComparisonSchema = z.object({
+  action: z.string(),
+  service: z.string(),
+  replicasBefore: z.number().nullable().optional(),
+  replicasAfter: z.number().nullable().optional(),
+  requestCountBefore: z.number().nullable().optional(),
+  requestCountAfter: z.number().nullable().optional(),
+  p95LatencyMsBefore: z.number().nullable().optional(),
+  p95LatencyMsAfter: z.number().nullable().optional(),
+  errorRateBefore: z.number().nullable().optional(),
+  errorRateAfter: z.number().nullable().optional(),
+  capturedSpanCount: z.number().nullable().optional(),
+  cleanupStatus: z.string().nullable().optional(),
+  measurementStatus: z.string(),
+  measurementNote: z.string(),
+});
+
 export const runtimeReadSchema = z.object({
   publicationGateStatus: z.string().nullable().optional(),
   failureReason: z.string().nullable().optional(),
@@ -417,6 +478,7 @@ export const runtimeReadSchema = z.object({
   capturedSpanCount: z.number().nullable().optional(),
   studioVerified: z.boolean().optional(),
   infrastructureActions: z.array(runtimeActionEvidenceSchema).optional(),
+  beforeAfterComparison: z.array(runtimeBeforeAfterComparisonSchema).nullish(),
   stepResults: z.array(runtimeStepResultSchema).optional(),
   id: z.string(),
   projectId: z.string(),

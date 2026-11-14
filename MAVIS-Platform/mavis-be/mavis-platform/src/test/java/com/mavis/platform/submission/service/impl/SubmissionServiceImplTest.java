@@ -101,6 +101,7 @@ class SubmissionServiceImplTest {
     @Mock
     private JobRepository jobRepository;
     @Mock private SubmissionReviewRepository submissionReviewRepository;
+    @Mock private com.mavis.common.security.CourseLabPolicy courseLabs;
 
     @Mock
     private com.mavis.common.security.AccessPolicyService accessPolicyService;
@@ -126,6 +127,7 @@ class SubmissionServiceImplTest {
     private EvaluationRun evaluationRun;
     private RuntimeSession runtimeSession;
 
+    @org.mockito.Spy
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
@@ -198,6 +200,58 @@ class SubmissionServiceImplTest {
                 .build();
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = {false, true})
+    void guidedLabRequiringRuntimeChecksStudioEvidence(boolean studio) {
+        var workspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).build();
+        assignment.setWorkspace(workspace);
+        assignment.setRequireRuntimeTrace(true);
+        project.setWorkspace(workspace);
+        project.setAssignment(assignment);
+        runtimeSession.setModelVersion(modelVersion);
+        snapshot.setArtifactHash("sha256:" + "a".repeat(64));
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(runtimeSession));
+
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        when(evaluationRunRepository.findById(evaluationRunId)).thenReturn(Optional.of(evaluationRun));
+        var request = SubmissionCreateRequest.builder().assignmentId(assignmentId).projectId(projectId)
+                .modelVersionId(modelVersionId).diagramVersionId(diagramVersionId).evaluationRunId(evaluationRunId)
+                .runtimeSessionId(runtimeSessionId).build();
+        if (!studio) {
+            assertThatThrownBy(() -> submissionService.submitAssignment(request))
+                    .isInstanceOf(BusinessException.class).hasMessageContaining("STEP_4_SIGNED_RUNTIME_RECEIPT");
+            verify(submissionSnapshotRepository, never()).save(any());
+            return;
+        }
+
+        runtimeSession.setSandboxEnforcementConfirmed(true);
+        runtimeSession.setReceiptDigest("sha256:" + "a".repeat(64));
+        var plan = objectMapper.createObjectNode();
+        plan.putArray("infrastructureActions").addObject().put("action", "SCALE")
+                .put("service", "orders").put("replicas", 4);
+        runtimeSession.setScenarioConfig(plan);
+        var receipt = objectMapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject();
+        var action = receipt.putArray("infrastructureActions").addObject().put("action", "SCALE")
+                .put("service", "orders").put("replicasBefore", 1).put("replicasAfter", 4).put("confirmed", true);
+        action.putObject("metricsBefore");
+        action.putObject("metricsAfter");
+        runtimeSession.setRunnerReceiptJson(receipt);
+        when(submissionSnapshotRepository.save(any(SubmissionSnapshot.class))).thenAnswer(inv -> {
+            SubmissionSnapshot saved = inv.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            saved.setSubmittedAt(OffsetDateTime.now());
+            return saved;
+        });
+
+        assertThat(submissionService.submitAssignment(request).getRuntimeSessionId()).isEqualTo(runtimeSessionId);
+    }
+
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
@@ -267,8 +321,35 @@ class SubmissionServiceImplTest {
         assertThat(response.getComplianceScore()).isEqualTo(95.5);
         assertThat(response.getScenarioStatus()).isEqualTo("PASSED");
         assertThat(response.getSubmissionNotes()).isEqualTo("Bài tập hoàn thành đúng hạn");
+        assertThat(response.getEvidencePackageDigest()).matches("sha256:[a-f0-9]{64}");
 
         verify(submissionSnapshotRepository).save(any(SubmissionSnapshot.class));
+    }
+
+    @Test
+    void courseSubmissionReportsEveryMissingFourStageEvidenceItem() {
+        var workspace=Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        student.setRole(Role.builder().code("STUDENT").build());
+        assignment.setWorkspace(workspace);assignment.setLabOrder(1);assignment.setRequireRuntimeTrace(false);
+        assignment.setReferenceModel(modelVersion);project.setWorkspace(workspace);project.setAssignment(assignment);
+        snapshot.setArtifactHash(null);project.setReferenceSnapshotId(snapshot.getId());
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(assignmentRepository.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        when(courseLabs.currentQuizPass(assignment,userId)).thenReturn(Optional.of(new com.mavis.common.security.CourseLabPolicy.QuizPass(
+                UUID.randomUUID(),1,8,10,70,OffsetDateTime.now())));
+        var request=SubmissionCreateRequest.builder().assignmentId(assignmentId).projectId(projectId)
+                .modelVersionId(modelVersionId).diagramVersionId(diagramVersionId).build();
+        assertThatThrownBy(()->submissionService.submitAssignment(request)).isInstanceOf(BusinessException.class)
+                .hasMessageContaining("INCOMPLETE_4STAGE_EVIDENCE")
+                .hasMessageContaining("STEP_1_STATIC_ANALYZED")
+                .hasMessageContaining("STEP_2_C4_GROUND_TRUTH_70")
+                .hasMessageContaining("STEP_3_RUNTIME_OTEL_VIEW")
+                .hasMessageContaining("STEP_4_SIGNED_RUNTIME_RECEIPT");
+        verify(submissionSnapshotRepository,never()).save(any());
     }
 
     @Test
@@ -669,5 +750,83 @@ class SubmissionServiceImplTest {
         when(submissionSnapshotRepository.findVisibleTo(userId,false)).thenReturn(List.of());assertThat(submissionService.getMySubmissions()).isEmpty();
         student.setRole(Role.builder().code("SYSTEM_ADMIN").build());when(submissionSnapshotRepository.findVisibleTo(userId,true)).thenReturn(List.of());assertThat(submissionService.getMySubmissions()).isEmpty();
         verify(submissionSnapshotRepository).findVisibleTo(userId,false);verify(submissionSnapshotRepository).findVisibleTo(userId,true);
+    }
+
+    @Test
+    @DisplayName("WF-04 F11-002: Course Lab submission requires written explanation and freezes studentSnapshots in SHA-256 package digest")
+    void courseSubmissionRequiresExplanationAndPersistsStudentSnapshots() {
+        var workspace = Workspace.builder().id(UUID.randomUUID()).courseMode(true).status("ACTIVE").build();
+        student.setRole(Role.builder().code("STUDENT").build());
+        assignment.setWorkspace(workspace);
+        assignment.setLabOrder(1);
+        assignment.setReferenceModel(modelVersion);
+        project.setWorkspace(workspace);
+        project.setAssignment(assignment);
+        snapshot.setArtifactHash("sha256:" + "a".repeat(64));
+        project.setReferenceSnapshotId(snapshot.getId());
+        runtimeSession.setReceiptDigest("sha256:" + "b".repeat(64));
+        runtimeSession.setSandboxEnforcementConfirmed(true);
+        runtimeSession.setModelVersion(modelVersion);
+        var plan = objectMapper.createObjectNode();
+        plan.putArray("infrastructureActions").addObject().put("action", "SCALE")
+                .put("service", "orders").put("replicas", 4);
+        runtimeSession.setScenarioConfig(plan);
+        var receipt = objectMapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject();
+        var action = receipt.putArray("infrastructureActions").addObject().put("action", "SCALE")
+                .put("service", "orders").put("replicasBefore", 1).put("replicasAfter", 4).put("confirmed", true);
+        action.putObject("metricsBefore");
+        action.putObject("metricsAfter");
+        runtimeSession.setRunnerReceiptJson(receipt);
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(assignmentRepository.findLockedById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        when(evaluationRunRepository.findById(evaluationRunId)).thenReturn(Optional.of(evaluationRun));
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(runtimeSession));
+        when(courseLabs.currentQuizPass(assignment, userId)).thenReturn(Optional.of(
+                new com.mavis.common.security.CourseLabPolicy.QuizPass(UUID.randomUUID(), 1, 8, 10, 80, OffsetDateTime.now())));
+
+        var missingNotesReq = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId).projectId(projectId)
+                .modelVersionId(modelVersionId).diagramVersionId(diagramVersionId)
+                .evaluationRunId(evaluationRunId).runtimeSessionId(runtimeSessionId)
+                .submissionNotes("   ")
+                .build();
+
+        assertThatThrownBy(() -> submissionService.submitAssignment(missingNotesReq))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("Written theoretical explanation is required");
+
+        var snapshotItems = List.of(
+                SubmissionCreateRequest.StudentSnapshotItemDTO.builder()
+                        .snapshotId("STEP_1_STATIC")
+                        .step("STEP_1_STATIC")
+                        .title("Order -> Payment boundary")
+                        .targetViewOrService("order-service")
+                        .writtenExplanation("Gateway routes synchronously to order-service over REST before async payment event.")
+                        .build()
+        );
+        var completeReq = SubmissionCreateRequest.builder()
+                .assignmentId(assignmentId).projectId(projectId)
+                .modelVersionId(modelVersionId).diagramVersionId(diagramVersionId)
+                .evaluationRunId(evaluationRunId).runtimeSessionId(runtimeSessionId)
+                .studentSnapshots(snapshotItems)
+                .build();
+
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call -> {
+            SubmissionSnapshot saved = call.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+
+        SubmissionResponseDTO dto = submissionService.submitAssignment(completeReq);
+        assertThat(dto.getStudentSnapshots()).isNotNull();
+        assertThat(dto.getStudentSnapshots().isArray()).isTrue();
+        assertThat(dto.getStudentSnapshots().get(0).path("snapshotId").asText()).isEqualTo("STEP_1_STATIC");
+        assertThat(dto.getEvidencePackageDigest()).matches("^sha256:[a-f0-9]{64}$");
     }
 }

@@ -23,7 +23,8 @@ import java.util.TreeMap;
  */
 public final class CanonicalReceiptDigestUtils {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+        .enable(com.fasterxml.jackson.core.JsonGenerator.Feature.WRITE_BIGDECIMAL_AS_PLAIN);
 
     public static final String GOLDEN_FIXTURE_DIGEST = "sha256:0346fac15f576ef8e56a99d6efcd5f013e29bada18fbbe24887743a2d51fa4e7";
 
@@ -81,6 +82,8 @@ public final class CanonicalReceiptDigestUtils {
                 canonicalArray.add(canonicalElement != null ? canonicalElement : OBJECT_MAPPER.nullNode());
             }
             return canonicalArray;
+        } else if(node.isFloatingPointNumber()) {
+            return com.fasterxml.jackson.databind.node.DecimalNode.valueOf(new java.math.BigDecimal(node.asText()).stripTrailingZeros());
         } else {
             return node.deepCopy();
         }

@@ -1116,4 +1116,48 @@ class RunnerReceiptIngestServiceImplTest {
                 .containsExactly("api-gateway->order-service");
         assertThat(steps.get(0).path("operation").asText()).isEqualTo("/api/orders/checkout");
     }
+
+    @Test
+    @DisplayName("WF-03 F05-006/007: Builds honest Before vs. After comparison without fabricated latency")
+    void buildsHonestBeforeAfterComparisonWithoutFabricatingLatency() {
+        var config = objectMapper.createObjectNode();
+        config.putArray("infrastructureActions").addObject()
+                .put("action", "SCALE").put("service", "order-service").put("replicas", 4);
+        session.setScenarioConfig(config);
+        session.setExecutionStatus("COMPLETED");
+        session.setScenarioStatus("PASSED");
+        session.setEvidenceStatus("AVAILABLE");
+        session.setCleanupStatus("CONFIRMED");
+
+        session.setTraceStatus("COMPLETE");
+        session.setSandboxEnforcementConfirmed(true);
+        session.setReceiptDigest("sha256:" + "a".repeat(64));
+
+        ObjectNode receipt = objectMapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject().put("traceId", "4bf92f3577b34da6a3ce929d0e0e4736");
+        var actions = receipt.putArray("infrastructureActions");
+        var scaled = actions.addObject()
+                .put("action", "SCALE").put("service", "order-service")
+                .put("replicasBefore", 1).put("replicasAfter", 4).put("confirmed", true);
+        scaled.putObject("metricsBefore").put("requestCount", 0);
+        scaled.putObject("metricsAfter").put("requestCount", 0);
+        session.setRunnerReceiptJson(receipt);
+
+        RuntimeSessionResponseDTO insufficientDto = RuntimeSessionResponseDTO.fromEntity(session);
+        assertThat(insufficientDto.isStudioVerified()).isTrue();
+        assertThat(insufficientDto.getBeforeAfterComparison()).hasSize(1);
+        assertThat(insufficientDto.getBeforeAfterComparison().getFirst().getMeasurementStatus())
+                .isEqualTo("INSUFFICIENT_TELEMETRY_SAMPLES");
+        assertThat(insufficientDto.getBeforeAfterComparison().getFirst().getMeasurementNote())
+                .contains("Insufficient telemetry samples");
+        assertThat(insufficientDto.getBeforeAfterComparison().getFirst().getP95LatencyMsBefore()).isNull();
+        assertThat(insufficientDto.getBeforeAfterComparison().getFirst().getP95LatencyMsAfter()).isNull();
+
+        scaled.putObject("metricsBefore").put("requestCount", 5).put("p95LatencyMs", 120.0).put("errorRatePercent", 0.0);
+        scaled.putObject("metricsAfter").put("requestCount", 5).put("p95LatencyMs", 48.5).put("errorRatePercent", 0.0);
+        RuntimeSessionResponseDTO measuredDto = RuntimeSessionResponseDTO.fromEntity(session);
+        assertThat(measuredDto.getBeforeAfterComparison().getFirst().getMeasurementStatus()).isEqualTo("MEASURED");
+        assertThat(measuredDto.getBeforeAfterComparison().getFirst().getP95LatencyMsBefore()).isEqualTo(120.0);
+        assertThat(measuredDto.getBeforeAfterComparison().getFirst().getP95LatencyMsAfter()).isEqualTo(48.5);
+    }
 }

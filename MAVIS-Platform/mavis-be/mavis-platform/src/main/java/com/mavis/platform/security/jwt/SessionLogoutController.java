@@ -12,12 +12,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class SessionLogoutController {
     private final JwtUtil jwt;
+    private final RefreshSessionService refreshSessions;
 
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(@RequestHeader(value = "Authorization", required = false) String authorization) {
+    public ApiResponse<Void> logout(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                    @RequestHeader(value = "X-Refresh-Token", required = false) String refreshToken) {
         if (authorization != null && authorization.startsWith("Bearer ")) {
             jwt.revoke(authorization.substring(7));
         }
+        refreshSessions.revoke(refreshToken);
         return ApiResponse.success(null);
     }
 }

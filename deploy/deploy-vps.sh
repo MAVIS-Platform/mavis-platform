@@ -96,6 +96,36 @@ if [ -e "$quiz_evidence_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$quiz_evidence_migration" /opt/mavis/db-backups/wf02-before-v28.dump
 fi
+digest_migration="$incoming/V29__Submission_Evidence_Package_Digest.sql"
+if [ -e "$digest_migration" ]; then
+  test -f "$quiz_evidence_migration" && test -f "$schema_tool" || { echo "Incomplete WF-04 digest schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$digest_migration" /opt/mavis/db-backups/wf04-before-v29.dump
+fi
+grading_migration="$incoming/V30__Submission_Snapshot_Grades_And_Explanations.sql"
+if [ -e "$grading_migration" ]; then
+  test -f "$digest_migration" && test -f "$schema_tool" || { echo "Incomplete WF-04 grading schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$grading_migration" /opt/mavis/db-backups/wf04-before-v30.dump
+fi
+identity_migration="$incoming/V31__WF01_Customer_Ready_Identity_And_Course.sql"
+if [ -e "$identity_migration" ]; then
+  test -f "$grading_migration" && test -f "$schema_tool" || { echo "Incomplete WF-01 identity schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$identity_migration" /opt/mavis/db-backups/wf01-before-v31.dump
+fi
+studio_control_migration="$incoming/V32__Runtime_Studio_Control.sql"
+if [ -e "$studio_control_migration" ]; then
+  test -f "$identity_migration" && test -f "$schema_tool" || { echo "Incomplete Studio control schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$studio_control_migration" /opt/mavis/db-backups/wf03-before-v32.dump
+fi
+studio_evidence_migration="$incoming/V33__Submission_Studio_Evidence.sql"
+if [ -e "$studio_evidence_migration" ]; then
+  test -f "$studio_control_migration" && test -f "$schema_tool" || { echo "Incomplete Studio evidence schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$studio_evidence_migration" /opt/mavis/db-backups/wf03-before-v33.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans
