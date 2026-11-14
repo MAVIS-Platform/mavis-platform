@@ -1224,36 +1224,147 @@ export function StudioObservability({
                       isSelected || isDropTarget ? 2.6 : 1.5,
                     )}
 
-                    {/* Main 3D Server Rack / Database Cylinder / Container Tower (height scales with 1..8 replicas) */}
+                    {/* Main 3D Archetype Sculpture: Database Cylinder / Gateway Hex-Prism / Queue Pipeline / Server Blade Rack */}
                     {archetype === "DATABASE" ? (
                       <g>
                         <path
-                          d={`M ${point.x - 32},${point.y - 8 - towerHeight} L ${point.x - 32},${point.y - 8} A 32 14 0 0 0 ${point.x + 32},${point.y - 8} L ${point.x + 32},${point.y - 8 - towerHeight} Z`}
+                          d={`M ${point.x - 36},${point.y - 8 - towerHeight} L ${point.x - 36},${point.y - 6} A 36 15 0 0 0 ${point.x + 36},${point.y - 6} L ${point.x + 36},${point.y - 8 - towerHeight} Z`}
                           fill={theme.cardFill}
                           stroke={strokeColor}
-                          strokeWidth="1.8"
+                          strokeWidth="1.9"
+                        />
+                        {/* 3D Database Platter Grooves */}
+                        <path
+                          d={`M ${point.x - 36},${point.y - 6 - towerHeight * 0.35} A 36 14 0 0 0 ${point.x + 36},${point.y - 6 - towerHeight * 0.35}`}
+                          fill="none"
+                          stroke={theme.accent}
+                          strokeWidth="1.2"
+                          opacity="0.65"
+                        />
+                        <path
+                          d={`M ${point.x - 36},${point.y - 6 - towerHeight * 0.7} A 36 14 0 0 0 ${point.x + 36},${point.y - 6 - towerHeight * 0.7}`}
+                          fill="none"
+                          stroke={theme.accent}
+                          strokeWidth="1.2"
+                          opacity="0.65"
                         />
                         <ellipse
                           cx={point.x}
                           cy={point.y - 8 - towerHeight}
-                          rx="32"
-                          ry="14"
+                          rx="36"
+                          ry="15"
+                          fill={theme.iconBg}
+                          stroke={strokeColor}
+                          strokeWidth="1.9"
+                        />
+                        <ellipse
+                          cx={point.x}
+                          cy={point.y - 8 - towerHeight}
+                          rx="18"
+                          ry="7"
+                          fill="none"
+                          stroke={theme.accent}
+                          strokeWidth="1.1"
+                          opacity="0.8"
+                        />
+                      </g>
+                    ) : archetype === "GATEWAY" ? (
+                      <g>
+                        {/* Tapered Hexagonal / Trapezoidal 3D Load-Balancer Router Frustum */}
+                        <polygon
+                          points={`${point.x - 52},${point.y - 6} ${point.x},${point.y + 18} ${point.x + 52},${point.y - 6} ${point.x + 34},${point.y - 10 - towerHeight} ${point.x},${point.y + 6 - towerHeight} ${point.x - 34},${point.y - 10 - towerHeight}`}
                           fill={theme.iconBg}
                           stroke={strokeColor}
                           strokeWidth="1.8"
+                          strokeLinejoin="round"
+                        />
+                        <polygon
+                          points={`${point.x},${point.y - 24 - towerHeight} ${point.x + 34},${point.y - 10 - towerHeight} ${point.x},${point.y + 6 - towerHeight} ${point.x - 34},${point.y - 10 - towerHeight}`}
+                          fill={theme.cardFill}
+                          stroke={strokeColor}
+                          strokeWidth="1.8"
+                        />
+                        {/* Router Signal Spire / Beacon */}
+                        <line
+                          x1={point.x}
+                          y1={point.y - 10 - towerHeight}
+                          x2={point.x}
+                          y2={point.y - 26 - towerHeight}
+                          stroke={theme.accent}
+                          strokeWidth="2"
+                        />
+                        <circle
+                          cx={point.x}
+                          cy={point.y - 28 - towerHeight}
+                          r="4"
+                          fill={theme.accent}
                         />
                       </g>
+                    ) : archetype === "QUEUE" ? (
+                      <g>
+                        {/* 3-Partition Isometric Event Stream Pipeline Conduit */}
+                        {[-14, 0, 14].map((offsetY, idx) => (
+                          <g key={idx}>
+                            <rect
+                              x={point.x - 44}
+                              y={point.y - 24 - towerHeight * 0.5 + offsetY * 0.7}
+                              width="88"
+                              height="11"
+                              rx="5.5"
+                              fill={theme.iconBg}
+                              stroke={strokeColor}
+                              strokeWidth="1.5"
+                            />
+                            <circle
+                              cx={point.x - 24 + idx * 24}
+                              cy={point.y - 18.5 - towerHeight * 0.5 + offsetY * 0.7}
+                              r="2.8"
+                              fill={theme.accent}
+                            />
+                          </g>
+                        ))}
+                      </g>
                     ) : (
-                      renderIsoBox(
-                        point.x,
-                        point.y - 8,
-                        46,
-                        22,
-                        towerHeight,
-                        strokeColor,
-                        theme.iconBg,
-                        isSelected ? 2.4 : 1.5,
-                      )
+                      <g>
+                        {renderIsoBox(
+                          point.x,
+                          point.y - 8,
+                          46,
+                          22,
+                          towerHeight,
+                          strokeColor,
+                          theme.iconBg,
+                          isSelected ? 2.4 : 1.5,
+                        )}
+                        {/* Glowing 3D Server Rack Blade Slots on Left & Right Walls */}
+                        <line
+                          x1={point.x - 36}
+                          y1={point.y - 12}
+                          x2={point.x - 8}
+                          y2={point.y + 1}
+                          stroke={theme.accent}
+                          strokeWidth="1.6"
+                          opacity="0.85"
+                        />
+                        <line
+                          x1={point.x - 36}
+                          y1={point.y - 19}
+                          x2={point.x - 8}
+                          y2={point.y - 6}
+                          stroke={theme.accent}
+                          strokeWidth="1.6"
+                          opacity="0.7"
+                        />
+                        <line
+                          x1={point.x + 8}
+                          y1={point.y + 1}
+                          x2={point.x + 36}
+                          y2={point.y - 12}
+                          stroke={theme.accent}
+                          strokeWidth="1.6"
+                          opacity="0.85"
+                        />
+                      </g>
                     )}
 
                     {/* Stacked 3D Isometric Replica Container Cubes (1..8 volumetric cubes on the tower roof) */}
@@ -1362,7 +1473,7 @@ export function StudioObservability({
                 );
               }
 
-              // 2D Mode Rich Color-Coded Component Card (200Lab GonnaCrash style)
+              // 2D Mode Distinct Archetype Silhouettes (Cylinder DB, Trapezoid Gateway, Flanged Pipe Queue, Rack Blade Service)
               return (
                 <g
                   key={name}
@@ -1417,11 +1528,11 @@ export function StudioObservability({
                   {/* Drop Target / Selected Outer Glow Halo */}
                   {(isDropTarget || isSelected || isStopped) && (
                     <rect
-                      x={point.x - 84}
-                      y={point.y - 39}
-                      width="168"
-                      height="78"
-                      rx="12"
+                      x={point.x - 88}
+                      y={point.y - 42}
+                      width="176"
+                      height="84"
+                      rx="14"
                       fill={theme.stroke}
                       opacity={isStopped ? "0.18" : "0.14"}
                       stroke={theme.stroke}
@@ -1430,23 +1541,141 @@ export function StudioObservability({
                     />
                   )}
 
-                  {/* Main Service Container Card with Archetype Color Tint */}
-                  <rect
-                    x={point.x - 78}
-                    y={point.y - 34}
-                    width="156"
-                    height="68"
-                    rx="10"
-                    fill={theme.cardFill}
-                    stroke={strokeColor}
-                    strokeWidth={isSelected || isDropTarget ? 2.6 : 1.6}
-                  />
+                  {/* DISTINCT 2D SILHOUETTE PER ARCHETYPE */}
+                  {archetype === "DATABASE" ? (
+                    <g>
+                      {/* Cylindrical Database Drum Body + Top Elliptical Platter Lid */}
+                      <path
+                        d={`M ${point.x - 80},${point.y - 24} L ${point.x - 80},${point.y + 24} A 80 14 0 0 0 ${point.x + 80},${point.y + 24} L ${point.x + 80},${point.y - 24} Z`}
+                        fill={theme.cardFill}
+                        stroke={strokeColor}
+                        strokeWidth={isSelected || isDropTarget ? 2.6 : 1.8}
+                      />
+                      <ellipse
+                        cx={point.x}
+                        cy={point.y - 24}
+                        rx="80"
+                        ry="13"
+                        fill={theme.iconBg}
+                        stroke={strokeColor}
+                        strokeWidth={isSelected || isDropTarget ? 2.4 : 1.6}
+                      />
+                      <path
+                        d={`M ${point.x - 80},${point.y + 2} A 80 11 0 0 0 ${point.x + 80},${point.y + 2}`}
+                        fill="none"
+                        stroke={strokeColor}
+                        strokeWidth="1"
+                        opacity="0.35"
+                      />
+                    </g>
+                  ) : archetype === "GATEWAY" ? (
+                    <g>
+                      {/* Trapezoid Load Balancer Shield (200Lab style) */}
+                      <polygon
+                        points={`${point.x - 64},${point.y - 36} ${point.x + 64},${point.y - 36} ${point.x + 86},${point.y + 34} ${point.x - 86},${point.y + 34}`}
+                        fill={theme.cardFill}
+                        stroke={strokeColor}
+                        strokeWidth={isSelected || isDropTarget ? 2.6 : 1.8}
+                        strokeLinejoin="round"
+                      />
+                      {/* Top Ingress Port & Bottom Fan-out Ports */}
+                      <rect
+                        x={point.x - 16}
+                        y={point.y - 40}
+                        width="32"
+                        height="5"
+                        rx="2.5"
+                        fill={theme.accent}
+                      />
+                      <circle cx={point.x - 36} cy={point.y + 34} r="3" fill={theme.accent} />
+                      <circle cx={point.x} cy={point.y + 34} r="3" fill={theme.accent} />
+                      <circle cx={point.x + 36} cy={point.y + 34} r="3" fill={theme.accent} />
+                    </g>
+                  ) : archetype === "QUEUE" ? (
+                    <g>
+                      {/* Flanged Message Broker Pipeline Capsule */}
+                      <rect
+                        x={point.x - 86}
+                        y={point.y - 20}
+                        width="8"
+                        height="40"
+                        rx="3"
+                        fill={theme.iconBg}
+                        stroke={strokeColor}
+                        strokeWidth="1.5"
+                      />
+                      <rect
+                        x={point.x + 78}
+                        y={point.y - 20}
+                        width="8"
+                        height="40"
+                        rx="3"
+                        fill={theme.iconBg}
+                        stroke={strokeColor}
+                        strokeWidth="1.5"
+                      />
+                      <rect
+                        x={point.x - 78}
+                        y={point.y - 34}
+                        width="156"
+                        height="68"
+                        rx="22"
+                        fill={theme.cardFill}
+                        stroke={strokeColor}
+                        strokeWidth={isSelected || isDropTarget ? 2.6 : 1.8}
+                      />
+                      {/* Kafka Topic Partition Vertical Slots */}
+                      <line x1={point.x + 62} y1={point.y - 18} x2={point.x + 62} y2={point.y - 2} stroke={theme.accent} strokeWidth="2" opacity="0.6" />
+                      <line x1={point.x + 67} y1={point.y - 18} x2={point.x + 67} y2={point.y - 2} stroke={theme.accent} strokeWidth="2" opacity="0.85" />
+                    </g>
+                  ) : (
+                    <g>
+                      {/* 19-Inch Server Rack Blade Chassis with Dual Mount Ears & LED Rails */}
+                      <rect
+                        x={point.x - 84}
+                        y={point.y - 26}
+                        width="6"
+                        height="52"
+                        rx="2"
+                        fill={theme.iconBg}
+                        stroke={strokeColor}
+                        strokeWidth="1.2"
+                      />
+                      <rect
+                        x={point.x + 78}
+                        y={point.y - 26}
+                        width="6"
+                        height="52"
+                        rx="2"
+                        fill={theme.iconBg}
+                        stroke={strokeColor}
+                        strokeWidth="1.2"
+                      />
+                      <rect
+                        x={point.x - 78}
+                        y={point.y - 34}
+                        width="156"
+                        height="68"
+                        rx="7"
+                        fill={theme.cardFill}
+                        stroke={strokeColor}
+                        strokeWidth={isSelected || isDropTarget ? 2.6 : 1.8}
+                      />
+                      {/* Dual Server Rack LED Columns */}
+                      <circle cx={point.x - 72} cy={point.y - 16} r="1.4" fill={theme.accent} opacity="0.85" />
+                      <circle cx={point.x - 72} cy={point.y - 10} r="1.4" fill={theme.accent} opacity="0.45" />
+                      <circle cx={point.x - 72} cy={point.y - 4} r="1.4" fill={theme.accent} opacity="0.85" />
+                      <circle cx={point.x + 72} cy={point.y - 16} r="1.4" fill={theme.accent} opacity="0.85" />
+                      <circle cx={point.x + 72} cy={point.y - 10} r="1.4" fill={theme.accent} opacity="0.45" />
+                      <circle cx={point.x + 72} cy={point.y - 4} r="1.4" fill={theme.accent} opacity="0.85" />
+                    </g>
+                  )}
 
                   {/* Top-Left Floating Status Badge (CRASHED or Archetype Tag) like 200Lab */}
                   <rect
-                    x={point.x - 70}
-                    y={point.y - 43}
-                    width={isStopped ? 64 : activePods > 1 ? 66 : 56}
+                    x={point.x - 66}
+                    y={point.y - 45}
+                    width={isStopped ? 64 : activePods > 1 ? 66 : 58}
                     height="15"
                     rx="4"
                     fill={isStopped ? "#9f1239" : theme.iconBg}
@@ -1454,8 +1683,8 @@ export function StudioObservability({
                     strokeWidth="1.1"
                   />
                   <text
-                    x={point.x - 70 + (isStopped ? 32 : activePods > 1 ? 33 : 28)}
-                    y={point.y - 33}
+                    x={point.x - 66 + (isStopped ? 32 : activePods > 1 ? 33 : 29)}
+                    y={point.y - 35}
                     textAnchor="middle"
                     fill={isStopped ? "#fecdd3" : theme.accent}
                     fontSize="8.5"
@@ -1464,28 +1693,43 @@ export function StudioObservability({
                     {isStopped ? "CRASHED" : activePods > 1 ? `×${activePods} CLUSTER` : theme.badgeText}
                   </text>
 
-                  {/* Left Colored Icon Tile inside Card */}
+                  {/* Left Colored Icon Tile + Distinct Vector Icon per Archetype */}
                   <rect
-                    x={point.x - 68}
-                    y={point.y - 22}
-                    width="26"
-                    height="26"
+                    x={point.x - 65}
+                    y={point.y - 21}
+                    width="24"
+                    height="24"
                     rx="6"
                     fill={theme.iconBg}
                     stroke={theme.stroke}
-                    strokeWidth="1"
+                    strokeWidth="1.1"
                   />
-                  <circle
-                    cx={point.x - 55}
-                    cy={point.y - 9}
-                    r="4.5"
-                    fill={theme.accent}
-                  />
-
-                  {/* Right Server Rack LED Dots (200Lab App Server style) */}
-                  <circle cx={point.x + 69} cy={point.y - 16} r="1.5" fill={theme.accent} opacity="0.8" />
-                  <circle cx={point.x + 69} cy={point.y - 10} r="1.5" fill={theme.accent} opacity="0.5" />
-                  <circle cx={point.x + 69} cy={point.y - 4} r="1.5" fill={theme.accent} opacity="0.8" />
+                  {archetype === "DATABASE" ? (
+                    <g stroke={theme.accent} strokeWidth="1.4" fill="none">
+                      <ellipse cx={point.x - 53} cy={point.y - 14} rx="6" ry="2.5" />
+                      <path d={`M ${point.x - 59},${point.y - 14} L ${point.x - 59},${point.y - 4} A 6 2.5 0 0 0 ${point.x - 47},${point.y - 4} L ${point.x - 47},${point.y - 14}`} />
+                      <path d={`M ${point.x - 59},${point.y - 9} A 6 2.2 0 0 0 ${point.x - 47},${point.y - 9}`} />
+                    </g>
+                  ) : archetype === "GATEWAY" ? (
+                    <g stroke={theme.accent} strokeWidth="1.6" strokeLinecap="round" fill="none">
+                      <path d={`M ${point.x - 53},${point.y - 3} L ${point.x - 53},${point.y - 9}`} />
+                      <path d={`M ${point.x - 53},${point.y - 9} L ${point.x - 58},${point.y - 14}`} />
+                      <path d={`M ${point.x - 53},${point.y - 9} L ${point.x - 48},${point.y - 14}`} />
+                      <circle cx={point.x - 58} cy={point.y - 15} r="1.3" fill={theme.accent} />
+                      <circle cx={point.x - 48} cy={point.y - 15} r="1.3" fill={theme.accent} />
+                    </g>
+                  ) : archetype === "QUEUE" ? (
+                    <g stroke={theme.accent} strokeWidth="1.5" strokeLinecap="round">
+                      <line x1={point.x - 59} y1={point.y - 13} x2={point.x - 47} y2={point.y - 13} />
+                      <line x1={point.x - 59} y1={point.y - 9} x2={point.x - 47} y2={point.y - 9} />
+                      <line x1={point.x - 59} y1={point.y - 5} x2={point.x - 47} y2={point.y - 5} />
+                    </g>
+                  ) : (
+                    <g stroke={theme.accent} strokeWidth="1.3" fill="none">
+                      <rect x={point.x - 60} y={point.y - 15} width="14" height="5" rx="1" />
+                      <rect x={point.x - 60} y={point.y - 8} width="14" height="5" rx="1" />
+                    </g>
+                  )}
 
                   {/* Service Name */}
                   <text
