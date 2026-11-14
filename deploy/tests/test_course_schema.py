@@ -16,6 +16,8 @@ class MigrationTest(unittest.TestCase):
         for filename, version, marker in (
             ("V27__Course_Quizzes.sql", 27, "course_quiz_attempts"),
             ("V28__Submission_Course_Quiz_Evidence.sql", 28, "course_quiz_evidence"),
+            ("V29__Submission_Evidence_Package_Digest.sql", 29, "evidence_package_digest"),
+            ("V30__Submission_Snapshot_Grades_And_Explanations.sql", 30, "snapshot_grades"),
         ):
             registered, probe = module.MIGRATIONS[filename]
             self.assertEqual(registered, version)

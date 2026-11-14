@@ -96,6 +96,18 @@ if [ -e "$quiz_evidence_migration" ]; then
   compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
     python3 "$schema_tool" "$quiz_evidence_migration" /opt/mavis/db-backups/wf02-before-v28.dump
 fi
+digest_migration="$incoming/V29__Submission_Evidence_Package_Digest.sql"
+if [ -e "$digest_migration" ]; then
+  test -f "$quiz_evidence_migration" && test -f "$schema_tool" || { echo "Incomplete WF-04 digest schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$digest_migration" /opt/mavis/db-backups/wf04-before-v29.dump
+fi
+grading_migration="$incoming/V30__Submission_Snapshot_Grades_And_Explanations.sql"
+if [ -e "$grading_migration" ]; then
+  test -f "$digest_migration" && test -f "$schema_tool" || { echo "Incomplete WF-04 grading schema package"; exit 1; }
+  compose "$prefix" "$tag" "$incoming/compose.production.yml" config --format json |
+    python3 "$schema_tool" "$grading_migration" /opt/mavis/db-backups/wf04-before-v30.dump
+fi
 if ! compose "$prefix" "$tag" "$incoming/compose.production.yml" up -d --no-build --remove-orphans || ! healthy; then
   echo "Deployment failed; restoring previous images and Compose."
   compose "$old_prefix" "$old_tag" "$previous/compose.production.yml" up -d --no-build --remove-orphans
