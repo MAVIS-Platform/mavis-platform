@@ -39,7 +39,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -48,6 +51,15 @@ import java.util.zip.ZipOutputStream;
 @Transactional
 public class CourseLabSeederService {
     private static final String ACTION_SEEDED = "COURSE_LABS_SEEDED_CURATED";
+    public static final String PRESET_STANDARD_DEMO = "STANDARD_DEMO";
+    public static final String PRESET_FULL_CURRICULUM = "FULL_CURRICULUM";
+
+    private record LabSeedSpec(
+            String curriculumCode,
+            String title,
+            String description,
+            List<String> requiredDiagramTypes,
+            boolean requireRuntimeTrace) {}
 
     private final AccessPolicyService access;
     private final WorkspaceRepository workspaces;
@@ -106,6 +118,10 @@ public class CourseLabSeederService {
     }
 
     public CourseAccessService.Roadmap seedCurated(UUID workspaceId) {
+        return seedCurated(workspaceId, PRESET_STANDARD_DEMO);
+    }
+
+    public CourseAccessService.Roadmap seedCurated(UUID workspaceId, String preset) {
         User lecturer = access.requireCurrentActiveUser();
         access.requireWorkspaceLecturer(workspaceId);
         Workspace workspace = workspaces.findLockedById(workspaceId)
@@ -114,20 +130,75 @@ public class CourseLabSeederService {
             throw new BusinessException(ErrorCode.CONFLICT, "This workspace is archived");
         }
 
+        boolean fullCurriculum = PRESET_FULL_CURRICULUM.equalsIgnoreCase(preset == null ? "" : preset.trim());
         List<Assignment> existingLabs = assignments.findByWorkspaceIdAndLabOrderIsNotNullOrderByLabOrderAsc(workspaceId);
-        if (!existingLabs.isEmpty()) {
-            if (!workspace.isCourseMode()) {
-                workspace.setCourseMode(true);
-                workspaces.saveAndFlush(workspace);
-            }
+
+        if (!fullCurriculum && !existingLabs.isEmpty()) {
+            ensureCourseMode(workspace);
+            return courses.roadmap(workspaceId);
+        }
+        if (fullCurriculum && existingLabs.size() >= 13) {
+            ensureCourseMode(workspace);
             return courses.roadmap(workspaceId);
         }
 
+        ModelVersion refModel = existingLabs.stream()
+                .map(Assignment::getReferenceModel)
+                .filter(java.util.Objects::nonNull)
+                .findFirst()
+                .orElseGet(() -> seedReferenceModel(workspaceId, workspace, lecturer));
+
+        ensureCourseMode(workspace);
+
+        Set<String> existingTitles = new LinkedHashSet<>();
+        int nextOrder = 0;
+        for (Assignment existing : existingLabs) {
+            if (existing.getTitle() != null) {
+                existingTitles.add(existing.getTitle());
+            }
+            if (existing.getLabOrder() != null && existing.getLabOrder() > nextOrder) {
+                nextOrder = existing.getLabOrder();
+            }
+        }
+
+        List<LabSeedSpec> specs = buildLabSpecs(fullCurriculum);
+        for (LabSeedSpec spec : specs) {
+            if (existingTitles.contains(spec.title())) {
+                continue;
+            }
+            Assignment lab = assignments.saveAndFlush(Assignment.builder()
+                    .workspace(workspace)
+                    .createdBy(lecturer)
+                    .title(spec.title())
+                    .description(spec.description())
+                    .requiredDiagramTypes(json.valueToTree(spec.requiredDiagramTypes()))
+                    .ruleSetVersion("SWD_DEFAULT_V1")
+                    .requireRuntimeTrace(spec.requireRuntimeTrace())
+                    .referenceModel(refModel)
+                    .labOrder(++nextOrder)
+                    .build());
+            quizzes.publishCurriculum(workspaceId, lab.getId(), curriculum.quizFor(spec.curriculumCode()));
+        }
+
+        jdbc.update("INSERT INTO audit_logs(actor_id, action, target_type, target_id) VALUES (?, ?, ?, ?)",
+                lecturer.getId(), ACTION_SEEDED, "WORKSPACE", workspaceId);
+
+        return courses.roadmap(workspaceId);
+    }
+
+    private void ensureCourseMode(Workspace workspace) {
+        if (!workspace.isCourseMode()) {
+            workspace.setCourseMode(true);
+            workspaces.saveAndFlush(workspace);
+        }
+    }
+
+    private ModelVersion seedReferenceModel(UUID workspaceId, Workspace workspace, User lecturer) {
         Project refProject = projects.save(Project.builder()
                 .workspace(workspace)
                 .owner(lecturer)
-                .name("Curated E-Commerce Reference (Spring Boot)")
-                .description("Curated multi-service repository (API Gateway, Order Service, Payment Service) for Guided Labs 01 & 02.")
+                .name("Curated E-Commerce Reference (Spring Boot & .NET Core)")
+                .description("Curated multi-service repository (API Gateway, Order Service, Payment Service, Inventory Service, C# Orders/Catalog) for Guided Labs.")
                 .defaultBranch("main")
                 .projectType("TEACHER_REFERENCE")
                 .isReferenceTemplate(true)
@@ -170,6 +241,9 @@ public class CourseLabSeederService {
         ModelElement paymentService = elements.save(ModelElement.builder()
                 .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
                 .name("payment-service").scope("service").status("CONFIRMED").build());
+        ModelElement inventoryService = elements.save(ModelElement.builder()
+                .modelVersion(refModel).elementType("SERVICE_CONTAINER").languageStack("Java / Spring Boot")
+                .name("inventory-service").scope("service").status("CONFIRMED").build());
 
         ModelElement orderController = elements.save(ModelElement.builder()
                 .modelVersion(refModel).parentElement(orderService).elementType("COMPONENT").languageStack("Spring MVC")
@@ -180,6 +254,9 @@ public class CourseLabSeederService {
         ModelElement paymentController = elements.save(ModelElement.builder()
                 .modelVersion(refModel).parentElement(paymentService).elementType("COMPONENT").languageStack("Spring MVC")
                 .name("PaymentController").scope("payment-service").status("CONFIRMED").build());
+        ModelElement inventoryController = elements.save(ModelElement.builder()
+                .modelVersion(refModel).parentElement(inventoryService).elementType("COMPONENT").languageStack("Spring MVC")
+                .name("InventoryController").scope("inventory-service").status("CONFIRMED").build());
 
         ModelRelationship customerToGateway = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(customer).targetElement(gateway)
@@ -190,6 +267,9 @@ public class CourseLabSeederService {
         ModelRelationship orderToPayment = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(orderService).targetElement(paymentService)
                 .relationType("FEIGN_CALL").originLayer("STATIC").direction("DIRECTED").build());
+        ModelRelationship orderToInventory = relationships.save(ModelRelationship.builder()
+                .modelVersion(refModel).sourceElement(orderService).targetElement(inventoryService)
+                .relationType("HTTP_CALL").originLayer("STATIC").direction("DIRECTED").build());
         ModelRelationship clientToPaymentController = relationships.save(ModelRelationship.builder()
                 .modelVersion(refModel).sourceElement(paymentClient).targetElement(paymentController)
                 .relationType("CALL_SITE").originLayer("STATIC").direction("DIRECTED").build());
@@ -207,10 +287,10 @@ public class CourseLabSeederService {
                 .excerpt("@FeignClient(name = \"payment-service\", url = \"http://payment-service:8082\")")
                 .build());
 
-        List<ModelElement> containers = List.of(gateway, orderService, paymentService);
-        List<ModelRelationship> containerEdges = List.of(gatewayToOrder, orderToPayment);
-        List<ModelElement> components = List.of(orderService, paymentService, orderController, paymentClient, paymentController);
-        List<ModelRelationship> componentEdges = List.of(orderCtrlToClient, clientToPaymentController);
+        List<ModelElement> containers = List.of(gateway, orderService, paymentService, inventoryService);
+        List<ModelRelationship> containerEdges = List.of(gatewayToOrder, orderToPayment, orderToInventory);
+        List<ModelElement> components = List.of(orderService, paymentService, inventoryService, orderController, paymentClient, paymentController, inventoryController);
+        List<ModelRelationship> componentEdges = List.of(orderCtrlToClient, clientToPaymentController, orderToInventory);
 
         diagrams.saveAll(List.of(
                 buildContextDiagram(refModel, refProject.getName(), customer, customerToGateway),
@@ -229,40 +309,53 @@ public class CourseLabSeederService {
                 .summaryMetrics(metrics)
                 .build());
 
-        workspace.setCourseMode(true);
-        workspaces.saveAndFlush(workspace);
+        return refModel;
+    }
 
-        Assignment lab1 = assignments.saveAndFlush(Assignment.builder()
-                .workspace(workspace)
-                .createdBy(lecturer)
-                .title("Lab 01 · Static C1–C3 Architecture & OpenFeign Reverse BFS")
-                .description("Inspect the curated Spring Boot microservices, identify OpenFeign/REST call sites, review C1–C3 views, pass the theory quiz, and submit your C4 Container & Component diagrams.")
-                .requiredDiagramTypes(json.valueToTree(List.of("C4_CONTAINER", "C4_COMPONENT")))
-                .ruleSetVersion("SWD_DEFAULT_V1")
-                .requireRuntimeTrace(false)
-                .referenceModel(refModel)
-                .labOrder(1)
-                .build());
+    private List<LabSeedSpec> buildLabSpecs(boolean fullCurriculum) {
+        if (!fullCurriculum) {
+            return List.of(
+                    new LabSeedSpec(
+                            "java-04",
+                            "Lab 01 · Static C1–C3 Architecture & OpenFeign Reverse BFS",
+                            "Inspect the curated Spring Boot microservices, identify OpenFeign/REST call sites, review C1–C3 views, pass the theory quiz, and submit your C4 Container & Component diagrams.",
+                            List.of("C4_CONTAINER", "C4_COMPONENT"),
+                            false),
+                    new LabSeedSpec(
+                            "java-07",
+                            "Lab 02 · Runtime Resilience, Circuit Breaker & Stop/Scale Impact",
+                            "Verify live OpenTelemetry runtime traces on the curated architecture, perform a MAVIS Studio Stop/Scale chaos experiment on payment-service, and submit your verified runtime & architecture package.",
+                            List.of("C4_CONTAINER", "DEPENDENCY_GRAPH"),
+                            true),
+                    new LabSeedSpec(
+                            "csharp-13",
+                            "Lab 03 · ASP.NET Core Microservices with Roslyn & OpenTelemetry",
+                            "Analyze C# ASP.NET Core services (Orders/Program.cs, Catalog/Program.cs) alongside Spring Boot services, inspect Roslyn static findings and OTel runtime traces, and verify Studio Stop/Scale impact.",
+                            List.of("C4_CONTAINER", "DEPENDENCY_GRAPH"),
+                            true)
+            );
+        }
 
-        Assignment lab2 = assignments.saveAndFlush(Assignment.builder()
-                .workspace(workspace)
-                .createdBy(lecturer)
-                .title("Lab 02 · Runtime Resilience, Circuit Breaker & Stop/Scale Impact")
-                .description("Verify live OpenTelemetry runtime traces on the curated architecture, perform a MAVIS Studio Stop/Scale chaos experiment on payment-service, and submit your verified runtime & architecture package.")
-                .requiredDiagramTypes(json.valueToTree(List.of("C4_CONTAINER", "DEPENDENCY_GRAPH")))
-                .ruleSetVersion("SWD_DEFAULT_V1")
-                .requireRuntimeTrace(true)
-                .referenceModel(refModel)
-                .labOrder(2)
-                .build());
-
-        quizzes.publishCurriculum(workspaceId, lab1.getId(), curriculum.quizFor("java-04"));
-        quizzes.publishCurriculum(workspaceId, lab2.getId(), curriculum.quizFor("java-07"));
-
-        jdbc.update("INSERT INTO audit_logs(actor_id, action, target_type, target_id) VALUES (?, ?, ?, ?)",
-                lecturer.getId(), ACTION_SEEDED, "WORKSPACE", workspaceId);
-
-        return courses.roadmap(workspaceId);
+        List<String> fullOrder = List.of(
+                "java-01", "java-02", "java-03", "java-04",
+                "java-05", "java-06", "java-07", "java-08",
+                "java-09", "java-10", "java-11", "java-12",
+                "csharp-13"
+        );
+        List<LabSeedSpec> specs = new ArrayList<>(fullOrder.size());
+        for (int i = 0; i < fullOrder.size(); i++) {
+            String code = fullOrder.get(i);
+            String label = String.format("Lab %02d", i + 1);
+            boolean staticOnly = i < 4;
+            List<String> requiredDiagrams = staticOnly
+                    ? List.of("C4_CONTAINER", "C4_COMPONENT")
+                    : List.of("C4_CONTAINER", "DEPENDENCY_GRAPH");
+            CourseCurriculum.Chapter chapter = curriculum.chapter(code);
+            String title = label + " · " + chapter.title();
+            String description = chapter.objective() + "\n\n" + chapter.exercise();
+            specs.add(new LabSeedSpec(code, title, description, requiredDiagrams, !staticOnly));
+        }
+        return specs;
     }
 
     private DiagramVersion buildContextDiagram(ModelVersion model, String projectName, ModelElement customer, ModelRelationship rel) {
@@ -384,6 +477,29 @@ public class CourseLabSeederService {
                         public String authorize() { return "AUTHORIZED"; }
                     }
                     """);
+            writeEntry(zip, "inventory-service/src/main/java/com/curated/inventory/InventoryController.java", """
+                    package com.curated.inventory;
+                    import org.springframework.web.bind.annotation.GetMapping;
+                    import org.springframework.web.bind.annotation.RestController;
+                    @RestController
+                    public class InventoryController {
+                        @GetMapping("/api/inventory/health")
+                        public String health() { return "IN_STOCK"; }
+                    }
+                    """);
+            writeEntry(zip, "Orders/Program.cs", """
+                    var builder = WebApplication.CreateBuilder(args);
+                    builder.Services.AddHttpClient("catalog", client => client.BaseAddress = new Uri("http://catalog-service:8084"));
+                    var app = builder.Build();
+                    app.MapGet("/api/orders/health", () => Results.Ok(new { service = "orders-dotnet", status = "UP" }));
+                    app.Run();
+                    """);
+            writeEntry(zip, "Catalog/Program.cs", """
+                    var builder = WebApplication.CreateBuilder(args);
+                    var app = builder.Build();
+                    app.MapGet("/api/catalog/items", () => Results.Ok(new[] { "SKU-001", "SKU-002" }));
+                    app.Run();
+                    """);
             writeEntry(zip, "docker-compose.yml", """
                     services:
                       api-gateway:
@@ -395,6 +511,9 @@ public class CourseLabSeederService {
                       payment-service:
                         image: mavis/payment-service:curated
                         ports: ["8082:8082"]
+                      inventory-service:
+                        image: mavis/inventory-service:curated
+                        ports: ["8083:8083"]
                     """);
             zip.finish();
             return out.toByteArray();

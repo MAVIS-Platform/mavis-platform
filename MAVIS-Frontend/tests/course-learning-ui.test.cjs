@@ -377,9 +377,13 @@ test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and
   const access = read("src/features/workspaces/course-access.tsx");
   const course = read("src/features/courses/screens.tsx");
   const assignments = read("src/features/assignments/screens.tsx");
+  const { allowedBackendPath } = require("../src/lib/api/backend-path.ts");
 
   assert.ok(access.includes("export function SeedCuratedCourseLabs"));
   assert.ok(access.includes("course-labs/seed-curated"));
+  assert.ok(access.includes("STANDARD_DEMO"));
+  assert.ok(access.includes("FULL_CURRICULUM"));
+  assert.equal(allowedBackendPath("workspaces/11111111-1111-1111-1111-111111111111/course-labs/seed-curated"), true);
   assert.ok(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
   assert.ok(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
 });
