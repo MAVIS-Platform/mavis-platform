@@ -34,11 +34,13 @@ export function CourseQuiz({
   labId,
   canSubmit,
   runtimeStepHref,
+  submissionHref,
 }: {
   workspaceId: string;
   labId: string;
   canSubmit: boolean;
   runtimeStepHref?: string;
+  submissionHref?: string | undefined;
 }) {
   const { t } = useLocale();
   const cache = useQueryClient();
@@ -60,14 +62,15 @@ export function CourseQuiz({
       )}
       {!quiz.isError && quiz.data && <AttemptForm key={`${path}:${quiz.data.version}`} quiz={quiz.data} path={path}
         reload={() => void quiz.refetch()} canSubmit={canSubmit}
-        runtimeStepHref={resolvedRuntimeHref}
+        runtimeStepHref={resolvedRuntimeHref} submissionHref={submissionHref}
         refreshReadiness={() => void cache.invalidateQueries({ queryKey: ["api", "course-quiz", workspaceId, labId] })} />}
     </DetailPanel>
   );
 }
 
-function AttemptForm({ quiz, path, reload, canSubmit, runtimeStepHref, refreshReadiness }: {
+function AttemptForm({ quiz, path, reload, canSubmit, runtimeStepHref, submissionHref, refreshReadiness }: {
   quiz: Quiz; path: string; reload: () => void; canSubmit: boolean; runtimeStepHref: string; refreshReadiness: () => void;
+  submissionHref?: string | undefined;
 }) {
   const { t } = useLocale();
   const [answers, setAnswers] = useState<Record<number, number>>({});
@@ -110,8 +113,10 @@ function AttemptForm({ quiz, path, reload, canSubmit, runtimeStepHref, refreshRe
             PASSED (v{quiz.version}) · {t("Quiz passed", "Đã đạt Quiz")}
           </p>
           <Button asChild className="w-full sm:w-auto">
-            <Link href={runtimeStepHref}>
-              {t("Proceed to Step 3: Live Runtime", "Tiếp tục Bước 3: Live Runtime")}
+            <Link href={submissionHref ?? runtimeStepHref}>
+              {submissionHref
+                ? t("Proceed to Submit Lab", "Chuyển sang Nộp bài Lab")
+                : t("Proceed to Step 3: Live Runtime", "Tiếp tục Bước 3: Live Runtime")}
               <ArrowRight />
             </Link>
           </Button>
@@ -132,8 +137,12 @@ function AttemptForm({ quiz, path, reload, canSubmit, runtimeStepHref, refreshRe
             <Lock className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <span>
               {t(
-                `Step 3 Live Docker Runtime is locked until you score at least ${quiz.passPercent}% on the current Quiz version (v${quiz.version}). Review the theory and retry if needed.`,
-                `Bước 3 Live Docker Runtime đang bị khóa cho đến khi bạn đạt tối thiểu ${quiz.passPercent}% ở phiên bản Quiz hiện tại (v${quiz.version}). Hãy ôn lại lý thuyết và làm lại nếu cần.`,
+                submissionHref
+                  ? `Reach ${quiz.passPercent}% on the current Quiz (v${quiz.version}) before submitting this Lab.`
+                  : `Step 3 Live Docker Runtime is locked until you score at least ${quiz.passPercent}% on the current Quiz version (v${quiz.version}). Review the theory and retry if needed.`,
+                submissionHref
+                  ? `Hãy đạt ${quiz.passPercent}% ở Quiz hiện tại (v${quiz.version}) trước khi nộp Lab.`
+                  : `Bước 3 Live Docker Runtime đang bị khóa cho đến khi bạn đạt tối thiểu ${quiz.passPercent}% ở phiên bản Quiz hiện tại (v${quiz.version}). Hãy ôn lại lý thuyết và làm lại nếu cần.`,
               )}
             </span>
           </div>

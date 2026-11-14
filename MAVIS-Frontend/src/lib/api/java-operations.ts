@@ -241,6 +241,7 @@ export async function executeJava(
         submittedById: z.string().uuid(),
         submittedAt: z.string(),
         assignmentTitle: z.string().nullish(),
+        guidedLab: z.boolean().optional(),
         submittedByName: z.string().nullish(),
         submittedByEmail: z.string().nullish(),
         diagramVersionId: z.string().uuid().optional(),
@@ -293,6 +294,7 @@ export async function executeJava(
     }
     return {
       assignmentTitle: sub.assignmentTitle ?? "",
+      guidedLab: sub.guidedLab ?? false,
       studentName: sub.submittedByName ?? "",
       studentEmail: sub.submittedByEmail ?? "",
       ...(sub.diagramVersionId ? { diagramVersionId: sub.diagramVersionId } : {}),

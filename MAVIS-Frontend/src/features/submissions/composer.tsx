@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { useApi, useApiMutation, useApiQuery, useSelection } from "@/hooks/use-api";
 import { useModel } from "@/features/architecture/use-model";
+import { useCourseQuiz } from "@/features/courses/course-quiz";
 import { ModelVersionSelector } from "@/features/architecture/components";
 import { ProjectSelector } from "@/features/projects/components";
 import { ConfirmDialog, SelectField } from "@/components/shared/forms";
@@ -156,7 +157,10 @@ export function SubmissionComposer({
     diagrams.data ?? [],
   );
   const overdue = isDeadlinePassed(requirements?.dueAt);
-  const requiresStudio = guided;
+  const requiresRuntime = requirements?.requireRuntimeTrace === true;
+  const requiresStudio = guided && requiresRuntime;
+  const quiz = useCourseQuiz(workspaceId, assignmentId, guided);
+  const labHref = `/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignmentId)}`;
   const compatible = useMemo(() => {
     const allCompleted = (sessions.data ?? []).filter(
       (s) =>
@@ -180,8 +184,10 @@ export function SubmissionComposer({
     return exactMatch.length > 0 ? exactMatch : allCompleted;
   }, [sessions.data, state.model, requiresStudio]);
   const selectedRuntime = compatible.find((s) => s.id === runtimeId);
-  const studioCaptured=useApiQuery("studioState",{sessionId:selectedRuntime?.id??""},{enabled:Boolean(selectedRuntime)&&client.mode==="backend"});
-  const capturedStudioSnapshots=studioCaptured.data?.snapshots??[];
+  const studioCaptured = useApiQuery("studioState", { sessionId: selectedRuntime?.id ?? "" },
+    { enabled: Boolean(selectedRuntime) && client.mode === "backend" && (!guided || requiresStudio) });
+  const capturedStudioSnapshots = studioCaptured.data?.snapshots ?? [];
+  const interactiveStudio = studioCaptured.data?.interactive === true;
 
   // Auto-select the latest compatible runtime/Studio session so Stage 3 & Stage 4 populate immediately
   useEffect(() => {
@@ -189,15 +195,7 @@ export function SubmissionComposer({
       setRuntimeId(compatible[0]!.id);
     }
   }, [compatible, runtimeId]);
-  const evaluationScore =
-    typeof evaluation?.result["complianceScore"] === "number"
-      ? evaluation.result["complianceScore"]
-      : null;
-  const stage1Ready = Boolean(state.model);
-  const stage2Ready =
-    missing.length === 0 &&
-    Boolean(choice && choice.documents.length + choice.diagramVersionIds.length > 0) &&
-    (!guided || (evaluationScore !== null && evaluationScore >= 70));
+  const stage2Ready = guided ? !quiz.isError && quiz.data?.passed === true : missing.length === 0 && Boolean(choice);
   const stage3Ready =
     Boolean(selectedRuntime) &&
     String(selectedRuntime?.evidenceStatus ?? "").toUpperCase() === "AVAILABLE";
@@ -218,11 +216,16 @@ export function SubmissionComposer({
           },
         ]
       : []),
-    ...(capturedStudioSnapshots.length>0?capturedStudioSnapshots.map((snapshot,index)=>({
-      snapshotId:snapshot.id,step:"STEP_4_RUNTIME",title:`Studio snapshot ${index+1}`,
-      targetViewOrService:selectedRuntime?.id??"",capturedAt:snapshot.capturedAt,
-      writtenExplanation:snapshot.explanation+(runtimeExplanation.trim()?"\n\n"+runtimeExplanation.trim():""),
-    })):runtimeExplanation.trim()
+    ...(!guided && interactiveStudio
+      ? capturedStudioSnapshots.map((snapshot, index) => ({
+          snapshotId: snapshot.id,
+          step: "STEP_4_RUNTIME",
+          title: `Studio snapshot ${index + 1}`,
+          targetViewOrService: selectedRuntime?.id ?? "",
+          capturedAt: snapshot.capturedAt,
+          writtenExplanation: snapshot.explanation,
+        }))
+      : (!guided || requiresStudio) && !interactiveStudio && runtimeExplanation.trim()
       ? [
           {
             snapshotId: "STEP_4_RUNTIME",
@@ -235,7 +238,9 @@ export function SubmissionComposer({
         ]
       : []),
   ];
-  const hasWrittenExplanation = Boolean(notes.trim() || preparedSnapshots.length > 0);
+  const hasWrittenExplanation =
+    staticExplanation.trim().length > 0
+    && (!requiresStudio || (interactiveStudio ? capturedStudioSnapshots.length > 0 : runtimeExplanation.trim().length > 0));
 
   return (
     <div id="submission-composer" className="scroll-mt-20">
@@ -468,7 +473,10 @@ export function SubmissionComposer({
                         : t("Optional snapshot theoretical notes")}
                     </span>
                   </div>
-                  <FormField label={t("Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning")}>
+                  <FormField
+                    label="Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning"
+                    sublabel={guided ? t("Required", "Bắt buộc") : undefined}
+                  >
                     {(props) => (
                       <Textarea
                         {...props}
@@ -482,30 +490,35 @@ export function SubmissionComposer({
                       />
                     )}
                   </FormField>
-                  <FormField label={t("Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis")}>
-                    {(props) => (
-                      <Textarea
-                        {...props}
-                        rows={2}
-                        maxLength={5000}
-                        placeholder={t(
-                          "Explain observed OTel trace propagation and Stop/Start/Scale Before vs. After impact…",
-                        )}
-                        value={runtimeExplanation}
-                        onChange={(e) => setRuntimeExplanation(e.target.value)}
-                      />
-                    )}
-                  </FormField>
-                  {capturedStudioSnapshots.length>0&&<div className="space-y-1 text-sm">
-                    <p>{t("Studio snapshots attached")}: {capturedStudioSnapshots.length}</p>
-                    {capturedStudioSnapshots.map(snapshot=><p key={snapshot.id}>{snapshot.explanation}</p>)}
-                  </div>}
-                  {studioCaptured.isError&&<ErrorState error={studioCaptured.error}/>}
+                  {(!guided || requiresStudio) && !interactiveStudio && (
+                    <FormField
+                      label="Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis"
+                      sublabel={requiresStudio ? t("Required", "Bắt buộc") : undefined}
+                    >
+                      {(props) => (
+                        <Textarea
+                          {...props}
+                          rows={2}
+                          maxLength={5000}
+                          placeholder={t(
+                            "Explain observed OTel trace propagation and Stop/Start/Scale Before vs. After impact…",
+                          )}
+                          value={runtimeExplanation}
+                          onChange={(e) => setRuntimeExplanation(e.target.value)}
+                        />
+                      )}
+                    </FormField>
+                  )}
+                  {capturedStudioSnapshots.length > 0 && (!guided || requiresStudio) && (
+                    <div className="space-y-1 text-sm">
+                      <p>{t("Studio snapshots attached")}: {capturedStudioSnapshots.length}</p>
+                      {capturedStudioSnapshots.map((snapshot) => <p key={snapshot.id}>{snapshot.explanation}</p>)}
+                    </div>
+                  )}
+                  {studioCaptured.isError && <ErrorState error={studioCaptured.error} onRetry={() => void studioCaptured.refetch()} />}
                   {guided && !hasWrittenExplanation && (
                     <p role="status" className="text-xs text-amber-600">
-                      {t(
-                        "Enter at least one theoretical explanation or overall submission note before submitting this Guided Lab.",
-                      )}
+                      {t("Add an explanation for each required Snapshot.", "Hãy giải trình cho từng Snapshot bắt buộc.")}
                     </p>
                   )}
                 </div>
@@ -519,35 +532,38 @@ export function SubmissionComposer({
                     />
                   )}
                 </FormField>
-                <RequestState query={sessions}>
-                  <SelectField
-                    label={
-                      requirements?.requireRuntimeTrace
-                        ? (requiresStudio ? "Required verified Studio evidence" : "Required runtime evidence")
-                        : "Optional runtime evidence"
-                    }
-                    value={selectedRuntime?.id ?? ""}
-                    onChange={setRuntimeId}
-                    options={[
-                      { value: "", label: "No runtime trace attached" },
-                      ...compatible.map((s) => {
-                        const sAny = s as Record<string, unknown>;
-                        const title =
-                          typeof sAny["scenarioName"] === "string" && sAny["scenarioName"]
-                            ? sAny["scenarioName"]
-                            : s.scenarioId || "Runtime Session";
-                        const count =
-                          typeof sAny["traceCount"] === "number"
-                            ? sAny["traceCount"]
-                            : (s.traces?.length ?? 0);
-                        return {
-                          value: s.id,
-                          label: `${title} · #${s.id.slice(0, 8)} (${count} spans)`,
-                        };
-                      }),
-                    ]}
-                  />
-                </RequestState>
+                {(!guided || requiresStudio) && (
+                  <RequestState query={sessions}>
+                    <SelectField
+                      label={
+                        requirements?.requireRuntimeTrace
+                          ? (requiresStudio ? "Required verified Studio evidence" : "Required runtime evidence")
+                          : "Optional runtime evidence"
+                      }
+                      value={selectedRuntime?.id ?? ""}
+                      onChange={setRuntimeId}
+                      options={[
+                        { value: "", label: "No runtime trace attached" },
+                        ...compatible.map((s) => {
+                          const sAny = s as Record<string, unknown>;
+                          const title =
+                            typeof sAny["scenarioName"] === "string" && sAny["scenarioName"]
+                              ? sAny["scenarioName"]
+                              : s.scenarioId || "Runtime Session";
+                          const count =
+                            typeof sAny["traceCount"] === "number"
+                              ? sAny["traceCount"]
+                              : (s.traces?.length ?? 0);
+                          return {
+                            value: s.id,
+                            label: `${title} · #${s.id.slice(0, 8)} (${count} spans)`,
+                          };
+                        }),
+                      ]}
+                    />
+                  </RequestState>
+
+                )}
 
                 {/* Submission Readiness Checklist */}
                 <div className="space-y-2.5 rounded-lg border bg-card p-4">
@@ -591,35 +607,30 @@ export function SubmissionComposer({
                         {stage2Ready ? "✓" : "!"}
                       </span>
                       <span>
-                        <strong>Step 2 · C0–C3 Ground Truth:</strong>{" "}
-                        {stage2Ready ? (
-                          <span>
-                            Required diagrams selected
-                            {guided ? ` · score ${evaluationScore?.toFixed(1)} / 100 (>= 70% pass)` : ""}
-                          </span>
-                        ) : (
-                          <span>
-                            {guided && (evaluationScore === null || evaluationScore < 70)
-                              ? evaluationScore !== null
-                                ? `Architecture evaluation score ${evaluationScore.toFixed(1)} / 100 (< 70%). `
-                                : "Run architecture evaluation and reach at least 70%. "
-                              : ""}
-                            {missing.length > 0
-                              ? `Missing ${missing.map(diagramTypeLabel).join(", ")}`
-                              : !choice || choice.documents.length + choice.diagramVersionIds.length === 0
-                                ? "Select at least one saved diagram"
-                                : "Evaluation >= 70% required"}{" "}
-                            —{" "}
-                            <Link
-                              className="text-primary underline"
-                              href={`/diagrams?project=${encodeURIComponent(state.projectId)}&model=${encodeURIComponent(state.model.id)}`}
-                            >
-                              Open Diagrams &amp; Save
+                        <strong>{guided ? t("Step 2 · Theory Quiz", "Bước 2 · Quiz lý thuyết") : t("Diagram requirements", "Yêu cầu sơ đồ")}</strong>{" "}
+                        {guided ? (
+                          quiz.isError ? (
+                            <Button type="button" variant="link" size="sm" onClick={() => void quiz.refetch()}>
+                              {t("Retry loading Quiz status", "Tải lại trạng thái Quiz")}
+                            </Button>
+                          ) : quiz.isPending ? (
+                            <span>{t("Loading Quiz…", "Đang tải Quiz…")}</span>
+                          ) : stage2Ready ? (
+                            <span>{t("Passed", "Đã đạt")}</span>
+                          ) : (
+                            <Link className="text-primary underline" href={`${labHref}&step=2`}>
+                              {t("Pass the current Lab Quiz", "Hoàn thành Quiz hiện hành của Lab")}
                             </Link>
-                          </span>
+                          )
+                        ) : (
+                          stage2Ready
+                            ? t("Required diagrams selected", "Đã chọn sơ đồ bắt buộc")
+                            : t("Select the required saved diagrams", "Chọn các sơ đồ bắt buộc đã lưu")
                         )}
                       </span>
                     </div>
+                    {(!guided || requiresStudio) && (
+                    <>
                     <div className="flex items-center gap-2">
                       <span
                         className={
@@ -637,24 +648,32 @@ export function SubmissionComposer({
                         ) : (
                           <span>
                             Select a completed session with available evidence —{" "}
-                            <Link className="text-primary underline" href={`/sessions?project=${encodeURIComponent(state.projectId)}`}>
+                            <Link className="text-primary underline" href={guided ? `${labHref}&step=3` : `/sessions?project=${encodeURIComponent(state.projectId)}`}>
                               Run runtime session
                             </Link>
                           </span>
                         )}
                       </span>
                     </div>
+                    {requiresStudio && (
                     <div className="flex items-center gap-2">
                       <span className={stage4Ready ? "font-bold text-success" : "font-bold text-amber-500"}>
                         {stage4Ready ? "✓" : "!"}
                       </span>
                       <span>
-                        <strong>Step 4 · MAVIS Studio RuntimeReceipt:</strong>{" "}
+                        <strong>{t("Step 4 · MAVIS Studio RuntimeReceipt", "Bước 4 · Biên nhận MAVIS Studio")}</strong>{" "}
                         {stage4Ready
                           ? "Signed receipt and zero-orphan cleanup confirmed"
-                          : "Complete a Studio Stop/Start/Scale run and wait for confirmed cleanup"}
+                          : (
+                            <Link className="text-primary underline" href={`${labHref}&step=4`}>
+                              {t("Complete Studio and wait for confirmed cleanup", "Hoàn thành Studio và chờ xác nhận dọn dẹp")}
+                            </Link>
+                          )}
                       </span>
                     </div>
+                    )}
+                    </>
+                    )}
                     <div className="flex items-center gap-2">
                       <span
                         className={
@@ -680,7 +699,8 @@ export function SubmissionComposer({
                     diagrams.isError ||
                     !choice ||
                     choice.documents.length + choice.diagramVersionIds.length === 0 ||
-                    (guided && (!stage1Ready || !stage2Ready || !stage3Ready || !stage4Ready)) ||
+                    (guided && !stage2Ready) ||
+                    (requiresStudio && !stage4Ready) ||
                     (guided && !hasWrittenExplanation) ||
                     (requirements?.requireRuntimeTrace && !selectedRuntime) ||
                     runtimeEvidenceBlocked(
@@ -701,7 +721,7 @@ export function SubmissionComposer({
                         modelId: state.model.id,
                         snapshotId: state.model.snapshotId,
                         diagramVersionId: frozen.diagramVersionId,
-                        runtimeSessionId: selectedRuntime?.id ?? null,
+                        runtimeSessionId: guided && !requiresStudio ? null : selectedRuntime?.id ?? null,
                         evaluationRunId: evaluation?.id ?? null,
                         submissionNotes: notes,
                         ...(preparedSnapshots.length > 0

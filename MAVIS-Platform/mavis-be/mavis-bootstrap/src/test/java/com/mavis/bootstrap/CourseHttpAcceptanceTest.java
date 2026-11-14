@@ -262,6 +262,7 @@ class CourseHttpAcceptanceTest {
         db.update("UPDATE assignments SET required_diagram_types = '[\"C4_CONTEXT\",\"C4_CONTAINER\",\"C4_COMPONENT\"]'::jsonb WHERE id = ?", lab1);
         UUID bundle = UUID.fromString(data(send("POST", analyzedModel + "/documents/freeze", student,
                 Map.of("diagramVersionIds", c4Diagrams), 200)).asText());
+        db.update("UPDATE assignments SET require_runtime_trace = true WHERE id = ?", lab1);
         UUID verifiedRuntime = id(db, """
                 INSERT INTO runtime_sessions(project_id, source_snapshot_id, model_version_id, scenario_status,
                                              execution_status, evidence_status, cleanup_status, trace_status,
@@ -271,18 +272,18 @@ class CourseHttpAcceptanceTest {
                         '{"infrastructureActions":[{"action":"SCALE","service":"orders","replicas":4}]}'::jsonb, true)
                 RETURNING id
                 """, workingProject, workingSource, workingModel, "sha256:" + "e".repeat(64));
-        checkCurriculum(workspace, lab1, lab2, lecturer, student, workingProject,
+        checkCurriculum(db, workspace, lab1, lab2, lecturer, student, workingProject,
                 Map.of("assignmentId", lab1, "projectId", workingProject,
                         "modelVersionId", workingModel, "diagramVersionId", bundle,
                         "runtimeSessionId", verifiedRuntime,
                         "submissionNotes", "Verified 4-stage C1-C3 static and runtime submission evidence.",
-                        "studentSnapshots", List.of(Map.of(
-                                "snapshotId", "snap-1",
-                                "step", "STEP_2",
-                                "title", "Static C4 & Runtime OTel Evidence",
-                                "writtenExplanation", "Static architecture evaluation and verified runtime trace attached."))));
-        send("GET", "assignments/" + lab2, student, null, 403);
-        send("GET", "assignments/" + lab2 + "/reference-source", student, null, 403);
+                        "studentSnapshots", List.of(
+                                Map.of("snapshotId", "STEP_1_STATIC", "step", "STEP_1_STATIC",
+                                        "writtenExplanation", "The gateway routes requests to the order service."),
+                                Map.of("snapshotId", "STEP_4_RUNTIME", "step", "STEP_4_RUNTIME",
+                                        "writtenExplanation", "Running replicas changed from one to four."))));
+        send("GET", "assignments/" + lab2, student, null, 200);
+        send("GET", "assignments/" + lab2 + "/reference-source", student, null, 200);
         send("GET", "assignments/" + lab1 + "/reference-source", foreignStudent, null, 403);
         assertArrayEquals(Files.readAllBytes(zip),
                 send("GET", "assignments/" + lab1 + "/reference-source", student, null, 200).body());
@@ -311,7 +312,7 @@ class CourseHttpAcceptanceTest {
         throw new AssertionError("Static analysis did not complete before the test deadline");
     }
 
-    private void checkCurriculum(String workspace, UUID lab1, UUID lab2, String lecturer, String student,
+    private void checkCurriculum(JdbcTemplate db, String workspace, UUID lab1, UUID lab2, String lecturer, String student,
                                  UUID workingProject, Map<String, Object> submission)
             throws Exception {
         send("GET", "course-curriculum", null, null, 401);
@@ -358,13 +359,46 @@ class CourseHttpAcceptanceTest {
         var attempt = Map.of("attemptId", UUID.randomUUID(), "version", csharpVersion, "answers", List.of(1, 0, 2, 1));
         assertEquals("PASSED", data(send("POST", quiz + "/attempts", student, attempt, 200)).path("status").asText());
         send("POST", runtime, student, runtimeRequest, 404);
-        send("POST", "submissions", student, Map.of(
-                "assignmentId", submission.get("assignmentId"),
-                "projectId", submission.get("projectId"),
-                "modelVersionId", submission.get("modelVersionId"),
-                "diagramVersionId", submission.get("diagramVersionId")), 400);
+        db.update("""
+                UPDATE evaluation_runs SET summary_metrics = jsonb_set(summary_metrics, '{complianceScore}', '30', true)
+                WHERE model_version_id = ?
+                """, submission.get("modelVersionId"));
+        var incomplete = new java.util.HashMap<>(submission);
+        incomplete.remove("runtimeSessionId");
+        assertEquals("STEP_4_SIGNED_RUNTIME_RECEIPT", json.readTree(
+                send("POST", "submissions", student, incomplete, 400).body()).path("message").asText());
+        incomplete.put("runtimeSessionId", submission.get("runtimeSessionId"));
+        incomplete.remove("studentSnapshots");
+        send("POST", "submissions", student, incomplete, 400);
+        var staticEvidence = Map.of("snapshotId", "STEP_1_STATIC", "step", "STEP_1_STATIC",
+                "writtenExplanation", "The gateway routes orders.");
+        incomplete.put("studentSnapshots", List.of(staticEvidence));
+        send("POST", "submissions", student, incomplete, 400);
+        incomplete.put("studentSnapshots", List.of(staticEvidence, staticEvidence));
+        send("POST", "submissions", student, incomplete, 400);
+        incomplete.put("studentSnapshots", List.of(staticEvidence, Map.of(
+                "snapshotId", "STEP_4_RUNTIME", "step", "STEP_4_RUNTIME", "writtenExplanation", "   ")));
+        send("POST", "submissions", student, incomplete, 400);
+        incomplete.put("studentSnapshots", List.of(staticEvidence, Map.of(
+                "snapshotId", "unknown", "step", "unknown", "writtenExplanation", "Fake evidence.")));
+        send("POST", "submissions", student, incomplete, 400);
+
+        db.update("UPDATE assignments SET require_runtime_trace = false WHERE id = ?", lab1);
+        incomplete.remove("runtimeSessionId");
+        incomplete.put("studentSnapshots", List.of(staticEvidence));
+        JsonNode staticSubmission = data(send("POST", "submissions", student, incomplete, 200));
+        assertEquals(1, staticSubmission.path("studentSnapshots").size());
+        assertEquals("STEP_1_STATIC", staticSubmission.path("studentSnapshots").get(0).path("snapshotId").asText());
+        assertTrue(staticSubmission.path("runtimeSessionId").isNull() || staticSubmission.path("runtimeSessionId").isMissingNode());
+        db.update("UPDATE assignments SET require_runtime_trace = true WHERE id = ?", lab1);
         JsonNode saved = data(send("POST", "submissions", student, submission, 200));
         assertTrue(saved.path("evidencePackageDigest").asText().startsWith("sha256:"));
+        assertEquals(30.0, saved.path("complianceScore").asDouble());
+        assertEquals(2, saved.path("studentSnapshots").size());
+        assertEquals(submission.get("modelVersionId").toString(),
+                saved.path("studentSnapshots").get(0).path("targetViewOrService").asText());
+        assertEquals(submission.get("runtimeSessionId").toString(),
+                saved.path("studentSnapshots").get(1).path("targetViewOrService").asText());
         String review = "submissions/" + saved.path("id").asText() + "/review";
         send("PUT", review, lecturer, Map.of("expectedRevision", 0, "status", "GRADED",
                 "score", 90, "summary", "Fixture feedback"), 400);
@@ -376,6 +410,38 @@ class CourseHttpAcceptanceTest {
         assertEquals(attempt.get("attemptId").toString(), frozen.path("attemptId").asText());
         assertEquals(csharpVersion, frozen.path("quizVersion").asInt());
         assertFalse(frozen.has("answers"));
+        var staticGrade = Map.of("snapshotId", "STEP_1_STATIC", "score", new java.math.BigDecimal("9.00"));
+        var borderline = Map.of("snapshotId", "STEP_4_RUNTIME", "score", new java.math.BigDecimal("5.00"));
+        var passedGrade = Map.of("snapshotId", "STEP_4_RUNTIME", "score", new java.math.BigDecimal("5.01"));
+        JsonNode failedReview = data(send("PUT", review, lecturer, Map.of("expectedRevision", 0, "status", "GRADED",
+                "summary", "Explain the measured impact.", "snapshotGrades", List.of(staticGrade, borderline)), 200));
+        assertEquals("NEEDS_REVISION", failedReview.path("labOutcome").asText());
+        send("GET", "assignments/" + lab2, student, null, 403);
+        var replacement = new java.util.HashMap<>(submission);
+        replacement.put("submissionNotes", "Revised observations after lecturer feedback.");
+        JsonNode resubmitted = data(send("POST", "submissions", student, replacement, 200));
+        assertNotEquals(saved.path("id"), resubmitted.path("id"));
+        assertNotEquals(saved.path("evidencePackageDigest"), resubmitted.path("evidencePackageDigest"));
+        String revisedReview = "submissions/" + resubmitted.path("id").asText() + "/review";
+        var gradeRequest = Map.of("expectedRevision", 0, "status", "GRADED",
+                "summary", "Verified runtime and architecture.", "snapshotGrades", List.of(staticGrade, passedGrade));
+        send("PUT", revisedReview, student, gradeRequest, 403);
+        send("PUT", review, lecturer, Map.of("expectedRevision", 1, "status", "GRADED",
+                "summary", "Older submission.", "snapshotGrades", List.of(staticGrade, passedGrade)), 409);
+        var publication = request("PUT", revisedReview, lecturer, gradeRequest).build();
+        var first = http.sendAsync(publication, HttpResponse.BodyHandlers.ofByteArray());
+        var second = http.sendAsync(publication, HttpResponse.BodyHandlers.ofByteArray());
+        var outcomes = List.of(first.get(15, TimeUnit.SECONDS).statusCode(), second.get(15, TimeUnit.SECONDS).statusCode());
+        assertTrue(outcomes.containsAll(List.of(200, 409)), outcomes.toString());
+        assertEquals("PASSED", data(send("GET", revisedReview, student, null, 200)).path("labOutcome").asText());
+        send("PUT", revisedReview, lecturer, Map.of("expectedRevision", 1, "status", "RETURNED",
+                "summary", "Cannot retract a completed result."), 409);
+        send("GET", "assignments/" + lab2, student, null, 200);
+        assertEquals(1, db.queryForObject("""
+                SELECT count(*) FROM user_notifications WHERE event_key = ? AND recipient_id = ?
+                """, Integer.class, "course-lab-unlocked:" + lab2, UUID.fromString(saved.path("submittedById").asText())));
+        assertEquals("NEEDS_REVISION", data(send("GET", review, student, null, 200)).path("labOutcome").asText());
+
         send("POST", quiz + "/curriculum", lecturer, java, 200);
         send("POST", runtime, student, runtimeRequest, 403);
         send("POST", "submissions", student, submission, 403);
