@@ -436,6 +436,15 @@ class CourseHttpAcceptanceTest {
         assertEquals("PASSED", data(send("GET", revisedReview, student, null, 200)).path("labOutcome").asText());
         send("PUT", revisedReview, lecturer, Map.of("expectedRevision", 1, "status", "RETURNED",
                 "summary", "Cannot retract a completed result."), 409);
+        var resultCountBeforeRetry = db.queryForObject(
+                "SELECT count(*) FROM submission_snapshots WHERE assignment_id = ? AND submitted_by = ?",
+                Integer.class, lab1, UUID.fromString(saved.path("submittedById").asText()));
+        assertEquals("LAB_SUBMISSION_ALREADY_PASSED", json.readTree(
+                send("POST", "submissions", student, replacement, 409).body()).path("message").asText());
+        assertEquals(resultCountBeforeRetry, db.queryForObject(
+                "SELECT count(*) FROM submission_snapshots WHERE assignment_id = ? AND submitted_by = ?",
+                Integer.class, lab1, UUID.fromString(saved.path("submittedById").asText())));
+
         send("GET", "assignments/" + lab2, student, null, 200);
         assertEquals(1, db.queryForObject("""
                 SELECT count(*) FROM user_notifications WHERE event_key = ? AND recipient_id = ?
@@ -444,7 +453,7 @@ class CourseHttpAcceptanceTest {
 
         send("POST", quiz + "/curriculum", lecturer, java, 200);
         send("POST", runtime, student, runtimeRequest, 403);
-        send("POST", "submissions", student, submission, 403);
+        send("POST", "submissions", student, submission, 409);
         assertEquals(frozen, data(send("GET", "submissions/" + saved.path("id").asText(), lecturer, null, 200))
                 .path("courseQuizEvidence"));
     }

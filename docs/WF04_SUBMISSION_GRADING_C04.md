@@ -20,7 +20,7 @@ Hợp đồng kỹ thuật, cơ chế đóng băng bằng chứng nộp bài (`V
     courseProgression.recordFinalizedResult(id, review.getRevision(), passed);
     ```
   - Nếu `labOutcome == "PASSED"` (`passed == true`), `CourseProgressionService` cập nhật trạng thái hoàn thành Lab `N`, phát sinh thông báo `course-lab-unlocked:{nextAssignmentId}` (idempotent theo `recipient_id + event_key` trong bảng `user_notifications`), và tự động mở khóa **`Lab N+1`** (`UNLOCKED` trên Course Roadmap). Nếu `passed == false` (`NEEDS_REVISION`), **`Lab N+1` giữ nguyên trạng thái `LOCKED`** (`PREREQUISITE`).
-  - Kết quả Guided Lab đã công bố đạt được giữ cố định để nhất quán với tiến độ. Các lần ghi sau trả `409`. Bài chưa đạt vẫn có thể được trả về và sinh viên có thể nộp lại.
+  - Kết quả Guided Lab đã công bố đạt được giữ cố định để nhất quán với tiến độ. Yêu cầu sửa kết quả đã đạt hoặc nộp bản mới sau khi Lab đã đạt trả `409`. Bài chưa đạt vẫn có thể được trả về và sinh viên có thể nộp lại.
 - **Flyway Migrations liên quan WF-04:**
   - `V28__Submission_Course_Quiz_Evidence.sql`: cột `submission_snapshots.course_quiz_evidence` (`JSONB`).
   - `V29__Submission_Evidence_Package_Digest.sql`: cột `submission_snapshots.evidence_package_digest` (`VARCHAR(71) NOT NULL`) + index `ix_submission_evidence_package_digest`.
