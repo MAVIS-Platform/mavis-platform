@@ -158,34 +158,54 @@ const LEFT_DOCK_ACTIONS = [
     id: "palette-scale-plus-1",
     badge: "+1 POD",
     label: "Scale +1 Replica",
+    sub: "+250 req/s · Incremental",
     action: "SCALE" as const,
     delta: 1,
+    cardClass:
+      "border-sky-500/35 bg-sky-500/10 hover:border-sky-400 hover:bg-sky-500/20",
+    badgeClass: "border border-sky-400/40 bg-sky-500/20 text-sky-300",
   },
   {
     id: "palette-scale-4",
     badge: "×4 PODS",
     label: "Scale ×4 Cluster",
+    sub: "1,000 req/s · High Availability",
     action: "SCALE" as const,
     replicas: 4,
+    cardClass:
+      "border-indigo-500/35 bg-indigo-500/10 hover:border-indigo-400 hover:bg-indigo-500/20",
+    badgeClass: "border border-indigo-400/40 bg-indigo-500/20 text-indigo-300",
   },
   {
     id: "palette-scale-8",
     badge: "×8 PODS",
     label: "Scale ×8 Max Load",
+    sub: "2,000 req/s · Peak Burst",
     action: "SCALE" as const,
     replicas: 8,
+    cardClass:
+      "border-purple-500/35 bg-purple-500/10 hover:border-purple-400 hover:bg-purple-500/20",
+    badgeClass: "border border-purple-400/40 bg-purple-500/20 text-purple-300",
   },
   {
     id: "palette-stop",
     badge: "FAULT",
     label: "Stop Container",
+    sub: "Inject HTTP 503 Crash",
     action: "STOP" as const,
+    cardClass:
+      "border-rose-500/40 bg-rose-500/10 hover:border-rose-400 hover:bg-rose-500/20",
+    badgeClass: "border border-rose-400/50 bg-rose-500/25 text-rose-300",
   },
   {
     id: "palette-start",
     badge: "RECOVER",
     label: "Restart Service",
+    sub: "Restore Healthy Pod",
     action: "START" as const,
+    cardClass:
+      "border-emerald-500/40 bg-emerald-500/10 hover:border-emerald-400 hover:bg-emerald-500/20",
+    badgeClass: "border border-emerald-400/50 bg-emerald-500/25 text-emerald-300",
   },
 ];
 
@@ -568,9 +588,11 @@ export function StudioWorkbench() {
             </Link>
           </Button>
           <div className="flex items-center gap-2 border-l pl-2.5">
-            <Boxes className="size-4 text-primary" />
-            <span className="text-sm font-bold tracking-tight">MAVIS STUDIO</span>
-            <Badge variant="secondary" className="font-mono text-[10px]">
+            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-mono text-xs font-extrabold text-emerald-400">
+              MAVIS
+            </span>
+            <span className="text-sm font-bold tracking-tight">Studio</span>
+            <Badge className="border border-sky-500/30 bg-sky-500/15 font-mono text-[10px] text-sky-300">
               3D / 2D WORKBENCH
             </Badge>
           </div>
@@ -579,10 +601,10 @@ export function StudioWorkbench() {
               aria-label={t("Architecture Preset Template")}
               value={templateId}
               onChange={(e) => switchTemplate(e.target.value)}
-              className="ml-2 h-8 rounded-md border bg-background px-2.5 text-xs font-medium"
+              className="ml-1 h-8 rounded-md border border-indigo-500/30 bg-indigo-950/30 px-2.5 text-xs font-medium text-indigo-200"
             >
               {STUDIO_TEMPLATES.map((tpl) => (
-                <option key={tpl.id} value={tpl.id}>
+                <option key={tpl.id} value={tpl.id} className="bg-slate-950 text-slate-100">
                   {tpl.name}
                 </option>
               ))}
@@ -590,25 +612,49 @@ export function StudioWorkbench() {
           )}
         </div>
 
+        {/* CENTER TELEMETRY PILL BAR (200Lab style Traffic + Resource Budget Bar) */}
+        <div className="hidden items-center gap-4 rounded-full border border-border/80 bg-background/90 px-4 py-1 text-xs shadow-sm lg:flex">
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-[10px] uppercase text-sky-400">⚡ Traffic</span>
+            <span className="font-mono font-bold text-foreground">
+              {(totalRunningPods * 240).toLocaleString()} req/s
+            </span>
+          </div>
+          <div className="h-3.5 w-px bg-border" />
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] uppercase text-emerald-400">Memory</span>
+            <span className="font-mono font-bold text-foreground">
+              {Math.round(totalRamMiB)} MiB
+            </span>
+            <div className="h-2 w-20 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-sky-400 transition-all"
+                style={{ width: `${Math.min(100, Math.round((totalRamMiB / 4096) * 100))}%` }}
+              />
+            </div>
+            <span className="font-mono text-[10px] text-muted-foreground">/ 4096 MiB</span>
+          </div>
+        </div>
+
         <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+          <div className="inline-flex rounded-full border bg-muted/40 p-0.5">
             <button
               type="button"
               onClick={() => setMode("SANDBOX")}
-              className={`rounded px-2.5 py-1 text-xs font-medium transition ${
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                 mode === "SANDBOX"
-                  ? "bg-primary text-primary-foreground shadow-xs"
+                  ? "bg-emerald-500 text-slate-950 shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {t("Interactive Studio Sandbox (Instant)")}
+              ▶ {t("Interactive Studio Sandbox (Instant)")}
             </button>
             <button
               type="button"
               onClick={() => setMode("LIVE")}
-              className={`rounded px-2.5 py-1 text-xs font-medium transition ${
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
                 mode === "LIVE"
-                  ? "bg-primary text-primary-foreground shadow-xs"
+                  ? "bg-sky-500 text-slate-950 shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -667,11 +713,12 @@ export function StudioWorkbench() {
             <div className="space-y-4">
               {/* Section A: Drag & Drop Action Blocks */}
               <div className="space-y-1.5">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-sky-400">
                   1. {t("Studio Action Palette")}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  {t("Drag onto any 3D/2D block or click to apply to")} <strong>{selectedService}</strong>
+                  {t("Drag onto any 3D/2D block or click to apply to")}{" "}
+                  <strong className="text-foreground">{selectedService}</strong>
                 </p>
                 <div className="space-y-1.5 pt-1">
                   {LEFT_DOCK_ACTIONS.map((item) => (
@@ -699,13 +746,18 @@ export function StudioWorkbench() {
                           });
                         }
                       }}
-                      className="flex cursor-grab items-center justify-between rounded-md border bg-background px-2.5 py-2 text-xs transition hover:border-primary hover:bg-accent/50 active:cursor-grabbing"
+                      className={`flex cursor-grab items-center justify-between rounded-lg border px-2.5 py-2 text-xs transition active:cursor-grabbing ${item.cardClass}`}
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="rounded bg-primary/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-primary">
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`rounded-md px-1.5 py-1 font-mono text-[10px] font-extrabold ${item.badgeClass}`}
+                        >
                           {item.badge}
                         </span>
-                        <span className="font-medium">{t(item.label)}</span>
+                        <div className="leading-tight">
+                          <p className="font-semibold text-foreground">{t(item.label)}</p>
+                          <p className="text-[10px] text-muted-foreground">{item.sub}</p>
+                        </div>
                       </div>
                       <span className="text-muted-foreground">⋮⋮</span>
                     </div>
@@ -713,52 +765,64 @@ export function StudioWorkbench() {
                 </div>
               </div>
 
-              {/* Section B: 3D Architecture Block Spawner */}
+              {/* Section B: 3D Architecture Block Spawner (200Lab Component Cards style) */}
               <div className="space-y-2 border-t pt-3">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
                   2. {t("3D Block Library (Add Node)")}
                 </p>
                 <div className="grid grid-cols-2 gap-1.5">
-                  <Button
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 justify-start gap-1.5 px-2 text-[11px]"
                     onClick={() => addCustomBlock("SERVICE")}
+                    className="flex items-center gap-2 rounded-lg border border-indigo-500/35 bg-indigo-500/10 p-2 text-left text-[11px] transition hover:border-indigo-400 hover:bg-indigo-500/20"
                   >
-                    <Server className="size-3.5 text-primary" />
-                    + Service
-                  </Button>
-                  <Button
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-indigo-500/25 text-indigo-300">
+                      <Server className="size-3.5" />
+                    </span>
+                    <div className="min-w-0 leading-tight">
+                      <p className="truncate font-semibold text-indigo-200">+ Service</p>
+                      <p className="truncate text-[9px] text-indigo-300/75">App Server</p>
+                    </div>
+                  </button>
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 justify-start gap-1.5 px-2 text-[11px]"
                     onClick={() => addCustomBlock("GATEWAY")}
+                    className="flex items-center gap-2 rounded-lg border border-amber-500/35 bg-amber-500/10 p-2 text-left text-[11px] transition hover:border-amber-400 hover:bg-amber-500/20"
                   >
-                    <Workflow className="size-3.5 text-sky-400" />
-                    + Gateway
-                  </Button>
-                  <Button
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-amber-500/25 text-amber-300">
+                      <Workflow className="size-3.5" />
+                    </span>
+                    <div className="min-w-0 leading-tight">
+                      <p className="truncate font-semibold text-amber-200">+ Gateway</p>
+                      <p className="truncate text-[9px] text-amber-300/75">Load Balancer</p>
+                    </div>
+                  </button>
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 justify-start gap-1.5 px-2 text-[11px]"
                     onClick={() => addCustomBlock("DATABASE")}
+                    className="flex items-center gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/10 p-2 text-left text-[11px] transition hover:border-emerald-400 hover:bg-emerald-500/20"
                   >
-                    <Database className="size-3.5 text-emerald-400" />
-                    + Database
-                  </Button>
-                  <Button
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-emerald-500/25 text-emerald-300">
+                      <Database className="size-3.5" />
+                    </span>
+                    <div className="min-w-0 leading-tight">
+                      <p className="truncate font-semibold text-emerald-200">+ Database</p>
+                      <p className="truncate text-[9px] text-emerald-300/75">Relational DB</p>
+                    </div>
+                  </button>
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-8 justify-start gap-1.5 px-2 text-[11px]"
                     onClick={() => addCustomBlock("QUEUE")}
+                    className="flex items-center gap-2 rounded-lg border border-purple-500/35 bg-purple-500/10 p-2 text-left text-[11px] transition hover:border-purple-400 hover:bg-purple-500/20"
                   >
-                    <Layers className="size-3.5 text-amber-400" />
-                    + Broker
-                  </Button>
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded bg-purple-500/25 text-purple-300">
+                      <Layers className="size-3.5" />
+                    </span>
+                    <div className="min-w-0 leading-tight">
+                      <p className="truncate font-semibold text-purple-200">+ Broker</p>
+                      <p className="truncate text-[9px] text-purple-300/75">Event Queue</p>
+                    </div>
+                  </button>
                 </div>
                 <div className="flex gap-1 pt-1">
                   <Input
@@ -781,14 +845,14 @@ export function StudioWorkbench() {
 
               {/* Section C: Chaos & Cluster Reset */}
               <div className="space-y-1.5 border-t pt-3">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-rose-400">
                   3. {t("Resilience & Chaos")}
                 </p>
                 <Button
                   type="button"
                   variant="destructive"
                   size="sm"
-                  className="w-full justify-start gap-2 text-xs"
+                  className="w-full justify-start gap-2 text-xs shadow-sm"
                   onClick={() => {
                     const running = customServices.filter((s) => (replicasMap[s] ?? 1) > 0);
                     if (running.length > 0) {
@@ -805,7 +869,7 @@ export function StudioWorkbench() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="w-full justify-start gap-2 text-xs"
+                  className="w-full justify-start gap-2 border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300 hover:bg-emerald-500/20"
                   onClick={() => switchTemplate(templateId)}
                 >
                   <RotateCcw className="size-3.5" />
@@ -820,34 +884,48 @@ export function StudioWorkbench() {
                 {t("Cluster Nodes")} ({customServices.length})
               </p>
               <div className="max-h-32 space-y-1 overflow-y-auto pr-1">
-                {customServices.map((svc) => (
-                  <div
-                    key={svc}
-                    className={`flex items-center justify-between rounded px-2 py-1 font-mono text-[11px] ${
-                      selectedService === svc
-                        ? "bg-primary/15 font-semibold text-primary"
-                        : "hover:bg-muted/50"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      className="flex-1 truncate text-left"
-                      onClick={() => setSelectedService(svc)}
+                {customServices.map((svc) => {
+                  const reps = replicasMap[svc] ?? 1;
+                  return (
+                    <div
+                      key={svc}
+                      className={`flex items-center justify-between rounded px-2 py-1 font-mono text-[11px] ${
+                        selectedService === svc
+                          ? "border border-sky-500/40 bg-sky-500/15 font-semibold text-sky-300"
+                          : "hover:bg-muted/50"
+                      }`}
                     >
-                      {svc} (×{replicasMap[svc] ?? 1})
-                    </button>
-                    {customServices.length > 2 && (
                       <button
                         type="button"
-                        aria-label={`Remove ${svc}`}
-                        onClick={() => removeCustomBlock(svc)}
-                        className="text-muted-foreground hover:text-destructive"
+                        className="flex flex-1 items-center gap-1.5 truncate text-left"
+                        onClick={() => setSelectedService(svc)}
                       >
-                        <Trash2 className="size-3" />
+                        <span
+                          className={`size-2 rounded-full ${
+                            reps === 0
+                              ? "bg-rose-500"
+                              : reps > 1
+                                ? "bg-sky-400"
+                                : "bg-emerald-400"
+                          }`}
+                        />
+                        <span className="truncate">
+                          {svc} (×{reps})
+                        </span>
                       </button>
-                    )}
-                  </div>
-                ))}
+                      {customServices.length > 2 && (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${svc}`}
+                          onClick={() => removeCustomBlock(svc)}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <Trash2 className="size-3" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </aside>
@@ -901,40 +979,69 @@ export function StudioWorkbench() {
                 className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/80 p-3.5"
               >
                 {selectedRow && (
-                  <div className="space-y-4">
-                    <div>
+                  <div className="space-y-3.5">
+                    {/* Selected Node Header Banner with Semantic Archetype Tint */}
+                    <div
+                      className={`rounded-lg border p-3 ${
+                        selectedRow.replicasNow === 0
+                          ? "border-rose-500/50 bg-rose-950/30"
+                          : selectedRow.type === "API_GATEWAY"
+                            ? "border-amber-500/40 bg-amber-950/25"
+                            : selectedRow.type === "DATABASE"
+                              ? "border-emerald-500/40 bg-emerald-950/25"
+                              : selectedRow.type === "MESSAGE_BROKER"
+                                ? "border-purple-500/40 bg-purple-950/25"
+                                : "border-indigo-500/40 bg-indigo-950/25"
+                      }`}
+                    >
                       <div className="flex items-center justify-between gap-2">
-                        <Badge variant="outline" className="font-mono text-[10px]">
-                          {selectedRow.layer.toUpperCase()} · {selectedRow.type}
-                        </Badge>
                         <span
-                          className={`font-mono text-xs font-bold ${
-                            selectedRow.replicasNow === 0 ? "text-destructive" : "text-primary"
+                          className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${
+                            selectedRow.type === "API_GATEWAY"
+                              ? "bg-amber-500/20 text-amber-300"
+                              : selectedRow.type === "DATABASE"
+                                ? "bg-emerald-500/20 text-emerald-300"
+                                : selectedRow.type === "MESSAGE_BROKER"
+                                  ? "bg-purple-500/20 text-purple-300"
+                                  : "bg-indigo-500/20 text-indigo-300"
+                          }`}
+                        >
+                          {selectedRow.layer.toUpperCase()} · {selectedRow.type}
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-bold ${
+                            selectedRow.replicasNow === 0
+                              ? "bg-rose-500/25 text-rose-300"
+                              : selectedRow.replicasNow > 1
+                                ? "bg-sky-500/25 text-sky-300"
+                                : "bg-emerald-500/25 text-emerald-300"
                           }`}
                         >
                           {selectedRow.replicasNow === 0
-                            ? "STOPPED (503)"
+                            ? "CRASHED (503)"
                             : `${selectedRow.replicasNow} POD(S) RUNNING`}
                         </span>
                       </div>
-                      <h2 className="mt-1.5 font-mono text-base font-bold">
+                      <h2 className="mt-1.5 font-mono text-base font-bold text-foreground">
                         {selectedRow.serviceName}
                       </h2>
+                      <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                        CPU <strong className="text-sky-400">{selectedRow.perPodCpu.toFixed(1)}%</strong> · RAM{" "}
+                        <strong className="text-emerald-400">{Math.round(selectedRow.totalRam)} MiB</strong> · p95{" "}
+                        <strong className="text-amber-300">{selectedRow.p95Now} ms</strong>
+                      </p>
                     </div>
 
                     {/* Direct Replica Scaling Buttons (1 -> 2 -> 4 -> 8) */}
-                    <div className="space-y-1.5 rounded-lg border bg-background p-2.5">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <div className="space-y-1.5 rounded-lg border border-sky-500/30 bg-sky-950/15 p-2.5">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-sky-400">
                         {t("Direct Replica & Fault Control")}
                       </p>
                       <div className="grid grid-cols-4 gap-1.5">
                         {([1, 2, 4, 8] as const).map((preset) => (
-                          <Button
+                          <button
                             key={preset}
                             type="button"
-                            size="sm"
-                            variant={selectedRow.replicasNow === preset ? "default" : "outline"}
-                            className="h-8 font-mono text-xs"
                             onClick={() =>
                               applySandboxAction({
                                 action: "SCALE",
@@ -942,16 +1049,19 @@ export function StudioWorkbench() {
                                 replicas: preset,
                               })
                             }
+                            className={`h-8 rounded-md border font-mono text-xs font-bold transition ${
+                              selectedRow.replicasNow === preset
+                                ? "border-sky-400 bg-sky-500 text-slate-950 shadow-xs"
+                                : "border-border bg-background/80 text-foreground hover:border-sky-400/60"
+                            }`}
                           >
                             ×{preset}
-                          </Button>
+                          </button>
                         ))}
                       </div>
                       <div className="grid grid-cols-2 gap-1.5 pt-1">
-                        <Button
+                        <button
                           type="button"
-                          size="sm"
-                          variant="outline"
                           disabled={selectedRow.replicasNow === 0}
                           onClick={() =>
                             applySandboxAction({
@@ -959,14 +1069,12 @@ export function StudioWorkbench() {
                               service: selectedRow.serviceName,
                             })
                           }
-                          className="h-7 text-xs text-destructive"
+                          className="h-7 rounded-md border border-rose-500/40 bg-rose-500/15 text-xs font-semibold text-rose-300 transition hover:bg-rose-500/25 disabled:opacity-40"
                         >
                           {t("Stop service")}
-                        </Button>
-                        <Button
+                        </button>
+                        <button
                           type="button"
-                          size="sm"
-                          variant="outline"
                           disabled={selectedRow.replicasNow > 0}
                           onClick={() =>
                             applySandboxAction({
@@ -974,20 +1082,28 @@ export function StudioWorkbench() {
                               service: selectedRow.serviceName,
                             })
                           }
-                          className="h-7 text-xs"
+                          className="h-7 rounded-md border border-emerald-500/40 bg-emerald-500/15 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-40"
                         >
                           {t("Start service")}
-                        </Button>
+                        </button>
                       </div>
                     </div>
 
                     {/* Live Architecture & Scaling Impact Explanation */}
-                    <div className="space-y-2 rounded-lg border bg-muted/20 p-3 text-xs">
-                      <p className="font-semibold uppercase tracking-wider text-muted-foreground">
-                        {t("Architecture & Scaling Explanation")}
+                    <div
+                      className={`space-y-2 rounded-lg border border-l-4 p-3 text-xs ${
+                        selectedRow.replicasNow === 0
+                          ? "border-rose-500/40 border-l-rose-500 bg-rose-950/20"
+                          : selectedRow.replicasNow > 1
+                            ? "border-emerald-500/40 border-l-emerald-400 bg-emerald-950/15"
+                            : "border-indigo-500/35 border-l-indigo-400 bg-indigo-950/15"
+                      }`}
+                    >
+                      <p className="font-bold uppercase tracking-wider text-emerald-400">
+                        🎯 {t("Architecture & Scaling Explanation")}
                       </p>
                       {selectedRow.replicasNow === 0 ? (
-                        <div className="space-y-1.5 text-destructive">
+                        <div className="space-y-1.5 text-rose-300">
                           <p className="font-semibold flex items-center gap-1">
                             <ShieldAlert className="size-3.5 shrink-0" />
                             {t("503 / CIRCUIT OPEN — Service Unavailable")}
@@ -1003,17 +1119,17 @@ export function StudioWorkbench() {
                         <div className="space-y-1.5">
                           <p className="font-medium text-foreground">
                             Horizontal scale: <strong>{selectedRow.replicasBefore}</strong> →{" "}
-                            <strong>{selectedRow.replicasNow} instances</strong> (~
+                            <strong className="text-sky-300">{selectedRow.replicasNow} instances</strong> (~
                             {Math.round(100 / selectedRow.replicasNow)}% traffic/pod).
                           </p>
                           <p className="text-muted-foreground">
                             Per-instance CPU dropped to{" "}
-                            <strong>{selectedRow.perPodCpu.toFixed(1)}%</strong> and p95 latency
-                            improved to <strong>{selectedRow.p95Now} ms</strong>, while total RAM
-                            footprint scaled to <strong>{Math.round(selectedRow.totalRam)} MiB</strong>.
+                            <strong className="text-emerald-300">{selectedRow.perPodCpu.toFixed(1)}%</strong> and p95 latency
+                            improved to <strong className="text-emerald-300">{selectedRow.p95Now} ms</strong>, while total RAM
+                            footprint scaled to <strong className="text-amber-300">{Math.round(selectedRow.totalRam)} MiB</strong>.
                           </p>
                           {selectedRow.bottleneckTarget && (
-                            <p className="rounded border border-amber-500/40 bg-amber-500/10 p-2 font-medium text-amber-400">
+                            <p className="rounded border border-amber-500/50 bg-amber-500/15 p-2 font-medium text-amber-300">
                               ⚠ {t("Downstream bottleneck risk")}:{" "}
                               <strong>{selectedRow.serviceName}</strong> has{" "}
                               {selectedRow.replicasNow} pods calling{" "}
@@ -1025,20 +1141,21 @@ export function StudioWorkbench() {
                       ) : (
                         <p className="text-muted-foreground">
                           Running single-instance baseline (100% load on 1 pod ·{" "}
-                          {selectedRow.perPodCpu.toFixed(1)}% CPU · {selectedRow.perPodRam} MiB RAM).
+                          <span className="text-sky-300">{selectedRow.perPodCpu.toFixed(1)}% CPU</span> ·{" "}
+                          <span className="text-emerald-300">{selectedRow.perPodRam} MiB RAM</span>).
                           Scale to ×4 or ×8 to observe load distribution and downstream impact.
                         </p>
                       )}
                     </div>
 
                     {/* Upstream & Downstream Dependency Chains */}
-                    <div className="space-y-2 rounded-lg border bg-background p-2.5 text-xs">
-                      <p className="font-semibold uppercase tracking-wider text-muted-foreground">
+                    <div className="space-y-2 rounded-lg border border-purple-500/30 border-l-4 border-l-purple-400 bg-purple-950/15 p-2.5 text-xs">
+                      <p className="font-bold uppercase tracking-wider text-purple-300">
                         {t("Static Dependency Blast Radius")}
                       </p>
                       <div>
                         <span className="text-muted-foreground">{t("Direct callers")}: </span>
-                        <span className="font-mono">
+                        <span className="font-mono font-semibold text-amber-300">
                           {selectedRow.inboundCallers.length > 0
                             ? selectedRow.inboundCallers.join(", ")
                             : "None (Ingress / Root)"}
@@ -1046,7 +1163,7 @@ export function StudioWorkbench() {
                       </div>
                       <div>
                         <span className="text-muted-foreground">Downstream targets: </span>
-                        <span className="font-mono">
+                        <span className="font-mono font-semibold text-sky-300">
                           {selectedRow.outboundTargets.length > 0
                             ? selectedRow.outboundTargets.join(", ")
                             : "None (Leaf / Data store)"}
@@ -1055,8 +1172,8 @@ export function StudioWorkbench() {
                     </div>
 
                     {/* Quick Snapshot Capture in Right Inspector */}
-                    <div className="space-y-2 border-t pt-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-950/10 p-2.5">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
                         {t("Capture evidence snapshot")}
                       </p>
                       <Textarea
@@ -1066,16 +1183,15 @@ export function StudioWorkbench() {
                         rows={2}
                         className="text-xs"
                       />
-                      <Button
+                      <button
                         type="button"
-                        size="sm"
-                        className="w-full gap-1.5 text-xs"
                         disabled={capturing}
                         onClick={() => void captureLocalSnapshot()}
+                        className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-emerald-500 text-xs font-bold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
                       >
                         <Camera className="size-3.5" />
                         {t("Capture evidence snapshot")} ({localSnapshots.length})
-                      </Button>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -1108,9 +1224,9 @@ export function StudioWorkbench() {
                       setBottomCollapsed(false);
                       setBottomTab("MATRIX");
                     }}
-                    className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
+                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
                       bottomTab === "MATRIX"
-                        ? "bg-primary/15 text-primary"
+                        ? "border border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -1122,9 +1238,9 @@ export function StudioWorkbench() {
                       setBottomCollapsed(false);
                       setBottomTab("LOGS");
                     }}
-                    className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
+                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
                       bottomTab === "LOGS"
-                        ? "bg-primary/15 text-primary"
+                        ? "border border-sky-500/40 bg-sky-500/20 text-sky-300"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -1136,9 +1252,9 @@ export function StudioWorkbench() {
                       setBottomCollapsed(false);
                       setBottomTab("SNAPSHOTS");
                     }}
-                    className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
+                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
                       bottomTab === "SNAPSHOTS"
-                        ? "bg-primary/15 text-primary"
+                        ? "border border-amber-500/40 bg-amber-500/20 text-amber-300"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
@@ -1147,13 +1263,13 @@ export function StudioWorkbench() {
                 </div>
 
                 <div className="flex items-center gap-3 font-mono text-xs">
-                  <span>
+                  <span className="rounded bg-sky-500/15 px-2 py-0.5 text-sky-300">
                     {t("Total running instances")}: <strong>{totalRunningPods}</strong>
                   </span>
-                  <span>
+                  <span className="rounded bg-indigo-500/15 px-2 py-0.5 text-indigo-300">
                     {t("Total CPU load")}: <strong>{avgCpu.toFixed(1)}%</strong>
                   </span>
-                  <span>
+                  <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-emerald-300">
                     {t("Total RAM footprint")}: <strong>{Math.round(totalRamMiB)} MiB</strong>
                   </span>
                   <button
@@ -1187,39 +1303,67 @@ export function StudioWorkbench() {
                           key={row.serviceName}
                           onClick={() => setSelectedService(row.serviceName)}
                           className={`cursor-pointer border-b last:border-0 hover:bg-muted/40 ${
-                            row.serviceName === selectedService ? "bg-primary/10 font-medium" : ""
+                            row.serviceName === selectedService ? "bg-sky-500/10 font-medium" : ""
                           }`}
                         >
                           <td className="py-1.5 pr-3 font-mono font-semibold">{row.serviceName}</td>
                           <td className="px-2 py-1.5 font-mono text-[11px]">
-                            {row.layer} · {row.type}
+                            <span
+                              className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                                row.type === "API_GATEWAY"
+                                  ? "bg-amber-500/20 text-amber-300"
+                                  : row.type === "DATABASE"
+                                    ? "bg-emerald-500/20 text-emerald-300"
+                                    : row.type === "MESSAGE_BROKER"
+                                      ? "bg-purple-500/20 text-purple-300"
+                                      : "bg-indigo-500/20 text-indigo-300"
+                              }`}
+                            >
+                              {row.layer} · {row.type}
+                            </span>
                           </td>
-                          <td className="px-2 py-1.5 font-mono">
+                          <td className="px-2 py-1.5 font-mono text-muted-foreground">
                             {row.inboundCount} in / {row.outboundCount} out
                           </td>
                           <td className="px-2 py-1.5 font-mono">
-                            {row.replicasBefore} → <strong>{row.replicasNow}</strong>
+                            {row.replicasBefore} →{" "}
+                            <strong
+                              className={
+                                row.replicasNow === 0
+                                  ? "text-rose-400"
+                                  : row.replicasNow > 1
+                                    ? "text-sky-400"
+                                    : "text-emerald-400"
+                              }
+                            >
+                              {row.replicasNow}
+                            </strong>
                           </td>
                           <td className="px-2 py-1.5 font-mono">
-                            {row.perPodCpu.toFixed(1)}% · {row.perPodRam} MiB
+                            <span className="text-sky-300">{row.perPodCpu.toFixed(1)}%</span> ·{" "}
+                            <span className="text-emerald-300">{row.perPodRam} MiB</span>
                           </td>
                           <td className="px-2 py-1.5 font-mono">
-                            <strong>{row.totalRam} MiB</strong>
+                            <strong className="text-amber-300">{row.totalRam} MiB</strong>
                           </td>
                           <td className="pl-2 py-1.5">
                             {row.replicasNow === 0 ? (
-                              <span className="font-semibold text-destructive">
+                              <span className="rounded bg-rose-500/20 px-2 py-0.5 font-semibold text-rose-300">
                                 {t("Service stopped (Fault injected)")} · {t("503 / CIRCUIT OPEN")}
                               </span>
                             ) : row.replicasNow > 1 ? (
-                              <span>
+                              <span className="text-sky-300">
                                 ~{Math.round(100 / row.replicasNow)}%/pod · p95: {row.p95Now}ms
-                                {row.bottleneckTarget
-                                  ? ` · ⚠ Bottleneck: ${row.bottleneckTarget} (1 pod)`
-                                  : ""}
+                                {row.bottleneckTarget ? (
+                                  <span className="ml-1.5 rounded bg-amber-500/20 px-1.5 py-0.5 text-amber-300">
+                                    ⚠ Bottleneck: {row.bottleneckTarget} (1 pod)
+                                  </span>
+                                ) : (
+                                  ""
+                                )}
                               </span>
                             ) : (
-                              <span className="text-muted-foreground">
+                              <span className="text-emerald-300/85">
                                 {t("Single instance baseline")} (100%/pod · p95: {row.p95Now}ms)
                               </span>
                             )}

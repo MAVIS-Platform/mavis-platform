@@ -108,6 +108,67 @@ function classifyArchetype(
   return "SERVICE";
 }
 
+function getArchetypeTheme(
+  archetype: "DATABASE" | "GATEWAY" | "QUEUE" | "SERVICE",
+  isStopped: boolean,
+  isSelected: boolean,
+  isDropTarget: boolean,
+) {
+  if (isStopped) {
+    return {
+      stroke: "#f43f5e",
+      cardFill: "#2a0913",
+      iconBg: "#4c0519",
+      accent: "#fb7185",
+      badgeText: "CRASHED",
+      typeLabel: "503 FAULT",
+    };
+  }
+  const base =
+    archetype === "GATEWAY"
+      ? {
+          stroke: "#f59e0b",
+          cardFill: "#1d1407",
+          iconBg: "#451a03",
+          accent: "#fbbf24",
+          badgeText: "EDGE",
+          typeLabel: "LOAD BALANCER",
+        }
+      : archetype === "DATABASE"
+        ? {
+            stroke: "#10b981",
+            cardFill: "#061f17",
+            iconBg: "#064e3b",
+            accent: "#34d399",
+            badgeText: "DATA",
+            typeLabel: "RELATIONAL DB",
+          }
+        : archetype === "QUEUE"
+          ? {
+              stroke: "#a855f7",
+              cardFill: "#1a0e29",
+              iconBg: "#3b0764",
+              accent: "#c084fc",
+              badgeText: "STREAM",
+              typeLabel: "EVENT BROKER",
+            }
+          : {
+              stroke: "#6366f1",
+              cardFill: "#0f152a",
+              iconBg: "#1e1b4b",
+              accent: "#818cf8",
+              badgeText: "COMPUTE",
+              typeLabel: "APP SERVER",
+            };
+  if (isDropTarget) {
+    return { ...base, stroke: "#38bdf8", accent: "#38bdf8" };
+  }
+  if (isSelected) {
+    return { ...base, stroke: base.accent };
+  }
+  return base;
+}
+
 function renderIsoBox(
   cx: number,
   cy: number,
@@ -257,6 +318,13 @@ export function StudioObservability({
         }
       }
     }
+    // Keep stateful Databases & Message Brokers in the rightmost data/infra tier
+    data.services.forEach((s) => {
+      const arch = classifyArchetype(s);
+      if ((arch === "DATABASE" || arch === "QUEUE") && (depths.get(s) ?? 0) >= 2) {
+        depths.set(s, 3);
+      }
+    });
     return depths;
   }, [data.services, staticEdges, telemetry?.interactions]);
 
@@ -915,10 +983,13 @@ export function StudioObservability({
               const qy1 = from.y + (to.y - from.y) * 0.28;
               const qx2 = from.x + (to.x - from.x) * 0.72;
               const qy2 = from.y + (to.y - from.y) * 0.72;
-              const pathD = `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+              const cx1 = from.x + (to.x - from.x) * 0.5;
+              const cx2 = from.x + (to.x - from.x) * 0.5;
+              const pathD = `M ${from.x} ${from.y} C ${cx1} ${from.y}, ${cx2} ${to.y}, ${to.x} ${to.y}`;
               const speedSec = Math.max(0.7, 2.2 / Math.max(1, Math.min(targetReplicas, 6))).toFixed(
                 2,
               );
+              const edgeColor = targetStopped ? "#f43f5e" : "#38bdf8";
               return (
                 <g
                   key={edge.traceId + index}
@@ -926,14 +997,13 @@ export function StudioObservability({
                   className="cursor-pointer"
                 >
                   <title>{edge.fromService + " → " + edge.toService + " · " + edge.traceId}</title>
-                  <line
-                    x1={from.x}
-                    y1={from.y}
-                    x2={to.x}
-                    y2={to.y}
-                    stroke={targetStopped ? "var(--destructive)" : "var(--primary)"}
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke={edgeColor}
                     strokeDasharray={targetStopped ? "6 4" : undefined}
-                    strokeWidth="2.5"
+                    strokeWidth="2.2"
+                    opacity={targetStopped ? "0.9" : "0.65"}
                     markerEnd={
                       targetStopped ? "url(#studio-arrow-fault)" : "url(#studio-arrow-live)"
                     }
@@ -943,24 +1013,24 @@ export function StudioObservability({
                     cx={qx1}
                     cy={qy1}
                     r="3"
-                    fill={targetStopped ? "var(--destructive)" : "var(--primary)"}
+                    fill={edgeColor}
                     opacity="0.65"
                   />
                   <circle
                     cx={mx}
                     cy={my}
                     r="4.5"
-                    fill={targetStopped ? "var(--destructive)" : "var(--primary)"}
+                    fill={edgeColor}
                   />
                   <circle
                     cx={qx2}
                     cy={qy2}
                     r="3"
-                    fill={targetStopped ? "var(--destructive)" : "var(--primary)"}
+                    fill={edgeColor}
                     opacity="0.65"
                   />
                   {!targetStopped && (
-                    <circle r="4" fill="var(--primary)">
+                    <circle r="4.5" fill="#38bdf8">
                       <animateMotion dur={`${speedSec}s`} repeatCount="indefinite" path={pathD} />
                     </circle>
                   )}
@@ -985,13 +1055,13 @@ export function StudioObservability({
               const cpuPercent = parseCpuPercent(live?.stats[0]?.cpu);
               const ramInfo = parseRamMiB(live?.stats[0]?.memory);
 
-              const strokeColor = isDropTarget
-                ? "var(--primary)"
-                : isSelected
-                  ? "var(--primary)"
-                  : isStopped || isAffected
-                    ? "var(--destructive)"
-                    : "currentColor";
+              const theme = getArchetypeTheme(
+                archetype,
+                isStopped || isAffected,
+                isSelected,
+                isDropTarget,
+              );
+              const strokeColor = theme.stroke;
 
               // 3D Isometric Pedestal + Volumetric Stacked Replica Cubes (Cloudcraft style)
               if (view === "3D") {
@@ -1062,8 +1132,8 @@ export function StudioObservability({
                     {/* 3D Isometric Ground Shadow */}
                     <polygon
                       points={`${point.x},${point.y - 35} ${point.x + 82},${point.y + 6} ${point.x},${point.y + 47} ${point.x - 82},${point.y + 6}`}
-                      fill="currentColor"
-                      opacity="0.09"
+                      fill={theme.stroke}
+                      opacity="0.16"
                     />
 
                     {/* Drop Target Highlight Isometric Ring */}
@@ -1071,7 +1141,7 @@ export function StudioObservability({
                       <polygon
                         points={`${point.x},${point.y - 46} ${point.x + 90},${point.y} ${point.x},${point.y + 46} ${point.x - 90},${point.y}`}
                         fill="none"
-                        stroke="var(--primary)"
+                        stroke="#38bdf8"
                         strokeWidth="2.5"
                         strokeDasharray="5 3"
                       />
@@ -1085,8 +1155,8 @@ export function StudioObservability({
                       36,
                       14,
                       strokeColor,
-                      "var(--background)",
-                      isSelected || isDropTarget ? 2.6 : 1.4,
+                      theme.cardFill,
+                      isSelected || isDropTarget ? 2.6 : 1.5,
                     )}
 
                     {/* Main 3D Server Rack / Database Cylinder / Container Tower (height scales with 1..8 replicas) */}
@@ -1094,18 +1164,18 @@ export function StudioObservability({
                       <g>
                         <path
                           d={`M ${point.x - 32},${point.y - 8 - towerHeight} L ${point.x - 32},${point.y - 8} A 32 14 0 0 0 ${point.x + 32},${point.y - 8} L ${point.x + 32},${point.y - 8 - towerHeight} Z`}
-                          fill="var(--background)"
+                          fill={theme.cardFill}
                           stroke={strokeColor}
-                          strokeWidth="1.6"
+                          strokeWidth="1.8"
                         />
                         <ellipse
                           cx={point.x}
                           cy={point.y - 8 - towerHeight}
                           rx="32"
                           ry="14"
-                          fill="var(--background)"
+                          fill={theme.iconBg}
                           stroke={strokeColor}
-                          strokeWidth="1.6"
+                          strokeWidth="1.8"
                         />
                       </g>
                     ) : (
@@ -1116,8 +1186,8 @@ export function StudioObservability({
                         22,
                         towerHeight,
                         strokeColor,
-                        "var(--background)",
-                        isSelected ? 2.2 : 1.3,
+                        theme.iconBg,
+                        isSelected ? 2.4 : 1.5,
                       )
                     )}
 
@@ -1136,15 +1206,15 @@ export function StudioObservability({
                             10,
                             5.5,
                             9,
-                            "var(--primary)",
-                            "var(--background)",
-                            1.2,
+                            theme.accent,
+                            theme.cardFill,
+                            1.3,
                           )}
                           <circle
                             cx={cubeCx}
                             cy={cubeCy - 9}
                             r="2.2"
-                            fill="var(--primary)"
+                            fill={theme.accent}
                           />
                         </g>
                       );
@@ -1152,28 +1222,28 @@ export function StudioObservability({
 
                     {/* Floating 3D Billboard HUD Tag above the 3D Tower */}
                     <rect
-                      x={point.x - 66}
+                      x={point.x - 68}
                       y={point.y + 14}
-                      width="132"
-                      height="38"
-                      rx="6"
-                      fill="var(--background)"
+                      width="136"
+                      height="40"
+                      rx="7"
+                      fill={theme.cardFill}
                       stroke={strokeColor}
-                      strokeWidth={isSelected ? 2.2 : 1.2}
+                      strokeWidth={isSelected ? 2.4 : 1.4}
                     />
                     <circle
-                      cx={point.x - 52}
+                      cx={point.x - 54}
                       cy={point.y + 26}
-                      r="3.5"
-                      fill={isStopped ? "var(--destructive)" : "var(--primary)"}
+                      r="3.8"
+                      fill={theme.accent}
                     />
                     <text
                       x={point.x + 4}
                       y={point.y + 29}
                       textAnchor="middle"
-                      fill="currentColor"
+                      fill="#f8fafc"
                       fontSize="11.5"
-                      fontWeight="600"
+                      fontWeight="700"
                     >
                       {name}
                     </text>
@@ -1181,9 +1251,9 @@ export function StudioObservability({
                       x={point.x}
                       y={point.y + 42}
                       textAnchor="middle"
-                      fill="currentColor"
+                      fill={theme.accent}
                       fontSize="10"
-                      opacity="0.85"
+                      fontWeight="600"
                     >
                       {live
                         ? `${live.runningReplicas}/${live.replicas} ${t("running")}`
@@ -1193,43 +1263,41 @@ export function StudioObservability({
                     {/* Mini CPU & RAM Bars on the 3D HUD */}
                     <rect
                       x={point.x - 56}
-                      y={point.y + 46}
+                      y={point.y + 47}
                       width="52"
-                      height="3"
+                      height="3.5"
                       rx="1.5"
-                      fill="currentColor"
-                      opacity="0.15"
+                      fill="#1e293b"
                     />
                     <rect
                       x={point.x - 56}
-                      y={point.y + 46}
+                      y={point.y + 47}
                       width={Math.max(3, Math.round((cpuPercent / 100) * 52))}
-                      height="3"
+                      height="3.5"
                       rx="1.5"
-                      fill="var(--primary)"
+                      fill="#38bdf8"
                     />
                     <rect
                       x={point.x + 4}
-                      y={point.y + 46}
+                      y={point.y + 47}
                       width="52"
-                      height="3"
+                      height="3.5"
                       rx="1.5"
-                      fill="currentColor"
-                      opacity="0.15"
+                      fill="#1e293b"
                     />
                     <rect
                       x={point.x + 4}
-                      y={point.y + 46}
+                      y={point.y + 47}
                       width={Math.max(3, Math.round((ramInfo.percent / 100) * 52))}
-                      height="3"
+                      height="3.5"
                       rx="1.5"
-                      fill="var(--primary)"
+                      fill="#10b981"
                     />
                   </g>
                 );
               }
 
-              // 2D Mode Blueprint Card with Embedded CPU/RAM Bars & Replica Pod Cluster
+              // 2D Mode Rich Color-Coded Component Card (200Lab GonnaCrash style)
               return (
                 <g
                   key={name}
@@ -1281,107 +1349,143 @@ export function StudioObservability({
                   }}
                   className="cursor-grab active:cursor-grabbing"
                 >
-                  {/* Drop Target Highlight Halo */}
-                  {isDropTarget && (
+                  {/* Drop Target / Selected Outer Glow Halo */}
+                  {(isDropTarget || isSelected || isStopped) && (
                     <rect
-                      x={point.x - 82}
-                      y={point.y - 40}
-                      width="164"
-                      height="80"
-                      rx="11"
-                      fill="none"
-                      stroke="var(--primary)"
-                      strokeWidth="2.5"
-                      strokeDasharray="4 3"
+                      x={point.x - 84}
+                      y={point.y - 39}
+                      width="168"
+                      height="78"
+                      rx="12"
+                      fill={theme.stroke}
+                      opacity={isStopped ? "0.18" : "0.14"}
+                      stroke={theme.stroke}
+                      strokeWidth={isDropTarget ? "2.5" : "1.5"}
+                      strokeDasharray={isDropTarget ? "4 3" : undefined}
                     />
                   )}
 
-                  {/* Main Service Container Card */}
+                  {/* Main Service Container Card with Archetype Color Tint */}
                   <rect
-                    x={point.x - 76}
+                    x={point.x - 78}
                     y={point.y - 34}
-                    width="152"
+                    width="156"
                     height="68"
-                    rx="9"
-                    fill="var(--background)"
+                    rx="10"
+                    fill={theme.cardFill}
                     stroke={strokeColor}
-                    strokeWidth={isSelected || isDropTarget ? 3 : 1.5}
+                    strokeWidth={isSelected || isDropTarget ? 2.6 : 1.6}
                   />
 
-                  {/* Health Status Dot */}
-                  <circle
-                    cx={point.x - 60}
-                    cy={point.y - 17}
-                    r="4"
-                    fill={isStopped ? "var(--destructive)" : "var(--primary)"}
+                  {/* Top-Left Floating Status Badge (CRASHED or Archetype Tag) like 200Lab */}
+                  <rect
+                    x={point.x - 70}
+                    y={point.y - 43}
+                    width={isStopped ? 64 : activePods > 1 ? 66 : 56}
+                    height="15"
+                    rx="4"
+                    fill={isStopped ? "#9f1239" : theme.iconBg}
+                    stroke={strokeColor}
+                    strokeWidth="1.1"
                   />
+                  <text
+                    x={point.x - 70 + (isStopped ? 32 : activePods > 1 ? 33 : 28)}
+                    y={point.y - 33}
+                    textAnchor="middle"
+                    fill={isStopped ? "#fecdd3" : theme.accent}
+                    fontSize="8.5"
+                    fontWeight="800"
+                  >
+                    {isStopped ? "CRASHED" : activePods > 1 ? `×${activePods} CLUSTER` : theme.badgeText}
+                  </text>
+
+                  {/* Left Colored Icon Tile inside Card */}
+                  <rect
+                    x={point.x - 68}
+                    y={point.y - 22}
+                    width="26"
+                    height="26"
+                    rx="6"
+                    fill={theme.iconBg}
+                    stroke={theme.stroke}
+                    strokeWidth="1"
+                  />
+                  <circle
+                    cx={point.x - 55}
+                    cy={point.y - 9}
+                    r="4.5"
+                    fill={theme.accent}
+                  />
+
+                  {/* Right Server Rack LED Dots (200Lab App Server style) */}
+                  <circle cx={point.x + 69} cy={point.y - 16} r="1.5" fill={theme.accent} opacity="0.8" />
+                  <circle cx={point.x + 69} cy={point.y - 10} r="1.5" fill={theme.accent} opacity="0.5" />
+                  <circle cx={point.x + 69} cy={point.y - 4} r="1.5" fill={theme.accent} opacity="0.8" />
 
                   {/* Service Name */}
                   <text
-                    x={point.x + 4}
+                    x={point.x + 8}
                     y={point.y - 13}
                     textAnchor="middle"
-                    fill="currentColor"
+                    fill="#f8fafc"
                     fontSize="12"
-                    fontWeight="600"
+                    fontWeight="700"
                   >
                     {name}
                   </text>
 
                   {/* Running / Configured Replicas Status */}
                   <text
-                    x={point.x}
-                    y={point.y + 2}
+                    x={point.x + 8}
+                    y={point.y + 1}
                     textAnchor="middle"
-                    fill="currentColor"
-                    fontSize="10.5"
-                    opacity="0.85"
+                    fill={theme.accent}
+                    fontSize="10"
+                    fontWeight="600"
                   >
                     {live
                       ? `${live.runningReplicas}/${live.replicas} ${t("running")}`
                       : t("Waiting for telemetry")}
                   </text>
 
-                  {/* Mini Embedded CPU & RAM Resource Progress Bars inside the Node */}
+                  {/* Mini Embedded CPU (Cyan) & RAM (Emerald) Progress Bars inside the Node */}
                   <rect
-                    x={point.x - 62}
-                    y={point.y + 8}
-                    width="58"
+                    x={point.x - 66}
+                    y={point.y + 10}
+                    width="62"
                     height="4"
                     rx="2"
-                    fill="currentColor"
-                    opacity="0.14"
+                    fill="#1e293b"
                   />
                   <rect
-                    x={point.x - 62}
-                    y={point.y + 8}
-                    width={Math.max(3, Math.round((cpuPercent / 100) * 58))}
+                    x={point.x - 66}
+                    y={point.y + 10}
+                    width={Math.max(4, Math.round((cpuPercent / 100) * 62))}
                     height="4"
                     rx="2"
-                    fill="var(--primary)"
-                  />
-                  <rect
-                    x={point.x + 4}
-                    y={point.y + 8}
-                    width="58"
-                    height="4"
-                    rx="2"
-                    fill="currentColor"
-                    opacity="0.14"
+                    fill={isStopped ? "#f43f5e" : "#38bdf8"}
                   />
                   <rect
                     x={point.x + 4}
-                    y={point.y + 8}
-                    width={Math.max(3, Math.round((ramInfo.percent / 100) * 58))}
+                    y={point.y + 10}
+                    width="62"
                     height="4"
                     rx="2"
-                    fill="var(--primary)"
+                    fill="#1e293b"
+                  />
+                  <rect
+                    x={point.x + 4}
+                    y={point.y + 10}
+                    width={Math.max(4, Math.round((ramInfo.percent / 100) * 62))}
+                    height="4"
+                    rx="2"
+                    fill={isStopped ? "#f43f5e" : "#10b981"}
                   />
 
                   {/* Visual Replica Pod Cluster (1..8 Pods rendered inside/below the block) */}
                   {Array.from({ length: activePods }, (_, i) => {
                     const podX = point.x - 52 + i * 14.5;
-                    const podY = point.y + 21;
+                    const podY = point.y + 22;
                     return (
                       <g key={i}>
                         <rect
@@ -1390,9 +1494,9 @@ export function StudioObservability({
                           width="9"
                           height="6.5"
                           rx="1.8"
-                          fill="var(--primary)"
+                          fill={theme.accent}
                         />
-                        <circle cx={podX} cy={podY + 20} r="2.2" fill="var(--primary)" />
+                        <circle cx={podX} cy={podY + 20} r="2.2" fill={theme.accent} />
                       </g>
                     );
                   })}
