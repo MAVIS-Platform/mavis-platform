@@ -1127,7 +1127,7 @@ export function StudioObservability({
             cameraDrag.current = {
               x: event.clientX,
               y: event.clientY,
-              mode: view === "3D" && event.shiftKey ? "ROTATE" : "PAN",
+              mode: view === "3D" && !event.shiftKey ? "ROTATE" : "PAN",
             };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
@@ -1174,7 +1174,9 @@ export function StudioObservability({
             if (cameraDrag.current.mode === "ROTATE") {
               setCamera((value) => ({
                 ...value,
-                yaw: value.yaw - dx * 0.008,
+                // Smooth 360° horizontal turntable rotation (left-to-right around the top-down view)
+                yaw: value.yaw - dx * 0.0085,
+                pitch: 0.52,
               }));
             } else {
               setPan((prev) => ({
@@ -1221,7 +1223,7 @@ export function StudioObservability({
           {/* Subtle Studio Blueprint Grid */}
           <rect x="0" y="0" width="1200" height="660" fill="url(#studio-grid)" />
 
-          {/* 3D Rotating Multi-Tier Architecture Platform Deck (orbits 360° with camera.yaw & pitch) */}
+          {/* 3D Top-Down Turntable Architecture Platform Deck (orbits 360° left-to-right, always viewed from above) */}
           {view === "3D" &&
             (() => {
               const halfW = 380;
@@ -1233,10 +1235,10 @@ export function StudioObservability({
                 project3DPoint(-halfW, 14, halfD),
               ];
               const botCorners = [
-                project3DPoint(-halfW, 26, -halfD),
-                project3DPoint(halfW, 26, -halfD),
-                project3DPoint(halfW, 26, halfD),
-                project3DPoint(-halfW, 26, halfD),
+                project3DPoint(-halfW, 28, -halfD),
+                project3DPoint(halfW, 28, -halfD),
+                project3DPoint(halfW, 28, halfD),
+                project3DPoint(-halfW, 28, halfD),
               ];
               const topPoly = topCorners.map((p) => `${p.x},${p.y}`).join(" ");
               const div1A = project3DPoint(-halfW * 0.33, 14, -halfD);
@@ -1247,32 +1249,34 @@ export function StudioObservability({
               const crossB = project3DPoint(halfW, 14, 0);
               return (
                 <g>
-                  {/* 3D Slab Side Walls (visible from any 360° angle) */}
+                  {/* Solid Top-Down Tabletop Surface (occludes back edges so view is ALWAYS unmistakably from above) */}
+                  <polygon
+                    points={topPoly}
+                    fill="#0a101d"
+                    opacity="0.95"
+                    stroke="#334155"
+                    strokeOpacity="0.55"
+                    strokeWidth="1.4"
+                  />
+                  {/* Front-Facing 3D Slab Rim Walls ONLY (t1.x > t2.x in clockwise screen order = lower front rim) */}
                   {[0, 1, 2, 3].map((i) => {
                     const next = (i + 1) % 4;
                     const t1 = topCorners[i]!;
                     const t2 = topCorners[next]!;
+                    if (t1.x <= t2.x) return null;
                     const b1 = botCorners[i]!;
                     const b2 = botCorners[next]!;
                     return (
                       <polygon
                         key={i}
                         points={`${t1.x},${t1.y} ${t2.x},${t2.y} ${b2.x},${b2.y} ${b1.x},${b1.y}`}
-                        fill="currentColor"
-                        opacity="0.09"
+                        fill="#1e293b"
+                        stroke="#334155"
+                        strokeWidth="1"
+                        opacity="0.85"
                       />
                     );
                   })}
-                  {/* Main Rotating Isometric Platform Surface */}
-                  <polygon
-                    points={topPoly}
-                    fill="currentColor"
-                    opacity="0.03"
-                    stroke="currentColor"
-                    strokeOpacity="0.22"
-                    strokeWidth="1.2"
-                    strokeDasharray="6 5"
-                  />
                   {/* Inner Rotating Tier Divider Lines */}
                   <line
                     x1={div1A.x}
