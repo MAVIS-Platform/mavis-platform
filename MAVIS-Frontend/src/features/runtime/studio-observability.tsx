@@ -961,12 +961,12 @@ export function StudioObservability({
       const ry = wy * cosP + rz * sinP;
       const depthZ = -wy * sinP + rz * cosP;
       return {
-        x: 600 + (rx + pan.x) * zoom,
-        y: 325 + (ry + pan.y) * zoom,
+        x: 600 + rx,
+        y: 325 + ry,
         z: depthZ,
       };
     };
-  }, [camera.yaw, pan.x, pan.y, zoom]);
+  }, [camera.yaw]);
 
   const positions = useMemo(() => {
     const raw = new Map<string, { x: number; y: number; z: number; tier: number }>();
@@ -1062,10 +1062,8 @@ export function StudioObservability({
         x = (loc.colIdx - (totalCols - 1) / 2) * spX;
         y = (loc.rowIdx - (loc.rowCount - 1) / 2) * spY;
       }
-      let px = (pinned ? pinned.x : 600 + x) + offset.x + pan.x;
-      let py = (pinned ? pinned.y : 330 + y) + offset.y + pan.y;
-      px = 600 + (px - 600) * zoom;
-      py = 330 + (py - 330) * zoom;
+      let px = (pinned ? pinned.x : 600 + x) + offset.x;
+      let py = (pinned ? pinned.y : 330 + y) + offset.y;
       if (snapToGrid && (offset.x !== 0 || offset.y !== 0 || Boolean(pinned))) {
         px = Math.round(px / 16) * 16;
         py = Math.round(py / 16) * 16;
@@ -1087,8 +1085,6 @@ export function StudioObservability({
     project3DPoint,
     customOffsets,
     pinnedPositions,
-    pan,
-    zoom,
     snapToGrid,
   ]);
 
@@ -1257,6 +1253,35 @@ export function StudioObservability({
               </button>
             </div>
           )}
+          <div className="mr-1 flex items-center gap-0.5 border-r border-slate-700/80 pr-1.5">
+            <button
+              type="button"
+              title="Zoom out (Thu nhỏ góc nhìn như draw.io để mở rộng không gian)"
+              onClick={() => setZoom((z) => Math.max(0.22, Number((z * 0.85).toFixed(2))))}
+              className="rounded-full px-1.5 py-0.5 font-mono text-[11px] text-slate-300 transition hover:bg-slate-800 hover:text-white"
+            >
+              −
+            </button>
+            <button
+              type="button"
+              title="Tỷ lệ phóng to/thu nhỏ hiện tại (Click để đưa về 100% chính giữa)"
+              onClick={() => {
+                setZoom(1);
+                setPan({ x: 0, y: 0 });
+              }}
+              className="rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+            >
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              type="button"
+              title="Zoom in (Phóng to góc nhìn)"
+              onClick={() => setZoom((z) => Math.min(2.5, Number((z * 1.18).toFixed(2))))}
+              className="rounded-full px-1.5 py-0.5 font-mono text-[11px] text-slate-300 transition hover:bg-slate-800 hover:text-white"
+            >
+              +
+            </button>
+          </div>
           {(["2D", "3D"] as const).map((mode) => (
             <button
               key={mode}
@@ -1495,8 +1520,21 @@ export function StudioObservability({
           }}
           onWheel={(event) => {
             if (!canvasOnly) return;
-            const delta = event.deltaY < 0 ? 0.1 : -0.1;
-            setZoom((z) => Math.max(0.4, Math.min(2.2, Number((z + delta).toFixed(2)))));
+            event.preventDefault();
+            const factor = event.deltaY < 0 ? 1.12 : 0.89;
+            const nextZoom = Math.max(0.22, Math.min(2.5, Number((zoom * factor).toFixed(3))));
+            if (nextZoom === zoom) return;
+            if (svg.current) {
+              const rect = svg.current.getBoundingClientRect();
+              const svgX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 1200;
+              const svgY = ((event.clientY - rect.top) / Math.max(1, rect.height)) * 660;
+              const ratio = nextZoom / zoom;
+              setPan((prev) => ({
+                x: Math.max(-3600, Math.min(3600, svgX - 600 - (svgX - 600 - prev.x) * ratio)),
+                y: Math.max(-2400, Math.min(2400, svgY - 330 - (svgY - 330 - prev.y) * ratio)),
+              }));
+            }
+            setZoom(nextZoom);
           }}
           onDragOver={(event) => {
             if (busy) return;
@@ -1510,13 +1548,15 @@ export function StudioObservability({
             const createdName = onSpawnBlock(spawnArch);
             if (createdName && svg.current) {
               const rect = svg.current.getBoundingClientRect();
-              const dropX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 1200;
-              const dropY = ((event.clientY - rect.top) / Math.max(1, rect.height)) * 660;
+              const svgX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 1200;
+              const svgY = ((event.clientY - rect.top) / Math.max(1, rect.height)) * 660;
+              const worldX = (svgX - 600 - pan.x) / zoom + 600;
+              const worldY = (svgY - 330 - pan.y) / zoom + 330;
               setPinnedPositions((prev) => ({
                 ...prev,
                 [createdName]: {
-                  x: Math.max(88, Math.min(1112, dropX)),
-                  y: Math.max(58, Math.min(602, dropY)),
+                  x: Math.round(worldX),
+                  y: Math.round(worldY),
                 },
               }));
             }
@@ -1525,7 +1565,8 @@ export function StudioObservability({
             cameraDrag.current = {
               x: event.clientX,
               y: event.clientY,
-              mode: view === "3D" && !event.shiftKey ? "ROTATE" : "PAN",
+              mode:
+                view === "3D" && !event.shiftKey && event.button === 0 ? "ROTATE" : "PAN",
             };
             event.currentTarget.setPointerCapture(event.pointerId);
           }}
@@ -1578,8 +1619,8 @@ export function StudioObservability({
               }));
             } else {
               setPan((prev) => ({
-                x: Math.max(-960, Math.min(960, prev.x + dx * 1.15)),
-                y: Math.max(-680, Math.min(680, prev.y + dy * 1.15)),
+                x: Math.max(-3600, Math.min(3600, prev.x + dx * 1.15)),
+                y: Math.max(-2400, Math.min(2400, prev.y + dy * 1.15)),
               }));
             }
           }}
@@ -1618,8 +1659,12 @@ export function StudioObservability({
             </marker>
           </defs>
 
-          {/* Subtle Studio Blueprint Grid */}
-          <rect x="0" y="0" width="1200" height="660" fill="url(#studio-grid)" />
+          {/* Infinite Camera Viewport Transform (draw.io / Figma style proportional zoom & pan) */}
+          <g
+            transform={`translate(${600 + pan.x}, ${330 + pan.y}) scale(${zoom}) translate(-600, -330)`}
+          >
+            {/* Infinite Studio Blueprint Grid (spans 10,800 × 10,800 world units when zoomed out) */}
+            <rect x="-4800" y="-4800" width="10800" height="10800" fill="url(#studio-grid)" />
 
           {/* 3D Top-Down Turntable Architecture Platform Deck (orbits 360° left-to-right, always viewed from above) */}
           {view === "3D" &&
@@ -2336,6 +2381,7 @@ export function StudioObservability({
                 </g>
               );
             })}
+          </g>
         </svg>
       </div>
 
