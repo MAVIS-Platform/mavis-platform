@@ -21,6 +21,7 @@ public sealed class StudioInfrastructureActionTests : IDisposable
         public string RemainingContainersOutput { get; set; } = "";
         public string RemainingVolumesOutput { get; set; } = "";
         public string RemainingNetworksOutput { get; set; } = "";
+        public bool TimeoutNextProbe { get; set; }
 
         public Task<DockerCommandResult> RunAsync(IReadOnlyList<string> args, string directory, int timeout, CancellationToken ct)
         {
@@ -75,6 +76,11 @@ public sealed class StudioInfrastructureActionTests : IDisposable
         public Task<DockerCommandResult> RunWithInputAsync(IReadOnlyList<string> args, string directory, int timeout, string input, CancellationToken ct)
         {
             Calls.Add(args);
+            if (TimeoutNextProbe)
+            {
+                TimeoutNextProbe = false;
+                throw new OperationCanceledException();
+            }
             var outcome = new HttpScenarioOutcome("s1", "Passed",
             [
                 new HttpStepOutcome("step-1", "Passed", 200, "4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7", 42L)
@@ -104,6 +110,28 @@ public sealed class StudioInfrastructureActionTests : IDisposable
         };
         return new("s1", "m1", "snap1", "prof1", compose, profile, scenario, mappings, "cfg1", "scn1",
             ResourceProject, InfrastructureActions: actions);
+    }
+
+    [Fact]
+    public async Task ReadinessRetriesHelperTimeoutWithSessionDeadlineIntact()
+    {
+        var directory = Path.Combine(_root, ResourceProject);
+        Directory.CreateDirectory(directory);
+        var docker = new MockDocker { TimeoutNextProbe = true };
+        var definition = CreateDefinition([]);
+        var session = new DockerComposeSession(definition, _root, "receivers: {}", docker);
+        typeof(DockerComposeSession).GetField("_directory", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
+            .SetValue(session, directory);
+        typeof(DockerComposeSession).GetProperty(nameof(DockerComposeSession.AllocationReserved))!
+            .SetValue(session, true);
+        await session.WaitUntilReadyAsync(CancellationToken.None);
+
+        Assert.Equal(2, docker.Calls.Count(args => args.Contains("stdin-scenario")));
+        Assert.Contains(docker.Calls, args => args.Contains("label=com.docker.compose.service=mavis-scenario"));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => session.WaitUntilReadyAsync(new CancellationToken(true)));
+        Assert.Equal(2, docker.Calls.Count(args => args.Contains("stdin-scenario")));
     }
 
     [Fact]
