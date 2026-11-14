@@ -44,6 +44,7 @@ public class GlobalExceptionHandler {
         }
         ApiResponse<Void> body = ApiResponse.error(ex.getErrorCode(), ex.getMessage());
         if (ex instanceof AuthException auth) body.setErrorCode(auth.getAuthErrorCode().name());
+        else if (ex.getStableCode() != null) body.setErrorCode(ex.getStableCode());
         return org.springframework.http.ResponseEntity.status(status).body(body);
     }
 

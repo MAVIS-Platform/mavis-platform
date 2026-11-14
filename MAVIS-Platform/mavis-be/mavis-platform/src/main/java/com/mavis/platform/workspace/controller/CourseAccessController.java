@@ -22,7 +22,7 @@ public class CourseAccessController {
     private final CourseAccessService courses;
     private final CourseLabSeederService seeder;
 
-    public record IssueKey(@Min(1) @Max(168) int validHours) {}
+    public record IssueKey(@Min(1) @Max(168) int validHours, @Min(1) @Max(10000) Integer maxStudents) {}
     public record RedeemKey(@NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{22}") String code) {}
 
     @GetMapping("/workspaces/{workspaceId}/course-roadmap")
@@ -49,7 +49,7 @@ public class CourseAccessController {
     public ResponseEntity<ApiResponse<CourseAccessService.Passkey>> issue(
             @PathVariable UUID workspaceId, @Valid @RequestBody IssueKey request) {
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(ApiResponse.success(courses.issue(workspaceId, request.validHours())));
+                .body(ApiResponse.success(courses.issue(workspaceId, request.validHours(), request.maxStudents())));
     }
 
     @PostMapping("/workspaces/{workspaceId}/course-passkey/revoke")

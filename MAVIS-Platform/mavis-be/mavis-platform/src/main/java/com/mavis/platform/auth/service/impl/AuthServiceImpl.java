@@ -49,6 +49,13 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final EmailService emailService;
+    private final com.mavis.platform.security.jwt.RefreshSessionService refreshSessions;
+    private final com.mavis.platform.auth.service.AuthAbuseGuard abuseGuard;
+
+    AuthServiceImpl(UserRepository users, RoleRepository roles, UserOtpRepository otps,
+                    PasswordEncoder passwords, JwtUtil jwt, EmailService email) {
+        this(users, roles, otps, passwords, jwt, email, null, null);
+    }
 
     @Value("${app.google.client-id:}")
     private String googleClientId;
@@ -98,13 +105,23 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void verifyEmail(VerifyEmailRequest request) {
+        if (abuseGuard != null) abuseGuard.check("OTP_VERIFY", request.getEmail());
         User user = userRepository.findForUpdateByEmail(request.getEmail())
-                .orElseThrow(() -> new AuthException(AuthErrorCode.AUTH_CODE_INVALID));
+                .orElseThrow(() -> {
+                    if (abuseGuard != null) abuseGuard.failure("OTP_VERIFY", request.getEmail());
+                    return new AuthException(AuthErrorCode.AUTH_CODE_INVALID);
+                });
 
         if (!"PENDING_VERIFICATION".equals(user.getStatus()) && !"ACTIVE".equals(user.getStatus()))
             throw new AuthException(AuthErrorCode.AUTH_VERIFICATION_UNAVAILABLE);
 
-        UserOtp userOtp = requireOtp(user, request.getOtpCode(), "EMAIL_VERIFICATION");
+        UserOtp userOtp;
+        try {
+            userOtp = requireOtp(user, request.getOtpCode(), "EMAIL_VERIFICATION");
+        } catch (AuthException ex) {
+            if (abuseGuard != null) abuseGuard.failure("OTP_VERIFY", request.getEmail());
+            throw ex;
+        }
         if (!"PENDING_VERIFICATION".equals(user.getStatus()))
             throw new AuthException(AuthErrorCode.AUTH_VERIFICATION_UNAVAILABLE);
 
@@ -114,15 +131,18 @@ public class AuthServiceImpl implements AuthService {
 
         user.setStatus("ACTIVE");
         userRepository.save(user);
+        if (abuseGuard != null) abuseGuard.success("OTP_VERIFY", request.getEmail(), user.getId());
     }
 
     @Override
     public AuthResponse login(LoginRequest request) {
+        if(abuseGuard!=null) abuseGuard.check("LOGIN",request.getEmail());
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new AuthException(AuthErrorCode.LOGIN_CREDENTIALS));
+                .orElseThrow(() -> {if(abuseGuard!=null)abuseGuard.failure("LOGIN",request.getEmail());return new AuthException(AuthErrorCode.LOGIN_CREDENTIALS);});
 
         // Verify credentials before disclosing verified/locked account state.
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            if(abuseGuard!=null)abuseGuard.failure("LOGIN",request.getEmail());
             throw new AuthException(AuthErrorCode.LOGIN_CREDENTIALS);
         }
 
@@ -136,13 +156,8 @@ public class AuthServiceImpl implements AuthService {
 
         String token = jwtUtil.generateToken(user.getEmail(), user.getId(), user.getRole().getCode());
 
-        return AuthResponse.builder()
-                .token(token)
-                .userId(user.getId())
-                .email(user.getEmail())
-                .fullName(user.getFullName())
-                .role(user.getRole().getCode())
-                .build();
+        if(abuseGuard!=null)abuseGuard.success("LOGIN",request.getEmail(),user.getId());
+        return session(user, token);
     }
 
     @Override
@@ -198,13 +213,7 @@ public class AuthServiceImpl implements AuthService {
 
             String token = jwtUtil.generateToken(user.getEmail(), user.getId(), user.getRole().getCode());
 
-            return AuthResponse.builder()
-                    .token(token)
-                    .userId(user.getId())
-                    .email(user.getEmail())
-                    .fullName(user.getFullName())
-                    .role(user.getRole().getCode())
-                    .build();
+            return session(user, token);
 
         } catch (BusinessException e) {
             throw e;
@@ -241,16 +250,27 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void resetPassword(com.mavis.platform.auth.dto.ResetPasswordRequest request) {
+        if (abuseGuard != null) abuseGuard.check("OTP_RESET", request.getEmail());
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new AuthException(AuthErrorCode.AUTH_RESET_INVALID));
+                .orElseThrow(() -> {
+                    if (abuseGuard != null) abuseGuard.failure("OTP_RESET", request.getEmail());
+                    return new AuthException(AuthErrorCode.AUTH_RESET_INVALID);
+                });
 
-        UserOtp userOtp = requireOtp(user, request.getOtpCode(), "PASSWORD_RESET");
+        UserOtp userOtp;
+        try {
+            userOtp = requireOtp(user, request.getOtpCode(), "PASSWORD_RESET");
+        } catch (AuthException ex) {
+            if (abuseGuard != null) abuseGuard.failure("OTP_RESET", request.getEmail());
+            throw ex;
+        }
 
         userOtp.setUsed(true);
         userOtpRepository.save(userOtp);
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        if (abuseGuard != null) abuseGuard.success("OTP_RESET", request.getEmail(), user.getId());
     }
 
     @Override
@@ -285,5 +305,11 @@ public class AuthServiceImpl implements AuthService {
         if (!otp.getExpiryTime().isAfter(OffsetDateTime.now(ZoneOffset.UTC)))
             throw new AuthException(reset ? AuthErrorCode.AUTH_RESET_EXPIRED : AuthErrorCode.AUTH_CODE_EXPIRED);
         return otp;
+    }
+
+    private AuthResponse session(User user, String token) {
+        if (refreshSessions != null) return refreshSessions.response(user, refreshSessions.issue(user.getId()));
+        return AuthResponse.builder().token(token).userId(user.getId()).email(user.getEmail())
+                .fullName(user.getFullName()).role(user.getRole().getCode()).build();
     }
 }

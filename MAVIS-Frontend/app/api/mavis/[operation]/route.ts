@@ -8,6 +8,7 @@ import { javaRequest } from "@/lib/api/java-client";
 import { ApiError } from "@/lib/errors/api-error";
 export const dynamic = "force-dynamic";
 const cookieName = "mavis_session";
+const refreshCookieName = "mavis_refresh";
 async function handle(request: NextRequest, context: { params: Promise<{ operation: string }> }) {
   const { operation } = await context.params;
   const fail = (status: number) =>
@@ -69,9 +70,46 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
       if (upload.archive.size !== upload.size) return fail(422);
     }
     if (operation === "session") {
-      const session = await currentSession(token, request.signal);
+      let activeToken = token;
+      let rotatedRefresh: string | undefined;
+      if (!activeToken && request.cookies.get(refreshCookieName)?.value) {
+        const refreshed = (await javaRequest("auth/refresh", undefined, {
+          method: "POST",
+          body: JSON.stringify({ refreshToken: request.cookies.get(refreshCookieName)!.value }),
+          signal: request.signal,
+        })) as { token: string; refreshToken: string };
+        activeToken = refreshed.token;
+        rotatedRefresh = refreshed.refreshToken;
+      }
+      let session = await currentSession(activeToken, request.signal);
+      if (!session.user && request.cookies.get(refreshCookieName)?.value) {
+        const refreshed = (await javaRequest("auth/refresh", undefined, {
+          method: "POST",
+          body: JSON.stringify({ refreshToken: request.cookies.get(refreshCookieName)!.value }),
+          signal: request.signal,
+        })) as { token: string; refreshToken: string };
+        activeToken = refreshed.token;
+        rotatedRefresh = refreshed.refreshToken;
+        session = await currentSession(activeToken, request.signal);
+      }
       const response = NextResponse.json(session, { headers: { "Cache-Control": "no-store" } });
       if (!session.user) response.cookies.delete(cookieName);
+      if (activeToken && activeToken !== token)
+        response.cookies.set(cookieName, activeToken, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: request.nextUrl.protocol === "https:",
+          path: "/",
+          maxAge: 900,
+        });
+      if (rotatedRefresh)
+        response.cookies.set(refreshCookieName, rotatedRefresh, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: request.nextUrl.protocol === "https:",
+          path: "/",
+          maxAge: 604800,
+        });
       return response;
     }
     const authPaths: Record<string, string> = {
@@ -103,18 +141,31 @@ async function handle(request: NextRequest, context: { params: Promise<{ operati
         sameSite: "lax",
         secure: request.nextUrl.protocol === "https:",
         path: "/",
-        maxAge: 86400,
+        maxAge: 900,
       });
+      if (auth.refreshToken)
+        response.cookies.set(refreshCookieName, auth.refreshToken, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: request.nextUrl.protocol === "https:",
+          path: "/",
+          maxAge: 604800,
+        });
       return response;
     }
     if (operation === "signOut") {
       if (token)
-        await javaRequest("auth/logout", token, { method: "POST", signal: request.signal });
+        await javaRequest("auth/logout", token, {
+          method: "POST",
+          headers: { "X-Refresh-Token": request.cookies.get(refreshCookieName)?.value ?? "" },
+          signal: request.signal,
+        });
       const response = NextResponse.json(
         { ok: true },
         { headers: { "Cache-Control": "no-store" } },
       );
       response.cookies.delete(cookieName);
+      response.cookies.delete(refreshCookieName);
       return response;
     }
     if (!token) return fail(401);

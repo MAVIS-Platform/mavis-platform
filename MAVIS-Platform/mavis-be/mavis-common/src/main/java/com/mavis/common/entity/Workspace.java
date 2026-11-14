@@ -42,6 +42,9 @@ public class Workspace {
     @Column(name = "course_mode", nullable = false)
     private boolean courseMode;
 
+    @Column(name = "max_students")
+    private Integer maxStudents;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;

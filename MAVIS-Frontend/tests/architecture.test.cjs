@@ -777,7 +777,7 @@ test("profile name editing uses the existing payload, prevents duplicates and re
  const input=()=>render().find(n=>n.props?.id==="profile-full-name");
  const submit=()=>render().find(n=>n.type==="form").props.onSubmit({preventDefault(){}});
  input().props.onChange({target:{value:"  "}});await submit();assert.equal(calls.length,0);assert.equal(input().props["aria-invalid"],true);
- input().props.onChange({target:{value:"  Updated Name  "}});const pending=submit();await submit();assert.equal(calls.length,1);assert.equal(JSON.stringify(calls[0]),JSON.stringify({fullName:"Updated Name"}));release({user:{name:"Updated Name"}});await pending;assert.equal(input().props.value,"Updated Name");
+ input().props.onChange({target:{value:"  Updated Name  "}});const pending=submit();await submit();assert.equal(calls.length,1);assert.equal(JSON.stringify(calls[0]),JSON.stringify({fullName:"Updated Name",avatarUrl:null,preferredLocale:"en"}));release({user:{name:"Updated Name"}});await pending;assert.equal(input().props.value,"Updated Name");
  fail=true;input().props.onChange({target:{value:"Correctable Name"}});await submit();assert.equal(input().props.value,"Correctable Name");
  render().find(n=>n.props?.children==="Reset").props.onClick();assert.equal(input().props.value,"Saved Name");
  const changePassword=render().find(n=>typeof n.props?.onClick==="function"&&React.Children.toArray(n.props?.children).includes("Change Password"));assert.ok(changePassword);changePassword.props.onClick();
