@@ -1242,48 +1242,71 @@ export function StudioWorkbench() {
                   </div>
                 </div>
 
-                {/* Section B: Compact Drag & Drop Actions (2-Column Pill Grid) */}
+                {/* Section B: One-Click Cluster Scenarios (System-Wide Simulation Presets) */}
                 <div className="space-y-1.5 border-t pt-2.5">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
-                    Actions
+                    Cluster Scenarios
                   </p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {LEFT_DOCK_ACTIONS.map((item) => (
-                      <div
-                        key={item.id}
-                        draggable
-                        onDragStart={(event) => {
-                          event.dataTransfer.setData("application/x-mavis-studio-tool", item.id);
-                          event.dataTransfer.effectAllowed = "copy";
-                        }}
-                        onClick={() => {
-                          const current = replicasMap[selectedService] ?? 1;
-                          if (item.action === "STOP") {
-                            applySandboxAction({ action: "STOP", service: selectedService });
-                          } else if (item.action === "START") {
-                            applySandboxAction({ action: "START", service: selectedService });
-                          } else {
-                            const nextReps = item.delta
-                              ? Math.max(1, Math.min(8, (current <= 0 ? 1 : current) + item.delta))
-                              : (item.replicas ?? 4);
-                            applySandboxAction({
-                              action: "SCALE",
-                              service: selectedService,
-                              replicas: nextReps,
-                            });
-                          }
-                        }}
-                        title={`${item.label} (${item.sub})`}
-                        className={`flex cursor-grab items-center justify-between rounded-md border px-2 py-1.5 text-[11px] transition active:cursor-grabbing ${item.cardClass}`}
-                      >
-                        <span
-                          className={`rounded px-1 py-0.5 font-mono text-[9px] font-extrabold ${item.badgeClass}`}
-                        >
-                          {item.badge}
-                        </span>
-                        <span className="text-[9px] text-muted-foreground">⋮⋮</span>
+                  <div className="grid grid-cols-1 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNodeConfigs(() =>
+                          Object.fromEntries(
+                            customServices.map((s) => [
+                              s,
+                              { ...(nodeConfigs[s] ?? DEFAULT_NODE_CONFIG), trafficMult: 4 },
+                            ]),
+                          ),
+                        );
+                        const gw = customServices[0];
+                        if (gw) {
+                          setReplicasMap((prev) => ({ ...prev, [gw]: 4 }));
+                        }
+                      }}
+                      className="flex items-center justify-between rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-left transition hover:border-amber-400 hover:bg-amber-500/20"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Flame className="size-3.5 shrink-0 text-amber-400" />
+                        <div className="leading-tight">
+                          <p className="text-[11px] font-bold text-amber-200">Black Friday 4× Surge</p>
+                          <p className="font-mono text-[9px] text-amber-300/75">
+                            Spike cluster traffic 4×
+                          </p>
+                        </div>
                       </div>
-                    ))}
+                      <span className="rounded bg-amber-500/25 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+                        4× LOAD
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dbNode =
+                          customServices.find((s) =>
+                            /(postgres|db|mongo|redis|sql|settlement)/.test(s.toLowerCase()),
+                          ) ?? customServices[customServices.length - 1];
+                        if (dbNode) {
+                          applySandboxAction({ action: "STOP", service: dbNode });
+                        }
+                      }}
+                      className="flex items-center justify-between rounded-lg border border-rose-500/40 bg-rose-500/10 px-2.5 py-1.5 text-left transition hover:border-rose-400 hover:bg-rose-500/20"
+                    >
+                      <div className="flex items-center gap-2">
+                        <ShieldAlert className="size-3.5 shrink-0 text-rose-400" />
+                        <div className="leading-tight">
+                          <p className="text-[11px] font-bold text-rose-200">DB Outage Drill</p>
+                          <p className="font-mono text-[9px] text-rose-300/75">
+                            Kill primary DB (503 test)
+                          </p>
+                        </div>
+                      </div>
+                      <span className="rounded bg-rose-500/25 px-1.5 py-0.5 font-mono text-[9px] font-bold text-rose-300">
+                        FAULT
+                      </span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
@@ -1296,20 +1319,65 @@ export function StudioWorkbench() {
                           applySandboxAction({ action: "STOP", service: pick });
                         }
                       }}
-                      title={t("Chaos Monkey (Kill Random)")}
-                      className="flex items-center justify-center gap-1 rounded-md border border-rose-500/50 bg-rose-500/20 px-2 py-1.5 text-[10px] font-bold text-rose-200 transition hover:bg-rose-500/30"
+                      className="flex items-center justify-between rounded-lg border border-fuchsia-500/40 bg-fuchsia-500/10 px-2.5 py-1.5 text-left transition hover:border-fuchsia-400 hover:bg-fuchsia-500/20"
                     >
-                      <Zap className="size-3 text-rose-300" />
-                      Chaos
+                      <div className="flex items-center gap-2">
+                        <Zap className="size-3.5 shrink-0 text-fuchsia-400" />
+                        <div className="leading-tight">
+                          <p className="text-[11px] font-bold text-fuchsia-200">Chaos Monkey</p>
+                          <p className="font-mono text-[9px] text-fuchsia-300/75">
+                            Kill random active pod
+                          </p>
+                        </div>
+                      </div>
+                      <span className="rounded bg-fuchsia-500/25 px-1.5 py-0.5 font-mono text-[9px] font-bold text-fuchsia-300">
+                        RANDOM
+                      </span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplicasMap(
+                          Object.fromEntries(customServices.map((s) => [s, 4])),
+                        );
+                        setNodeConfigs((prev) =>
+                          Object.fromEntries(
+                            customServices.map((s) => [
+                              s,
+                              {
+                                ...(prev[s] ?? DEFAULT_NODE_CONFIG),
+                                autoScaleHpa: true,
+                                readCache: true,
+                              },
+                            ]),
+                          ),
+                        );
+                      }}
+                      className="flex items-center justify-between rounded-lg border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-left transition hover:border-sky-400 hover:bg-sky-500/20"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="size-3.5 shrink-0 text-sky-400" />
+                        <div className="leading-tight">
+                          <p className="text-[11px] font-bold text-sky-200">HA Auto-Scale ×4</p>
+                          <p className="font-mono text-[9px] text-sky-300/75">
+                            Scale all ×4 + Enable Cache
+                          </p>
+                        </div>
+                      </div>
+                      <span className="rounded bg-sky-500/25 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-300">
+                        ×4 HA
+                      </span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => switchTemplate(templateId)}
                       title={t("Reset cluster")}
-                      className="flex items-center justify-center gap-1 rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2 py-1.5 text-[10px] font-bold text-emerald-300 transition hover:bg-emerald-500/25 col-span-2"
+                      className="flex items-center justify-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-[11px] font-bold text-emerald-300 transition hover:bg-emerald-500/25"
                     >
-                      <RotateCcw className="size-3" />
-                      Reset Cluster
+                      <RotateCcw className="size-3.5" />
+                      Reset Cluster Baseline
                     </button>
                   </div>
                 </div>
