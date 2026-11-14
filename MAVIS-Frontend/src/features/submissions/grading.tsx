@@ -15,11 +15,26 @@ import type { SnapshotGradeItem, StudentSnapshotItem } from "@/types/domain";
 const PASSING_SCORE = 50;
 const SNAPSHOT_PASS_EXCLUSIVE = 5.0;
 
-function reviewOutcome(score: number | null, labOutcome?: "PENDING" | "PASSED" | "NEEDS_REVISION") {
-  if (labOutcome === "PASSED") return "PASS";
-  if (labOutcome === "NEEDS_REVISION") return "NEEDS REVISION";
-  if (score === null) return null;
-  return score > PASSING_SCORE ? "PASS" : "NEEDS REVISION";
+export interface SubmissionOutcomeInput {
+  score: number | null;
+  labOutcome?: "PENDING" | "PASSED" | "NEEDS_REVISION" | null | undefined;
+  snapshotGrades?: ReadonlyArray<{ score: number }> | null | undefined;
+  status?: string | null | undefined;
+}
+
+export function resolveSubmissionOutcome(
+  review: SubmissionOutcomeInput,
+): "PASS" | "NEEDS REVISION" | null {
+  if (review.status === "DRAFT") return null;
+  if (review.labOutcome === "PASSED") return "PASS";
+  if (review.labOutcome === "NEEDS_REVISION") return "NEEDS REVISION";
+  if (review.snapshotGrades && review.snapshotGrades.length > 0) {
+    return review.snapshotGrades.every((g) => g.score > SNAPSHOT_PASS_EXCLUSIVE)
+      ? "PASS"
+      : "NEEDS REVISION";
+  }
+  if (review.score === null) return null;
+  return review.score > PASSING_SCORE ? "PASS" : "NEEDS REVISION";
 }
 
 export function GradingPanel({
@@ -55,15 +70,15 @@ export function GradingPanel({
               {query.data.score !== null && (
                 <span className="text-xl font-semibold">{query.data.score} / 100</span>
               )}
-              {reviewOutcome(query.data.score, query.data.labOutcome) && (
+              {resolveSubmissionOutcome(query.data) && (
                 <Badge
                   variant={
-                    reviewOutcome(query.data.score, query.data.labOutcome) === "PASS"
+                    resolveSubmissionOutcome(query.data) === "PASS"
                       ? "success"
                       : "warning"
                   }
                 >
-                  {reviewOutcome(query.data.score, query.data.labOutcome)}
+                  {resolveSubmissionOutcome(query.data)}
                 </Badge>
               )}
             </div>
@@ -247,7 +262,7 @@ function GradeForm({
         ? "PASS"
         : "NEEDS REVISION"
       : null
-    : reviewOutcome(value);
+    : resolveSubmissionOutcome({ score: value });
 
   function submit(status: "DRAFT" | "RETURNED" | "GRADED") {
     if (!valid && status !== "DRAFT") return;
@@ -391,6 +406,16 @@ function GradeForm({
           <span className="text-muted-foreground">{t("Calculated outcome")}</span>
           <Badge variant={outcome === "PASS" ? "success" : "warning"}>{outcome}</Badge>
         </div>
+      )}
+      {usePerSnapshot && parsedSnapshots.valid && parsedSnapshots.allPassed === false && (
+        <p
+          role="status"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
+        >
+          {t(
+            "At least one snapshot scored <= 5.0 / 10 — publishing or returning this review will set Lab Outcome to NEEDS REVISION.",
+          )}
+        </p>
       )}
       {!summary.trim() && value !== null && (
         <p role="status" className="text-sm text-muted-foreground">
