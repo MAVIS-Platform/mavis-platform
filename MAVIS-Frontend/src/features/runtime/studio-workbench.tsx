@@ -500,9 +500,13 @@ type LocalSnapshot = {
 };
 
 type NodeSimConfig = {
-  instanceTier: "S" | "M" | "L";
-  trafficMult: 1 | 2 | 4 | 8;
-  injectedLatencyMs: 0 | 40 | 180 | 600;
+  instanceTier: "S" | "M" | "L" | "XL" | "CUSTOM";
+  vcpuPerPod: number;
+  ramPerPodMiB: number;
+  targetRps: number;
+  trafficMult: number;
+  injectedLatencyMs: number;
+  rateLimitRps: number;
   circuitBreaker: boolean;
   autoScaleHpa: boolean;
   readCache: boolean;
@@ -511,8 +515,12 @@ type NodeSimConfig = {
 
 const DEFAULT_NODE_CONFIG: NodeSimConfig = {
   instanceTier: "M",
+  vcpuPerPod: 1,
+  ramPerPodMiB: 512,
+  targetRps: 240,
   trafficMult: 1,
   injectedLatencyMs: 0,
+  rateLimitRps: 1200,
   circuitBreaker: true,
   autoScaleHpa: false,
   readCache: false,
@@ -654,10 +662,19 @@ export function StudioWorkbench() {
   function updateNodeConfig(svc: string, patch: Partial<NodeSimConfig>) {
     setNodeConfigs((prev) => {
       const current = prev[svc] ?? DEFAULT_NODE_CONFIG;
-      const next = { ...current, ...patch };
-      // If Auto-Scale HPA is enabled and traffic is high, auto-bump replicas to at least 4
-      if (next.autoScaleHpa && next.trafficMult >= 2 && (replicasMap[svc] ?? 1) < 4) {
-        setReplicasMap((rm) => ({ ...rm, [svc]: 4 }));
+      const next: NodeSimConfig = { ...current, ...patch };
+      if (patch.targetRps !== undefined && patch.trafficMult === undefined) {
+        next.trafficMult = Math.max(0.1, Number((patch.targetRps / 240).toFixed(2)));
+      } else if (patch.trafficMult !== undefined && patch.targetRps === undefined) {
+        next.targetRps = Math.round(patch.trafficMult * 240);
+      }
+      // If Auto-Scale HPA is enabled, dynamically compute required pods from targetRps & vCPU capacity
+      if (next.autoScaleHpa) {
+        const perPodCap = Math.max(100, next.vcpuPerPod * (next.readCache ? 650 : 400));
+        const neededPods = Math.max(1, Math.min(256, Math.ceil(next.targetRps / perPodCap)));
+        if ((replicasMap[svc] ?? 1) < neededPods) {
+          setReplicasMap((rm) => ({ ...rm, [svc]: neededPods }));
+        }
       }
       return { ...prev, [svc]: next };
     });
@@ -684,7 +701,7 @@ export function StudioWorkbench() {
         ? 0
         : cmd.action === "START"
           ? Math.max(1, before || 1)
-          : Math.max(1, Math.min(8, cmd.replicas ?? 2));
+          : Math.max(1, Math.min(256, cmd.replicas ?? 2));
 
     setReplicasMap((prev) => ({ ...prev, [svc]: after }));
     setSelectedService(svc);
@@ -912,26 +929,66 @@ export function StudioWorkbench() {
       const catalogMatch = STUDIO_COMPONENT_CATALOG.find((item) => svc.startsWith(item.key));
       const baseCpuVal = template.baseCpu[svc] ?? catalogMatch?.baseCpu ?? 26.5;
       const baseRamVal = template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
-      const tierCpuFactor = cfg.instanceTier === "S" ? 1.35 : cfg.instanceTier === "L" ? 0.62 : 1.0;
-      const tierRamFactor = cfg.instanceTier === "S" ? 0.75 : cfg.instanceTier === "L" ? 1.45 : 1.0;
-      const effectiveTraffic = cfg.rateLimiter ? Math.min(2, cfg.trafficMult) : cfg.trafficMult;
-      const cacheCpuFactor = cfg.readCache ? 0.75 : 1.0;
+
+      // Dynamic capacity & utilization physics driven by user-defined vCPU, RAM, and targetRps
+      const podCapacityRps = Math.max(80, Math.round(cfg.vcpuPerPod * (cfg.readCache ? 650 : 400)));
+      const maxCapacityRps = Math.max(0, now) * podCapacityRps;
+      const demandRps = Math.max(0, cfg.targetRps);
+      const effectiveRps = cfg.rateLimiter ? Math.min(cfg.rateLimitRps, demandRps) : demandRps;
+      const rpsPerPod = now <= 0 ? 0 : effectiveRps / now;
+      const utilizationPct =
+        now <= 0 ? 100 : Math.round((effectiveRps / Math.max(1, maxCapacityRps)) * 100);
+      const droppedRps =
+        now <= 0 ? demandRps : Math.max(0, demandRps - Math.min(effectiveRps, maxCapacityRps));
+
       const rawPodCpu =
         now <= 0
           ? 0
-          : ((baseCpuVal * tierCpuFactor * effectiveTraffic * cacheCpuFactor) /
-              Math.pow(now, 0.68));
-      const perPodCpu = now <= 0 ? 0 : Math.min(99.5, Math.max(4.2, rawPodCpu));
-      const perPodRam = now <= 0 ? 0 : Math.round(baseRamVal * tierRamFactor);
+          : (baseCpuVal * (rpsPerPod / 240)) / Math.max(0.25, Math.pow(cfg.vcpuPerPod, 0.85)) *
+            (cfg.readCache ? 0.72 : 1.0);
+      const perPodCpu = now <= 0 ? 0 : Math.min(99.9, Math.max(2.4, rawPodCpu));
+      const ramBufferMiB = Math.min(cfg.ramPerPodMiB * 0.35, Math.round(rpsPerPod * 0.08));
+      const perPodRam =
+        now <= 0
+          ? 0
+          : Math.min(
+              cfg.ramPerPodMiB,
+              Math.round(baseRamVal * Math.sqrt(cfg.ramPerPodMiB / 512) + ramBufferMiB),
+            );
       const totalRam = perPodRam * Math.max(0, now);
+      const totalVcpu = cfg.vcpuPerPod * Math.max(0, now);
+
       const inbound = activeEdges.filter((e) => e.to === svc);
       const outbound = activeEdges.filter((e) => e.from === svc);
       const bottleneckTarget = outbound
         .map((e) => e.to)
-        .find((ds) => (now >= 4 || cfg.trafficMult >= 2) && (replicasMap[ds] ?? 1) <= 1);
-      const baseP95 = Math.max(8, Math.round((48 * Math.sqrt(effectiveTraffic)) / Math.sqrt(Math.max(1, now))));
-      const cachedP95 = cfg.readCache ? Math.max(5, Math.round(baseP95 * 0.62)) : baseP95;
-      const p95Now = now <= 0 ? 980 : cachedP95 + cfg.injectedLatencyMs;
+        .find((ds) => {
+          const dsReps = replicasMap[ds] ?? 1;
+          const dsCfg = nodeConfigs[ds] ?? DEFAULT_NODE_CONFIG;
+          const dsCap = dsReps * Math.max(80, Math.round(dsCfg.vcpuPerPod * (dsCfg.readCache ? 650 : 400)));
+          return effectiveRps > dsCap * 0.85;
+        });
+      const bottleneckRecommendedPods = bottleneckTarget
+        ? (() => {
+            const dsCfg = nodeConfigs[bottleneckTarget] ?? DEFAULT_NODE_CONFIG;
+            const dsPodCap = Math.max(80, Math.round(dsCfg.vcpuPerPod * (dsCfg.readCache ? 650 : 400)));
+            return Math.max(2, Math.min(256, Math.ceil(effectiveRps / (dsPodCap * 0.75))));
+          })()
+        : 0;
+      const selfRecommendedPods = Math.max(
+        1,
+        Math.min(256, Math.ceil(demandRps / (podCapacityRps * 0.75))),
+      );
+
+      const queuePenaltyMs =
+        utilizationPct > 80 ? Math.round(Math.pow(utilizationPct - 80, 1.38) * 1.6) : 0;
+      const baseP95 = Math.max(
+        6,
+        Math.round((42 * Math.sqrt(Math.max(0.2, rpsPerPod / 240))) / Math.sqrt(Math.max(0.5, cfg.vcpuPerPod))),
+      );
+      const cachedP95 = cfg.readCache ? Math.max(4, Math.round(baseP95 * 0.62)) : baseP95;
+      const p95Now = now <= 0 ? 980 : cachedP95 + queuePenaltyMs + cfg.injectedLatencyMs;
+
       return {
         serviceName: svc,
         layer: template.layers[svc] ?? catalogMatch?.layer ?? "domain",
@@ -945,8 +1002,17 @@ export function StudioWorkbench() {
         perPodCpu,
         perPodRam,
         totalRam,
+        totalVcpu,
+        demandRps,
+        effectiveRps,
+        maxCapacityRps,
+        podCapacityRps,
+        utilizationPct,
+        droppedRps,
+        selfRecommendedPods,
         p95Now,
         bottleneckTarget,
+        bottleneckRecommendedPods,
         cfg,
       };
     });
@@ -962,18 +1028,14 @@ export function StudioWorkbench() {
       : 0;
   const healthyServicesCount = deploymentRows.filter((r) => r.replicasNow > 0).length;
   const downServicesCount = deploymentRows.length - healthyServicesCount;
-  const bottleneckCount = deploymentRows.filter((r) => Boolean(r.bottleneckTarget)).length;
-  const totalVcpuAllocated = deploymentRows.reduce((sum, r) => {
-    const vcpuPerPod = r.cfg.instanceTier === "S" ? 0.5 : r.cfg.instanceTier === "L" ? 2.0 : 1.0;
-    return sum + r.replicasNow * vcpuPerPod;
-  }, 0);
-  const maxServerVcpu = 16;
-  const maxServerRamMiB = 4096;
+  const bottleneckCount = deploymentRows.filter(
+    (r) => Boolean(r.bottleneckTarget) || r.utilizationPct > 90,
+  ).length;
+  const totalVcpuAllocated = deploymentRows.reduce((sum, r) => sum + r.totalVcpu, 0);
+  const maxServerVcpu = Math.max(16, Math.ceil(totalVcpuAllocated / 16) * 16);
+  const maxServerRamMiB = Math.max(4096, Math.ceil(totalRamMiB / 4096) * 4096);
   const peakCpuRow = [...deploymentRows].sort((a, b) => b.perPodCpu - a.perPodCpu)[0];
-  const clusterRps = deploymentRows.reduce(
-    (sum, r) => sum + r.replicasNow * r.cfg.trafficMult * 240,
-    0,
-  );
+  const clusterRps = deploymentRows.reduce((sum, r) => sum + r.effectiveRps, 0);
   const avgClusterP95 =
     healthyServicesCount > 0
       ? Math.round(
@@ -1063,7 +1125,7 @@ export function StudioWorkbench() {
           <div className="flex items-center gap-1.5">
             <span className="font-mono text-[10px] uppercase text-slate-400">Traffic</span>
             <span className="font-mono font-semibold text-slate-100">
-              {(totalRunningPods * 240).toLocaleString()} req/s
+              {clusterRps.toLocaleString()} req/s
             </span>
           </div>
           <div className="h-3 w-px bg-slate-800" />
@@ -1075,10 +1137,10 @@ export function StudioWorkbench() {
             <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-800">
               <div
                 className="h-full rounded-full bg-sky-400/80 transition-all"
-                style={{ width: `${Math.min(100, Math.round((totalRamMiB / 4096) * 100))}%` }}
+                style={{ width: `${Math.min(100, Math.round((totalRamMiB / maxServerRamMiB) * 100))}%` }}
               />
             </div>
-            <span className="font-mono text-[10px] text-slate-500">/ 4096</span>
+            <span className="font-mono text-[10px] text-slate-500">/ {maxServerRamMiB}</span>
           </div>
         </div>
 
@@ -1306,7 +1368,11 @@ export function StudioWorkbench() {
                           Object.fromEntries(
                             customServices.map((s) => [
                               s,
-                              { ...(nodeConfigs[s] ?? DEFAULT_NODE_CONFIG), trafficMult: 4 },
+                              {
+                                ...(nodeConfigs[s] ?? DEFAULT_NODE_CONFIG),
+                                targetRps: 2400,
+                                trafficMult: 10,
+                              },
                             ]),
                           ),
                         );
@@ -1487,7 +1553,7 @@ export function StudioWorkbench() {
                 {/* Cluster-wide KPI Summary Pills (Clean Monochrome Engineering Readouts, Zero Emojis) */}
                 <div className="flex items-center gap-2 font-mono text-[11px]">
                   <span className="hidden rounded border border-slate-800 bg-slate-900 px-2 py-0.5 text-slate-400 sm:inline-block">
-                    REQ/S <strong className="text-slate-100">{(totalRunningPods * 240).toLocaleString()}</strong>
+                    REQ/S <strong className="text-slate-100">{clusterRps.toLocaleString()}</strong>
                   </span>
                   <span className="rounded border border-slate-800 bg-slate-900 px-2 py-0.5 text-slate-400">
                     PODS <strong className="text-slate-100">{totalRunningPods}</strong>
@@ -1765,7 +1831,7 @@ export function StudioWorkbench() {
                                     applySandboxAction({
                                       action: "SCALE",
                                       service: row.serviceName,
-                                      replicas: Math.min(8, (row.replicasNow <= 0 ? 0 : row.replicasNow) + 1),
+                                      replicas: Math.min(256, (row.replicasNow <= 0 ? 0 : row.replicasNow) + 1),
                                     });
                                   }}
                                   className="flex size-5 items-center justify-center rounded border border-slate-800 bg-slate-950 font-mono text-[11px] text-slate-400 hover:border-slate-600 hover:text-slate-100"
@@ -1972,27 +2038,77 @@ export function StudioWorkbench() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-1 pt-0.5">
-                      {([1, 2, 4, 8] as const).map((preset) => (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() =>
-                            applySandboxAction({
-                              action: "SCALE",
-                              service: selectedRow.serviceName,
-                              replicas: preset,
-                            })
-                          }
-                          className={`h-7 rounded border font-mono text-xs font-semibold transition ${
-                            selectedRow.replicasNow === preset
-                              ? "border-slate-200 bg-slate-100 text-slate-950 shadow-xs"
-                              : "border-slate-800 bg-slate-950/80 text-slate-300 hover:border-slate-600 hover:text-white"
-                          }`}
-                        >
-                          ×{preset}
-                        </button>
-                      ))}
+                    {/* Free-Form Replica / Pod Count Input + Quick Presets (No ×8 Cap!) */}
+                    <div className="space-y-1.5 pt-0.5">
+                      <div className="flex items-center justify-between gap-2 text-[10px] text-slate-400">
+                        <span>Custom Replicas (1–256 Pods)</span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              applySandboxAction({
+                                action: selectedRow.replicasNow <= 1 ? "STOP" : "SCALE",
+                                service: selectedRow.serviceName,
+                                replicas: Math.max(0, selectedRow.replicasNow - 1),
+                              })
+                            }
+                            className="flex size-6 items-center justify-center rounded border border-slate-800 bg-slate-950 font-mono text-xs text-slate-300 hover:border-slate-600 hover:text-white"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min={0}
+                            max={256}
+                            aria-label="Custom pod replica count"
+                            value={selectedRow.replicasNow}
+                            onChange={(e) => {
+                              const val = Math.max(0, Math.min(256, Number(e.target.value) || 0));
+                              applySandboxAction({
+                                action: val === 0 ? "STOP" : "SCALE",
+                                service: selectedRow.serviceName,
+                                replicas: val,
+                              });
+                            }}
+                            className="h-6 w-14 rounded border border-slate-700 bg-slate-950 px-1.5 text-center font-mono text-xs font-semibold text-slate-100 focus:border-sky-400 focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              applySandboxAction({
+                                action: "SCALE",
+                                service: selectedRow.serviceName,
+                                replicas: Math.min(256, selectedRow.replicasNow + 1),
+                              })
+                            }
+                            className="flex size-6 items-center justify-center rounded border border-slate-800 bg-slate-950 font-mono text-xs text-slate-300 hover:border-slate-600 hover:text-white"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-5 gap-1">
+                        {([1, 4, 8, 16, 32] as const).map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() =>
+                              applySandboxAction({
+                                action: "SCALE",
+                                service: selectedRow.serviceName,
+                                replicas: preset,
+                              })
+                            }
+                            className={`h-6 rounded border font-mono text-[10.5px] font-semibold transition ${
+                              selectedRow.replicasNow === preset
+                                ? "border-slate-200 bg-slate-100 text-slate-950 shadow-xs"
+                                : "border-slate-800 bg-slate-950/80 text-slate-300 hover:border-slate-600 hover:text-white"
+                            }`}
+                          >
+                            ×{preset}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                     <div className="grid grid-cols-3 gap-1">
                       <button
@@ -2031,40 +2147,82 @@ export function StudioWorkbench() {
                     </div>
                   </div>
 
-                  {/* Card 2: Hardware Spec & Stress Simulation (Instance Tier, Traffic Spike, Latency Fault) */}
-                  <div className="space-y-2 rounded-xl border border-slate-800/90 bg-slate-900/60 p-2.5 text-[11px]">
+                  {/* Card 2: Free-Form Hardware Spec & Stress Simulation (Custom vCPU, RAM, Traffic req/s, Latency ms) */}
+                  <div className="space-y-2.5 rounded-xl border border-slate-800/90 bg-slate-900/60 p-2.5 text-[11px]">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                       Hardware & Stress Simulation
                     </p>
 
-                    {/* Instance Tier */}
-                    <div className="space-y-1">
+                    {/* 1. Custom Hardware Spec (vCPU & RAM per Pod) + Quick Tier Presets */}
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span>Instance Size (vCPU / RAM)</span>
+                        <span>Pod Spec (vCPU / RAM MiB)</span>
                         <span className="font-mono text-slate-200">
-                          {selectedRow.cfg.instanceTier === "S"
-                            ? "0.5 vCPU · 256M"
-                            : selectedRow.cfg.instanceTier === "L"
-                              ? "2 vCPU · 1024M"
-                              : "1 vCPU · 512M"}
+                          {selectedRow.cfg.vcpuPerPod} vCPU · {selectedRow.cfg.ramPerPodMiB}M/pod
                         </span>
                       </div>
-                      <div className="grid grid-cols-3 gap-1">
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <label className="flex items-center justify-between rounded border border-slate-800 bg-slate-950/90 px-2 py-1 font-mono text-[10px] text-slate-400">
+                          <span>vCPU</span>
+                          <input
+                            type="number"
+                            min={0.25}
+                            max={128}
+                            step={0.5}
+                            aria-label="vCPU per pod"
+                            value={selectedRow.cfg.vcpuPerPod}
+                            onChange={(e) => {
+                              const v = Math.max(0.25, Math.min(128, Number(e.target.value) || 0.25));
+                              updateNodeConfig(selectedRow.serviceName, {
+                                instanceTier: "CUSTOM",
+                                vcpuPerPod: v,
+                              });
+                            }}
+                            className="w-12 bg-transparent text-right font-mono text-[11px] font-semibold text-slate-100 focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex items-center justify-between rounded border border-slate-800 bg-slate-950/90 px-2 py-1 font-mono text-[10px] text-slate-400">
+                          <span>RAM(M)</span>
+                          <input
+                            type="number"
+                            min={64}
+                            max={65536}
+                            step={128}
+                            aria-label="RAM MiB per pod"
+                            value={selectedRow.cfg.ramPerPodMiB}
+                            onChange={(e) => {
+                              const m = Math.max(64, Math.min(65536, Number(e.target.value) || 64));
+                              updateNodeConfig(selectedRow.serviceName, {
+                                instanceTier: "CUSTOM",
+                                ramPerPodMiB: m,
+                              });
+                            }}
+                            className="w-14 bg-transparent text-right font-mono text-[11px] font-semibold text-slate-100 focus:outline-none"
+                          />
+                        </label>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1">
                         {(
                           [
-                            ["S", "Small"],
-                            ["M", "Medium"],
-                            ["L", "Large"],
+                            ["S", "0.5C/256M", 0.5, 256],
+                            ["M", "1C/512M", 1, 512],
+                            ["L", "2C/1G", 2, 1024],
+                            ["XL", "4C/2G", 4, 2048],
                           ] as const
-                        ).map(([tierKey, tierLabel]) => (
+                        ).map(([tierKey, tierLabel, vcpu, ram]) => (
                           <button
                             key={tierKey}
                             type="button"
                             onClick={() =>
-                              updateNodeConfig(selectedRow.serviceName, { instanceTier: tierKey })
+                              updateNodeConfig(selectedRow.serviceName, {
+                                instanceTier: tierKey,
+                                vcpuPerPod: vcpu,
+                                ramPerPodMiB: ram,
+                              })
                             }
-                            className={`h-6 rounded border font-mono text-[10px] font-semibold transition ${
-                              selectedRow.cfg.instanceTier === tierKey
+                            className={`h-6 rounded border font-mono text-[9.5px] font-semibold transition ${
+                              selectedRow.cfg.vcpuPerPod === vcpu &&
+                              selectedRow.cfg.ramPerPodMiB === ram
                                 ? "border-slate-200 bg-slate-100 text-slate-950"
                                 : "border-slate-800 bg-slate-950/80 text-slate-400 hover:border-slate-600 hover:text-slate-200"
                             }`}
@@ -2075,44 +2233,78 @@ export function StudioWorkbench() {
                       </div>
                     </div>
 
-                    {/* Traffic Multiplier */}
-                    <div className="space-y-1">
+                    {/* 2. Free-Form Incoming Traffic Input (req/s) + Presets */}
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span>Traffic Load Spike</span>
-                        <span className="font-mono text-slate-200">
-                          {selectedRow.cfg.trafficMult}× ({selectedRow.replicasNow * selectedRow.cfg.trafficMult * 240} req/s)
-                        </span>
+                        <span>Incoming Traffic (req/s)</span>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={0}
+                            max={1000000}
+                            step={100}
+                            aria-label="Custom incoming traffic req/s"
+                            value={selectedRow.cfg.targetRps}
+                            onChange={(e) => {
+                              const rps = Math.max(0, Math.min(1000000, Number(e.target.value) || 0));
+                              updateNodeConfig(selectedRow.serviceName, { targetRps: rps });
+                            }}
+                            className="h-6 w-20 rounded border border-slate-700 bg-slate-950 px-1.5 text-right font-mono text-[11px] font-semibold text-slate-100 focus:border-sky-400 focus:outline-none"
+                          />
+                          <span className="font-mono text-[9.5px] text-slate-500">req/s</span>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-4 gap-1">
-                        {([1, 2, 4, 8] as const).map((mult) => (
+                      <div className="grid grid-cols-5 gap-1">
+                        {(
+                          [
+                            [240, "240"],
+                            [1000, "1k"],
+                            [2500, "2.5k"],
+                            [5000, "5k"],
+                            [15000, "15k"],
+                          ] as const
+                        ).map(([rpsVal, rpsLabel]) => (
                           <button
-                            key={mult}
+                            key={rpsVal}
                             type="button"
                             onClick={() =>
-                              updateNodeConfig(selectedRow.serviceName, { trafficMult: mult })
+                              updateNodeConfig(selectedRow.serviceName, { targetRps: rpsVal })
                             }
                             className={`h-6 rounded border font-mono text-[10px] font-semibold transition ${
-                              selectedRow.cfg.trafficMult === mult
+                              selectedRow.cfg.targetRps === rpsVal
                                 ? "border-slate-200 bg-slate-100 text-slate-950"
                                 : "border-slate-800 bg-slate-950/80 text-slate-400 hover:border-slate-600 hover:text-slate-200"
                             }`}
                           >
-                            {mult}×
+                            {rpsLabel}
                           </button>
                         ))}
                       </div>
                     </div>
 
-                    {/* Injected Network Latency */}
-                    <div className="space-y-1">
+                    {/* 3. Free-Form Network / Query Lag Input (+ms) + Presets */}
+                    <div className="space-y-1.5">
                       <div className="flex items-center justify-between text-[10px] text-slate-400">
-                        <span>Network / Query Lag</span>
-                        <span className="font-mono text-slate-200">
-                          +{selectedRow.cfg.injectedLatencyMs}ms
-                        </span>
+                        <span>Network / Query Lag (+ms)</span>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={0}
+                            max={30000}
+                            step={25}
+                            aria-label="Custom injected network latency ms"
+                            value={selectedRow.cfg.injectedLatencyMs}
+                            onChange={(e) => {
+                              const ms = Math.max(0, Math.min(30000, Number(e.target.value) || 0));
+                              updateNodeConfig(selectedRow.serviceName, { injectedLatencyMs: ms });
+                            }}
+                            className="h-6 w-16 rounded border border-slate-700 bg-slate-950 px-1.5 text-right font-mono text-[11px] font-semibold text-slate-100 focus:border-sky-400 focus:outline-none"
+                          />
+                          <span className="font-mono text-[9.5px] text-slate-500">ms</span>
+                        </div>
                       </div>
-                      <div className="grid grid-cols-4 gap-1">
-                        {([0, 40, 180, 600] as const).map((lag) => (
+                      <div className="grid grid-cols-5 gap-1">
+                        {([0, 50, 200, 500, 1500] as const).map((lag) => (
                           <button
                             key={lag}
                             type="button"
@@ -2125,14 +2317,14 @@ export function StudioWorkbench() {
                                 : "border-slate-800 bg-slate-950/80 text-slate-400 hover:border-slate-600 hover:text-slate-200"
                             }`}
                           >
-                            +{lag}ms
+                            +{lag}
                           </button>
                         ))}
                       </div>
                     </div>
                   </div>
 
-                  {/* Card 3: Resilience & Architecture Policies (4 Interactive Toggles, Zero Emojis) */}
+                  {/* Card 3: Resilience & Architecture Policies (4 Interactive Toggles + Custom Rate Limit Cap) */}
                   <div className="space-y-1.5 rounded-xl border border-slate-800/90 bg-slate-900/60 p-2.5 text-[11px]">
                     <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                       Resilience Policies
@@ -2170,9 +2362,27 @@ export function StudioWorkbench() {
                         );
                       })}
                     </div>
+                    {selectedRow.cfg.rateLimiter && (
+                      <div className="flex items-center justify-between pt-1 text-[10px] text-slate-400">
+                        <span>Rate Limit Ceiling (req/s)</span>
+                        <input
+                          type="number"
+                          min={50}
+                          max={500000}
+                          step={100}
+                          value={selectedRow.cfg.rateLimitRps}
+                          onChange={(e) =>
+                            updateNodeConfig(selectedRow.serviceName, {
+                              rateLimitRps: Math.max(50, Number(e.target.value) || 50),
+                            })
+                          }
+                          className="h-5 w-20 rounded border border-slate-700 bg-slate-950 px-1.5 text-right font-mono text-[10.5px] font-semibold text-slate-100"
+                        />
+                      </div>
+                    )}
                   </div>
 
-                  {/* Card 4: Impact & Interactive Topology Wiring */}
+                  {/* Card 4: Live Quantitative Change Impact & Topology Blast Radius */}
                   <div
                     className={`space-y-2 rounded-xl border p-2.5 text-[11px] ${
                       selectedRow.replicasNow === 0
@@ -2180,33 +2390,134 @@ export function StudioWorkbench() {
                         : "border-slate-800/90 bg-slate-900/60"
                     }`}
                   >
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                      Impact & Live Topology Wiring
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                        Live Change Impact & Capacity
+                      </p>
+                      <span
+                        className={`font-mono text-[10px] font-semibold ${
+                          selectedRow.replicasNow === 0 || selectedRow.utilizationPct > 100
+                            ? "text-rose-400"
+                            : selectedRow.utilizationPct > 80
+                              ? "text-amber-300"
+                              : "text-emerald-400"
+                        }`}
+                      >
+                        {selectedRow.replicasNow === 0
+                          ? "0% CAP (503)"
+                          : `${selectedRow.utilizationPct}% Saturation`}
+                      </span>
+                    </div>
+
+                    {/* Demand vs. Capacity Progress Bar */}
+                    <div className="space-y-1 font-mono text-[10px]">
+                      <div className="flex items-center justify-between text-slate-400">
+                        <span>
+                          Demand: <strong className="text-slate-100">{selectedRow.demandRps.toLocaleString()}</strong> req/s
+                        </span>
+                        <span>
+                          Max Cap: <strong className="text-slate-100">{selectedRow.maxCapacityRps.toLocaleString()}</strong> req/s
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            selectedRow.replicasNow === 0 || selectedRow.utilizationPct > 100
+                              ? "bg-rose-500"
+                              : selectedRow.utilizationPct > 80
+                                ? "bg-amber-400"
+                                : "bg-sky-400/80"
+                          }`}
+                          style={{
+                            width: `${Math.min(100, selectedRow.utilizationPct)}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Live Quantitative Impact Delta Matrix */}
+                    <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-slate-800/90 bg-slate-950/70 p-2 font-mono text-[10px]">
+                      <div>
+                        <span className="block text-[9px] uppercase text-slate-500">Pods & vCPU</span>
+                        <span className="font-semibold text-slate-100">
+                          {selectedRow.replicasBefore}→×{selectedRow.replicasNow} ({selectedRow.totalVcpu.toFixed(1)}C)
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block text-[9px] uppercase text-slate-500">Memory Pool</span>
+                        <span className="font-semibold text-slate-100">
+                          {selectedRow.perPodRam}M × {selectedRow.replicasNow} = {selectedRow.totalRam}M
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block text-[9px] uppercase text-slate-500">p95 Latency</span>
+                        <span className="font-semibold text-slate-100">
+                          42ms → {selectedRow.p95Now}ms
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block text-[9px] uppercase text-slate-500">Dropped / 429-503</span>
+                        <span
+                          className={`font-semibold ${
+                            selectedRow.droppedRps > 0 ? "text-rose-400" : "text-slate-300"
+                          }`}
+                        >
+                          {selectedRow.droppedRps.toLocaleString()} req/s
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Actionable Auto-Fix Recommendations when Overloaded or Bottlenecked */}
                     {selectedRow.replicasNow === 0 ? (
-                      <p className="text-rose-300">
+                      <p className="text-[10.5px] text-rose-300">
                         <ShieldAlert className="mr-1 inline size-3.5" />
                         <strong>503 Circuit Open:</strong> Callers (
                         {selectedRow.inboundCallers.join(", ") || "Gateway"}) failing fast.
                       </p>
-                    ) : selectedRow.replicasNow > 1 ? (
+                    ) : (
                       <div className="space-y-1">
-                        <p className="text-slate-200">
-                          Scaled <strong>{selectedRow.replicasBefore}</strong> →{" "}
-                          <strong>×{selectedRow.replicasNow}</strong> (~
-                          {Math.round(100 / selectedRow.replicasNow)}%/pod · p95{" "}
-                          <strong>{selectedRow.p95Now}ms</strong>).
-                        </p>
+                        {selectedRow.utilizationPct > 85 &&
+                          selectedRow.selfRecommendedPods > selectedRow.replicasNow && (
+                            <div className="flex items-center justify-between gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-200">
+                              <span className="truncate">
+                                Overload ({selectedRow.utilizationPct}%): Need ×{selectedRow.selfRecommendedPods} pods
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  applySandboxAction({
+                                    action: "SCALE",
+                                    service: selectedRow.serviceName,
+                                    replicas: selectedRow.selfRecommendedPods,
+                                  })
+                                }
+                                className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-slate-950 hover:bg-white"
+                              >
+                                Scale ×{selectedRow.selfRecommendedPods}
+                              </button>
+                            </div>
+                          )}
                         {selectedRow.bottleneckTarget && (
-                          <p className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-1 text-[10px] text-amber-300">
-                            Bottleneck: <strong>{selectedRow.bottleneckTarget}</strong> (1 pod)
-                          </p>
+                          <div className="flex items-center justify-between gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] text-amber-200">
+                            <span className="truncate">
+                              Downstream saturation: <strong>{selectedRow.bottleneckTarget}</strong>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                applySandboxAction({
+                                  action: "SCALE",
+                                  service: selectedRow.bottleneckTarget!,
+                                  replicas: selectedRow.bottleneckRecommendedPods,
+                                })
+                              }
+                              className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[9.5px] font-semibold text-slate-950 hover:bg-white"
+                            >
+                              Fix ×{selectedRow.bottleneckRecommendedPods}
+                            </button>
+                          </div>
                         )}
                       </div>
-                    ) : (
-                      <p className="text-slate-400">
-                        Single-pod baseline (100% traffic). Scale ×4 or enable Cache/HPA to optimize.
-                      </p>
                     )}
 
                     <div className="space-y-1.5 border-t border-slate-800/80 pt-1.5 font-mono text-[10px]">
