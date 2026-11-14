@@ -279,8 +279,9 @@ function renderIsoBox(
   ry: number,
   height: number,
   stroke: string,
-  fillBase = "var(--background)",
-  strokeWidth = 1.4,
+  fillBase = "#0b1120",
+  strokeWidth = 1.2,
+  topFill?: string,
 ) {
   const topY = cy - height;
   const topPoints = `${cx},${topY - ry} ${cx + rx},${topY} ${cx},${topY + ry} ${cx - rx},${topY}`;
@@ -288,38 +289,41 @@ function renderIsoBox(
   const rightPoints = `${cx},${topY + ry} ${cx + rx},${topY} ${cx + rx},${cy} ${cx},${cy + ry}`;
   return (
     <g>
-      {/* Base solid backing so dashed lines behind don't bleed through */}
+      {/* Base solid silhouette so lines behind never bleed through */}
       <polygon
         points={`${cx},${topY - ry} ${cx + rx},${topY} ${cx + rx},${cy} ${cx},${cy + ry} ${cx - rx},${cy} ${cx - rx},${topY}`}
         fill={fillBase}
       />
-      {/* Left Shaded Wall */}
+      {/* Left Medium-Lit Isometric Wall */}
       <polygon
         points={leftPoints}
-        fill="currentColor"
-        opacity="0.12"
+        fill={fillBase}
         stroke={stroke}
-        strokeWidth={strokeWidth}
+        strokeOpacity="0.65"
+        strokeWidth={strokeWidth * 0.9}
         strokeLinejoin="round"
       />
-      {/* Right Deep-Shaded Wall */}
+      <polygon points={leftPoints} fill={stroke} opacity="0.1" />
+      {/* Right Deep-Shaded Isometric Wall */}
       <polygon
         points={rightPoints}
-        fill="currentColor"
-        opacity="0.22"
+        fill="#050811"
+        opacity="0.78"
         stroke={stroke}
-        strokeWidth={strokeWidth}
+        strokeOpacity="0.55"
+        strokeWidth={strokeWidth * 0.9}
         strokeLinejoin="round"
       />
       {/* Top Illuminated Roof */}
       <polygon
         points={topPoints}
-        fill={fillBase}
+        fill={topFill ?? fillBase}
         stroke={stroke}
+        strokeOpacity="0.9"
         strokeWidth={strokeWidth}
         strokeLinejoin="round"
       />
-      <polygon points={topPoints} fill="currentColor" opacity="0.04" />
+      <polygon points={topPoints} fill={stroke} opacity="0.14" />
     </g>
   );
 }
@@ -1043,87 +1047,59 @@ export function StudioObservability({
             <g>
               {/* Outer 3D Slab Side Thickness */}
               <polygon
-                points="110,340 600,600 1090,340 1090,352 600,612 110,352"
+                points="70,335 600,616 1130,335 1130,345 600,626 70,345"
                 fill="currentColor"
-                opacity="0.11"
+                opacity="0.08"
               />
               {/* Main Isometric Platform Surface */}
               <polygon
-                points="600,80 1090,340 600,600 110,340"
+                points="600,54 1130,335 600,616 70,335"
                 fill="currentColor"
-                opacity="0.035"
+                opacity="0.025"
                 stroke="currentColor"
-                strokeWidth="1.2"
-                strokeDasharray="5 4"
+                strokeOpacity="0.2"
+                strokeWidth="1.1"
+                strokeDasharray="6 5"
               />
               {/* Inner Tier Zone Divider Lines */}
               <line
-                x1="435"
-                y1="168"
-                x2="925"
-                y2="428"
+                x1="423"
+                y1="148"
+                x2="953"
+                y2="429"
                 stroke="currentColor"
-                strokeDasharray="3 4"
-                opacity="0.22"
+                strokeDasharray="4 5"
+                opacity="0.14"
               />
               <line
-                x1="275"
-                y1="252"
-                x2="765"
-                y2="512"
+                x1="247"
+                y1="241"
+                x2="777"
+                y2="522"
                 stroke="currentColor"
-                strokeDasharray="3 4"
-                opacity="0.22"
+                strokeDasharray="4 5"
+                opacity="0.14"
               />
-              {/* 3D Tier Zone Labels */}
-              <text x="290" y="182" fill="currentColor" fontSize="11" opacity="0.55">
-                {t("Ingress / Edge Tier")}
-              </text>
-              <text x="910" y="495" fill="currentColor" fontSize="11" opacity="0.55" textAnchor="end">
-                {t("Data & Downstream Tier")}
-              </text>
             </g>
           )}
 
-          {/* Legend & Viewport Metadata */}
-          <text
-            x="20"
-            y={canvasOnly ? "628" : "26"}
-            fill="currentColor"
-            fontSize={canvasOnly ? "10" : "12"}
-            opacity={canvasOnly ? "0.45" : "1"}
-          >
-            {t("Static dependencies (dashed)")}
-          </text>
-          <text
-            x="20"
-            y={canvasOnly ? "644" : "44"}
-            fill="currentColor"
-            fontSize={canvasOnly ? "10" : "12"}
-            opacity={canvasOnly ? "0.45" : "1"}
-          >
-            {t("Observed runtime (solid)")}
-          </text>
-          <text
-            x="1180"
-            y={canvasOnly ? "628" : "26"}
-            fill="currentColor"
-            fontSize={canvasOnly ? "11" : "12"}
-            opacity={canvasOnly ? "0.55" : "1"}
-            textAnchor="end"
-          >
-            {view}
-          </text>
-          <text
-            x="1180"
-            y={canvasOnly ? "644" : "44"}
-            fill="currentColor"
-            fontSize="10"
-            opacity="0.5"
-            textAnchor="end"
-          >
-            {layoutMode} · {Math.round(zoom * 100)}%
-          </text>
+          {/* Legend & Viewport Metadata (hidden in clean canvasOnly mode) */}
+          {!canvasOnly && (
+            <>
+              <text x="20" y="26" fill="currentColor" fontSize="12">
+                {t("Static dependencies (dashed)")}
+              </text>
+              <text x="20" y="44" fill="currentColor" fontSize="12">
+                {t("Observed runtime (solid)")}
+              </text>
+              <text x="1180" y="26" fill="currentColor" fontSize="12" textAnchor="end">
+                {view}
+              </text>
+              <text x="1180" y="44" fill="currentColor" fontSize="10" opacity="0.5" textAnchor="end">
+                {layoutMode} · {Math.round(zoom * 100)}%
+              </text>
+            </>
+          )}
 
           {/* Static Dependency Edges + Severed Link / Circuit Breaker Banner when target is STOPPED */}
           {staticEdges.map((edge) => {
@@ -1208,35 +1184,22 @@ export function StudioObservability({
                     fill="none"
                     stroke={edgeColor}
                     strokeDasharray={targetStopped ? "6 4" : undefined}
-                    strokeWidth="2.2"
-                    opacity={targetStopped ? "0.9" : "0.65"}
+                    strokeWidth="1.8"
+                    opacity={targetStopped ? "0.85" : "0.5"}
                     markerEnd={
                       targetStopped ? "url(#studio-arrow-fault)" : "url(#studio-arrow-live)"
                     }
                   />
-                  {/* Static snapshot anchor dots + Live animated motion pulses */}
-                  <circle
-                    cx={qx1}
-                    cy={qy1}
-                    r="3"
-                    fill={edgeColor}
-                    opacity="0.65"
-                  />
-                  <circle
-                    cx={mx}
-                    cy={my}
-                    r="4.5"
-                    fill={edgeColor}
-                  />
-                  <circle
-                    cx={qx2}
-                    cy={qy2}
-                    r="3"
-                    fill={edgeColor}
-                    opacity="0.65"
-                  />
+                  {/* Static snapshot anchor dots (only in legacy non-canvasOnly mode) + Live animated motion pulse */}
+                  {!canvasOnly && (
+                    <>
+                      <circle cx={qx1} cy={qy1} r="3" fill={edgeColor} opacity="0.65" />
+                      <circle cx={mx} cy={my} r="4.5" fill={edgeColor} />
+                      <circle cx={qx2} cy={qy2} r="3" fill={edgeColor} opacity="0.65" />
+                    </>
+                  )}
                   {!targetStopped && (
-                    <circle r="4.5" fill="#38bdf8">
+                    <circle r="3.8" fill="#38bdf8">
                       <animateMotion dur={`${speedSec}s`} repeatCount="indefinite" path={pathD} />
                     </circle>
                   )}
@@ -1270,20 +1233,14 @@ export function StudioObservability({
               );
               const strokeColor = theme.stroke;
 
-              // 3D Isometric Pedestal + Volumetric Stacked Replica Cubes (Cloudcraft style)
+              // 3D Isometric Pedestal + Sleek Volumetric Sculptures & Floating Pill Label (Cloudcraft / Isoflow style)
               if (view === "3D") {
-                const towerHeight = isStopped ? 8 : 16 + activePods * 5;
-                // Compute up to 8 3D mini container cube positions arranged in 2 rows × 4 columns on the pedestal roof
-                const podSlots = [
-                  { dx: -30, dy: -6 },
-                  { dx: -10, dy: -15 },
-                  { dx: 10, dy: -6 },
-                  { dx: 30, dy: -15 },
-                  { dx: -24, dy: 5 },
-                  { dx: -4, dy: -4 },
-                  { dx: 16, dy: 5 },
-                  { dx: 36, dy: -4 },
-                ];
+                const towerHeight = isStopped ? 12 : 18 + Math.min(activePods, 6) * 4;
+                const bladeCount = isStopped ? 1 : Math.min(4, Math.max(2, activePods + 1));
+                const labelWidth = Math.max(114, Math.min(172, name.length * 7 + 50));
+                const pillBadgeText = isStopped
+                  ? "0"
+                  : `×${live ? live.runningReplicas : 1}`;
 
                 return (
                   <g
@@ -1292,6 +1249,7 @@ export function StudioObservability({
                     tabIndex={0}
                     aria-label={name}
                     aria-pressed={isSelected}
+                    style={{ outline: "none" }}
                     onPointerDown={(event) => {
                       event.stopPropagation();
                       const existing = customOffsets[name] ?? { x: 0, y: 0 };
@@ -1334,283 +1292,251 @@ export function StudioObservability({
                         onSelect(name);
                       }
                     }}
-                    className="cursor-grab active:cursor-grabbing"
+                    className="cursor-grab outline-none focus:outline-none active:cursor-grabbing"
                   >
-                    {/* 3D Isometric Ground Shadow */}
+                    {/* Soft 3D Isometric Ambient Ground Glow */}
                     <polygon
-                      points={`${point.x},${point.y - 35} ${point.x + 82},${point.y + 6} ${point.x},${point.y + 47} ${point.x - 82},${point.y + 6}`}
+                      points={`${point.x},${point.y - 30} ${point.x + 70},${point.y + 4} ${point.x},${point.y + 38} ${point.x - 70},${point.y + 4}`}
                       fill={theme.stroke}
-                      opacity="0.16"
+                      opacity={isSelected ? "0.24" : "0.11"}
                     />
 
-                    {/* Drop Target Highlight Isometric Ring */}
-                    {isDropTarget && (
+                    {/* Isometric Diamond Selection / Drop Halo on Ground Plane */}
+                    {(isSelected || isDropTarget) && (
                       <polygon
-                        points={`${point.x},${point.y - 46} ${point.x + 90},${point.y} ${point.x},${point.y + 46} ${point.x - 90},${point.y}`}
+                        points={`${point.x},${point.y - 35} ${point.x + 76},${point.y + 4} ${point.x},${point.y + 43} ${point.x - 76},${point.y + 4}`}
                         fill="none"
-                        stroke="#38bdf8"
-                        strokeWidth="2.5"
-                        strokeDasharray="5 3"
+                        stroke={isDropTarget ? "#38bdf8" : theme.accent}
+                        strokeWidth={isDropTarget ? "2.2" : "1.6"}
+                        strokeDasharray={isDropTarget ? "5 3" : undefined}
+                        opacity="0.9"
                       />
                     )}
 
-                    {/* 3D Base Pedestal Slab */}
+                    {/* Sleek Low-Profile 3D Isometric Base Pad */}
                     {renderIsoBox(
                       point.x,
-                      point.y + 6,
-                      76,
-                      36,
-                      14,
+                      point.y + 4,
+                      60,
+                      29,
+                      7,
                       strokeColor,
+                      "#090e1a",
+                      isSelected || isDropTarget ? 1.8 : 1.1,
                       theme.cardFill,
-                      isSelected || isDropTarget ? 2.6 : 1.5,
                     )}
 
-                    {/* Main 3D Archetype Sculpture: Database Cylinder / Gateway Hex-Prism / Queue Pipeline / Server Blade Rack */}
+                    {/* Main 3D Archetype Sculpture: Multi-Ring Cylinder / Stepped Router Prism / Isometric Pipeline / Stacked Server Blades */}
                     {archetype === "DATABASE" ? (
                       <g>
+                        {/* Cylinder Drum Body */}
                         <path
-                          d={`M ${point.x - 36},${point.y - 8 - towerHeight} L ${point.x - 36},${point.y - 6} A 36 15 0 0 0 ${point.x + 36},${point.y - 6} L ${point.x + 36},${point.y - 8 - towerHeight} Z`}
+                          d={`M ${point.x - 34},${point.y - 6 - towerHeight} L ${point.x - 34},${point.y - 4} A 34 15 0 0 0 ${point.x + 34},${point.y - 4} L ${point.x + 34},${point.y - 6 - towerHeight} Z`}
                           fill={theme.cardFill}
                           stroke={strokeColor}
-                          strokeWidth="1.9"
+                          strokeWidth="1.5"
                         />
-                        {/* 3D Database Platter Grooves */}
+                        {/* Right-Half Cylinder Deep Shadow for Smooth 3D Curvature */}
                         <path
-                          d={`M ${point.x - 36},${point.y - 6 - towerHeight * 0.35} A 36 14 0 0 0 ${point.x + 36},${point.y - 6 - towerHeight * 0.35}`}
-                          fill="none"
-                          stroke={theme.accent}
-                          strokeWidth="1.2"
-                          opacity="0.65"
+                          d={`M ${point.x},${point.y + 11 - towerHeight} L ${point.x},${point.y + 11} A 34 15 0 0 0 ${point.x + 34},${point.y - 4} L ${point.x + 34},${point.y - 6 - towerHeight} Z`}
+                          fill="#050811"
+                          opacity="0.45"
                         />
-                        <path
-                          d={`M ${point.x - 36},${point.y - 6 - towerHeight * 0.7} A 36 14 0 0 0 ${point.x + 36},${point.y - 6 - towerHeight * 0.7}`}
-                          fill="none"
-                          stroke={theme.accent}
-                          strokeWidth="1.2"
-                          opacity="0.65"
-                        />
+                        {/* Glowing Isometric Platter Rings */}
+                        {[0.33, 0.66].map((ratio, idx) => (
+                          <path
+                            key={idx}
+                            d={`M ${point.x - 34},${point.y - 4 - towerHeight * ratio} A 34 15 0 0 0 ${point.x + 34},${point.y - 4 - towerHeight * ratio}`}
+                            fill="none"
+                            stroke={theme.accent}
+                            strokeWidth="1.2"
+                            opacity="0.7"
+                          />
+                        ))}
+                        {/* Top Illuminated Elliptical Cap */}
                         <ellipse
                           cx={point.x}
-                          cy={point.y - 8 - towerHeight}
-                          rx="36"
+                          cy={point.y - 6 - towerHeight}
+                          rx="34"
                           ry="15"
                           fill={theme.iconBg}
                           stroke={strokeColor}
-                          strokeWidth="1.9"
+                          strokeWidth="1.5"
                         />
                         <ellipse
                           cx={point.x}
-                          cy={point.y - 8 - towerHeight}
-                          rx="18"
+                          cy={point.y - 6 - towerHeight}
+                          rx="16"
                           ry="7"
                           fill="none"
                           stroke={theme.accent}
-                          strokeWidth="1.1"
-                          opacity="0.8"
+                          strokeWidth="1.2"
+                          opacity="0.85"
+                        />
+                        <circle
+                          cx={point.x}
+                          cy={point.y - 6 - towerHeight}
+                          r="3"
+                          fill={theme.accent}
                         />
                       </g>
                     ) : archetype === "GATEWAY" ? (
                       <g>
-                        {/* Tapered Hexagonal / Trapezoidal 3D Load-Balancer Router Frustum */}
-                        <polygon
-                          points={`${point.x - 52},${point.y - 6} ${point.x},${point.y + 18} ${point.x + 52},${point.y - 6} ${point.x + 34},${point.y - 10 - towerHeight} ${point.x},${point.y + 6 - towerHeight} ${point.x - 34},${point.y - 10 - towerHeight}`}
-                          fill={theme.iconBg}
-                          stroke={strokeColor}
-                          strokeWidth="1.8"
-                          strokeLinejoin="round"
-                        />
-                        <polygon
-                          points={`${point.x},${point.y - 24 - towerHeight} ${point.x + 34},${point.y - 10 - towerHeight} ${point.x},${point.y + 6 - towerHeight} ${point.x - 34},${point.y - 10 - towerHeight}`}
-                          fill={theme.cardFill}
-                          stroke={strokeColor}
-                          strokeWidth="1.8"
-                        />
-                        {/* Router Signal Spire / Beacon */}
+                        {/* Lower Router Switch Chassis */}
+                        {renderIsoBox(
+                          point.x,
+                          point.y - 3,
+                          42,
+                          20,
+                          11,
+                          strokeColor,
+                          theme.cardFill,
+                          1.4,
+                          theme.iconBg,
+                        )}
+                        {/* Upper Concentric Routing Core */}
+                        {renderIsoBox(
+                          point.x,
+                          point.y - 14,
+                          26,
+                          12.5,
+                          9 + Math.min(activePods, 4) * 2,
+                          theme.accent,
+                          theme.cardFill,
+                          1.3,
+                          theme.iconBg,
+                        )}
+                        {/* Center Signal Beacon */}
                         <line
                           x1={point.x}
-                          y1={point.y - 10 - towerHeight}
+                          y1={point.y - 23 - Math.min(activePods, 4) * 2}
                           x2={point.x}
-                          y2={point.y - 26 - towerHeight}
+                          y2={point.y - 34 - Math.min(activePods, 4) * 2}
                           stroke={theme.accent}
-                          strokeWidth="2"
+                          strokeWidth="1.8"
                         />
                         <circle
                           cx={point.x}
-                          cy={point.y - 28 - towerHeight}
-                          r="4"
+                          cy={point.y - 36 - Math.min(activePods, 4) * 2}
+                          r="3.5"
                           fill={theme.accent}
                         />
                       </g>
                     ) : archetype === "QUEUE" ? (
                       <g>
-                        {/* 3-Partition Isometric Event Stream Pipeline Conduit */}
-                        {[-14, 0, 14].map((offsetY, idx) => (
-                          <g key={idx}>
-                            <rect
-                              x={point.x - 44}
-                              y={point.y - 24 - towerHeight * 0.5 + offsetY * 0.7}
-                              width="88"
-                              height="11"
-                              rx="5.5"
-                              fill={theme.iconBg}
-                              stroke={strokeColor}
-                              strokeWidth="1.5"
-                            />
-                            <circle
-                              cx={point.x - 24 + idx * 24}
-                              cy={point.y - 18.5 - towerHeight * 0.5 + offsetY * 0.7}
-                              r="2.8"
-                              fill={theme.accent}
-                            />
-                          </g>
-                        ))}
+                        {/* 3 True Isometric Parallel Event Stream Channels */}
+                        {[-13, 0, 13].map((offset, idx) => {
+                          const chanX = point.x + offset * 0.85;
+                          const chanY = point.y - 5 + offset * 0.42;
+                          return (
+                            <g key={idx}>
+                              {renderIsoBox(
+                                chanX,
+                                chanY,
+                                32,
+                                8.5,
+                                9 + Math.min(activePods, 4) * 1.5,
+                                strokeColor,
+                                theme.cardFill,
+                                1.2,
+                                theme.iconBg,
+                              )}
+                              <circle
+                                cx={chanX}
+                                cy={chanY - 9 - Math.min(activePods, 4) * 1.5}
+                                r="2.2"
+                                fill={theme.accent}
+                              />
+                            </g>
+                          );
+                        })}
                       </g>
                     ) : (
                       <g>
-                        {renderIsoBox(
-                          point.x,
-                          point.y - 8,
-                          46,
-                          22,
-                          towerHeight,
-                          strokeColor,
-                          theme.iconBg,
-                          isSelected ? 2.4 : 1.5,
-                        )}
-                        {/* Glowing 3D Server Rack Blade Slots on Left & Right Walls */}
-                        <line
-                          x1={point.x - 36}
-                          y1={point.y - 12}
-                          x2={point.x - 8}
-                          y2={point.y + 1}
-                          stroke={theme.accent}
-                          strokeWidth="1.6"
-                          opacity="0.85"
-                        />
-                        <line
-                          x1={point.x - 36}
-                          y1={point.y - 19}
-                          x2={point.x - 8}
-                          y2={point.y - 6}
-                          stroke={theme.accent}
-                          strokeWidth="1.6"
-                          opacity="0.7"
-                        />
-                        <line
-                          x1={point.x + 8}
-                          y1={point.y + 1}
-                          x2={point.x + 36}
-                          y2={point.y - 12}
-                          stroke={theme.accent}
-                          strokeWidth="1.6"
-                          opacity="0.85"
-                        />
+                        {/* Stacked 3D Isometric Server Blades (scales vertically with activePods) */}
+                        {Array.from({ length: bladeCount }, (_, idx) => {
+                          const bladeY = point.y - 3 - idx * 10;
+                          return (
+                            <g key={idx}>
+                              {renderIsoBox(
+                                point.x,
+                                bladeY,
+                                40,
+                                19,
+                                7.5,
+                                strokeColor,
+                                theme.cardFill,
+                                1.3,
+                                theme.iconBg,
+                              )}
+                              {/* Glowing Front-Left Blade Status LEDs */}
+                              <circle
+                                cx={point.x - 24}
+                                cy={bladeY - 1}
+                                r="1.5"
+                                fill={theme.accent}
+                              />
+                              <circle
+                                cx={point.x - 16}
+                                cy={bladeY + 3}
+                                r="1.5"
+                                fill={theme.accent}
+                                opacity="0.65"
+                              />
+                            </g>
+                          );
+                        })}
                       </g>
                     )}
 
-                    {/* Stacked 3D Isometric Replica Container Cubes (1..8 volumetric cubes on the tower roof) */}
-                    {Array.from({ length: activePods }, (_, i) => {
-                      const slot = podSlots[i] ?? { dx: 0, dy: 0 };
-                      const stackLayer = Math.floor(i / 4);
-                      const cubeCx = point.x + slot.dx * 0.65;
-                      const cubeCy =
-                        point.y - 8 - towerHeight + slot.dy * 0.65 - stackLayer * 11;
-                      return (
-                        <g key={i}>
-                          {renderIsoBox(
-                            cubeCx,
-                            cubeCy,
-                            10,
-                            5.5,
-                            9,
-                            theme.accent,
-                            theme.cardFill,
-                            1.3,
-                          )}
-                          <circle
-                            cx={cubeCx}
-                            cy={cubeCy - 9}
-                            r="2.2"
-                            fill={theme.accent}
-                          />
-                        </g>
-                      );
-                    })}
-
-                    {/* Floating 3D Billboard HUD Tag above the 3D Tower */}
+                    {/* Sleek Floating Pill Name Tag below the 3D Pedestal */}
                     <rect
-                      x={point.x - 68}
-                      y={point.y + 14}
-                      width="136"
-                      height="40"
-                      rx="7"
-                      fill={theme.cardFill}
-                      stroke={strokeColor}
-                      strokeWidth={isSelected ? 2.4 : 1.4}
+                      x={point.x - labelWidth / 2}
+                      y={point.y + 16}
+                      width={labelWidth}
+                      height="24"
+                      rx="12"
+                      fill="#090d16"
+                      fillOpacity="0.92"
+                      stroke={isSelected ? theme.accent : strokeColor}
+                      strokeOpacity={isSelected ? "0.95" : "0.45"}
+                      strokeWidth={isSelected ? 1.6 : 1.1}
                     />
                     <circle
-                      cx={point.x - 54}
-                      cy={point.y + 26}
-                      r="3.8"
-                      fill={theme.accent}
+                      cx={point.x - labelWidth / 2 + 12}
+                      cy={point.y + 28}
+                      r="3.2"
+                      fill={isStopped ? "#f43f5e" : theme.accent}
                     />
                     <text
-                      x={point.x + 4}
-                      y={point.y + 29}
+                      x={point.x - 6}
+                      y={point.y + 31.5}
                       textAnchor="middle"
                       fill="#f8fafc"
-                      fontSize="11.5"
-                      fontWeight="700"
+                      fontSize="11"
+                      fontWeight="600"
                     >
                       {name}
                     </text>
+                    {/* Compact Replica Count Badge inside the right end of the Pill */}
+                    <rect
+                      x={point.x + labelWidth / 2 - 31}
+                      y={point.y + 20}
+                      width="25"
+                      height="16"
+                      rx="8"
+                      fill={isStopped ? "#881337" : theme.iconBg}
+                    />
                     <text
-                      x={point.x}
-                      y={point.y + 42}
+                      x={point.x + labelWidth / 2 - 18.5}
+                      y={point.y + 31}
                       textAnchor="middle"
-                      fill={theme.accent}
-                      fontSize="10"
-                      fontWeight="600"
+                      fill={isStopped ? "#fda4af" : theme.accent}
+                      fontSize="9.5"
+                      fontWeight="700"
                     >
-                      {live
-                        ? `${live.runningReplicas}/${live.replicas} ${t("running")}`
-                        : t("Waiting for telemetry")}
+                      {pillBadgeText}
                     </text>
-
-                    {/* Mini CPU & RAM Bars on the 3D HUD */}
-                    <rect
-                      x={point.x - 56}
-                      y={point.y + 47}
-                      width="52"
-                      height="3.5"
-                      rx="1.5"
-                      fill="#1e293b"
-                    />
-                    <rect
-                      x={point.x - 56}
-                      y={point.y + 47}
-                      width={Math.max(3, Math.round((cpuPercent / 100) * 52))}
-                      height="3.5"
-                      rx="1.5"
-                      fill="#38bdf8"
-                    />
-                    <rect
-                      x={point.x + 4}
-                      y={point.y + 47}
-                      width="52"
-                      height="3.5"
-                      rx="1.5"
-                      fill="#1e293b"
-                    />
-                    <rect
-                      x={point.x + 4}
-                      y={point.y + 47}
-                      width={Math.max(3, Math.round((ramInfo.percent / 100) * 52))}
-                      height="3.5"
-                      rx="1.5"
-                      fill="#10b981"
-                    />
                   </g>
                 );
               }
@@ -1623,6 +1549,7 @@ export function StudioObservability({
                   tabIndex={0}
                   aria-label={name}
                   aria-pressed={isSelected}
+                  style={{ outline: "none" }}
                   onPointerDown={(event) => {
                     event.stopPropagation();
                     const existing = customOffsets[name] ?? { x: 0, y: 0 };
@@ -1665,7 +1592,7 @@ export function StudioObservability({
                       onSelect(name);
                     }
                   }}
-                  className="cursor-grab active:cursor-grabbing"
+                  className="cursor-grab outline-none focus:outline-none active:cursor-grabbing"
                 >
                   {/* Drop Target / Selected Outer Glow Halo */}
                   {(isDropTarget || isSelected || isStopped) && (
