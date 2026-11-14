@@ -372,3 +372,14 @@ test("Stage 1 reference views, 1-click workspace init, Step 4 submit bridge, and
   assert.ok(composer.includes("(guided || useReferenceSnapshot) && requirements?.referenceSource?.snapshotId"));
   assert.ok(composer.includes("Run Static Analysis Now"));
 });
+
+test("Stage 3 lecturer 1-click curated course lab seeder is wired on courses and assignments pages", () => {
+  const access = read("src/features/workspaces/course-access.tsx");
+  const course = read("src/features/courses/screens.tsx");
+  const assignments = read("src/features/assignments/screens.tsx");
+
+  assert.ok(access.includes("export function SeedCuratedCourseLabs"));
+  assert.ok(access.includes("course-labs/seed-curated"));
+  assert.ok(course.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
+  assert.ok(assignments.includes("<SeedCuratedCourseLabs workspaceId={workspaceId}"));
+});

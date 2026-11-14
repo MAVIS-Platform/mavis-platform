@@ -12,7 +12,7 @@ import { ErrorState, RequestState } from "@/components/shared/request-state";
 import { DetailPanel } from "@/components/shared/data";
 import { SubmissionComposer } from "@/features/submissions/composer";
 import { CreateAssignment } from "./create";
-import { PublishCourseLab, useCourseRoadmap } from "@/features/workspaces/course-access";
+import { PublishCourseLab, SeedCuratedCourseLabs, useCourseRoadmap } from "@/features/workspaces/course-access";
 import { CurriculumPublisher } from "@/features/courses/curriculum";
 import { AssignmentInstructions } from "./assignment-instructions";
 import Link from "next/link";
@@ -59,7 +59,8 @@ export function Assignments() {
   return workspaceId ? (
     <div className="space-y-5">
       {canManage && (
-        <div className="flex items-center justify-end">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {client.mode === "backend" && <SeedCuratedCourseLabs workspaceId={workspaceId} />}
           <Button
             type="button"
             variant={showCreate ? "outline" : "default"}
