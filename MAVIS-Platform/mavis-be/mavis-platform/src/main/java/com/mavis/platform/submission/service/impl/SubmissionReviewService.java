@@ -116,7 +116,11 @@ public class SubmissionReviewService {
         var review=reviews.findBySubmissionId(id).orElseGet(SubmissionReview::new);
         if(review.getRevision()!=request.expectedRevision())throw new BusinessException(ErrorCode.CONFLICT,"Review changed. Reload before saving");
 
-        if ("GRADED".equals(request.status()) && submission.getAssignment().getLabOrder() != null) {
+        boolean guidedLab = submission.getAssignment().getLabOrder() != null;
+        if (guidedLab && "GRADED".equals(review.getStatus()) && "PASSED".equals(review.getLabOutcome())) {
+            throw new BusinessException(ErrorCode.CONFLICT, "PASSED_LAB_REVIEW_FINAL");
+        }
+        if ("GRADED".equals(request.status()) && guidedLab) {
             var required = new HashSet<String>();
             JsonNode snapshots = submission.getStudentSnapshots();
             if (snapshots != null && snapshots.isArray()) {

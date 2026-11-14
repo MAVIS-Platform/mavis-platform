@@ -180,6 +180,22 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
     "Giải thích lan truyền OTel trace quan sát được và tác động Trước vs. Sau của thao tác Stop/Start/Scale…",
   "Enter at least one theoretical explanation or overall submission note before submitting this Guided Lab.":
     "Nhập ít nhất một giải thích lý thuyết hoặc ghi chú nộp bài trước khi nộp Guided Lab này.",
+  "Add an explanation for each required Snapshot (up to 5,000 characters each).":
+    "Hãy giải trình cho từng Snapshot bắt buộc (tối đa 5.000 ký tự mỗi Snapshot).",
+  "The Snapshot selection has changed. Reload the Lab and review its required evidence.":
+    "Danh sách Snapshot đã thay đổi. Hãy tải lại Lab và kiểm tra bằng chứng bắt buộc.",
+  "Select a verified Studio receipt for the selected model version.":
+    "Hãy chọn biên nhận Studio đã xác minh cho đúng phiên bản mô hình.",
+  "Pass the current Lab Quiz before submitting.":
+    "Hãy đạt Quiz hiện hành của Lab trước khi nộp.",
+  "Enter a grade for every frozen Snapshot before publishing.":
+    "Hãy nhập điểm cho từng Snapshot đã đóng băng trước khi công bố.",
+  "The Snapshot grades do not match this submission. Refresh the review.":
+    "Điểm Snapshot không khớp với bài nộp này. Hãy tải lại trang chấm bài.",
+  "Return this submission with instructions to resubmit the required Snapshots.":
+    "Hãy trả bài kèm hướng dẫn nộp lại các Snapshot bắt buộc.",
+  "This Lab result is finalized. Refresh the review to see the published grade.":
+    "Kết quả Lab đã được chốt. Hãy tải lại trang để xem điểm đã công bố.",
   "Per-snapshot grading results (> 5.0 / 10 required)": "Kết quả chấm từng Snapshot (bắt buộc > 5.0 / 10)",
   "Apply the requested changes in your working project, save the new model/diagram revisions and submit again from the assignment. This submission remains unchanged.":
     "Thực hiện các chỉnh sửa theo yêu cầu trên dự án làm việc, lưu phiên bản mô hình/sơ đồ mới rồi nộp lại từ bài tập. Bản nộp này được giữ nguyên bất biến.",

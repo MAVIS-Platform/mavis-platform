@@ -5,11 +5,12 @@ Hợp đồng kỹ thuật, cơ chế đóng băng bằng chứng nộp bài (`V
 ## 1. Quy tắc nghiệp vụ (`BR-09`, `BR-10`) & Lược đồ CSDL (`V28`–`V30`)
 
 - **BR-09 · Snapshot Evidence Freeze, SHA-256 Digest & Per-Snapshot Grading:**
-  - Sinh viên nộp bài (`SubmissionServiceImpl.createSubmission`) yêu cầu dự án qua cửa Quiz Gate (`CourseLabPolicy.requireRuntimeReadiness(project)`) và bắt buộc giải trình cho từng Snapshot/gói bằng chứng (`studentSnapshots[]`).
+  - Sinh viên phải đạt Quiz hiện hành của Lab. Điểm 3E được giữ trong gói bằng chứng để giảng viên tham khảo.
+  - Lab tĩnh yêu cầu giải trình cho `STEP_1_STATIC`. Lab yêu cầu Runtime bổ sung receipt Studio khớp với phiên bản mô hình. Với Studio tương tác, backend đóng băng từng Snapshot đã chụp cùng giải trình ghi lúc chụp. Với phiên Studio cũ, sinh viên giải trình thêm cho `STEP_4_RUNTIME`.
   - Hệ thống đóng băng đồng thời ảnh chụp Quiz (`courseQuizEvidence` — `V28`), danh sách giải trình từng Snapshot của sinh viên (`studentSnapshots` JSONB — `V30`), và băm SHA-256 toàn bộ gói bằng chứng vào `evidencePackageDigest` (`sha256:<64-hex>`, index `ix_submission_evidence_package_digest` — `V29`). Việc xuất báo cáo (`GET /api/v1/submissions/{submissionId}/export`) trả `SubmissionExportBundleDTO` kèm `evidencePackageDigest` và `studentSnapshots`.
   - **Quy tắc chấm điểm từng Snapshot (`SubmissionReviewService`):**
     - Giảng viên nhập điểm `snapshotGrades[]` trên thang **`0.00` .. `10.00`** cho từng Snapshot (tối đa 2 chữ số thập phân; ngoài `[0, 10]` trả `HTTP 400`).
-    - Nếu không truyền `score` tổng (0..100), hệ thống tự tính trung bình nhân 10 (`total / count * 10`, làm tròn `HALF_UP` 2 chữ số).
+    - Hệ thống yêu cầu đúng một điểm cho mỗi ID Snapshot trong gói đã đóng băng của Guided Lab. Nếu không truyền `score` tổng (0..100), hệ thống tính trung bình các điểm Snapshot trên thang 100.
     - **Ngưỡng đạt theo Snapshot (`SNAPSHOT_PASS_EXCLUSIVE_THRESHOLD = 5.0`):** Mọi Snapshot trong `snapshotGrades` bắt buộc **nghiêm ngặt `score > 5.0`** (tức `score <= 5.0` bị tính là chưa đạt). Khi `status == "GRADED"`, chỉ khi tất cả Snapshot `> 5.0` thì `labOutcome = "PASSED"`; ngược lại dù điểm trung bình tổng cao hơn `50/100`, nếu có ít nhất 1 Snapshot `<= 5.0` thì `labOutcome = "NEEDS_REVISION"`.
     - Khi `status == "GRADED"`, trường `summary` (nhận xét tổng thể của giảng viên) là **bắt buộc không được rỗng** (`APPROVAL_SUMMARY_REQUIRED` / `HTTP 400`); khi `status == "RETURNED"`, lý do trả về cũng bắt buộc (`REJECTION_REASON_REQUIRED` / `HTTP 400`).
     - Nháp đánh giá `status == "DRAFT"` luôn được ẩn khỏi sinh viên khi `GET /review` (sinh viên nhận trạng thái `PENDING`, `labOutcome = "PENDING"`). Lưu song song được bảo vệ bằng pessimistic lock + `expectedRevision` optimistic concurrency (`HTTP 409` khi lệch revision). Giảng viên tự chấm bài của chính mình bị chặn (`HTTP 403`).
@@ -19,6 +20,7 @@ Hợp đồng kỹ thuật, cơ chế đóng băng bằng chứng nộp bài (`V
     courseProgression.recordFinalizedResult(id, review.getRevision(), passed);
     ```
   - Nếu `labOutcome == "PASSED"` (`passed == true`), `CourseProgressionService` cập nhật trạng thái hoàn thành Lab `N`, phát sinh thông báo `course-lab-unlocked:{nextAssignmentId}` (idempotent theo `recipient_id + event_key` trong bảng `user_notifications`), và tự động mở khóa **`Lab N+1`** (`UNLOCKED` trên Course Roadmap). Nếu `passed == false` (`NEEDS_REVISION`), **`Lab N+1` giữ nguyên trạng thái `LOCKED`** (`PREREQUISITE`).
+  - Kết quả Guided Lab đã công bố đạt được giữ cố định để nhất quán với tiến độ. Các lần ghi sau trả `409`. Bài chưa đạt vẫn có thể được trả về và sinh viên có thể nộp lại.
 - **Flyway Migrations liên quan WF-04:**
   - `V28__Submission_Course_Quiz_Evidence.sql`: cột `submission_snapshots.course_quiz_evidence` (`JSONB`).
   - `V29__Submission_Evidence_Package_Digest.sql`: cột `submission_snapshots.evidence_package_digest` (`VARCHAR(71) NOT NULL`) + index `ix_submission_evidence_package_digest`.

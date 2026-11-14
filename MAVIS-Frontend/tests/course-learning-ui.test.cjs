@@ -100,15 +100,19 @@ test("WF-04 submission UI exposes every evidence gate and the sealed package dig
 
   for (const gate of [
     "Step 1 · Static C1–C3 &amp; AI:",
-    "Step 2 · C0–C3 Ground Truth:",
+    "Step 2 · Theory Quiz",
     "Step 3 · OpenTelemetry Runtime View:",
-    "Step 4 · MAVIS Studio RuntimeReceipt:",
+    "Step 4 · MAVIS Studio RuntimeReceipt",
   ])
     assert.ok(composer.includes(gate), gate);
   assert.match(
     composer,
-    /guided && \(!stage1Ready \|\| !stage2Ready \|\| !stage3Ready \|\| !stage4Ready\)/,
+    /const requiresStudio = guided && requiresRuntime/,
   );
+  assert.match(composer, /useCourseQuiz\(workspaceId, assignmentId, guided\)/);
+  assert.match(composer, /guided && !stage2Ready/);
+  assert.match(composer, /requiresStudio && !stage4Ready/);
+  assert.match(composer, /staticExplanation\.trim\(\)\.length > 0\s+&& \(!requiresStudio \|\| \(interactiveStudio \? capturedStudioSnapshots\.length > 0 : runtimeExplanation\.trim\(\)\.length > 0\)\)/);
   assert.ok(frozen.includes("Evidence package SHA-256"));
   assert.match(contract, /evidencePackageDigest:\s*z\s*\.string\(\)\s*\.regex/);
 });
@@ -253,6 +257,14 @@ test("Studio in the guided Lab requires observed traces on the current model", (
   assert.match(course, /item\.projectId === projectId && item\.modelId === model\?\.id/);
   assert.match(course, /const studioReady = runtimeReady && Boolean\(observedRuntime\)/);
   assert.match(course, /\(step\.id === 4 && studioReady\)/);
+});
+
+test("static Guided Labs proceed from a passing Quiz to submission", () => {
+  const lab = read("src/features/courses/screens.tsx");
+  const quiz = read("src/features/courses/course-quiz.tsx");
+  assert.match(lab, /!requiresRuntime && activeStep > 2 \? 2 : activeStep/);
+  assert.match(lab, /submissionHref=\{staticSubmission \? submitHref : undefined\}/);
+  assert.match(quiz, /href=\{submissionHref \?\? runtimeStepHref\}/);
 });
 
 test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-15 EN/VI runtime/studio translations", async () => {

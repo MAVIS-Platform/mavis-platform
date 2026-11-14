@@ -316,6 +316,8 @@ export function LabWorkspace() {
   const quiz = useCourseQuiz(workspaceId, assignmentId,
     Boolean(lab && roadmap.data?.guided && session.data?.user?.role === "student"));
   const runtimeReady = !quiz.isError && quiz.data?.passed === true;
+  const requiresRuntime = lab?.requireRuntimeTrace === true;
+  const displayedStep = !requiresRuntime && activeStep > 2 ? 2 : activeStep;
   const referenceSnapshotId = lab?.referenceSource?.snapshotId;
   const projects = useApiQuery("projects", {}, { enabled: Boolean(referenceSnapshotId) });
   const project = referenceSnapshotId ? projects.data?.find((item) =>
@@ -336,8 +338,8 @@ export function LabWorkspace() {
     (item.latest || completeModelIds.has(item.id)),
   ).sort((left, right) => right.revision - left.revision)[0];
   const runtimeSessions = useApiQuery("runtimeReadSessions", { projectId }, {
-    enabled: client.mode === "backend" && runtimeReady && Boolean(projectId && model),
-    poll: activeStep >= 3,
+    enabled: client.mode === "backend" && requiresRuntime && runtimeReady && Boolean(projectId && model),
+    poll: displayedStep >= 3,
   });
   const labSessions = runtimeSessions.data?.filter((item) =>
     item.projectId === projectId && item.modelId === model?.id,
@@ -370,10 +372,12 @@ export function LabWorkspace() {
         state: model ? "READY" : referenceSnapshotId ? "IN PROGRESS" : "MISSING",
       },
       { label: t("Theory and quiz", "Lý thuyết và quiz"), state: runtimeReady ? "PASSED" : "IN PROGRESS" },
-      { label: t("Runtime observation", "Quan sát runtime"), state: runtimeReady ? "READY" : "LOCKED" },
-      { label: t("Studio receipt", "Biên nhận Studio"), state: studioSession ? "VERIFIED" : studioReady ? "READY" : "LOCKED" },
+      ...(requiresRuntime ? [
+        { label: t("Runtime observation", "Quan sát runtime"), state: runtimeReady ? "READY" : "LOCKED" },
+        { label: t("Studio receipt", "Biên nhận Studio"), state: studioSession ? "VERIFIED" : studioReady ? "READY" : "LOCKED" },
+      ] : []),
     ],
-    [model, referenceSnapshotId, runtimeReady, studioReady, studioSession, t],
+    [model, referenceSnapshotId, requiresRuntime, runtimeReady, studioReady, studioSession, t],
   );
 
   if (!workspaceId)
@@ -452,9 +456,9 @@ export function LabWorkspace() {
             aria-label="Lab stages"
             className="grid gap-2 rounded-2xl border bg-card p-3 md:grid-cols-4"
           >
-            {learningSteps.map((step) => {
+            {learningSteps.filter((step) => requiresRuntime || step.id <= 2).map((step) => {
               const Icon = step.icon;
-              const current = step.id === activeStep;
+              const current = step.id === displayedStep;
               const available = step.id <= 2 || (step.id === 3 && runtimeReady) || (step.id === 4 && studioReady);
               return (
                 <Link
@@ -492,6 +496,7 @@ export function LabWorkspace() {
           <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
             <main className="min-w-0 space-y-5">
               <StepContent
+                requiresRuntime={requiresRuntime}
                 runtimeReady={runtimeReady}
                 runtimeSessionHref={labSessions[0] ? runtimeLink(labSessions[0].id) : null}
                 studioHref={studioReady ? runtimeLink(studioSession?.id ?? observedRuntime?.id) + "&studio=1" : null}
@@ -505,7 +510,7 @@ export function LabWorkspace() {
                     ["queued", "processing", "running"].includes(String(job.status)),
                   ),
                 )}
-                step={activeStep}
+                step={displayedStep}
                 workspaceId={workspaceId}
                 labId={lab.id}
                 projectId={projectId}
@@ -797,6 +802,7 @@ function StepContent({
   runtimeSessionHref,
   studioHref,
   studioVerified,
+  requiresRuntime,
 }: {
   step: 1 | 2 | 3 | 4;
   workspaceId: string;
@@ -816,6 +822,7 @@ function StepContent({
   runtimeSessionHref: string | null;
   studioHref: string | null;
   studioVerified: boolean;
+  requiresRuntime: boolean;
 }) {
   const { t } = useLocale();
   const client = useApi();
@@ -834,6 +841,8 @@ function StepContent({
   const next = step < 4 ? ((step + 1) as 2 | 3 | 4) : undefined;
   const nextAvailable = next === 2 || (next === 3 && runtimeReady) || (next === 4 && Boolean(studioHref));
   const canSubmitFromStep4 = step === 4 && runtimeReady && studioVerified;
+  const staticSubmission = step === 2 && !requiresRuntime;
+  const canSubmitLab = (staticSubmission && runtimeReady && isStudent) || canSubmitFromStep4;
 
   async function handleInitializeWorkspace() {
     if (!snapshotId || initializingWorkspace) return;
@@ -1031,6 +1040,7 @@ function StepContent({
           {showQuiz ? (
             <CourseQuiz workspaceId={workspaceId} labId={labId} canSubmit={canAttemptQuiz}
               runtimeStepHref={`/lab?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(labId)}&step=3`}
+              submissionHref={staticSubmission ? submitHref : undefined}
             />
           ) : (
             <DetailPanel title={t("Quiz gate", "Điều kiện Quiz")}>
@@ -1111,9 +1121,9 @@ function StepContent({
             "Tiến độ được lưu bởi dịch vụ tương ứng.",
           )}
         </span>
-        {step === 4 ? (
-          <Button asChild={canSubmitFromStep4} disabled={!canSubmitFromStep4}>
-            {canSubmitFromStep4 ? (
+        {step === 4 || staticSubmission ? (
+          <Button asChild={Boolean(canSubmitLab)} disabled={!canSubmitLab}>
+            {canSubmitLab ? (
               <Link href={submitHref}>
                 {t("Proceed to Submit Lab", "Chuyển sang Nộp bài Lab")} <ArrowRight />
               </Link>

@@ -1,5 +1,6 @@
 package com.mavis.platform.submission.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -50,6 +51,7 @@ public class SubmissionCreateRequest {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class StudentSnapshotItemDTO {
         private String snapshotId;
         private String step;
