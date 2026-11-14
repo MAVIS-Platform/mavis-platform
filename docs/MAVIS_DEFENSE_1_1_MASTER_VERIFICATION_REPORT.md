@@ -1,6 +1,6 @@
 # Báo Cáo Tổng Hợp Kiểm Chứng & Nghiệm Thu Hội Đồng Kín 1.1 (`MAVIS Defense 1.1 Master Verification Report`)
 
-Báo cáo tổng hợp bằng chứng hoàn thiện, truy vết mã nguồn, lược đồ CSDL (`V26`–`V30`), CI/CD và kết quả chạy kiểm thử thực tế trên toàn bộ 4 luồng nghiệp vụ **WF-01 .. WF-04** của nền tảng **MAVIS**.
+Báo cáo tổng hợp bằng chứng hoàn thiện, truy vết mã nguồn, lược đồ CSDL (`V26`–`V31`), CI/CD và kết quả chạy kiểm thử thực tế trên toàn bộ 4 luồng nghiệp vụ **WF-01 .. WF-04** của nền tảng **MAVIS**.
 
 Tài liệu kỹ thuật từng workflow:
 - [`WF01_COURSE_ACCESS.md`](./WF01_COURSE_ACCESS.md) · Lớp học, Passkey & Khóa tuần tự (`C01`, `C05`)
@@ -21,9 +21,10 @@ Tài liệu kỹ thuật từng workflow:
 | **Chặng 5** | `test/all-stage5-wf01-wf03-wf04-acceptance-matrices-108-cases` | `34d79f5` -> `55e2040` | Bổ sung `Wf01AcceptanceMatrixTest.java`, `Wf03AcceptanceMatrixTest.java`, `Wf04AcceptanceMatrixTest.java` cùng `Wf02AcceptanceMatrixTest.java` phủ trọn bộ **108 ca cam kết BM04** |
 | **Chặng 6** | `ci/all-stage6-ci-pipeline-and-nfr-benchmarks` | `c83785a` -> `288ff04` | Đăng ký `Wf01..Wf04AcceptanceMatrixTest`, `RuntimePlanningServiceTest`, `SubmissionReviewServiceTest` và chuỗi migration `V29` + `V30` vào `.github/workflows/deploy-production.yml`, `deploy/apply-course-schema.py`, `deploy/deploy-vps.sh`, `deploy/tests/test_course_schema.py` và `deploy/CI-CD.md` (`SR-13`) |
 | **Chặng 7** | `docs/all-stage7-handover-docs-wf01-to-wf04-and-final-audit` | `ad234cc` | Xuất bản `WF03_RUNTIME_STUDIO_C03.md`, `WF04_SUBMISSION_GRADING_C04.md`, cập nhật `WF01`/`WF02` và báo cáo nghiệm thu tổng thể |
-| **Đợt hoàn thiện cuối (Single-Branch)** | `feat/mavis-final-100pct-all-workflows-polish` | `dca1892` -> `7dad574` -> *(Chặng 5/6 hiện tại)* | Sửa nhất quán `resolveSubmissionOutcome` trên `SubmissionResult` & `GradeForm` (`5.0/10` -> `NEEDS REVISION`), đóng vòng UX 1-click Guided Lab & Phân tích tĩnh (`#submission-composer`, xem trước `C1–C3 + Dependency Graph`), bổ sung `CourseLabSeederService` (`POST /course-labs/seed-curated` + nút 1-click Giảng viên + CI), mở rộng `Wf01` (29) + `Wf02` (29) + `Wf03` (28) + `Wf04` (33) = **119 ca `@Test` chi tiết** |
+| **Đợt hoàn thiện Single-Branch #1** | `feat/mavis-final-100pct-all-workflows-polish` | `dca1892` -> `7086a14` | Sửa nhất quán `resolveSubmissionOutcome` trên `SubmissionResult` & `GradeForm` (`5.0/10` -> `NEEDS REVISION`), đóng vòng UX 1-click Guided Lab & Phân tích tĩnh (`#submission-composer`, xem trước `C1–C3 + Dependency Graph`), bổ sung `CourseLabSeederService`, mở rộng `Wf01`..`Wf04` lên **119 ca `@Test`** |
+| **Đợt hoàn thiện Argon 100% (Single-Branch #2)** | `feat/argon-complete-100pct-all-workflows-studio2d-curriculum` | `45f0c07` -> `53a7355` -> *(Stage 5 hiện tại)* | BFF `allowedBackendPath` mở `course-labs/seed-curated`, `CourseLabSeederService` hỗ trợ 2 preset `STANDARD_DEMO` (3 Lab: `java-04`, `java-07`, `csharp-13`) & `FULL_CURRICULUM` (13 Lab: `java-01..12` + `csharp-13`) kèm archive Java + `.NET Core` (`Orders/Program.cs`, `Catalog/Program.cs`, `inventory-service`), `SubmissionComposer` tự chọn dự án lớp & phiên Studio + nút 1-click `Run 5-Rule Static Evaluation`, **Interactive 2D Studio Topology Canvas** (`Stop/Start/Scale 1..8` trực tiếp trên node + stacked replica cards & stopped rose state + song ngữ EN/VI), giữ nguyên 100% commit đồng đội `a947667` / `a09673f` / `2351622` (`V31`), và mở rộng bộ acceptance test lên **120 ca `@Test`** (`F10-009` + `F10-010`) |
 
-> **Ghi chú đồng bộ Flyway (`V29` & `V30`):** Nhánh `main` trước đó đã tiếp nhận commit `a2119f0` (`V29__Submission_Evidence_Package_Digest.sql` của đồng đội). Hệ thống giữ nguyên 100% `V29` và đánh số migration chấm từng Snapshot tiếp theo là **`V30__Submission_Snapshot_Grades_And_Explanations.sql`**, đồng thời cập nhật CI/VPS schema pre-flight hỗ trợ tuần tự đầy đủ **`V26 -> V27 -> V28 -> V29 -> V30`**.
+> **Ghi chú đồng bộ Flyway (`V29`–`V31`):** Nhánh `main` đã tiếp nhận `V29__Submission_Evidence_Package_Digest.sql` (`a2119f0`), `V30__Submission_Snapshot_Grades_And_Explanations.sql` (`dfd0cb4`) và **`V31__WF01_Customer_Ready_Identity_And_Course.sql`** (`a09673f`/`2351622`: `users.avatar_url`, `users.preferred_locale`, `workspaces.max_students`, `refresh_sessions`, `auth_rate_limits`). Hệ thống bảo toàn nguyên vẹn toàn bộ chuỗi migration `V1..V31`.
 
 ---
 
@@ -46,14 +47,14 @@ Tài liệu kỹ thuật từng workflow:
 
 ---
 
-## 3. Đối chiếu Ma trận Kiểm thử Cam kết (**119 ca `@Test` chi tiết** phủ trọn 108 ca BM04 + `DS-01..04` + `TC-GR01..06` + `TC-N01..06`)
+## 3. Đối chiếu Ma trận Kiểm thử Cam kết (**120 ca `@Test` chi tiết** phủ trọn 108 ca BM04 + `DS-01..04` + `TC-GR01..06` + `TC-N01..06` + `F10-009..010`)
 
-| Workflow | Lớp kiểm thử tự động | Phạm vi mã ca bao phủ | Kết quả thực thi gần nhất |
+| Workflow | Lớp kiểm thử tự động | Phạm vi mã ca bao phủ | Kết quả thực thi quan sát trực tiếp |
 |---|---|---|---|
-| **WF-01** (`C01`/`C05`) | `com.mavis.bootstrap.acceptance.Wf01AcceptanceMatrixTest` + `CourseLabSeederServiceTest` | `F01-001..008`, `F09-001..008`, `F10-001..009`, `TC-WF01-E2E` (`DS-01a/b`), `TC-ST01`, `TC-N01` (`<= 3000ms`), `TC-N02` | **29/29 PASS** (`0` fail, `0` error, `3.696 s`) |
-| **WF-02** (`C02`) | `com.mavis.bootstrap.Wf02AcceptanceMatrixTest` | `F02-001..008`, `F03-001..008`, `F06-001..008`, `TC-WF02-E2E` (`DS-02a/b`), `TC-ST02`, `TC-N01`, `TC-N03`, `TC-N04` | **29/29 PASS** (`0` fail, `0` error, `0.925 s`) |
-| **WF-03** (`C03`) | `com.mavis.bootstrap.acceptance.Wf03AcceptanceMatrixTest` + `StudioInfrastructureActionTests.cs` | `F05-001..008`, `F07-001..008`, `F08-001..008`, `TC-WF03-E2E` (`DS-03a/b`), `DS-03`, `TC-ST03`, `TC-N05` (`<= 300s`) | **28/28 PASS** (`0` fail, `0` error, `15.75 s`) |
-| **WF-04** (`C04`/`C05`) | `com.mavis.bootstrap.acceptance.Wf04AcceptanceMatrixTest` + `SubmissionReviewServiceTest` | `F04-001..008`, `F11-001..008`, `F12-001..008`, `TC-GR01..06`, `TC-WF04-E2E` (`DS-04a/b`), `TC-ST04`, `TC-N06` | **33/33 PASS** (`0` fail, `0` error, `0.739 s`) |
+| **WF-01** (`C01`/`C05`) | `com.mavis.bootstrap.acceptance.Wf01AcceptanceMatrixTest` + `CourseLabSeederServiceTest` | `F01-001..008`, `F09-001..008`, `F10-001..010`, `TC-WF01-E2E` (`DS-01a/b`), `TC-ST01`, `TC-N01` (`<= 3000ms`), `TC-N02` | **30/30 PASS** (`0` fail, `0` error, `3.543 s`) + `CourseLabSeederServiceTest` **3/3 PASS** |
+| **WF-02** (`C02`) | `com.mavis.bootstrap.Wf02AcceptanceMatrixTest` | `F02-001..008`, `F03-001..008`, `F06-001..008`, `TC-WF02-E2E` (`DS-02a/b`), `TC-ST02`, `TC-N01`, `TC-N03`, `TC-N04` | **29/29 PASS** (`0` fail, `0` error, `1.163 s`) |
+| **WF-03** (`C03`) | `com.mavis.bootstrap.acceptance.Wf03AcceptanceMatrixTest` + `StudioInfrastructureActionTests.cs` + `runtime-planning.test.cjs` | `F05-001..008`, `F07-001..008`, `F08-001..008`, `TC-WF03-E2E` (`DS-03a/b`), `DS-03`, `TC-ST03`, `TC-N05` (`<= 300s`), Interactive 2D Studio Control Bar | **28/28 PASS** (`0` fail, `0` error, `21.75 s`) + `runtime-planning.test.cjs` **17/17 PASS** |
+| **WF-04** (`C04`/`C05`) | `com.mavis.bootstrap.acceptance.Wf04AcceptanceMatrixTest` + `SubmissionReviewServiceTest` + `course-learning-ui.test.cjs` | `F04-001..008`, `F11-001..008`, `F12-001..008`, `TC-GR01..06`, `TC-WF04-E2E` (`DS-04a/b`), `TC-ST04`, `TC-N06` | **33/33 PASS** (`0` fail, `0` error, `0.756 s`) + `course-learning-ui.test.cjs` **16/16 PASS** |
 
 ---
 
