@@ -359,3 +359,16 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
   assert.ok(submissionsScreen.includes("resolveSubmissionOutcome(query.data)"));
   assert.ok(grading.includes("At least one snapshot scored <= 5.0 / 10"));
 });
+
+test("Stage 1 reference views, 1-click workspace init, Step 4 submit bridge, and composer 1-click analysis", () => {
+  const course = read("src/features/courses/screens.tsx");
+  const composer = read("src/features/submissions/composer.tsx");
+
+  assert.ok(course.includes("const referenceModelQuery ="));
+  assert.ok(course.includes("Initialize & Analyze My Lab Workspace"));
+  assert.ok(course.includes("Proceed to Submit Lab"));
+  assert.ok(course.includes("#submission-composer"));
+  assert.ok(composer.includes('id="submission-composer"'));
+  assert.ok(composer.includes("(guided || useReferenceSnapshot) && requirements?.referenceSource?.snapshotId"));
+  assert.ok(composer.includes("Run Static Analysis Now"));
+});
