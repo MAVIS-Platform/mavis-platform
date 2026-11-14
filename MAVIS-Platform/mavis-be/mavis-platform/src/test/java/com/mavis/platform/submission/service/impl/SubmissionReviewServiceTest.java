@@ -110,4 +110,29 @@ class SubmissionReviewServiceTest {
           .isInstanceOf(BusinessException.class)
           .hasMessageContaining("APPROVAL_SUMMARY_REQUIRED");
  }
+
+ @Test
+ void guidedLabRequiresExactlyOneGradeForEachFrozenSnapshot() throws Exception {
+  submission.getAssignment().setLabOrder(1);
+  submission.setStudentSnapshots(new com.fasterxml.jackson.databind.ObjectMapper()
+          .readTree("[{\"snapshotId\":\"static\"},{\"snapshotId\":\"runtime\"}]"));
+  when(access.requireCurrentActiveUser()).thenReturn(teacher);
+  when(reviews.findBySubmissionId(id)).thenReturn(Optional.empty());
+
+  var staticGrade = new SubmissionReviewService.SnapshotGrade("static", "Static", new BigDecimal("9.00"), "");
+  var foreignGrade = new SubmissionReviewService.SnapshotGrade("wrong", "Other", new BigDecimal("8.00"), "");
+  for (var attempt : List.of(List.<SubmissionReviewService.SnapshotGrade>of(), List.of(staticGrade))) {
+   assertThatThrownBy(() -> service.save(id, new SubmissionReviewService.Save(0, "GRADED",
+           new BigDecimal("99"), "Summary", attempt))).hasMessage("SNAPSHOT_GRADES_INCOMPLETE");
+  }
+  for (var attempt : List.of(List.of(staticGrade, staticGrade), List.of(staticGrade, foreignGrade))) {
+   assertThatThrownBy(() -> service.save(id, new SubmissionReviewService.Save(0, "GRADED",
+           new BigDecimal("99"), "Summary", attempt))).hasMessage("INVALID_SNAPSHOT_GRADE_IDS");
+  }
+  submission.setStudentSnapshots(null);
+  assertThatThrownBy(() -> service.save(id, new SubmissionReviewService.Save(0, "GRADED",
+          new BigDecimal("99"), "Summary"))).hasMessage("SUBMISSION_SNAPSHOTS_REQUIRED");
+  verify(reviews, never()).saveAndFlush(any());
+  verifyNoInteractions(courseProgression);
+ }
 }

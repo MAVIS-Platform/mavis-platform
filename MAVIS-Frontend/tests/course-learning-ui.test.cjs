@@ -277,7 +277,7 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
     "Step 2: Test Scenarios",
     "Step 3: Run & Trace",
     "Captured Snapshots & Written Theoretical Explanations",
-    "Every required snapshot must score > 5.0 / 10 (5.1 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
+    "Every required snapshot must score > 5.0 / 10 (5.01 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
   ]) {
     assert.ok(dict.includes(key), `Missing Vietnamese dictionary entry for: ${key}`);
   }
@@ -420,4 +420,25 @@ test("guided submission requires Studio evidence on the selected model", () => {
   assert.match(lab, /canSubmitFromStep4 = step === 4 && runtimeReady && studioVerified/);
   assert.match(composer, /s\.studioVerified && s\.snapshotId === model\.snapshotId/);
   assert.match(composer, /stage3Ready && selectedRuntime\?\.studioVerified === true/);
+});
+
+
+test("lecturer grading uses frozen Snapshot rows and preserves matching draft grades", () => {
+  const { buildInitialSnapshotGrades } = require("../src/features/submissions/grading.tsx");
+  const review = {
+    snapshotGrades: [
+      { snapshotId: "static", title: "Old title", score: 5.01, comment: "Checked" },
+      { snapshotId: "orphan", title: "Old evidence", score: 10 },
+    ],
+  };
+  const snapshots = [
+    { snapshotId: "static", title: "Frozen static" },
+    { snapshotId: "runtime", title: "Frozen runtime" },
+  ];
+
+  assert.deepEqual(buildInitialSnapshotGrades(review, snapshots), [
+    { snapshotId: "static", title: "Frozen static", score: "5.01", comment: "Checked" },
+    { snapshotId: "runtime", title: "Frozen runtime", score: "", comment: "" },
+  ]);
+  assert.equal(buildInitialSnapshotGrades(review)[0].score, "5.01");
 });

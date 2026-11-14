@@ -17,6 +17,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 
@@ -114,6 +115,30 @@ public class SubmissionReviewService {
         entityManager.lock(submission,LockModeType.PESSIMISTIC_WRITE);
         var review=reviews.findBySubmissionId(id).orElseGet(SubmissionReview::new);
         if(review.getRevision()!=request.expectedRevision())throw new BusinessException(ErrorCode.CONFLICT,"Review changed. Reload before saving");
+
+        if ("GRADED".equals(request.status()) && submission.getAssignment().getLabOrder() != null) {
+            var required = new HashSet<String>();
+            JsonNode snapshots = submission.getStudentSnapshots();
+            if (snapshots != null && snapshots.isArray()) {
+                for (JsonNode snapshot : snapshots) {
+                    String snapshotId = snapshot.path("snapshotId").textValue();
+                    if (snapshotId == null || snapshotId.isBlank() || !required.add(snapshotId)) {
+                        throw new BusinessException(ErrorCode.BAD_REQUEST, "INVALID_SUBMISSION_SNAPSHOTS");
+                    }
+                }
+            }
+            if (required.isEmpty()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "SUBMISSION_SNAPSHOTS_REQUIRED");
+            }
+            for (SnapshotGrade grade : normalizedGrades) {
+                if (!required.remove(grade.snapshotId())) {
+                    throw new BusinessException(ErrorCode.BAD_REQUEST, "INVALID_SNAPSHOT_GRADE_IDS");
+                }
+            }
+            if (!required.isEmpty()) {
+                throw new BusinessException(ErrorCode.BAD_REQUEST, "SNAPSHOT_GRADES_INCOMPLETE");
+            }
+        }
 
         boolean passed = "GRADED".equals(request.status()) && (!hasSnapshotGrades || allSnapshotsPassed);
         String labOutcome = "GRADED".equals(request.status())
