@@ -102,9 +102,12 @@ function classifyArchetype(
   layer?: string,
 ): "DATABASE" | "GATEWAY" | "QUEUE" | "SERVICE" {
   const sig = `${serviceName} ${elementType ?? ""} ${layer ?? ""}`.toLowerCase();
-  if (/(postgres|mysql|mongo|redis|db|database|data_store|storage)/.test(sig)) return "DATABASE";
-  if (/(kafka|rabbit|mq|broker|queue|event|stream)/.test(sig)) return "QUEUE";
-  if (/(gateway|ingress|proxy|nginx|bff|edge|router)/.test(sig)) return "GATEWAY";
+  if (/(postgres|mysql|mongo|redis|cache|s3|bucket|elastic|search|db|database|data_store|storage)/.test(sig))
+    return "DATABASE";
+  if (/(kafka|rabbit|mq|broker|queue|event|stream|otel|prometheus|telemetry|monitor)/.test(sig))
+    return "QUEUE";
+  if (/(gateway|ingress|proxy|nginx|bff|edge|router|cdn|waf|shield|firewall|lb|balancer)/.test(sig))
+    return "GATEWAY";
   return "SERVICE";
 }
 
@@ -113,6 +116,7 @@ function getArchetypeTheme(
   isStopped: boolean,
   isSelected: boolean,
   isDropTarget: boolean,
+  serviceName = "",
 ) {
   if (isStopped) {
     return {
@@ -124,42 +128,141 @@ function getArchetypeTheme(
       typeLabel: "503 FAULT",
     };
   }
-  const base =
-    archetype === "GATEWAY"
+  const lower = serviceName.toLowerCase();
+  const base = /(cdn|cloudflare|cloudfront)/.test(lower)
+    ? {
+        stroke: "#06b6d4",
+        cardFill: "#061c24",
+        iconBg: "#083344",
+        accent: "#22d3ee",
+        badgeText: "CDN",
+        typeLabel: "EDGE POP CACHE",
+      }
+    : /(waf|shield|firewall|ddos)/.test(lower)
       ? {
-          stroke: "#f59e0b",
-          cardFill: "#1d1407",
-          iconBg: "#451a03",
-          accent: "#fbbf24",
-          badgeText: "EDGE",
-          typeLabel: "LOAD BALANCER",
+          stroke: "#fb7185",
+          cardFill: "#240a12",
+          iconBg: "#4c0519",
+          accent: "#fda4af",
+          badgeText: "WAF",
+          typeLabel: "EDGE FIREWALL",
         }
-      : archetype === "DATABASE"
+      : /(redis|memcache|cache)/.test(lower)
         ? {
-            stroke: "#10b981",
-            cardFill: "#061f17",
-            iconBg: "#064e3b",
-            accent: "#34d399",
-            badgeText: "DATA",
-            typeLabel: "RELATIONAL DB",
+            stroke: "#ef4444",
+            cardFill: "#220a0a",
+            iconBg: "#450a0a",
+            accent: "#f87171",
+            badgeText: "CACHE",
+            typeLabel: "IN-MEMORY KV",
           }
-        : archetype === "QUEUE"
+        : /(s3|bucket|blob|minio|storage)/.test(lower)
           ? {
-              stroke: "#a855f7",
-              cardFill: "#1a0e29",
-              iconBg: "#3b0764",
-              accent: "#c084fc",
-              badgeText: "STREAM",
-              typeLabel: "EVENT BROKER",
+              stroke: "#0ea5e9",
+              cardFill: "#071927",
+              iconBg: "#0c4a6e",
+              accent: "#38bdf8",
+              badgeText: "STORAGE",
+              typeLabel: "OBJECT BUCKET",
             }
-          : {
-              stroke: "#6366f1",
-              cardFill: "#0f152a",
-              iconBg: "#1e1b4b",
-              accent: "#818cf8",
-              badgeText: "COMPUTE",
-              typeLabel: "APP SERVER",
-            };
+          : /(elastic|opensearch|search|solr)/.test(lower)
+            ? {
+                stroke: "#eab308",
+                cardFill: "#1f1905",
+                iconBg: "#422006",
+                accent: "#facc15",
+                badgeText: "SEARCH",
+                typeLabel: "INVERTED INDEX",
+              }
+            : /(mongo|dynamo|cassandra|nosql)/.test(lower)
+              ? {
+                  stroke: "#22c55e",
+                  cardFill: "#071f10",
+                  iconBg: "#14532d",
+                  accent: "#4ade80",
+                  badgeText: "NOSQL",
+                  typeLabel: "DOCUMENT DB",
+                }
+              : /(rabbit|amqp|celery|bull)/.test(lower)
+                ? {
+                    stroke: "#d946ef",
+                    cardFill: "#220a29",
+                    iconBg: "#4a044e",
+                    accent: "#e879f9",
+                    badgeText: "MQ BUS",
+                    typeLabel: "TASK QUEUE",
+                  }
+                : /(otel|prometheus|grafana|jaeger|monitor|telemetry)/.test(lower)
+                  ? {
+                      stroke: "#ec4899",
+                      cardFill: "#240919",
+                      iconBg: "#500724",
+                      accent: "#f472b6",
+                      badgeText: "OTEL",
+                      typeLabel: "OBSERVABILITY",
+                    }
+                  : /(worker|consumer|job|batch|cron)/.test(lower)
+                    ? {
+                        stroke: "#3b82f6",
+                        cardFill: "#0b162c",
+                        iconBg: "#172554",
+                        accent: "#60a5fa",
+                        badgeText: "WORKER",
+                        typeLabel: "ASYNC CONSUMER",
+                      }
+                    : /(auth|sso|oauth|iam|keycloak)/.test(lower)
+                      ? {
+                          stroke: "#14b8a6",
+                          cardFill: "#061f1e",
+                          iconBg: "#134e4a",
+                          accent: "#2dd4bf",
+                          badgeText: "AUTH",
+                          typeLabel: "IDENTITY / SSO",
+                        }
+                      : /(lambda|serverless|fn|edge-fn)/.test(lower)
+                        ? {
+                            stroke: "#38bdf8",
+                            cardFill: "#081b29",
+                            iconBg: "#075985",
+                            accent: "#7dd3fc",
+                            badgeText: "FN",
+                            typeLabel: "SERVERLESS",
+                          }
+                        : archetype === "GATEWAY"
+                          ? {
+                              stroke: "#f59e0b",
+                              cardFill: "#1d1407",
+                              iconBg: "#451a03",
+                              accent: "#fbbf24",
+                              badgeText: "EDGE",
+                              typeLabel: "LOAD BALANCER",
+                            }
+                          : archetype === "DATABASE"
+                            ? {
+                                stroke: "#10b981",
+                                cardFill: "#061f17",
+                                iconBg: "#064e3b",
+                                accent: "#34d399",
+                                badgeText: "DATA",
+                                typeLabel: "RELATIONAL DB",
+                              }
+                            : archetype === "QUEUE"
+                              ? {
+                                  stroke: "#a855f7",
+                                  cardFill: "#1a0e29",
+                                  iconBg: "#3b0764",
+                                  accent: "#c084fc",
+                                  badgeText: "STREAM",
+                                  typeLabel: "EVENT BROKER",
+                                }
+                              : {
+                                  stroke: "#6366f1",
+                                  cardFill: "#0f152a",
+                                  iconBg: "#1e1b4b",
+                                  accent: "#818cf8",
+                                  badgeText: "COMPUTE",
+                                  typeLabel: "APP SERVER",
+                                };
   if (isDropTarget) {
     return { ...base, stroke: "#38bdf8", accent: "#38bdf8" };
   }
@@ -236,7 +339,7 @@ export function StudioObservability({
   onSelect: (service: string) => void;
   busy?: boolean;
   onQuickAction?: (command: StudioQuickAction) => void;
-  onSpawnBlock?: (archetype: "SERVICE" | "GATEWAY" | "DATABASE" | "QUEUE") => string | undefined;
+  onSpawnBlock?: (presetKey: string) => string | undefined;
   canvasOnly?: boolean;
   defaultView?: "2D" | "3D";
 }) {
@@ -834,12 +937,7 @@ export function StudioObservability({
             event.dataTransfer.dropEffect = "copy";
           }}
           onDrop={(event) => {
-            const spawnArch = event.dataTransfer.getData("application/x-mavis-studio-spawn") as
-              | "SERVICE"
-              | "GATEWAY"
-              | "DATABASE"
-              | "QUEUE"
-              | "";
+            const spawnArch = event.dataTransfer.getData("application/x-mavis-studio-spawn");
             if (!spawnArch || !onSpawnBlock) return;
             event.preventDefault();
             const createdName = onSpawnBlock(spawnArch);
@@ -1184,6 +1282,7 @@ export function StudioObservability({
                 isStopped || isAffected,
                 isSelected,
                 isDropTarget,
+                name,
               );
               const strokeColor = theme.stroke;
 

@@ -207,6 +207,255 @@ const LEFT_DOCK_ACTIONS = [
   },
 ];
 
+type StudioComponentPreset = {
+  key: string;
+  label: string;
+  spec: string;
+  category: "EDGE" | "COMPUTE" | "DATA" | "INFRA";
+  layer: string;
+  elementType: string;
+  baseCpu: number;
+  baseRam: number;
+  cardClass: string;
+  iconClass: string;
+  titleClass: string;
+  specClass: string;
+};
+
+const STUDIO_COMPONENT_CATALOG: StudioComponentPreset[] = [
+  // EDGE & SECURITY (4)
+  {
+    key: "cdn-edge",
+    label: "CDN Edge",
+    spec: "5,000 req/s · 4ms",
+    category: "EDGE",
+    layer: "edge",
+    elementType: "API_GATEWAY",
+    baseCpu: 9.5,
+    baseRam: 128,
+    cardClass: "border-cyan-500/35 bg-cyan-500/10 hover:border-cyan-400 hover:bg-cyan-500/20",
+    iconClass: "bg-cyan-500/25 text-cyan-300",
+    titleClass: "text-cyan-200",
+    specClass: "text-cyan-300/70",
+  },
+  {
+    key: "waf-shield",
+    label: "WAF Firewall",
+    spec: "3,000 req/s · DDoS",
+    category: "EDGE",
+    layer: "edge",
+    elementType: "API_GATEWAY",
+    baseCpu: 14.0,
+    baseRam: 150,
+    cardClass: "border-rose-500/35 bg-rose-500/10 hover:border-rose-400 hover:bg-rose-500/20",
+    iconClass: "bg-rose-500/25 text-rose-300",
+    titleClass: "text-rose-200",
+    specClass: "text-rose-300/70",
+  },
+  {
+    key: "load-balancer",
+    label: "Load Balancer",
+    spec: "2,500 req/s · L7 LB",
+    category: "EDGE",
+    layer: "edge",
+    elementType: "API_GATEWAY",
+    baseCpu: 16.5,
+    baseRam: 160,
+    cardClass: "border-amber-500/35 bg-amber-500/10 hover:border-amber-400 hover:bg-amber-500/20",
+    iconClass: "bg-amber-500/25 text-amber-300",
+    titleClass: "text-amber-200",
+    specClass: "text-amber-300/70",
+  },
+  {
+    key: "edge-gateway",
+    label: "API Gateway",
+    spec: "1,500 req/s · OAuth",
+    category: "EDGE",
+    layer: "edge",
+    elementType: "API_GATEWAY",
+    baseCpu: 22.0,
+    baseRam: 180,
+    cardClass: "border-orange-500/35 bg-orange-500/10 hover:border-orange-400 hover:bg-orange-500/20",
+    iconClass: "bg-orange-500/25 text-orange-300",
+    titleClass: "text-orange-200",
+    specClass: "text-orange-300/70",
+  },
+
+  // COMPUTE & MICROSERVICES (4)
+  {
+    key: "app-service",
+    label: "App Server",
+    spec: "500 req/s · 220 MiB",
+    category: "COMPUTE",
+    layer: "application",
+    elementType: "SERVICE_CONTAINER",
+    baseCpu: 34.0,
+    baseRam: 220,
+    cardClass: "border-indigo-500/35 bg-indigo-500/10 hover:border-indigo-400 hover:bg-indigo-500/20",
+    iconClass: "bg-indigo-500/25 text-indigo-300",
+    titleClass: "text-indigo-200",
+    specClass: "text-indigo-300/70",
+  },
+  {
+    key: "async-worker",
+    label: "Worker Node",
+    spec: "300 jobs/s · Consumer",
+    category: "COMPUTE",
+    layer: "domain",
+    elementType: "SERVICE_CONTAINER",
+    baseCpu: 42.0,
+    baseRam: 280,
+    cardClass: "border-blue-500/35 bg-blue-500/10 hover:border-blue-400 hover:bg-blue-500/20",
+    iconClass: "bg-blue-500/25 text-blue-300",
+    titleClass: "text-blue-200",
+    specClass: "text-blue-300/70",
+  },
+  {
+    key: "auth-sso",
+    label: "Auth / SSO",
+    spec: "800 req/s · JWT IAM",
+    category: "COMPUTE",
+    layer: "domain",
+    elementType: "SERVICE_CONTAINER",
+    baseCpu: 21.0,
+    baseRam: 160,
+    cardClass: "border-teal-500/35 bg-teal-500/10 hover:border-teal-400 hover:bg-teal-500/20",
+    iconClass: "bg-teal-500/25 text-teal-300",
+    titleClass: "text-teal-200",
+    specClass: "text-teal-300/70",
+  },
+  {
+    key: "lambda-fn",
+    label: "Serverless Fn",
+    spec: "1,200 req/s · Auto",
+    category: "COMPUTE",
+    layer: "application",
+    elementType: "SERVICE_CONTAINER",
+    baseCpu: 14.0,
+    baseRam: 128,
+    cardClass: "border-sky-500/35 bg-sky-500/10 hover:border-sky-400 hover:bg-sky-500/20",
+    iconClass: "bg-sky-500/25 text-sky-300",
+    titleClass: "text-sky-200",
+    specClass: "text-sky-300/70",
+  },
+
+  // DATA & STORAGE (5)
+  {
+    key: "postgres-db",
+    label: "PostgreSQL DB",
+    spec: "400 qps · ACID SQL",
+    category: "DATA",
+    layer: "data",
+    elementType: "DATABASE",
+    baseCpu: 32.0,
+    baseRam: 320,
+    cardClass: "border-emerald-500/35 bg-emerald-500/10 hover:border-emerald-400 hover:bg-emerald-500/20",
+    iconClass: "bg-emerald-500/25 text-emerald-300",
+    titleClass: "text-emerald-200",
+    specClass: "text-emerald-300/70",
+  },
+  {
+    key: "redis-cache",
+    label: "Redis Cache",
+    spec: "10k ops/s · 2ms KV",
+    category: "DATA",
+    layer: "data",
+    elementType: "DATABASE",
+    baseCpu: 15.0,
+    baseRam: 190,
+    cardClass: "border-red-500/35 bg-red-500/10 hover:border-red-400 hover:bg-red-500/20",
+    iconClass: "bg-red-500/25 text-red-300",
+    titleClass: "text-red-200",
+    specClass: "text-red-300/70",
+  },
+  {
+    key: "mongo-nosql",
+    label: "MongoDB Doc",
+    spec: "1,800 ops/s · NoSQL",
+    category: "DATA",
+    layer: "data",
+    elementType: "DATABASE",
+    baseCpu: 28.0,
+    baseRam: 290,
+    cardClass: "border-green-500/35 bg-green-500/10 hover:border-green-400 hover:bg-green-500/20",
+    iconClass: "bg-green-500/25 text-green-300",
+    titleClass: "text-green-200",
+    specClass: "text-green-300/70",
+  },
+  {
+    key: "s3-storage",
+    label: "S3 Object Store",
+    spec: "2,000 req/s · Blob",
+    category: "DATA",
+    layer: "data",
+    elementType: "DATABASE",
+    baseCpu: 11.0,
+    baseRam: 140,
+    cardClass: "border-sky-500/35 bg-sky-500/10 hover:border-sky-400 hover:bg-sky-500/20",
+    iconClass: "bg-sky-500/25 text-sky-300",
+    titleClass: "text-sky-200",
+    specClass: "text-sky-300/70",
+  },
+  {
+    key: "elastic-search",
+    label: "ElasticSearch",
+    spec: "700 qps · Full-Text",
+    category: "DATA",
+    layer: "data",
+    elementType: "DATABASE",
+    baseCpu: 39.0,
+    baseRam: 380,
+    cardClass: "border-yellow-500/35 bg-yellow-500/10 hover:border-yellow-400 hover:bg-yellow-500/20",
+    iconClass: "bg-yellow-500/25 text-yellow-300",
+    titleClass: "text-yellow-200",
+    specClass: "text-yellow-300/70",
+  },
+
+  // MESSAGING & OBSERVABILITY (3)
+  {
+    key: "kafka-broker",
+    label: "Kafka Stream",
+    spec: "5,000 msg/s · Topic",
+    category: "INFRA",
+    layer: "infrastructure",
+    elementType: "MESSAGE_BROKER",
+    baseCpu: 24.0,
+    baseRam: 310,
+    cardClass: "border-purple-500/35 bg-purple-500/10 hover:border-purple-400 hover:bg-purple-500/20",
+    iconClass: "bg-purple-500/25 text-purple-300",
+    titleClass: "text-purple-200",
+    specClass: "text-purple-300/70",
+  },
+  {
+    key: "rabbitmq-bus",
+    label: "RabbitMQ Bus",
+    spec: "1,500 msg/s · AMQP",
+    category: "INFRA",
+    layer: "infrastructure",
+    elementType: "MESSAGE_BROKER",
+    baseCpu: 19.0,
+    baseRam: 210,
+    cardClass: "border-fuchsia-500/35 bg-fuchsia-500/10 hover:border-fuchsia-400 hover:bg-fuchsia-500/20",
+    iconClass: "bg-fuchsia-500/25 text-fuchsia-300",
+    titleClass: "text-fuchsia-200",
+    specClass: "text-fuchsia-300/70",
+  },
+  {
+    key: "otel-collector",
+    label: "Prometheus / OTel",
+    spec: "2,000 spans/s · APM",
+    category: "INFRA",
+    layer: "infrastructure",
+    elementType: "MESSAGE_BROKER",
+    baseCpu: 16.0,
+    baseRam: 190,
+    cardClass: "border-pink-500/35 bg-pink-500/10 hover:border-pink-400 hover:bg-pink-500/20",
+    iconClass: "bg-pink-500/25 text-pink-300",
+    titleClass: "text-pink-200",
+    specClass: "text-pink-300/70",
+  },
+];
+
 type LocalSnapshot = {
   id: string;
   capturedAt: string;
@@ -238,16 +487,17 @@ export function StudioWorkbench() {
     template.services[1] ?? "order-service",
   );
   const [newNodeName, setNewNodeName] = useState("");
-  const [newNodeArchetype, setNewNodeArchetype] = useState<
-    "SERVICE" | "GATEWAY" | "DATABASE" | "QUEUE"
-  >("SERVICE");
+  const [componentCategory, setComponentCategory] = useState<
+    "ALL" | "EDGE" | "COMPUTE" | "DATA" | "INFRA"
+  >("ALL");
+  const [componentSearch, setComponentSearch] = useState("");
   const [actionsLog, setActionsLog] = useState<StudioData["actions"]>([]);
   const [localSnapshots, setLocalSnapshots] = useState<LocalSnapshot[]>([]);
   const [snapshotNote, setSnapshotNote] = useState("");
   const [capturing, setCapturing] = useState(false);
   const [liveSessionId, setLiveSessionId] = useState(initialSessionId);
   const [bottomTab, setBottomTab] = useState<"MATRIX" | "LOGS" | "SNAPSHOTS">("MATRIX");
-  const [leftWidth, setLeftWidth] = useState(212);
+  const [leftWidth, setLeftWidth] = useState(236);
   const [rightWidth, setRightWidth] = useState(264);
   const [bottomHeight, setBottomHeight] = useState(176);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
@@ -360,19 +610,24 @@ export function StudioWorkbench() {
     ]);
   }
 
-  function addCustomBlock(presetArchetype?: "SERVICE" | "GATEWAY" | "DATABASE" | "QUEUE") {
-    const arch = presetArchetype ?? newNodeArchetype;
-    const rawName =
-      newNodeName.trim() ||
-      (arch === "DATABASE"
-        ? `postgres-db-${customServices.length + 1}`
-        : arch === "GATEWAY"
-          ? `edge-gateway-${customServices.length + 1}`
-          : arch === "QUEUE"
-            ? `kafka-mq-${customServices.length + 1}`
-            : `service-${customServices.length + 1}`);
-    const clean = rawName.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
-    if (!clean || customServices.includes(clean)) return undefined;
+  function addCustomBlock(presetKey?: string) {
+    const legacyMap: Record<string, string> = {
+      SERVICE: "app-service",
+      GATEWAY: "edge-gateway",
+      DATABASE: "postgres-db",
+      QUEUE: "kafka-broker",
+    };
+    const resolvedKey = presetKey ? (legacyMap[presetKey] ?? presetKey) : "app-service";
+    const preset = STUDIO_COMPONENT_CATALOG.find((item) => item.key === resolvedKey);
+    const baseSlug = newNodeName.trim() || preset?.key || resolvedKey;
+    const cleanBase = baseSlug.toLowerCase().replace(/[^a-z0-9-_]/g, "-");
+    if (!cleanBase) return undefined;
+    let clean = cleanBase;
+    let suffix = 2;
+    while (customServices.includes(clean)) {
+      clean = `${cleanBase}-${suffix}`;
+      suffix += 1;
+    }
     setCustomServices((prev) => [...prev, clean]);
     setReplicasMap((prev) => ({ ...prev, [clean]: 1 }));
     setBaselineReplicasMap((prev) => ({ ...prev, [clean]: 1 }));
@@ -397,11 +652,32 @@ export function StudioWorkbench() {
       ),
       ...customServices
         .filter((s) => !template.services.includes(s))
-        .map((s) => ({
-          from: customServices[0] ?? "api-gateway",
-          to: s,
-          protocol: "HTTP",
-        })),
+        .map((s) => {
+          const lower = s.toLowerCase();
+          const gatewayNode = customServices[0] ?? "api-gateway";
+          const primaryAppNode =
+            customServices.find(
+              (n) =>
+                !/(gateway|cdn|waf|lb|balancer|postgres|mysql|mongo|redis|s3|elastic|kafka|rabbit|otel)/.test(
+                  n.toLowerCase(),
+                ),
+            ) ?? gatewayNode;
+          if (/(cdn|waf|shield|firewall|load-balancer)/.test(lower)) {
+            return { from: s, to: gatewayNode, protocol: "HTTPS" };
+          }
+          if (
+            /(postgres|mysql|mongo|redis|cache|s3|storage|elastic|search|kafka|rabbit|mq|otel|monitor)/.test(
+              lower,
+            )
+          ) {
+            return { from: primaryAppNode, to: s, protocol: "TCP" };
+          }
+          return {
+            from: gatewayNode,
+            to: s,
+            protocol: "HTTP",
+          };
+        }),
     ],
     [template, customServices],
   );
@@ -445,8 +721,9 @@ export function StudioWorkbench() {
 
     const servicesTelemetry = customServices.map((svc) => {
       const reps = replicasMap[svc] ?? 1;
-      const baseCpuVal = template.baseCpu[svc] ?? 26.5;
-      const baseRamVal = template.baseRam[svc] ?? 220;
+      const catalogMatch = STUDIO_COMPONENT_CATALOG.find((item) => svc.startsWith(item.key));
+      const baseCpuVal = template.baseCpu[svc] ?? catalogMatch?.baseCpu ?? 26.5;
+      const baseRamVal = template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
       const perPodCpu = reps <= 0 ? 0 : Math.max(4.2, baseCpuVal / Math.pow(reps, 0.68));
       const perPodRam = reps <= 0 ? 0 : baseRamVal;
       const stats = Array.from({ length: Math.max(0, reps) }, (_, podIdx) => ({
@@ -508,8 +785,9 @@ export function StudioWorkbench() {
     return customServices.map((svc) => {
       const before = baselineReplicasMap[svc] ?? 1;
       const now = replicasMap[svc] ?? 1;
-      const baseCpuVal = template.baseCpu[svc] ?? 26.5;
-      const baseRamVal = template.baseRam[svc] ?? 220;
+      const catalogMatch = STUDIO_COMPONENT_CATALOG.find((item) => svc.startsWith(item.key));
+      const baseCpuVal = template.baseCpu[svc] ?? catalogMatch?.baseCpu ?? 26.5;
+      const baseRamVal = template.baseRam[svc] ?? catalogMatch?.baseRam ?? 220;
       const perPodCpu = now <= 0 ? 0 : Math.max(4.2, baseCpuVal / Math.pow(now, 0.68));
       const perPodRam = now <= 0 ? 0 : baseRamVal;
       const totalRam = perPodRam * Math.max(0, now);
@@ -521,8 +799,8 @@ export function StudioWorkbench() {
       const p95Now = now <= 0 ? 980 : Math.max(8, Math.round(48 / Math.sqrt(Math.max(1, now))));
       return {
         serviceName: svc,
-        layer: template.layers[svc] ?? "domain",
-        type: template.types[svc] ?? "SERVICE_CONTAINER",
+        layer: template.layers[svc] ?? catalogMatch?.layer ?? "domain",
+        type: template.types[svc] ?? catalogMatch?.elementType ?? "SERVICE_CONTAINER",
         inboundCount: inbound.length,
         outboundCount: outbound.length,
         inboundCallers: inbound.map((e) => e.from),
@@ -735,93 +1013,106 @@ export function StudioWorkbench() {
               className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/90 p-2.5"
             >
               <div className="space-y-3">
-                {/* Section A: 3D Architecture Block Spawner (Click OR Drag onto Canvas) */}
+                {/* Section A: 16-Component System Design Catalog (Filterable + Searchable + Drag/Click) */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                      Components
+                      Components ({STUDIO_COMPONENT_CATALOG.length})
                     </p>
                     <span className="text-[9px] text-muted-foreground">Drag or Click</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData("application/x-mavis-studio-spawn", "SERVICE");
-                        event.dataTransfer.effectAllowed = "copy";
-                      }}
-                      onClick={() => addCustomBlock("SERVICE")}
-                      className="flex cursor-grab items-center gap-1.5 rounded-lg border border-indigo-500/35 bg-indigo-500/10 px-2 py-1.5 text-left text-[11px] transition hover:border-indigo-400 hover:bg-indigo-500/20 active:cursor-grabbing"
-                    >
-                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-indigo-500/25 text-indigo-300">
-                        <Server className="size-3" />
-                      </span>
-                      <div className="min-w-0 leading-tight">
-                        <p className="truncate font-semibold text-indigo-200">+ Service</p>
-                        <p className="truncate text-[9px] text-indigo-300/70">App Pod</p>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData("application/x-mavis-studio-spawn", "GATEWAY");
-                        event.dataTransfer.effectAllowed = "copy";
-                      }}
-                      onClick={() => addCustomBlock("GATEWAY")}
-                      className="flex cursor-grab items-center gap-1.5 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2 py-1.5 text-left text-[11px] transition hover:border-amber-400 hover:bg-amber-500/20 active:cursor-grabbing"
-                    >
-                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-amber-500/25 text-amber-300">
-                        <Workflow className="size-3" />
-                      </span>
-                      <div className="min-w-0 leading-tight">
-                        <p className="truncate font-semibold text-amber-200">+ Gateway</p>
-                        <p className="truncate text-[9px] text-amber-300/70">Edge LB</p>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData("application/x-mavis-studio-spawn", "DATABASE");
-                        event.dataTransfer.effectAllowed = "copy";
-                      }}
-                      onClick={() => addCustomBlock("DATABASE")}
-                      className="flex cursor-grab items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2 py-1.5 text-left text-[11px] transition hover:border-emerald-400 hover:bg-emerald-500/20 active:cursor-grabbing"
-                    >
-                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-emerald-500/25 text-emerald-300">
-                        <Database className="size-3" />
-                      </span>
-                      <div className="min-w-0 leading-tight">
-                        <p className="truncate font-semibold text-emerald-200">+ Database</p>
-                        <p className="truncate text-[9px] text-emerald-300/70">SQL Silo</p>
-                      </div>
-                    </button>
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={(event) => {
-                        event.dataTransfer.setData("application/x-mavis-studio-spawn", "QUEUE");
-                        event.dataTransfer.effectAllowed = "copy";
-                      }}
-                      onClick={() => addCustomBlock("QUEUE")}
-                      className="flex cursor-grab items-center gap-1.5 rounded-lg border border-purple-500/35 bg-purple-500/10 px-2 py-1.5 text-left text-[11px] transition hover:border-purple-400 hover:bg-purple-500/20 active:cursor-grabbing"
-                    >
-                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-purple-500/25 text-purple-300">
-                        <Layers className="size-3" />
-                      </span>
-                      <div className="min-w-0 leading-tight">
-                        <p className="truncate font-semibold text-purple-200">+ Broker</p>
-                        <p className="truncate text-[9px] text-purple-300/70">MQ Pipe</p>
-                      </div>
-                    </button>
+
+                  {/* Search Input */}
+                  <Input
+                    value={componentSearch}
+                    onChange={(e) => setComponentSearch(e.target.value)}
+                    placeholder="🔍 Search 16 components..."
+                    className="h-6 text-[11px]"
+                  />
+
+                  {/* Category Filter Pills (200Lab style: All | Edge | Compute | Data | Infra) */}
+                  <div className="flex flex-wrap gap-1">
+                    {(
+                      [
+                        ["ALL", "All"],
+                        ["EDGE", "Edge"],
+                        ["COMPUTE", "Compute"],
+                        ["DATA", "Data"],
+                        ["INFRA", "Infra"],
+                      ] as const
+                    ).map(([cat, label]) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setComponentCategory(cat)}
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
+                          componentCategory === cat
+                            ? "bg-emerald-500 text-slate-950"
+                            : "border border-border/70 bg-background/60 text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
-                  <div className="flex gap-1">
+
+                  {/* Scrollable Component Cards */}
+                  <div className="grid max-h-[250px] grid-cols-1 gap-1 overflow-y-auto pr-0.5">
+                    {STUDIO_COMPONENT_CATALOG.filter((item) => {
+                      const matchesCat =
+                        componentCategory === "ALL" || item.category === componentCategory;
+                      const q = componentSearch.trim().toLowerCase();
+                      const matchesSearch =
+                        !q ||
+                        item.label.toLowerCase().includes(q) ||
+                        item.key.toLowerCase().includes(q) ||
+                        item.spec.toLowerCase().includes(q);
+                      return matchesCat && matchesSearch;
+                    }).map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        draggable
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData("application/x-mavis-studio-spawn", item.key);
+                          event.dataTransfer.effectAllowed = "copy";
+                        }}
+                        onClick={() => addCustomBlock(item.key)}
+                        className={`flex cursor-grab items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[11px] transition active:cursor-grabbing ${item.cardClass}`}
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className={`flex size-6 shrink-0 items-center justify-center rounded ${item.iconClass}`}
+                          >
+                            {item.category === "EDGE" ? (
+                              <Workflow className="size-3.5" />
+                            ) : item.category === "DATA" ? (
+                              <Database className="size-3.5" />
+                            ) : item.category === "INFRA" ? (
+                              <Layers className="size-3.5" />
+                            ) : (
+                              <Server className="size-3.5" />
+                            )}
+                          </span>
+                          <div className="min-w-0 leading-tight">
+                            <p className={`truncate font-semibold ${item.titleClass}`}>
+                              + {item.label}
+                            </p>
+                            <p className={`truncate font-mono text-[9px] ${item.specClass}`}>
+                              {item.spec}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] opacity-55">⋮⋮</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-1 pt-0.5">
                     <Input
                       value={newNodeName}
                       onChange={(e) => setNewNodeName(e.target.value)}
-                      placeholder="Custom node..."
+                      placeholder="Custom node name..."
                       className="h-6 text-[11px]"
                     />
                     <Button
