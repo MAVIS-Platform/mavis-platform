@@ -317,4 +317,45 @@ test("WF-04 per-snapshot submission explanations, > 5.0/10 grading rule, and SR-
   });
   assert.equal(passReview.labOutcome, "PASSED");
   assert.equal(passReview.score, 60);
+
+  // Verify resolveSubmissionOutcome & SubmissionResult logic on (9.0, 5.0) -> score: 70, labOutcome: "NEEDS_REVISION"
+  const submissionsScreen = read("src/features/submissions/screens.tsx");
+  const { resolveSubmissionOutcome } = require("../src/features/submissions/grading.tsx");
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 70,
+      labOutcome: "NEEDS_REVISION",
+      snapshotGrades: [
+        { score: 9.0 },
+        { score: 5.0 },
+      ],
+    }),
+    "NEEDS REVISION",
+  );
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 70,
+      snapshotGrades: [
+        { score: 9.0 },
+        { score: 5.0 },
+      ],
+    }),
+    "NEEDS REVISION",
+  );
+  assert.equal(
+    resolveSubmissionOutcome({
+      status: "GRADED",
+      score: 60,
+      labOutcome: "PASSED",
+      snapshotGrades: [
+        { score: 5.1 },
+        { score: 6.9 },
+      ],
+    }),
+    "PASS",
+  );
+  assert.ok(submissionsScreen.includes("resolveSubmissionOutcome(query.data)"));
+  assert.ok(grading.includes("At least one snapshot scored <= 5.0 / 10"));
 });
