@@ -4,16 +4,32 @@ import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
+  Activity,
   ArrowLeft,
+  BarChart3,
   Boxes,
   Camera,
+  Cpu,
+  CreditCard,
   Database,
+  FileJson,
+  Flame,
+  GitFork,
+  Globe,
+  HardDrive,
+  KeyRound,
   Layers,
+  Network,
+  Package,
   Play,
   Plus,
   RotateCcw,
+  Search,
+  Send,
   Server,
   ShieldAlert,
+  ShieldCheck,
+  ShoppingCart,
   Sparkles,
   Trash2,
   Workflow,
@@ -466,6 +482,39 @@ type LocalSnapshot = {
   totalInstances: number;
   totalRamMiB: number;
 };
+
+function renderComponentIcon(keyOrName: string, className = "size-4") {
+  const n = keyOrName.toLowerCase();
+  if (n.includes("cdn")) return <Globe className={className} />;
+  if (n.includes("waf") || n.includes("shield") || n.includes("firewall") || n.includes("fraud"))
+    return <ShieldCheck className={className} />;
+  if (n.includes("load-balancer") || n.includes("lb"))
+    return <GitFork className={`${className} rotate-90`} />;
+  if (n.includes("gateway") || n.includes("edge")) return <Network className={className} />;
+  if (n.includes("worker") || n.includes("async")) return <Cpu className={className} />;
+  if (n.includes("auth") || n.includes("sso") || n.includes("iam"))
+    return <KeyRound className={className} />;
+  if (n.includes("lambda") || n.includes("fn") || n.includes("serverless"))
+    return <Zap className={className} />;
+  if (n.includes("redis") || n.includes("cache")) return <Flame className={className} />;
+  if (n.includes("mongo") || n.includes("nosql") || n.includes("doc"))
+    return <FileJson className={className} />;
+  if (n.includes("s3") || n.includes("storage") || n.includes("blob"))
+    return <HardDrive className={className} />;
+  if (n.includes("elastic") || n.includes("search")) return <Search className={className} />;
+  if (n.includes("postgres") || n.includes("db") || n.includes("sql") || n.includes("settlement"))
+    return <Database className={className} />;
+  if (n.includes("rabbit") || n.includes("bus") || n.includes("mq"))
+    return <Send className={className} />;
+  if (n.includes("otel") || n.includes("prometheus") || n.includes("metric"))
+    return <BarChart3 className={className} />;
+  if (n.includes("kafka") || n.includes("stream") || n.includes("broker"))
+    return <Activity className={className} />;
+  if (n.includes("order")) return <ShoppingCart className={className} />;
+  if (n.includes("payment") || n.includes("ledger")) return <CreditCard className={className} />;
+  if (n.includes("inventory")) return <Package className={className} />;
+  return <Server className={className} />;
+}
 
 export function StudioWorkbench() {
   const { t } = useLocale();
@@ -1077,23 +1126,15 @@ export function StudioWorkbench() {
                         onClick={() => addCustomBlock(item.key)}
                         className={`flex cursor-grab items-center justify-between gap-1.5 rounded-lg border px-2 py-1.5 text-left text-[11px] transition active:cursor-grabbing ${item.cardClass}`}
                       >
-                        <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex min-w-0 items-center gap-2.5">
                           <span
-                            className={`flex size-6 shrink-0 items-center justify-center rounded ${item.iconClass}`}
+                            className={`flex size-8 shrink-0 items-center justify-center rounded-lg border border-white/10 shadow-xs ${item.iconClass}`}
                           >
-                            {item.category === "EDGE" ? (
-                              <Workflow className="size-3.5" />
-                            ) : item.category === "DATA" ? (
-                              <Database className="size-3.5" />
-                            ) : item.category === "INFRA" ? (
-                              <Layers className="size-3.5" />
-                            ) : (
-                              <Server className="size-3.5" />
-                            )}
+                            {renderComponentIcon(item.key, "size-4")}
                           </span>
                           <div className="min-w-0 leading-tight">
                             <p className={`truncate font-semibold ${item.titleClass}`}>
-                              + {item.label}
+                              {item.label}
                             </p>
                             <p className={`truncate font-mono text-[9px] ${item.specClass}`}>
                               {item.spec}
@@ -1543,14 +1584,16 @@ export function StudioWorkbench() {
                           <div className="flex items-center justify-between gap-1">
                             <div className="flex min-w-0 items-center gap-1.5">
                               <span
-                                className={`size-2 shrink-0 rounded-full ${
+                                className={`flex size-5 shrink-0 items-center justify-center rounded ${
                                   isDown
-                                    ? "bg-rose-500"
+                                    ? "bg-rose-500/20 text-rose-400"
                                     : row.replicasNow > 1
-                                      ? "bg-sky-400"
-                                      : "bg-emerald-400"
+                                      ? "bg-sky-500/20 text-sky-400"
+                                      : "bg-emerald-500/20 text-emerald-400"
                                 }`}
-                              />
+                              >
+                                {renderComponentIcon(row.serviceName, "size-3")}
+                              </span>
                               <span className="truncate font-mono text-[11px] font-bold">
                                 {row.serviceName}
                               </span>

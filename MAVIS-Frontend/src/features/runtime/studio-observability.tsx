@@ -328,6 +328,150 @@ function renderIsoBox(
   );
 }
 
+function renderNodeFunctionGlyph(
+  name: string,
+  archetype: string,
+  cx: number,
+  cy: number,
+  color: string,
+) {
+  const n = name.toLowerCase();
+  if (n.includes("cdn")) {
+    return (
+      <g stroke={color} strokeWidth="1.3" fill="none">
+        <circle cx={cx} cy={cy} r="5.5" />
+        <ellipse cx={cx} cy={cy} rx="2.6" ry="5.5" />
+        <line x1={cx - 5.2} y1={cy} x2={cx + 5.2} y2={cy} />
+      </g>
+    );
+  }
+  if (n.includes("waf") || n.includes("shield") || n.includes("firewall") || n.includes("fraud")) {
+    return (
+      <path
+        d={`M ${cx},${cy - 5.5} L ${cx + 4.8},${cy - 3.5} L ${cx + 4.8},${cy + 0.5} C ${cx + 4.8},${cy + 3.5} ${cx},${cy + 5.8} ${cx},${cy + 5.8} C ${cx},${cy + 5.8} ${cx - 4.8},${cy + 3.5} ${cx - 4.8},${cy + 0.5} L ${cx - 4.8},${cy - 3.5} Z`}
+        stroke={color}
+        strokeWidth="1.4"
+        fill="none"
+      />
+    );
+  }
+  if (n.includes("auth") || n.includes("sso") || n.includes("iam")) {
+    return (
+      <g stroke={color} strokeWidth="1.4" fill="none">
+        <rect x={cx - 4.2} y={cy - 1} width="8.4" height="6.2" rx="1.5" />
+        <path d={`M ${cx - 2.4},${cy - 1} L ${cx - 2.4},${cy - 3.2} A 2.4 2.4 0 0 1 ${cx + 2.4},${cy - 3.2} L ${cx + 2.4},${cy - 1}`} />
+      </g>
+    );
+  }
+  if (n.includes("lambda") || n.includes("fn") || n.includes("serverless") || n.includes("redis") || n.includes("cache")) {
+    return (
+      <polygon
+        points={`${cx + 1},${cy - 5.5} ${cx - 4.2},${cy + 0.5} ${cx - 0.3},${cy + 0.5} ${cx - 1.2},${cy + 5.5} ${cx + 4.2},${cy - 0.5} ${cx + 0.3},${cy - 0.5}`}
+        stroke={color}
+        strokeWidth="1.2"
+        fill={color}
+        fillOpacity="0.25"
+      />
+    );
+  }
+  if (n.includes("elastic") || n.includes("search")) {
+    return (
+      <g stroke={color} strokeWidth="1.5" strokeLinecap="round" fill="none">
+        <circle cx={cx - 1} cy={cy - 1} r="3.8" />
+        <line x1={cx + 1.8} y1={cy + 1.8} x2={cx + 5} y2={cy + 5} />
+      </g>
+    );
+  }
+  if (n.includes("mongo") || n.includes("nosql") || n.includes("doc")) {
+    return (
+      <path
+        d={`M ${cx},${cy - 5.8} C ${cx + 4.2},${cy - 2.5} ${cx + 4.2},${cy + 2.5} ${cx},${cy + 5.8} C ${cx - 4.2},${cy + 2.5} ${cx - 4.2},${cy - 2.5} ${cx},${cy - 5.8} Z`}
+        stroke={color}
+        strokeWidth="1.4"
+        fill="none"
+      />
+    );
+  }
+  if (n.includes("s3") || n.includes("storage") || n.includes("blob")) {
+    return (
+      <g stroke={color} strokeWidth="1.4" fill="none">
+        <path d={`M ${cx - 4.8},${cy - 3.5} L ${cx + 4.8},${cy - 3.5} L ${cx + 3.6},${cy + 4.8} L ${cx - 3.6},${cy + 4.8} Z`} />
+        <ellipse cx={cx} cy={cy - 3.5} rx="4.8" ry="1.6" />
+      </g>
+    );
+  }
+  if (n.includes("otel") || n.includes("prometheus") || n.includes("metric")) {
+    return (
+      <g stroke={color} strokeWidth="1.6" strokeLinecap="round">
+        <line x1={cx - 3.6} y1={cy + 4.5} x2={cx - 3.6} y2={cy + 0.5} />
+        <line x1={cx} y1={cy + 4.5} x2={cx} y2={cy - 4.2} />
+        <line x1={cx + 3.6} y1={cy + 4.5} x2={cx + 3.6} y2={cy - 1.5} />
+      </g>
+    );
+  }
+  if (n.includes("order")) {
+    return (
+      <g stroke={color} strokeWidth="1.3" fill="none">
+        <path d={`M ${cx - 5},${cy - 4} L ${cx - 3.2},${cy - 4} L ${cx - 1.6},${cy + 2} L ${cx + 3.8},${cy + 2} L ${cx + 4.8},${cy - 2} L ${cx - 2.4},${cy - 2}`} />
+        <circle cx={cx - 1.2} cy={cy + 4.2} r="1" fill={color} />
+        <circle cx={cx + 3.2} cy={cy + 4.2} r="1" fill={color} />
+      </g>
+    );
+  }
+  if (n.includes("payment") || n.includes("ledger")) {
+    return (
+      <g stroke={color} strokeWidth="1.3" fill="none">
+        <rect x={cx - 5.2} y={cy - 3.6} width="10.4" height="7.2" rx="1.4" />
+        <line x1={cx - 5.2} y1={cy - 1} x2={cx + 5.2} y2={cy - 1} />
+      </g>
+    );
+  }
+  if (n.includes("inventory")) {
+    return (
+      <g stroke={color} strokeWidth="1.3" fill="none">
+        <polygon points={`${cx},${cy - 5.2} ${cx + 4.8},${cy - 2.6} ${cx + 4.8},${cy + 2.6} ${cx},${cy + 5.2} ${cx - 4.8},${cy + 2.6} ${cx - 4.8},${cy - 2.6}`} />
+        <polyline points={`${cx - 4.8},${cy - 2.6} ${cx},${cy} ${cx + 4.8},${cy - 2.6}`} />
+        <line x1={cx} y1={cy} x2={cx} y2={cy + 5.2} />
+      </g>
+    );
+  }
+  if (archetype === "DATABASE") {
+    return (
+      <g stroke={color} strokeWidth="1.4" fill="none">
+        <ellipse cx={cx} cy={cy - 3.5} rx="4.8" ry="2" />
+        <path d={`M ${cx - 4.8},${cy - 3.5} L ${cx - 4.8},${cy + 3.5} A 4.8 2 0 0 0 ${cx + 4.8},${cy + 3.5} L ${cx + 4.8},${cy - 3.5}`} />
+        <path d={`M ${cx - 4.8},${cy} A 4.8 1.8 0 0 0 ${cx + 4.8},${cy}`} />
+      </g>
+    );
+  }
+  if (archetype === "GATEWAY") {
+    return (
+      <g stroke={color} strokeWidth="1.5" strokeLinecap="round" fill="none">
+        <path d={`M ${cx},${cy + 4.5} L ${cx},${cy}`} />
+        <path d={`M ${cx},${cy} L ${cx - 4},${cy - 4}`} />
+        <path d={`M ${cx},${cy} L ${cx + 4},${cy - 4}`} />
+        <circle cx={cx - 4} cy={cy - 4.2} r="1.2" fill={color} />
+        <circle cx={cx + 4} cy={cy - 4.2} r="1.2" fill={color} />
+      </g>
+    );
+  }
+  if (archetype === "QUEUE") {
+    return (
+      <g stroke={color} strokeWidth="1.5" strokeLinecap="round">
+        <line x1={cx - 4.5} y1={cy - 3.2} x2={cx + 4.5} y2={cy - 3.2} />
+        <line x1={cx - 4.5} y1={cy} x2={cx + 4.5} y2={cy} />
+        <line x1={cx - 4.5} y1={cy + 3.2} x2={cx + 4.5} y2={cy + 3.2} />
+      </g>
+    );
+  }
+  return (
+    <g stroke={color} strokeWidth="1.3" fill="none">
+      <rect x={cx - 5} y={cy - 4.2} width="10" height="3.6" rx="1" />
+      <rect x={cx - 5} y={cy + 0.8} width="10" height="3.6" rx="1" />
+    </g>
+  );
+}
+
 export function StudioObservability({
   data,
   selected,
@@ -1489,7 +1633,7 @@ export function StudioObservability({
                       </g>
                     )}
 
-                    {/* Sleek Floating Pill Name Tag below the 3D Pedestal */}
+                    {/* Sleek Floating Pill Name Tag below the 3D Pedestal with Functional Icon Badge */}
                     <rect
                       x={point.x - labelWidth / 2}
                       y={point.y + 16}
@@ -1502,14 +1646,24 @@ export function StudioObservability({
                       strokeOpacity={isSelected ? "0.95" : "0.45"}
                       strokeWidth={isSelected ? 1.6 : 1.1}
                     />
-                    <circle
-                      cx={point.x - labelWidth / 2 + 12}
-                      cy={point.y + 28}
-                      r="3.2"
-                      fill={isStopped ? "#f43f5e" : theme.accent}
+                    {/* Left Functional Component Icon Badge inside the Pill */}
+                    <rect
+                      x={point.x - labelWidth / 2 + 4}
+                      y={point.y + 20}
+                      width="16"
+                      height="16"
+                      rx="8"
+                      fill={isStopped ? "#881337" : theme.iconBg}
                     />
+                    {renderNodeFunctionGlyph(
+                      name,
+                      archetype,
+                      point.x - labelWidth / 2 + 12,
+                      point.y + 28,
+                      isStopped ? "#fda4af" : theme.accent,
+                    )}
                     <text
-                      x={point.x - 6}
+                      x={point.x - 4}
                       y={point.y + 31.5}
                       textAnchor="middle"
                       fill="#f8fafc"
@@ -1762,7 +1916,7 @@ export function StudioObservability({
                     {isStopped ? "CRASHED" : activePods > 1 ? `×${activePods} CLUSTER` : theme.badgeText}
                   </text>
 
-                  {/* Left Colored Icon Tile + Distinct Vector Icon per Archetype */}
+                  {/* Left Colored Icon Tile + Specific Functional Vector Icon per Component */}
                   <rect
                     x={point.x - 65}
                     y={point.y - 21}
@@ -1773,31 +1927,12 @@ export function StudioObservability({
                     stroke={theme.stroke}
                     strokeWidth="1.1"
                   />
-                  {archetype === "DATABASE" ? (
-                    <g stroke={theme.accent} strokeWidth="1.4" fill="none">
-                      <ellipse cx={point.x - 53} cy={point.y - 14} rx="6" ry="2.5" />
-                      <path d={`M ${point.x - 59},${point.y - 14} L ${point.x - 59},${point.y - 4} A 6 2.5 0 0 0 ${point.x - 47},${point.y - 4} L ${point.x - 47},${point.y - 14}`} />
-                      <path d={`M ${point.x - 59},${point.y - 9} A 6 2.2 0 0 0 ${point.x - 47},${point.y - 9}`} />
-                    </g>
-                  ) : archetype === "GATEWAY" ? (
-                    <g stroke={theme.accent} strokeWidth="1.6" strokeLinecap="round" fill="none">
-                      <path d={`M ${point.x - 53},${point.y - 3} L ${point.x - 53},${point.y - 9}`} />
-                      <path d={`M ${point.x - 53},${point.y - 9} L ${point.x - 58},${point.y - 14}`} />
-                      <path d={`M ${point.x - 53},${point.y - 9} L ${point.x - 48},${point.y - 14}`} />
-                      <circle cx={point.x - 58} cy={point.y - 15} r="1.3" fill={theme.accent} />
-                      <circle cx={point.x - 48} cy={point.y - 15} r="1.3" fill={theme.accent} />
-                    </g>
-                  ) : archetype === "QUEUE" ? (
-                    <g stroke={theme.accent} strokeWidth="1.5" strokeLinecap="round">
-                      <line x1={point.x - 59} y1={point.y - 13} x2={point.x - 47} y2={point.y - 13} />
-                      <line x1={point.x - 59} y1={point.y - 9} x2={point.x - 47} y2={point.y - 9} />
-                      <line x1={point.x - 59} y1={point.y - 5} x2={point.x - 47} y2={point.y - 5} />
-                    </g>
-                  ) : (
-                    <g stroke={theme.accent} strokeWidth="1.3" fill="none">
-                      <rect x={point.x - 60} y={point.y - 15} width="14" height="5" rx="1" />
-                      <rect x={point.x - 60} y={point.y - 8} width="14" height="5" rx="1" />
-                    </g>
+                  {renderNodeFunctionGlyph(
+                    name,
+                    archetype,
+                    point.x - 53,
+                    point.y - 9,
+                    theme.accent,
                   )}
 
                   {/* Service Name */}
