@@ -565,24 +565,31 @@ export function StudioObservability({
       : 0;
 
   return (
-    <div className={canvasOnly ? "flex h-full min-h-0 flex-1 flex-col gap-2" : "space-y-4"}>
+    <div className={canvasOnly ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "space-y-4"}>
       {exportError && <p role="alert">{t("Could not export graph")}</p>}
 
-      {/* Top Studio Viewport & Layout Toolbar */}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2">
-        <h3 className="mr-auto font-medium">{t("Runtime topology and impact")}</h3>
+      {/* Top Studio Viewport & Layout Toolbar (Sleek Floating HUD in canvasOnly mode) */}
+      <div
+        className={
+          canvasOnly
+            ? "pointer-events-auto absolute top-2.5 right-3 left-3 z-10 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-700/75 bg-slate-950/85 px-2.5 py-1.5 shadow-lg backdrop-blur-md"
+            : "flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2"
+        }
+      >
+        {!canvasOnly && <h3 className="mr-auto font-medium">{t("Runtime topology and impact")}</h3>}
         {(["2D", "3D"] as const).map((mode) => (
           <Button
             key={mode}
             size="sm"
             variant={view === mode ? "default" : "outline"}
             aria-pressed={view === mode}
+            className={canvasOnly ? "h-7 px-2.5 text-xs" : ""}
             onClick={() => setView(mode)}
           >
             {mode}
           </Button>
         ))}
-        <div className="flex flex-wrap items-center gap-1 border-l pl-2">
+        <div className="flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2">
           {(
             [
               ["LAYERED", "Layered"],
@@ -594,6 +601,7 @@ export function StudioObservability({
               key={mode}
               size="sm"
               variant={layoutMode === mode ? "secondary" : "outline"}
+              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
               onClick={() => {
                 setLayoutMode(mode);
                 setCustomOffsets({});
@@ -604,10 +612,11 @@ export function StudioObservability({
           ))}
         </div>
         {view === "3D" && (
-          <div className="flex flex-wrap items-center gap-1 border-l pl-2">
+          <div className="flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2">
             <Button
               size="sm"
               variant="outline"
+              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
               onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw - 0.2 }))}
             >
               {t("Rotate left")}
@@ -615,6 +624,7 @@ export function StudioObservability({
             <Button
               size="sm"
               variant="outline"
+              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
               onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.2 }))}
             >
               {t("Rotate right")}
@@ -622,6 +632,7 @@ export function StudioObservability({
             <Button
               size="sm"
               variant="outline"
+              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
               onClick={() =>
                 setCamera((value) => ({ ...value, pitch: Math.min(0.95, value.pitch + 0.15) }))
               }
@@ -631,6 +642,7 @@ export function StudioObservability({
             <Button
               size="sm"
               variant="outline"
+              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
               onClick={() =>
                 setCamera((value) => ({ ...value, pitch: Math.max(-0.6, value.pitch - 0.15) }))
               }
@@ -640,6 +652,7 @@ export function StudioObservability({
             <Button
               size="sm"
               variant="outline"
+              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
               onClick={() => setCamera({ yaw: 0.55, pitch: 0.38 })}
             >
               {t("Isometric")}
@@ -647,6 +660,7 @@ export function StudioObservability({
             <Button
               size="sm"
               variant="outline"
+              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
               onClick={() => setCamera({ yaw: 0.0, pitch: 0.92 })}
             >
               {t("Top-down")}
@@ -654,17 +668,23 @@ export function StudioObservability({
             <Button
               size="sm"
               variant="outline"
+              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
               onClick={() => setCamera({ yaw: 0.2, pitch: 0.08 })}
             >
               {t("Elevation")}
             </Button>
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-1 border-l pl-2">
+        <div
+          className={`flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2 ${
+            canvasOnly ? "ml-auto" : ""
+          }`}
+        >
           <Button
             size="sm"
             variant="outline"
             aria-label={t("Zoom in")}
+            className={canvasOnly ? "h-7 w-7 p-0 text-xs" : ""}
             onClick={() => setZoom((z) => Math.min(2.2, Number((z + 0.15).toFixed(2))))}
           >
             +
@@ -673,6 +693,7 @@ export function StudioObservability({
             size="sm"
             variant="outline"
             aria-label={t("Zoom out")}
+            className={canvasOnly ? "h-7 w-7 p-0 text-xs" : ""}
             onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.15).toFixed(2))))}
           >
             −
@@ -680,6 +701,7 @@ export function StudioObservability({
           <Button
             size="sm"
             variant={snapToGrid ? "secondary" : "outline"}
+            className={canvasOnly ? "h-7 px-2 text-xs" : ""}
             onClick={() => setSnapToGrid((prev) => !prev)}
           >
             {t("Snap to grid")}
@@ -687,6 +709,7 @@ export function StudioObservability({
           <Button
             size="sm"
             variant="outline"
+            className={canvasOnly ? "h-7 px-2 text-xs" : ""}
             onClick={() => {
               setCustomOffsets({});
               setPinnedPositions({});
@@ -698,11 +721,21 @@ export function StudioObservability({
             {t("Reset layout")}
           </Button>
         </div>
-        <div className="flex flex-wrap items-center gap-1 border-l pl-2">
-          <Button size="sm" variant="outline" onClick={() => void downloadGraph()}>
+        <div className="flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className={canvasOnly ? "h-7 px-2 text-xs" : ""}
+            onClick={() => void downloadGraph()}
+          >
             {t("Export graph")}
           </Button>
-          <Button size="sm" variant="outline" onClick={() => void downloadGraph(true)}>
+          <Button
+            size="sm"
+            variant="outline"
+            className={canvasOnly ? "h-7 px-2 text-xs" : ""}
+            onClick={() => void downloadGraph(true)}
+          >
             {t("Export snapshot image")}
           </Button>
         </div>
@@ -780,7 +813,7 @@ export function StudioObservability({
           viewBox="0 0 1200 660"
           className={
             canvasOnly
-              ? "h-full w-full select-none rounded-lg border bg-background shadow-inner"
+              ? "h-full w-full select-none bg-[#070b14]"
               : "min-w-[640px] w-full select-none rounded-lg border bg-background shadow-inner"
           }
           role="group"
@@ -971,16 +1004,42 @@ export function StudioObservability({
           )}
 
           {/* Legend & Viewport Metadata */}
-          <text x="20" y="26" fill="currentColor" fontSize="12">
+          <text
+            x="20"
+            y={canvasOnly ? "628" : "26"}
+            fill="currentColor"
+            fontSize={canvasOnly ? "10" : "12"}
+            opacity={canvasOnly ? "0.45" : "1"}
+          >
             {t("Static dependencies (dashed)")}
           </text>
-          <text x="20" y="44" fill="currentColor" fontSize="12">
+          <text
+            x="20"
+            y={canvasOnly ? "644" : "44"}
+            fill="currentColor"
+            fontSize={canvasOnly ? "10" : "12"}
+            opacity={canvasOnly ? "0.45" : "1"}
+          >
             {t("Observed runtime (solid)")}
           </text>
-          <text x="1180" y="26" fill="currentColor" fontSize="12" textAnchor="end">
+          <text
+            x="1180"
+            y={canvasOnly ? "628" : "26"}
+            fill="currentColor"
+            fontSize={canvasOnly ? "11" : "12"}
+            opacity={canvasOnly ? "0.55" : "1"}
+            textAnchor="end"
+          >
             {view}
           </text>
-          <text x="1180" y="44" fill="currentColor" fontSize="10" opacity="0.65" textAnchor="end">
+          <text
+            x="1180"
+            y={canvasOnly ? "644" : "44"}
+            fill="currentColor"
+            fontSize="10"
+            opacity="0.5"
+            textAnchor="end"
+          >
             {layoutMode} · {Math.round(zoom * 100)}%
           </text>
 

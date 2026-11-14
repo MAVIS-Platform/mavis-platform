@@ -22,9 +22,7 @@ import {
 import { useApiQuery } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { SelectField } from "@/components/shared/forms";
-import { Badge } from "@/components/ui/badge";
 import { LocaleSwitchButton, useLocale } from "@/lib/i18n/locale-context";
 import { AppearanceSelector } from "@/components/appearance-selector";
 import type { Response } from "@/lib/api/contracts";
@@ -249,12 +247,12 @@ export function StudioWorkbench() {
   const [capturing, setCapturing] = useState(false);
   const [liveSessionId, setLiveSessionId] = useState(initialSessionId);
   const [bottomTab, setBottomTab] = useState<"MATRIX" | "LOGS" | "SNAPSHOTS">("MATRIX");
-  const [leftWidth, setLeftWidth] = useState(264);
-  const [rightWidth, setRightWidth] = useState(330);
-  const [bottomHeight, setBottomHeight] = useState(240);
+  const [leftWidth, setLeftWidth] = useState(212);
+  const [rightWidth, setRightWidth] = useState(264);
+  const [bottomHeight, setBottomHeight] = useState(176);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [bottomCollapsed, setBottomCollapsed] = useState(false);
+  const [bottomCollapsed, setBottomCollapsed] = useState(true);
   const workspaceRef = useRef<HTMLDivElement>(null);
 
   function startResize(
@@ -270,15 +268,15 @@ export function StudioWorkbench() {
 
     function onPointerMove(moveEvent: PointerEvent) {
       if (axis === "left") {
-        const next = Math.max(180, Math.min(520, initialLeft + (moveEvent.clientX - startX)));
+        const next = Math.max(170, Math.min(460, initialLeft + (moveEvent.clientX - startX)));
         setLeftCollapsed(false);
         setLeftWidth(next);
       } else if (axis === "right") {
-        const next = Math.max(220, Math.min(600, initialRight - (moveEvent.clientX - startX)));
+        const next = Math.max(200, Math.min(520, initialRight - (moveEvent.clientX - startX)));
         setRightCollapsed(false);
         setRightWidth(next);
       } else {
-        const next = Math.max(96, Math.min(560, initialBottom - (moveEvent.clientY - startY)));
+        const next = Math.max(96, Math.min(480, initialBottom - (moveEvent.clientY - startY)));
         setBottomCollapsed(false);
         setBottomHeight(next);
       }
@@ -579,30 +577,27 @@ export function StudioWorkbench() {
       ref={workspaceRef}
       className="fixed inset-0 z-50 flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground"
     >
-      {/* STANDALONE STUDIO TOP HEADER BAR (No Web Sidebar) */}
-      <header className="flex h-12 shrink-0 items-center justify-between border-b bg-card px-3">
-        <div className="flex items-center gap-2.5">
-          <Button asChild variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+      {/* STANDALONE STUDIO TOP HEADER BAR (Ultra-Slim, Clean IDE Header) */}
+      <header className="flex h-10 shrink-0 items-center justify-between border-b bg-card px-2.5">
+        <div className="flex items-center gap-2">
+          <Button asChild variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs">
             <Link href="/administration/health">
-              <ArrowLeft className="size-3.5" />
+              <ArrowLeft className="size-3" />
               {t("Exit Studio")}
             </Link>
           </Button>
-          <div className="flex items-center gap-2 border-l pl-2.5">
-            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-mono text-xs font-extrabold text-emerald-400">
+          <div className="flex items-center gap-1.5 border-l pl-2">
+            <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 font-mono text-[11px] font-extrabold text-emerald-400">
               MAVIS
             </span>
-            <span className="text-sm font-bold tracking-tight">Studio</span>
-            <Badge className="border border-sky-500/30 bg-sky-500/15 font-mono text-[10px] text-sky-300">
-              3D / 2D WORKBENCH
-            </Badge>
+            <span className="text-xs font-bold tracking-tight">Studio</span>
           </div>
           {mode === "SANDBOX" && (
             <select
               aria-label={t("Architecture Preset Template")}
               value={templateId}
               onChange={(e) => switchTemplate(e.target.value)}
-              className="ml-1 h-8 rounded-md border border-indigo-500/30 bg-indigo-950/30 px-2.5 text-xs font-medium text-indigo-200"
+              className="h-7 rounded-md border border-indigo-500/30 bg-indigo-950/30 px-2 text-xs font-medium text-indigo-200"
             >
               {STUDIO_TEMPLATES.map((tpl) => (
                 <option key={tpl.id} value={tpl.id} className="bg-slate-950 text-slate-100">
@@ -614,52 +609,80 @@ export function StudioWorkbench() {
         </div>
 
         {/* CENTER TELEMETRY PILL BAR (200Lab style Traffic + Resource Budget Bar) */}
-        <div className="hidden items-center gap-4 rounded-full border border-border/80 bg-background/90 px-4 py-1 text-xs shadow-sm lg:flex">
+        <div className="hidden items-center gap-3 rounded-full border border-border/80 bg-background/90 px-3.5 py-0.5 text-[11px] shadow-xs lg:flex">
           <div className="flex items-center gap-1.5">
             <span className="font-mono text-[10px] uppercase text-sky-400">⚡ Traffic</span>
             <span className="font-mono font-bold text-foreground">
               {(totalRunningPods * 240).toLocaleString()} req/s
             </span>
           </div>
-          <div className="h-3.5 w-px bg-border" />
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] uppercase text-emerald-400">Memory</span>
+          <div className="h-3 w-px bg-border" />
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-[10px] uppercase text-emerald-400">RAM</span>
             <span className="font-mono font-bold text-foreground">
               {Math.round(totalRamMiB)} MiB
             </span>
-            <div className="h-2 w-20 overflow-hidden rounded-full bg-muted">
+            <div className="h-1.5 w-16 overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-sky-400 transition-all"
                 style={{ width: `${Math.min(100, Math.round((totalRamMiB / 4096) * 100))}%` }}
               />
             </div>
-            <span className="font-mono text-[10px] text-muted-foreground">/ 4096 MiB</span>
+            <span className="font-mono text-[10px] text-muted-foreground">/ 4096</span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          {mode === "SANDBOX" && (
+            <div className="hidden items-center gap-1 sm:flex">
+              <button
+                type="button"
+                onClick={() => setLeftCollapsed((p) => !p)}
+                title="Ẩn/hiện thanh công cụ bên trái"
+                className={`h-7 rounded border px-2 text-[11px] font-medium transition ${
+                  !leftCollapsed
+                    ? "border-sky-500/40 bg-sky-500/15 text-sky-300"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                ◧ Tools
+              </button>
+              <button
+                type="button"
+                onClick={() => setRightCollapsed((p) => !p)}
+                title="Ẩn/hiện thanh Inspector bên phải"
+                className={`h-7 rounded border px-2 text-[11px] font-medium transition ${
+                  !rightCollapsed
+                    ? "border-indigo-500/40 bg-indigo-500/15 text-indigo-300"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                ◨ Inspector
+              </button>
+            </div>
+          )}
           <div className="inline-flex rounded-full border bg-muted/40 p-0.5">
             <button
               type="button"
               onClick={() => setMode("SANDBOX")}
-              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+              className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition ${
                 mode === "SANDBOX"
                   ? "bg-emerald-500 text-slate-950 shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              ▶ {t("Interactive Studio Sandbox (Instant)")}
+              ▶ Sandbox
             </button>
             <button
               type="button"
               onClick={() => setMode("LIVE")}
-              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+              className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition ${
                 mode === "LIVE"
                   ? "bg-sky-500 text-slate-950 shadow-xs"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              {t("Connect Live Docker Session")} ({liveSessions.length})
+              Live ({liveSessions.length})
             </button>
           </div>
           <LocaleSwitchButton />
@@ -705,266 +728,244 @@ export function StudioWorkbench() {
       ) : (
         /* 4-ZONE STANDALONE WORKBENCH LAYOUT (MATCHING USER WIREFRAME) */
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* 1. LEFT VERTICAL TOOLBOX (Full Height): Drag-and-Drop Actions + 3D Block Spawner + Chaos */}
+          {/* 1. LEFT VERTICAL TOOLBOX: Clean Component Spawner + Compact Action Grid + Nodes */}
           {!leftCollapsed && (
             <aside
               style={{ width: leftWidth }}
-              className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/80 p-3"
+              className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/90 p-2.5"
             >
-            <div className="space-y-4">
-              {/* Section A: Drag & Drop Action Blocks */}
-              <div className="space-y-1.5">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-sky-400">
-                  1. {t("Studio Action Palette")}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {t("Drag onto any 3D/2D block or click to apply to")}{" "}
-                  <strong className="text-foreground">{selectedService}</strong>
-                </p>
-                <div className="space-y-1.5 pt-1">
-                  {LEFT_DOCK_ACTIONS.map((item) => (
-                    <div
-                      key={item.id}
+              <div className="space-y-3">
+                {/* Section A: 3D Architecture Block Spawner (Click OR Drag onto Canvas) */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                      Components
+                    </p>
+                    <span className="text-[9px] text-muted-foreground">Drag or Click</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
                       draggable
                       onDragStart={(event) => {
-                        event.dataTransfer.setData("application/x-mavis-studio-tool", item.id);
+                        event.dataTransfer.setData("application/x-mavis-studio-spawn", "SERVICE");
                         event.dataTransfer.effectAllowed = "copy";
                       }}
-                      onClick={() => {
-                        const current = replicasMap[selectedService] ?? 1;
-                        if (item.action === "STOP") {
-                          applySandboxAction({ action: "STOP", service: selectedService });
-                        } else if (item.action === "START") {
-                          applySandboxAction({ action: "START", service: selectedService });
-                        } else {
-                          const nextReps = item.delta
-                            ? Math.max(1, Math.min(8, (current <= 0 ? 1 : current) + item.delta))
-                            : (item.replicas ?? 4);
-                          applySandboxAction({
-                            action: "SCALE",
-                            service: selectedService,
-                            replicas: nextReps,
-                          });
-                        }
-                      }}
-                      className={`flex cursor-grab items-center justify-between rounded-lg border px-2.5 py-2 text-xs transition active:cursor-grabbing ${item.cardClass}`}
+                      onClick={() => addCustomBlock("SERVICE")}
+                      className="flex cursor-grab items-center gap-1.5 rounded-lg border border-indigo-500/35 bg-indigo-500/10 px-2 py-1.5 text-left text-[11px] transition hover:border-indigo-400 hover:bg-indigo-500/20 active:cursor-grabbing"
                     >
-                      <div className="flex items-center gap-2.5">
-                        <span
-                          className={`rounded-md px-1.5 py-1 font-mono text-[10px] font-extrabold ${item.badgeClass}`}
-                        >
-                          {item.badge}
-                        </span>
-                        <div className="leading-tight">
-                          <p className="font-semibold text-foreground">{t(item.label)}</p>
-                          <p className="text-[10px] text-muted-foreground">{item.sub}</p>
-                        </div>
-                      </div>
-                      <span className="text-muted-foreground">⋮⋮</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Section B: 3D Architecture Block Spawner (Click OR Drag onto Canvas like draw.io) */}
-              <div className="space-y-2 border-t pt-3">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
-                  2. {t("3D Block Library (Add Node)")}
-                </p>
-                <p className="text-[10px] text-muted-foreground">
-                  Click để thêm ngay hoặc kéo thả trực tiếp ra vị trí bất kỳ trên Canvas
-                </p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <button
-                    type="button"
-                    draggable
-                    onDragStart={(event) => {
-                      event.dataTransfer.setData("application/x-mavis-studio-spawn", "SERVICE");
-                      event.dataTransfer.effectAllowed = "copy";
-                    }}
-                    onClick={() => addCustomBlock("SERVICE")}
-                    className="flex cursor-grab items-center justify-between gap-1.5 rounded-lg border border-indigo-500/35 bg-indigo-500/10 p-2 text-left text-[11px] transition hover:border-indigo-400 hover:bg-indigo-500/20 active:cursor-grabbing"
-                  >
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded bg-indigo-500/25 text-indigo-300">
-                        <Server className="size-3.5" />
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-indigo-500/25 text-indigo-300">
+                        <Server className="size-3" />
                       </span>
                       <div className="min-w-0 leading-tight">
                         <p className="truncate font-semibold text-indigo-200">+ Service</p>
-                        <p className="truncate text-[9px] text-indigo-300/75">App Server</p>
+                        <p className="truncate text-[9px] text-indigo-300/70">App Pod</p>
                       </div>
-                    </div>
-                    <span className="text-[10px] text-indigo-300/60">⋮⋮</span>
-                  </button>
-                  <button
-                    type="button"
-                    draggable
-                    onDragStart={(event) => {
-                      event.dataTransfer.setData("application/x-mavis-studio-spawn", "GATEWAY");
-                      event.dataTransfer.effectAllowed = "copy";
-                    }}
-                    onClick={() => addCustomBlock("GATEWAY")}
-                    className="flex cursor-grab items-center justify-between gap-1.5 rounded-lg border border-amber-500/35 bg-amber-500/10 p-2 text-left text-[11px] transition hover:border-amber-400 hover:bg-amber-500/20 active:cursor-grabbing"
-                  >
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded bg-amber-500/25 text-amber-300">
-                        <Workflow className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/x-mavis-studio-spawn", "GATEWAY");
+                        event.dataTransfer.effectAllowed = "copy";
+                      }}
+                      onClick={() => addCustomBlock("GATEWAY")}
+                      className="flex cursor-grab items-center gap-1.5 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2 py-1.5 text-left text-[11px] transition hover:border-amber-400 hover:bg-amber-500/20 active:cursor-grabbing"
+                    >
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-amber-500/25 text-amber-300">
+                        <Workflow className="size-3" />
                       </span>
                       <div className="min-w-0 leading-tight">
                         <p className="truncate font-semibold text-amber-200">+ Gateway</p>
-                        <p className="truncate text-[9px] text-amber-300/75">Load Balancer</p>
+                        <p className="truncate text-[9px] text-amber-300/70">Edge LB</p>
                       </div>
-                    </div>
-                    <span className="text-[10px] text-amber-300/60">⋮⋮</span>
-                  </button>
-                  <button
-                    type="button"
-                    draggable
-                    onDragStart={(event) => {
-                      event.dataTransfer.setData("application/x-mavis-studio-spawn", "DATABASE");
-                      event.dataTransfer.effectAllowed = "copy";
-                    }}
-                    onClick={() => addCustomBlock("DATABASE")}
-                    className="flex cursor-grab items-center justify-between gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 p-2 text-left text-[11px] transition hover:border-emerald-400 hover:bg-emerald-500/20 active:cursor-grabbing"
-                  >
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded bg-emerald-500/25 text-emerald-300">
-                        <Database className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/x-mavis-studio-spawn", "DATABASE");
+                        event.dataTransfer.effectAllowed = "copy";
+                      }}
+                      onClick={() => addCustomBlock("DATABASE")}
+                      className="flex cursor-grab items-center gap-1.5 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-2 py-1.5 text-left text-[11px] transition hover:border-emerald-400 hover:bg-emerald-500/20 active:cursor-grabbing"
+                    >
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-emerald-500/25 text-emerald-300">
+                        <Database className="size-3" />
                       </span>
                       <div className="min-w-0 leading-tight">
                         <p className="truncate font-semibold text-emerald-200">+ Database</p>
-                        <p className="truncate text-[9px] text-emerald-300/75">Relational DB</p>
+                        <p className="truncate text-[9px] text-emerald-300/70">SQL Silo</p>
                       </div>
-                    </div>
-                    <span className="text-[10px] text-emerald-300/60">⋮⋮</span>
-                  </button>
-                  <button
-                    type="button"
-                    draggable
-                    onDragStart={(event) => {
-                      event.dataTransfer.setData("application/x-mavis-studio-spawn", "QUEUE");
-                      event.dataTransfer.effectAllowed = "copy";
-                    }}
-                    onClick={() => addCustomBlock("QUEUE")}
-                    className="flex cursor-grab items-center justify-between gap-1.5 rounded-lg border border-purple-500/35 bg-purple-500/10 p-2 text-left text-[11px] transition hover:border-purple-400 hover:bg-purple-500/20 active:cursor-grabbing"
-                  >
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="flex size-6 shrink-0 items-center justify-center rounded bg-purple-500/25 text-purple-300">
-                        <Layers className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("application/x-mavis-studio-spawn", "QUEUE");
+                        event.dataTransfer.effectAllowed = "copy";
+                      }}
+                      onClick={() => addCustomBlock("QUEUE")}
+                      className="flex cursor-grab items-center gap-1.5 rounded-lg border border-purple-500/35 bg-purple-500/10 px-2 py-1.5 text-left text-[11px] transition hover:border-purple-400 hover:bg-purple-500/20 active:cursor-grabbing"
+                    >
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded bg-purple-500/25 text-purple-300">
+                        <Layers className="size-3" />
                       </span>
                       <div className="min-w-0 leading-tight">
                         <p className="truncate font-semibold text-purple-200">+ Broker</p>
-                        <p className="truncate text-[9px] text-purple-300/75">Event Queue</p>
+                        <p className="truncate text-[9px] text-purple-300/70">MQ Pipe</p>
                       </div>
-                    </div>
-                    <span className="text-[10px] text-purple-300/60">⋮⋮</span>
-                  </button>
-                </div>
-                <div className="flex gap-1 pt-1">
-                  <Input
-                    value={newNodeName}
-                    onChange={(e) => setNewNodeName(e.target.value)}
-                    placeholder="Custom block name..."
-                    className="h-7 text-xs"
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="h-7 px-2"
-                    onClick={() => addCustomBlock()}
-                  >
-                    <Plus className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Section C: Chaos & Cluster Reset */}
-              <div className="space-y-1.5 border-t pt-3">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-rose-400">
-                  3. {t("Resilience & Chaos")}
-                </p>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  className="w-full justify-start gap-2 text-xs shadow-sm"
-                  onClick={() => {
-                    const running = customServices.filter((s) => (replicasMap[s] ?? 1) > 0);
-                    if (running.length > 0) {
-                      const pick =
-                        running[crypto.getRandomValues(new Uint32Array(1))[0]! % running.length]!;
-                      applySandboxAction({ action: "STOP", service: pick });
-                    }
-                  }}
-                >
-                  <Zap className="size-3.5" />
-                  {t("Chaos Monkey (Kill Random)")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-start gap-2 border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300 hover:bg-emerald-500/20"
-                  onClick={() => switchTemplate(templateId)}
-                >
-                  <RotateCcw className="size-3.5" />
-                  {t("Reset cluster")}
-                </Button>
-              </div>
-            </div>
-
-            {/* Active Nodes Quick List at Bottom of Left Dock */}
-            <div className="space-y-1 border-t pt-2">
-              <p className="text-[10px] font-semibold uppercase text-muted-foreground">
-                {t("Cluster Nodes")} ({customServices.length})
-              </p>
-              <div className="max-h-32 space-y-1 overflow-y-auto pr-1">
-                {customServices.map((svc) => {
-                  const reps = replicasMap[svc] ?? 1;
-                  return (
-                    <div
-                      key={svc}
-                      className={`flex items-center justify-between rounded px-2 py-1 font-mono text-[11px] ${
-                        selectedService === svc
-                          ? "border border-sky-500/40 bg-sky-500/15 font-semibold text-sky-300"
-                          : "hover:bg-muted/50"
-                      }`}
+                    </button>
+                  </div>
+                  <div className="flex gap-1">
+                    <Input
+                      value={newNodeName}
+                      onChange={(e) => setNewNodeName(e.target.value)}
+                      placeholder="Custom node..."
+                      className="h-6 text-[11px]"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-6 px-2"
+                      onClick={() => addCustomBlock()}
                     >
-                      <button
-                        type="button"
-                        className="flex flex-1 items-center gap-1.5 truncate text-left"
-                        onClick={() => setSelectedService(svc)}
+                      <Plus className="size-3" />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Section B: Compact Drag & Drop Actions (2-Column Pill Grid) */}
+                <div className="space-y-1.5 border-t pt-2.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                      Actions
+                    </p>
+                    <span className="truncate font-mono text-[9px] text-muted-foreground">
+                      → {selectedService}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {LEFT_DOCK_ACTIONS.map((item) => (
+                      <div
+                        key={item.id}
+                        draggable
+                        onDragStart={(event) => {
+                          event.dataTransfer.setData("application/x-mavis-studio-tool", item.id);
+                          event.dataTransfer.effectAllowed = "copy";
+                        }}
+                        onClick={() => {
+                          const current = replicasMap[selectedService] ?? 1;
+                          if (item.action === "STOP") {
+                            applySandboxAction({ action: "STOP", service: selectedService });
+                          } else if (item.action === "START") {
+                            applySandboxAction({ action: "START", service: selectedService });
+                          } else {
+                            const nextReps = item.delta
+                              ? Math.max(1, Math.min(8, (current <= 0 ? 1 : current) + item.delta))
+                              : (item.replicas ?? 4);
+                            applySandboxAction({
+                              action: "SCALE",
+                              service: selectedService,
+                              replicas: nextReps,
+                            });
+                          }
+                        }}
+                        title={`${item.label} (${item.sub})`}
+                        className={`flex cursor-grab items-center justify-between rounded-md border px-2 py-1.5 text-[11px] transition active:cursor-grabbing ${item.cardClass}`}
                       >
                         <span
-                          className={`size-2 rounded-full ${
-                            reps === 0
-                              ? "bg-rose-500"
-                              : reps > 1
-                                ? "bg-sky-400"
-                                : "bg-emerald-400"
-                          }`}
-                        />
-                        <span className="truncate">
-                          {svc} (×{reps})
+                          className={`rounded px-1 py-0.5 font-mono text-[9px] font-extrabold ${item.badgeClass}`}
+                        >
+                          {item.badge}
                         </span>
-                      </button>
-                      {customServices.length > 2 && (
+                        <span className="text-[9px] text-muted-foreground">⋮⋮</span>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const running = customServices.filter((s) => (replicasMap[s] ?? 1) > 0);
+                        if (running.length > 0) {
+                          const pick =
+                            running[
+                              crypto.getRandomValues(new Uint32Array(1))[0]! % running.length
+                            ]!;
+                          applySandboxAction({ action: "STOP", service: pick });
+                        }
+                      }}
+                      title={t("Chaos Monkey (Kill Random)")}
+                      className="flex items-center justify-center gap-1 rounded-md border border-rose-500/50 bg-rose-500/20 px-2 py-1.5 text-[10px] font-bold text-rose-200 transition hover:bg-rose-500/30"
+                    >
+                      <Zap className="size-3 text-rose-300" />
+                      Chaos
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Active Nodes Quick List at Bottom of Left Dock */}
+              <div className="space-y-1 border-t pt-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+                    Nodes ({customServices.length})
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => switchTemplate(templateId)}
+                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-emerald-300 hover:bg-emerald-500/15"
+                  >
+                    <RotateCcw className="size-2.5" />
+                    Reset
+                  </button>
+                </div>
+                <div className="max-h-36 space-y-0.5 overflow-y-auto pr-0.5">
+                  {customServices.map((svc) => {
+                    const reps = replicasMap[svc] ?? 1;
+                    return (
+                      <div
+                        key={svc}
+                        className={`flex items-center justify-between rounded px-1.5 py-1 font-mono text-[11px] ${
+                          selectedService === svc
+                            ? "border border-sky-500/40 bg-sky-500/15 font-semibold text-sky-300"
+                            : "hover:bg-muted/50"
+                        }`}
+                      >
                         <button
                           type="button"
-                          aria-label={`Remove ${svc}`}
-                          onClick={() => removeCustomBlock(svc)}
-                          className="text-muted-foreground hover:text-destructive"
+                          className="flex flex-1 items-center gap-1.5 truncate text-left"
+                          onClick={() => setSelectedService(svc)}
                         >
-                          <Trash2 className="size-3" />
+                          <span
+                            className={`size-1.5 shrink-0 rounded-full ${
+                              reps === 0
+                                ? "bg-rose-500"
+                                : reps > 1
+                                  ? "bg-sky-400"
+                                  : "bg-emerald-400"
+                            }`}
+                          />
+                          <span className="truncate">
+                            {svc} <span className="opacity-65">×{reps}</span>
+                          </span>
                         </button>
-                      )}
-                    </div>
-                  );
-                })}
+                        {customServices.length > 2 && (
+                          <button
+                            type="button"
+                            aria-label={`Remove ${svc}`}
+                            onClick={() => removeCustomBlock(svc)}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="size-3" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          </aside>
+            </aside>
           )}
 
           {/* LEFT RESIZE SPLITTER */}
@@ -974,17 +975,17 @@ export function StudioWorkbench() {
             title="Kéo để thay đổi độ rộng thanh công cụ trái (Double-click để thu gọn/mở rộng)"
             onPointerDown={(e) => startResize("left", e)}
             onDoubleClick={() => setLeftCollapsed((prev) => !prev)}
-            className="group relative flex w-2 shrink-0 cursor-col-resize items-center justify-center border-x border-border/60 bg-muted/30 transition hover:bg-primary/30 active:bg-primary/50"
+            className="group relative flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-x border-border/60 bg-muted/20 transition hover:bg-primary/30 active:bg-primary/50"
           >
             <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
           </div>
 
-          {/* RIGHT SIDE: TOP (CENTER CANVAS + RIGHT INSPECTOR) + BOTTOM (STATS DOCK) */}
+          {/* RIGHT SIDE: TOP (FULL-BLEED CENTER CANVAS + COMPACT INSPECTOR) + BOTTOM DRAWER */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             {/* TOP ROW: CENTER VISUAL WORKSPACE + RIGHT EXPLANATION INSPECTOR */}
             <div className="flex min-h-0 flex-1 overflow-hidden">
-              {/* 2. CENTER INTERACTIVE 3D / 2D CANVAS */}
-              <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background/50 p-2">
+              {/* 2. CENTER INTERACTIVE 3D / 2D CANVAS (Full-Bleed Edge-to-Edge) */}
+              <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b14]">
                 <StudioObservability
                   data={sandboxStudioData}
                   selected={selectedService}
@@ -1004,235 +1005,210 @@ export function StudioWorkbench() {
                 title="Kéo để thay đổi độ rộng cột giải thích bên phải (Double-click để thu gọn/mở rộng)"
                 onPointerDown={(e) => startResize("right", e)}
                 onDoubleClick={() => setRightCollapsed((prev) => !prev)}
-                className="group relative flex w-2 shrink-0 cursor-col-resize items-center justify-center border-x border-border/60 bg-muted/30 transition hover:bg-primary/30 active:bg-primary/50"
+                className="group relative flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-x border-border/60 bg-muted/20 transition hover:bg-primary/30 active:bg-primary/50"
               >
                 <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
               </div>
 
-              {/* 3. RIGHT INSPECTOR DOCK: Explanation, Scaling Controls, Upstream/Downstream Impact & Snapshot */}
+              {/* 3. RIGHT INSPECTOR DOCK: Clean 3-Card Inspector */}
               {!rightCollapsed && (
-              <aside
-                style={{ width: rightWidth }}
-                className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/80 p-3.5"
-              >
-                {selectedRow && (
-                  <div className="space-y-3.5">
-                    {/* Selected Node Header Banner with Semantic Archetype Tint */}
-                    <div
-                      className={`rounded-lg border p-3 ${
-                        selectedRow.replicasNow === 0
-                          ? "border-rose-500/50 bg-rose-950/30"
-                          : selectedRow.type === "API_GATEWAY"
-                            ? "border-amber-500/40 bg-amber-950/25"
-                            : selectedRow.type === "DATABASE"
-                              ? "border-emerald-500/40 bg-emerald-950/25"
-                              : selectedRow.type === "MESSAGE_BROKER"
-                                ? "border-purple-500/40 bg-purple-950/25"
-                                : "border-indigo-500/40 bg-indigo-950/25"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span
-                          className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-bold ${
-                            selectedRow.type === "API_GATEWAY"
-                              ? "bg-amber-500/20 text-amber-300"
+                <aside
+                  style={{ width: rightWidth }}
+                  className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/90 p-2.5"
+                >
+                  {selectedRow && (
+                    <div className="space-y-2.5">
+                      {/* Card 1: Selected Node + Inline Replica & Fault Controls */}
+                      <div
+                        className={`space-y-2 rounded-lg border p-2.5 ${
+                          selectedRow.replicasNow === 0
+                            ? "border-rose-500/50 bg-rose-950/30"
+                            : selectedRow.type === "API_GATEWAY"
+                              ? "border-amber-500/40 bg-amber-950/25"
                               : selectedRow.type === "DATABASE"
-                                ? "bg-emerald-500/20 text-emerald-300"
+                                ? "border-emerald-500/40 bg-emerald-950/25"
                                 : selectedRow.type === "MESSAGE_BROKER"
-                                  ? "bg-purple-500/20 text-purple-300"
-                                  : "bg-indigo-500/20 text-indigo-300"
-                          }`}
-                        >
-                          {selectedRow.layer.toUpperCase()} · {selectedRow.type}
-                        </span>
-                        <span
-                          className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-bold ${
-                            selectedRow.replicasNow === 0
-                              ? "bg-rose-500/25 text-rose-300"
-                              : selectedRow.replicasNow > 1
-                                ? "bg-sky-500/25 text-sky-300"
-                                : "bg-emerald-500/25 text-emerald-300"
-                          }`}
-                        >
-                          {selectedRow.replicasNow === 0
-                            ? "CRASHED (503)"
-                            : `${selectedRow.replicasNow} POD(S) RUNNING`}
-                        </span>
-                      </div>
-                      <h2 className="mt-1.5 font-mono text-base font-bold text-foreground">
-                        {selectedRow.serviceName}
-                      </h2>
-                      <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                        CPU <strong className="text-sky-400">{selectedRow.perPodCpu.toFixed(1)}%</strong> · RAM{" "}
-                        <strong className="text-emerald-400">{Math.round(selectedRow.totalRam)} MiB</strong> · p95{" "}
-                        <strong className="text-amber-300">{selectedRow.p95Now} ms</strong>
-                      </p>
-                    </div>
-
-                    {/* Direct Replica Scaling Buttons (1 -> 2 -> 4 -> 8) */}
-                    <div className="space-y-1.5 rounded-lg border border-sky-500/30 bg-sky-950/15 p-2.5">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-sky-400">
-                        {t("Direct Replica & Fault Control")}
-                      </p>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {([1, 2, 4, 8] as const).map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            onClick={() =>
-                              applySandboxAction({
-                                action: "SCALE",
-                                service: selectedRow.serviceName,
-                                replicas: preset,
-                              })
-                            }
-                            className={`h-8 rounded-md border font-mono text-xs font-bold transition ${
-                              selectedRow.replicasNow === preset
-                                ? "border-sky-400 bg-sky-500 text-slate-950 shadow-xs"
-                                : "border-border bg-background/80 text-foreground hover:border-sky-400/60"
+                                  ? "border-purple-500/40 bg-purple-950/25"
+                                  : "border-indigo-500/40 bg-indigo-950/25"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1.5">
+                          <span
+                            className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-bold ${
+                              selectedRow.type === "API_GATEWAY"
+                                ? "bg-amber-500/20 text-amber-300"
+                                : selectedRow.type === "DATABASE"
+                                  ? "bg-emerald-500/20 text-emerald-300"
+                                  : selectedRow.type === "MESSAGE_BROKER"
+                                    ? "bg-purple-500/20 text-purple-300"
+                                    : "bg-indigo-500/20 text-indigo-300"
                             }`}
                           >
-                            ×{preset}
+                            {selectedRow.type}
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 font-mono text-[9px] font-bold ${
+                              selectedRow.replicasNow === 0
+                                ? "bg-rose-500/25 text-rose-300"
+                                : selectedRow.replicasNow > 1
+                                  ? "bg-sky-500/25 text-sky-300"
+                                  : "bg-emerald-500/25 text-emerald-300"
+                            }`}
+                          >
+                            {selectedRow.replicasNow === 0
+                              ? "CRASHED (503)"
+                              : `${selectedRow.replicasNow} POD(S)`}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h2 className="truncate font-mono text-sm font-bold text-foreground">
+                            {selectedRow.serviceName}
+                          </h2>
+                          <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                            CPU <strong className="text-sky-400">{selectedRow.perPodCpu.toFixed(1)}%</strong> · RAM{" "}
+                            <strong className="text-emerald-400">{Math.round(selectedRow.totalRam)}M</strong> · p95{" "}
+                            <strong className="text-amber-300">{selectedRow.p95Now}ms</strong>
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-1 pt-0.5">
+                          {([1, 2, 4, 8] as const).map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              onClick={() =>
+                                applySandboxAction({
+                                  action: "SCALE",
+                                  service: selectedRow.serviceName,
+                                  replicas: preset,
+                                })
+                              }
+                              className={`h-7 rounded border font-mono text-xs font-bold transition ${
+                                selectedRow.replicasNow === preset
+                                  ? "border-sky-400 bg-sky-500 text-slate-950 shadow-xs"
+                                  : "border-border bg-background/80 text-foreground hover:border-sky-400/60"
+                              }`}
+                            >
+                              ×{preset}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-2 gap-1">
+                          <button
+                            type="button"
+                            disabled={selectedRow.replicasNow === 0}
+                            onClick={() =>
+                              applySandboxAction({
+                                action: "STOP",
+                                service: selectedRow.serviceName,
+                              })
+                            }
+                            className="h-6 rounded border border-rose-500/40 bg-rose-500/15 text-[11px] font-semibold text-rose-300 transition hover:bg-rose-500/25 disabled:opacity-40"
+                          >
+                            Stop
                           </button>
-                        ))}
-                      </div>
-                      <div className="grid grid-cols-2 gap-1.5 pt-1">
-                        <button
-                          type="button"
-                          disabled={selectedRow.replicasNow === 0}
-                          onClick={() =>
-                            applySandboxAction({
-                              action: "STOP",
-                              service: selectedRow.serviceName,
-                            })
-                          }
-                          className="h-7 rounded-md border border-rose-500/40 bg-rose-500/15 text-xs font-semibold text-rose-300 transition hover:bg-rose-500/25 disabled:opacity-40"
-                        >
-                          {t("Stop service")}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={selectedRow.replicasNow > 0}
-                          onClick={() =>
-                            applySandboxAction({
-                              action: "START",
-                              service: selectedRow.serviceName,
-                            })
-                          }
-                          className="h-7 rounded-md border border-emerald-500/40 bg-emerald-500/15 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-40"
-                        >
-                          {t("Start service")}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Live Architecture & Scaling Impact Explanation */}
-                    <div
-                      className={`space-y-2 rounded-lg border border-l-4 p-3 text-xs ${
-                        selectedRow.replicasNow === 0
-                          ? "border-rose-500/40 border-l-rose-500 bg-rose-950/20"
-                          : selectedRow.replicasNow > 1
-                            ? "border-emerald-500/40 border-l-emerald-400 bg-emerald-950/15"
-                            : "border-indigo-500/35 border-l-indigo-400 bg-indigo-950/15"
-                      }`}
-                    >
-                      <p className="font-bold uppercase tracking-wider text-emerald-400">
-                        🎯 {t("Architecture & Scaling Explanation")}
-                      </p>
-                      {selectedRow.replicasNow === 0 ? (
-                        <div className="space-y-1.5 text-rose-300">
-                          <p className="font-semibold flex items-center gap-1">
-                            <ShieldAlert className="size-3.5 shrink-0" />
-                            {t("503 / CIRCUIT OPEN — Service Unavailable")}
-                          </p>
-                          <p className="text-muted-foreground">
-                            All containers for <strong>{selectedRow.serviceName}</strong> are
-                            stopped. Upstream callers (
-                            {selectedRow.inboundCallers.join(", ") || "Gateway"}) trip their Circuit
-                            Breaker and return HTTP 503.
-                          </p>
+                          <button
+                            type="button"
+                            disabled={selectedRow.replicasNow > 0}
+                            onClick={() =>
+                              applySandboxAction({
+                                action: "START",
+                                service: selectedRow.serviceName,
+                              })
+                            }
+                            className="h-6 rounded border border-emerald-500/40 bg-emerald-500/15 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-40"
+                          >
+                            Start
+                          </button>
                         </div>
-                      ) : selectedRow.replicasNow > 1 ? (
-                        <div className="space-y-1.5">
-                          <p className="font-medium text-foreground">
-                            Horizontal scale: <strong>{selectedRow.replicasBefore}</strong> →{" "}
-                            <strong className="text-sky-300">{selectedRow.replicasNow} instances</strong> (~
-                            {Math.round(100 / selectedRow.replicasNow)}% traffic/pod).
-                          </p>
-                          <p className="text-muted-foreground">
-                            Per-instance CPU dropped to{" "}
-                            <strong className="text-emerald-300">{selectedRow.perPodCpu.toFixed(1)}%</strong> and p95 latency
-                            improved to <strong className="text-emerald-300">{selectedRow.p95Now} ms</strong>, while total RAM
-                            footprint scaled to <strong className="text-amber-300">{Math.round(selectedRow.totalRam)} MiB</strong>.
-                          </p>
-                          {selectedRow.bottleneckTarget && (
-                            <p className="rounded border border-amber-500/50 bg-amber-500/15 p-2 font-medium text-amber-300">
-                              ⚠ {t("Downstream bottleneck risk")}:{" "}
-                              <strong>{selectedRow.serviceName}</strong> has{" "}
-                              {selectedRow.replicasNow} pods calling{" "}
-                              <strong>{selectedRow.bottleneckTarget}</strong> (only 1 pod), risking
-                              connection pool exhaustion.
-                            </p>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-muted-foreground">
-                          Running single-instance baseline (100% load on 1 pod ·{" "}
-                          <span className="text-sky-300">{selectedRow.perPodCpu.toFixed(1)}% CPU</span> ·{" "}
-                          <span className="text-emerald-300">{selectedRow.perPodRam} MiB RAM</span>).
-                          Scale to ×4 or ×8 to observe load distribution and downstream impact.
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Upstream & Downstream Dependency Chains */}
-                    <div className="space-y-2 rounded-lg border border-purple-500/30 border-l-4 border-l-purple-400 bg-purple-950/15 p-2.5 text-xs">
-                      <p className="font-bold uppercase tracking-wider text-purple-300">
-                        {t("Static Dependency Blast Radius")}
-                      </p>
-                      <div>
-                        <span className="text-muted-foreground">{t("Direct callers")}: </span>
-                        <span className="font-mono font-semibold text-amber-300">
-                          {selectedRow.inboundCallers.length > 0
-                            ? selectedRow.inboundCallers.join(", ")
-                            : "None (Ingress / Root)"}
-                        </span>
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Downstream targets: </span>
-                        <span className="font-mono font-semibold text-sky-300">
-                          {selectedRow.outboundTargets.length > 0
-                            ? selectedRow.outboundTargets.join(", ")
-                            : "None (Leaf / Data store)"}
-                        </span>
-                      </div>
-                    </div>
 
-                    {/* Quick Snapshot Capture in Right Inspector */}
-                    <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-950/10 p-2.5">
-                      <p className="text-[11px] font-bold uppercase tracking-wider text-amber-300">
-                        {t("Capture evidence snapshot")}
-                      </p>
-                      <Textarea
-                        value={snapshotNote}
-                        onChange={(e) => setSnapshotNote(e.target.value)}
-                        placeholder={t("Explain the observed behavior")}
-                        rows={2}
-                        className="text-xs"
-                      />
-                      <button
-                        type="button"
-                        disabled={capturing}
-                        onClick={() => void captureLocalSnapshot()}
-                        className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md bg-emerald-500 text-xs font-bold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
+                      {/* Card 2: Unified Impact & Topology Card */}
+                      <div
+                        className={`space-y-2 rounded-lg border border-l-4 p-2.5 text-[11px] ${
+                          selectedRow.replicasNow === 0
+                            ? "border-rose-500/40 border-l-rose-500 bg-rose-950/20"
+                            : selectedRow.replicasNow > 1
+                              ? "border-emerald-500/40 border-l-emerald-400 bg-emerald-950/15"
+                              : "border-indigo-500/35 border-l-indigo-400 bg-indigo-950/15"
+                        }`}
                       >
-                        <Camera className="size-3.5" />
-                        {t("Capture evidence snapshot")} ({localSnapshots.length})
-                      </button>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                          Impact & Topology
+                        </p>
+                        {selectedRow.replicasNow === 0 ? (
+                          <p className="text-rose-300">
+                            <ShieldAlert className="mr-1 inline size-3.5" />
+                            <strong>503 Circuit Open:</strong> Callers (
+                            {selectedRow.inboundCallers.join(", ") || "Gateway"}) failing fast.
+                          </p>
+                        ) : selectedRow.replicasNow > 1 ? (
+                          <div className="space-y-1">
+                            <p className="text-foreground">
+                              Scaled <strong>{selectedRow.replicasBefore}</strong> →{" "}
+                              <strong className="text-sky-300">×{selectedRow.replicasNow}</strong> (~
+                              {Math.round(100 / selectedRow.replicasNow)}%/pod · p95{" "}
+                              <strong className="text-emerald-300">{selectedRow.p95Now}ms</strong>).
+                            </p>
+                            {selectedRow.bottleneckTarget && (
+                              <p className="rounded border border-amber-500/50 bg-amber-500/15 px-1.5 py-1 text-[10px] text-amber-300">
+                                ⚠ Bottleneck: <strong>{selectedRow.bottleneckTarget}</strong> (1 pod)
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground">
+                            Single-pod baseline (100% traffic). Scale ×4 or ×8 to distribute load.
+                          </p>
+                        )}
+
+                        <div className="space-y-1 border-t border-border/60 pt-1.5 font-mono text-[10px]">
+                          <div className="truncate">
+                            <span className="text-muted-foreground">In: </span>
+                            <span className="text-amber-300">
+                              {selectedRow.inboundCallers.length > 0
+                                ? selectedRow.inboundCallers.join(", ")
+                                : "Ingress"}
+                            </span>
+                          </div>
+                          <div className="truncate">
+                            <span className="text-muted-foreground">Out: </span>
+                            <span className="text-sky-300">
+                              {selectedRow.outboundTargets.length > 0
+                                ? selectedRow.outboundTargets.join(", ")
+                                : "Leaf / Store"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Card 3: Compact 1-Row Snapshot Capture */}
+                      <div className="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-950/10 p-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                          Snapshot ({localSnapshots.length})
+                        </p>
+                        <div className="flex gap-1">
+                          <Input
+                            value={snapshotNote}
+                            onChange={(e) => setSnapshotNote(e.target.value)}
+                            placeholder="Note..."
+                            className="h-7 text-[11px]"
+                          />
+                          <button
+                            type="button"
+                            disabled={capturing}
+                            onClick={() => void captureLocalSnapshot()}
+                            className="flex h-7 shrink-0 items-center gap-1 rounded bg-emerald-500 px-2.5 text-[11px] font-bold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
+                          >
+                            <Camera className="size-3" />
+                            Save
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </aside>
+                  )}
+                </aside>
               )}
             </div>
 
@@ -1243,78 +1219,90 @@ export function StudioWorkbench() {
               title="Kéo lên/xuống để thay đổi chiều cao thanh Stats (Double-click để thu gọn/mở rộng)"
               onPointerDown={(e) => startResize("bottom", e)}
               onDoubleClick={() => setBottomCollapsed((prev) => !prev)}
-              className="group relative flex h-2 shrink-0 cursor-row-resize items-center justify-center border-y border-border/60 bg-muted/30 transition hover:bg-primary/30 active:bg-primary/50"
+              className="group relative flex h-1.5 shrink-0 cursor-row-resize items-center justify-center border-y border-border/60 bg-muted/20 transition hover:bg-primary/30 active:bg-primary/50"
             >
               <div className="h-0.5 w-10 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
             </div>
 
-            {/* 4. BOTTOM STATS DOCK: Deployment & Scaling Impact Matrix + Action Logs + Snapshots */}
+            {/* 4. BOTTOM STATS DOCK: Sleek Status Bar by Default, Expands on Tab Click */}
             <section
-              style={{ height: bottomCollapsed ? 38 : bottomHeight }}
+              style={{ height: bottomCollapsed ? 34 : bottomHeight }}
               className="flex shrink-0 flex-col bg-card"
             >
-              <div className="flex items-center justify-between border-b px-4 py-1.5">
-                <div className="flex items-center gap-2">
+              <div className="flex h-[34px] shrink-0 items-center justify-between border-b px-3">
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => {
-                      setBottomCollapsed(false);
-                      setBottomTab("MATRIX");
+                      if (!bottomCollapsed && bottomTab === "MATRIX") {
+                        setBottomCollapsed(true);
+                      } else {
+                        setBottomCollapsed(false);
+                        setBottomTab("MATRIX");
+                      }
                     }}
-                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
-                      bottomTab === "MATRIX"
+                    className={`rounded px-2 py-0.5 text-[11px] font-semibold transition ${
+                      !bottomCollapsed && bottomTab === "MATRIX"
                         ? "border border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    {t("Project Deployment & Scaling Impact Matrix")}
+                    Matrix ({deploymentRows.length})
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setBottomCollapsed(false);
-                      setBottomTab("LOGS");
+                      if (!bottomCollapsed && bottomTab === "LOGS") {
+                        setBottomCollapsed(true);
+                      } else {
+                        setBottomCollapsed(false);
+                        setBottomTab("LOGS");
+                      }
                     }}
-                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
-                      bottomTab === "LOGS"
+                    className={`rounded px-2 py-0.5 text-[11px] font-semibold transition ${
+                      !bottomCollapsed && bottomTab === "LOGS"
                         ? "border border-sky-500/40 bg-sky-500/20 text-sky-300"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    {t("Service metrics and logs")} ({actionsLog.length})
+                    Logs ({actionsLog.length})
                   </button>
                   <button
                     type="button"
                     onClick={() => {
-                      setBottomCollapsed(false);
-                      setBottomTab("SNAPSHOTS");
+                      if (!bottomCollapsed && bottomTab === "SNAPSHOTS") {
+                        setBottomCollapsed(true);
+                      } else {
+                        setBottomCollapsed(false);
+                        setBottomTab("SNAPSHOTS");
+                      }
                     }}
-                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
-                      bottomTab === "SNAPSHOTS"
+                    className={`rounded px-2 py-0.5 text-[11px] font-semibold transition ${
+                      !bottomCollapsed && bottomTab === "SNAPSHOTS"
                         ? "border border-amber-500/40 bg-amber-500/20 text-amber-300"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
-                    {t("Compare captured snapshots")} ({localSnapshots.length})
+                    Snapshots ({localSnapshots.length})
                   </button>
                 </div>
 
-                <div className="flex items-center gap-3 font-mono text-xs">
-                  <span className="rounded bg-sky-500/15 px-2 py-0.5 text-sky-300">
-                    {t("Total running instances")}: <strong>{totalRunningPods}</strong>
+                <div className="flex items-center gap-2 font-mono text-[11px]">
+                  <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-sky-300">
+                    Pods: <strong>{totalRunningPods}</strong>
                   </span>
-                  <span className="rounded bg-indigo-500/15 px-2 py-0.5 text-indigo-300">
-                    {t("Total CPU load")}: <strong>{avgCpu.toFixed(1)}%</strong>
+                  <span className="rounded bg-indigo-500/15 px-1.5 py-0.5 text-indigo-300">
+                    CPU: <strong>{avgCpu.toFixed(1)}%</strong>
                   </span>
-                  <span className="rounded bg-emerald-500/15 px-2 py-0.5 text-emerald-300">
-                    {t("Total RAM footprint")}: <strong>{Math.round(totalRamMiB)} MiB</strong>
+                  <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-emerald-300">
+                    RAM: <strong>{Math.round(totalRamMiB)} MiB</strong>
                   </span>
                   <button
                     type="button"
                     onClick={() => setBottomCollapsed((prev) => !prev)}
                     className="rounded border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
                   >
-                    {bottomCollapsed ? "▲ Mở rộng" : "▼ Thu gọn"}
+                    {bottomCollapsed ? "▲ Mở bảng" : "▼ Thu gọn"}
                   </button>
                 </div>
               </div>
