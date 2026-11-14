@@ -1756,6 +1756,16 @@ export const EXACT_VI_DICTIONARY: Record<string, string> = {
   "snapshots captured": "bản chụp đã lưu",
   "Open Standalone MAVIS Studio": "Mở MAVIS Studio độc lập",
   "Open MAVIS Studio": "Mở MAVIS Studio",
+  "Exit Studio": "Thoát Studio về Web",
+  "Drag onto any 3D/2D block or click to apply to": "Kéo thả vào khối 3D/2D hoặc bấm để áp dụng cho",
+  "3D Block Library (Add Node)": "Thư viện khối 3D (Thêm Node)",
+  "Resilience & Chaos": "Tiêm lỗi & Chaos Monkey",
+  "Chaos Monkey (Kill Random)": "Chaos Monkey (Dừng ngẫu nhiên)",
+  "Cluster Nodes": "Danh sách khối trong cụm",
+  "Direct Replica & Fault Control": "Điều khiển số bản sao & Lỗi",
+  "Architecture & Scaling Explanation": "Giải thích Kiến trúc & Tác động nhân bản",
+  "503 / CIRCUIT OPEN — Service Unavailable": "503 / NGẮT MẠCH — Service ngừng hoạt động",
+  "Static Dependency Blast Radius": "Bán kính ảnh hưởng phụ thuộc (Blast Radius)",
 };
 
 export const PATTERN_REPLACEMENTS: Array<[RegExp, string]> = [

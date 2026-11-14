@@ -166,15 +166,19 @@ export function StudioObservability({
   onSelect,
   busy = false,
   onQuickAction,
+  canvasOnly = false,
+  defaultView = "2D",
 }: {
   data: Studio;
   selected: string;
   onSelect: (service: string) => void;
   busy?: boolean;
   onQuickAction?: (command: StudioQuickAction) => void;
+  canvasOnly?: boolean;
+  defaultView?: "2D" | "3D";
 }) {
   const { t } = useLocale();
-  const [view, setView] = useState<"2D" | "3D">("2D");
+  const [view, setView] = useState<"2D" | "3D">(defaultView);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("LAYERED");
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [zoom, setZoom] = useState(1);
@@ -233,12 +237,19 @@ export function StudioObservability({
     [reference.data, data.serviceMappings],
   );
 
-  // Compute topological depth for LAYERED layout
+  // Compute topological depth for LAYERED layout (uses staticEdges or falls back to telemetry interactions)
   const serviceDepth = useMemo(() => {
     const depths = new Map<string, number>();
     data.services.forEach((s) => depths.set(s, 0));
+    const flowEdges =
+      staticEdges.length > 0
+        ? staticEdges
+        : (telemetry?.interactions ?? []).map((edge) => ({
+            from: edge.fromService,
+            to: edge.toService,
+          }));
     for (let pass = 0; pass < data.services.length; pass++) {
-      for (const edge of staticEdges) {
+      for (const edge of flowEdges) {
         const dFrom = depths.get(edge.from) ?? 0;
         const dTo = depths.get(edge.to) ?? 0;
         if (dTo <= dFrom) {
@@ -247,7 +258,7 @@ export function StudioObservability({
       }
     }
     return depths;
-  }, [data.services, staticEdges]);
+  }, [data.services, staticEdges, telemetry?.interactions]);
 
   const positions = useMemo(() => {
     const raw = new Map<string, { x: number; y: number; z: number; tier: number }>();
@@ -287,10 +298,14 @@ export function StudioObservability({
         const siblings = tierGroups.get(tier) ?? [name];
         const siblingIndex = siblings.indexOf(name);
         if (tierCount === 1) {
-          x = (siblingIndex - (siblings.length - 1) / 2) * 210;
-          y = (siblingIndex % 2 === 0 ? -1 : 1) * (siblings.length > 2 ? 55 : 0);
+          const cols = Math.min(3, siblings.length);
+          const col = siblingIndex % cols;
+          const row = Math.floor(siblingIndex / cols);
+          const rows = Math.ceil(siblings.length / cols);
+          x = (col - (cols - 1) / 2) * 215;
+          y = (row - (rows - 1) / 2) * 130;
         } else {
-          x = (tierIndex - (tierCount - 1) / 2) * 220;
+          x = (tierIndex - (tierCount - 1) / 2) * 215;
           y = (siblingIndex - (siblings.length - 1) / 2) * 125;
         }
         z = (tierIndex - (tierCount - 1) / 2) * 110;
@@ -604,57 +619,61 @@ export function StudioObservability({
       </div>
 
       {/* Drag-and-Drop Action Palette (Drag onto any 2D/3D Service Block) */}
-      <div className="rounded-lg border bg-card p-3 shadow-xs">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            {t("Studio Action Palette")}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {t("Drag an action block onto any service node on the 2D/3D canvas")}
-          </span>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
-          {PALETTE_ITEMS.map((item) => {
-            const active = draggedTool?.id === item.id;
-            return (
-              <div
-                key={item.id}
-                draggable={!busy}
-                onDragStart={(event) => {
-                  if (busy) {
-                    event.preventDefault();
-                    return;
-                  }
-                  setDraggedTool(item);
-                  event.dataTransfer.setData("application/x-mavis-studio-tool", item.id);
-                  event.dataTransfer.effectAllowed = "copy";
-                }}
-                onDragEnd={() => {
-                  setDraggedTool(null);
-                  setDropTargetNode(null);
-                }}
-                onClick={() => {
-                  if (selected && !busy) {
-                    applyPaletteToolToService(item, selected);
-                  }
-                }}
-                className={`flex cursor-grab select-none flex-col justify-between rounded-md border p-2 text-left text-xs transition active:cursor-grabbing ${
-                  busy ? "cursor-not-allowed opacity-50" : "hover:border-primary hover:bg-accent/40"
-                } ${active ? "ring-2 ring-primary" : ""}`}
-                title={`${t(item.label)} — ${t("Drop onto a service node to execute")}`}
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-semibold">
-                    {item.badge}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">⋮⋮</span>
+      {!canvasOnly && (
+        <div className="rounded-lg border bg-card p-3 shadow-xs">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {t("Studio Action Palette")}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {t("Drag an action block onto any service node on the 2D/3D canvas")}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
+            {PALETTE_ITEMS.map((item) => {
+              const active = draggedTool?.id === item.id;
+              return (
+                <div
+                  key={item.id}
+                  draggable={!busy}
+                  onDragStart={(event) => {
+                    if (busy) {
+                      event.preventDefault();
+                      return;
+                    }
+                    setDraggedTool(item);
+                    event.dataTransfer.setData("application/x-mavis-studio-tool", item.id);
+                    event.dataTransfer.effectAllowed = "copy";
+                  }}
+                  onDragEnd={() => {
+                    setDraggedTool(null);
+                    setDropTargetNode(null);
+                  }}
+                  onClick={() => {
+                    if (selected && !busy) {
+                      applyPaletteToolToService(item, selected);
+                    }
+                  }}
+                  className={`flex cursor-grab select-none flex-col justify-between rounded-md border p-2 text-left text-xs transition active:cursor-grabbing ${
+                    busy
+                      ? "cursor-not-allowed opacity-50"
+                      : "hover:border-primary hover:bg-accent/40"
+                  } ${active ? "ring-2 ring-primary" : ""}`}
+                  title={`${t(item.label)} — ${t("Drop onto a service node to execute")}`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] font-semibold">
+                      {item.badge}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">⋮⋮</span>
+                  </div>
+                  <span className="mt-1.5 font-medium">{t(item.label)}</span>
                 </div>
-                <span className="mt-1.5 font-medium">{t(item.label)}</span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Interactive 2D/3D Studio Canvas + Volumetric 3D Isometric Server Racks & Stacked Replica Cubes */}
       <div className="relative max-w-full overflow-x-auto">
@@ -1384,7 +1403,7 @@ export function StudioObservability({
       </div>
 
       {/* Floating Direct Node Controller Bar for the Selected Service */}
-      {selected && onQuickAction && (
+      {!canvasOnly && selected && onQuickAction && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-muted/40 px-3 py-2 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-foreground">
@@ -1421,7 +1440,8 @@ export function StudioObservability({
       )}
 
       {/* Project Deployment & Scaling Impact Matrix (Static Architecture + Live 1 -> 4 -> 8 Scaling Delta) */}
-      <section className="space-y-3 rounded-lg border bg-card p-3.5 text-sm shadow-xs">
+      {!canvasOnly && (
+        <section className="space-y-3 rounded-lg border bg-card p-3.5 text-sm shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h4 className="font-medium">{t("Project Deployment & Scaling Impact Matrix")}</h4>
@@ -1527,14 +1547,15 @@ export function StudioObservability({
           </table>
         </div>
       </section>
+      )}
 
-      {!telemetry && <p role="status">{t("Waiting for observed telemetry from Runner.")}</p>}
-      {telemetry && (
+      {!canvasOnly && !telemetry && <p role="status">{t("Waiting for observed telemetry from Runner.")}</p>}
+      {!canvasOnly && telemetry && (
         <p className="text-sm text-muted-foreground">
           {t("Observed at")} {new Date(telemetry.observedAt).toLocaleTimeString()}
         </p>
       )}
-      {impact && (
+      {!canvasOnly && impact && (
         <section className="space-y-1 rounded-lg border p-3 text-sm">
           <h4 className="font-medium">
             {t("Static upstream impact")} · {selected}
@@ -1582,7 +1603,7 @@ export function StudioObservability({
             </pre>
           </details>
         ))}
-      {telemetry && (
+      {!canvasOnly && telemetry && (
         <div className="space-y-3">
           <h4 className="font-medium">{t("Service metrics and logs")}</h4>
           <details>

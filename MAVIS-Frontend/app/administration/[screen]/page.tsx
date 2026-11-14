@@ -32,6 +32,7 @@ export default async function AdminPage({ params }: { params: Promise<{ screen: 
   const { screen } = await params;
   const config = screens[screen];
   if (!config) notFound();
+  if (screen === "studio") return <StudioWorkbench />;
   const Screen = config.component;
   return (
     <AppShell scope="global" activeId={screen} pageTitle={config.title} contentVariant="workspace">

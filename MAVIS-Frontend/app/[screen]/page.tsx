@@ -131,6 +131,7 @@ export default async function FeaturePage({ params }: { params: Promise<{ screen
   const { screen } = await params;
   const config = screens[screen];
   if (!config) notFound();
+  if (screen === "studio") return <StudioWorkbench />;
   const Screen = config.component;
   if (screen === "diagrams")
     return (
