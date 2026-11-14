@@ -170,10 +170,18 @@ class Wf04AcceptanceMatrixTest {
                 .notation("C4").level("CONTAINER").layoutJson(reqDiagrams).build();
         evaluationRun = EvaluationRun.builder().id(UUID.randomUUID()).modelVersion(modelVersion)
                 .ruleSetVersion("v1.0").summaryMetrics(objectMapper.createObjectNode().put("complianceScore", 92.0)).build();
+        var plan = objectMapper.createObjectNode();
+        plan.putArray("infrastructureActions").addObject().put("action", "SCALE").put("service", "orders").put("replicas", 4);
+        var receipt = objectMapper.createObjectNode();
+        receipt.putObject("outcome").putObject("trace").putArray("spans").addObject().put("spanId", "00f067aa0ba902b7");
+        var action = receipt.putArray("infrastructureActions").addObject().put("action", "SCALE").put("service", "orders")
+                .put("replicasBefore", 1).put("replicasAfter", 4).put("confirmed", true);
+        action.putObject("metricsBefore").put("runningReplicas", 1);
+        action.putObject("metricsAfter").put("runningReplicas", 4);
         verifiedSession = RuntimeSession.builder().id(UUID.randomUUID()).project(studentProject).sourceSnapshot(sourceSnapshot)
                 .modelVersion(modelVersion).scenarioStatus("PASSED").executionStatus("COMPLETED")
                 .evidenceStatus("AVAILABLE").cleanupStatus("CONFIRMED").traceStatus("COMPLETE")
-                .runnerReceiptJson(objectMapper.createObjectNode()).receiptDigest("sha256:" + "c".repeat(64)).build();
+                 .sandboxEnforcementConfirmed(true).scenarioConfig(plan).runnerReceiptJson(receipt).receiptDigest("sha256:" + "c".repeat(64)).build();
 
         when(userRepository.findById(student.getId())).thenReturn(Optional.of(student));
         when(assignmentRepository.findById(lab01.getId())).thenReturn(Optional.of(lab01));

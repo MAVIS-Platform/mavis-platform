@@ -265,9 +265,10 @@ class CourseHttpAcceptanceTest {
         UUID verifiedRuntime = id(db, """
                 INSERT INTO runtime_sessions(project_id, source_snapshot_id, model_version_id, scenario_status,
                                              execution_status, evidence_status, cleanup_status, trace_status,
-                                             receipt_digest, runner_receipt_json, publication_gate_status)
+                                             receipt_digest, runner_receipt_json, publication_gate_status, scenario_config, sandbox_enforcement_confirmed)
                 VALUES (?, ?, ?, 'PASSED', 'COMPLETED', 'AVAILABLE', 'CONFIRMED', 'COMPLETE',
-                        ?, '{"outcome":{"executionStatus":"COMPLETED"}}'::jsonb, 'NONE')
+                        ?, '{"outcome":{"trace":{"spans":[{"spanId":"00f067aa0ba902b7"}]}},"infrastructureActions":[{"action":"SCALE","service":"orders","replicasBefore":1,"replicasAfter":4,"confirmed":true,"metricsBefore":{"runningReplicas":1},"metricsAfter":{"runningReplicas":4}}]}'::jsonb, 'NONE',
+                        '{"infrastructureActions":[{"action":"SCALE","service":"orders","replicas":4}]}'::jsonb, true)
                 RETURNING id
                 """, workingProject, workingSource, workingModel, "sha256:" + "e".repeat(64));
         checkCurriculum(workspace, lab1, lab2, lecturer, student, workingProject,
