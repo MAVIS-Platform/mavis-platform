@@ -88,24 +88,11 @@ interface ObservedStepItem {
 function normalizeEndpointDisplay(
   method: string | null | undefined,
   operation: string | null | undefined,
-  callee: string | null | undefined,
 ): string {
-  const m = (method ?? "GET").trim().toUpperCase();
-  let op = (operation ?? "").trim();
-  if (op.toUpperCase().startsWith(m + " ")) {
-    op = op.slice(m.length).trim();
-  }
-  if (op.startsWith("HTTP -> ")) {
-    op = "/api/" + op.slice("HTTP -> ".length).trim().toLowerCase();
-  }
-  if (!op || op === callee || !op.includes("/")) {
-    const cleanSlug = (op || callee || "service")
-      .replace(/^fruit[-_]/i, "")
-      .replace(/[-_]service$/i, "")
-      .toLowerCase();
-    op = `/api/${cleanSlug}`;
-  }
-  return `${m} ${op}`;
+  const verb = method?.trim().toUpperCase();
+  const label = operation?.trim();
+  if (!label) return verb || "Operation unavailable";
+  return !verb || label.toUpperCase().startsWith(verb + " ") ? label : `${verb} ${label}`;
 }
 
 function methodStrokeColor(method: string | null | undefined, isError = false): string {
@@ -339,9 +326,6 @@ function buildRuntimeSequenceSvgString(
       <marker id="seq-err-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
         <polygon points="0 0, 10 4, 0 8" fill="#f43f5e" />
       </marker>
-      <marker id="seq-reply-arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
-        <polyline points="1 1, 9 4, 1 7" fill="none" stroke="#34d399" stroke-width="1.8" />
-      </marker>
     </defs>
   `);
 
@@ -397,10 +381,9 @@ function buildRuntimeSequenceSvgString(
     const x1 = xOf(caller);
     const x2 = xOf(callee);
     const callY = topMargin + idx * rowHeight + 18;
-    const replyY = callY + 26;
-    const status = step.httpStatusCode ?? 200;
-    const isError = status >= 400;
-    const verb = (step.httpMethod ?? "GET").toUpperCase();
+    const status = step.httpStatusCode;
+    const isError = status != null && status >= 400;
+    const verb = step.httpMethod?.toUpperCase();
     const strokeCol = methodStrokeColor(verb, isError);
     const markerId = isError
       ? "seq-err-arrow"
@@ -409,9 +392,9 @@ function buildRuntimeSequenceSvgString(
         : verb === "PUT"
           ? "seq-put-arrow"
           : "seq-sync-arrow";
-    const durationText = step.durationMs != null ? `${step.durationMs} ms` : "duration n/a";
-    const endpointLabel = `#${idx + 1} ${normalizeEndpointDisplay(step.httpMethod, step.operation, callee)}`;
-    const replyLabel = `HTTP ${status} (${durationText})`;
+    const durationText = step.durationMs != null ? `${step.durationMs} ms` : null;
+    const endpointLabel = `#${idx + 1} ${normalizeEndpointDisplay(step.httpMethod, step.operation)}`;
+    const evidenceLabel = [status == null ? null : `HTTP ${status}`, durationText].filter(Boolean).join(" · ");
 
     parts.push(
       `<rect x="${x1 - 5}" y="${callY - 6}" width="10" height="38" rx="2" fill="#0284c7" stroke="#38bdf8" stroke-width="1" />`,
@@ -426,7 +409,7 @@ function buildRuntimeSequenceSvgString(
         `<path d="M ${x1 + 5} ${callY} L ${x1 + loopW} ${callY} L ${x1 + loopW} ${callY + 20} L ${x1 + 6} ${callY + 20}" fill="none" stroke="${strokeCol}" stroke-width="1.8" marker-end="url(#${markerId})" />`,
       );
       parts.push(
-        `<text x="${x1 + loopW + 6}" y="${callY + 13}" fill="#e2e8f0" font-size="10.5" font-weight="bold">${escapeXml(endpointLabel)} (${escapeXml(replyLabel)})</text>`,
+        `<text x="${x1 + loopW + 6}" y="${callY + 13}" fill="#e2e8f0" font-size="10.5" font-weight="bold">${escapeXml(endpointLabel)}${evidenceLabel ? ` · ${escapeXml(evidenceLabel)}` : ""}</text>`,
       );
     } else {
       const dir = x2 > x1 ? 1 : -1;
@@ -449,12 +432,11 @@ function buildRuntimeSequenceSvgString(
         `<text x="${midX}" y="${callY - 8}" text-anchor="middle" fill="#f8fafc" font-size="10.5" font-weight="bold">${escapeXml(endpointLabel)}</text>`,
       );
 
-      parts.push(
-        `<line x1="${endX}" y1="${replyY}" x2="${startX}" y2="${replyY}" stroke="#34d399" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#seq-reply-arrow)" />`,
-      );
-      parts.push(
-        `<text x="${midX}" y="${replyY - 4}" text-anchor="middle" fill="#6ee7b7" font-size="9.5">${escapeXml(replyLabel)}</text>`,
-      );
+      if (evidenceLabel) {
+        parts.push(
+          `<text x="${midX}" y="${callY + 22}" text-anchor="middle" fill="#cbd5e1" font-size="9.5">${escapeXml(evidenceLabel)}</text>`,
+        );
+      }
     }
   });
 
@@ -560,6 +542,7 @@ function RuntimeWorkflowTopologyCanvas({
   selectedService,
   onSelectService,
   studioComparisons = [],
+  studioServices,
   onQuickStudioAction,
   quickRunPending = false,
 }: {
@@ -568,6 +551,7 @@ function RuntimeWorkflowTopologyCanvas({
   selectedService: string | null;
   onSelectService: (svc: string | null) => void;
   studioComparisons?: StudioComparisonOverlay[];
+  studioServices: string[];
   onQuickStudioAction?: (service: string, action: "STOP" | "START" | "SCALE", replicas?: number) => void;
   quickRunPending?: boolean;
 }) {
@@ -599,7 +583,7 @@ function RuntimeWorkflowTopologyCanvas({
         count: number;
         totalMs: number;
         hasError: boolean;
-        samplePath: string;
+        measuredCount: number;
       }
     >();
 
@@ -617,12 +601,15 @@ function RuntimeWorkflowTopologyCanvas({
         count: 0,
         totalMs: 0,
         hasError: false,
-        samplePath: normalizeEndpointDisplay(st.httpMethod, st.operation, to),
+        measuredCount: 0,
       };
-      existing.methods.add((st.httpMethod ?? "GET").toUpperCase());
+      if (st.httpMethod) existing.methods.add(st.httpMethod.toUpperCase());
       existing.count += 1;
-      existing.totalMs += st.durationMs ?? 0;
-      if ((st.httpStatusCode ?? 200) >= 400) existing.hasError = true;
+      if (st.durationMs != null) {
+        existing.totalMs += st.durationMs;
+        existing.measuredCount += 1;
+      }
+      if (st.httpStatusCode != null && st.httpStatusCode >= 400) existing.hasError = true;
       edgeMap.set(key, existing);
     }
 
@@ -687,24 +674,15 @@ function RuntimeWorkflowTopologyCanvas({
 
   const findNodeStudioState = (nodeName: string): StudioComparisonOverlay | undefined => {
     const key = nodeName.trim().toLowerCase();
-    return [...studioComparisons]
-      .reverse()
-      .find((item) => {
-        const svc = item.service.trim().toLowerCase();
-        return svc === key || (svc.length > 2 && (key.includes(svc) || svc.includes(key)));
-      });
+    return [...studioComparisons].reverse().find((item) => item.service.trim().toLowerCase() === key);
   };
 
   const selectedStudioState =
     selectedService && !isRunnerActor(selectedService)
       ? findNodeStudioState(selectedService)
       : undefined;
-  const selectedIsStopped = Boolean(
-    selectedStudioState &&
-      (selectedStudioState.replicasAfter === 0 ||
-        selectedStudioState.action?.toUpperCase() === "STOP"),
-  );
-  const selectedReplicas = selectedIsStopped ? 0 : (selectedStudioState?.replicasAfter ?? 1);
+  const selectedIsStopped = selectedStudioState?.replicasAfter === 0;
+  const selectedReplicas = selectedStudioState?.replicasAfter;
 
   const toSvgPoint = (clientX: number, clientY: number) => {
     const svg = svgRef.current;
@@ -735,8 +713,8 @@ function RuntimeWorkflowTopologyCanvas({
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
             {planned
-              ? "PLANNED: built from your Step 2 requests and real model edges. Drag nodes or click a service node to control Studio Stop/Start/Scale."
-              : "OBSERVED: built from captured trace spans. Drag nodes or click a service node to control Studio Stop/Start/Scale directly."}
+              ? "PLANNED: built from your Step 2 requests and real model edges. Select an application service to run a new Studio experiment."
+              : "OBSERVED: built from captured trace spans. Select an application service to run a new Studio experiment."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -765,7 +743,7 @@ function RuntimeWorkflowTopologyCanvas({
         </div>
       </div>
 
-      {selectedService && !isRunnerActor(selectedService) && onQuickStudioAction && (
+      {selectedService && studioServices.includes(selectedService) && onQuickStudioAction && (
         <div
           data-testid="studio-2d-node-control-bar"
           className="rounded-lg border border-sky-500/40 bg-slate-900/90 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs"
@@ -779,18 +757,19 @@ function RuntimeWorkflowTopologyCanvas({
               className={`rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold border ${
                 selectedIsStopped
                   ? "border-rose-500/50 bg-rose-500/15 text-rose-300"
-                  : selectedReplicas > 1
+                  : (selectedReplicas ?? 0) > 1
                     ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
                     : "border-sky-500/40 bg-sky-500/10 text-sky-300"
               }`}
             >
               {selectedIsStopped
-                ? `⛔ STOPPED (0 replicas)`
-                : selectedReplicas > 1
-                  ? `📦 SCALED (×${selectedReplicas} replicas)`
-                  : "RUNNING (1 replica)"}
+                ? t("Stopped after experiment (0 replicas)")
+                : selectedReplicas == null
+                  ? t("No confirmed replica count")
+                  : t("Replicas after experiment: {count}").replace("{count}", String(selectedReplicas))}
             </span>
           </div>
+          <p className="basis-full text-muted-foreground">{t("Each experiment starts a new sandbox run.")}</p>
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex rounded-md border border-slate-700 bg-slate-950 p-0.5">
               <button
@@ -869,7 +848,7 @@ function RuntimeWorkflowTopologyCanvas({
               }
               className="h-7 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs"
             >
-              ⚡ {t("Apply & Run Studio Experiment")}
+              ⚡ {t("Run new Studio experiment")}
             </Button>
           </div>
         </div>
@@ -933,7 +912,7 @@ function RuntimeWorkflowTopologyCanvas({
             const midX = (x1 + x2) / 2;
             const midY = (y1 + y2) / 2;
             const verbs = Array.from(edge.methods).join("/");
-            const avgMs = Math.round(edge.totalMs / Math.max(1, edge.count));
+            const avgMs = edge.measuredCount ? Math.round(edge.totalMs / edge.measuredCount) : null;
             const stroke = methodStrokeColor(Array.from(edge.methods)[0], edge.hasError);
             const isDimmed =
               selectedService && edge.from !== selectedService && edge.to !== selectedService;
@@ -1031,7 +1010,7 @@ function RuntimeWorkflowTopologyCanvas({
                   fontSize="9.5"
                   fontWeight="bold"
                 >
-                  {planned ? `${verbs} · PLANNED` : `${verbs} · ${edge.count}x (${avgMs}ms)`}
+                  {[verbs, planned ? "PLANNED" : `${edge.count}x`, avgMs == null ? null : `${avgMs} ms`].filter(Boolean).join(" · ")}
                 </text>
               </g>
             );
@@ -1044,11 +1023,8 @@ function RuntimeWorkflowTopologyCanvas({
             const isSelected = selectedService === node.name;
             const isDragging = draggingNode === node.name;
             const studioState = !isRunner ? findNodeStudioState(node.name) : undefined;
-            const isStopped = Boolean(
-              studioState &&
-                (studioState.replicasAfter === 0 || studioState.action?.toUpperCase() === "STOP"),
-            );
-            const activeReplicas = isStopped ? 0 : (studioState?.replicasAfter ?? 1);
+            const isStopped = studioState?.replicasAfter === 0;
+            const activeReplicas = studioState?.replicasAfter ?? 0;
             const isScaled = !isStopped && activeReplicas > 1;
             const borderCol = isSelected
               ? "#facc15"
@@ -1079,6 +1055,15 @@ function RuntimeWorkflowTopologyCanvas({
             return (
               <g
                 key={node.name}
+                role="button"
+                tabIndex={0}
+                aria-label={node.name}
+                aria-pressed={isSelected}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  onSelectService(isSelected ? null : node.name);
+                }}
                 style={{ cursor: isDragging ? "grabbing" : "grab" }}
                 onPointerDown={(e) => {
                   e.stopPropagation();
@@ -1468,22 +1453,21 @@ function buildRuntimeActivitySvgString(
       const cy = topMargin + headerHeight + (idx + 1) * rowHeight;
       const topY = cy - nodeH / 2;
       const bottomY = cy + nodeH / 2;
-      const status = step.httpStatusCode ?? 200;
-      const isError = status >= 400;
-      const verb = (step.httpMethod ?? "GET").toUpperCase();
+      const status = step.httpStatusCode;
+      const isError = status != null && status >= 400;
+      const verb = step.httpMethod?.toUpperCase();
       const strokeCol = methodStrokeColor(verb, isError);
       const endpointLabel = `#${idx + 1} ${normalizeEndpointDisplay(
         step.httpMethod,
         step.operation,
-        targetSvc,
       )}`;
       const shortEndpoint =
         endpointLabel.length > 34 ? `${endpointLabel.slice(0, 32)}…` : endpointLabel;
-      const durText = step.durationMs != null ? `${step.durationMs}ms` : "n/a";
+      const durText = step.durationMs != null ? `${step.durationMs} ms` : null;
       const caller = (step.callerService ?? "").trim();
       const fromText =
-        caller && !isRunnerActor(caller) && caller !== targetSvc ? `from ${caller} · ` : "";
-      const subLabel = `${fromText}HTTP ${status} · ${durText}`;
+        caller && !isRunnerActor(caller) && caller !== targetSvc ? `from ${caller}` : null;
+      const subLabel = [fromText, status == null ? null : `HTTP ${status}`, durText].filter(Boolean).join(" · ");
 
       // Orthogonal control-flow edge from previous node to this action node
       const midY = Math.round((prevBottomY + topY) / 2);
@@ -1791,7 +1775,9 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     const apps = rawProfile["applications"];
     return apps && typeof apps === "object" && !Array.isArray(apps) ? Object.keys(apps) : [];
   }, [rawProfile]);
-  const selectedStudioService = studioService || runtimeApplicationServices[0] || "";
+  const selectedStudioService = runtimeApplicationServices.includes(studioService)
+    ? studioService
+    : (runtimeApplicationServices[0] ?? "");
   const detectedEndpoints = useMemo(
     () =>
       Array.isArray(rawProfile["detectedEndpoints"])
@@ -1942,7 +1928,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
       if (st.calleeService && st.calleeService !== "mavis-runner") {
         entry.services.add(st.calleeService);
       }
-      const routeLabel = `${(st.httpMethod ?? "GET").toUpperCase()} ${st.operation ?? "/"}`;
+      const routeLabel = normalizeEndpointDisplay(st.httpMethod, st.operation);
       if (!entry.routes.includes(routeLabel)) {
         entry.routes.push(routeLabel);
       }
@@ -1986,10 +1972,11 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
     action?: "OBSERVE" | "STOP" | "START" | "SCALE";
     replicas?: number;
   }) => {
-    if (!projectId || quickRunRunning) return;
+    if (administrative || !projectId || quickRunRunning || active.has(upperExecStatus)) return;
     const effAction = override?.action ?? studioAction;
     const effService = override?.service ?? selectedStudioService;
     const effReplicas = override?.replicas ?? studioReplicas;
+    if (effAction !== "OBSERVE" && !runtimeApplicationServices.includes(effService)) return;
     setQuickRunRunning(true);
     setQuickRunMsg("Saving Step 1 & Step 2 runtime configuration and launching workflow...");
     setQuickRunError("");
@@ -2952,7 +2939,6 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                       {normalizeEndpointDisplay(
                         slowest.httpMethod,
                         slowest.operation,
-                        slowest.calleeService,
                       )}
                       , {slowest.durationMs} ms)
                     </p>
@@ -3121,7 +3107,8 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                   selectedService={selectedServiceFilter}
                   onSelectService={setSelectedServiceFilter}
                   studioComparisons={studioComparisons}
-                  quickRunPending={quickRunRunning}
+                  studioServices={administrative || sessionProjectId !== projectId ? [] : runtimeApplicationServices}
+                  quickRunPending={quickRunRunning || active.has(upperExecStatus)}
                   onQuickStudioAction={(svc, act, reps) => {
                     setStudioAction(act);
                     setStudioService(svc);
@@ -3447,7 +3434,7 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                                   4,
                                   Math.min(100, Math.round((dur / maxStepDuration) * 100)),
                                 );
-                          const method = (step.httpMethod ?? "GET").toUpperCase();
+                          const method = step.httpMethod?.toUpperCase();
                           const statusCode = step.httpStatusCode;
                           return (
                             <div
@@ -3459,11 +3446,13 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                                   <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-bold">
                                     {displayIndex}
                                   </span>
-                                  <span
-                                    className={`px-2 py-0.5 rounded text-[11px] font-bold ${httpMethodBadgeClass(method)}`}
-                                  >
-                                    {method}
-                                  </span>
+                                  {method && (
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-[11px] font-bold ${httpMethodBadgeClass(method)}`}
+                                    >
+                                      {method}
+                                    </span>
+                                  )}
                                   {chainServices.map((svcName, sIdx) => (
                                     <span
                                       key={`${svcName}:${sIdx}`}
@@ -3489,7 +3478,6 @@ function RuntimeProject({ administrative = false }: { administrative?: boolean }
                                     {normalizeEndpointDisplay(
                                       step.httpMethod,
                                       step.operation,
-                                      step.calleeService,
                                     )}
                                   </span>
                                 </div>
