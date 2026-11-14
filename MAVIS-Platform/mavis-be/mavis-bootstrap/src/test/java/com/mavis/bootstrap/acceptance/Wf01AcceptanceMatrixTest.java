@@ -46,9 +46,11 @@ import com.mavis.platform.auth.dto.GoogleLoginRequest;
 import com.mavis.platform.auth.dto.LoginRequest;
 import com.mavis.platform.auth.dto.RegisterRequest;
 import com.mavis.platform.auth.dto.VerifyEmailRequest;
+import com.mavis.platform.auth.service.AuthAbuseGuard;
 import com.mavis.platform.auth.service.EmailService;
 import com.mavis.platform.auth.service.impl.AuthServiceImpl;
 import com.mavis.platform.security.jwt.JwtUtil;
+import com.mavis.platform.security.jwt.RefreshSessionService;
 import com.mavis.platform.security.jwt.SessionLogoutController;
 import com.mavis.platform.workspace.service.CourseAccessService;
 import com.mavis.platform.workspace.service.CourseCurriculum;
@@ -164,8 +166,10 @@ class Wf01AcceptanceMatrixTest {
         jwtUtil = new JwtUtil(jdbc);
         ReflectionTestUtils.setField(jwtUtil, "secretKey", "mavis-wf01-acceptance-jwt-signing-secret-key-2026-hmac");
         ReflectionTestUtils.setField(jwtUtil, "jwtExpiration", 3_600_000L);
-        logoutController = new SessionLogoutController(jwtUtil);
-        authService = new AuthServiceImpl(users, roles, otps, passwords, jwtUtil, emailService);
+        var refreshSessions = new RefreshSessionService(jdbc, users, jwtUtil);
+        logoutController = new SessionLogoutController(jwtUtil, refreshSessions);
+        authService = new AuthServiceImpl(users, roles, otps, passwords, jwtUtil, emailService,
+                refreshSessions, mock(AuthAbuseGuard.class));
         courseLabPolicy = new CourseLabPolicy(jdbc);
         accessPolicy = new AccessPolicyServiceImpl(users, workspaces, members, courseLabPolicy);
         courseAccess = new CourseAccessService(accessPolicy, workspaces, assignments, courseLabPolicy, jdbc, referenceArchive);
@@ -437,7 +441,10 @@ class Wf01AcceptanceMatrixTest {
         var loginResp = authService.login(loginReq);
         assertThat(jwtUtil.activeClaims(loginResp.getToken())).isNotNull();
 
-        logoutController.logout("Bearer " + loginResp.getToken());
+        assertThat(loginResp.getRefreshToken()).isNotBlank();
+        logoutController.logout("Bearer " + loginResp.getToken(), loginResp.getRefreshToken());
+        verify(jdbc).update("UPDATE refresh_sessions SET revoked_at=coalesce(revoked_at,now()) WHERE token_digest=?",
+                HashUtils.sha256Hex(loginResp.getRefreshToken().getBytes(StandardCharsets.UTF_8)));
         assertThat(jwtUtil.activeClaims(loginResp.getToken())).isNull();
     }
 
