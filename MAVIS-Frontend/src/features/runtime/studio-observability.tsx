@@ -671,178 +671,165 @@ export function StudioObservability({
     <div className={canvasOnly ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "space-y-4"}>
       {exportError && <p role="alert">{t("Could not export graph")}</p>}
 
-      {/* Top Studio Viewport & Layout Toolbar (Sleek Floating HUD in canvasOnly mode) */}
-      <div
-        className={
-          canvasOnly
-            ? "pointer-events-auto absolute top-2.5 right-3 left-3 z-10 flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-700/75 bg-slate-950/85 px-2.5 py-1.5 shadow-lg backdrop-blur-md"
-            : "flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2"
-        }
-      >
-        {!canvasOnly && <h3 className="mr-auto font-medium">{t("Runtime topology and impact")}</h3>}
-        {(["2D", "3D"] as const).map((mode) => (
-          <Button
-            key={mode}
-            size="sm"
-            variant={view === mode ? "default" : "outline"}
-            aria-pressed={view === mode}
-            className={canvasOnly ? "h-7 px-2.5 text-xs" : ""}
-            onClick={() => setView(mode)}
-          >
-            {mode}
-          </Button>
-        ))}
-        <div className="flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2">
-          {(
-            [
-              ["LAYERED", "Layered"],
-              ["CIRCULAR", "Circular"],
-              ["GRID", "Grid"],
-            ] as const
-          ).map(([mode, label]) => (
+      {/* Top Studio Viewport & Layout Toolbar (Minimal 2D/3D Pill in canvasOnly mode) */}
+      {canvasOnly ? (
+        <div className="pointer-events-auto absolute top-2.5 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-slate-700/80 bg-slate-950/85 p-1 shadow-md backdrop-blur-md">
+          {(["2D", "3D"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={view === mode}
+              onClick={() => setView(mode)}
+              className={`rounded-full px-2.5 py-0.5 font-mono text-[11px] font-bold transition ${
+                view === mode
+                  ? "bg-indigo-500 text-white shadow-xs"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2">
+          <h3 className="mr-auto font-medium">{t("Runtime topology and impact")}</h3>
+          {(["2D", "3D"] as const).map((mode) => (
             <Button
               key={mode}
               size="sm"
-              variant={layoutMode === mode ? "secondary" : "outline"}
-              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-              onClick={() => {
-                setLayoutMode(mode);
-                setCustomOffsets({});
-              }}
+              variant={view === mode ? "default" : "outline"}
+              aria-pressed={view === mode}
+              onClick={() => setView(mode)}
             >
-              {t(label)}
+              {mode}
             </Button>
           ))}
-        </div>
-        {view === "3D" && (
+          <div className="flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2">
+            {(
+              [
+                ["LAYERED", "Layered"],
+                ["CIRCULAR", "Circular"],
+                ["GRID", "Grid"],
+              ] as const
+            ).map(([mode, label]) => (
+              <Button
+                key={mode}
+                size="sm"
+                variant={layoutMode === mode ? "secondary" : "outline"}
+                onClick={() => {
+                  setLayoutMode(mode);
+                  setCustomOffsets({});
+                }}
+              >
+                {t(label)}
+              </Button>
+            ))}
+          </div>
+          {view === "3D" && (
+            <div className="flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw - 0.2 }))}
+              >
+                {t("Rotate left")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.2 }))}
+              >
+                {t("Rotate right")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setCamera((value) => ({ ...value, pitch: Math.min(0.95, value.pitch + 0.15) }))
+                }
+              >
+                {t("Tilt up")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  setCamera((value) => ({ ...value, pitch: Math.max(-0.6, value.pitch - 0.15) }))
+                }
+              >
+                {t("Tilt down")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCamera({ yaw: 0.55, pitch: 0.38 })}
+              >
+                {t("Isometric")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCamera({ yaw: 0.0, pitch: 0.92 })}
+              >
+                {t("Top-down")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setCamera({ yaw: 0.2, pitch: 0.08 })}
+              >
+                {t("Elevation")}
+              </Button>
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2">
             <Button
               size="sm"
               variant="outline"
-              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-              onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw - 0.2 }))}
+              aria-label={t("Zoom in")}
+              onClick={() => setZoom((z) => Math.min(2.2, Number((z + 0.15).toFixed(2))))}
             >
-              {t("Rotate left")}
+              +
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-              onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.2 }))}
+              aria-label={t("Zoom out")}
+              onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.15).toFixed(2))))}
             >
-              {t("Rotate right")}
+              −
+            </Button>
+            <Button
+              size="sm"
+              variant={snapToGrid ? "secondary" : "outline"}
+              onClick={() => setSnapToGrid((prev) => !prev)}
+            >
+              {t("Snap to grid")}
             </Button>
             <Button
               size="sm"
               variant="outline"
-              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-              onClick={() =>
-                setCamera((value) => ({ ...value, pitch: Math.min(0.95, value.pitch + 0.15) }))
-              }
+              onClick={() => {
+                setCustomOffsets({});
+                setPinnedPositions({});
+                setPan({ x: 0, y: 0 });
+                setZoom(1);
+                setCamera({ yaw: 0.45, pitch: 0.35 });
+              }}
             >
-              {t("Tilt up")}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-              onClick={() =>
-                setCamera((value) => ({ ...value, pitch: Math.max(-0.6, value.pitch - 0.15) }))
-              }
-            >
-              {t("Tilt down")}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-              onClick={() => setCamera({ yaw: 0.55, pitch: 0.38 })}
-            >
-              {t("Isometric")}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-              onClick={() => setCamera({ yaw: 0.0, pitch: 0.92 })}
-            >
-              {t("Top-down")}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-              onClick={() => setCamera({ yaw: 0.2, pitch: 0.08 })}
-            >
-              {t("Elevation")}
+              {t("Reset layout")}
             </Button>
           </div>
-        )}
-        <div
-          className={`flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2 ${
-            canvasOnly ? "ml-auto" : ""
-          }`}
-        >
-          <Button
-            size="sm"
-            variant="outline"
-            aria-label={t("Zoom in")}
-            className={canvasOnly ? "h-7 w-7 p-0 text-xs" : ""}
-            onClick={() => setZoom((z) => Math.min(2.2, Number((z + 0.15).toFixed(2))))}
-          >
-            +
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            aria-label={t("Zoom out")}
-            className={canvasOnly ? "h-7 w-7 p-0 text-xs" : ""}
-            onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.15).toFixed(2))))}
-          >
-            −
-          </Button>
-          <Button
-            size="sm"
-            variant={snapToGrid ? "secondary" : "outline"}
-            className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-            onClick={() => setSnapToGrid((prev) => !prev)}
-          >
-            {t("Snap to grid")}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-            onClick={() => {
-              setCustomOffsets({});
-              setPinnedPositions({});
-              setPan({ x: 0, y: 0 });
-              setZoom(1);
-              setCamera({ yaw: 0.45, pitch: 0.35 });
-            }}
-          >
-            {t("Reset layout")}
-          </Button>
+          <div className="flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2">
+            <Button size="sm" variant="outline" onClick={() => void downloadGraph()}>
+              {t("Export graph")}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void downloadGraph(true)}>
+              {t("Export snapshot image")}
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1 border-l border-slate-700/70 pl-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-            onClick={() => void downloadGraph()}
-          >
-            {t("Export graph")}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className={canvasOnly ? "h-7 px-2 text-xs" : ""}
-            onClick={() => void downloadGraph(true)}
-          >
-            {t("Export snapshot image")}
-          </Button>
-        </div>
-      </div>
+      )}
 
       {/* Drag-and-Drop Action Palette (Drag onto any 2D/3D Service Block) */}
       {!canvasOnly && (
