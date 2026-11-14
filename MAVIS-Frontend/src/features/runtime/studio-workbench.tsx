@@ -229,7 +229,49 @@ export function StudioWorkbench() {
   const [capturing, setCapturing] = useState(false);
   const [liveSessionId, setLiveSessionId] = useState(initialSessionId);
   const [bottomTab, setBottomTab] = useState<"MATRIX" | "LOGS" | "SNAPSHOTS">("MATRIX");
+  const [leftWidth, setLeftWidth] = useState(264);
+  const [rightWidth, setRightWidth] = useState(330);
+  const [bottomHeight, setBottomHeight] = useState(240);
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
+  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [bottomCollapsed, setBottomCollapsed] = useState(false);
   const workspaceRef = useRef<HTMLDivElement>(null);
+
+  function startResize(
+    axis: "left" | "right" | "bottom",
+    startEvent: React.PointerEvent<HTMLDivElement>,
+  ) {
+    startEvent.preventDefault();
+    const startX = startEvent.clientX;
+    const startY = startEvent.clientY;
+    const initialLeft = leftWidth;
+    const initialRight = rightWidth;
+    const initialBottom = bottomHeight;
+
+    function onPointerMove(moveEvent: PointerEvent) {
+      if (axis === "left") {
+        const next = Math.max(180, Math.min(520, initialLeft + (moveEvent.clientX - startX)));
+        setLeftCollapsed(false);
+        setLeftWidth(next);
+      } else if (axis === "right") {
+        const next = Math.max(220, Math.min(600, initialRight - (moveEvent.clientX - startX)));
+        setRightCollapsed(false);
+        setRightWidth(next);
+      } else {
+        const next = Math.max(96, Math.min(560, initialBottom - (moveEvent.clientY - startY)));
+        setBottomCollapsed(false);
+        setBottomHeight(next);
+      }
+    }
+
+    function onPointerUp() {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    }
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  }
 
   const sessionsQuery = useApiQuery("runtimeReadSessions", { projectId: "*" });
   const liveSessions = sessionsQuery.data ?? [];
@@ -617,7 +659,11 @@ export function StudioWorkbench() {
         /* 4-ZONE STANDALONE WORKBENCH LAYOUT (MATCHING USER WIREFRAME) */
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* 1. LEFT VERTICAL TOOLBOX (Full Height): Drag-and-Drop Actions + 3D Block Spawner + Chaos */}
-          <aside className="flex w-64 shrink-0 flex-col justify-between overflow-y-auto border-r bg-card/80 p-3">
+          {!leftCollapsed && (
+            <aside
+              style={{ width: leftWidth }}
+              className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/80 p-3"
+            >
             <div className="space-y-4">
               {/* Section A: Drag & Drop Action Blocks */}
               <div className="space-y-1.5">
@@ -805,6 +851,19 @@ export function StudioWorkbench() {
               </div>
             </div>
           </aside>
+          )}
+
+          {/* LEFT RESIZE SPLITTER */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="Kéo để thay đổi độ rộng thanh công cụ trái (Double-click để thu gọn/mở rộng)"
+            onPointerDown={(e) => startResize("left", e)}
+            onDoubleClick={() => setLeftCollapsed((prev) => !prev)}
+            className="group relative flex w-2 shrink-0 cursor-col-resize items-center justify-center border-x border-border/60 bg-muted/30 transition hover:bg-primary/30 active:bg-primary/50"
+          >
+            <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
+          </div>
 
           {/* RIGHT SIDE: TOP (CENTER CANVAS + RIGHT INSPECTOR) + BOTTOM (STATS DOCK) */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -823,8 +882,24 @@ export function StudioWorkbench() {
                 />
               </main>
 
+              {/* RIGHT RESIZE SPLITTER */}
+              <div
+                role="separator"
+                aria-orientation="vertical"
+                title="Kéo để thay đổi độ rộng cột giải thích bên phải (Double-click để thu gọn/mở rộng)"
+                onPointerDown={(e) => startResize("right", e)}
+                onDoubleClick={() => setRightCollapsed((prev) => !prev)}
+                className="group relative flex w-2 shrink-0 cursor-col-resize items-center justify-center border-x border-border/60 bg-muted/30 transition hover:bg-primary/30 active:bg-primary/50"
+              >
+                <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
+              </div>
+
               {/* 3. RIGHT INSPECTOR DOCK: Explanation, Scaling Controls, Upstream/Downstream Impact & Snapshot */}
-              <aside className="flex w-80 shrink-0 flex-col justify-between overflow-y-auto border-l bg-card/80 p-3.5">
+              {!rightCollapsed && (
+              <aside
+                style={{ width: rightWidth }}
+                className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/80 p-3.5"
+              >
                 {selectedRow && (
                   <div className="space-y-4">
                     <div>
@@ -1005,15 +1080,34 @@ export function StudioWorkbench() {
                   </div>
                 )}
               </aside>
+              )}
+            </div>
+
+            {/* BOTTOM RESIZE SPLITTER */}
+            <div
+              role="separator"
+              aria-orientation="horizontal"
+              title="Kéo lên/xuống để thay đổi chiều cao thanh Stats (Double-click để thu gọn/mở rộng)"
+              onPointerDown={(e) => startResize("bottom", e)}
+              onDoubleClick={() => setBottomCollapsed((prev) => !prev)}
+              className="group relative flex h-2 shrink-0 cursor-row-resize items-center justify-center border-y border-border/60 bg-muted/30 transition hover:bg-primary/30 active:bg-primary/50"
+            >
+              <div className="h-0.5 w-10 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
             </div>
 
             {/* 4. BOTTOM STATS DOCK: Deployment & Scaling Impact Matrix + Action Logs + Snapshots */}
-            <section className="flex h-60 shrink-0 flex-col border-t bg-card">
+            <section
+              style={{ height: bottomCollapsed ? 38 : bottomHeight }}
+              className="flex shrink-0 flex-col bg-card"
+            >
               <div className="flex items-center justify-between border-b px-4 py-1.5">
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setBottomTab("MATRIX")}
+                    onClick={() => {
+                      setBottomCollapsed(false);
+                      setBottomTab("MATRIX");
+                    }}
                     className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
                       bottomTab === "MATRIX"
                         ? "bg-primary/15 text-primary"
@@ -1024,7 +1118,10 @@ export function StudioWorkbench() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setBottomTab("LOGS")}
+                    onClick={() => {
+                      setBottomCollapsed(false);
+                      setBottomTab("LOGS");
+                    }}
                     className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
                       bottomTab === "LOGS"
                         ? "bg-primary/15 text-primary"
@@ -1035,7 +1132,10 @@ export function StudioWorkbench() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setBottomTab("SNAPSHOTS")}
+                    onClick={() => {
+                      setBottomCollapsed(false);
+                      setBottomTab("SNAPSHOTS");
+                    }}
                     className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
                       bottomTab === "SNAPSHOTS"
                         ? "bg-primary/15 text-primary"
@@ -1056,9 +1156,17 @@ export function StudioWorkbench() {
                   <span>
                     {t("Total RAM footprint")}: <strong>{Math.round(totalRamMiB)} MiB</strong>
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setBottomCollapsed((prev) => !prev)}
+                    className="rounded border px-2 py-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground"
+                  >
+                    {bottomCollapsed ? "▲ Mở rộng" : "▼ Thu gọn"}
+                  </button>
                 </div>
               </div>
 
+              {!bottomCollapsed && (
               <div className="flex-1 overflow-y-auto px-4 py-2">
                 {bottomTab === "MATRIX" && (
                   <table className="w-full border-collapse text-left text-xs">
@@ -1155,6 +1263,7 @@ export function StudioWorkbench() {
                   </div>
                 )}
               </div>
+              )}
             </section>
           </div>
         </div>
