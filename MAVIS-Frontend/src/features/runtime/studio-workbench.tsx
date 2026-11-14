@@ -984,7 +984,7 @@ export function StudioWorkbench() {
             {/* TOP ROW: CENTER VISUAL WORKSPACE + RIGHT EXPLANATION INSPECTOR */}
             <div className="flex min-h-0 flex-1 overflow-hidden">
               {/* 2. CENTER INTERACTIVE 3D / 2D CANVAS */}
-              <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-background/50 p-3">
+              <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background/50 p-2">
                 <StudioObservability
                   data={sandboxStudioData}
                   selected={selectedService}

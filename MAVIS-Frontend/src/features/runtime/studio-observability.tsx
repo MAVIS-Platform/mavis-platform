@@ -354,17 +354,17 @@ export function StudioObservability({
 
       if (layoutMode === "CIRCULAR") {
         const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
-        x = Math.cos(angle) * 210;
-        y = Math.sin(angle) * 135;
-        z = ((index % 3) - 1) * 95;
+        x = Math.cos(angle) * 340;
+        y = Math.sin(angle) * 205;
+        z = ((index % 3) - 1) * 115;
       } else if (layoutMode === "GRID") {
         const cols = Math.max(2, Math.ceil(Math.sqrt(total)));
         const col = index % cols;
         const row = Math.floor(index / cols);
         const rows = Math.ceil(total / cols);
-        x = (col - (cols - 1) / 2) * 195;
-        y = (row - (rows - 1) / 2) * 125;
-        z = (row - (rows - 1) / 2) * 90;
+        x = (col - (cols - 1) / 2) * 290;
+        y = (row - (rows - 1) / 2) * 165;
+        z = (row - (rows - 1) / 2) * 105;
       } else {
         const tierIndex = Math.max(0, tierKeys.indexOf(tier));
         const tierCount = Math.max(1, tierKeys.length);
@@ -375,13 +375,13 @@ export function StudioObservability({
           const col = siblingIndex % cols;
           const row = Math.floor(siblingIndex / cols);
           const rows = Math.ceil(siblings.length / cols);
-          x = (col - (cols - 1) / 2) * 215;
-          y = (row - (rows - 1) / 2) * 130;
+          x = (col - (cols - 1) / 2) * 300;
+          y = (row - (rows - 1) / 2) * 165;
         } else {
-          x = (tierIndex - (tierCount - 1) / 2) * 215;
-          y = (siblingIndex - (siblings.length - 1) / 2) * 125;
+          x = (tierIndex - (tierCount - 1) / 2) * 300;
+          y = (siblingIndex - (siblings.length - 1) / 2) * 165;
         }
-        z = (tierIndex - (tierCount - 1) / 2) * 110;
+        z = (tierIndex - (tierCount - 1) / 2) * 125;
       }
 
       if (view === "3D") {
@@ -392,12 +392,12 @@ export function StudioObservability({
         const rotatedY = y * Math.cos(camera.pitch) - z * Math.sin(camera.pitch);
         z = y * Math.sin(camera.pitch) + z * Math.cos(camera.pitch);
         y = rotatedY;
-        const perspective = 680 / Math.max(220, 680 + z);
+        const perspective = 920 / Math.max(280, 920 + z);
         x *= perspective;
         y *= perspective;
       }
 
-      raw.set(name, { x: x + 350, y: y + 245, z, tier });
+      raw.set(name, { x: x + 600, y: y + 340, z, tier });
     });
 
     if (raw.size > 0) {
@@ -406,24 +406,24 @@ export function StudioObservability({
       const maxX = Math.max(...points.map((point) => point.x));
       const minY = Math.min(...points.map((point) => point.y));
       const maxY = Math.max(...points.map((point) => point.y));
-      const fit = Math.min(1, 470 / Math.max(1, maxX - minX), 240 / Math.max(1, maxY - minY));
+      const fit = Math.min(1, 960 / Math.max(1, maxX - minX), 460 / Math.max(1, maxY - minY));
       for (const [name, point] of raw.entries()) {
         const offset = customOffsets[name] ?? { x: 0, y: 0 };
         const pinned = pinnedPositions[name];
         let px = pinned
           ? pinned.x + offset.x + pan.x
-          : 350 + (point.x - (minX + maxX) / 2) * fit + offset.x + pan.x;
+          : 600 + (point.x - (minX + maxX) / 2) * fit + offset.x + pan.x;
         let py = pinned
           ? pinned.y + offset.y + pan.y
-          : 248 + (point.y - (minY + maxY) / 2) * fit + offset.y + pan.y;
-        px = 350 + (px - 350) * zoom;
-        py = 248 + (py - 248) * zoom;
+          : 340 + (point.y - (minY + maxY) / 2) * fit + offset.y + pan.y;
+        px = 600 + (px - 600) * zoom;
+        py = 340 + (py - 340) * zoom;
         if (snapToGrid && view === "2D" && (offset.x !== 0 || offset.y !== 0 || Boolean(pinned))) {
           px = Math.round(px / 16) * 16;
           py = Math.round(py / 16) * 16;
         }
-        point.x = Math.max(92, Math.min(608, px));
-        point.y = Math.max(96, Math.min(395, py));
+        point.x = Math.max(88, Math.min(1112, px));
+        point.y = Math.max(58, Math.min(602, py));
       }
     }
     return raw;
@@ -565,11 +565,11 @@ export function StudioObservability({
       : 0;
 
   return (
-    <div className="space-y-4">
+    <div className={canvasOnly ? "flex h-full min-h-0 flex-1 flex-col gap-2" : "space-y-4"}>
       {exportError && <p role="alert">{t("Could not export graph")}</p>}
 
       {/* Top Studio Viewport & Layout Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2.5">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2">
         <h3 className="mr-auto font-medium">{t("Runtime topology and impact")}</h3>
         {(["2D", "3D"] as const).map((mode) => (
           <Button
@@ -665,7 +665,7 @@ export function StudioObservability({
             size="sm"
             variant="outline"
             aria-label={t("Zoom in")}
-            onClick={() => setZoom((z) => Math.min(1.45, Number((z + 0.12).toFixed(2))))}
+            onClick={() => setZoom((z) => Math.min(2.2, Number((z + 0.15).toFixed(2))))}
           >
             +
           </Button>
@@ -673,7 +673,7 @@ export function StudioObservability({
             size="sm"
             variant="outline"
             aria-label={t("Zoom out")}
-            onClick={() => setZoom((z) => Math.max(0.7, Number((z - 0.12).toFixed(2))))}
+            onClick={() => setZoom((z) => Math.max(0.4, Number((z - 0.15).toFixed(2))))}
           >
             −
           </Button>
@@ -766,19 +766,34 @@ export function StudioObservability({
       )}
 
       {/* Interactive 2D/3D Studio Canvas + Volumetric 3D Isometric Server Racks & Stacked Replica Cubes */}
-      <div className="relative max-w-full overflow-x-auto">
+      <div
+        className={
+          canvasOnly
+            ? "relative flex min-h-0 flex-1 overflow-hidden"
+            : "relative max-w-full overflow-x-auto"
+        }
+      >
         <svg
           ref={svg}
           data-studio-graph="true"
           xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 700 460"
-          className="min-w-[640px] w-full select-none rounded-lg border bg-background shadow-inner"
+          viewBox="0 0 1200 660"
+          className={
+            canvasOnly
+              ? "h-full w-full select-none rounded-lg border bg-background shadow-inner"
+              : "min-w-[640px] w-full select-none rounded-lg border bg-background shadow-inner"
+          }
           role="group"
           aria-label={t("Runtime topology and impact")}
           style={{
-            maxHeight: 540,
+            ...(canvasOnly ? {} : { maxHeight: 560 }),
             touchAction: view === "3D" || draggingNode ? "none" : "auto",
             cursor: draggingNode ? "grabbing" : view === "3D" ? "grab" : "default",
+          }}
+          onWheel={(event) => {
+            if (!canvasOnly) return;
+            const delta = event.deltaY < 0 ? 0.1 : -0.1;
+            setZoom((z) => Math.max(0.4, Math.min(2.2, Number((z + delta).toFixed(2)))));
           }}
           onDragOver={(event) => {
             if (busy) return;
@@ -797,13 +812,13 @@ export function StudioObservability({
             const createdName = onSpawnBlock(spawnArch);
             if (createdName && svg.current) {
               const rect = svg.current.getBoundingClientRect();
-              const dropX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 700;
-              const dropY = ((event.clientY - rect.top) / Math.max(1, rect.height)) * 460;
+              const dropX = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 1200;
+              const dropY = ((event.clientY - rect.top) / Math.max(1, rect.height)) * 660;
               setPinnedPositions((prev) => ({
                 ...prev,
                 [createdName]: {
-                  x: Math.max(92, Math.min(608, dropX)),
-                  y: Math.max(96, Math.min(395, dropY)),
+                  x: Math.max(88, Math.min(1112, dropX)),
+                  y: Math.max(58, Math.min(602, dropY)),
                 },
               }));
             }
@@ -831,8 +846,8 @@ export function StudioObservability({
           onPointerMove={(event) => {
             if (nodeDrag.current && svg.current) {
               const rect = svg.current.getBoundingClientRect();
-              const scaleX = 700 / Math.max(1, rect.width);
-              const scaleY = 460 / Math.max(1, rect.height);
+              const scaleX = 1200 / Math.max(1, rect.width);
+              const scaleY = 660 / Math.max(1, rect.height);
               const dx = ((event.clientX - nodeDrag.current.startX) * scaleX) / zoom;
               const dy = ((event.clientY - nodeDrag.current.startY) * scaleY) / zoom;
               if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
@@ -865,8 +880,8 @@ export function StudioObservability({
               }));
             } else {
               setPan((prev) => ({
-                x: Math.max(-180, Math.min(180, prev.x + dx * 0.7)),
-                y: Math.max(-120, Math.min(120, prev.y + dy * 0.7)),
+                x: Math.max(-520, Math.min(520, prev.x + dx * 0.9)),
+                y: Math.max(-340, Math.min(340, prev.y + dy * 0.9)),
               }));
             }
           }}
@@ -906,20 +921,20 @@ export function StudioObservability({
           </defs>
 
           {/* Subtle Studio Blueprint Grid */}
-          <rect x="0" y="0" width="700" height="460" fill="url(#studio-grid)" />
+          <rect x="0" y="0" width="1200" height="660" fill="url(#studio-grid)" />
 
           {/* 3D Isometric Multi-Tier Architecture Platform Deck when in 3D mode */}
           {view === "3D" && (
             <g>
               {/* Outer 3D Slab Side Thickness */}
               <polygon
-                points="42,245 350,425 658,245 658,255 350,435 42,255"
+                points="110,340 600,600 1090,340 1090,352 600,612 110,352"
                 fill="currentColor"
                 opacity="0.11"
               />
               {/* Main Isometric Platform Surface */}
               <polygon
-                points="350,65 658,245 350,425 42,245"
+                points="600,80 1090,340 600,600 110,340"
                 fill="currentColor"
                 opacity="0.035"
                 stroke="currentColor"
@@ -928,44 +943,44 @@ export function StudioObservability({
               />
               {/* Inner Tier Zone Divider Lines */}
               <line
-                x1="245"
-                y1="126"
-                x2="553"
-                y2="306"
+                x1="435"
+                y1="168"
+                x2="925"
+                y2="428"
                 stroke="currentColor"
                 strokeDasharray="3 4"
                 opacity="0.22"
               />
               <line
-                x1="145"
-                y1="185"
-                x2="453"
-                y2="365"
+                x1="275"
+                y1="252"
+                x2="765"
+                y2="512"
                 stroke="currentColor"
                 strokeDasharray="3 4"
                 opacity="0.22"
               />
               {/* 3D Tier Zone Labels */}
-              <text x="155" y="138" fill="currentColor" fontSize="9.5" opacity="0.55">
+              <text x="290" y="182" fill="currentColor" fontSize="11" opacity="0.55">
                 {t("Ingress / Edge Tier")}
               </text>
-              <text x="545" y="352" fill="currentColor" fontSize="9.5" opacity="0.55" textAnchor="end">
+              <text x="910" y="495" fill="currentColor" fontSize="11" opacity="0.55" textAnchor="end">
                 {t("Data & Downstream Tier")}
               </text>
             </g>
           )}
 
           {/* Legend & Viewport Metadata */}
-          <text x="16" y="22" fill="currentColor" fontSize="12">
+          <text x="20" y="26" fill="currentColor" fontSize="12">
             {t("Static dependencies (dashed)")}
           </text>
-          <text x="16" y="40" fill="currentColor" fontSize="12">
+          <text x="20" y="44" fill="currentColor" fontSize="12">
             {t("Observed runtime (solid)")}
           </text>
-          <text x="684" y="22" fill="currentColor" fontSize="12" textAnchor="end">
+          <text x="1180" y="26" fill="currentColor" fontSize="12" textAnchor="end">
             {view}
           </text>
-          <text x="684" y="40" fill="currentColor" fontSize="10" opacity="0.65" textAnchor="end">
+          <text x="1180" y="44" fill="currentColor" fontSize="10" opacity="0.65" textAnchor="end">
             {layoutMode} · {Math.round(zoom * 100)}%
           </text>
 
