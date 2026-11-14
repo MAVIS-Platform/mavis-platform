@@ -137,3 +137,17 @@ test('runtime history keeps evidence scoped to its pinned project and model', ()
   assert.match(source, /projectId=\{sessionProjectId\}\s+targetGraphModelId=\{enrichedModelId \?\? sessionModelId\}/);
   assert.match(source, /observed && session\.data\?\.traceStatus\?\.toUpperCase\(\) === "PARTIAL"/);
 });
+
+test('interactive 2D Studio topology renders stacked replica cards, stopped node badge, and direct node control bar', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/features/runtime/backend.tsx'), 'utf8');
+  const dict = fs.readFileSync(path.join(__dirname, '../src/lib/i18n/locale-context.tsx'), 'utf8');
+  assert.ok(source.includes('studio-2d-node-control-bar'));
+  assert.ok(source.includes('Selected 2D Service Node'));
+  assert.ok(source.includes('Apply & Run Studio Experiment'));
+  assert.ok(source.includes('STOPPED · 0 Replicas'));
+  assert.ok(source.includes('REPLICAS'));
+  assert.ok(source.includes('onQuickStudioAction'));
+  assert.ok(source.includes('runWorkflowWithStudio'));
+  assert.ok(dict.includes('Selected 2D Service Node'));
+  assert.ok(dict.includes('Apply & Run Studio Experiment'));
+});

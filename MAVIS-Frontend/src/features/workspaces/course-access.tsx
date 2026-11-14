@@ -439,29 +439,52 @@ export function SeedCuratedCourseLabs({
 }) {
   const t = useCourseText();
   const cache = useQueryClient();
+  const [activePreset, setActivePreset] = useState<"STANDARD_DEMO" | "FULL_CURRICULUM" | null>(null);
   const seed = useMutation({
-    mutationFn: () =>
-      courseApi<Roadmap>(`workspaces/${workspaceId}/course-labs/seed-curated`, {
+    mutationFn: (preset: "STANDARD_DEMO" | "FULL_CURRICULUM") => {
+      setActivePreset(preset);
+      return courseApi<Roadmap>(`workspaces/${workspaceId}/course-labs/seed-curated`, {
         method: "POST",
-      }),
+        body: JSON.stringify({ preset }),
+      });
+    },
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: roadmapKey(workspaceId) });
       void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
       void cache.invalidateQueries({ queryKey: ["api", "projects"] });
     },
+    onSettled: () => setActivePreset(null),
   });
   return (
-    <div className="inline-flex flex-col items-start gap-1">
-      <Button
-        type="button"
-        variant={variant}
-        disabled={seed.isPending}
-        onClick={() => seed.mutate()}
-      >
-        {seed.isPending
-          ? t("Seeding Curated Labs…", "Đang khởi tạo Lab mẫu…")
-          : t("Seed Curated Course Labs (Lab 01 & 02)", "Khởi tạo nhanh Lab mẫu (Lab 01 & 02)")}
-      </Button>
+    <div className="inline-flex flex-col items-start gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          variant={variant}
+          disabled={seed.isPending}
+          onClick={() => seed.mutate("STANDARD_DEMO")}
+        >
+          {seed.isPending && activePreset === "STANDARD_DEMO"
+            ? t("Seeding Curated Labs…", "Đang khởi tạo Bộ Lab Chuẩn…")
+            : t(
+                "⚡ 1-Click Seed Curated Labs (Lab 01–03)",
+                "⚡ Khởi tạo nhanh Bộ Lab Chuẩn (Lab 01–03)",
+              )}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={seed.isPending}
+          onClick={() => seed.mutate("FULL_CURRICULUM")}
+        >
+          {seed.isPending && activePreset === "FULL_CURRICULUM"
+            ? t("Seeding Full 13-Lab Curriculum…", "Đang khởi tạo 13 Lab Giáo trình…")
+            : t(
+                "📚 Seed Full 12 Java + 1 C# Curriculum",
+                "📚 Khởi tạo trọn bộ 13 Lab (12 Java + 1 C#)",
+              )}
+        </Button>
+      </div>
       {seed.isSuccess && (
         <p role="status" className="text-xs text-success">
           {t(

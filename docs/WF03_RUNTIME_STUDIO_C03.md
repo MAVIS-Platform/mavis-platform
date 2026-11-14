@@ -39,7 +39,9 @@ Tất cả endpoint sử dụng tiền tố `/api/v1` và bảo vệ bằng JWT 
 
 ## 3. Đối chiếu Ma trận Nghiệm thu BM04 (`Wf03AcceptanceMatrixTest` — **28 ca**)
 
-- **UX chuyển tiếp Bước 4 -> Nộp bài (`C03 -> C04`):** Trong `LabWorkspace` (`src/features/courses/screens.tsx`), nút điều hướng cuối bước 4 (`Proceed to Submit Lab`) và bảng chi tiết Step 4 được mở khóa liên kết trực tiếp tới `/assignments?workspace=...&assignment=...#submission-composer` ngay khi đạt `studioVerified || runtimeReady`.
+- **UX chuyển tiếp Bước 4 -> Nộp bài (`C03 -> C04`) & Interactive 2D Studio Canvas:**
+  - Trong `LabWorkspace` (`src/features/courses/screens.tsx`), nút điều hướng cuối bước 4 (`Proceed to Submit Lab`) và bảng chi tiết Step 4 được mở khóa liên kết trực tiếp tới `/assignments?workspace=...&assignment=...#submission-composer` khi đạt `runtimeReady && studioVerified`, đồng thời `SubmissionComposer` (`src/features/submissions/composer.tsx`) tự chọn dự án Lab tương thích và phiên Studio đã xác minh gần nhất.
+  - Trên `RuntimeWorkflowTopologyCanvas` (`src/features/runtime/backend.tsx`), click trực tiếp vào một service node mở **Interactive 2D Node Studio Control Bar** (`Selected 2D Service Node`: chọn nhanh `Stop`, `Start`, hoặc `Scale ×2 / ×4 / ×8` và bấm `Apply & Run Studio Experiment` qua `runWorkflowWithStudio`); các node đang scaled hiển thị **stacked 2D replica cards** kèm huy hiệu `×N REPLICAS`, còn node đang stopped hiển thị viền đứt rose kèm huy hiệu `⛔ STOPPED · 0 Replicas` (kiểm chứng trong `runtime-planning.test.cjs` 17/17 PASS).
 
 | Mã cam kết BM04 | Phương thức / Bài test chứng minh | Kết quả & Phạm vi xác minh |
 |---|---|---|

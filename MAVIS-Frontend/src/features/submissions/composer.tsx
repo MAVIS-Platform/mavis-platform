@@ -61,6 +61,13 @@ export function SubmissionComposer({
   );
   const personalProjectsCount = (projects.data ?? []).filter((p) => !p.workspaceId).length;
 
+  // Auto-select the student's Lab project when entering composer with no compatible project active
+  useEffect(() => {
+    if (!compatibleProject && classProjects.length > 0) {
+      selection.setProjectId(classProjects[0]!.id);
+    }
+  }, [compatibleProject, classProjects, selection]);
+
   useEffect(() => {
     if (
       guided &&
@@ -173,6 +180,13 @@ export function SubmissionComposer({
     return exactMatch.length > 0 ? exactMatch : allCompleted;
   }, [sessions.data, state.model, requiresStudio]);
   const selectedRuntime = compatible.find((s) => s.id === runtimeId);
+
+  // Auto-select the latest compatible runtime/Studio session so Stage 3 & Stage 4 populate immediately
+  useEffect(() => {
+    if (compatible.length > 0 && !compatible.some((s) => s.id === runtimeId)) {
+      setRuntimeId(compatible[0]!.id);
+    }
+  }, [compatible, runtimeId]);
   const evaluationScore =
     typeof evaluation?.result["complianceScore"] === "number"
       ? evaluation.result["complianceScore"]
