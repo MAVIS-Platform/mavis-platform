@@ -137,3 +137,24 @@ test('runtime history keeps evidence scoped to its pinned project and model', ()
   assert.match(source, /projectId=\{sessionProjectId\}\s+targetGraphModelId=\{enrichedModelId \?\? sessionModelId\}/);
   assert.match(source, /observed && session\.data\?\.traceStatus\?\.toUpperCase\(\) === "PARTIAL"/);
 });
+
+test('runtime sequence SVG displays recorded span fields without inventing responses', () => {
+  const filename = path.join(__dirname, '../src/features/runtime/backend.tsx');
+  const source = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'),
+    ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const names = new Set(['isRunnerActor', 'normalizeEndpointDisplay', 'methodStrokeColor',
+    'buildRuntimeSequenceSvgString']);
+  const functions = source.statements.filter(node => ts.isFunctionDeclaration(node) &&
+    names.has(node.name?.text)).map(node => node.getText(source)).join('\n');
+  const js = ts.transpileModule(functions, { compilerOptions: { target: ts.ScriptTarget.ES2022 } });
+  const render = new Function(js.outputText + '\nreturn buildRuntimeSequenceSvgString;')();
+  const call = { callerService: 'orders', calleeService: 'broker' };
+  const partial = render([{ ...call, operation: 'Publish order.created' }], 'Recorded session').svgMarkup;
+  assert.match(partial, /Publish order\.created/);
+  assert.doesNotMatch(partial, /GET|HTTP 200|\/api\/|seq-reply-arrow/);
+  const measured = render([{ ...call, httpMethod: 'POST', operation: 'POST /events',
+    httpStatusCode: 503, durationMs: 12 }], 'Recorded session').svgMarkup;
+  assert.match(measured, /POST \/events/);
+  assert.match(measured, /HTTP 503 · 12 ms/);
+  assert.doesNotMatch(measured, /POST POST|seq-reply-arrow/);
+});
