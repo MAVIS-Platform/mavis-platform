@@ -11,6 +11,8 @@ export const sessionSchema = z.object({
       name: z.string(),
       role: roleSchema,
       email: z.string().email().nullish(),
+      avatarUrl: z.string().url().nullish(),
+      preferredLocale: z.enum(["en", "vi"]).optional(),
     })
     .nullable(),
 });
@@ -252,7 +254,8 @@ export const explanationSchema = z.object({
   cached: z.boolean().optional(),
 });
 export const workspaceSchema = z.object({
-  createdById:z.string().optional(),description:z.string().optional(),
+  createdById: z.string().optional(),
+  description: z.string().optional(),
   id: z.string(),
   name: z.string(),
   code: z.string().optional(),
@@ -261,10 +264,16 @@ export const workspaceSchema = z.object({
   members: z.array(z.object({ id: z.string(), name: z.string(), role: z.string() })),
 });
 export const assignmentReferenceSchema = z.object({
-  projectId: z.string(), projectName: z.string(), snapshotId: z.string(), modelId: z.string(),
-  revision: z.number().int().positive(), sourceType: z.string(),
-  repositoryUrl: z.string().nullish(), branch: z.string().nullish(),
-  commitSha: z.string().nullish(), artifactHash: z.string().nullish(),
+  projectId: z.string(),
+  projectName: z.string(),
+  snapshotId: z.string(),
+  modelId: z.string(),
+  revision: z.number().int().positive(),
+  sourceType: z.string(),
+  repositoryUrl: z.string().nullish(),
+  branch: z.string().nullish(),
+  commitSha: z.string().nullish(),
+  artifactHash: z.string().nullish(),
 });
 export const assignmentSchema = z.object({
   referenceSource: assignmentReferenceSchema.nullish(),
@@ -322,7 +331,10 @@ export const submissionSchema = z
     diagramLayout: z.record(z.unknown()).optional(),
     evaluationRunId: z.string().nullable().optional(),
     complianceScore: z.number().nullable().optional(),
-    evidencePackageDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
+    evidencePackageDigest: z
+      .string()
+      .regex(/^sha256:[a-f0-9]{64}$/)
+      .optional(),
     courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
     studentSnapshots: z.array(studentSnapshotSchema).nullish(),
     id: z.string(),
@@ -333,7 +345,15 @@ export const submissionSchema = z
     snapshot: snapshotSchema,
     runtime: runtimeSessionSchema.nullable(),
     feedback: z.array(
-      z.object({ id: z.string(), text: z.string(), createdAt: z.string(), authorId: z.string(), authorName:z.string().optional(), elementId:z.string().nullable().optional(), relationshipId:z.string().nullable().optional() }),
+      z.object({
+        id: z.string(),
+        text: z.string(),
+        createdAt: z.string(),
+        authorId: z.string(),
+        authorName: z.string().optional(),
+        elementId: z.string().nullable().optional(),
+        relationshipId: z.string().nullable().optional(),
+      }),
     ),
   })
   .superRefine((submission, ctx) => {

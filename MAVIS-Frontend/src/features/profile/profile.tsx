@@ -136,6 +136,8 @@ export function ProfileDetails({ user }: { user: User }) {
   const api = useApi();
   const update = useApiMutation("updateProfile");
   const [fullName, setFullName] = useState(user.name);
+  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl ?? "");
+  const [preferredLocale, setPreferredLocale] = useState<"en" | "vi">(user.preferredLocale ?? "en");
   const [nameError, setNameError] = useState("");
   const [notice, setNotice] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
@@ -158,7 +160,11 @@ export function ProfileDetails({ user }: { user: User }) {
     setNameError("");
     setNotice("");
     try {
-      const result = await update.mutateAsync({ fullName: fullName.trim() });
+      const result = await update.mutateAsync({
+        fullName: fullName.trim(),
+        avatarUrl: avatarUrl.trim() || null,
+        preferredLocale,
+      });
       setFullName(result.user?.name ?? fullName.trim());
       setNotice("Profile updated successfully.");
     } catch {
@@ -193,7 +199,11 @@ export function ProfileDetails({ user }: { user: User }) {
             aria-hidden="true"
             className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary"
           >
-            {initials || <UserRound className="size-5" />}
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="" className="size-12 rounded-full object-cover" />
+            ) : (
+              initials || <UserRound className="size-5" />
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <h2 className="break-words text-lg font-semibold leading-7">
@@ -302,6 +312,33 @@ export function ProfileDetails({ user }: { user: User }) {
               </dd>
             </div>
           </dl>
+          <div>
+            <label htmlFor="profile-avatar" className="text-sm font-medium">
+              {t("Avatar URL")}
+            </label>
+            <Input
+              id="profile-avatar"
+              className="mt-2"
+              type="url"
+              maxLength={1000}
+              value={avatarUrl}
+              onChange={(e) => setAvatarUrl(e.target.value)}
+            />
+          </div>
+          <div>
+            <label htmlFor="profile-locale" className="text-sm font-medium">
+              {t("Preferred language")}
+            </label>
+            <select
+              id="profile-locale"
+              className="mt-2 h-11 w-full rounded-md border bg-background px-3"
+              value={preferredLocale}
+              onChange={(e) => setPreferredLocale(e.target.value as "en" | "vi")}
+            >
+              <option value="en">English</option>
+              <option value="vi">Tiếng Việt</option>
+            </select>
+          </div>
           {update.error && <ErrorState error={update.error} />}
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button
@@ -311,7 +348,9 @@ export function ProfileDetails({ user }: { user: User }) {
                 passwordSaving ||
                 !fullName.trim() ||
                 fullName.trim().length > 255 ||
-                fullName.trim() === user.name
+                (fullName.trim() === user.name &&
+                  avatarUrl === (user.avatarUrl ?? "") &&
+                  preferredLocale === (user.preferredLocale ?? "en"))
               }
               className="h-11 w-full sm:w-auto"
             >

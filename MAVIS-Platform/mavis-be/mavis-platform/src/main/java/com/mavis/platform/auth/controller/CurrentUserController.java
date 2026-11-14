@@ -24,14 +24,18 @@ public class CurrentUserController {
     private final AccessPolicyService accessPolicy;
     private final UserRepository users;
     private final PasswordEncoder passwords;
-    public record CurrentUser(UUID id, String email, String fullName, String role) {}
+    public record CurrentUser(UUID id, String email, String fullName, String role, String avatarUrl, String preferredLocale) {}
     public record UpdateProfileRequest(@NotBlank @Size(max=255) String fullName,
                                        @Size(max=100) String currentPassword,
-                                       @Size(min=6,max=100) String newPassword) {}
+                                       @Size(min=6,max=100) String newPassword,
+                                       @Size(max=1000) String avatarUrl,
+                                       @jakarta.validation.constraints.Pattern(regexp="en|vi") String preferredLocale) {
+        public UpdateProfileRequest(String fullName,String currentPassword,String newPassword){this(fullName,currentPassword,newPassword,null,null);}
+    }
     @GetMapping("/api/v1/auth/me")
     public ApiResponse<CurrentUser> me() {
         var user = accessPolicy.requireCurrentActiveUser();
-        return ApiResponse.success(new CurrentUser(user.getId(), user.getEmail(), user.getFullName(), user.getRole().getCode()));
+        return ApiResponse.success(view(user));
     }
     @RequestMapping(value="/api/v1/auth/me",method={RequestMethod.PATCH,RequestMethod.PUT})
     @Transactional
@@ -44,7 +48,10 @@ public class CurrentUserController {
             user.setPasswordHash(passwords.encode(request.newPassword()));
         }
         user.setFullName(request.fullName().trim());
+        if(request.avatarUrl()!=null) user.setAvatarUrl(request.avatarUrl().isBlank()?null:request.avatarUrl().trim());
+        if(request.preferredLocale()!=null) user.setPreferredLocale(request.preferredLocale());
         users.save(user);
-        return ApiResponse.success(new CurrentUser(user.getId(),user.getEmail(),user.getFullName(),user.getRole().getCode()));
+        return ApiResponse.success(view(user));
     }
+    private CurrentUser view(com.mavis.common.entity.User user){return new CurrentUser(user.getId(),user.getEmail(),user.getFullName(),user.getRole().getCode(),user.getAvatarUrl(),user.getPreferredLocale());}
 }

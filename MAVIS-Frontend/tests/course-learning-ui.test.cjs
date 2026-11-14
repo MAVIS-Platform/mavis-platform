@@ -110,7 +110,7 @@ test("WF-04 submission UI exposes every evidence gate and the sealed package dig
     /guided && \(!stage1Ready \|\| !stage2Ready \|\| !stage3Ready \|\| !stage4Ready\)/,
   );
   assert.ok(frozen.includes("Evidence package SHA-256"));
-  assert.match(contract, /evidencePackageDigest:\s*z\.string\(\)\.regex/);
+  assert.match(contract, /evidencePackageDigest:\s*z\s*\.string\(\)\s*\.regex/);
 });
 
 test("lecturer review requires comments and maps the documented pass threshold to /100", () => {

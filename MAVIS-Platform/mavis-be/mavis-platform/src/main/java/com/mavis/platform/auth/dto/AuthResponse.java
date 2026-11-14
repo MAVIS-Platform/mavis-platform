@@ -13,6 +13,7 @@ import java.util.UUID;
 @NoArgsConstructor
 public class AuthResponse {
     private String token;
+    private String refreshToken;
     @Builder.Default
     private String type = "Bearer";
     private UUID userId;

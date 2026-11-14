@@ -25,7 +25,12 @@ type Roadmap = {
   enrollmentStatus: "ENROLLED" | "IN_PROGRESS" | "COMPLETED" | null;
   labs: Lab[];
 };
-type KeyStatus = { active: boolean; expiresAt: string | null };
+type KeyStatus = {
+  active: boolean;
+  expiresAt: string | null;
+  maxStudents: number | null;
+  enrolledStudents: number;
+};
 type IssuedKey = { code: string; expiresAt: string };
 
 const roadmapKey = (workspaceId: string) => ["api", "course-roadmap", workspaceId];
@@ -233,6 +238,7 @@ function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   const cache = useQueryClient();
   const path = `workspaces/${workspaceId}/course-passkey`;
   const [validHours, setValidHours] = useState(24);
+  const [maxStudents, setMaxStudents] = useState(30);
   const [issued, setIssued] = useState<IssuedKey>();
   const [copied, setCopied] = useState(false);
   const status = useQuery({
@@ -242,7 +248,10 @@ function CoursePasskey({ workspaceId }: { workspaceId: string }) {
   const change = useMutation<IssuedKey | null, Error, "issue" | "revoke">({
     mutationFn: (action: "issue" | "revoke") =>
       action === "issue"
-        ? courseApi<IssuedKey>(path, { method: "POST", body: JSON.stringify({ validHours }) })
+        ? courseApi<IssuedKey>(path, {
+            method: "POST",
+            body: JSON.stringify({ validHours, maxStudents }),
+          })
         : courseApi<null>(`${path}/revoke`, { method: "POST" }),
     onSuccess: (key) => {
       setIssued(key ?? undefined);
@@ -259,6 +268,12 @@ function CoursePasskey({ workspaceId }: { workspaceId: string }) {
           <time dateTime={status.data.expiresAt}>
             {new Date(status.data.expiresAt).toLocaleString()}
           </time>
+        </p>
+      )}
+      {status.data && (
+        <p className="text-sm text-muted-foreground">
+          {t("Enrollment", "Ghi danh")}: {status.data.enrolledStudents}/
+          {status.data.maxStudents ?? t("Unlimited", "Không giới hạn")}
         </p>
       )}
       <form
@@ -282,6 +297,19 @@ function CoursePasskey({ workspaceId }: { workspaceId: string }) {
               required
               value={validHours || ""}
               onChange={(event) => setValidHours(Number(event.target.value))}
+            />
+          )}
+        </FormField>
+        <FormField label={t("Maximum students", "Sĩ số tối đa")}>
+          {(props) => (
+            <Input
+              {...props}
+              type="number"
+              min={1}
+              max={10000}
+              required
+              value={maxStudents || ""}
+              onChange={(event) => setMaxStudents(Number(event.target.value))}
             />
           )}
         </FormField>

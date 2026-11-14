@@ -10,7 +10,7 @@ class CurrentUserControllerTest {
     @Test void currentUserIsLoadedThroughActiveUserPolicyAndContainsNoToken() {
         var policy=mock(AccessPolicyService.class);var user=User.builder().id(UUID.randomUUID()).email("test@example.invalid").fullName("Test").role(Role.builder().code("STUDENT").build()).build();
         when(policy.requireCurrentActiveUser()).thenReturn(user);var view=new CurrentUserController(policy,mock(com.mavis.common.repository.UserRepository.class),mock(org.springframework.security.crypto.password.PasswordEncoder.class)).me().getData();
-        assertEquals(user.getId(),view.id());assertEquals("STUDENT",view.role());assertEquals(4,view.getClass().getRecordComponents().length);
+        assertEquals(user.getId(),view.id());assertEquals("STUDENT",view.role());assertEquals(6,view.getClass().getRecordComponents().length);
     }
     @Test void inactiveOrUnauthenticatedUserIsRejected() {
         var policy=mock(AccessPolicyService.class);doThrow(new BusinessException(ErrorCode.UNAUTHORIZED)).when(policy).requireCurrentActiveUser();

@@ -48,6 +48,8 @@ export async function signIn(input: unknown, signal?: AbortSignal, google = fals
   const raw = z
     .object({
       token: z.string().min(1),
+      // Optional during a rolling deployment; the current WF-01 backend always returns it.
+      refreshToken: z.string().min(20).optional(),
       userId: z.string().uuid(),
       fullName: z.string(),
       role: z.string(),
@@ -62,6 +64,7 @@ export async function signIn(input: unknown, signal?: AbortSignal, google = fals
     );
   return {
     token: raw.token,
+    refreshToken: raw.refreshToken,
     session: {
       user: userView({
         id: raw.userId,
@@ -245,7 +248,10 @@ export async function executeJava(
         submissionNotes: z.string().nullish(),
         evaluationRunId: z.string().uuid().nullish(),
         complianceScore: z.number().nullish(),
-        evidencePackageDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
+        evidencePackageDigest: z
+          .string()
+          .regex(/^sha256:[a-f0-9]{64}$/)
+          .optional(),
         courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
         studentSnapshots: z.array(studentSnapshotSchema).nullish(),
         sourceSnapshotId: z.string().uuid(),
@@ -445,7 +451,8 @@ export async function executeJava(
     const resolvedConfigRev =
       typeof plan["configurationRevision"] === "number" && plan["configurationRevision"] >= 1
         ? plan["configurationRevision"]
-        : typeof cfgData["configurationRevision"] === "number" && cfgData["configurationRevision"] >= 1
+        : typeof cfgData["configurationRevision"] === "number" &&
+            cfgData["configurationRevision"] >= 1
           ? cfgData["configurationRevision"]
           : typeof fallbackInput?.["configurationRevision"] === "number" &&
               fallbackInput["configurationRevision"] >= 1
@@ -477,13 +484,11 @@ export async function executeJava(
       scenarioStatus: String(r["scenarioStatus"] ?? "UNKNOWN"),
       evidenceStatus: String(r["evidenceStatus"] ?? "UNKNOWN"),
       cleanupStatus: String(r["cleanupStatus"] ?? "UNKNOWN"),
-      outcome: (
-        r["scenarioStatus"] === "PASSED"
-          ? "passed"
-          : r["scenarioStatus"] === "FAILED"
-            ? "failed"
-            : "unknown"
-      ) as "pending" | "passed" | "failed" | "unknown",
+      outcome: (r["scenarioStatus"] === "PASSED"
+        ? "passed"
+        : r["scenarioStatus"] === "FAILED"
+          ? "failed"
+          : "unknown") as "pending" | "passed" | "failed" | "unknown",
       approvedAt: r["startedAt"]
         ? String(r["startedAt"])
         : r["createdAt"]
@@ -559,7 +564,9 @@ export async function executeJava(
         : {}),
       ...(value.failureReason !== undefined ? { failureReason: value.failureReason ?? null } : {}),
       ...(value.diagnostics !== undefined ? { diagnostics: value.diagnostics ?? [] } : {}),
-      ...(value.infrastructureActions ? { infrastructureActions: value.infrastructureActions } : {}),
+      ...(value.infrastructureActions
+        ? { infrastructureActions: value.infrastructureActions }
+        : {}),
       ...(value.beforeAfterComparison ? { beforeAfterComparison: value.beforeAfterComparison } : {}),
       ...(value.studioVerified !== undefined ? { studioVerified: value.studioVerified } : {}),
       ...(value.capturedSpanCount !== undefined
@@ -612,30 +619,45 @@ export async function executeJava(
     javaRequest(path, token, { method: "PATCH", body: JSON.stringify(body), signal });
   switch (operation) {
     case "runtimeConfiguration": {
-      return get(`analyzer/projects/${id(input,"projectId")}/runtime-plan`);
+      return get(`analyzer/projects/${id(input, "projectId")}/runtime-plan`);
     }
     case "saveRuntimeConfiguration": {
-      return javaRequest(`analyzer/projects/${id(input,"projectId")}/runtime-plan`, token,
-        { method: "PUT", body: JSON.stringify(input), signal });
+      return javaRequest(`analyzer/projects/${id(input, "projectId")}/runtime-plan`, token, {
+        method: "PUT",
+        body: JSON.stringify(input),
+        signal,
+      });
     }
     case "scenarios": {
-      return get(`analyzer/projects/${id(input,"projectId")}/runtime-plan/scenarios`);
+      return get(`analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios`);
     }
     case "createScenario": {
-      return post(`analyzer/projects/${id(input,"projectId")}/runtime-plan/scenarios`, { ...input, expectedRevision: 0 });
+      return post(`analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios`, {
+        ...input,
+        expectedRevision: 0,
+      });
     }
     case "saveScenario": {
-      return javaRequest(`analyzer/projects/${id(input,"projectId")}/runtime-plan/scenarios/${id(input,"scenarioId")}`, token,
-        { method: "PUT", body: JSON.stringify(input), signal });
+      return javaRequest(
+        `analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios/${id(input, "scenarioId")}`,
+        token,
+        { method: "PUT", body: JSON.stringify(input), signal },
+      );
     }
     case "buildRuntimeSandboxImages": {
-      return post(`analyzer/projects/${id(input,"projectId")}/runtime-plan/build-images`, input);
+      return post(`analyzer/projects/${id(input, "projectId")}/runtime-plan/build-images`, input);
     }
     case "generateRuntimeScenario": {
-      return post(`analyzer/projects/${id(input,"projectId")}/runtime-plan/scenarios/generate`, input);
+      return post(
+        `analyzer/projects/${id(input, "projectId")}/runtime-plan/scenarios/generate`,
+        input,
+      );
     }
     case "startRuntime": {
-      return courseworkRuntime(await post(`analyzer/projects/${id(input,"projectId")}/runtime-plan/start`, input), input);
+      return courseworkRuntime(
+        await post(`analyzer/projects/${id(input, "projectId")}/runtime-plan/start`, input),
+        input,
+      );
     }
     case "runtimeSessions":
       return Promise.all(
@@ -657,12 +679,18 @@ export async function executeJava(
       return courseworkRuntime(stopped);
     }
     case "notifications": {
-      const params = new URLSearchParams({page:String(input["page"]),size:String(input["size"]),unreadOnly:String(input["unreadOnly"])});
-      if (input["category"]) params.set("category",String(input["category"]));
+      const params = new URLSearchParams({
+        page: String(input["page"]),
+        size: String(input["size"]),
+        unreadOnly: String(input["unreadOnly"]),
+      });
+      if (input["category"]) params.set("category", String(input["category"]));
       return get(`notifications?${params}`);
     }
-    case "readNotification": return patch(`notifications/${id(input,"notificationId")}/read`,{});
-    case "readAllNotifications": return post("notifications/read-all",{before:input["before"]});
+    case "readNotification":
+      return patch(`notifications/${id(input, "notificationId")}/read`, {});
+    case "readAllNotifications":
+      return post("notifications/read-all", { before: input["before"] });
     case "accounts":
       return list.parse(await get("admin/users")).map(account);
     case "setAccountLock":
@@ -734,7 +762,8 @@ export async function executeJava(
       return list.parse(await get("admin/jobs")).map(jobView);
     case "adminAiUsage":
       return get("admin/ai-usage");
-    case "adminHealth": return get("admin/health");
+    case "adminHealth":
+      return get("admin/health");
     case "platformSummary": {
       const a = z
         .object({
@@ -1172,12 +1201,65 @@ export async function executeJava(
       return snapshotView(await get(`analyzer/snapshots/${result.snapshotId}`));
     }
     case "projectActivity": {
-      const result=z.object({items:z.array(z.object({id:z.string(),kind:z.string(),projectId:z.string(),projectName:z.string(),occurredAt:z.string().nullable(),projectDeleted:z.boolean(),targetId:z.string().nullish().transform(value=>value??null),targetName:z.string().nullish().transform(value=>value??null),actorId:z.string().nullish().transform(value=>value??null),actorName:z.string().nullish().transform(value=>value??null),job:z.record(z.string(),z.unknown()).nullish()})),total:z.number(),page:z.number(),size:z.number()}).parse(await get(`activity/projects?page=${input["page"]}&size=${input["size"]}`));
-      return {...result,items:result.items.map(row=>({...row,job:row.job?jobView(row.job):null}))};
+      const result = z
+        .object({
+          items: z.array(
+            z.object({
+              id: z.string(),
+              kind: z.string(),
+              projectId: z.string(),
+              projectName: z.string(),
+              occurredAt: z.string().nullable(),
+              projectDeleted: z.boolean(),
+              targetId: z
+                .string()
+                .nullish()
+                .transform((value) => value ?? null),
+              targetName: z
+                .string()
+                .nullish()
+                .transform((value) => value ?? null),
+              actorId: z
+                .string()
+                .nullish()
+                .transform((value) => value ?? null),
+              actorName: z
+                .string()
+                .nullish()
+                .transform((value) => value ?? null),
+              job: z.record(z.string(), z.unknown()).nullish(),
+            }),
+          ),
+          total: z.number(),
+          page: z.number(),
+          size: z.number(),
+        })
+        .parse(await get(`activity/projects?page=${input["page"]}&size=${input["size"]}`));
+      return {
+        ...result,
+        items: result.items.map((row) => ({ ...row, job: row.job ? jobView(row.job) : null })),
+      };
     }
     case "projectAnalysisActivity": {
-      const result = z.object({items:z.array(z.object({job:z.record(z.string(),z.unknown()),projectName:z.string()})),total:z.number(),page:z.number(),size:z.number()}).parse(await get(`activity/analysis?page=${input["page"]}&size=${input["size"]}`));
-      return {...result,items:result.items.map(row=>({...jobView(row.job),projectName:row.projectName,startedAt:row.job["startedAt"]??null,completedAt:row.job["completedAt"]??null}))};
+      const result = z
+        .object({
+          items: z.array(
+            z.object({ job: z.record(z.string(), z.unknown()), projectName: z.string() }),
+          ),
+          total: z.number(),
+          page: z.number(),
+          size: z.number(),
+        })
+        .parse(await get(`activity/analysis?page=${input["page"]}&size=${input["size"]}`));
+      return {
+        ...result,
+        items: result.items.map((row) => ({
+          ...jobView(row.job),
+          projectName: row.projectName,
+          startedAt: row.job["startedAt"] ?? null,
+          completedAt: row.job["completedAt"] ?? null,
+        })),
+      };
     }
     case "analysisJobs":
       return list.parse(await get(`analyzer/projects/${id(input, "projectId")}/jobs`)).map(jobView);
@@ -1566,7 +1648,9 @@ export async function executeJava(
         elementId,
         ...(relationshipId ? { relationshipId } : {}),
         explanationScope: a.explanationScope ?? scope,
-        ...((a.userQuestion ?? userQuestion) !== undefined ? { userQuestion: a.userQuestion ?? userQuestion } : {}),
+        ...((a.userQuestion ?? userQuestion) !== undefined
+          ? { userQuestion: a.userQuestion ?? userQuestion }
+          : {}),
         text: a.explanationText,
         evidenceIds: a.citedEvidenceIds,
         ...(a.citedEvidences
@@ -1588,16 +1672,23 @@ export async function executeJava(
       };
     }
     case "deleteProject": {
-      await javaRequest(`projects/${id(input,"projectId")}`,token,{method:"DELETE",signal});
-      return {ok:true};
+      await javaRequest(`projects/${id(input, "projectId")}`, token, { method: "DELETE", signal });
+      return { ok: true };
     }
     case "deleteSnapshot": {
-      await javaRequest(`projects/${id(input,"projectId")}/snapshots/${id(input,"snapshotId")}`,token,{method:"DELETE",signal});
-      return {ok:true};
+      await javaRequest(
+        `projects/${id(input, "projectId")}/snapshots/${id(input, "snapshotId")}`,
+        token,
+        { method: "DELETE", signal },
+      );
+      return { ok: true };
     }
-    case "contextCandidates": return get(`analyzer/models/${id(input,"modelId")}/context-review/candidates`);
+    case "contextCandidates":
+      return get(`analyzer/models/${id(input, "modelId")}/context-review/candidates`);
     case "reviewContext": {
-      const result = z.object({ id: z.string().uuid() }).parse(await post(`analyzer/models/${id(input,"modelId")}/context-review`, input));
+      const result = z
+        .object({ id: z.string().uuid() })
+        .parse(await post(`analyzer/models/${id(input, "modelId")}/context-review`, input));
       return model(result.id);
     }
     case "saveModel": {
@@ -1912,7 +2003,7 @@ export function parseSourceFileToUmlMeta(
         // Field declaration
         const beforeEq = declaration;
         const fMatch =
-          /^((?:(?:public|protected|private|internal|static|final|readonly|volatile|transient)\s+)*)([\w.<>, ?\[\]]+?)\s+(\w+)$/.exec(
+          /^((?:(?:public|protected|private|internal|static|final|readonly|volatile|transient)\s+)*)([\w.<>, ?[\]]+?)\s+(\w+)$/.exec(
             beforeEq,
           );
         if (fMatch) {
@@ -1981,7 +2072,7 @@ export function parseSourceFileToUmlMeta(
         }
 
         const mMatch =
-          /^((?:(?:public|protected|private|internal|static|final|abstract|synchronized|default|virtual|override|async)\s+)*)(?:<[^>]+>\s*)?([\w.<>, ?\[\]]+?)\s+(\w+)$/.exec(
+          /^((?:(?:public|protected|private|internal|static|final|abstract|synchronized|default|virtual|override|async)\s+)*)(?:<[^>]+>\s*)?([\w.<>, ?[\]]+?)\s+(\w+)$/.exec(
             head,
           );
         if (mMatch) {
