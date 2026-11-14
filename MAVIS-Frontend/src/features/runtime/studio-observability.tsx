@@ -497,7 +497,7 @@ export function StudioObservability({
   const [snapToGrid, setSnapToGrid] = useState(true);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [camera, setCamera] = useState({ yaw: 0.45, pitch: 0.35 });
+  const [camera, setCamera] = useState({ yaw: 0.78, pitch: 0.52 });
   const [customOffsets, setCustomOffsets] = useState<Record<string, { x: number; y: number }>>({});
   const [pinnedPositions, setPinnedPositions] = useState<Record<string, { x: number; y: number }>>(
     {},
@@ -584,6 +584,25 @@ export function StudioObservability({
     return depths;
   }, [data.services, staticEdges, telemetry?.interactions]);
 
+  const project3DPoint = useMemo(() => {
+    const cosY = Math.cos(camera.yaw);
+    const sinY = Math.sin(camera.yaw);
+    const cosP = Math.cos(camera.pitch);
+    const sinP = Math.sin(camera.pitch);
+    return (wx: number, wy: number, wz: number) => {
+      const rx = wx * cosY - wz * sinY;
+      const rz = wx * sinY + wz * cosY;
+      const ry = wy * cosP + rz * sinP;
+      const depthZ = -wy * sinP + rz * cosP;
+      const perspective = 1150 / Math.max(420, 1150 + depthZ);
+      return {
+        x: 600 + (rx * perspective + pan.x) * zoom,
+        y: 325 + (ry * perspective + pan.y) * zoom,
+        z: depthZ,
+      };
+    };
+  }, [camera.yaw, camera.pitch, pan.x, pan.y, zoom]);
+
   const positions = useMemo(() => {
     const raw = new Map<string, { x: number; y: number; z: number; tier: number }>();
     const total = Math.max(1, data.services.length);
@@ -597,93 +616,110 @@ export function StudioObservability({
     });
     const tierKeys = [...tierGroups.keys()].sort((a, b) => a - b);
 
+    // Split any crowded tier (> 4 nodes) into balanced sub-columns so nodes never stack or collide
+    const effectiveColumns: Array<{ tier: number; nodes: string[] }> = [];
+    for (const tier of tierKeys) {
+      const list = tierGroups.get(tier) ?? [];
+      const maxPerCol = 4;
+      for (let i = 0; i < list.length; i += maxPerCol) {
+        effectiveColumns.push({ tier, nodes: list.slice(i, i + maxPerCol) });
+      }
+    }
+    const colLocation = new Map<string, { colIdx: number; rowIdx: number; rowCount: number }>();
+    effectiveColumns.forEach((col, colIdx) => {
+      col.nodes.forEach((name, rowIdx) => {
+        colLocation.set(name, { colIdx, rowIdx, rowCount: col.nodes.length });
+      });
+    });
+    const totalCols = Math.max(1, effectiveColumns.length);
+
     data.services.forEach((name, index) => {
       const tier = serviceDepth.get(name) ?? 0;
+      const offset = customOffsets[name] ?? { x: 0, y: 0 };
+      const pinned = pinnedPositions[name];
+
+      if (view === "3D") {
+        let wx = 0;
+        let wz = 0;
+        if (layoutMode === "CIRCULAR") {
+          const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
+          const radius = Math.min(340, 210 + total * 8);
+          wx = Math.cos(angle) * radius;
+          wz = Math.sin(angle) * radius;
+        } else if (layoutMode === "GRID") {
+          const cols = Math.max(2, Math.ceil(Math.sqrt(total)));
+          const col = index % cols;
+          const row = Math.floor(index / cols);
+          const rows = Math.ceil(total / cols);
+          const spX = Math.min(200, 680 / Math.max(1, cols - 1));
+          const spZ = Math.min(185, 560 / Math.max(1, rows - 1));
+          wx = (col - (cols - 1) / 2) * spX;
+          wz = (row - (rows - 1) / 2) * spZ;
+        } else {
+          const loc = colLocation.get(name) ?? { colIdx: 0, rowIdx: 0, rowCount: 1 };
+          const spX = totalCols <= 1 ? 0 : Math.min(220, 720 / (totalCols - 1));
+          const spZ = loc.rowCount <= 1 ? 0 : Math.min(185, 520 / (loc.rowCount - 1));
+          wx = (loc.colIdx - (totalCols - 1) / 2) * spX;
+          wz = (loc.rowIdx - (loc.rowCount - 1) / 2) * spZ;
+        }
+        const proj = project3DPoint(wx, 0, wz);
+        const px = (pinned ? pinned.x : proj.x) + offset.x;
+        const py = (pinned ? pinned.y : proj.y) + offset.y;
+        raw.set(name, {
+          x: Math.max(76, Math.min(1124, px)),
+          y: Math.max(54, Math.min(606, py)),
+          z: proj.z,
+          tier,
+        });
+        return;
+      }
+
+      // 2D Mode Coordinates
       let x = 0;
       let y = 0;
-      let z = (tier - 1) * 95;
-
       if (layoutMode === "CIRCULAR") {
         const angle = (index / total) * Math.PI * 2 - Math.PI / 2;
-        x = Math.cos(angle) * 340;
-        y = Math.sin(angle) * 205;
-        z = ((index % 3) - 1) * 115;
+        x = Math.cos(angle) * 360;
+        y = Math.sin(angle) * 215;
       } else if (layoutMode === "GRID") {
         const cols = Math.max(2, Math.ceil(Math.sqrt(total)));
         const col = index % cols;
         const row = Math.floor(index / cols);
         const rows = Math.ceil(total / cols);
-        x = (col - (cols - 1) / 2) * 290;
-        y = (row - (rows - 1) / 2) * 165;
-        z = (row - (rows - 1) / 2) * 105;
+        const spX = Math.min(250, 920 / Math.max(1, cols - 1));
+        const spY = Math.min(145, 460 / Math.max(1, rows - 1));
+        x = (col - (cols - 1) / 2) * spX;
+        y = (row - (rows - 1) / 2) * spY;
       } else {
-        const tierIndex = Math.max(0, tierKeys.indexOf(tier));
-        const tierCount = Math.max(1, tierKeys.length);
-        const siblings = tierGroups.get(tier) ?? [name];
-        const siblingIndex = siblings.indexOf(name);
-        if (tierCount === 1) {
-          const cols = Math.min(3, siblings.length);
-          const col = siblingIndex % cols;
-          const row = Math.floor(siblingIndex / cols);
-          const rows = Math.ceil(siblings.length / cols);
-          x = (col - (cols - 1) / 2) * 300;
-          y = (row - (rows - 1) / 2) * 165;
-        } else {
-          x = (tierIndex - (tierCount - 1) / 2) * 300;
-          y = (siblingIndex - (siblings.length - 1) / 2) * 165;
-        }
-        z = (tierIndex - (tierCount - 1) / 2) * 125;
+        const loc = colLocation.get(name) ?? { colIdx: 0, rowIdx: 0, rowCount: 1 };
+        const spX = totalCols <= 1 ? 0 : Math.min(260, 920 / (totalCols - 1));
+        const spY = loc.rowCount <= 1 ? 0 : Math.min(145, 460 / (loc.rowCount - 1));
+        x = (loc.colIdx - (totalCols - 1) / 2) * spX;
+        y = (loc.rowIdx - (loc.rowCount - 1) / 2) * spY;
       }
-
-      if (view === "3D") {
-        const rotatedX = x * Math.cos(camera.yaw) - z * Math.sin(camera.yaw);
-        const rotatedZ = x * Math.sin(camera.yaw) + z * Math.cos(camera.yaw);
-        x = rotatedX;
-        z = rotatedZ;
-        const rotatedY = y * Math.cos(camera.pitch) - z * Math.sin(camera.pitch);
-        z = y * Math.sin(camera.pitch) + z * Math.cos(camera.pitch);
-        y = rotatedY;
-        const perspective = 920 / Math.max(280, 920 + z);
-        x *= perspective;
-        y *= perspective;
+      let px = (pinned ? pinned.x : 600 + x) + offset.x + pan.x;
+      let py = (pinned ? pinned.y : 330 + y) + offset.y + pan.y;
+      px = 600 + (px - 600) * zoom;
+      py = 330 + (py - 330) * zoom;
+      if (snapToGrid && (offset.x !== 0 || offset.y !== 0 || Boolean(pinned))) {
+        px = Math.round(px / 16) * 16;
+        py = Math.round(py / 16) * 16;
       }
-
-      raw.set(name, { x: x + 600, y: y + 340, z, tier });
+      raw.set(name, {
+        x: Math.max(88, Math.min(1112, px)),
+        y: Math.max(58, Math.min(602, py)),
+        z: tier,
+        tier,
+      });
     });
 
-    if (raw.size > 0) {
-      const points = [...raw.values()];
-      const minX = Math.min(...points.map((point) => point.x));
-      const maxX = Math.max(...points.map((point) => point.x));
-      const minY = Math.min(...points.map((point) => point.y));
-      const maxY = Math.max(...points.map((point) => point.y));
-      const fit = Math.min(1, 960 / Math.max(1, maxX - minX), 460 / Math.max(1, maxY - minY));
-      for (const [name, point] of raw.entries()) {
-        const offset = customOffsets[name] ?? { x: 0, y: 0 };
-        const pinned = pinnedPositions[name];
-        let px = pinned
-          ? pinned.x + offset.x + pan.x
-          : 600 + (point.x - (minX + maxX) / 2) * fit + offset.x + pan.x;
-        let py = pinned
-          ? pinned.y + offset.y + pan.y
-          : 340 + (point.y - (minY + maxY) / 2) * fit + offset.y + pan.y;
-        px = 600 + (px - 600) * zoom;
-        py = 340 + (py - 340) * zoom;
-        if (snapToGrid && view === "2D" && (offset.x !== 0 || offset.y !== 0 || Boolean(pinned))) {
-          px = Math.round(px / 16) * 16;
-          py = Math.round(py / 16) * 16;
-        }
-        point.x = Math.max(88, Math.min(1112, px));
-        point.y = Math.max(58, Math.min(602, py));
-      }
-    }
     return raw;
   }, [
     data.services,
     serviceDepth,
     layoutMode,
     view,
-    camera,
+    project3DPoint,
     customOffsets,
     pinnedPositions,
     pan,
@@ -819,9 +855,43 @@ export function StudioObservability({
     <div className={canvasOnly ? "relative flex h-full min-h-0 flex-1 flex-col overflow-hidden" : "space-y-4"}>
       {exportError && <p role="alert">{t("Could not export graph")}</p>}
 
-      {/* Top Studio Viewport & Layout Toolbar (Minimal 2D/3D Pill in canvasOnly mode) */}
+      {/* Top Studio Viewport & 360° Orbit Pill (in canvasOnly mode) */}
       {canvasOnly ? (
         <div className="pointer-events-auto absolute top-2.5 right-3 z-10 inline-flex items-center gap-1 rounded-full border border-slate-700/80 bg-slate-950/85 p-1 shadow-md backdrop-blur-md">
+          {view === "3D" && (
+            <div className="flex items-center gap-0.5 border-r border-slate-800 pr-1">
+              <button
+                type="button"
+                title="Xoay trái 45° (hoặc giữ chuột kéo trên nền để xoay 360°)"
+                onClick={() => setCamera((c) => ({ ...c, yaw: c.yaw - Math.PI / 4 }))}
+                className="rounded-full px-2 py-0.5 font-mono text-[11px] text-slate-300 transition hover:bg-slate-800 hover:text-white"
+              >
+                ⟲
+              </button>
+              <button
+                type="button"
+                title="Góc xoay 360° hiện tại (Click để về góc chuẩn Isometric 45°)"
+                onClick={() => {
+                  setCamera({ yaw: 0.78, pitch: 0.52 });
+                  setPan({ x: 0, y: 0 });
+                  setZoom(1);
+                  setCustomOffsets({});
+                  setPinnedPositions({});
+                }}
+                className="rounded-full px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-400 transition hover:bg-slate-800"
+              >
+                {Math.round((((camera.yaw * 180) / Math.PI) % 360 + 360) % 360)}°
+              </button>
+              <button
+                type="button"
+                title="Xoay phải 45° (hoặc giữ chuột kéo trên nền để xoay 360°)"
+                onClick={() => setCamera((c) => ({ ...c, yaw: c.yaw + Math.PI / 4 }))}
+                className="rounded-full px-2 py-0.5 font-mono text-[11px] text-slate-300 transition hover:bg-slate-800 hover:text-white"
+              >
+                ⟳
+              </button>
+            </div>
+          )}
           {(["2D", "3D"] as const).map((mode) => (
             <button
               key={mode}
@@ -1087,14 +1157,12 @@ export function StudioObservability({
             }
           }}
           onPointerDown={(event) => {
-            if (event.target === event.currentTarget) {
-              cameraDrag.current = {
-                x: event.clientX,
-                y: event.clientY,
-                mode: view === "3D" ? "ROTATE" : "PAN",
-              };
-              event.currentTarget.setPointerCapture(event.pointerId);
-            }
+            cameraDrag.current = {
+              x: event.clientX,
+              y: event.clientY,
+              mode: view === "3D" && !event.shiftKey ? "ROTATE" : "PAN",
+            };
+            event.currentTarget.setPointerCapture(event.pointerId);
           }}
           onPointerUp={() => {
             cameraDrag.current = null;
@@ -1138,8 +1206,8 @@ export function StudioObservability({
             };
             if (cameraDrag.current.mode === "ROTATE") {
               setCamera((value) => ({
-                yaw: value.yaw + dx * 0.008,
-                pitch: Math.max(-1, Math.min(1, value.pitch + dy * 0.008)),
+                yaw: value.yaw - dx * 0.009,
+                pitch: Math.max(0.18, Math.min(1.35, value.pitch + dy * 0.007)),
               }));
             } else {
               setPan((prev) => ({
@@ -1186,46 +1254,89 @@ export function StudioObservability({
           {/* Subtle Studio Blueprint Grid */}
           <rect x="0" y="0" width="1200" height="660" fill="url(#studio-grid)" />
 
-          {/* 3D Isometric Multi-Tier Architecture Platform Deck when in 3D mode */}
-          {view === "3D" && (
-            <g>
-              {/* Outer 3D Slab Side Thickness */}
-              <polygon
-                points="70,335 600,616 1130,335 1130,345 600,626 70,345"
-                fill="currentColor"
-                opacity="0.08"
-              />
-              {/* Main Isometric Platform Surface */}
-              <polygon
-                points="600,54 1130,335 600,616 70,335"
-                fill="currentColor"
-                opacity="0.025"
-                stroke="currentColor"
-                strokeOpacity="0.2"
-                strokeWidth="1.1"
-                strokeDasharray="6 5"
-              />
-              {/* Inner Tier Zone Divider Lines */}
-              <line
-                x1="423"
-                y1="148"
-                x2="953"
-                y2="429"
-                stroke="currentColor"
-                strokeDasharray="4 5"
-                opacity="0.14"
-              />
-              <line
-                x1="247"
-                y1="241"
-                x2="777"
-                y2="522"
-                stroke="currentColor"
-                strokeDasharray="4 5"
-                opacity="0.14"
-              />
-            </g>
-          )}
+          {/* 3D Rotating Multi-Tier Architecture Platform Deck (orbits 360° with camera.yaw & pitch) */}
+          {view === "3D" &&
+            (() => {
+              const halfW = 450;
+              const halfD = 340;
+              const topCorners = [
+                project3DPoint(-halfW, 14, -halfD),
+                project3DPoint(halfW, 14, -halfD),
+                project3DPoint(halfW, 14, halfD),
+                project3DPoint(-halfW, 14, halfD),
+              ];
+              const botCorners = [
+                project3DPoint(-halfW, 26, -halfD),
+                project3DPoint(halfW, 26, -halfD),
+                project3DPoint(halfW, 26, halfD),
+                project3DPoint(-halfW, 26, halfD),
+              ];
+              const topPoly = topCorners.map((p) => `${p.x},${p.y}`).join(" ");
+              const div1A = project3DPoint(-halfW * 0.33, 14, -halfD);
+              const div1B = project3DPoint(-halfW * 0.33, 14, halfD);
+              const div2A = project3DPoint(halfW * 0.33, 14, -halfD);
+              const div2B = project3DPoint(halfW * 0.33, 14, halfD);
+              const crossA = project3DPoint(-halfW, 14, 0);
+              const crossB = project3DPoint(halfW, 14, 0);
+              return (
+                <g>
+                  {/* 3D Slab Side Walls (visible from any 360° angle) */}
+                  {[0, 1, 2, 3].map((i) => {
+                    const next = (i + 1) % 4;
+                    const t1 = topCorners[i]!;
+                    const t2 = topCorners[next]!;
+                    const b1 = botCorners[i]!;
+                    const b2 = botCorners[next]!;
+                    return (
+                      <polygon
+                        key={i}
+                        points={`${t1.x},${t1.y} ${t2.x},${t2.y} ${b2.x},${b2.y} ${b1.x},${b1.y}`}
+                        fill="currentColor"
+                        opacity="0.09"
+                      />
+                    );
+                  })}
+                  {/* Main Rotating Isometric Platform Surface */}
+                  <polygon
+                    points={topPoly}
+                    fill="currentColor"
+                    opacity="0.03"
+                    stroke="currentColor"
+                    strokeOpacity="0.22"
+                    strokeWidth="1.2"
+                    strokeDasharray="6 5"
+                  />
+                  {/* Inner Rotating Tier Divider Lines */}
+                  <line
+                    x1={div1A.x}
+                    y1={div1A.y}
+                    x2={div1B.x}
+                    y2={div1B.y}
+                    stroke="currentColor"
+                    strokeDasharray="4 5"
+                    opacity="0.14"
+                  />
+                  <line
+                    x1={div2A.x}
+                    y1={div2A.y}
+                    x2={div2B.x}
+                    y2={div2B.y}
+                    stroke="currentColor"
+                    strokeDasharray="4 5"
+                    opacity="0.14"
+                  />
+                  <line
+                    x1={crossA.x}
+                    y1={crossA.y}
+                    x2={crossB.x}
+                    y2={crossB.y}
+                    stroke="currentColor"
+                    strokeDasharray="3 6"
+                    opacity="0.09"
+                  />
+                </g>
+              );
+            })()}
 
           {/* Legend & Viewport Metadata (hidden in clean canvasOnly mode) */}
           {!canvasOnly && (
@@ -1353,7 +1464,7 @@ export function StudioObservability({
 
           {/* Interactive Draggable 2D/3D Service Blocks + True Volumetric 3D Isometric Server Racks & Stacked Replica Cubes */}
           {[...positions.entries()]
-            .sort((a, b) => b[1].z - a[1].z)
+            .sort((a, b) => a[1].y - b[1].y)
             .map(([name, point]) => {
               const live = telemetry?.services.find((item) => item.service === name);
               const elId = data.serviceMappings?.[name];
