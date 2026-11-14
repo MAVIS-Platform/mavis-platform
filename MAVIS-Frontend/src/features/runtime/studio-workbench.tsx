@@ -1252,237 +1252,21 @@ export function StudioWorkbench() {
             <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
           </div>
 
-          {/* RIGHT SIDE: TOP (FULL-BLEED CENTER CANVAS + COMPACT INSPECTOR) + BOTTOM DRAWER */}
+          {/* CENTER COLUMN: TOP (FULL-BLEED 3D/2D CANVAS) + BOTTOM (TELEMETRY DOCK) */}
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-            {/* TOP ROW: CENTER VISUAL WORKSPACE + RIGHT EXPLANATION INSPECTOR */}
-            <div className="flex min-h-0 flex-1 overflow-hidden">
-              {/* 2. CENTER INTERACTIVE 3D / 2D CANVAS (Full-Bleed Edge-to-Edge) */}
-              <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b14]">
-                <StudioObservability
-                  data={sandboxStudioData}
-                  selected={selectedService}
-                  onSelect={setSelectedService}
-                  busy={false}
-                  onQuickAction={applySandboxAction}
-                  onSpawnBlock={addCustomBlock}
-                  canvasOnly
-                  defaultView="3D"
-                />
-              </main>
-
-              {/* RIGHT RESIZE SPLITTER */}
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                title="Kéo để thay đổi độ rộng cột giải thích bên phải (Double-click để thu gọn/mở rộng)"
-                onPointerDown={(e) => startResize("right", e)}
-                onDoubleClick={() => setRightCollapsed((prev) => !prev)}
-                className="group relative flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-x border-border/60 bg-muted/20 transition hover:bg-primary/30 active:bg-primary/50"
-              >
-                <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
-              </div>
-
-              {/* 3. RIGHT INSPECTOR DOCK: Clean 3-Card Inspector */}
-              {!rightCollapsed && (
-                <aside
-                  style={{ width: rightWidth }}
-                  className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/90 p-2.5"
-                >
-                  {selectedRow && (
-                    <div className="space-y-2.5">
-                      {/* Card 1: Selected Node + Inline Replica & Fault Controls */}
-                      <div
-                        className={`space-y-2 rounded-lg border p-2.5 ${
-                          selectedRow.replicasNow === 0
-                            ? "border-rose-500/50 bg-rose-950/30"
-                            : selectedRow.type === "API_GATEWAY"
-                              ? "border-amber-500/40 bg-amber-950/25"
-                              : selectedRow.type === "DATABASE"
-                                ? "border-emerald-500/40 bg-emerald-950/25"
-                                : selectedRow.type === "MESSAGE_BROKER"
-                                  ? "border-purple-500/40 bg-purple-950/25"
-                                  : "border-indigo-500/40 bg-indigo-950/25"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-1.5">
-                          <span
-                            className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-bold ${
-                              selectedRow.type === "API_GATEWAY"
-                                ? "bg-amber-500/20 text-amber-300"
-                                : selectedRow.type === "DATABASE"
-                                  ? "bg-emerald-500/20 text-emerald-300"
-                                  : selectedRow.type === "MESSAGE_BROKER"
-                                    ? "bg-purple-500/20 text-purple-300"
-                                    : "bg-indigo-500/20 text-indigo-300"
-                            }`}
-                          >
-                            {selectedRow.type}
-                          </span>
-                          <span
-                            className={`rounded-full px-2 py-0.5 font-mono text-[9px] font-bold ${
-                              selectedRow.replicasNow === 0
-                                ? "bg-rose-500/25 text-rose-300"
-                                : selectedRow.replicasNow > 1
-                                  ? "bg-sky-500/25 text-sky-300"
-                                  : "bg-emerald-500/25 text-emerald-300"
-                            }`}
-                          >
-                            {selectedRow.replicasNow === 0
-                              ? "CRASHED (503)"
-                              : `${selectedRow.replicasNow} POD(S)`}
-                          </span>
-                        </div>
-
-                        <div>
-                          <h2 className="truncate font-mono text-sm font-bold text-foreground">
-                            {selectedRow.serviceName}
-                          </h2>
-                          <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                            CPU <strong className="text-sky-400">{selectedRow.perPodCpu.toFixed(1)}%</strong> · RAM{" "}
-                            <strong className="text-emerald-400">{Math.round(selectedRow.totalRam)}M</strong> · p95{" "}
-                            <strong className="text-amber-300">{selectedRow.p95Now}ms</strong>
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-1 pt-0.5">
-                          {([1, 2, 4, 8] as const).map((preset) => (
-                            <button
-                              key={preset}
-                              type="button"
-                              onClick={() =>
-                                applySandboxAction({
-                                  action: "SCALE",
-                                  service: selectedRow.serviceName,
-                                  replicas: preset,
-                                })
-                              }
-                              className={`h-7 rounded border font-mono text-xs font-bold transition ${
-                                selectedRow.replicasNow === preset
-                                  ? "border-sky-400 bg-sky-500 text-slate-950 shadow-xs"
-                                  : "border-border bg-background/80 text-foreground hover:border-sky-400/60"
-                              }`}
-                            >
-                              ×{preset}
-                            </button>
-                          ))}
-                        </div>
-                        <div className="grid grid-cols-2 gap-1">
-                          <button
-                            type="button"
-                            disabled={selectedRow.replicasNow === 0}
-                            onClick={() =>
-                              applySandboxAction({
-                                action: "STOP",
-                                service: selectedRow.serviceName,
-                              })
-                            }
-                            className="h-6 rounded border border-rose-500/40 bg-rose-500/15 text-[11px] font-semibold text-rose-300 transition hover:bg-rose-500/25 disabled:opacity-40"
-                          >
-                            Stop
-                          </button>
-                          <button
-                            type="button"
-                            disabled={selectedRow.replicasNow > 0}
-                            onClick={() =>
-                              applySandboxAction({
-                                action: "START",
-                                service: selectedRow.serviceName,
-                              })
-                            }
-                            className="h-6 rounded border border-emerald-500/40 bg-emerald-500/15 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-40"
-                          >
-                            Start
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Card 2: Unified Impact & Topology Card */}
-                      <div
-                        className={`space-y-2 rounded-lg border border-l-4 p-2.5 text-[11px] ${
-                          selectedRow.replicasNow === 0
-                            ? "border-rose-500/40 border-l-rose-500 bg-rose-950/20"
-                            : selectedRow.replicasNow > 1
-                              ? "border-emerald-500/40 border-l-emerald-400 bg-emerald-950/15"
-                              : "border-indigo-500/35 border-l-indigo-400 bg-indigo-950/15"
-                        }`}
-                      >
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                          Impact & Topology
-                        </p>
-                        {selectedRow.replicasNow === 0 ? (
-                          <p className="text-rose-300">
-                            <ShieldAlert className="mr-1 inline size-3.5" />
-                            <strong>503 Circuit Open:</strong> Callers (
-                            {selectedRow.inboundCallers.join(", ") || "Gateway"}) failing fast.
-                          </p>
-                        ) : selectedRow.replicasNow > 1 ? (
-                          <div className="space-y-1">
-                            <p className="text-foreground">
-                              Scaled <strong>{selectedRow.replicasBefore}</strong> →{" "}
-                              <strong className="text-sky-300">×{selectedRow.replicasNow}</strong> (~
-                              {Math.round(100 / selectedRow.replicasNow)}%/pod · p95{" "}
-                              <strong className="text-emerald-300">{selectedRow.p95Now}ms</strong>).
-                            </p>
-                            {selectedRow.bottleneckTarget && (
-                              <p className="rounded border border-amber-500/50 bg-amber-500/15 px-1.5 py-1 text-[10px] text-amber-300">
-                                ⚠ Bottleneck: <strong>{selectedRow.bottleneckTarget}</strong> (1 pod)
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-muted-foreground">
-                            Single-pod baseline (100% traffic). Scale ×4 or ×8 to distribute load.
-                          </p>
-                        )}
-
-                        <div className="space-y-1 border-t border-border/60 pt-1.5 font-mono text-[10px]">
-                          <div className="truncate">
-                            <span className="text-muted-foreground">In: </span>
-                            <span className="text-amber-300">
-                              {selectedRow.inboundCallers.length > 0
-                                ? selectedRow.inboundCallers.join(", ")
-                                : "Ingress"}
-                            </span>
-                          </div>
-                          <div className="truncate">
-                            <span className="text-muted-foreground">Out: </span>
-                            <span className="text-sky-300">
-                              {selectedRow.outboundTargets.length > 0
-                                ? selectedRow.outboundTargets.join(", ")
-                                : "Leaf / Store"}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Card 3: Compact 1-Row Snapshot Capture */}
-                      <div className="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-950/10 p-2">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
-                          Snapshot ({localSnapshots.length})
-                        </p>
-                        <div className="flex gap-1">
-                          <Input
-                            value={snapshotNote}
-                            onChange={(e) => setSnapshotNote(e.target.value)}
-                            placeholder="Note..."
-                            className="h-7 text-[11px]"
-                          />
-                          <button
-                            type="button"
-                            disabled={capturing}
-                            onClick={() => void captureLocalSnapshot()}
-                            className="flex h-7 shrink-0 items-center gap-1 rounded bg-emerald-500 px-2.5 text-[11px] font-bold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
-                          >
-                            <Camera className="size-3" />
-                            Save
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </aside>
-              )}
-            </div>
+            {/* 2. CENTER INTERACTIVE 3D / 2D CANVAS (Full-Bleed Edge-to-Edge) */}
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#070b14]">
+              <StudioObservability
+                data={sandboxStudioData}
+                selected={selectedService}
+                onSelect={setSelectedService}
+                busy={false}
+                onQuickAction={applySandboxAction}
+                onSpawnBlock={addCustomBlock}
+                canvasOnly
+                defaultView="3D"
+              />
+            </main>
 
             {/* BOTTOM RESIZE SPLITTER */}
             <div
@@ -1496,7 +1280,7 @@ export function StudioWorkbench() {
               <div className="h-0.5 w-10 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
             </div>
 
-            {/* 4. BOTTOM TELEMETRY & IMPACT DOCK: Full-Width Structured Bento Grid with Complete Stats */}
+            {/* 4. BOTTOM TELEMETRY & IMPACT DOCK: Strictly inside Center Column between Left & Right Sidebars */}
             <section
               style={{ height: bottomCollapsed ? 36 : bottomHeight }}
               className="flex shrink-0 flex-col bg-card/95"
@@ -1783,6 +1567,219 @@ export function StudioWorkbench() {
               )}
             </section>
           </div>
+
+          {/* RIGHT RESIZE SPLITTER */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="Kéo để thay đổi độ rộng cột giải thích bên phải (Double-click để thu gọn/mở rộng)"
+            onPointerDown={(e) => startResize("right", e)}
+            onDoubleClick={() => setRightCollapsed((prev) => !prev)}
+            className="group relative flex w-1.5 shrink-0 cursor-col-resize items-center justify-center border-x border-border/60 bg-muted/20 transition hover:bg-primary/30 active:bg-primary/50"
+          >
+            <div className="h-8 w-0.5 rounded-full bg-muted-foreground/40 group-hover:bg-primary" />
+          </div>
+
+          {/* 3. RIGHT INSPECTOR DOCK: Full-Height Right Sidebar (Never overlapped by bottom dock) */}
+          {!rightCollapsed && (
+            <aside
+              style={{ width: rightWidth }}
+              className="flex shrink-0 flex-col justify-between overflow-y-auto bg-card/90 p-2.5"
+            >
+              {selectedRow && (
+                <div className="space-y-2.5">
+                  {/* Card 1: Selected Node + Inline Replica & Fault Controls */}
+                  <div
+                    className={`space-y-2 rounded-lg border p-2.5 ${
+                      selectedRow.replicasNow === 0
+                        ? "border-rose-500/50 bg-rose-950/30"
+                        : selectedRow.type === "API_GATEWAY"
+                          ? "border-amber-500/40 bg-amber-950/25"
+                          : selectedRow.type === "DATABASE"
+                            ? "border-emerald-500/40 bg-emerald-950/25"
+                            : selectedRow.type === "MESSAGE_BROKER"
+                              ? "border-purple-500/40 bg-purple-950/25"
+                              : "border-indigo-500/40 bg-indigo-950/25"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-mono text-[9px] font-bold ${
+                          selectedRow.type === "API_GATEWAY"
+                            ? "bg-amber-500/20 text-amber-300"
+                            : selectedRow.type === "DATABASE"
+                              ? "bg-emerald-500/20 text-emerald-300"
+                              : selectedRow.type === "MESSAGE_BROKER"
+                                ? "bg-purple-500/20 text-purple-300"
+                                : "bg-indigo-500/20 text-indigo-300"
+                        }`}
+                      >
+                        {selectedRow.type}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-mono text-[9px] font-bold ${
+                          selectedRow.replicasNow === 0
+                            ? "bg-rose-500/25 text-rose-300"
+                            : selectedRow.replicasNow > 1
+                              ? "bg-sky-500/25 text-sky-300"
+                              : "bg-emerald-500/25 text-emerald-300"
+                        }`}
+                      >
+                        {selectedRow.replicasNow === 0
+                          ? "CRASHED (503)"
+                          : `${selectedRow.replicasNow} POD(S)`}
+                      </span>
+                    </div>
+
+                    <div>
+                      <h2 className="truncate font-mono text-sm font-bold text-foreground">
+                        {selectedRow.serviceName}
+                      </h2>
+                      <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                        CPU <strong className="text-sky-400">{selectedRow.perPodCpu.toFixed(1)}%</strong> · RAM{" "}
+                        <strong className="text-emerald-400">{Math.round(selectedRow.totalRam)}M</strong> · p95{" "}
+                        <strong className="text-amber-300">{selectedRow.p95Now}ms</strong>
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-1 pt-0.5">
+                      {([1, 2, 4, 8] as const).map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() =>
+                            applySandboxAction({
+                              action: "SCALE",
+                              service: selectedRow.serviceName,
+                              replicas: preset,
+                            })
+                          }
+                          className={`h-7 rounded border font-mono text-xs font-bold transition ${
+                            selectedRow.replicasNow === preset
+                              ? "border-sky-400 bg-sky-500 text-slate-950 shadow-xs"
+                              : "border-border bg-background/80 text-foreground hover:border-sky-400/60"
+                          }`}
+                        >
+                          ×{preset}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-1">
+                      <button
+                        type="button"
+                        disabled={selectedRow.replicasNow === 0}
+                        onClick={() =>
+                          applySandboxAction({
+                            action: "STOP",
+                            service: selectedRow.serviceName,
+                          })
+                        }
+                        className="h-6 rounded border border-rose-500/40 bg-rose-500/15 text-[11px] font-semibold text-rose-300 transition hover:bg-rose-500/25 disabled:opacity-40"
+                      >
+                        Stop
+                      </button>
+                      <button
+                        type="button"
+                        disabled={selectedRow.replicasNow > 0}
+                        onClick={() =>
+                          applySandboxAction({
+                            action: "START",
+                            service: selectedRow.serviceName,
+                          })
+                        }
+                        className="h-6 rounded border border-emerald-500/40 bg-emerald-500/15 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-40"
+                      >
+                        Start
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Unified Impact & Topology Card */}
+                  <div
+                    className={`space-y-2 rounded-lg border border-l-4 p-2.5 text-[11px] ${
+                      selectedRow.replicasNow === 0
+                        ? "border-rose-500/40 border-l-rose-500 bg-rose-950/20"
+                        : selectedRow.replicasNow > 1
+                          ? "border-emerald-500/40 border-l-emerald-400 bg-emerald-950/15"
+                          : "border-indigo-500/35 border-l-indigo-400 bg-indigo-950/15"
+                    }`}
+                  >
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                      Impact & Topology
+                    </p>
+                    {selectedRow.replicasNow === 0 ? (
+                      <p className="text-rose-300">
+                        <ShieldAlert className="mr-1 inline size-3.5" />
+                        <strong>503 Circuit Open:</strong> Callers (
+                        {selectedRow.inboundCallers.join(", ") || "Gateway"}) failing fast.
+                      </p>
+                    ) : selectedRow.replicasNow > 1 ? (
+                      <div className="space-y-1">
+                        <p className="text-foreground">
+                          Scaled <strong>{selectedRow.replicasBefore}</strong> →{" "}
+                          <strong className="text-sky-300">×{selectedRow.replicasNow}</strong> (~
+                          {Math.round(100 / selectedRow.replicasNow)}%/pod · p95{" "}
+                          <strong className="text-emerald-300">{selectedRow.p95Now}ms</strong>).
+                        </p>
+                        {selectedRow.bottleneckTarget && (
+                          <p className="rounded border border-amber-500/50 bg-amber-500/15 px-1.5 py-1 text-[10px] text-amber-300">
+                            ⚠ Bottleneck: <strong>{selectedRow.bottleneckTarget}</strong> (1 pod)
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        Single-pod baseline (100% traffic). Scale ×4 or ×8 to distribute load.
+                      </p>
+                    )}
+
+                    <div className="space-y-1 border-t border-border/60 pt-1.5 font-mono text-[10px]">
+                      <div className="truncate">
+                        <span className="text-muted-foreground">In: </span>
+                        <span className="text-amber-300">
+                          {selectedRow.inboundCallers.length > 0
+                            ? selectedRow.inboundCallers.join(", ")
+                            : "Ingress"}
+                        </span>
+                      </div>
+                      <div className="truncate">
+                        <span className="text-muted-foreground">Out: </span>
+                        <span className="text-sky-300">
+                          {selectedRow.outboundTargets.length > 0
+                            ? selectedRow.outboundTargets.join(", ")
+                            : "Leaf / Store"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Compact 1-Row Snapshot Capture */}
+                  <div className="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-950/10 p-2">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-300">
+                      Snapshot ({localSnapshots.length})
+                    </p>
+                    <div className="flex gap-1">
+                      <Input
+                        value={snapshotNote}
+                        onChange={(e) => setSnapshotNote(e.target.value)}
+                        placeholder="Note..."
+                        className="h-7 text-[11px]"
+                      />
+                      <button
+                        type="button"
+                        disabled={capturing}
+                        onClick={() => void captureLocalSnapshot()}
+                        className="flex h-7 shrink-0 items-center gap-1 rounded bg-emerald-500 px-2.5 text-[11px] font-bold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
+                      >
+                        <Camera className="size-3" />
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </aside>
+          )}
         </div>
       )}
     </div>
