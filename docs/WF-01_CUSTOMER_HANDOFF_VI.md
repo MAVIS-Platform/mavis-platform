@@ -65,14 +65,14 @@ Curriculum hiện tại có 30 chương/lab. Đây là bản mở rộng tương
 
 ## 5. Dữ liệu và migration
 
-Migration `V30__WF01_Customer_Ready_Identity_And_Course.sql` bổ sung:
+Migration `V31__WF01_Customer_Ready_Identity_And_Course.sql` bổ sung:
 
 - `users.avatar_url`, `users.preferred_locale` (`en`/`vi`).
 - `workspaces.max_students` với ràng buộc số dương.
 - `refresh_sessions`: chỉ lưu SHA-256 digest của refresh token, có expiry/revoke/rotation.
 - `auth_rate_limits`: lưu subject đã hash, số lần thử và thời điểm khóa.
 
-Phải backup database trước deploy và để Flyway chạy V30 đúng một lần. Không hạ phiên bản ứng dụng khi database đã dùng V30 nếu chưa có kế hoạch rollback tương thích.
+Phải backup database trước deploy và để pipeline kiểm và áp dụng V31 trước khi thay container. Không hạ phiên bản ứng dụng khi database đã dùng V31 nếu chưa có kế hoạch rollback tương thích.
 
 ## 6. Cấu hình production bắt buộc
 
@@ -86,7 +86,7 @@ Phải backup database trước deploy và để Flyway chạy V30 đúng một 
 
 ## 7. Checklist nghiệm thu trước khi giao khách hàng
 
-- [ ] V30 chạy thành công trên bản sao database production.
+- [ ] V31 chạy thành công trên bản sao database production.
 - [ ] Register → OTP → login email chạy bằng hộp thư thật.
 - [ ] Google Login chạy đúng Client ID/domain.
 - [ ] Access token tự refresh sau khi access cookie hết hạn.
@@ -116,7 +116,7 @@ Tạo mới trên môi trường demo, không hard-code trong source:
 
 - Backend Maven: 188 test pass (`mavis-common` 29, `mavis-platform` 159).
 - Frontend: 382/382 test pass; TypeScript typecheck pass; lint các file thay đổi không có error (còn một warning Fast Refresh không chặn build).
-- PostgreSQL 16/Flyway: `CourseAccessPostgresTest` và `MigrationUpgradeTest` pass; V30 chạy được từ schema rỗng, nâng cấp từ V20 và chạy lại idempotent ở V30.
+- PostgreSQL 16/Flyway: `CourseAccessPostgresTest` và `MigrationUpgradeTest` pass; V31 chạy được từ schema rỗng, nâng cấp từ V20 và chạy lại idempotent ở V31.
 
 ## 10. Tiêu chí “sẵn sàng bán/giao khách hàng”
 

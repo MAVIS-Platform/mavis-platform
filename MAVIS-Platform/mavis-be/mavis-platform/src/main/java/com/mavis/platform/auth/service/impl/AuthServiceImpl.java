@@ -24,6 +24,7 @@ import com.mavis.platform.auth.service.AuthService;
 import com.mavis.platform.auth.service.EmailService;
 import com.mavis.platform.security.jwt.JwtUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -38,7 +39,7 @@ import java.security.SecureRandom;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
+@RequiredArgsConstructor(onConstructor_ = @Autowired)
 @Slf4j
 public class AuthServiceImpl implements AuthService {
     private static final SecureRandom OTP_RANDOM = new SecureRandom();
