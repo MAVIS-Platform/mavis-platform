@@ -8,16 +8,43 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useLocale } from "@/lib/i18n/locale-context";
 import type { Response } from "@/lib/api/contracts";
+import type { SnapshotGradeItem, StudentSnapshotItem } from "@/types/domain";
 
 const PASSING_SCORE = 50;
+const SNAPSHOT_PASS_EXCLUSIVE = 5.0;
 
-function reviewOutcome(score: number | null) {
-  if (score === null) return null;
-  return score > PASSING_SCORE ? "PASS" : "NEEDS REVISION";
+export interface SubmissionOutcomeInput {
+  score: number | null;
+  labOutcome?: "PENDING" | "PASSED" | "NEEDS_REVISION" | null | undefined;
+  snapshotGrades?: ReadonlyArray<{ score: number }> | null | undefined;
+  status?: string | null | undefined;
 }
 
-export function GradingPanel({ submissionId }: { submissionId: string }) {
+export function resolveSubmissionOutcome(
+  review: SubmissionOutcomeInput,
+): "PASS" | "NEEDS REVISION" | null {
+  if (review.status === "DRAFT") return null;
+  if (review.labOutcome === "PASSED") return "PASS";
+  if (review.labOutcome === "NEEDS_REVISION") return "NEEDS REVISION";
+  if (review.snapshotGrades && review.snapshotGrades.length > 0) {
+    return review.snapshotGrades.every((g) => g.score > SNAPSHOT_PASS_EXCLUSIVE)
+      ? "PASS"
+      : "NEEDS REVISION";
+  }
+  if (review.score === null) return null;
+  return review.score > PASSING_SCORE ? "PASS" : "NEEDS REVISION";
+}
+
+export function GradingPanel({
+  submissionId,
+  studentSnapshots,
+}: {
+  submissionId: string;
+  studentSnapshots?: StudentSnapshotItem[] | undefined;
+}) {
+  const { t } = useLocale();
   const canReview = usePermission("submission:review");
   const query = useApiQuery(
     "submissionReview",
@@ -25,7 +52,7 @@ export function GradingPanel({ submissionId }: { submissionId: string }) {
     { refreshMs: canReview ? 60000 : 15000 },
   );
   return (
-    <DetailPanel title="Lecturer review & grade">
+    <DetailPanel title={t("Lecturer review & grade")}>
       <RequestState query={query}>
         {query.data && (
           <div className="space-y-3">
@@ -43,15 +70,40 @@ export function GradingPanel({ submissionId }: { submissionId: string }) {
               {query.data.score !== null && (
                 <span className="text-xl font-semibold">{query.data.score} / 100</span>
               )}
-              {reviewOutcome(query.data.score) && (
-                <Badge variant={query.data.score! > PASSING_SCORE ? "success" : "warning"}>
-                  {reviewOutcome(query.data.score)}
+              {resolveSubmissionOutcome(query.data) && (
+                <Badge
+                  variant={
+                    resolveSubmissionOutcome(query.data) === "PASS"
+                      ? "success"
+                      : "warning"
+                  }
+                >
+                  {resolveSubmissionOutcome(query.data)}
                 </Badge>
               )}
             </div>
+            {query.data.snapshotGrades && query.data.snapshotGrades.length > 0 && (
+              <div className="space-y-1.5 rounded-lg border bg-muted/20 p-3 text-xs">
+                <p className="font-medium">{t("Per-snapshot grading results (> 5.0 / 10 required)")}</p>
+                {query.data.snapshotGrades.map((g, idx) => (
+                  <div
+                    key={`${g.snapshotId}-${idx}`}
+                    className="flex flex-wrap items-center justify-between gap-2 rounded border bg-background px-2.5 py-1.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium">{g.title || g.snapshotId}</p>
+                      {g.comment && <p className="text-muted-foreground">{g.comment}</p>}
+                    </div>
+                    <Badge variant={g.score > SNAPSHOT_PASS_EXCLUSIVE ? "success" : "warning"}>
+                      {g.score.toFixed(1)} / 10
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
             {query.data.status === "PENDING" && (
               <p className="text-sm text-muted-foreground">
-                Awaiting lecturer review. Inline feedback may be available below.
+                {t("Awaiting lecturer review. Inline feedback may be available below.")}
               </p>
             )}
             {query.data.summary && (
@@ -59,8 +111,9 @@ export function GradingPanel({ submissionId }: { submissionId: string }) {
             )}
             {query.data.status === "RETURNED" && (
               <p className="text-sm text-muted-foreground">
-                Apply the requested changes in your working project, save the new model/diagram
-                revisions and submit again from the assignment. This submission remains unchanged.
+                {t(
+                  "Apply the requested changes in your working project, save the new model/diagram revisions and submit again from the assignment. This submission remains unchanged.",
+                )}
               </p>
             )}
             {query.data.updatedAt && (
@@ -68,14 +121,20 @@ export function GradingPanel({ submissionId }: { submissionId: string }) {
                 {query.data.lecturerName} · {new Date(query.data.updatedAt).toLocaleString()}
               </p>
             )}
-            {canReview && <GradeForm key={query.data.revision} review={query.data} />}
+            {canReview && (
+              <GradeForm
+                key={query.data.revision}
+                review={query.data}
+                studentSnapshots={studentSnapshots}
+              />
+            )}
             <Button
               size="sm"
               variant="outline"
               disabled={query.isFetching}
               onClick={() => void query.refetch()}
             >
-              Refresh review
+              {t("Refresh review")}
             </Button>
           </div>
         )}
@@ -83,25 +142,143 @@ export function GradingPanel({ submissionId }: { submissionId: string }) {
     </DetailPanel>
   );
 }
-function GradeForm({ review }: { review: Response<"submissionReview"> }) {
+
+interface EditableSnapshotGrade {
+  snapshotId: string;
+  title: string;
+  score: string;
+  comment: string;
+}
+
+function buildInitialSnapshotGrades(
+  review: Response<"submissionReview">,
+  studentSnapshots?: StudentSnapshotItem[],
+): EditableSnapshotGrade[] {
+  if (review.snapshotGrades && review.snapshotGrades.length > 0) {
+    return review.snapshotGrades.map((g) => ({
+      snapshotId: g.snapshotId,
+      title: g.title || g.snapshotId,
+      score: String(g.score),
+      comment: g.comment ?? "",
+    }));
+  }
+  if (studentSnapshots && studentSnapshots.length > 0) {
+    return studentSnapshots.map((s) => ({
+      snapshotId: s.snapshotId,
+      title: s.title || s.snapshotId,
+      score: "",
+      comment: "",
+    }));
+  }
+  return [
+    {
+      snapshotId: "STEP_1_STATIC",
+      title: "Snapshot 1 · Static C1–C3 Architecture & 3E Reasoning",
+      score: "",
+      comment: "",
+    },
+    {
+      snapshotId: "STEP_4_RUNTIME",
+      title: "Snapshot 2 · MAVIS Studio Runtime Stop/Scale Before-After Analysis",
+      score: "",
+      comment: "",
+    },
+  ];
+}
+
+function GradeForm({
+  review,
+  studentSnapshots,
+}: {
+  review: Response<"submissionReview">;
+  studentSnapshots?: StudentSnapshotItem[] | undefined;
+}) {
+  const { t } = useLocale();
   const save = useApiMutation("gradeSubmission");
-  const [score, setScore] = useState(review.score === null ? "" : String(review.score)),
-    [summary, setSummary] = useState(review.summary);
-  const value = score.trim() === "" ? null : Number(score),
-    valid =
-      value === null ||
+  const initialUseSnapshots = Boolean(
+    (review.snapshotGrades && review.snapshotGrades.length > 0) ||
+      (studentSnapshots && studentSnapshots.length > 0),
+  );
+  const [usePerSnapshot, setUsePerSnapshot] = useState(initialUseSnapshots);
+  const [snapshotRows, setSnapshotRows] = useState<EditableSnapshotGrade[]>(() =>
+    buildInitialSnapshotGrades(review, studentSnapshots),
+  );
+  const [score, setScore] = useState(review.score === null ? "" : String(review.score));
+  const [summary, setSummary] = useState(review.summary);
+
+  const parsedSnapshots: { items: SnapshotGradeItem[]; valid: boolean; allPassed: boolean } = (() => {
+    if (!usePerSnapshot) return { items: [], valid: true, allPassed: true };
+    const items: SnapshotGradeItem[] = [];
+    for (const row of snapshotRows) {
+      const trimmed = row.score.trim();
+      const num = trimmed === "" ? NaN : Number(trimmed);
+      if (
+        !trimmed ||
+        !Number.isFinite(num) ||
+        num < 0 ||
+        num > 10 ||
+        !/^\d+(\.\d{1,2})?$/.test(trimmed)
+      ) {
+        return { items: [], valid: false, allPassed: false };
+      }
+      items.push({
+        snapshotId: row.snapshotId,
+        title: row.title,
+        score: num,
+        comment: row.comment.trim() || null,
+      });
+    }
+    return {
+      items,
+      valid: items.length > 0,
+      allPassed: items.length > 0 && items.every((item) => item.score > SNAPSHOT_PASS_EXCLUSIVE),
+    };
+  })();
+
+  const computedScale100 =
+    usePerSnapshot && parsedSnapshots.valid && parsedSnapshots.items.length > 0
+      ? Number(
+          (
+            (parsedSnapshots.items.reduce((acc, g) => acc + g.score, 0) /
+              parsedSnapshots.items.length) *
+            10
+          ).toFixed(2),
+        )
+      : null;
+
+  const value = usePerSnapshot
+    ? computedScale100
+    : score.trim() === ""
+      ? null
+      : Number(score);
+  const valid = usePerSnapshot
+    ? parsedSnapshots.valid
+    : value === null ||
       (Number.isFinite(value) && value >= 0 && value <= 100 && /^\d+(\.\d{1,2})?$/.test(score));
-  const outcome = reviewOutcome(value);
+
+  const outcome = usePerSnapshot
+    ? parsedSnapshots.valid
+      ? parsedSnapshots.allPassed
+        ? "PASS"
+        : "NEEDS REVISION"
+      : null
+    : resolveSubmissionOutcome({ score: value });
+
   function submit(status: "DRAFT" | "RETURNED" | "GRADED") {
-    if (!valid || (status !== "DRAFT" && !summary.trim())) return;
-    if (status === "GRADED" && (value === null || value <= PASSING_SCORE)) return;
-    if (status === "RETURNED" && value !== null && value > PASSING_SCORE) return;
+    if (!valid && status !== "DRAFT") return;
+    if (status !== "DRAFT" && !summary.trim()) return;
+    if (!usePerSnapshot) {
+      if (status === "GRADED" && (value === null || value <= PASSING_SCORE)) return;
+      if (status === "RETURNED" && value !== null && value > PASSING_SCORE) return;
+    } else if (status === "GRADED" && !parsedSnapshots.valid) {
+      return;
+    }
     if (
       status !== "DRAFT" &&
       !window.confirm(
         status === "GRADED"
-          ? "Publish this score and summary to the student?"
-          : "Return this submission with change requests?",
+          ? t("Publish this score and summary to the student?")
+          : t("Return this submission with change requests?"),
       )
     )
       return;
@@ -111,30 +288,103 @@ function GradeForm({ review }: { review: Response<"submissionReview"> }) {
       status,
       score: value,
       summary,
+      ...(usePerSnapshot && parsedSnapshots.items.length > 0
+        ? { snapshotGrades: parsedSnapshots.items }
+        : {}),
     });
   }
+
   return (
     <div className="space-y-3 border-t pt-4">
-      <p className="text-xs text-muted-foreground">
-        The lecturer grade is separate from automated architecture compliance. Draft reviews are
-        private; inline comments below are immediately visible to the student. The current backend
-        stores one overall score out of 100: above 50 passes, while 50 or below needs revision.
-      </p>
-      <FormField label="Lecturer score (out of 100)">
-        {(props) => (
-          <Input
-            {...props}
-            type="number"
-            min={0}
-            max={100}
-            step="0.01"
-            value={score}
-            onChange={(e) => setScore(e.target.value)}
-            className="max-w-48"
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">
+          {t(
+            "Every required snapshot must score > 5.0 / 10 (5.1 or higher) with a mandatory overall summary to pass and unlock the next Lab; any snapshot <= 5.0 results in NEEDS REVISION.",
+          )}
+        </p>
+        <label className="flex items-center gap-2 text-xs font-medium">
+          <input
+            type="checkbox"
+            checked={usePerSnapshot}
+            onChange={(e) => setUsePerSnapshot(e.target.checked)}
           />
-        )}
-      </FormField>
-      <FormField label="Overall review / changes requested">
+          <span>{t("Per-snapshot grading (0–10)")}</span>
+        </label>
+      </div>
+      {usePerSnapshot ? (
+        <div className="space-y-2.5 rounded-lg border bg-muted/20 p-3">
+          {snapshotRows.map((row, idx) => {
+            const num = row.score.trim() === "" ? null : Number(row.score);
+            const isValidCell =
+              num !== null &&
+              Number.isFinite(num) &&
+              num >= 0 &&
+              num <= 10 &&
+              /^\d+(\.\d{1,2})?$/.test(row.score.trim());
+            return (
+              <div
+                key={`${row.snapshotId}-${idx}`}
+                className="space-y-2 rounded-md border bg-background p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold">{row.title}</span>
+                  {isValidCell && (
+                    <Badge variant={num! > SNAPSHOT_PASS_EXCLUSIVE ? "success" : "warning"}>
+                      {num! > SNAPSHOT_PASS_EXCLUSIVE ? t("PASS (> 5.0)") : t("NEEDS REVISION (<= 5.0)")}
+                    </Badge>
+                  )}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)]">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={10}
+                    step="0.1"
+                    placeholder="0.0 – 10.0"
+                    value={row.score}
+                    onChange={(e) =>
+                      setSnapshotRows((prev) =>
+                        prev.map((item, i) => (i === idx ? { ...item, score: e.target.value } : item)),
+                      )
+                    }
+                  />
+                  <Input
+                    placeholder={t("Snapshot comment (optional)")}
+                    maxLength={2000}
+                    value={row.comment}
+                    onChange={(e) =>
+                      setSnapshotRows((prev) =>
+                        prev.map((item, i) => (i === idx ? { ...item, comment: e.target.value } : item)),
+                      )
+                    }
+                  />
+                </div>
+              </div>
+            );
+          })}
+          {computedScale100 !== null && (
+            <p className="text-xs text-muted-foreground">
+              {t("Computed overall equivalent")}: <strong>{computedScale100} / 100</strong>
+            </p>
+          )}
+        </div>
+      ) : (
+        <FormField label={t("Lecturer score (out of 100)")}>
+          {(props) => (
+            <Input
+              {...props}
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              value={score}
+              onChange={(e) => setScore(e.target.value)}
+              className="max-w-48"
+            />
+          )}
+        </FormField>
+      )}
+      <FormField label={t("Overall review / changes requested")}>
         {(props) => (
           <Textarea
             {...props}
@@ -146,44 +396,63 @@ function GradeForm({ review }: { review: Response<"submissionReview"> }) {
       </FormField>
       {!valid && (
         <p role="alert" className="text-sm text-destructive">
-          Enter a score between 0 and 100 with at most two decimal places.
+          {usePerSnapshot
+            ? t("Enter a score between 0.0 and 10.0 for every snapshot (e.g. 5.1 to pass).")
+            : t("Enter a score between 0 and 100 with at most two decimal places.")}
         </p>
       )}
       {valid && outcome && (
         <div className="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">Calculated outcome</span>
-          <Badge variant={value! > PASSING_SCORE ? "success" : "warning"}>{outcome}</Badge>
+          <span className="text-muted-foreground">{t("Calculated outcome")}</span>
+          <Badge variant={outcome === "PASS" ? "success" : "warning"}>{outcome}</Badge>
         </div>
+      )}
+      {usePerSnapshot && parsedSnapshots.valid && parsedSnapshots.allPassed === false && (
+        <p
+          role="status"
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300"
+        >
+          {t(
+            "At least one snapshot scored <= 5.0 / 10 — publishing or returning this review will set Lab Outcome to NEEDS REVISION.",
+          )}
+        </p>
       )}
       {!summary.trim() && value !== null && (
         <p role="status" className="text-sm text-muted-foreground">
-          Add an overall review before publishing or returning this snapshot.
+          {t("Add an overall review before publishing or returning this snapshot.")}
         </p>
       )}
       <div className="flex flex-wrap gap-2">
         <Button
           variant="outline"
-          disabled={save.isPending || !valid}
+          disabled={save.isPending || (!usePerSnapshot && !valid)}
           onClick={() => submit("DRAFT")}
         >
-          Save grading draft
+          {t("Save grading draft")}
         </Button>
         <Button
           variant="outline"
           disabled={
-            save.isPending || !valid || !summary.trim() || (value !== null && value > PASSING_SCORE)
+            save.isPending ||
+            !valid ||
+            !summary.trim() ||
+            (!usePerSnapshot && value !== null && value > PASSING_SCORE)
           }
           onClick={() => submit("RETURNED")}
         >
-          Return for changes
+          {t("Return for changes")}
         </Button>
         <Button
           disabled={
-            save.isPending || !valid || value === null || value <= PASSING_SCORE || !summary.trim()
+            save.isPending ||
+            !valid ||
+            value === null ||
+            (!usePerSnapshot && value <= PASSING_SCORE) ||
+            !summary.trim()
           }
           onClick={() => submit("GRADED")}
         >
-          Publish grade
+          {t("Publish grade")}
         </Button>
       </div>
       {save.error && <ErrorState error={save.error} />}

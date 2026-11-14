@@ -401,3 +401,55 @@ export function PublishCourseLab({
     </div>
   );
 }
+
+export function SeedCuratedCourseLabs({
+  workspaceId,
+  variant = "outline",
+}: {
+  workspaceId: string;
+  variant?: "default" | "outline";
+}) {
+  const t = useCourseText();
+  const cache = useQueryClient();
+  const seed = useMutation({
+    mutationFn: () =>
+      courseApi<Roadmap>(`workspaces/${workspaceId}/course-labs/seed-curated`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: roadmapKey(workspaceId) });
+      void cache.invalidateQueries({ queryKey: ["api", "assignments"] });
+      void cache.invalidateQueries({ queryKey: ["api", "projects"] });
+    },
+  });
+  return (
+    <div className="inline-flex flex-col items-start gap-1">
+      <Button
+        type="button"
+        variant={variant}
+        disabled={seed.isPending}
+        onClick={() => seed.mutate()}
+      >
+        {seed.isPending
+          ? t("Seeding Curated Labs…", "Đang khởi tạo Lab mẫu…")
+          : t("Seed Curated Course Labs (Lab 01 & 02)", "Khởi tạo nhanh Lab mẫu (Lab 01 & 02)")}
+      </Button>
+      {seed.isSuccess && (
+        <p role="status" className="text-xs text-success">
+          {t(
+            `Ready (${seed.data.labs.length} guided labs published).`,
+            `Đã sẵn sàng (${seed.data.labs.length} Lab tuần tự đã công bố).`,
+          )}
+        </p>
+      )}
+      {seed.isError && (
+        <p role="alert" className="text-xs text-destructive">
+          {t(
+            "Could not seed curated labs. Verify workspace status and lecturer permissions.",
+            "Chưa thể khởi tạo Lab mẫu. Hãy kiểm tra trạng thái lớp và quyền giảng viên.",
+          )}
+        </p>
+      )}
+    </div>
+  );
+}

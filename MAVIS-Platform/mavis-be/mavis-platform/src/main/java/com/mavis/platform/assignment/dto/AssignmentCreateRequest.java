@@ -1,5 +1,6 @@
 package com.mavis.platform.assignment.dto;
 
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -9,7 +10,6 @@ import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
 import java.util.List;
-import java.util.Map;
 
 @Data
 @Builder
@@ -31,7 +31,10 @@ public class AssignmentCreateRequest {
     @Builder.Default
     private Boolean requireRuntimeTrace = false;
 
-    private Map<String, Object> aiPolicy;
+    private Object aiPolicy;
+
+    @Min(value = 1, message = "Thứ tự Lab phải >= 1")
+    private Integer labOrder;
 
     private java.util.UUID referenceModelId;
     private Boolean clearReferenceSource;

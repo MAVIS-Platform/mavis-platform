@@ -26,6 +26,7 @@ public class AssignmentResponseDTO {
     private String ruleSetVersion;
     private Boolean requireRuntimeTrace;
     private JsonNode aiPolicy;
+    private Integer labOrder;
     private java.util.Map<String, Object> referenceSource;
     private OffsetDateTime dueAt;
     private long submissionCount;

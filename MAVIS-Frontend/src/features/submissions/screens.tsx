@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArchitectureGraph, ElementDetailsPanel } from "@/features/architecture/components";
 import { TraceViewer, RuntimeSessionTimeline } from "@/features/runtime/components";
 import { SubmissionVersionHeader, FeedbackPanel } from "./components";
-import { GradingPanel } from "./grading";
+import { GradingPanel, resolveSubmissionOutcome } from "./grading";
 export function Submissions() {
   const canReview = usePermission("submission:review");
   return canReview ? <TeachingSubmissions /> : <MySubmissions />;
@@ -163,6 +163,7 @@ function SubmissionList({ rows }: { rows: import("@/types/domain").Submission[] 
 }
 function SubmissionResult({ submissionId }: { submissionId: string }) {
   const query = useApiQuery("submissionReview", { submissionId });
+  const outcome = query.data ? resolveSubmissionOutcome(query.data) : null;
   return (
     <span className="text-xs">
       {query.isError ? (
@@ -171,9 +172,9 @@ function SubmissionResult({ submissionId }: { submissionId: string }) {
         <>
           <StatusLabel status={query.data.status} />
           {query.data.score !== null ? ` · ${query.data.score}/100` : ""}
-          {query.data.score !== null && query.data.status !== "DRAFT" && (
-            <Badge className="ml-2" variant={query.data.score > 50 ? "success" : "warning"}>
-              {query.data.score > 50 ? "Pass" : "Needs revision"}
+          {outcome && (
+            <Badge className="ml-2" variant={outcome === "PASS" ? "success" : "warning"}>
+              {outcome === "PASS" ? "Pass" : "Needs revision"}
             </Badge>
           )}
         </>
@@ -196,7 +197,11 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
     <RequestState query={query}>
       {query.data && (
         <div className="min-w-0 space-y-6">
-          <GradingPanel key={query.data.id} submissionId={query.data.id} />
+          <GradingPanel
+            key={query.data.id}
+            submissionId={query.data.id}
+            studentSnapshots={query.data.studentSnapshots ?? undefined}
+          />
           <section id="review" className="scroll-mt-24">
             <SubmissionVersionHeader submission={query.data} />
             <FrozenArtifacts submission={query.data} />

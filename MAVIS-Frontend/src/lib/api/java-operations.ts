@@ -1,4 +1,10 @@
-import { assignmentReferenceSchema, courseQuizEvidenceSchema, runtimeActionEvidenceSchema } from "@/types/domain";
+import {
+  assignmentReferenceSchema,
+  courseQuizEvidenceSchema,
+  runtimeActionEvidenceSchema,
+  runtimeBeforeAfterComparisonSchema,
+  studentSnapshotSchema,
+} from "@/types/domain";
 import { planArchitectureViews } from "../architecture/view-planner";
 import { githubBranches, githubRevision } from "../github/branches";
 import { generateDrawio } from "../drawio/server";
@@ -208,7 +214,10 @@ export async function executeJava(
         description: z.string().nullish(),
         dueAt: z.string().nullish(),
         requiredDiagramTypes: z.array(z.string()).nullish(),
+        ruleSetVersion: z.string().nullish(),
         requireRuntimeTrace: z.boolean().nullish(),
+        aiPolicy: z.union([z.record(z.unknown()), z.string()]).nullish(),
+        labOrder: z.number().int().positive().nullish(),
         referenceSource: assignmentReferenceSchema.nullish(),
       })
       .parse(raw);
@@ -236,7 +245,9 @@ export async function executeJava(
         submissionNotes: z.string().nullish(),
         evaluationRunId: z.string().uuid().nullish(),
         complianceScore: z.number().nullish(),
+        evidencePackageDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
         courseQuizEvidence: courseQuizEvidenceSchema.nullish(),
+        studentSnapshots: z.array(studentSnapshotSchema).nullish(),
         sourceSnapshotId: z.string().uuid(),
         modelVersionId: z.string().uuid(),
         runtimeSessionId: z.string().uuid().nullish(),
@@ -283,7 +294,9 @@ export async function executeJava(
       ...(diagramLayout ? { diagramLayout } : {}),
       evaluationRunId: sub.evaluationRunId ?? null,
       complianceScore: sub.complianceScore ?? null,
+      ...(sub.evidencePackageDigest ? { evidencePackageDigest: sub.evidencePackageDigest } : {}),
       courseQuizEvidence: sub.courseQuizEvidence ?? null,
+      ...(sub.studentSnapshots ? { studentSnapshots: sub.studentSnapshots } : {}),
       id: sub.id,
       assignmentId: sub.assignmentId,
       studentId: sub.submittedById,
@@ -501,6 +514,7 @@ export async function executeJava(
         capturedSpanCount: z.number().nullish(),
         studioVerified: z.boolean().optional(),
         infrastructureActions: z.array(runtimeActionEvidenceSchema).nullish(),
+        beforeAfterComparison: z.array(runtimeBeforeAfterComparisonSchema).nullish(),
         stepResults: z
           .array(
             z.object({
@@ -546,6 +560,7 @@ export async function executeJava(
       ...(value.failureReason !== undefined ? { failureReason: value.failureReason ?? null } : {}),
       ...(value.diagnostics !== undefined ? { diagnostics: value.diagnostics ?? [] } : {}),
       ...(value.infrastructureActions ? { infrastructureActions: value.infrastructureActions } : {}),
+      ...(value.beforeAfterComparison ? { beforeAfterComparison: value.beforeAfterComparison } : {}),
       ...(value.studioVerified !== undefined ? { studioVerified: value.studioVerified } : {}),
       ...(value.capturedSpanCount !== undefined
         ? { capturedSpanCount: value.capturedSpanCount ?? null }
@@ -941,6 +956,7 @@ export async function executeJava(
           evaluationRunId: input["evaluationRunId"] ?? null,
           runtimeSessionId: input["runtimeSessionId"] ?? null,
           submissionNotes: input["submissionNotes"],
+          ...(input["studentSnapshots"] ? { studentSnapshots: input["studentSnapshots"] } : {}),
         }),
       );
     }
