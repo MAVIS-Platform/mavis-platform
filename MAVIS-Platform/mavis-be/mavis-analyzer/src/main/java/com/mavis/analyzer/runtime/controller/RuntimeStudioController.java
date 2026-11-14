@@ -13,6 +13,20 @@ import java.util.UUID;
 @RequestMapping("/api/v1/analyzer/runtime/sessions/{sessionId}/studio")
 public class RuntimeStudioController {
     private final RuntimeStudioService studio;
+    @GetMapping("/receipt") public ApiResponse<JsonNode> receipt(@PathVariable UUID sessionId) {
+        return ApiResponse.success("Studio receipt",studio.receipt(sessionId));
+    }
+    @GetMapping("/snapshots/{snapshotId}") public ApiResponse<JsonNode> snapshot(@PathVariable UUID sessionId,@PathVariable UUID snapshotId) {
+        return ApiResponse.success("Studio evidence snapshot",studio.snapshot(sessionId,snapshotId));
+    }
+    @PostMapping("/telemetry") public ApiResponse<JsonNode> telemetry(@PathVariable UUID sessionId,
+            @Valid @RequestBody RuntimeStudioService.TelemetryRequest request) {
+        return ApiResponse.success("Studio telemetry observed", studio.telemetry(sessionId, request));
+    }
+    @PostMapping("/snapshots") public ApiResponse<JsonNode> capture(@PathVariable UUID sessionId,
+            @Valid @RequestBody RuntimeStudioService.CaptureRequest request) {
+        return ApiResponse.success("Studio snapshot captured", studio.capture(sessionId, request));
+    }
     @GetMapping public ApiResponse<JsonNode> state(@PathVariable UUID sessionId) {
         return ApiResponse.success("Studio state", studio.state(sessionId));
     }

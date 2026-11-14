@@ -31,6 +31,88 @@ public class RuntimeStudioService {
                                 @NotBlank @Size(max=128) String service, @Min(1) @Max(8) Integer replicas) {}
     public record AckRequest(@NotNull UUID actionId, @NotNull UUID sessionId, @NotBlank String resourceProject,
                              @NotNull @Pattern(regexp="CONFIRMED|FAILED") String status, JsonNode result) {}
+    public record TelemetryRequest(@NotNull UUID sessionId, @NotBlank String resourceProject,
+                                   @NotNull JsonNode telemetry) {}
+    public record CaptureRequest(@NotBlank @Size(max=4000) String explanation,
+        @Size(max=1500000) String imageData, @Size(max=100) String observedAt) {
+        public CaptureRequest(String explanation) {this(explanation,null,null);}
+    }
+    @Transactional(readOnly = true)
+    public JsonNode receipt(UUID id) {
+        RuntimeSession session=sessions.findById(id).orElseThrow(()->error(ErrorCode.NOT_FOUND,"Runtime session not found."));
+        access.requireProjectReadAccess(session.getProject());
+        ObjectNode control=control(session);
+        if(session.getRunnerReceiptJson()==null) throw error(ErrorCode.NOT_FOUND,"Runner receipt has not been committed.");
+        ObjectNode result=mapper.createObjectNode().put("sessionId",id.toString()).put("digest",session.getReceiptDigest());
+        result.set("signature",control.path("receiptSignature"));
+        result.set("receipt",session.getRunnerReceiptJson().deepCopy());
+        return result;
+    }
+    @Transactional(readOnly = true)
+    public JsonNode snapshot(UUID id, UUID snapshotId) {
+        RuntimeSession session=sessions.findById(id).orElseThrow(()->error(ErrorCode.NOT_FOUND,"Runtime session not found."));
+        access.requireProjectReadAccess(session.getProject());
+        for(JsonNode snapshot:control(session).withArray("snapshots"))
+            if(snapshotId.toString().equals(snapshot.path("id").asText())) return snapshot;
+        throw error(ErrorCode.NOT_FOUND,"Studio snapshot not found.");
+    }
+
+    @Transactional
+    public JsonNode telemetry(UUID id, TelemetryRequest request) {
+        runner.requireRunnerService();
+        RuntimeSession session = locked(id);
+        if (!id.equals(request.sessionId()) || !request.resourceProject().equals(session.getResourceProject()))
+            throw error(ErrorCode.CONFLICT, "Runner allocation mismatch.");
+        if(session.getCancelRequestedAt()!=null || session.getRunnerReceiptJson()!=null ||
+            !"RUNNING".equals(session.getExecutionStatus()))
+            return mapper.createObjectNode().put("sessionId",id.toString()).put("resourceProject",request.resourceProject());
+        if (!request.telemetry().isObject() || request.telemetry().toString().length() > 524288)
+            throw error(ErrorCode.BAD_REQUEST, "Telemetry exceeds the session budget.");
+        ObjectNode control = control(session);
+        control.set("telemetry", com.mavis.analyzer.runtime.util.SecretRedactor.redactJson(request.telemetry()));
+        control.put("telemetryReceivedAt", OffsetDateTime.now().toString());
+        save(session, control);
+        return mapper.createObjectNode().put("sessionId", id.toString()).put("resourceProject", request.resourceProject());
+    }
+
+    @Transactional
+    public JsonNode capture(UUID id, CaptureRequest request) {
+        RuntimeSession session = locked(id);
+        access.requireProjectWriteAccess(session.getProject());
+        ObjectNode control = control(session);
+        if (!control.hasNonNull("telemetry")) throw error(ErrorCode.UNPROCESSABLE_ENTITY, "Wait for observed telemetry before capturing evidence.");
+        if(request.observedAt()!=null && !request.observedAt().equals(control.path("telemetry").path("observedAt").asText()))
+            throw error(ErrorCode.CONFLICT,"Telemetry changed. Capture the refreshed view again.");
+        for(JsonNode action:control.withArray("actions"))
+            if(java.util.Set.of("PENDING","RUNNING").contains(action.path("status").asText()))
+                throw error(ErrorCode.CONFLICT,"Wait for the action result before capturing evidence.");
+        if (control.withArray("snapshots").size() >= 8) throw error(ErrorCode.CONFLICT, "Snapshot limit reached.");
+        ObjectNode evidence = mapper.createObjectNode().put("id", UUID.randomUUID().toString())
+            .put("sessionId", id.toString()).put("sourceSnapshotId", session.getSourceSnapshot().getId().toString())
+            .put("modelVersionId", session.getModelVersion() == null ? "" : session.getModelVersion().getId().toString())
+            .put("capturedAt", OffsetDateTime.now().toString()).put("explanation", request.explanation().trim());
+        evidence.set("telemetry", control.path("telemetry").deepCopy());
+        evidence.set("actions", control.withArray("actions").deepCopy());
+        if(request.imageData()!=null) {
+            try {
+                if(!request.imageData().startsWith("data:image/png;base64,") || request.imageData().length()>1500000) throw new IllegalArgumentException();
+                byte[] png=java.util.Base64.getDecoder().decode(request.imageData().substring(22));
+                if(png.length<24 || !java.util.Arrays.equals(java.util.Arrays.copyOf(png,8),new byte[]{(byte)137,80,78,71,13,10,26,10}))
+                    throw new IllegalArgumentException();
+                var dimensions=java.nio.ByteBuffer.wrap(png,16,8);
+                int width=dimensions.getInt(),height=dimensions.getInt();
+                if(width<1||height<1||width>2000||height>2000)throw new IllegalArgumentException();
+                evidence.put("imageData",request.imageData());
+            } catch(IllegalArgumentException invalid) {throw error(ErrorCode.BAD_REQUEST,"Snapshot image must be a bounded PNG.");}
+        }
+        try {
+            evidence.put("digest", "sha256:" + java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(mapper.writeValueAsBytes(evidence))));
+        } catch (Exception failure) { throw error(ErrorCode.INTERNAL_SERVER_ERROR, "Could not freeze snapshot."); }
+        control.withArray("snapshots").add(evidence);
+        save(session, control);
+        return evidence;
+    }
 
     @Transactional(readOnly = true)
     public JsonNode state(UUID id) {
@@ -165,15 +247,22 @@ public class RuntimeStudioService {
         boolean interactive = session.getScenarioConfig() != null && session.getScenarioConfig().path("interactiveStudio").asBoolean();
         ObjectNode result = interactive ? control(session) : mapper.createObjectNode().put("finishRequested", false);
         if (!result.has("actions")) result.putArray("actions");
+        for(JsonNode snapshot:result.withArray("snapshots"))
+            ((ObjectNode)snapshot).remove(java.util.List.of("telemetry","actions","imageData"));
         String execution = session.getExecutionStatus() == null ? "UNKNOWN" : session.getExecutionStatus();
         if (Set.of("COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT", "TIMEOUT").contains(execution))
             for (JsonNode action : result.withArray("actions"))
                 if (Set.of("PENDING", "RUNNING").contains(action.path("status").asText()))
                     ((ObjectNode) action).put("status", "INTERRUPTED");
         var services = result.putArray("services");
+        result.set("serviceMappings", mapper.valueToTree(session.getConfirmedServiceMappings() == null ? java.util.Map.of() : session.getConfirmedServiceMappings()));
         if (session.getConfirmedServiceMappings() != null)
             session.getConfirmedServiceMappings().keySet().stream().filter(name -> !"mavis-collector".equals(name)).sorted().forEach(services::add);
         return result.put("sessionId", session.getId().toString()).put("interactive", interactive)
+            .put("projectId", session.getProject().getId() == null ? "" : session.getProject().getId().toString())
+            .put("modelVersionId", session.getModelVersion() == null ? "" : session.getModelVersion().getId().toString())
+            .put("sourceSnapshotId", session.getSourceSnapshot() == null ? "" : session.getSourceSnapshot().getId().toString())
+            .put("receiptDigest", session.getReceiptDigest())
             .put("executionStatus", execution).put("cleanupStatus", session.getCleanupStatus() == null ? "UNKNOWN" : session.getCleanupStatus());
     }
     private void requireRunning(RuntimeSession session) {

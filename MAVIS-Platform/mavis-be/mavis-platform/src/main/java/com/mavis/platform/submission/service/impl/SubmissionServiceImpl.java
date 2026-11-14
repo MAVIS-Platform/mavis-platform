@@ -196,7 +196,25 @@ public class SubmissionServiceImpl implements SubmissionService {
         }
 
         // 9. Lưu bản ghi nộp bài bất biến vào submission_snapshots
+        com.fasterxml.jackson.databind.node.ObjectNode studioEvidence=null;
+        if(runtimeSession!=null && runtimeSession.getScenarioConfig()!=null &&
+            runtimeSession.getScenarioConfig().path("interactiveStudio").asBoolean()) {
+            var control=runtimeSession.getStudioControl();
+            if(control==null || !control.path("snapshots").isArray() || control.path("snapshots").isEmpty() ||
+                runtimeSession.getReceiptDigest()==null || runtimeSession.getRunnerReceiptJson()==null ||
+                !"COMPLETED".equalsIgnoreCase(runtimeSession.getExecutionStatus()) ||
+                !"AVAILABLE".equalsIgnoreCase(runtimeSession.getEvidenceStatus()) ||
+                !"PASSED".equalsIgnoreCase(runtimeSession.getScenarioStatus()) ||
+                !"CONFIRMED".equalsIgnoreCase(runtimeSession.getCleanupStatus()))
+                throw new BusinessException(ErrorCode.BAD_REQUEST,"Capture a Studio snapshot with explanation and finish the verified runtime before submitting.");
+            studioEvidence=com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode()
+                .put("sessionId",runtimeSession.getId().toString()).put("receiptDigest",runtimeSession.getReceiptDigest());
+            studioEvidence.set("snapshots",control.path("snapshots").deepCopy());
+            studioEvidence.set("receiptSignature",control.path("receiptSignature").deepCopy());
+            studioEvidence.set("receipt",runtimeSession.getRunnerReceiptJson().deepCopy());
+        }
         SubmissionSnapshot submission = SubmissionSnapshot.builder()
+                .studioEvidence(studioEvidence)
                 .assignment(assignment)
                 .project(project)
                 .submittedBy(submitter)
@@ -298,6 +316,7 @@ public class SubmissionServiceImpl implements SubmissionService {
         }
 
         return com.mavis.platform.submission.dto.SubmissionExportBundleDTO.builder()
+                .studioEvidence(submission.getStudioEvidence())
                 .submissionId(submission.getId())
                 .projectId(project != null ? project.getId() : null)
                 .projectName(project != null ? project.getName() : null)

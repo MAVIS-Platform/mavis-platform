@@ -203,6 +203,32 @@ class SubmissionServiceImplTest {
         SecurityContextHolder.clearContext();
     }
 
+    @Test void submittedStudioEvidenceIsFrozenIndependentlyOfLiveSession() {
+        runtimeSession.setScenarioConfig(objectMapper.createObjectNode().put("interactiveStudio",true));
+        runtimeSession.setReceiptDigest("sha256:fixture");
+        var control=objectMapper.createObjectNode().put("receiptSignature","hmac-sha256:fixture");
+        control.putArray("snapshots").addObject().put("id","captured").put("explanation","Observed fallback").put("imageData","png-fixture");
+        runtimeSession.setStudioControl(control);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(student));
+        when(assignmentRepository.findById(assignmentId)).thenReturn(Optional.of(assignment));
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(modelVersionRepository.findById(modelVersionId)).thenReturn(Optional.of(modelVersion));
+        when(diagramVersionRepository.findById(diagramVersionId)).thenReturn(Optional.of(diagramVersion));
+        when(runtimeSessionRepository.findById(runtimeSessionId)).thenReturn(Optional.of(runtimeSession));
+        when(submissionSnapshotRepository.save(any())).thenAnswer(call->{
+            SubmissionSnapshot saved=call.getArgument(0);saved.setId(UUID.randomUUID());return saved;
+        });
+        var request=SubmissionCreateRequest.builder().assignmentId(assignmentId).projectId(projectId)
+            .modelVersionId(modelVersionId).diagramVersionId(diagramVersionId).runtimeSessionId(runtimeSessionId).build();
+        var response=submissionService.submitAssignment(request);
+        var saved=org.mockito.ArgumentCaptor.forClass(SubmissionSnapshot.class);
+        verify(submissionSnapshotRepository).save(saved.capture());
+        control.withArray("snapshots").removeAll();
+        assertThat(saved.getValue().getStudioEvidence().path("snapshots").size()).isEqualTo(1);
+        assertThat(saved.getValue().getStudioEvidence().path("snapshots").get(0).path("imageData").asText()).isEqualTo("png-fixture");
+        assertThat(response.getStudioEvidence().path("snapshots").get(0).has("imageData")).isFalse();
+    }
+
     @Test
     @DisplayName("Nộp bài tập thành công đầy đủ các thành phần (Snapshot, Model, Diagram, Evaluation, RuntimeSession)")
     void testSubmitAssignment_Success() {

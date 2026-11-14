@@ -63,6 +63,16 @@ class RuntimeStudioApiIntegrationTest extends ApiIntegrationContext {
         for (int i=0;i<2;i++)
             mvc.perform(post(url+"/ack").header("X-Mavis-Runner-Key","mavis-runner-secret-key-test")
                 .contentType(MediaType.APPLICATION_JSON).content(ack)).andExpect(status().isOk());
+        var telemetry=mapper.createObjectNode().put("observedAt","2026-11-14T00:00:00Z");
+        telemetry.putArray("services");telemetry.putArray("spans");telemetry.putArray("interactions");
+        mvc.perform(post(url+"/telemetry").header("X-Mavis-Runner-Key","mavis-runner-secret-key-test")
+            .contentType(MediaType.APPLICATION_JSON).content(mapper.writeValueAsString(Map.of(
+                "sessionId",session.getId(),"resourceProject",session.getResourceProject(),"telemetry",telemetry))))
+            .andExpect(status().isOk());
+        mvc.perform(post(url+"/snapshots").header("Authorization",auth).contentType(MediaType.APPLICATION_JSON)
+            .content("{\"explanation\":\"Observed order replica scaling\"}")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.sourceSnapshotId").value(snapshot.getId().toString()))
+            .andExpect(jsonPath("$.data.digest").isString());
         mvc.perform(post(url+"/finish").header("Authorization",auth)).andExpect(status().isOk());
         mvc.perform(get(url).header("Authorization",auth)).andExpect(status().isOk())
             .andExpect(jsonPath("$.data.finishRequested").value(true))

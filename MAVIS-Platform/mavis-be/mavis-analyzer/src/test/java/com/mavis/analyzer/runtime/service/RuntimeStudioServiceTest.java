@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.mavis.analyzer.runtime.security.RunnerServiceAuthGuard;
 import com.mavis.common.entity.Project;
 import com.mavis.common.entity.RuntimeSession;
+import com.mavis.common.entity.SourceSnapshot;
 import com.mavis.common.exception.BusinessException;
 import com.mavis.common.repository.RuntimeSessionRepository;
 import com.mavis.common.security.AccessPolicyService;
@@ -75,6 +76,21 @@ class RuntimeStudioServiceTest {
         var state = service.state(id);
         assertEquals("UNKNOWN", state.path("executionStatus").asText());
         assertEquals("UNKNOWN", state.path("cleanupStatus").asText());
+    }
+
+    @Test void telemetryIsRedactedAndCapturedEvidenceDoesNotChangeWithNewSamples() {
+        session.setSourceSnapshot(SourceSnapshot.builder().id(UUID.randomUUID()).build());
+        var telemetry = mapper.createObjectNode().put("observedAt","sample-before");
+        telemetry.put("logs","password=supersecret");
+        service.telemetry(id,new RuntimeStudioService.TelemetryRequest(id,session.getResourceProject(),telemetry));
+        var evidence=service.capture(id,new RuntimeStudioService.CaptureRequest("Observed failure propagation"));
+        assertFalse(evidence.toString().contains("supersecret"));
+        assertTrue(evidence.path("digest").asText().matches("sha256:[a-f0-9]{64}"));
+        telemetry.put("observedAt","sample-after");
+        service.telemetry(id,new RuntimeStudioService.TelemetryRequest(id,session.getResourceProject(),telemetry));
+        assertEquals("sample-before",session.getStudioControl().path("snapshots").get(0).path("telemetry").path("observedAt").asText());
+        assertThrows(BusinessException.class,()->service.telemetry(id,
+            new RuntimeStudioService.TelemetryRequest(id,"other-allocation",telemetry)));
     }
 
     @Test void failedAcknowledgementWithoutMetricsCanBeRetried() {

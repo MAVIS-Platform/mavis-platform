@@ -10,6 +10,13 @@ public sealed class JavaRuntimeClient : IRuntimeLifecycleObserver, IDisposable
 {
     public sealed record StudioCommand(string ActionId, string Action, string Service, int? Replicas);
     public sealed record StudioPoll(bool FinishRequested, StudioCommand? Command);
+    public async Task PublishStudioTelemetryAsync(string sessionId, string project, object telemetry, CancellationToken ct)
+    {
+        var json = await SendAsync(HttpMethod.Post, Route(sessionId, "studio/telemetry"),
+            JsonSerializer.Serialize(new {sessionId,resourceProject=project,telemetry},RuntimeLifecycleJournal.Json),ct);
+        using var doc=JsonDocument.Parse(json);
+        RequireIdentity(Data(doc.RootElement),sessionId,project);
+    }
     public async Task<StudioPoll> NextStudioCommandAsync(string sessionId, string project, CancellationToken ct)
     {
         var json = await SendAsync(HttpMethod.Get, Route(sessionId, "studio/commands") + "?resourceProject=" + Uri.EscapeDataString(project), null, ct);
@@ -120,6 +127,11 @@ public sealed class JavaRuntimeClient : IRuntimeLifecycleObserver, IDisposable
             {
                 using var request = new HttpRequestMessage(method, new Uri(baseUri, route));
                 request.Headers.Add("X-Mavis-Runner-Key", serviceKey);
+                if (route.EndsWith("/ingest-receipt-ack", StringComparison.Ordinal) && body is not null) {
+                    var signature=System.Security.Cryptography.HMACSHA256.HashData(Encoding.UTF8.GetBytes(serviceKey),
+                        Encoding.UTF8.GetBytes(ReceiptCanonicalJson.Digest(body)));
+                    request.Headers.Add("X-Mavis-Receipt-Signature","hmac-sha256:"+Convert.ToHexString(signature).ToLowerInvariant());
+                }
                 request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
                 if (body is not null) request.Content = new StringContent(body, Encoding.UTF8, "application/json");
                 using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);

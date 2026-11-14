@@ -23,6 +23,12 @@ import {ApiContext} from '@/providers/app-context';
 import {LocaleProvider} from '@/lib/i18n/locale-context';
 import {StudioControls} from '@/features/runtime/studio-controls';
 const state={sessionId:'fixture',interactive:true,services:['orders','payment'],executionStatus:'RUNNING',cleanupStatus:'NOT_APPLICABLE',finishRequested:false,actions:[]};
+state.telemetry={observedAt:new Date().toISOString(),services:[
+ {service:'orders',replicas:1,runningReplicas:1,stats:[{containerId:'orders-1',cpu:'1%',memory:'30MiB / 512MiB',network:'2kB / 1kB'}],logs:'CircuitBreaker fallback observed'},
+ {service:'payment',replicas:1,runningReplicas:1,stats:[],logs:'ready'}],
+ spans:[{traceId:'trace-observed',spanId:'span-orders',runtimeService:'orders',httpStatusCode:200,spanStatus:'OK'}],
+ interactions:[{traceId:'trace-observed',fromService:'orders',toService:'payment',parentSpanId:'span-orders',childSpanId:'span-payment'}]};
+state.snapshots=[];
 window.studioCalls=[];
 const api={mode:'backend',async execute(op,input){
  if(op==='studioAction'){
@@ -31,6 +37,9 @@ const api={mode:'backend',async execute(op,input){
   setTimeout(()=>{const a=state.actions.at(-1);a.status='CONFIRMED';a.result={action:a.action,service:a.service,confirmed:true,replicasBefore:1,replicasAfter:a.replicas??0,metricsBefore:{requestCount:1,p95LatencyMs:20},metricsAfter:{requestCount:1,p95LatencyMs:30}}},1800);
  }
  if(op==='studioFinish'){state.finishRequested=true;state.executionStatus='COMPLETED';state.cleanupStatus='CONFIRMED'}
+ if(op==='studioCapture'){state.snapshots.push({id:'snapshot-1',sessionId:'fixture',sourceSnapshotId:'source-1',modelVersionId:'model-1',
+  capturedAt:new Date().toISOString(),explanation:input.explanation,digest:'sha256:fixture',telemetry:structuredClone(state.telemetry),actions:structuredClone(state.actions)})}
+ if(op==='studioSnapshot')return structuredClone(state.snapshots.find(item=>item.id===input.snapshotId));
  if(op==='stopRuntime'){state.executionStatus='CANCELLED';state.cleanupStatus='CONFIRMED'}
  return structuredClone(state);
 }};
@@ -100,6 +109,10 @@ async function main() {
       if (message.type() === "error") console.error(message.text());
     });
     await page.goto("http://127.0.0.1:" + server.address().port);
+    await page.getByRole("button",{name:"3D",exact:true}).click();
+    await page.getByRole("button",{name:"Rotate right",exact:true}).click();
+    await page.getByRole("button",{name:"2D",exact:true}).click();
+    assert.equal(await page.getByRole("button",{name:"orders",exact:true}).getAttribute("aria-pressed"),"true");
     await page.screenshot({ path: path.join(output, "studio-initial.png"), fullPage: true });
     const finish = page.getByRole("button", {
       name: "Finish Studio and save evidence",
@@ -123,6 +136,12 @@ async function main() {
     );
     assert.equal(await page.evaluate(() => window.studioCalls.length), 1);
     assert.equal(await page.evaluate(() => window.studioCalls[0].replicas), 4);
+    await page.getByLabel("Explain the observed behavior").fill("Observed scaling and fallback");
+    await page.getByRole("button",{name:"Capture evidence snapshot",exact:true}).click();
+    await page.getByRole("button",{name:"Download evidence",exact:true}).waitFor();
+    const imageDownload=page.waitForEvent("download");
+    await page.getByRole("button",{name:"Export snapshot image",exact:true}).click();
+    await (await imageDownload).saveAs(path.join(output,"studio-graph.png"));
     await page.screenshot({ path: path.join(output, "studio-desktop.png"), fullPage: true });
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(

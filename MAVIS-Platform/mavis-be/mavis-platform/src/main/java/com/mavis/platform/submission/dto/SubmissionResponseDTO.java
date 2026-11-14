@@ -14,6 +14,15 @@ import java.util.UUID;
 @Builder
 @Schema(description = "Thông tin chi tiết gói bài nộp bất biến")
 public class SubmissionResponseDTO {
+    private static com.fasterxml.jackson.databind.JsonNode studioSummary(SubmissionSnapshot submission) {
+        if(submission.getStudioEvidence()==null)return null;
+        var summary=(com.fasterxml.jackson.databind.node.ObjectNode)submission.getStudioEvidence().deepCopy();
+        summary.remove("receipt");
+        for(var snapshot:summary.path("snapshots"))
+            if(snapshot instanceof com.fasterxml.jackson.databind.node.ObjectNode object)
+                object.remove(java.util.List.of("telemetry","actions","imageData"));
+        return summary;
+    }
 
     private UUID id;
     private UUID assignmentId;
@@ -32,6 +41,7 @@ public class SubmissionResponseDTO {
     private Double complianceScore;
     private UUID runtimeSessionId;
     private com.fasterxml.jackson.databind.JsonNode courseQuizEvidence;
+    private com.fasterxml.jackson.databind.JsonNode studioEvidence;
     private String scenarioStatus;
     private Long feedbackCount;
     private String submissionNotes;
@@ -68,6 +78,7 @@ public class SubmissionResponseDTO {
                 .complianceScore(complianceScore)
                 .runtimeSessionId(s.getRuntimeSession() != null ? s.getRuntimeSession().getId() : null)
                 .courseQuizEvidence(s.getCourseQuizEvidence())
+                .studioEvidence(studioSummary(s))
                 .scenarioStatus(scenarioStatus)
                 .feedbackCount(feedbackCount != null ? feedbackCount : 0L)
                 .submissionNotes(s.getSubmissionNotes())
