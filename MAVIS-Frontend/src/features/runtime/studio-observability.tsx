@@ -96,6 +96,70 @@ function parseRamMiB(raw?: string | null): { usedMiB: number; limitMiB: number; 
   };
 }
 
+function classifyArchetype(
+  serviceName: string,
+  elementType?: string,
+  layer?: string,
+): "DATABASE" | "GATEWAY" | "QUEUE" | "SERVICE" {
+  const sig = `${serviceName} ${elementType ?? ""} ${layer ?? ""}`.toLowerCase();
+  if (/(postgres|mysql|mongo|redis|db|database|data_store|storage)/.test(sig)) return "DATABASE";
+  if (/(kafka|rabbit|mq|broker|queue|event|stream)/.test(sig)) return "QUEUE";
+  if (/(gateway|ingress|proxy|nginx|bff|edge|router)/.test(sig)) return "GATEWAY";
+  return "SERVICE";
+}
+
+function renderIsoBox(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  height: number,
+  stroke: string,
+  fillBase = "var(--background)",
+  strokeWidth = 1.4,
+) {
+  const topY = cy - height;
+  const topPoints = `${cx},${topY - ry} ${cx + rx},${topY} ${cx},${topY + ry} ${cx - rx},${topY}`;
+  const leftPoints = `${cx - rx},${topY} ${cx},${topY + ry} ${cx},${cy + ry} ${cx - rx},${cy}`;
+  const rightPoints = `${cx},${topY + ry} ${cx + rx},${topY} ${cx + rx},${cy} ${cx},${cy + ry}`;
+  return (
+    <g>
+      {/* Base solid backing so dashed lines behind don't bleed through */}
+      <polygon
+        points={`${cx},${topY - ry} ${cx + rx},${topY} ${cx + rx},${cy} ${cx},${cy + ry} ${cx - rx},${cy} ${cx - rx},${topY}`}
+        fill={fillBase}
+      />
+      {/* Left Shaded Wall */}
+      <polygon
+        points={leftPoints}
+        fill="currentColor"
+        opacity="0.12"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+      />
+      {/* Right Deep-Shaded Wall */}
+      <polygon
+        points={rightPoints}
+        fill="currentColor"
+        opacity="0.22"
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+      />
+      {/* Top Illuminated Roof */}
+      <polygon
+        points={topPoints}
+        fill={fillBase}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeLinejoin="round"
+      />
+      <polygon points={topPoints} fill="currentColor" opacity="0.04" />
+    </g>
+  );
+}
+
 export function StudioObservability({
   data,
   selected,
@@ -245,7 +309,7 @@ export function StudioObservability({
         y *= perspective;
       }
 
-      raw.set(name, { x: x + 350, y: y + 230, z, tier });
+      raw.set(name, { x: x + 350, y: y + 245, z, tier });
     });
 
     if (raw.size > 0) {
@@ -254,19 +318,19 @@ export function StudioObservability({
       const maxX = Math.max(...points.map((point) => point.x));
       const minY = Math.min(...points.map((point) => point.y));
       const maxY = Math.max(...points.map((point) => point.y));
-      const fit = Math.min(1, 480 / Math.max(1, maxX - minX), 260 / Math.max(1, maxY - minY));
+      const fit = Math.min(1, 470 / Math.max(1, maxX - minX), 240 / Math.max(1, maxY - minY));
       for (const [name, point] of raw.entries()) {
         const offset = customOffsets[name] ?? { x: 0, y: 0 };
         let px = 350 + (point.x - (minX + maxX) / 2) * fit + offset.x + pan.x;
-        let py = 235 + (point.y - (minY + maxY) / 2) * fit + offset.y + pan.y;
+        let py = 248 + (point.y - (minY + maxY) / 2) * fit + offset.y + pan.y;
         px = 350 + (px - 350) * zoom;
-        py = 235 + (py - 235) * zoom;
+        py = 248 + (py - 248) * zoom;
         if (snapToGrid && view === "2D" && (offset.x !== 0 || offset.y !== 0)) {
           px = Math.round(px / 16) * 16;
           py = Math.round(py / 16) * 16;
         }
-        point.x = Math.max(84, Math.min(616, px));
-        point.y = Math.max(68, Math.min(400, py));
+        point.x = Math.max(92, Math.min(608, px));
+        point.y = Math.max(96, Math.min(395, py));
       }
     }
     return raw;
@@ -347,7 +411,6 @@ export function StudioObservability({
           ? ramValues.reduce((acc, v) => acc + v.usedMiB, 0) / ramValues.length
           : 0;
       const ramLimitMiB = ramValues[0]?.limitMiB ?? 512;
-      // When scaling 1 -> 4 -> 8 instances, total cluster memory footprint scales across running containers
       const totalServiceRamMiB =
         ramValues.length > 1
           ? ramValues.reduce((acc, v) => acc + v.usedMiB, 0)
@@ -358,7 +421,6 @@ export function StudioObservability({
       const reqAfter = latestAction?.result?.metricsAfter?.["requestCount"];
       const errAfter = latestAction?.result?.metricsAfter?.["errorRatePercent"];
 
-      // Check if any downstream dependency has significantly fewer replicas (bottleneck warning when scaling 4 -> 8)
       const downstreamServices = outboundStatic.map((e) => e.to);
       const bottleneckTarget = downstreamServices.find((ds) => {
         const dsReplicas = resolveLiveReplicas(ds);
@@ -452,6 +514,45 @@ export function StudioObservability({
               onClick={() => setCamera((value) => ({ ...value, yaw: value.yaw + 0.2 }))}
             >
               {t("Rotate right")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                setCamera((value) => ({ ...value, pitch: Math.min(0.95, value.pitch + 0.15) }))
+              }
+            >
+              {t("Tilt up")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                setCamera((value) => ({ ...value, pitch: Math.max(-0.6, value.pitch - 0.15) }))
+              }
+            >
+              {t("Tilt down")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCamera({ yaw: 0.55, pitch: 0.38 })}
+            >
+              {t("Isometric")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCamera({ yaw: 0.0, pitch: 0.92 })}
+            >
+              {t("Top-down")}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setCamera({ yaw: 0.2, pitch: 0.08 })}
+            >
+              {t("Elevation")}
             </Button>
           </div>
         )}
@@ -555,7 +656,7 @@ export function StudioObservability({
         </div>
       </div>
 
-      {/* Interactive 2D/3D Studio Canvas + Direct Node Manipulation + Circuit Breaker & Mini CPU/RAM Bars */}
+      {/* Interactive 2D/3D Studio Canvas + Volumetric 3D Isometric Server Racks & Stacked Replica Cubes */}
       <div className="relative max-w-full overflow-x-auto">
         <svg
           ref={svg}
@@ -566,7 +667,7 @@ export function StudioObservability({
           role="group"
           aria-label={t("Runtime topology and impact")}
           style={{
-            maxHeight: 520,
+            maxHeight: 540,
             touchAction: view === "3D" || draggingNode ? "none" : "auto",
             cursor: draggingNode ? "grabbing" : view === "3D" ? "grab" : "default",
           }}
@@ -670,15 +771,51 @@ export function StudioObservability({
           {/* Subtle Studio Blueprint Grid */}
           <rect x="0" y="0" width="700" height="460" fill="url(#studio-grid)" />
 
-          {/* 3D Isometric Floor Plane when in 3D mode */}
+          {/* 3D Isometric Multi-Tier Architecture Platform Deck when in 3D mode */}
           {view === "3D" && (
-            <polygon
-              points="350,65 655,235 350,415 45,235"
-              fill="currentColor"
-              opacity="0.035"
-              stroke="currentColor"
-              strokeDasharray="4 4"
-            />
+            <g>
+              {/* Outer 3D Slab Side Thickness */}
+              <polygon
+                points="42,245 350,425 658,245 658,255 350,435 42,255"
+                fill="currentColor"
+                opacity="0.11"
+              />
+              {/* Main Isometric Platform Surface */}
+              <polygon
+                points="350,65 658,245 350,425 42,245"
+                fill="currentColor"
+                opacity="0.035"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeDasharray="5 4"
+              />
+              {/* Inner Tier Zone Divider Lines */}
+              <line
+                x1="245"
+                y1="126"
+                x2="553"
+                y2="306"
+                stroke="currentColor"
+                strokeDasharray="3 4"
+                opacity="0.22"
+              />
+              <line
+                x1="145"
+                y1="185"
+                x2="453"
+                y2="365"
+                stroke="currentColor"
+                strokeDasharray="3 4"
+                opacity="0.22"
+              />
+              {/* 3D Tier Zone Labels */}
+              <text x="155" y="138" fill="currentColor" fontSize="9.5" opacity="0.55">
+                {t("Ingress / Edge Tier")}
+              </text>
+              <text x="545" y="352" fill="currentColor" fontSize="9.5" opacity="0.55" textAnchor="end">
+                {t("Data & Downstream Tier")}
+              </text>
+            </g>
           )}
 
           {/* Legend & Viewport Metadata */}
@@ -812,17 +949,19 @@ export function StudioObservability({
               );
             })}
 
-          {/* Interactive Draggable 2D/3D Service Blocks + Mini CPU/RAM Bars & Replica Pod Clusters */}
+          {/* Interactive Draggable 2D/3D Service Blocks + True Volumetric 3D Isometric Server Racks & Stacked Replica Cubes */}
           {[...positions.entries()]
             .sort((a, b) => b[1].z - a[1].z)
             .map(([name, point]) => {
               const live = telemetry?.services.find((item) => item.service === name);
-              const isAffected = affected.has(data.serviceMappings?.[name] ?? "");
+              const elId = data.serviceMappings?.[name];
+              const element = reference.data?.elements.find((el) => el.id === elId);
+              const archetype = classifyArchetype(name, element?.elementType, element?.layer);
+              const isAffected = affected.has(elId ?? "");
               const isSelected = selected === name;
               const isDropTarget = dropTargetNode === name;
               const isStopped = live !== undefined && live.runningReplicas === 0;
               const activePods = Math.min(live?.runningReplicas ?? 0, 8);
-              const depthOffset = view === "3D" ? 13 : 0;
 
               const cpuPercent = parseCpuPercent(live?.stats[0]?.cpu);
               const ramInfo = parseRamMiB(live?.stats[0]?.memory);
@@ -835,6 +974,243 @@ export function StudioObservability({
                     ? "var(--destructive)"
                     : "currentColor";
 
+              // 3D Isometric Pedestal + Volumetric Stacked Replica Cubes (Cloudcraft style)
+              if (view === "3D") {
+                const towerHeight = isStopped ? 8 : 16 + activePods * 5;
+                // Compute up to 8 3D mini container cube positions arranged in 2 rows × 4 columns on the pedestal roof
+                const podSlots = [
+                  { dx: -30, dy: -6 },
+                  { dx: -10, dy: -15 },
+                  { dx: 10, dy: -6 },
+                  { dx: 30, dy: -15 },
+                  { dx: -24, dy: 5 },
+                  { dx: -4, dy: -4 },
+                  { dx: 16, dy: 5 },
+                  { dx: 36, dy: -4 },
+                ];
+
+                return (
+                  <g
+                    key={name}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={name}
+                    aria-pressed={isSelected}
+                    onPointerDown={(event) => {
+                      event.stopPropagation();
+                      const existing = customOffsets[name] ?? { x: 0, y: 0 };
+                      nodeDrag.current = {
+                        service: name,
+                        startX: event.clientX,
+                        startY: event.clientY,
+                        origX: existing.x,
+                        origY: existing.y,
+                        moved: false,
+                      };
+                      setDraggingNode(name);
+                    }}
+                    onClick={() => {
+                      onSelect(name);
+                    }}
+                    onDragOver={(event) => {
+                      if (busy) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "copy";
+                      if (dropTargetNode !== name) setDropTargetNode(name);
+                    }}
+                    onDragLeave={() => {
+                      if (dropTargetNode === name) setDropTargetNode(null);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      setDropTargetNode(null);
+                      const toolId = event.dataTransfer.getData("application/x-mavis-studio-tool");
+                      const tool =
+                        PALETTE_ITEMS.find((item) => item.id === toolId) ?? draggedTool ?? null;
+                      if (tool) {
+                        applyPaletteToolToService(tool, name);
+                      }
+                      setDraggedTool(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onSelect(name);
+                      }
+                    }}
+                    className="cursor-grab active:cursor-grabbing"
+                  >
+                    {/* 3D Isometric Ground Shadow */}
+                    <polygon
+                      points={`${point.x},${point.y - 35} ${point.x + 82},${point.y + 6} ${point.x},${point.y + 47} ${point.x - 82},${point.y + 6}`}
+                      fill="currentColor"
+                      opacity="0.09"
+                    />
+
+                    {/* Drop Target Highlight Isometric Ring */}
+                    {isDropTarget && (
+                      <polygon
+                        points={`${point.x},${point.y - 46} ${point.x + 90},${point.y} ${point.x},${point.y + 46} ${point.x - 90},${point.y}`}
+                        fill="none"
+                        stroke="var(--primary)"
+                        strokeWidth="2.5"
+                        strokeDasharray="5 3"
+                      />
+                    )}
+
+                    {/* 3D Base Pedestal Slab */}
+                    {renderIsoBox(
+                      point.x,
+                      point.y + 6,
+                      76,
+                      36,
+                      14,
+                      strokeColor,
+                      "var(--background)",
+                      isSelected || isDropTarget ? 2.6 : 1.4,
+                    )}
+
+                    {/* Main 3D Server Rack / Database Cylinder / Container Tower (height scales with 1..8 replicas) */}
+                    {archetype === "DATABASE" ? (
+                      <g>
+                        <path
+                          d={`M ${point.x - 32},${point.y - 8 - towerHeight} L ${point.x - 32},${point.y - 8} A 32 14 0 0 0 ${point.x + 32},${point.y - 8} L ${point.x + 32},${point.y - 8 - towerHeight} Z`}
+                          fill="var(--background)"
+                          stroke={strokeColor}
+                          strokeWidth="1.6"
+                        />
+                        <ellipse
+                          cx={point.x}
+                          cy={point.y - 8 - towerHeight}
+                          rx="32"
+                          ry="14"
+                          fill="var(--background)"
+                          stroke={strokeColor}
+                          strokeWidth="1.6"
+                        />
+                      </g>
+                    ) : (
+                      renderIsoBox(
+                        point.x,
+                        point.y - 8,
+                        46,
+                        22,
+                        towerHeight,
+                        strokeColor,
+                        "var(--background)",
+                        isSelected ? 2.2 : 1.3,
+                      )
+                    )}
+
+                    {/* Stacked 3D Isometric Replica Container Cubes (1..8 volumetric cubes on the tower roof) */}
+                    {Array.from({ length: activePods }, (_, i) => {
+                      const slot = podSlots[i] ?? { dx: 0, dy: 0 };
+                      const stackLayer = Math.floor(i / 4);
+                      const cubeCx = point.x + slot.dx * 0.65;
+                      const cubeCy =
+                        point.y - 8 - towerHeight + slot.dy * 0.65 - stackLayer * 11;
+                      return (
+                        <g key={i}>
+                          {renderIsoBox(
+                            cubeCx,
+                            cubeCy,
+                            10,
+                            5.5,
+                            9,
+                            "var(--primary)",
+                            "var(--background)",
+                            1.2,
+                          )}
+                          <circle
+                            cx={cubeCx}
+                            cy={cubeCy - 9}
+                            r="2.2"
+                            fill="var(--primary)"
+                          />
+                        </g>
+                      );
+                    })}
+
+                    {/* Floating 3D Billboard HUD Tag above the 3D Tower */}
+                    <rect
+                      x={point.x - 66}
+                      y={point.y + 14}
+                      width="132"
+                      height="38"
+                      rx="6"
+                      fill="var(--background)"
+                      stroke={strokeColor}
+                      strokeWidth={isSelected ? 2.2 : 1.2}
+                    />
+                    <circle
+                      cx={point.x - 52}
+                      cy={point.y + 26}
+                      r="3.5"
+                      fill={isStopped ? "var(--destructive)" : "var(--primary)"}
+                    />
+                    <text
+                      x={point.x + 4}
+                      y={point.y + 29}
+                      textAnchor="middle"
+                      fill="currentColor"
+                      fontSize="11.5"
+                      fontWeight="600"
+                    >
+                      {name}
+                    </text>
+                    <text
+                      x={point.x}
+                      y={point.y + 42}
+                      textAnchor="middle"
+                      fill="currentColor"
+                      fontSize="10"
+                      opacity="0.85"
+                    >
+                      {live
+                        ? `${live.runningReplicas}/${live.replicas} ${t("running")}`
+                        : t("Waiting for telemetry")}
+                    </text>
+
+                    {/* Mini CPU & RAM Bars on the 3D HUD */}
+                    <rect
+                      x={point.x - 56}
+                      y={point.y + 46}
+                      width="52"
+                      height="3"
+                      rx="1.5"
+                      fill="currentColor"
+                      opacity="0.15"
+                    />
+                    <rect
+                      x={point.x - 56}
+                      y={point.y + 46}
+                      width={Math.max(3, Math.round((cpuPercent / 100) * 52))}
+                      height="3"
+                      rx="1.5"
+                      fill="var(--primary)"
+                    />
+                    <rect
+                      x={point.x + 4}
+                      y={point.y + 46}
+                      width="52"
+                      height="3"
+                      rx="1.5"
+                      fill="currentColor"
+                      opacity="0.15"
+                    />
+                    <rect
+                      x={point.x + 4}
+                      y={point.y + 46}
+                      width={Math.max(3, Math.round((ramInfo.percent / 100) * 52))}
+                      height="3"
+                      rx="1.5"
+                      fill="var(--primary)"
+                    />
+                  </g>
+                );
+              }
+
+              // 2D Mode Blueprint Card with Embedded CPU/RAM Bars & Replica Pod Cluster
               return (
                 <g
                   key={name}
@@ -886,26 +1262,6 @@ export function StudioObservability({
                   }}
                   className="cursor-grab active:cursor-grabbing"
                 >
-                  {/* 3D Isometric Extrusion Faces (Top Roof + Right Side Wall) */}
-                  {view === "3D" && (
-                    <>
-                      <polygon
-                        points={`${point.x - 76},${point.y - 34} ${point.x - 76 + depthOffset},${point.y - 34 - depthOffset} ${point.x + 76 + depthOffset},${point.y - 34 - depthOffset} ${point.x + 76},${point.y - 34}`}
-                        fill="currentColor"
-                        opacity="0.14"
-                        stroke={strokeColor}
-                        strokeWidth="1"
-                      />
-                      <polygon
-                        points={`${point.x + 76},${point.y - 34} ${point.x + 76 + depthOffset},${point.y - 34 - depthOffset} ${point.x + 76 + depthOffset},${point.y + 34 - depthOffset} ${point.x + 76},${point.y + 34}`}
-                        fill="currentColor"
-                        opacity="0.22"
-                        stroke={strokeColor}
-                        strokeWidth="1"
-                      />
-                    </>
-                  )}
-
                   {/* Drop Target Highlight Halo */}
                   {isDropTarget && (
                     <rect
@@ -1006,7 +1362,7 @@ export function StudioObservability({
                   {/* Visual Replica Pod Cluster (1..8 Pods rendered inside/below the block) */}
                   {Array.from({ length: activePods }, (_, i) => {
                     const podX = point.x - 52 + i * 14.5;
-                    const podY = point.y + 21 + (view === "3D" ? (i % 2) * 2 : 0);
+                    const podY = point.y + 21;
                     return (
                       <g key={i}>
                         <rect

@@ -136,6 +136,9 @@ async function main() {
     await page.getByRole("button", { name: "Layered", exact: true }).click();
     await page.getByRole("button", { name: "3D", exact: true }).click();
     await page.getByRole("button", { name: "Rotate right", exact: true }).click();
+    await page.getByRole("button", { name: "Tilt up", exact: true }).click();
+    await page.getByRole("button", { name: "Isometric", exact: true }).click();
+    await page.screenshot({ path: path.join(output, "studio-3d-isometric.png"), fullPage: false });
     await page.getByRole("button", { name: "2D", exact: true }).click();
     await page.getByRole("button", { name: "Reset layout", exact: true }).click();
     await page
