@@ -213,7 +213,15 @@ export function Assignments() {
                       "Any saved diagram"}{" "}
                     · Runtime trace: {assignment.requireRuntimeTrace ? "Required" : "Optional"}
                   </p>
-                  {canSubmit && (client.mode !== "backend" || roadmap.isSuccess) && (
+                  {canSubmit && published?.state === "PASSED" && (
+                    <div className="flex flex-wrap items-center gap-3" role="status">
+                      <span>{t("This Lab is complete. Your passing submission is in My Submissions.", "Lab đã hoàn thành. Bạn có thể xem bài đã đạt trong Bài nộp của tôi.")}</span>
+                      <Link className="text-primary underline" href={`/submissions?workspace=${encodeURIComponent(workspaceId)}&assignment=${encodeURIComponent(assignment.id)}`}>
+                        {t("View submissions", "Xem bài nộp")}
+                      </Link>
+                    </div>
+                  )}
+                  {canSubmit && published?.state !== "PASSED" && (client.mode !== "backend" || roadmap.isSuccess) && (
                     <SubmissionComposer
                       key={assignment.id}
                       assignmentId={assignment.id}
