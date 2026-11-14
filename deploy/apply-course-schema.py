@@ -49,6 +49,33 @@ SELECT coalesce((SELECT CASE WHEN data_type = 'jsonb' AND is_nullable = 'YES'
                  AND table_name = 'submission_snapshots' AND column_name = 'course_quiz_evidence'),
                 CASE WHEN to_regclass('submission_snapshots') IS NULL THEN 'partial' ELSE 'missing' END);
 """),
+    "V29__Submission_Evidence_Package_Digest.sql": (29, """
+SELECT CASE
+    WHEN to_regclass('submission_snapshots') IS NULL THEN 'partial'
+    WHEN (SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema()
+          AND table_name = 'submission_snapshots' AND column_name = 'evidence_package_digest') = 0
+         AND to_regclass('ix_submission_evidence_package_digest') IS NULL THEN 'missing'
+    WHEN (SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema()
+          AND table_name = 'submission_snapshots' AND column_name = 'evidence_package_digest'
+          AND data_type = 'character varying' AND character_maximum_length = 71 AND is_nullable = 'NO') = 1
+         AND to_regclass('ix_submission_evidence_package_digest') IS NOT NULL THEN 'ready'
+    ELSE 'partial' END;
+"""),
+    "V30__Submission_Snapshot_Grades_And_Explanations.sql": (30, """
+SELECT CASE
+    WHEN to_regclass('submission_snapshots') IS NULL OR to_regclass('submission_reviews') IS NULL THEN 'partial'
+    WHEN (SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema()
+          AND ((table_name = 'submission_snapshots' AND column_name = 'student_snapshots')
+               OR (table_name = 'submission_reviews' AND column_name IN ('snapshot_grades', 'lab_outcome')))) = 0
+        THEN 'missing'
+    WHEN (SELECT count(*) FROM information_schema.columns WHERE table_schema = current_schema()
+          AND ((table_name = 'submission_snapshots' AND column_name = 'student_snapshots' AND data_type = 'jsonb')
+               OR (table_name = 'submission_reviews' AND column_name = 'snapshot_grades' AND data_type = 'jsonb')
+               OR (table_name = 'submission_reviews' AND column_name = 'lab_outcome'
+                   AND data_type = 'character varying' AND character_maximum_length = 24))) = 3
+        THEN 'ready'
+    ELSE 'partial' END;
+"""),
 }
 
 
