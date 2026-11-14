@@ -6,7 +6,8 @@ import org.springframework.core.env.Environment;
 /** SecurityUtils bridges static callers; cached Spring test contexts must restore their own auth mode. */
 @org.springframework.test.context.TestPropertySource(properties={
  "mavis.runner.service-key=mavis-runner-secret-key-test",
- "mavis.runner.auto-dispatch-enabled=false"
+ "mavis.runner.auto-dispatch-enabled=false",
+ "mavis.storage.upload-dir=${java.io.tmpdir}/mavis-uploads/"
 })
 abstract class ApiIntegrationContext {
  @Autowired private Environment testEnvironment;
